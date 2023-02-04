@@ -1,0 +1,626 @@
+#pragma once
+
+#include <stdint.h>     // uint32, int64_t, etc..
+#include <stdbool.h>    // bool
+#include <stddef.h>     // NULL, size_t, offsetof
+
+#include "../Config.h"
+
+// Cpu Architecture  
+#define ARCH_32BIT 0
+#define ARCH_64BIT 0
+#define ARCH_PTRSIZE 0
+
+// Compiler
+#define COMPILER_CLANG 0
+#define COMPILER_CLANG_ANALYZER 0
+#define COMPILER_CLANG_CL 0
+#define COMPILER_GCC 0
+#define COMPILER_MSVC 0
+
+// CPU
+#define CPU_ARM 0
+#define CPU_X86 0
+
+// C Runtime
+#define CRT_BIONIC 0
+#define CRT_GLIBC 0
+#define CRT_LIBCXX 0
+#define CRT_MINGW 0
+#define CRT_MSVC 0
+
+#ifndef CRT_NONE
+    #define CRT_NONE 0
+#endif    // CRT_NONE
+
+// Platform
+#define PLATFORM_ANDROID 0
+#define PLATFORM_IOS 0
+#define PLATFORM_LINUX 0
+#define PLATFORM_NX 0
+#define PLATFORM_OSX 0
+#define PLATFORM_WINDOWS 0
+#define PLATFORM_SCARLETT 0
+#define PLATFORM_PROSPERO 0
+
+// useful macros
+#define __STRINGIZE__(_x) #_x
+#define STRINGIZE(_x) __STRINGIZE__(_x)
+
+#define __CONCAT__(a, b) a##b
+#define CONCAT(a, b) __CONCAT__(a, b)
+
+// http://sourceforge.net/apps/mediawiki/predef/index.php?title=Compilers
+#if defined(__clang__)
+    // clang defines __GN_ or _MSC_VER
+    #undef COMPILER_CLANG
+    #define COMPILER_CLANG 1
+    #define COMPILER_CLANG_VERSION (__clang_major__ * 10000 + __clang_minor__ * 100 + __clang_patchlevel__)
+    #if defined(__clang_analyzer__)
+        #undef COMPILER_CLANG_ANALYZER
+        #define COMPILER_CLANG_ANALYZER 1
+    #endif    // defined(__clang_analyzer__)
+    #if defined(_MSC_VER)
+        #undef COMPILER_MSVC
+        #define COMPILER_MSVC 1
+        #undef COMPILER_CLANG_CL
+        #define COMPILER_CLANG_CL_VERSION COMPILER_CLANG
+    #endif
+#elif defined(_MSC_VER)
+    #undef COMPILER_MSVC
+    #define COMPILER_MSVC 1
+    #define COMPILER_MSVC_VERSION _MSC_VER
+#elif defined(__GNUC__)
+    #undef COMPILER_GCC
+    #define COMPILER_GCC 1
+    #define COMPILER_GCC_VERIONS (__GNUC__ * 10000 + __GNUC_MINOR__ * 100 + __GNUC_PATCHLEVEL__)
+#else
+    #error "COMPILER_* is not defined!"
+#endif    //
+
+// http://sourceforge.net/apps/mediawiki/predef/index.php?title=Architectures
+#if defined(__arm__) || defined(__aarch64__) || defined(_M_ARM)
+    #undef CPU_ARM
+    #define CPU_ARM 1
+    #define CACHE_LINE_SIZE 64u
+#elif defined(_M_IX86) || defined(_M_X64) || defined(__i386__) || defined(__x86_64__)
+    #undef CPU_X86
+    #define CPU_X86 1
+    #define CACHE_LINE_SIZE 64u
+#else
+    #error "Cpu not supported"
+#endif    //
+
+#if defined(__x86_64__) || defined(_M_X64) || defined(__aarch64__) || defined(__64BIT__) || \
+    defined(__mips64) || defined(__powerpc64__) || defined(__ppc64__) || defined(__LP64__)
+    #undef ARCH_64BIT
+    #define ARCH_64BIT 1
+    #undef ARCH_PTRSIZE
+    #define ARCH_PTRSIZE 8
+#else
+    #undef ARCH_32BIT
+    #define ARCH_32BIT 1
+    #undef ARCH_PTRSIZE
+    #define ARCH_PTRSIZE 4
+#endif    //
+
+// http://sourceforge.net/apps/mediawiki/predef/index.php?title=Operating_Systems
+#if defined(__ANDROID__) || defined(ANDROID) || defined(__ANDROID_API__)
+    // Android compiler defines __linux__
+    #include <sys/cdefs.h>    // Defines __BIONIC__ and includes android/api-level.h
+    #undef PLATFORM_ANDROID
+    #define PLATFORM_ANDROID 1
+    #define  PLATFORM_ANDROID_VERSION __ANDROID__
+#elif defined(_WIN32) || defined(_WIN64)
+    // http://msdn.microsoft.com/en-us/library/6sehtctf.aspx
+    #ifndef NOMINMAX
+        #define NOMINMAX
+    #endif    // NOMINMAX
+    //  If _USING_V110_SDK71_ is defined it means we are using the v110_xp or v120_xp toolset.
+    #if defined(_MSC_VER) && (_MSC_VER >= 1700) && (!_USING_V110_SDK71_)
+        #include <winapifamily.h>
+    #endif    // defined(_MSC_VER) && (_MSC_VER >= 1700) && (!_USING_V110_SDK71_)
+    #undef PLATFORM_WINDOWS
+    #if !defined(WINVER) && !defined(_WIN32_WINNT)
+        #if ARCH_64BIT
+            // When building 64-bit target Win10 and above.
+            #define WINVER 0x0a00
+            #define _WIN32_WINNT 0x0a00
+        #else
+            // Windows Server 2003 with SP1, Windows XP with SP2 and above
+            #define WINVER 0x0502
+            #define _WIN32_WINNT 0x0502
+        #endif    // ARCH_64BIT
+    #endif        // !defined(WINVER) && !defined(_WIN32_WINNT)
+    #define PLATFORM_WINDOWS 1
+    #define PLATFORM_WINDOWS_VERSION WINVER
+#elif defined(__linux__)
+    #undef PLATFORM_LINUX
+    #define PLATFORM_LINUX 1
+#elif defined(__ENVIRONMENT_IPHONE_OS_VERSION_MIN_REQUIRED__) || defined(__ENVIRONMENT_TV_OS_VERSION_MIN_REQUIRED__)
+    #undef PLATFORM_IOS
+    #define PLATFORM_IOS 1
+#elif defined(__ENVIRONMENT_MAC_OS_X_VERSION_MIN_REQUIRED__)
+    #undef PLATFORM_OSX
+    #define PLATFORM_OSX __ENVIRONMENT_MAC_OS_X_VERSION_MIN_REQUIRED__
+#elif defined(__NX__)
+    #undef PLATFORM_NX
+    #define PLATFORM_NX 1
+#endif    //
+
+#if !CRT_NONE
+    // https://sourceforge.net/p/predef/wiki/Libraries/
+    #if defined(__BIONIC__)
+        #undef CRT_BIONIC
+        #define CRT_BIONIC 1
+    #elif defined(_MSC_VER)
+        #undef CRT_MSVC
+        #define CRT_MSVC 1
+    #elif defined(__GLIBC__)
+        #undef CRT_GLIBC
+        #define CRT_GLIBC (__GLIBC__ * 10000 + __GLIBC_MINOR__ * 100)
+    #elif defined(__MINGW32__) || defined(__MINGW64__)
+        #undef CRT_MINGW
+        #define CRT_MINGW 1
+    #elif defined(__apple_build_version__) || defined(__ORBIS__) || defined(__llvm__)
+        #undef CRT_LIBCXX
+        #define CRT_LIBCXX 1
+    #endif    //
+
+    #if !CRT_BIONIC && !CRT_GLIBC && !CRT_LIBCXX && !CRT_MINGW && !CRT_MSVC 
+        #undef CRT_NONE
+        #define CRT_NONE 1
+    #endif    // CRT_*
+#endif        // !CRT_NONE
+
+#if COMPILER_GCC
+    #define COMPILER_NAME \
+        "GCC " STRINGIZE(__GN_) "." STRINGIZE(__GNMINOR__) "." STRINGIZE(__GNPATCHLEVEL__)
+#elif COMPILER_CLANG
+    #define COMPILER_NAME \
+        "Clang " STRINGIZE(__clang_major__) "." STRINGIZE(__clang_minor__) "." STRINGIZE(__clang_patchlevel__)
+#elif COMPILER_MSVC
+    #if COMPILER_MSVC_VERSION >= 1930
+        #define COMPILER_NAME "MSVC 17 (" STRINGIZE(COMPILER_MSVC_VERSION)  ")"
+    #elif COMPILER_MSVC_VERSION >= 1920      // Visual Studio 2019
+        #define COMPILER_NAME "MSVC 16 (" STRINGIZE(COMPILER_MSVC_VERSION)  ")"
+    #elif COMPILER_MSVC_VERSION >= 1910    // Visual Studio 2017
+        #define COMPILER_NAME "MSVC 15"
+    #elif COMPILER_MSVC_VERSION >= 1900    // Visual Studio 2015
+        #define COMPILER_NAME "MSVC 14"
+    #elif COMPILER_MSVC_VERSION >= 1800    // Visual Studio 2013
+        #define COMPILER_NAME "MSVC 12"
+    #elif COMPILER_MSVC_VERSION >= 1700    // Visual Studio 2012
+        #define COMPILER_NAME "MSVC 11"
+    #elif COMPILER_MSVC_VERSION >= 1600    // Visual Studio 2010
+        #define COMPILER_NAME "MSVC 10"
+    #elif COMPILER_MSVC_VERSION >= 1500    // Visual Studio 2008
+        #define COMPILER_NAME "MSVC 9"
+    #else
+        #define COMPILER_NAME "MSVC"
+    #endif    
+#endif        // COMPILER_NAME
+
+#if PLATFORM_ANDROID
+    #define PLATFORM_NAME "Android " STRINGIZE(PLATFORM_ANDROID)
+#elif PLATFORM_IOS
+    #define PLATFORM_NAME "iOS"
+#elif PLATFORM_LINUX
+    #define PLATFORM_NAME "Linux"
+#elif PLATFORM_NX
+    #define PLATFORM_NAME "NX"
+#elif PLATFORM_OSX
+    #define PLATFORM_NAME "OSX"
+#elif PLATFORM_WINDOWS
+    #define PLATFORM_NAME "Windows"
+#else
+    #error "Unknown PLATFORM!"
+#endif    // PLATFORM_
+
+#define PLATFORM_APPLE (0 || PLATFORM_IOS || PLATFORM_OSX)
+
+#if CPU_ARM
+    #define CPU_NAME "ARM"
+#elif CPU_X86
+    #define CPU_NAME "x86"
+#endif    // CPU_
+
+#if CRT_BIONIC
+    #define CRT_NAME "Bionic libc"
+#elif CRT_GLIBC
+    #define CRT_NAME "GNU C Library"
+#elif CRT_MSVC
+    #define CRT_NAME "MSVC C Runtime"
+#elif CRT_MINGW
+    #define CRT_NAME "MinGW C Runtime"
+#elif CRT_LIBCXX
+    #define CRT_NAME "Clang C Library"
+#elif CRT_NONE
+    #define CRT_NAME "None"
+#else
+    #error "Unknown CRT!"
+#endif    // CRT_
+
+#if ARCH_32BIT
+    #define ARCH_NAME "32-bit"
+#elif ARCH_64BIT
+    #define ARCH_NAME "64-bit"
+#endif    // ARCH_
+
+#if defined(__has_feature)
+    #define CLANG_HAS_FEATURE(_x) __has_feature(_x)
+#else
+    #define CLANG_HAS_FEATURE(_x) 0
+#endif    // defined(__has_feature)
+
+#if defined(__has_extension)
+    #define CLANG_HAS_EXTENSION(_x) __has_extension(_x)
+#else
+    #define CLANG_HAS_EXTENSION(_x) 0
+#endif    // defined(__has_extension)
+
+#if COMPILER_GCC || COMPILER_CLANG
+    #define FORCE_INLINE static inline __attribute__((__always_inline__))
+    #define FUNCTION __PRETTY_FUNCTION__
+    #define NO_OPT __attribute__((optnone))
+    #define NO_INLINE __attribute__((noinline))
+    #define CONSTFN __attribute__((const))
+    #define RESTRICT __restrict__
+    // https://awesomekling.github.io/Smarter-C++-inlining-with-attribute-flatten/
+    #define FLATTEN __attribute__((flatten))    // inline everything in the function body
+    #if CONFIG_FORCE_INLINE_DEBUG
+        #define INLINE static 
+    #else
+        #define INLINE static inline 
+    #endif
+    #if CRT_MSVC
+        #define __stdcall
+    #endif    // CRT_MSVC
+    #define NO_VTABLE 
+#elif COMPILER_MSVC
+    #define FORCE_INLINE __forceinline
+    #define FUNCTION __FUNCTION__
+    #define NO_INLINE __declspec(noinline)
+    #define NO_OPT 
+    #define CONSTFN __declspec(noalias)
+    #define RESTRICT __restrict
+    #define FLATTEN
+    #define NO_VTABLE __declspec(novtable)
+    #if CONFIG_FORCE_INLINE_DEBUG
+        #define INLINE static 
+    #else
+        #define INLINE static inline 
+    #endif
+#else
+    #error "Unknown COMPILER_?"
+#endif
+
+#if COMPILER_CLANG
+    #define PRAGMA_DIAGNOSTIC_PUSH_CLANG_() _Pragma("clang diagnostic push")
+    #define PRAGMA_DIAGNOSTIC_POP_CLANG_() _Pragma("clang diagnostic pop")
+    #define PRAGMA_DIAGNOSTIC_IGNORED_CLANG(_x) _Pragma(STRINGIZE(clang diagnostic ignored _x))
+#else
+    #define PRAGMA_DIAGNOSTIC_PUSH_CLANG_()
+    #define PRAGMA_DIAGNOSTIC_POP_CLANG_()
+    #define PRAGMA_DIAGNOSTIC_IGNORED_CLANG(_x)
+#endif    // COMPILER_CLANG
+
+#if COMPILER_GCC && COMPILER_GCC >= 40600
+    #define PRAGMA_DIAGNOSTIC_PUSH_GCC_() _Pragma("GCC diagnostic push")
+    #define PRAGMA_DIAGNOSTIC_POP_GCC_() _Pragma("GCC diagnostic pop")
+    #define PRAGMA_DIAGNOSTIC_IGNORED_GCC(_x) _Pragma(STRINGIZE(GCC diagnostic ignored _x))
+#else
+    #define PRAGMA_DIAGNOSTIC_PUSH_GCC_()
+    #define PRAGMA_DIAGNOSTIC_POP_GCC_()
+    #define PRAGMA_DIAGNOSTIC_IGNORED_GCC(_x)
+#endif    // COMPILER_GCC
+
+#if COMPILER_MSVC
+    #define PRAGMA_DIAGNOSTIC_PUSH_MSVC_() __pragma(warning(push))
+    #define PRAGMA_DIAGNOSTIC_POP_MSVC_() __pragma(warning(pop))
+    #define PRAGMA_DIAGNOSTIC_IGNORED_MSVC(_x) __pragma(warning(disable : _x))
+#else
+    #define PRAGMA_DIAGNOSTIC_PUSH_MSVC_()
+    #define PRAGMA_DIAGNOSTIC_POP_MSVC_()
+    #define PRAGMA_DIAGNOSTIC_IGNORED_MSVC(_x)
+#endif    // COMPILER_MSVC
+
+#if COMPILER_CLANG
+    #define PRAGMA_DIAGNOSTIC_PUSH PRAGMA_DIAGNOSTIC_PUSH_CLANG_
+    #define PRAGMA_DIAGNOSTIC_POP PRAGMA_DIAGNOSTIC_POP_CLANG_
+    #define PRAGMA_DIAGNOSTIC_IGNORED_CLANG_GCC PRAGMA_DIAGNOSTIC_IGNORED_CLANG
+#elif COMPILER_GCC
+    #define PRAGMA_DIAGNOSTIC_PUSH PRAGMA_DIAGNOSTIC_PUSH_GCC_
+    #define PRAGMA_DIAGNOSTIC_POP PRAGMA_DIAGNOSTIC_POP_GCC_
+    #define PRAGMA_DIAGNOSTIC_IGNORED_CLANG_GCC PRAGMA_DIAGNOSTIC_IGNORED_GCC
+#elif COMPILER_MSVC
+    #define PRAGMA_DIAGNOSTIC_PUSH PRAGMA_DIAGNOSTIC_PUSH_MSVC_
+    #define PRAGMA_DIAGNOSTIC_POP PRAGMA_DIAGNOSTIC_POP_MSVC_
+    #define PRAGMA_DIAGNOSTIC_IGNORED_CLANG_GCC(_x)
+#endif    // COMPILER_
+
+#define PLATFORM_POSIX (0 || PLATFORM_ANDROID || PLATFORM_IOS || PLATFORM_LINUX || PLATFORM_NX || PLATFORM_OSX)
+#define PLATFORM_DESKTOP (0 || PLATFORM_WINDOWS || PLATFORM_LINUX || PLATFORM_OSX)
+#define PLATFORM_MOBILE (0 || PLATFORM_ANDROID || PLATFORM_IOS)
+
+// Force ToolMode=0 on mobile platforms
+#if CONFIG_TOOLMODE && PLATFORM_MOBILE
+    #undef CONFIG_TOOLMODE
+    #define CONFIG_TOOLMODE 0
+#endif
+   
+#define UNUSED(_a) (void)(_a)
+
+#define INVALID_INDEX UINT32_MAX
+
+#ifndef API
+    #define API 
+#endif
+
+// Sanitizer macros 
+#define IS_ASAN_ENABLED 0
+#define NO_ASAN 
+
+#if COMPILER_MSVC
+    #if defined(__SANITIZE_ADDRESS__)
+        #undef IS_ASAN_ENABLED
+        #define IS_ASAN_ENABLED 1
+        
+        #undef NO_ASAN
+        #define NO_ASAN __declspec(no_sanitize_address)
+    #endif
+#elif COMPILER_CLANG
+    #if defined(__has_feature)
+        #if __has_feature(address_sanitizer)
+            #undef NO_ASAN
+            #define NO_ASAN __attribute__((no_sanitize("address")))
+
+            #undef IS_ASAN_ENABLED
+            #define IS_ASAN_ENABLED 1
+        #endif
+    #endif
+#elif COMPILER_GCC
+    #if defined(__SANITIZE_ADDRESS__) && __SANITIZE_ADDRESS__
+        #undef NO_ASAN
+        #define NO_ASAN __attribute__((__no_sanitize_address__))
+
+        #undef IS_ASAN_ENABLED
+        #define IS_ASAN_ENABLED 1
+    #endif
+#endif  
+
+#if IS_ASAN_ENABLED
+    // taken from asan_interface.h (llvm)
+    extern "C" void __asan_poison_memory_region(void const volatile *addr, size_t size);
+    extern "C" void __asan_unpoison_memory_region(void const volatile *addr, size_t size);
+    
+    #define ASAN_POISON_MEMORY(_addr, _size) __asan_poison_memory_region((_addr), (_size));
+    #define ASAN_UNPOISON_MEMORY(_addr, _size) __asan_unpoison_memory_region((_addr), (_size))
+#else
+    #define ASAN_POISON_MEMORY(_addr, _size)
+    #define ASAN_UNPOISON_MEMORY(_addr, _size)
+#endif
+
+#define HAS_INCLUDE(incl) __has_include(incl)
+
+// extern "C" int __asan_address_is_poisoned(void const volatile *addr);
+// extern "C" void *__asan_region_is_poisoned(void *beg, size_t size);
+
+// typedef basic opaque times, make them easier to write
+using uint8 = uint8_t;
+using int8 = int8_t;
+using uint16 = uint16_t;
+using int16 = int16_t;
+using uint32 = uint32_t;
+using int32 = int32_t;
+using uint64 = uint64_t;
+using int64 = int64_t;
+using fl32 = float;
+using fl64 = double;
+using uintptr = uintptr_t;
+
+static inline constexpr uint32 kMaxPath = CONFIG_MAX_PATH;
+static inline constexpr size_t kKB = 1024;
+static inline constexpr size_t kMB = 1024*1024;
+static inline constexpr size_t kGB = 1024*1024*1024;
+
+// Minimal template min/max/clamp/Swap implementations
+template <typename T> T Max(T a, T b);
+template <typename T> T Min(T a, T b);
+template <typename T> T Clamp(T v, T _min, T _max);
+template <typename T> void Swap(T& a, T& b);
+template <typename T, size_t N> constexpr uint32 CountOf(T const (&)[N]);
+
+template <typename T> 
+inline void Swap(T& a, T& b)
+{
+    T tmp = b;
+    b = a;
+    a = tmp;
+}
+
+template <typename T, size_t N> 
+constexpr uint32 CountOf(T const (&)[N])
+{
+    return static_cast<uint32>(N);
+}
+    
+template<typename T> inline T Max(T a, T b) { return (a > b) ? a : b; }
+template<> inline int Max(int a, int b) { return (a > b) ? a : b; }
+template<> inline fl32 Max(fl32 a, fl32 b) { return (a > b) ? a : b; }
+template<> inline fl64 Max(fl64 a, fl64 b) { return (a > b) ? a : b; }
+template<> inline int8 Max(int8 a, int8 b) { return (a > b) ? a : b; }
+template<> inline uint8 Max(uint8 a, uint8 b) { return (a > b) ? a : b; }
+template<> inline uint16 Max(uint16 a, uint16 b) { return (a > b) ? a : b; }
+template<> inline int16 Max(int16 a, int16 b) { return (a > b) ? a : b; }
+template<> inline uint32 Max(uint32 a, uint32 b) { return (a > b) ? a : b; }
+template<> inline int64 Max(int64 a, int64 b) { return (a > b) ? a : b; }
+template<> inline uint64 Max(uint64 a, uint64 b) { return (a > b) ? a : b; }
+
+template<typename T> T Min(T a, T b) { return (a < b) ? a : b; }
+template<> inline int Min(int a, int b) { return (a < b) ? a : b; }
+template<> inline fl32 Min(fl32 a, fl32 b) { return (a < b) ? a : b; }
+template<> inline fl64 Min(fl64 a, fl64 b) { return (a < b) ? a : b; }
+template<> inline int8 Min(int8 a, int8 b) { return (a < b) ? a : b; }
+template<> inline uint8 Min(uint8 a, uint8 b) { return (a < b) ? a : b; }
+template<> inline uint16 Min(uint16 a, uint16 b) { return (a < b) ? a : b; }
+template<> inline int16 Min(int16 a, int16 b) { return (a < b) ? a : b; }
+template<> inline uint32 Min(uint32 a, uint32 b) { return (a < b) ? a : b; }
+template<> inline int64 Min(int64 a, int64 b) { return (a < b) ? a : b; }
+template<> inline uint64 Min(uint64 a, uint64 b) { return (a < b) ? a : b; }
+
+template<typename T> inline T Clamp(T v, T _min, T _max) { return Max(Min(v, _max), _min); }
+template<> inline int Clamp(int v, int _min, int _max) { return Max(Min(v, _max), _min); }
+template<> inline fl32 Clamp(fl32 v, fl32 _min, fl32 _max) { return Max(Min(v, _max), _min); }
+template<> inline fl64 Clamp(fl64 v, fl64 _min, fl64 _max) { return Max(Min(v, _max), _min); }
+template<> inline int8 Clamp(int8 v, int8 _min, int8 _max) { return Max(Min(v, _max), _min); }
+template<> inline uint8 Clamp(uint8 v, uint8 _min, uint8 _max) { return Max(Min(v, _max), _min); }
+template<> inline int16 Clamp(int16 v, int16 _min, int16 _max) { return Max(Min(v, _max), _min); }
+template<> inline uint16 Clamp(uint16 v, uint16 _min, uint16 _max) { return Max(Min(v, _max), _min); }
+template<> inline uint32 Clamp(uint32 v, uint32 _min, uint32 _max) { return Max(Min(v, _max), _min); }
+template<> inline int64 Clamp(int64 v, int64 _min, int64 _max) { return Max(Min(v, _max), _min); }
+template<> inline uint64 Clamp(uint64 v, uint64 _min, uint64 _max) { return Max(Min(v, _max), _min); }
+
+// pointer to integer conversion
+template <typename T> T PtrToInt(void* ptr);
+
+template<> inline uint16 PtrToInt(void* ptr) { return static_cast<uint16>((uintptr_t)ptr); }
+template<> inline uint32 PtrToInt(void* ptr) { return static_cast<uint32>((uintptr_t)ptr); }
+template<> inline int    PtrToInt(void* ptr) { return static_cast<int>((uintptr_t)ptr); }
+template<> inline uint64 PtrToInt(void* ptr) { return static_cast<uint64>((uintptr_t)ptr); }
+template<> inline int64  PtrToInt(void* ptr) { return static_cast<int64>((uintptr_t)ptr); }
+
+// integer to pointer conversion
+template <typename T> void* IntToPtr(T i);
+
+template<> inline void* IntToPtr(uint16 i)  { return reinterpret_cast<void*>((uintptr_t)i); }
+template<> inline void* IntToPtr(uint32 i)  { return reinterpret_cast<void*>((uintptr_t)i); }
+template<> inline void* IntToPtr(int i)     { return reinterpret_cast<void*>((uintptr_t)i); }
+template<> inline void* IntToPtr(uint64 i)  { return reinterpret_cast<void*>((uintptr_t)i); }
+template<> inline void* IntToPtr(int64 i)   { return reinterpret_cast<void*>((uintptr_t)i); }
+
+template <typename T> T IndexToId(T i);
+template<> inline uint16 IndexToId(uint16 i)  { return i + 1; }
+template<> inline uint32 IndexToId(uint32 i)  { return i + 1; }
+
+// This macro is to enable bitmasks for "enum class" types
+#define ENABLE_BITMASK(_EnumType) \
+    FORCE_INLINE _EnumType operator|(_EnumType lhs, _EnumType rhs) {   \
+        return static_cast<_EnumType>(static_cast<uint32>(lhs) | static_cast<uint32>(rhs));  \
+    }   \
+    FORCE_INLINE _EnumType operator&(_EnumType lhs, _EnumType rhs) {   \
+        return static_cast<_EnumType>(static_cast<uint32>(lhs) & static_cast<uint32>(rhs));  \
+    }   \
+    FORCE_INLINE _EnumType operator^(_EnumType lhs, _EnumType rhs) {   \
+        return static_cast<_EnumType>(static_cast<uint32>(lhs) ^ static_cast<uint32>(rhs));  \
+    }    \
+    FORCE_INLINE _EnumType operator~(_EnumType rhs) {   \
+        return static_cast<_EnumType>(~static_cast<uint32>(rhs));  \
+    }   \
+    FORCE_INLINE _EnumType& operator|=(_EnumType& lhs, _EnumType rhs)  {   \
+        lhs = static_cast<_EnumType>(static_cast<uint32>(lhs) | static_cast<uint32>(rhs));  \
+        return lhs; \
+    }   \
+    FORCE_INLINE _EnumType& operator&=(_EnumType& lhs, _EnumType rhs)   {   \
+        lhs = static_cast<_EnumType>(static_cast<uint32>(lhs) & static_cast<uint32>(rhs));  \
+        return lhs; \
+    }   \
+    FORCE_INLINE _EnumType& operator^=(_EnumType& lhs, _EnumType rhs)   {   \
+        lhs = static_cast<_EnumType>(static_cast<uint32>(lhs) ^ static_cast<uint32>(rhs));  \
+        return lhs; \
+    }
+
+template <typename _A, typename _B>
+struct Pair
+{
+    _A first;
+    _B second;
+
+    Pair() = default;
+    explicit Pair(const _A& a, const _B& b) : 
+        first(a), second(b) {}
+};
+
+//------------------------------------------------------------------------
+// Random generation
+struct RandomContext
+{
+    uint64 state[2];
+};
+
+API uint32        randomGenSeed(void);
+API RandomContext randomCreateContext(uint32 seed = randomGenSeed());
+
+API uint32        randomNewUint(RandomContext* ctx);
+API float         randomNewFloat(RandomContext* ctx);
+API float         randomNewFloatInRange(RandomContext* ctx, float _min, float _max);
+API int           randomNewIntInRange(RandomContext* ctx, int _min, int _max);
+
+// Context Free random functions (Uses thread_local context)
+API uint32        randomNewUint();
+API float         randomNewFloat();
+API float         randomNewFloatInRange(float _min, float _max);
+API int           randomNewIntInRange(int _min, int _max);
+
+// Misc
+INLINE constexpr uint32 MakeFourCC(uint8 _a, uint8 _b, uint8 _c, uint8 _d)
+{
+    return  static_cast<uint32>(_a) | 
+           (static_cast<uint32>(_b) << 8) | 
+           (static_cast<uint32>(_c) << 16) | 
+           (static_cast<uint32>(_d) << 24);
+}
+
+template<typename _T> inline constexpr _T AlignValue(_T value, _T align);
+template<> inline constexpr int AlignValue(int value, int align) { int mask = align - 1; return (value + mask) & ((~0) & (~mask)); }
+template<> inline constexpr uint16 AlignValue(uint16 value, uint16 align) { uint16 mask = align - 1; return (value + mask) & ((~0) & (~mask)); }
+template<> inline constexpr uint32 AlignValue(uint32 value, uint32 align) { uint32 mask = align - 1; return (value + mask) & ((~0) & (~mask)); }
+template<> inline constexpr uint64 AlignValue(uint64 value, uint64 align) { uint64 mask = align - 1; return (value + mask) & ((~0) & (~mask)); }
+
+template<typename _T> inline constexpr _T DivCeil(_T value, _T divider);
+template<> inline constexpr int DivCeil(int value, int divider) { return (value + divider - 1)/divider; }
+template<> inline constexpr uint16 DivCeil(uint16 value, uint16 divider) { return (value + divider - 1)/divider; }
+template<> inline constexpr uint32 DivCeil(uint32 value, uint32 divider) { return (value + divider - 1)/divider; }
+template<> inline constexpr uint64 DivCeil(uint64 value, uint64 divider) { return (value + divider - 1)/divider; }
+
+// Implemented in Atomic.h
+// We put this in here to avoid expensive c89atomic.h include
+struct alignas(CACHE_LINE_SIZE) AtomicLock
+{
+    uint32 locked = 0;
+};
+
+#if defined(Main)
+    #undef Main
+#endif
+
+#if PLATFORM_ANDROID
+    #define Main AndroidMain
+#else
+    #define Main main
+#endif
+
+#include "Debug.h"
+
+//------------------------------------------------------------------------
+template <typename _T>
+struct RelativePtr
+{
+    RelativePtr() : _offset(0) {}
+    RelativePtr(_T* ptr) { _offset = ptr ? uint32((uint8*)ptr - (uint8*)this) : 0; }
+    _T* operator->() { ASSERT(_offset); return Get(); }
+    const _T* operator->() const { ASSERT(_offset); return Get(); }
+    RelativePtr<_T>& operator=(_T* ptr) { _offset = ptr ? uint32((uint8*)ptr - (uint8*)this) : 0; return *this; }
+    _T& operator[](uint32 index) { ASSERT(_offset); return ((_T*)(((uint8*)&_offset) + _offset))[index]; }
+    const _T& operator[](uint32 index) const { ASSERT(_offset); return ((_T*)(((uint8*)&_offset) + _offset))[index]; }
+    bool IsNull() const { return _offset == 0; };
+    void SetNull() { _offset = 0; }
+    bool operator!() const { return IsNull(); }
+    operator bool() const { return !IsNull(); }
+    _T& operator*() const { return *Get(); }
+    _T* Get() const { return (_T*)(((uint8*)&_offset) + _offset); }
+
+private:
+    uint32 _offset;
+};
+

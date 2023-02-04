@@ -1,0 +1,43 @@
+{
+    // See https://go.microsoft.com/fwlink/?LinkId=733558
+    // for the documentation about the tasks.json format
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "ClCompile",
+            "type": "shell",
+            "windows": {
+                "command": "cl",
+                "args": [
+                    "/D_MBCS",
+                    "/DBUILD_UNITY",
+                    "/GR-",  // No Runtime type info 
+                    "/EHs-", // No exceptions
+                    "/Od",   // No optimize
+                    "/Zi",   // Generate symbol database .pch
+                    "/c",    // no link
+                    "${file}",
+                ],
+                "options": {
+                    "cwd": "${workspaceFolder}\\.."
+                },
+                "problemMatcher": ["$msCompile"]
+            },
+            "linux": {
+                "command": "gcc",
+                "args": [
+                    "-DBUILD_UNITY",
+                    "-fno-rtti",
+                    "-fno-exceptions",
+                    "-O0",
+                    "-g",
+                    "-Wall",
+                    "--std=c++14",
+                    "-c",
+                    "${file}"
+                ],
+                "problemMatcher": ["$gcc"]
+            }
+        }
+    ]
+}

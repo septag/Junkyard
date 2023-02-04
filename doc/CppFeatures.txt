@@ -1,0 +1,23 @@
+https://github.com/AnthonyCalandra/modern-cpp-features#explicitbool
+
+c++20: 
+    - Designated initializers
+    - [[likely]] in switch
+    
+C++17:
+https://www.geeksforgeeks.org/features-of-c17-with-examples/
+    - Variable declaration in if and switch. 
+    - if constexpr()
+    - utf8 character literals
+    - [[maybe_used]]
+    - [[nodiscard]]
+    - [[fallthrough]]
+    - [[deprecated]]
+    - inline variables
+
+C++14:
+    - functors: https://www.geeksforgeeks.org/functors-in-cpp/?ref=lbp
+    - generalized lambda expressions
+    - Extended capturing in lambdas
+    - static_assert
+    - decltype

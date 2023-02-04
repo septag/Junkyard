@@ -1,0 +1,357 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" ToolsVersion="12.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="ReleaseDev|ARM64">
+      <Configuration>ReleaseDev</Configuration>
+      <Platform>ARM64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Debug|ARM64">
+      <Configuration>Debug</Configuration>
+      <Platform>ARM64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|ARM64">
+      <Configuration>Release</Configuration>
+      <Platform>ARM64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="..\..\..\code\Application.h" />
+    <ClInclude Include="..\..\..\code\AssetManager.h" />
+    <ClInclude Include="..\..\..\code\Camera.h" />
+    <ClInclude Include="..\..\..\code\CommonTypes.h" />
+    <ClInclude Include="..\..\..\code\Config.h" />
+    <ClInclude Include="..\..\..\code\Core\Array.h" />
+    <ClInclude Include="..\..\..\code\Core\Atomic.h" />
+    <ClInclude Include="..\..\..\code\Core\Base.h" />
+    <ClInclude Include="..\..\..\code\Core\BlitSort.h" />
+    <ClInclude Include="..\..\..\code\Core\Buffers.h" />
+    <ClInclude Include="..\..\..\code\Core\Debug.h" />
+    <ClInclude Include="..\..\..\code\Core\FileIO.h" />
+    <ClInclude Include="..\..\..\code\Core\HandlePool.h" />
+    <ClInclude Include="..\..\..\code\Core\Hash.h" />
+    <ClInclude Include="..\..\..\code\Core\HashTable.h" />
+    <ClInclude Include="..\..\..\code\Core\IncludeWin.h" />
+    <ClInclude Include="..\..\..\code\Core\Jobs.h" />
+    <ClInclude Include="..\..\..\code\Core\JsonParser.h" />
+    <ClInclude Include="..\..\..\code\Core\Log.h" />
+    <ClInclude Include="..\..\..\code\Core\Memory.h" />
+    <ClInclude Include="..\..\..\code\Core\Settings.h" />
+    <ClInclude Include="..\..\..\code\Core\SocketIO.h" />
+    <ClInclude Include="..\..\..\code\Core\String.h" />
+    <ClInclude Include="..\..\..\code\Core\System.h" />
+    <ClInclude Include="..\..\..\code\Core\TracyHelper.h" />
+    <ClInclude Include="..\..\..\code\Engine.h" />
+    <ClInclude Include="..\..\..\code\External\c89atomic\c89atomic.h" />
+    <ClInclude Include="..\..\..\code\External\cj5\cj5.h" />
+    <ClInclude Include="..\..\..\code\External\cpufeatures\cpu-features.h" />
+    <ClInclude Include="..\..\..\code\External\dds-ktx\dds-ktx.h" />
+    <ClInclude Include="..\..\..\code\External\ImGuizmo\ImGuizmo.h" />
+    <ClInclude Include="..\..\..\code\External\imgui\imconfig.h" />
+    <ClInclude Include="..\..\..\code\External\imgui\imgui.h" />
+    <ClInclude Include="..\..\..\code\External\imgui\imgui_internal.h" />
+    <ClInclude Include="..\..\..\code\External\imgui\imstb_rectpack.h" />
+    <ClInclude Include="..\..\..\code\External\imgui\imstb_textedit.h" />
+    <ClInclude Include="..\..\..\code\External\imgui\imstb_truetype.h" />
+    <ClInclude Include="..\..\..\code\External\mgustavsson\ini.h" />
+    <ClInclude Include="..\..\..\code\External\minicoro\minicoro.h" />
+    <ClInclude Include="..\..\..\code\External\stb\stb_image.h" />
+    <ClInclude Include="..\..\..\code\External\stb\stb_sprintf.h" />
+    <ClInclude Include="..\..\..\code\External\tlsf\tlsf.h" />
+    <ClInclude Include="..\..\..\code\External\tracy\TracyC.h" />
+    <ClInclude Include="..\..\..\code\External\tracy\TracyVulkan.hpp" />
+    <ClInclude Include="..\..\..\code\External\vma\include\vk_mem_alloc.h" />
+    <ClInclude Include="..\..\..\code\Graphics\CousineFont.h" />
+    <ClInclude Include="..\..\..\code\Graphics\DebugDraw.h" />
+    <ClInclude Include="..\..\..\code\Graphics\Graphics.h" />
+    <ClInclude Include="..\..\..\code\Graphics\ImGuiWrapper.h" />
+    <ClInclude Include="..\..\..\code\Graphics\Model.h" />
+    <ClInclude Include="..\..\..\code\Graphics\Shader.h" />
+    <ClInclude Include="..\..\..\code\Math\Math.h" />
+    <ClInclude Include="..\..\..\code\Math\MathScalar.h" />
+    <ClInclude Include="..\..\..\code\Math\MathTypes.h" />
+    <ClInclude Include="..\..\..\code\Math\MathVector.h" />
+    <ClInclude Include="..\..\..\code\RemoteServices.h" />
+    <ClInclude Include="..\..\..\code\Tool\Console.h" />
+    <ClInclude Include="..\..\..\code\Tool\ImageEncoder.h" />
+    <ClInclude Include="..\..\..\code\Tool\ImGuiTools.h" />
+    <ClInclude Include="..\..\..\code\Tool\MeshOptimizer.h" />
+    <ClInclude Include="..\..\..\code\Tool\ShaderCompiler.h" />
+    <ClInclude Include="..\..\..\code\VirtualFS.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="..\..\..\code\Application.cpp" />
+    <ClCompile Include="..\..\..\code\ApplicationAndroid.cpp" />
+    <ClCompile Include="..\..\..\code\ApplicationWin.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='ReleaseDev|ARM64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">true</ExcludedFromBuild>
+    </ClCompile>
+    <ClCompile Include="..\..\..\code\AssetManager.cpp" />
+    <ClCompile Include="..\..\..\code\Camera.cpp" />
+    <ClCompile Include="..\..\..\code\Core\Base.cpp" />
+    <ClCompile Include="..\..\..\code\Core\Debug.cpp" />
+    <ClCompile Include="..\..\..\code\Core\DebugAndroid.cpp" />
+    <ClCompile Include="..\..\..\code\Core\DebugWin.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='ReleaseDev|ARM64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">true</ExcludedFromBuild>
+    </ClCompile>
+    <ClCompile Include="..\..\..\code\Core\FileIO.cpp" />
+    <ClCompile Include="..\..\..\code\Core\FileIOPosix.cpp" />
+    <ClCompile Include="..\..\..\code\Core\FileIOWin.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='ReleaseDev|ARM64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">true</ExcludedFromBuild>
+    </ClCompile>
+    <ClCompile Include="..\..\..\code\Core\HandlePool.cpp" />
+    <ClCompile Include="..\..\..\code\Core\Hash.cpp" />
+    <ClCompile Include="..\..\..\code\Core\HashTable.cpp" />
+    <ClCompile Include="..\..\..\code\Core\Jobs.cpp" />
+    <ClCompile Include="..\..\..\code\Core\JsonParser.cpp" />
+    <ClCompile Include="..\..\..\code\Core\Log.cpp" />
+    <ClCompile Include="..\..\..\code\Core\Memory.cpp" />
+    <ClCompile Include="..\..\..\code\Core\Settings.cpp" />
+    <ClCompile Include="..\..\..\code\Core\SocketIO.cpp" />
+    <ClCompile Include="..\..\..\code\Core\String.cpp" />
+    <ClCompile Include="..\..\..\code\Core\StringWin.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='ReleaseDev|ARM64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">true</ExcludedFromBuild>
+    </ClCompile>
+    <ClCompile Include="..\..\..\code\Core\System.cpp" />
+    <ClCompile Include="..\..\..\code\Core\SystemAndroid.cpp" />
+    <ClCompile Include="..\..\..\code\Core\SystemMac.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='ReleaseDev|ARM64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">true</ExcludedFromBuild>
+    </ClCompile>
+    <ClCompile Include="..\..\..\code\Core\SystemPosix.cpp" />
+    <ClCompile Include="..\..\..\code\Core\SystemWin.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='ReleaseDev|ARM64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">true</ExcludedFromBuild>
+    </ClCompile>
+    <ClCompile Include="..\..\..\code\Core\TracyHelper.cpp" />
+    <ClCompile Include="..\..\..\code\Engine.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">false</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">false</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='ReleaseDev|ARM64'">false</ExcludedFromBuild>
+    </ClCompile>
+    <ClCompile Include="..\..\..\code\External\ImGuizmo\ImGuizmo.cpp" />
+    <ClCompile Include="..\..\..\code\External\imgui\imgui.cpp" />
+    <ClCompile Include="..\..\..\code\External\imgui\imgui_demo.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='ReleaseDev|ARM64'">true</ExcludedFromBuild>
+    </ClCompile>
+    <ClCompile Include="..\..\..\code\External\imgui\imgui_draw.cpp" />
+    <ClCompile Include="..\..\..\code\External\imgui\imgui_tables.cpp" />
+    <ClCompile Include="..\..\..\code\External\imgui\imgui_widgets.cpp" />
+    <ClCompile Include="..\..\..\code\External\tlsf\tlsf.c" />
+    <ClCompile Include="..\..\..\code\External\tracy\TracyClient.cpp">
+      <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='ReleaseDev|ARM64'">TRACY_FIBERS;TRACY_CALLSTACK=6;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalOptions Condition="'$(Configuration)|$(Platform)'=='ReleaseDev|ARM64'">-Wno-sometimes-uninitialized %(AdditionalOptions)</AdditionalOptions>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='ReleaseDev|ARM64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">true</ExcludedFromBuild>
+    </ClCompile>
+    <ClCompile Include="..\..\..\code\Graphics\DebugDraw.cpp" />
+    <ClCompile Include="..\..\..\code\Graphics\Graphics.cpp" />
+    <ClCompile Include="..\..\..\code\Graphics\GraphicsVk.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='ReleaseDev|ARM64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">true</ExcludedFromBuild>
+    </ClCompile>
+    <ClCompile Include="..\..\..\code\Graphics\ImageVk.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='ReleaseDev|ARM64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">true</ExcludedFromBuild>
+    </ClCompile>
+    <ClCompile Include="..\..\..\code\Graphics\ImGuiWrapper.cpp" />
+    <ClCompile Include="..\..\..\code\Graphics\Model.cpp" />
+    <ClCompile Include="..\..\..\code\Graphics\Shader.cpp" />
+    <ClCompile Include="..\..\..\code\Graphics\TracyVk.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='ReleaseDev|ARM64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">true</ExcludedFromBuild>
+    </ClCompile>
+    <ClCompile Include="..\..\..\code\Math\Math.cpp" />
+    <ClCompile Include="..\..\..\code\RemoteServices.cpp" />
+    <ClCompile Include="..\..\..\code\Tests\Test.cpp" />
+    <ClCompile Include="..\..\..\code\Tool\Console.cpp" />
+    <ClCompile Include="..\..\..\code\Tool\ImageEncoder.cpp" />
+    <ClCompile Include="..\..\..\code\Tool\ImGuiTools.cpp" />
+    <ClCompile Include="..\..\..\code\Tool\MeshOptimizer.cpp" />
+    <ClCompile Include="..\..\..\code\Tool\ShaderCompiler.cpp" />
+    <ClCompile Include="..\..\..\code\VirtualFS.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <FxCompile Include="..\..\..\code\Shaders\DebugDraw.hlsl">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='ReleaseDev|ARM64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">true</ExcludedFromBuild>
+    </FxCompile>
+    <FxCompile Include="..\..\..\code\Shaders\ImGui.hlsl">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='ReleaseDev|ARM64'">true</ExcludedFromBuild>
+    </FxCompile>
+    <FxCompile Include="..\..\..\code\Shaders\Model.hlsl">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='ReleaseDev|ARM64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">true</ExcludedFromBuild>
+    </FxCompile>
+    <FxCompile Include="..\..\..\code\Shaders\Quad.hlsl">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='ReleaseDev|ARM64'">true</ExcludedFromBuild>
+    </FxCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="..\..\..\code\ApplicationMac.m">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='ReleaseDev|ARM64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">true</ExcludedFromBuild>
+    </None>
+    <None Include="..\..\..\code\Graphics\ValidateEnumsVk.inl" />
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <ProjectGuid>{FCB55543-CE01-4EBA-BC57-D9EF650C3C94}</ProjectGuid>
+    <Keyword>Android</Keyword>
+    <RootNamespace>JunkyardAndroid</RootNamespace>
+    <DefaultLanguage>en-US</DefaultLanguage>
+    <MinimumVisualStudioVersion>14.0</MinimumVisualStudioVersion>
+    <ApplicationType>Android</ApplicationType>
+    <ApplicationTypeRevision>3.0</ApplicationTypeRevision>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'" Label="Configuration">
+    <ConfigurationType>DynamicLibrary</ConfigurationType>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <PlatformToolset>Clang_5_0</PlatformToolset>
+    <AndroidAPILevel>android-29</AndroidAPILevel>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'" Label="Configuration">
+    <ConfigurationType>DynamicLibrary</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>Clang_5_0</PlatformToolset>
+    <AndroidAPILevel>android-29</AndroidAPILevel>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='ReleaseDev|ARM64'" Label="Configuration">
+    <ConfigurationType>DynamicLibrary</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>Clang_5_0</PlatformToolset>
+    <AndroidAPILevel>android-29</AndroidAPILevel>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Label="ExtensionSettings">
+  </ImportGroup>
+  <ImportGroup Label="Shared">
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Condition="'$(Configuration)|$(Platform)'=='ReleaseDev|ARM64'" Label="PropertySheets">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <PropertyGroup Label="UserMacros" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">
+    <UseMultiToolTask>true</UseMultiToolTask>
+    <OutDir>$(SolutionDir)..\..\..\bin\android\$(ProjectName)\$(Configuration)\</OutDir>
+    <IntDir>$(SolutionDir)..\..\..\.build\$(Configuration)\$(ProjectName)\</IntDir>
+    <PackageDebugSymbols>true</PackageDebugSymbols>
+    <PostBuildEventUseInBuild>true</PostBuildEventUseInBuild>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">
+    <UseMultiToolTask>true</UseMultiToolTask>
+    <OutDir>$(SolutionDir)..\..\..\bin\android\$(ProjectName)\$(Configuration)\</OutDir>
+    <IntDir>$(SolutionDir)..\..\..\.build\$(Configuration)\$(ProjectName)\</IntDir>
+    <PostBuildEventUseInBuild>true</PostBuildEventUseInBuild>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='ReleaseDev|ARM64'">
+    <UseMultiToolTask>true</UseMultiToolTask>
+    <OutDir>$(SolutionDir)..\..\..\bin\android\$(ProjectName)\$(Configuration)\</OutDir>
+    <IntDir>$(SolutionDir)..\..\..\.build\$(Configuration)\$(ProjectName)\</IntDir>
+    <PackageDebugSymbols>true</PackageDebugSymbols>
+    <PostBuildEventUseInBuild>true</PostBuildEventUseInBuild>
+  </PropertyGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">
+    <ClCompile>
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
+      <CompileAs>CompileAsCpp</CompileAs>
+      <CppLanguageStandard>c++1z</CppLanguageStandard>
+      <PreprocessorDefinitions>_DEBUG</PreprocessorDefinitions>
+      <AdditionalOptions>-funwind-tables  -fno-omit-frame-pointer %(AdditionalOptions)</AdditionalOptions>
+      <UndefinePreprocessorDefinitions>
+      </UndefinePreprocessorDefinitions>
+    </ClCompile>
+    <Link>
+      <LibraryDependencies>%(LibraryDependencies);m;vulkan</LibraryDependencies>
+      <AdditionalDependencies>
+      </AdditionalDependencies>
+      <AdditionalOptions>-rdynamic %(AdditionalOptions)</AdditionalOptions>
+    </Link>
+    <PostBuildEvent>
+      <Command>call $(SolutionDir)..\..\..\scripts\android-export-symbols.cmd $(TargetName) $(TargetPath) $(LLVMToolchainPrebuiltRoot)
+call $(SolutionDir)..\..\..\scripts\close-logcats.cmd com.JunkyardAndroid
+</Command>
+      <Message>
+      </Message>
+    </PostBuildEvent>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">
+    <ClCompile>
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
+      <CompileAs>CompileAsCpp</CompileAs>
+      <CppLanguageStandard>c++1z</CppLanguageStandard>
+      <DebugInformationFormat>LineNumber</DebugInformationFormat>
+      <TreatWarningAsError>true</TreatWarningAsError>
+      <PreprocessorDefinitions>
+      </PreprocessorDefinitions>
+    </ClCompile>
+    <Link>
+      <LibraryDependencies>%(LibraryDependencies);m;vulkan</LibraryDependencies>
+    </Link>
+    <PostBuildEvent>
+      <Command>call $(SolutionDir)..\..\..\scripts\android-export-symbols.cmd $(TargetName) $(TargetPath) $(LLVMToolchainPrebuiltRoot)
+call $(SolutionDir)..\..\..\scripts\close-logcats.cmd com.JunkyardAndroid
+</Command>
+      <Message>
+      </Message>
+    </PostBuildEvent>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='ReleaseDev|ARM64'">
+    <ClCompile>
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
+      <CompileAs>CompileAsCpp</CompileAs>
+      <CppLanguageStandard>c++1z</CppLanguageStandard>
+      <PreprocessorDefinitions>TRACY_ENABLE</PreprocessorDefinitions>
+      <TreatWarningAsError>true</TreatWarningAsError>
+      <OmitFramePointers>false</OmitFramePointers>
+      <DebugInformationFormat>FullDebug</DebugInformationFormat>
+      <Optimization>Full</Optimization>
+      <AdditionalOptions>-funwind-tables  -fno-omit-frame-pointer %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <Link>
+      <LibraryDependencies>%(LibraryDependencies);m;vulkan</LibraryDependencies>
+      <AdditionalOptions>-rdynamic %(AdditionalOptions)</AdditionalOptions>
+      <NoExecStackRequired>true</NoExecStackRequired>
+    </Link>
+    <PostBuildEvent>
+      <Command>call $(SolutionDir)..\..\..\scripts\android-export-symbols.cmd $(TargetName) $(TargetPath) $(LLVMToolchainPrebuiltRoot)
+call $(SolutionDir)..\..\..\scripts\close-logcats.cmd com.JunkyardAndroid
+</Command>
+      <Message>
+      </Message>
+    </PostBuildEvent>
+  </ItemDefinitionGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ImportGroup Label="ExtensionTargets">
+  </ImportGroup>
+</Project>

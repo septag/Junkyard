@@ -1,0 +1,13 @@
+{
+    normalMap: false,
+    hasAlpha: false,
+    sRGB: true,
+    isMask: false,
+	generateMips: true,
+    android: {
+        format: "astc_6x6"
+    },
+    pc: {
+        format: "bc7"
+    }
+}
