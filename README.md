@@ -35,7 +35,7 @@ It's very much WIP, so not much to show off right now.
 - Async asset manager with remote baking on the server
 
 ## Dependencies
-Overlooked by many, external dependencies are a pretty big deal imo. They are part of your code even if you don't write them yourself and they all play a big role in compile-times, maintainance, deployment and technical debt of your code. So I try to keep the dependencies small and to minimum. Most of them are simple stb-style single-header C libs, but some just can't be as small and quick-to-compile as I want them to be. Anyway, here they are:
+External dependencies are a pretty big deal imo, so I'm going to pay special attention to them. They are part of your code even if you don't write them yourself and they all play a big role in compile-times, maintainance, deployment and technical debt of your code. So I try to keep the dependencies small and to minimum. Also try to minimize the amount of unused code, meaning that if I plan to do A, I won't add a library that only 5% of it's code does A and the rest does something I don't use. Most of them are simple stb-style single-header C libs, but some just can't be as small and quick-to-compile as I want them to be. Anyway, here they are:
 
 - [Git](https://git-scm.com/downloads) and [Git LFS](https://git-lfs.com/): Source control (make sure you have git-lfs installed by running `git lfs install`)
 - [VulkanSDK](https://vulkan.lunarg.com/): Used for the graphics backend. 
