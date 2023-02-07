@@ -298,6 +298,11 @@ echo No | copy /-Y $(SolutionDir)..\..\code\External\meshoptimizer\lib\win64\mes
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='ReleaseDev|x64'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
     </ClCompile>
+    <ClCompile Include="..\..\code\External\volk\volk.c">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='ReleaseDev|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
+    </ClCompile>
     <ClCompile Include="..\..\code\Graphics\DebugDraw.cpp" />
     <ClCompile Include="..\..\code\Graphics\Graphics.cpp" />
     <ClCompile Include="..\..\code\Graphics\GraphicsVk.cpp">
@@ -383,6 +388,7 @@ echo No | copy /-Y $(SolutionDir)..\..\code\External\meshoptimizer\lib\win64\mes
     <ClInclude Include="..\..\code\External\tlsf\tlsf.h" />
     <ClInclude Include="..\..\code\External\tracy\TracyC.h" />
     <ClInclude Include="..\..\code\External\vma\include\vk_mem_alloc.h" />
+    <ClInclude Include="..\..\code\External\volk\volk.h" />
     <ClInclude Include="..\..\code\Graphics\DebugDraw.h" />
     <ClInclude Include="..\..\code\Graphics\Graphics.h" />
     <ClInclude Include="..\..\code\Graphics\ImGuiWrapper.h" />

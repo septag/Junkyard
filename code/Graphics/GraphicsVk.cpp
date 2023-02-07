@@ -4,9 +4,10 @@
 #include "Graphics.h"
 #include "Shader.h"
 
+#define VK_NO_PROTOTYPES
 #include "../External/vulkan/include/vulkan.h"
 
-// I'm skipping default vulkan.h including these platform-specific headers because it includes bloated headers like windows.h
+// Vulkan platform headers
 #if PLATFORM_WINDOWS
     #include "../Core/IncludeWin.h"
     #include "../External/vulkan/include/vulkan_win32.h"
@@ -15,6 +16,16 @@
 #else
     #error "Not implemented"
 #endif
+
+// Always include volk after vulkan.h
+#define VOLK_IMPLEMENTATION
+#if PLATFORM_WINDOWS
+    #define VK_USE_PLATFORM_WIN32_KHR
+#elif PLATFORM_APPLE
+    #define VK_USE_PLATFORM_MACOS_MVK
+#endif
+//#define VOLK_VULKAN_H_PATH "../External/vulkan/include/vulkan.h"
+#include "../External/volk/volk.h"
 
 #include "../Core/Memory.h"
 #include "../Core/String.h"
@@ -1309,6 +1320,11 @@ static GfxSwapchain gfxCreateSwapchain(VkSurfaceKHR surface, uint16 width, uint1
 
 bool _private::gfxInitialize()
 {
+    if (volkInitialize() != VK_SUCCESS) {
+        logError("Volk failed to initialize");
+        return false;
+    }
+
     MemBudgetAllocator* initHeap = engineGetInitHeap();
     gVk.initHeapStart = initHeap->GetOffset();
     
@@ -1482,6 +1498,8 @@ bool _private::gfxInitialize()
         return false;
     }
     logInfo("(init) Vulkan instance created");
+
+    volkLoadInstanceOnly(gVk.instance);
 
     //------------------------------------------------------------------------
     // Validation layer and callbacks
@@ -1818,6 +1836,7 @@ bool _private::gfxInitialize()
     }
 
     logInfo("(init) Vulkan device created");
+    volkLoadDevice(gVk.device);
 
     //------------------------------------------------------------------------
     // VMA

@@ -87,6 +87,9 @@
     <Filter Include="Source Files\Math">
       <UniqueIdentifier>{cddbeb51-eac1-43c7-857e-07ce8021b5f3}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Source Files\External\volk">
+      <UniqueIdentifier>{14062483-1dbb-445f-abfb-38b826455c56}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\..\code\Application.cpp">
@@ -253,6 +256,9 @@
     </ClCompile>
     <ClCompile Include="..\..\code\ApplicationWin.cpp">
       <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\code\External\volk\volk.c">
+      <Filter>Source Files\External\volk</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -459,6 +465,9 @@
     </ClInclude>
     <ClInclude Include="..\..\code\Core\TracyHelper.h">
       <Filter>Header Files\Core</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\code\External\volk\volk.h">
+      <Filter>Source Files\External\volk</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

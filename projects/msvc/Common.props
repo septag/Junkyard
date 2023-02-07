@@ -29,8 +29,8 @@
       <AdditionalLibraryDirectories>$(OutDir)</AdditionalLibraryDirectories>
     </Lib>
     <Link>
-      <AdditionalLibraryDirectories>$(SolutionDir)..\..\code\External\vulkan\lib\win64;$(OutDir)</AdditionalLibraryDirectories>
-      <AdditionalDependencies>Junkyard.lib;vulkan-1.lib;ws2_32.lib;User32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>$(OutDir)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>Junkyard.lib;ws2_32.lib;User32.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <IgnoreAllDefaultLibraries>true</IgnoreAllDefaultLibraries>
     </Link>
   </ItemDefinitionGroup>

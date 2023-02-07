@@ -51,6 +51,7 @@ Overlooked by many, external dependencies are a pretty big deal imo. They are pa
 - [stb](https://github.com/nothings/stb): stb single-file public domain libraries for C/C++
 - [tlsf](https://github.com/mattconte/tlsf): Two-Level Segregated Fit memory allocator implementation.
 - [Vulkan Memory allocator](https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator): Easy to integrate Vulkan memory allocation library
+- [volk](https://github.com/zeux/volk): Meta loader for Vulkan API
 - Tooling (only used in tooling/PC builds):
     - [ISPC Texture Compressor](https://github.com/septag/ISPCTextureCompressor): BC/ASTC texture compressor
     - [meshoptimizer](https://github.com/zeux/meshoptimizer): Mesh optimization library that makes meshes smaller and faster to render
