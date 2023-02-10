@@ -300,7 +300,7 @@ void imguiQuickInfoHud(float dt, bool *pOpen)
 
     //ImGui::SetNextWindowSizeConstraints(ImVec2(kFontSize*10, kLineSize*5), ImVec2(kFontSize*20, kLineSize*5));
     ImGui::SetNextWindowPos(ImVec2(0, 0), ImGuiCond_Always);
-    ImGui::SetNextWindowSize(ImVec2(kDisplaySize.x*0.33f, kLineSize*3), ImGuiCond_Always);
+    ImGui::SetNextWindowSize(ImVec2(kDisplaySize.x*0.33f, kLineSize*4), ImGuiCond_Always);
     const uint32 kWndFlags = ImGuiWindowFlags_NoBackground|ImGuiWindowFlags_NoTitleBar|ImGuiWindowFlags_NoScrollbar|
                              ImGuiWindowFlags_NoMove|ImGuiWindowFlags_NoResize|ImGuiWindowFlags_NoInputs;
     if (ImGui::Begin("Frame", pOpen, kWndFlags)) {
@@ -327,8 +327,15 @@ void imguiQuickInfoHud(float dt, bool *pOpen)
         }
 
         float avgFt = 0;
-        for (uint32 i = 0; i < valuesRead; i++) 
+        float minFt = FLT_MAX;
+        float maxFt = -FLT_MAX;
+        for (uint32 i = 0; i < valuesRead; i++) {
             avgFt += values[i];
+            if (values[i] < minFt)
+                minFt = values[i];
+            if (values[i] > maxFt)
+                maxFt = values[i];
+        }
         avgFt /= float(valuesRead);
 
         uint32 targetFps = settingsGetGraphics().enableVsync ? gImGuiQuickInfoState.targetFps : uint32(1.0f / avgFt);
@@ -341,6 +348,8 @@ void imguiQuickInfoHud(float dt, bool *pOpen)
                         
         imguiLabel(kTextColorU32, fpsColor, "Fps", "%u", fps);
         imguiLabel(kTextColorU32, fpsColor, "AvgFt", "%.1fms", avgFt*1000.0f);
+        imguiLabel(kTextColorU32, fpsColor, "MinFt", "%.1fms", minFt*1000.0f);
+        imguiLabel(kTextColorU32, fpsColor, "MaxFt", "%.1fms", maxFt*1000.0f);
         
         ImGui::TableNextColumn();
         ImGui::PushItemWidth(ImGui::GetWindowWidth() - kStyle.WindowPadding.x*2 - ImGui::GetCursorPos().x);

@@ -290,7 +290,7 @@
       </UndefinePreprocessorDefinitions>
     </ClCompile>
     <Link>
-      <LibraryDependencies>%(LibraryDependencies);m;vulkan</LibraryDependencies>
+      <LibraryDependencies>%(LibraryDependencies);m</LibraryDependencies>
       <AdditionalDependencies>
       </AdditionalDependencies>
       <AdditionalOptions>-rdynamic %(AdditionalOptions)</AdditionalOptions>
@@ -315,7 +315,7 @@ call $(SolutionDir)..\..\..\scripts\close-logcats.cmd com.JunkyardAndroid
       </PreprocessorDefinitions>
     </ClCompile>
     <Link>
-      <LibraryDependencies>%(LibraryDependencies);m;vulkan</LibraryDependencies>
+      <LibraryDependencies>%(LibraryDependencies);m</LibraryDependencies>
     </Link>
     <PostBuildEvent>
       <Command>call $(SolutionDir)..\..\..\scripts\android-export-symbols.cmd $(TargetName) $(TargetPath) $(LLVMToolchainPrebuiltRoot)
@@ -339,7 +339,7 @@ call $(SolutionDir)..\..\..\scripts\close-logcats.cmd com.JunkyardAndroid
       <AdditionalOptions>-funwind-tables  -fno-omit-frame-pointer %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
     <Link>
-      <LibraryDependencies>%(LibraryDependencies);m;vulkan</LibraryDependencies>
+      <LibraryDependencies>%(LibraryDependencies);m</LibraryDependencies>
       <AdditionalOptions>-rdynamic %(AdditionalOptions)</AdditionalOptions>
       <NoExecStackRequired>true</NoExecStackRequired>
     </Link>

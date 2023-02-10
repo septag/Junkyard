@@ -23,11 +23,6 @@ static thread_local JNIEnv* gJniEnv = nullptr;
 static atomicUint32 gJniAttachedThreadCount;
 static constexpr uint32 kJniMaxAttachedThreadCount = 5;
 
-uint32 sysGetCoreCount(void)
-{
-    return android_getCpuCount();
-}
-
 // https://en.wikipedia.org/wiki/CPUID
 // https://docs.microsoft.com/en-us/cpp/intrinsics/cpuid-cpuidex?redirectedfrom=MSDN&view=msvc-170
 void sysGetSysInfo(SysInfo* info)
