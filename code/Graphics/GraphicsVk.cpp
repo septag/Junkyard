@@ -318,6 +318,9 @@ struct GfxVkState
     GfxSwapchain swapchain;
     VkDescriptorPool descriptorPool;
 
+    VkQueryPool queryPool[kMaxFramesInFlight];
+    atomicUint32 queryFirstCall;
+
     VkSemaphore imageAvailSemaphores[kMaxFramesInFlight];
     VkSemaphore renderFinishedSemaphores[kMaxFramesInFlight];
     VkFence inflightFences[kMaxFramesInFlight];
@@ -784,6 +787,15 @@ bool gfxBeginCommandBuffer()
         return false;
     }
 
+    // Start query for frametime on the first command-buffer only
+    if (gVk.deviceProps.limits.timestampComputeAndGraphics) {
+        uint32 expectedValue = 0;
+        if (atomicCompareExchange32Weak(&gVk.queryFirstCall, &expectedValue, 1)) {
+            vkCmdWriteTimestamp(gCmdBufferThreadData.curCmdBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, 
+                                gVk.queryPool[gVk.currentFrameIdx], 0);
+        }
+    }
+
     return true;
 }
 
@@ -795,6 +807,7 @@ void gfxEndCommandBuffer()
     }
     else {
         ASSERT_MSG(0, "BeginCommandBuffer wasn't called successfully on this thread");
+        return;
     }
 
     // Recoding finished, push it for submittion
@@ -2010,7 +2023,7 @@ bool _private::gfxInitialize()
     //------------------------------------------------------------------------
     // Graphics Sub-systems/manager
     if (!gfxInitializeImageManager()) {
-        logError("Initializing image manager failed");
+        logError("Gfx: Initializing image manager failed");
         return false;
     }
     logInfo("(init) Gfx image manager");
@@ -2025,6 +2038,20 @@ bool _private::gfxInitialize()
             }
         }
     #endif
+    
+    if (gVk.deviceProps.limits.timestampComputeAndGraphics && !settings.headless) {
+        VkQueryPoolCreateInfo queryCreateInfo {
+            .sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO,
+            .queryType = VK_QUERY_TYPE_TIMESTAMP,
+            .queryCount = 2
+        };
+        for (uint32 i = 0; i < kMaxFramesInFlight; i++) {
+            if (vkCreateQueryPool(gVk.device, &queryCreateInfo, &gVk.allocVk, &gVk.queryPool[i]) != VK_SUCCESS) {
+                logError("Gfx: Creating main query pool failed");
+                return false;
+            }
+        }
+    }
 
     gVk.initHeapSize = initHeap->GetOffset() - gVk.initHeapStart;
     gVk.initialized = true;
@@ -2101,6 +2128,10 @@ void _private::gfxRelease()
     #ifdef TRACY_ENABLE
        gfxReleaseProfiler();
     #endif
+    for (uint32 i = 0; i < kMaxFramesInFlight; i++) {
+        if (gVk.queryPool[i])
+            vkDestroyQueryPool(gVk.device, gVk.queryPool[i], &gVk.allocVk);
+    }
 
     { MutexScope mtx(gVk.shaderPipelinesTableMtx);
         const uint32* keys = gVk.shaderPipelinesTable.Keys();
@@ -3428,6 +3459,12 @@ void gfxCmdEndSwapchainRenderPass()
 
     vkCmdEndRenderPass(cmdBufferVk);
     gCmdBufferThreadData.renderingToSwapchain = false;
+
+    if (gVk.deviceProps.limits.timestampComputeAndGraphics) {
+        // Assume this is the final pass that is called in the frame, write the end-frame query
+        vkCmdWriteTimestamp(cmdBufferVk, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, gVk.queryPool[gVk.currentFrameIdx], 1);
+        atomicStore32Explicit(&gVk.queryFirstCall, 0, AtomicMemoryOrder::Relaxed);
+    }
 }
 
 GfxDescriptorSet gfxCreateDescriptorSet(GfxPipeline pipeline)
@@ -4075,6 +4112,25 @@ Mat4 gfxGetClipspaceTransform()
 bool gfxIsRenderingToSwapchain()
 {
     return gCmdBufferThreadData.renderingToSwapchain;
+}
+
+float gfxGetRenderTimeNs()
+{
+    if (!gVk.deviceProps.limits.timestampComputeAndGraphics)
+        return 0;
+
+    uint64 frameTimestamps[2];
+    // Try getting results for the last successfully queried frame
+    for (uint32 i = kMaxFramesInFlight; i-- > 0;) {
+        uint32 frame = (gVk.currentFrameIdx + i)%kMaxFramesInFlight;
+        if (vkGetQueryPoolResults(gVk.device, gVk.queryPool[frame], 0, 2, sizeof(frameTimestamps), frameTimestamps, 
+                                  sizeof(uint64), VK_QUERY_RESULT_64_BIT) == VK_SUCCESS)
+        {
+            return float(frameTimestamps[1] - frameTimestamps[0]) * gVk.deviceProps.limits.timestampPeriod;
+        }
+    }
+    
+    return 0;
 }
 
 #endif // __GRAPHICS_VK_CPP__

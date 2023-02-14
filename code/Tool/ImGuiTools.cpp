@@ -6,6 +6,7 @@
 #include "../Core/Log.h"
 #include "../Core/Atomic.h"
 #include "../Core/Jobs.h"
+#include "../Core/System.h"
 
 #include "../Math/MathTypes.h"
 #include "../Math/MathScalar.h"
@@ -350,6 +351,7 @@ void imguiQuickInfoHud(float dt, bool *pOpen)
         imguiLabel(kTextColorU32, fpsColor, "AvgFt", "%.1fms", avgFt*1000.0f);
         imguiLabel(kTextColorU32, fpsColor, "MinFt", "%.1fms", minFt*1000.0f);
         imguiLabel(kTextColorU32, fpsColor, "MaxFt", "%.1fms", maxFt*1000.0f);
+        imguiLabel(kTextColorU32, fpsColor, "Gpu", "%.1fms", gfxGetRenderTimeNs()/1000000.0f);
         
         ImGui::TableNextColumn();
         ImGui::PushItemWidth(ImGui::GetWindowWidth() - kStyle.WindowPadding.x*2 - ImGui::GetCursorPos().x);

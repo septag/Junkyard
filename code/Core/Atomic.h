@@ -65,18 +65,18 @@ FORCE_INLINE uint32 atomicFetchSub32(atomicUint32* a, uint32 b);
 FORCE_INLINE uint32 atomicFetchOr32(atomicUint32* a, uint32 b);
 FORCE_INLINE uint32 atomicFetchAnd32(atomicUint32* a, uint32 b);
 FORCE_INLINE uint32 atomicExchange32(atomicUint32* a, uint32 b);
-FORCE_INLINE uint32 atomicCompareExchange32Weak(atomicUint32* a, atomicUint32* expected, uint32 desired);
-FORCE_INLINE uint32 atomicCompareExchange32Strong(atomicUint32* a, atomicUint32* expected, uint32 desired);
+FORCE_INLINE bool atomicCompareExchange32Weak(atomicUint32* a, atomicUint32* expected, uint32 desired);
+FORCE_INLINE bool atomicCompareExchange32Strong(atomicUint32* a, atomicUint32* expected, uint32 desired);
 
 FORCE_INLINE uint32 atomicFetchAdd32Explicit(atomicUint32* a, uint32 b, AtomicMemoryOrder order);
 FORCE_INLINE uint32 atomicFetchSub32Explicit(atomicUint32* a, uint32 b, AtomicMemoryOrder order);
 FORCE_INLINE uint32 atomicFetchOr32Explicit(atomicUint32* a, uint32 b, AtomicMemoryOrder order);
 FORCE_INLINE uint32 atomicFetchAnd32Explicit(atomicUint32* a, uint32 b, AtomicMemoryOrder order);
 FORCE_INLINE uint32 atomicExchange32Explicit(atomicUint32* a, uint32 b, AtomicMemoryOrder order);
-FORCE_INLINE uint32 atomicCompareExchange32WeakExplicit(
+FORCE_INLINE bool atomicCompareExchange32WeakExplicit(
     atomicUint32* a, uint32* expected, uint32 desired,
     AtomicMemoryOrder success, AtomicMemoryOrder fail);
-FORCE_INLINE uint32 atomicCompareExchange32StrongExplicit(
+FORCE_INLINE bool atomicCompareExchange32StrongExplicit(
     atomicUint32* a, uint32* expected, uint32 desired,
     AtomicMemoryOrder success, AtomicMemoryOrder fail);
 
@@ -85,18 +85,18 @@ FORCE_INLINE uint64 atomicFetchSub64(atomicUint64* a, uint64 b);
 FORCE_INLINE uint64 atomicExchange64(atomicUint64* a, uint64 b);
 FORCE_INLINE uint64 atomicFetchOr64(atomicUint64* a, uint64 b);
 FORCE_INLINE uint64 atomicFetchAnd64(atomicUint64* a, uint64 b);
-FORCE_INLINE uint64 atomicCompareExchange64Weak(atomicUint64* a, unsigned long long* expected, uint64 desired);
-FORCE_INLINE uint64 atomicCompareExchange64Strong(atomicUint64* a, unsigned long long* expected, uint64 desired);
+FORCE_INLINE bool atomicCompareExchange64Weak(atomicUint64* a, unsigned long long* expected, uint64 desired);
+FORCE_INLINE bool atomicCompareExchange64Strong(atomicUint64* a, unsigned long long* expected, uint64 desired);
 
 FORCE_INLINE uint64 atomicFetchAdd64Explicit(atomicUint64* a, uint64 b, AtomicMemoryOrder order);
 FORCE_INLINE uint64 atomicFetchSub64Explicit(atomicUint64* a, uint64 b, AtomicMemoryOrder order);
 FORCE_INLINE uint64 atomicExchange64Explicit(atomicUint64* a, uint64 b, AtomicMemoryOrder order);
 FORCE_INLINE uint64 atomicFetchOr64Explicit(atomicUint64* a, uint64 b, AtomicMemoryOrder order);
 FORCE_INLINE uint64 atomicFetchAnd64Explicit(atomicUint64* a, uint64 b, AtomicMemoryOrder order);
-FORCE_INLINE uint64 atomicCompareExchange64WeakExplicit(
+FORCE_INLINE bool atomicCompareExchange64WeakExplicit(
     atomicUint64* a, unsigned long long* expected, uint64 desired,
     AtomicMemoryOrder success, AtomicMemoryOrder fail);
-FORCE_INLINE uint64 atomicCompareExchange64StrongExplicit(
+FORCE_INLINE bool atomicCompareExchange64StrongExplicit(
     atomicUint64* a, unsigned long long* expected, uint64 desired,
     AtomicMemoryOrder success, AtomicMemoryOrder fail);
 
@@ -255,12 +255,12 @@ FORCE_INLINE uint32 atomicExchange32(atomicUint32* a, uint32 b)
     return c89atomic_exchange_32(a, b);
 }
 
-FORCE_INLINE uint32 atomicCompareExchange32Weak(atomicUint32* a, atomicUint32* expected, uint32 desired)
+FORCE_INLINE bool atomicCompareExchange32Weak(atomicUint32* a, atomicUint32* expected, uint32 desired)
 {
     return c89atomic_compare_exchange_weak_32(a, expected, desired);
 }
 
-FORCE_INLINE uint32 atomicCompareExchange32Strong(atomicUint32* a, atomicUint32* expected, uint32 desired)
+FORCE_INLINE bool atomicCompareExchange32Strong(atomicUint32* a, atomicUint32* expected, uint32 desired)
 {
     return c89atomic_compare_exchange_strong_32(a, expected, desired);
 }
@@ -290,20 +290,20 @@ FORCE_INLINE uint32 atomicExchange32Explicit(atomicUint32* a, uint32 b, AtomicMe
     return c89atomic_exchange_explicit_32(a, b, static_cast<c89atomic_memory_order>(order));
 }
 
-FORCE_INLINE uint32 atomicCompareExchange32WeakExplicit(
-    atomicUint32* a, uint32* desired, uint32 expected,
+FORCE_INLINE bool atomicCompareExchange32WeakExplicit(
+    atomicUint32* a, uint32* expected, uint32 desired,
     AtomicMemoryOrder success, AtomicMemoryOrder fail)
 {
-    return c89atomic_compare_exchange_weak_explicit_32(a, desired, expected, 
+    return c89atomic_compare_exchange_weak_explicit_32(a, expected, desired, 
         static_cast<c89atomic_memory_order>(success), 
         static_cast<c89atomic_memory_order>(fail));
 }
 
-FORCE_INLINE uint32 atomicCompareExchange32StrongExplicit(
-    atomicUint32* a, uint32* desired, uint32 expected,
+FORCE_INLINE bool atomicCompareExchange32StrongExplicit(
+    atomicUint32* a, uint32* expected, uint32 desired,
     AtomicMemoryOrder success, AtomicMemoryOrder fail)
 {
-    return c89atomic_compare_exchange_strong_explicit_32(a, desired, expected, 
+    return c89atomic_compare_exchange_strong_explicit_32(a, expected, desired, 
         static_cast<c89atomic_memory_order>(success), 
         static_cast<c89atomic_memory_order>(fail));
 }
@@ -333,12 +333,12 @@ FORCE_INLINE uint64 atomicFetchAnd64(atomicUint64* a, uint64 b)
     return c89atomic_fetch_and_64(a, b);
 }
 
-FORCE_INLINE uint64 atomicCompareExchange64Weak(atomicUint64* a, unsigned long long* expected, uint64 desired)
+FORCE_INLINE bool atomicCompareExchange64Weak(atomicUint64* a, unsigned long long* expected, uint64 desired)
 {
     return c89atomic_compare_exchange_weak_64(a, expected, desired);
 }
 
-FORCE_INLINE uint64 atomicCompareExchange64Strong(atomicUint64* a, unsigned long long* expected, uint64 desired)
+FORCE_INLINE bool atomicCompareExchange64Strong(atomicUint64* a, unsigned long long* expected, uint64 desired)
 {
     return c89atomic_compare_exchange_strong_64(a, expected, desired);
 }
@@ -368,7 +368,7 @@ FORCE_INLINE uint64 atomicFetchAnd64Explicit(atomicUint64* a, uint64 b, AtomicMe
     return c89atomic_fetch_and_explicit_64(a, b, static_cast<c89atomic_memory_order>(order));
 }
 
-FORCE_INLINE uint64 atomicCompareExchange64WeakExplicit(
+FORCE_INLINE bool atomicCompareExchange64WeakExplicit(
     atomicUint64* a, unsigned long long* expected, uint64 desired,
     AtomicMemoryOrder success, AtomicMemoryOrder fail)
 {
@@ -377,7 +377,7 @@ FORCE_INLINE uint64 atomicCompareExchange64WeakExplicit(
         static_cast<c89atomic_memory_order>(fail));
 }
 
-FORCE_INLINE uint64 atomicCompareExchange64StrongExplicit(
+FORCE_INLINE bool atomicCompareExchange64StrongExplicit(
     atomicUint64* a, unsigned long long* expected, uint64 desired,
     AtomicMemoryOrder success, AtomicMemoryOrder fail)
 {

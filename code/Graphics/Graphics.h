@@ -962,6 +962,7 @@ API void gfxEndFrame();
 
 API void gfxWaitForIdle();
 API void gfxGetBudgetStats(GfxBudgetStats* stats);
+API float gfxGetRenderTimeNs();  // Note: This functions calls Vk functions. So not that cheap
 
 // This function is mainly used for android platform where you need to transform the clip-space (MVPC)
 // Depending on the orientation of the device
