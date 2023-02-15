@@ -1,12 +1,16 @@
 #include "Application.h"
 
 #if PLATFORM_WINDOWS
+
+#include "External/mgustavsson/ini.h"
+
 #include "Core/Memory.h"
 #include "Core/String.h"
 #include "Core/System.h"
 #include "Core/Array.h"
 #include "Core/Settings.h"
 #include "Core/IncludeWin.h"
+#include "Core/FileIO.h"
 
 #include "VirtualFS.h"
 #include "RemoteServices.h"
@@ -71,6 +75,7 @@ struct AppWindowsState
     uint16 displayHeight;
     uint16 displayRefreshRate;
     HMONITOR wndMonitor;
+    RECT mainRect;
 
     HANDLE hStdin;
     HANDLE hStdOut;
@@ -81,6 +86,7 @@ struct AppWindowsState
     float contentScale;
     float mouseScale;
 
+    bool windowModified;
     bool mouseTracked;
     bool firstFrame;
     bool initCalled;
@@ -219,6 +225,97 @@ static void appWinInitKeyTable()
     gApp.keycodes[0x04A] = AppKeycode::KPSubtract;
 }
 
+static void appWinLoadInitRects()
+{
+    ini_t* windowsIni = nullptr;
+    char iniFilename[64];
+    strPrintFmt(iniFilename, sizeof(iniFilename), "%s_windows.ini", appGetName());
+
+    Blob data = vfsReadFile(iniFilename, VfsFlags::TextFile|VfsFlags::AbsolutePath);
+    if (data.IsValid())
+        windowsIni = ini_load((const char*)data.Data(), memDefaultAlloc());
+    
+    auto GetWindowData = [](ini_t* ini, const char* name)->RECT {
+        RECT rc {};
+        int id = ini_find_section(ini, name, strLen(name));
+        if (id != -1) {
+           int topId = ini_find_property(ini, id, "top", 0);
+           int bottomId = ini_find_property(ini, id, "bottom", 0);
+           int leftId = ini_find_property(ini, id, "left", 0);
+           int rightId = ini_find_property(ini, id, "right", 0);
+
+           if (topId != -1)
+               rc.top = strToInt(ini_property_value(ini, id, topId));
+           if (bottomId != -1)
+               rc.bottom = strToInt(ini_property_value(ini, id, bottomId));
+           if (leftId != -1)
+               rc.left = strToInt(ini_property_value(ini, id, leftId));
+           if (rightId != -1)
+               rc.right = strToInt(ini_property_value(ini, id, rightId));
+        }
+        return rc;
+    };
+
+    if (windowsIni) {
+        gApp.mainRect = GetWindowData(windowsIni, "Main");
+        ini_destroy(windowsIni);
+    }
+
+    if (gApp.mainRect.right <= gApp.mainRect.left && gApp.mainRect.bottom <= gApp.mainRect.top) {
+        gApp.mainRect = {-1, -1, gApp.windowWidth, gApp.windowHeight};
+    }
+    else {
+        gApp.windowWidth = uint16(gApp.mainRect.right - gApp.mainRect.left);
+        gApp.windowHeight = uint16(gApp.mainRect.bottom - gApp.mainRect.top);
+        gApp.framebufferWidth = gApp.windowWidth;
+        gApp.framebufferHeight = gApp.windowHeight;
+    }           
+}
+
+static void appWinSaveInitRects()
+{
+    auto PutWindowData = [](ini_t* ini, const char* name, const RECT& rc) {
+        int id = ini_section_add(ini, name, strLen(name));
+        char value[32];
+        strPrintFmt(value, sizeof(value), "%d", rc.top);
+        ini_property_add(ini, id, "top", 0, value, strLen(value));
+
+        strPrintFmt(value, sizeof(value), "%d", rc.bottom);
+        ini_property_add(ini, id, "bottom", 0, value, strLen(value));
+
+        strPrintFmt(value, sizeof(value), "%d", rc.left);
+        ini_property_add(ini, id, "left", 0, value, strLen(value));
+
+        strPrintFmt(value, sizeof(value), "%d", rc.right);
+        ini_property_add(ini, id, "right", 0, value, strLen(value));
+    };
+
+    if (gApp.windowModified && gApp.hwnd) {
+        ini_t* windowsIni = ini_create(memDefaultAlloc());
+        char iniFilename[64];
+        strPrintFmt(iniFilename, sizeof(iniFilename), "%s_windows.ini", appGetName());
+
+        RECT mainRect;
+        if (GetWindowRect(gApp.hwnd, &mainRect))
+            PutWindowData(windowsIni, "Main", mainRect);
+
+        int size = ini_save(windowsIni, nullptr, 0);
+        if (size > 0) {
+            char* data = memAllocTyped<char>(size);
+            ini_save(windowsIni, data, size);
+    
+            if (File f = File(iniFilename, FileIOFlags::Write); f.IsOpen()) {
+                f.Write<char>(data, static_cast<size_t>(size));
+                f.Close();
+            }
+            memFree(data);
+        }
+    
+        ini_destroy(windowsIni);
+    }
+}
+
+// Returns true if window monitor has changed
 static bool appWinUpdateDisplayInfo()
 {
     HMONITOR hm = gApp.hwnd ? 
@@ -541,6 +638,7 @@ static LRESULT CALLBACK appWinProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
                 if (appWinUpdateDisplayInfo())
                     appWinDispatchEvent(AppEventType::DisplayUpdated);
                 appWinDispatchEvent(AppEventType::Moved);
+                gApp.windowModified = true;
                 break;
             case WM_SETCURSOR:
                 if (gApp.desc.userCursor) {
@@ -661,7 +759,7 @@ static bool appWinCreateWindow()
     
     DWORD winStyle;
     const DWORD winExStyle = WS_EX_APPWINDOW | WS_EX_WINDOWEDGE;
-    RECT rect = { 0, 0, 0, 0 };
+    RECT rect = gApp.mainRect;
     if (gApp.desc.fullscreen) {
         winStyle = WS_POPUP | WS_SYSMENU | WS_VISIBLE;
         rect.right = GetSystemMetrics(SM_CXSCREEN);
@@ -669,8 +767,8 @@ static bool appWinCreateWindow()
     }
     else {
         winStyle = WS_CLIPSIBLINGS | WS_CLIPCHILDREN | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX | WS_MAXIMIZEBOX | WS_SIZEBOX;
-        rect.right = int(float(gApp.windowWidth) * gApp.windowScale);
-        rect.bottom = int(float(gApp.windowHeight) * gApp.windowScale);
+        rect.right = rect.left + int(float(gApp.windowWidth) * gApp.windowScale);
+        rect.bottom = rect.top + int(float(gApp.windowHeight) * gApp.windowScale);
     }
     AdjustWindowRectEx(&rect, winStyle, FALSE, winExStyle);
     const int winWidth = rect.right - rect.left;
@@ -682,11 +780,11 @@ static bool appWinCreateWindow()
     gApp.inCreateWindow = true;
     gApp.hwnd = CreateWindowExW(
         winExStyle,               	/* dwExStyle */
-        L"JunkyardApp", 	        	/* lpClassName */
+        L"JunkyardApp", 	        /* lpClassName */
         winTitleWide,             	/* lpWindowName */
         winStyle,                 	/* dwStyle */
-        CW_USEDEFAULT,              /* X */
-        CW_USEDEFAULT,              /* Y */
+        rect.left >= 0 ? rect.left : CW_USEDEFAULT, /* X */
+        rect.top >= 0 ? rect.top : CW_USEDEFAULT,   /* Y */
         winWidth,                  	/* nWidth */
         winHeight,                 	/* nHeight */
         NULL,                       /* hWndParent */
@@ -700,6 +798,9 @@ static bool appWinCreateWindow()
     gApp.inCreateWindow = false;
     
     appWinUpdateDimensions();
+
+    // TODO: Have some sort of snapping to the main window
+    MoveWindow(GetConsoleWindow(), rect.left - 200, rect.top, rect.right - rect.left, rect.bottom - rect.top - 200, FALSE);
     return true;
 }
 
@@ -747,9 +848,8 @@ bool appInitialize(const AppDesc& desc)
     pathFileName(moduleFilename, moduleFilename, sizeof(moduleFilename));
     strCopy(gApp.name, sizeof(gApp.name), moduleFilename);
 
-    if (settingsGetApp().launchMinimized) {
+    if (settingsGetApp().launchMinimized)
         ShowWindow(GetConsoleWindow(), SW_MINIMIZE);
-    }
 
     gApp.hStdin = GetStdHandle(STD_INPUT_HANDLE);
     gApp.hStdOut = GetStdHandle(STD_OUTPUT_HANDLE);
@@ -785,6 +885,7 @@ bool appInitialize(const AppDesc& desc)
         return false;
     }
 
+    appWinLoadInitRects();  // may modify window/framebuffer dimensions 
     appWinInitKeyTable();
 
     bool headless = settingsGetGraphics().headless;
@@ -798,7 +899,7 @@ bool appInitialize(const AppDesc& desc)
     }
     gApp.valid = true;
 
-    // message loop
+    // Main loop
     bool done = false;
     while (!(done || gApp.quitOrdered)) {
         if (!headless) {
@@ -817,8 +918,10 @@ bool appInitialize(const AppDesc& desc)
             }
 
             // check for window resized, this cannot happen in WM_SIZE as it explodes memory usage
-            if (appWinUpdateDimensions())
+            if (appWinUpdateDimensions()) {
                 appWinDispatchEvent(AppEventType::Resized);
+                gApp.windowModified = true;
+            }
 
             // When minimized, bring down update frequency
             if (IsIconic(gApp.hwnd))
@@ -863,6 +966,8 @@ bool appInitialize(const AppDesc& desc)
     }
     
     // Cleanup
+    appWinSaveInitRects();
+
     if (gApp.desc.callbacks) {
         gApp.desc.callbacks->Cleanup();
     }

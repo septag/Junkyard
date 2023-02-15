@@ -53,7 +53,7 @@ struct SettingsTooling
 
 struct SettingsApp
 {
-    bool launchMinimized = false;
+    bool launchMinimized = false;       // Launch application minimized (Desktop builds only)
 };
 
 struct SettingsEngine

@@ -1158,7 +1158,7 @@ static VkSurfaceKHR gfxCreateWindowSurface(void* windowHandle)
             .hwnd = (HWND)windowHandle
         };
     
-        vkCreateWin32SurfaceKHR(gVk.instance, &surfaceCreateInfo, &gVk.allocVk, &surface));
+        vkCreateWin32SurfaceKHR(gVk.instance, &surfaceCreateInfo, &gVk.allocVk, &surface);
     #elif PLATFORM_ANDROID
         VkAndroidSurfaceCreateInfoKHR surfaceCreateInfo {
             .sType = VK_STRUCTURE_TYPE_ANDROID_SURFACE_CREATE_INFO_KHR,
