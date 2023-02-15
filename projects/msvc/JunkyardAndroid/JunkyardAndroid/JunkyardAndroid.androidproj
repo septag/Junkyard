@@ -27,6 +27,7 @@
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
+    <AndroidAPILevel>android-29</AndroidAPILevel>
   </PropertyGroup>
   <Import Project="$(AndroidTargetsPath)\Android.props" />
   <ItemDefinitionGroup>

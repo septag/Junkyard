@@ -606,7 +606,6 @@ static int appAndroidMainEventsFn(int fd, int events, void* data)
         break;
 
     case ANDROID_CMD_RESUME:
-        eventType = AppEventType::Resumed;
         gApp.paused = false;
         pthread_mutex_lock(&gApp.mutex);
         gApp.activityState = cmd;
@@ -615,7 +614,6 @@ static int appAndroidMainEventsFn(int fd, int events, void* data)
         break;
 
     case ANDROID_CMD_PAUSE:
-        eventType = AppEventType::Suspended;
         gApp.paused = true;
         pthread_mutex_lock(&gApp.mutex);
         gApp.activityState = cmd;
@@ -624,9 +622,11 @@ static int appAndroidMainEventsFn(int fd, int events, void* data)
         break;
         
     case ANDROID_CMD_LOST_FOCUS:
+        eventType = AppEventType::Suspended;
         gApp.focused = false;
         break;
     case ANDROID_CMD_GAINED_FOCUS:
+        eventType = AppEventType::Resumed;
         gApp.focused = true;
         break;
     case ANDROID_CMD_START:
@@ -653,9 +653,8 @@ static int appAndroidMainEventsFn(int fd, int events, void* data)
     }
 
     // dispatch events based on CMD
-    if (eventType != AppEventType::Invalid) {
+    if (eventType != AppEventType::Invalid)
         appAndroidDispatchEvent(eventType);
-    }
 
     switch (cmd) {
     case ANDROID_CMD_TERM_WINDOW:

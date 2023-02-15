@@ -1148,6 +1148,30 @@ static VkRenderPass gfxCreateRenderPass(VkFormat format, VkFormat depthFormat = 
     return renderPass;
 }
 
+static VkSurfaceKHR gfxCreateWindowSurface(void* windowHandle)
+{
+    VkSurfaceKHR surface = nullptr;
+    #if PLATFORM_WINDOWS
+        VkWin32SurfaceCreateInfoKHR surfaceCreateInfo {
+            .sType = VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR,
+            .hinstance = (HMODULE)appGetNativeAppHandle(),
+            .hwnd = (HWND)windowHandle
+        };
+    
+        vkCreateWin32SurfaceKHR(gVk.instance, &surfaceCreateInfo, &gVk.allocVk, &surface));
+    #elif PLATFORM_ANDROID
+        VkAndroidSurfaceCreateInfoKHR surfaceCreateInfo {
+            .sType = VK_STRUCTURE_TYPE_ANDROID_SURFACE_CREATE_INFO_KHR,
+            .window = (ANativeWindow*)windowHandle
+        };
+    
+        vkCreateAndroidSurfaceKHR(gVk.instance, &surfaceCreateInfo, &gVk.allocVk, &surface);
+    #else
+        #error "Not implemented"
+    #endif
+    return surface;
+}
+
 static GfxSwapchain gfxCreateSwapchain(VkSurfaceKHR surface, uint16 width, uint16 height, 
                                        VkSwapchainKHR oldSwapChain = VK_NULL_HANDLE, bool depth = false)
 {
@@ -1573,27 +1597,11 @@ bool _private::gfxInitialize()
     //------------------------------------------------------------------------
     // Surface (Implementation is platform dependent)
     if (!settings.headless) {
-        #if PLATFORM_WINDOWS
-            VkWin32SurfaceCreateInfoKHR surfaceCreateInfo {
-                .sType = VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR,
-                .hinstance = (HMODULE)appGetNativeAppHandle(),
-                .hwnd = (HWND)appGetNativeWindowHandle()
-            };
-
-            if (VK_FAILED(vkCreateWin32SurfaceKHR(gVk.instance, &surfaceCreateInfo, &gVk.allocVk, &gVk.surface))) {
-                logError("Gfx: vkCreateWin32SurfaceKHR failed");
-                return false;
-            }
-        #elif PLATFORM_ANDROID
-            VkAndroidSurfaceCreateInfoKHR surfaceCreateInfo {
-                .sType = VK_STRUCTURE_TYPE_ANDROID_SURFACE_CREATE_INFO_KHR,
-                .window = (ANativeWindow*)appGetNativeWindowHandle()
-            };
-
-            vkCreateAndroidSurfaceKHR(gVk.instance, &surfaceCreateInfo, &gVk.allocVk, &gVk.surface);
-        #else
-            #error "Not implemented"
-        #endif
+        gVk.surface = gfxCreateWindowSurface(appGetNativeWindowHandle());
+        if (!gVk.surface) {
+            logError("Gfx: Creating window surface failed");
+            return false;
+        }
     }
 
     //------------------------------------------------------------------------
@@ -2247,6 +2255,40 @@ void gfxResizeSwapchain(uint16 width, uint16 height)
         vkDeviceWaitIdle(gVk.device);
 }
 
+void gfxDestroySurfaceAndSwapchain()
+{
+    if (gVk.device)
+        vkDeviceWaitIdle(gVk.device);
+
+    gfxDestroySwapchain(&gVk.swapchain);
+
+    if (gVk.surface) {
+        vkDestroySurfaceKHR(gVk.instance, gVk.surface, &gVk.allocVk);
+        gVk.surface = nullptr;
+    }
+}
+
+void gfxRecreateSurfaceAndSwapchain()
+{
+    if (gVk.device)
+        vkDeviceWaitIdle(gVk.device);
+
+    if (gVk.surface) 
+        vkDestroySurfaceKHR(gVk.instance, gVk.surface, &gVk.allocVk);
+    
+    gVk.surface = gfxCreateWindowSurface(appGetNativeWindowHandle());
+    ASSERT(gVk.surface);
+
+    gfxDestroySwapchain(&gVk.swapchain);
+    gVk.swapchain = gfxCreateSwapchain(gVk.surface, appGetFramebufferWidth(), appGetFramebufferHeight(), nullptr, true);
+
+    if (gVk.device)
+        vkDeviceWaitIdle(gVk.device);
+
+    logDebug("Window surface (Handle = 0x%x) and swapchain (%ux%u) recreated.", 
+             appGetNativeWindowHandle(), appGetFramebufferWidth(), appGetFramebufferHeight());
+}
+
 // Note: must be protected
 static void gfxSubmitDeferredCommands()
 {
@@ -2298,7 +2340,7 @@ void gfxBeginFrame()
             gfxResizeSwapchain(appGetFramebufferWidth(), appGetFramebufferHeight());
         }
         else if (nextImageResult != VK_SUCCESS && nextImageResult != VK_SUBOPTIMAL_KHR) {
-            ASSERT_MSG(false, "Gfx: Acquire swapchain failed");
+            ASSERT_MSG(false, "Gfx: Acquire swapchain failed: %d", nextImageResult);
             return;
         }
     }

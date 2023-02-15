@@ -99,6 +99,12 @@ static void engineOnEvent(const AppEvent& ev, [[maybe_unused]] void* userData)
             } 
         }
     }
+#if PLATFORM_ANDROID
+    else if (ev.type == AppEventType::Suspended) 
+        gfxDestroySurfaceAndSwapchain();
+    else if (ev.type == AppEventType::Resumed)
+        gfxRecreateSurfaceAndSwapchain();
+#endif
 }
 
 bool engineInitialize()

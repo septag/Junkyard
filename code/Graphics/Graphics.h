@@ -916,6 +916,8 @@ API bool gfxHasDeviceExtension(const char* extension);
 API bool gfxHasInstanceExtension(const char* extension);
 API const GfxPhysicalDeviceProperties gfxGetPhysicalDeviceProperties();
 
+API void gfxDestroySurfaceAndSwapchain();
+API void gfxRecreateSurfaceAndSwapchain();
 API void gfxResizeSwapchain(uint16 width, uint16 height);
 
 // Create/Destroy resources explicitly
