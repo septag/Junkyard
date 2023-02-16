@@ -18,11 +18,22 @@ struct Array;
     #include <alloca.h>	// alloca
 #endif
 
+enum class AllocatorType
+{
+    Unknown,
+    Heap,       // Normal malloc/free heap allocator
+    Temp,       // Stack-based temp allocator. Grows by page. Only works within a single thread context and function scopes.
+    Frame,      // Linear-based frame allocator. Grows by page. Resets every frame. Only works within a single thread context.
+    Budget,     // Linear-based budget allocator. Fixed capacity. Persists in memory in a higher lifetime
+    Tlsf        // TLSF dynamic allocator. Fixed capacity. Persists in memory and usually used for subsystems with unknown memory allocation pattern.
+};
+
 struct NO_VTABLE Allocator
 {
     virtual void* Malloc(size_t size, uint32 align) = 0;
     virtual void* Realloc(void* ptr, size_t size, uint32 align) = 0;
     virtual void  Free(void* ptr, uint32 align) = 0;
+    virtual AllocatorType GetType() const { return AllocatorType::Unknown; };
 };
 
 using MemFailCallback = void(*)(void* userData);
@@ -51,6 +62,17 @@ template<typename _T> _T* memReallocTyped(void* ptr, uint32 count = 1, Allocator
 template<typename _T> _T* memAllocCopy(const _T* src, uint32 count = 1, Allocator* alloc = memDefaultAlloc());
 template<typename _T> _T* memAllocCopyRawBytes(const _T* src, size_t sizeBytes, Allocator* alloc = memDefaultAlloc());
 
+namespace _private
+{
+    struct MemDebugPointer
+    {
+        void* ptr;
+        uint32 align;
+    };
+} // _private
+
+//------------------------------------------------------------------------
+// Temp Allocator: Stack-based temp allocator. Grows by page. Only works within a single thread context.
 using MemTempId = uint32;
 [[nodiscard]] MemTempId memPushTempId();
 void memPopTempId(MemTempId id);
@@ -62,12 +84,6 @@ void memTempSetDebugMode(bool enable);
 template<typename _T> _T* memAllocTempTyped(MemTempId id, uint32 count = 1, uint32 align = CONFIG_MACHINE_ALIGNMENT);
 template<typename _T> _T* memAllocTempZeroTyped(MemTempId id, uint32 count = 1, uint32 align = CONFIG_MACHINE_ALIGNMENT);
 
-struct MemDebugPointer
-{
-    void* ptr;
-    uint32 align;
-};
-
 struct MemTempAllocator : Allocator
 {
     MemTempAllocator();
@@ -78,16 +94,20 @@ struct MemTempAllocator : Allocator
     [[nodiscard]] void* Malloc(size_t size, uint32 align = CONFIG_MACHINE_ALIGNMENT) override;
     [[nodiscard]] void* Realloc(void* ptr, size_t size, uint32 align = CONFIG_MACHINE_ALIGNMENT) override;
     void Free(void* ptr, uint32 align = CONFIG_MACHINE_ALIGNMENT) override;
+    AllocatorType GetType() const override { return AllocatorType::Temp; }
 
     size_t GetOffset() const;
     size_t GetPointerOffset(void* ptr) const;
 
     template <typename _T>
-    _T* MallocTyped(uint32 count = 1, uint32 align = CONFIG_MACHINE_ALIGNMENT) 
+    [[nodiscard]] _T* MallocTyped(uint32 count = 1, uint32 align = CONFIG_MACHINE_ALIGNMENT) 
         { return reinterpret_cast<_T*>(memAllocTemp(_id, count*sizeof(_T), align)); }
     template <typename _T>
-    _T* MallocZeroTyped(uint32 count = 1, uint32 align = CONFIG_MACHINE_ALIGNMENT) 
+    [[nodiscard]] _T* MallocZeroTyped(uint32 count = 1, uint32 align = CONFIG_MACHINE_ALIGNMENT) 
         { return reinterpret_cast<_T*>(memAllocTempZero(_id, count*sizeof(_T), align)); }
+    template <typename _T>
+    [[nodiscard]] _T* ReallocTyped(_T* ptr, uint32 count = 1, uint32 align = CONFIG_MACHINE_ALIGNMENT)
+        { return reinterpret_cast<_T*>(memReallocTemp(_id, ptr, count*sizeof(_T), align)); }
 
 private:
     MemTempId _id = 0;
@@ -95,6 +115,20 @@ private:
     bool _ownsId = false;
 };
 
+//------------------------------------------------------------------------
+// Frame Allocator: Linear-based frame allocator. Grows by page. Resets every frame. 
+//                  Unlike temp allocator, allocations are thread-safe and available within all threads
+struct MemFrameAllocator;
+void memFrameSetDebugMode(bool enable);
+MemFrameAllocator* memFrameAlloc();
+
+namespace _private 
+{
+    void memFrameReset();
+}
+
+//------------------------------------------------------------------------
+// Budget allocator: Linear-based budget allocator. Fixed capacity. Persists in memory in a higher lifetime
 struct MemBudgetAllocator : Allocator
 {
     explicit MemBudgetAllocator(const char* name);
@@ -105,6 +139,7 @@ struct MemBudgetAllocator : Allocator
     [[nodiscard]] void* Malloc(size_t size, uint32 align = CONFIG_MACHINE_ALIGNMENT) override;
     [[nodiscard]] void* Realloc(void* ptr, size_t size, uint32 align = CONFIG_MACHINE_ALIGNMENT) override;
     void  Free(void* ptr, uint32 align = CONFIG_MACHINE_ALIGNMENT) override;
+    AllocatorType GetType() const override { return AllocatorType::Budget; }
 
     size_t GetCommitedSize() const { return _commitSize; }
     size_t GetTotalSize() const { return _maxSize; }
@@ -118,9 +153,11 @@ private:
     size_t _pageSize = 0;   
     char   _name[32];
     bool   _debugMode = false;
-    Array<MemDebugPointer, 8>* _debugPointers;
+    Array<_private::MemDebugPointer, 8>* _debugPointers;
 };
 
+//------------------------------------------------------------------------
+// TLSF dynamic allocator: Fixed capacity. Persists in memory and usually used for subsystems with unknown memory allocation pattern.
 struct MemTlsfAllocator : Allocator
 {
     static size_t GetMemoryRequirement(size_t poolSize);
@@ -131,6 +168,7 @@ struct MemTlsfAllocator : Allocator
     [[nodiscard]] void* Malloc(size_t size, uint32 align = CONFIG_MACHINE_ALIGNMENT) override;
     [[nodiscard]] void* Realloc(void* ptr, size_t size, uint32 align = CONFIG_MACHINE_ALIGNMENT) override;
     void  Free(void* ptr, uint32 align = CONFIG_MACHINE_ALIGNMENT) override;
+    AllocatorType GetType() const override { return AllocatorType::Tlsf; }
 
     size_t GetAllocatedSize() const { return _allocatedSize; }
 
@@ -215,6 +253,7 @@ FORCE_INLINE void memFree(void* ptr, Allocator* alloc)
     void* ptr = alloc->Malloc(size, align);
     if (ptr == NULL) {
         MEMORY_FAIL();
+        return nullptr;
     }
     memset(ptr, 0x0, size);
     return ptr;

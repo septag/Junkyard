@@ -47,17 +47,30 @@
     INLINE void  aligned_free(void* ptr);
 #endif
 
-static constexpr size_t kTempMaxBufferSize = 4*kGB;
+static constexpr size_t kTempMaxBufferSize = kGB;
 static constexpr uint32 kTempFramePeaksCount = 4;
 static constexpr uint32 kTempPageSize = 256*kKB;
 static constexpr float  kTempValidateResetTime = 5.0f;
 static constexpr uint32 kTempMaxStackframes = 8;
+
+static constexpr size_t kFrameMaxBufferSize = 2*kGB;
+static constexpr uint32 kFramePageSize = 256*kKB;
+static constexpr uint32 kFramePeaksCount = 4;
 
 struct MemHeapAllocator : Allocator 
 {
     void* Malloc(size_t size, uint32 align) override;
     void* Realloc(void* ptr, size_t size, uint32 align) override;
     void  Free(void* ptr, uint32 align) override;
+    AllocatorType GetType() const override { return AllocatorType::Heap; }
+};
+
+struct MemFrameAllocator : Allocator 
+{
+    void* Malloc(size_t size, uint32 align) override;
+    void* Realloc(void* ptr, size_t size, uint32 align) override;
+    void  Free(void* ptr, uint32 align) override;
+    AllocatorType GetType() const override { return AllocatorType::Frame; }
 };
 
 struct MemTempStack
@@ -66,7 +79,7 @@ struct MemTempStack
     size_t offset;
     void* lastAllocatedPtr;
     void* stacktrace[kTempMaxStackframes];
-    Array<MemDebugPointer> debugPointers;    
+    Array<_private::MemDebugPointer> debugPointers;    
     uint16 numStackframes;
 };
 
@@ -90,12 +103,35 @@ struct MemTempContext
     ~MemTempContext();
 };
 
+struct MemFrameAllocatorInternal : MemFrameAllocator
+{
+    MemFrameAllocatorInternal();
+    ~MemFrameAllocatorInternal();
+
+    void Initialize();
+    void Release();
+
+    size_t curFramePeak = 0;
+    size_t peakBytes = 0;
+    size_t framePeaks[kTempFramePeaksCount];
+    uint32 resetCount;
+
+    uint8* buffer = nullptr;
+    size_t bufferSize = 0;
+    size_t offset = 0;
+    void* lastAllocatedPtr = 0;
+    Array<_private::MemDebugPointer> debugPointers;
+    AtomicLock spinlock;
+    bool debugMode = false;
+};
+
 struct MemState
 {
     MemFailCallback  memFailFn			= nullptr;
     void* 			 memFailUserdata	= nullptr;
     Allocator*		 defaultAlloc       = &heapAlloc;
     MemHeapAllocator heapAlloc;
+    MemFrameAllocatorInternal frameAlloc;
     size_t           pageSize           = sysGetPageSize();
     Mutex            tempMtx;
     Array<MemTempContext*> tempCtxs; 
@@ -142,6 +178,8 @@ void memSetDefaultAlloc(Allocator* alloc)
 {
     gMem.defaultAlloc = alloc != nullptr ? alloc : &gMem.heapAlloc;
 }
+
+
 
 void memTempSetDebugMode(bool enable)
 {
@@ -204,7 +242,7 @@ void memPopTempId(MemTempId id)
 
     MemTempStack memStack = gMemTempCtx.allocStack.PopLast();
     if (memStack.debugPointers.Count()) {
-        for (MemDebugPointer p : memStack.debugPointers)
+        for (_private::MemDebugPointer p : memStack.debugPointers)
             gMem.defaultAlloc->Free(p.ptr, p.align);
         memStack.debugPointers.Free();
     }
@@ -292,7 +330,7 @@ void* memReallocTemp(MemTempId id, void* ptr, size_t size, uint32 align)
             size_t endOffset = memStack.baseOffset + memStack.offset;
 
             gMemTempCtx.peakBytes = Max<size_t>(gMemTempCtx.peakBytes, endOffset);
-            memStack.debugPointers.Push(MemDebugPointer {ptr, align});
+            memStack.debugPointers.Push(_private::MemDebugPointer {ptr, align});
         }
         return ptr;
     }
@@ -308,7 +346,7 @@ MemTempContext::~MemTempContext()
 
     if (debugMode) {
         for (MemTempStack& memStack : allocStack) {
-            for (MemDebugPointer p : memStack.debugPointers)
+            for (_private::MemDebugPointer p : memStack.debugPointers)
                 gMem.defaultAlloc->Free(p.ptr, p.align);
             memStack.debugPointers.Free();
         }
@@ -473,7 +511,178 @@ void MemHeapAllocator::Free(void* ptr, uint32 align)
 }
 
 //------------------------------------------------------------------------
-// Temp Allocator Scope
+// Frame allocator
+void MemFrameAllocatorInternal::Initialize()
+{
+    // We use RAII reserve/release here because FrameAllocator remains during the lifetime of the program
+    if (!this->debugMode)
+        this->buffer = (uint8*)memVirtualReserve(kFrameMaxBufferSize);
+}
+
+void MemFrameAllocatorInternal::Release()
+{
+    if (this->buffer) {
+        if (this->bufferSize)
+            memVirtualDecommit(this->buffer, this->bufferSize);
+        memVirtualRelease(this->buffer, this->bufferSize);
+    }
+
+    if (this->debugMode) {
+        for (_private::MemDebugPointer p : this->debugPointers)
+            gMem.defaultAlloc->Free(p.ptr, p.align);
+        this->debugPointers.Free();
+    }
+}
+
+MemFrameAllocatorInternal::MemFrameAllocatorInternal()
+{
+    Initialize();
+}
+
+MemFrameAllocatorInternal::~MemFrameAllocatorInternal()
+{
+    Release();
+}
+
+void* MemFrameAllocator::Malloc(size_t size, uint32 align)
+{
+    return Realloc(nullptr, size, align);
+}
+
+void* MemFrameAllocator::Realloc(void* ptr, size_t size, uint32 align)
+{
+    ASSERT(size);
+
+    MemFrameAllocatorInternal& alloc = gMem.frameAlloc;
+    AtomicLockScope lock(alloc.spinlock);
+
+    if (!alloc.debugMode) {
+        align = Max(align, CONFIG_MACHINE_ALIGNMENT);
+        size = AlignValue<size_t>(size, align);
+
+        // For a common case that we call realloc several times (dynamic Arrays), we can reuse the last allocated pointer
+        void* newPtr = nullptr;
+        size_t lastSize = 0;
+        if (ptr && alloc.lastAllocatedPtr == ptr) {
+            lastSize = *((size_t*)ptr - 1);
+            ASSERT(size > lastSize);
+            newPtr = ptr;
+        }
+
+        // align to requested alignment
+        size_t offset = alloc.offset;
+        if (newPtr == nullptr) {
+            offset += sizeof(size_t);
+            if (offset % align != 0) 
+                offset = AlignValue<size_t>(offset, align);
+        }
+        else {
+            ASSERT(offset % align == 0);
+        }
+    
+        size_t endOffset = offset + (size - lastSize);
+
+        if (endOffset > kFrameMaxBufferSize) {
+            MEMORY_FAIL();
+            return nullptr;
+        }
+
+        // Grow the buffer if necessary (double size policy)
+        if (endOffset > alloc.bufferSize) {
+            size_t newSize = Clamp(alloc.bufferSize ? alloc.bufferSize << 1 : kFramePageSize, endOffset, kFrameMaxBufferSize);
+
+            // Align grow size to page size for virtual memory commit
+            size_t growSize = AlignValue(newSize - alloc.bufferSize, gMem.pageSize);
+            memVirtualCommit(alloc.buffer + alloc.bufferSize, growSize);
+            alloc.bufferSize += growSize;
+        }
+
+        alloc.curFramePeak = Max<size_t>(alloc.curFramePeak, endOffset);
+        alloc.peakBytes = Max<size_t>(alloc.peakBytes, endOffset);
+
+        // Create the pointer if we are not re-using the previous one
+        if (!newPtr) {
+            newPtr = alloc.buffer + offset;
+
+            // we are not re-using the previous allocation, memcpy the previous block in case of realloc
+            if (ptr)
+                memcpy(newPtr, ptr, *((size_t*)ptr - 1));
+        }
+
+        *((size_t*)newPtr - 1) = size;
+        alloc.offset = endOffset;
+        alloc.lastAllocatedPtr = newPtr;
+        return newPtr;
+    }
+    else {
+        if (ptr == nullptr)
+            ptr = gMem.defaultAlloc->Malloc(size, align);
+        else
+            ptr = gMem.defaultAlloc->Realloc(ptr, size, align);
+
+        if (ptr) {
+            alloc.offset += size;
+            alloc.peakBytes = Max<size_t>(alloc.peakBytes, alloc.offset);
+            alloc.debugPointers.Push(_private::MemDebugPointer {ptr, align});
+        }
+        return ptr;
+    }
+}
+
+void MemFrameAllocator::Free(void*, uint32)
+{
+    // No free in frame allocator!
+}
+
+void memFrameSetDebugMode(bool enable)
+{
+    MemFrameAllocatorInternal& alloc = gMem.frameAlloc;
+    AtomicLockScope lock(alloc.spinlock);
+    ASSERT_MSG(alloc.offset == 0, "Frame allocator must be at reset state when changing mode");
+    if (alloc.debugMode != enable) {
+        alloc.Release();
+        alloc.debugMode = enable;
+        alloc.Initialize();
+    }
+}
+
+void _private::memFrameReset()
+{
+    MemFrameAllocatorInternal& alloc = gMem.frameAlloc;
+    AtomicLockScope lock(alloc.spinlock);
+
+    alloc.lastAllocatedPtr = nullptr;
+    alloc.offset = 0;
+
+    alloc.framePeaks[alloc.resetCount] = alloc.curFramePeak;
+    alloc.resetCount = (alloc.resetCount + 1) % kFramePeaksCount;
+    alloc.curFramePeak = 0;
+
+    if (!alloc.debugMode) {
+        // resize buffer to the maximum of the last 4 frames peak allocations
+        // So based on the last frames activity, we might grow or shrink the temp buffer
+        size_t maxPeakSize = 0;
+        for (uint32 k = 0; k < kFramePeaksCount; k++) {
+            if (alloc.framePeaks[k] > maxPeakSize) 
+                maxPeakSize = alloc.framePeaks[k];
+        }
+
+        maxPeakSize = Max<size_t>(kFramePageSize, maxPeakSize);
+        maxPeakSize = AlignValue(maxPeakSize, gMem.pageSize);
+        if (maxPeakSize > alloc.bufferSize) {
+            size_t growSize = maxPeakSize - alloc.bufferSize;
+            memVirtualCommit(alloc.buffer + alloc.bufferSize, growSize);
+        }
+        else if (maxPeakSize < alloc.bufferSize) {
+            size_t shrinkSize = alloc.bufferSize - maxPeakSize;
+            memVirtualDecommit(alloc.buffer + maxPeakSize, shrinkSize);
+        }
+        alloc.bufferSize = maxPeakSize;
+    }
+}
+
+//------------------------------------------------------------------------
+// Temp Allocator Scoped
 MemTempAllocator::MemTempAllocator() : 
     _id(memPushTempId()), 
     _fiberProtectorId(debugFiberScopeProtector_Push("TempAllocator")),
@@ -507,6 +716,7 @@ void* MemTempAllocator::Realloc(void* ptr, size_t size, uint32 align)
 
 void MemTempAllocator::Free(void*, uint32) 
 {
+    // No Free!
 }
 
 size_t MemTempAllocator::GetOffset() const
@@ -554,7 +764,7 @@ void MemBudgetAllocator::Initialize(size_t sizeBudget, size_t pageSize, bool com
         _maxSize = sizeBudget;
     }
     else {
-        _debugPointers = NEW(gMem.defaultAlloc, Array<MemDebugPointer>);
+        _debugPointers = NEW(gMem.defaultAlloc, Array<_private::MemDebugPointer>);
     }    
 }
 
@@ -566,7 +776,7 @@ void MemBudgetAllocator::Release()
     }
 
     if (_debugPointers) {
-        for (MemDebugPointer p: *_debugPointers)
+        for (_private::MemDebugPointer p: *_debugPointers)
             gMem.defaultAlloc->Free(p.ptr, p.align);
         _debugPointers->Free();
         memFree(_debugPointers, gMem.defaultAlloc);
@@ -606,7 +816,7 @@ void* MemBudgetAllocator::Malloc(size_t size, uint32 align)
     else {
         void* ptr = gMem.defaultAlloc->Malloc(size, align);
         if (ptr) {
-            _debugPointers->Push(MemDebugPointer {ptr, align});
+            _debugPointers->Push(_private::MemDebugPointer {ptr, align});
             _commitSize += size;
             _offset += size;
         }
@@ -627,7 +837,7 @@ void* MemBudgetAllocator::Realloc(void* ptr, size_t size, uint32 align)
 
 void MemBudgetAllocator::Free(void*, uint32)
 {
-    ASSERT(0);
+    // No Free!
 }
 
 //------------------------------------------------------------------------

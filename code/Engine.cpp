@@ -118,8 +118,10 @@ bool engineInitialize()
     gEng.shortcuts.SetAllocator(memDefaultAlloc());
     gEng.initHeap.Initialize(kHeapInitBudget, kMB, false, settingsGetEngine().debugAllocations);
 
-    if (settingsGetEngine().debugAllocations) 
+    if (settingsGetEngine().debugAllocations) {
         memTempSetDebugMode(true);
+        memFrameSetDebugMode(true);
+    }
 
     {   // Cpu/Memory info
         sysGetSysInfo(&gEng.sysInfo);
@@ -324,6 +326,7 @@ void engineEndFrame(float dt)
     }
 
     _private::memTempReset(dt);
+    _private::memFrameReset();
 
     TracyCFrameMark;
 
