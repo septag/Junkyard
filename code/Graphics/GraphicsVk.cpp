@@ -2249,7 +2249,12 @@ void gfxResizeSwapchain(uint16 width, uint16 height)
         vkDeviceWaitIdle(gVk.device);
     
     gfxDestroySwapchain(&gVk.swapchain);
+
+    uint32 oldWidth = gVk.swapchain.extent.width;
+    uint32 oldHeight = gVk.swapchain.extent.height;
+    
     gVk.swapchain = gfxCreateSwapchain(gVk.surface, width, height, nullptr, true);
+    logDebug("Swapchain resized from %ux%u to %ux%u", oldWidth, oldHeight, width, height);
 
     if (gVk.device)
         vkDeviceWaitIdle(gVk.device);

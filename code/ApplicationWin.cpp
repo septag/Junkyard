@@ -76,6 +76,7 @@ struct AppWindowsState
     uint16 displayRefreshRate;
     HMONITOR wndMonitor;
     RECT mainRect;
+    RECT consoleRect;
 
     HANDLE hStdin;
     HANDLE hStdOut;
@@ -235,8 +236,7 @@ static void appWinLoadInitRects()
     if (data.IsValid())
         windowsIni = ini_load((const char*)data.Data(), memDefaultAlloc());
     
-    auto GetWindowData = [](ini_t* ini, const char* name)->RECT {
-        RECT rc {};
+    auto GetWindowData = [](ini_t* ini, const char* name, RECT* rc) {
         int id = ini_find_section(ini, name, strLen(name));
         if (id != -1) {
            int topId = ini_find_property(ini, id, "top", 0);
@@ -245,31 +245,24 @@ static void appWinLoadInitRects()
            int rightId = ini_find_property(ini, id, "right", 0);
 
            if (topId != -1)
-               rc.top = strToInt(ini_property_value(ini, id, topId));
+               rc->top = strToInt(ini_property_value(ini, id, topId));
            if (bottomId != -1)
-               rc.bottom = strToInt(ini_property_value(ini, id, bottomId));
+               rc->bottom = strToInt(ini_property_value(ini, id, bottomId));
            if (leftId != -1)
-               rc.left = strToInt(ini_property_value(ini, id, leftId));
+               rc->left = strToInt(ini_property_value(ini, id, leftId));
            if (rightId != -1)
-               rc.right = strToInt(ini_property_value(ini, id, rightId));
+               rc->right = strToInt(ini_property_value(ini, id, rightId));
         }
         return rc;
     };
 
+    gApp.mainRect = RECT {0, 0, gApp.windowWidth, gApp.windowHeight};
+    gApp.consoleRect = RECT {1, 1, -1, -1};     // empty (leave it as it is)
     if (windowsIni) {
-        gApp.mainRect = GetWindowData(windowsIni, "Main");
+        GetWindowData(windowsIni, "Main", &gApp.mainRect);
+        GetWindowData(windowsIni, "Console", &gApp.consoleRect);
         ini_destroy(windowsIni);
     }
-
-    if (gApp.mainRect.right <= gApp.mainRect.left && gApp.mainRect.bottom <= gApp.mainRect.top) {
-        gApp.mainRect = {-1, -1, gApp.windowWidth, gApp.windowHeight};
-    }
-    else {
-        gApp.windowWidth = uint16(gApp.mainRect.right - gApp.mainRect.left);
-        gApp.windowHeight = uint16(gApp.mainRect.bottom - gApp.mainRect.top);
-        gApp.framebufferWidth = gApp.windowWidth;
-        gApp.framebufferHeight = gApp.windowHeight;
-    }           
 }
 
 static void appWinSaveInitRects()
@@ -295,9 +288,11 @@ static void appWinSaveInitRects()
         char iniFilename[64];
         strPrintFmt(iniFilename, sizeof(iniFilename), "%s_windows.ini", appGetName());
 
-        RECT mainRect;
+        RECT mainRect, consoleRect;
         if (GetWindowRect(gApp.hwnd, &mainRect))
-            PutWindowData(windowsIni, "Main", mainRect);
+            PutWindowData(windowsIni, "Main", RECT {mainRect.left, mainRect.top, mainRect.left + gApp.windowWidth, mainRect.top + gApp.windowHeight});
+        if (GetWindowRect(GetConsoleWindow(), &consoleRect))
+            PutWindowData(windowsIni, "Console", consoleRect);
 
         int size = ini_save(windowsIni, nullptr, 0);
         if (size > 0) {
@@ -762,13 +757,10 @@ static bool appWinCreateWindow()
     RECT rect = gApp.mainRect;
     if (gApp.desc.fullscreen) {
         winStyle = WS_POPUP | WS_SYSMENU | WS_VISIBLE;
-        rect.right = GetSystemMetrics(SM_CXSCREEN);
-        rect.bottom = GetSystemMetrics(SM_CYSCREEN);
+        rect = RECT {-1, -1, GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN)};
     }
     else {
         winStyle = WS_CLIPSIBLINGS | WS_CLIPCHILDREN | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX | WS_MAXIMIZEBOX | WS_SIZEBOX;
-        rect.right = rect.left + int(float(gApp.windowWidth) * gApp.windowScale);
-        rect.bottom = rect.top + int(float(gApp.windowHeight) * gApp.windowScale);
     }
     AdjustWindowRectEx(&rect, winStyle, FALSE, winExStyle);
     const int winWidth = rect.right - rect.left;
@@ -783,8 +775,8 @@ static bool appWinCreateWindow()
         L"JunkyardApp", 	        /* lpClassName */
         winTitleWide,             	/* lpWindowName */
         winStyle,                 	/* dwStyle */
-        rect.left >= 0 ? rect.left : CW_USEDEFAULT, /* X */
-        rect.top >= 0 ? rect.top : CW_USEDEFAULT,   /* Y */
+        rect.left > 0 ? rect.left : CW_USEDEFAULT, /* X */
+        rect.top > 0 ? rect.top : CW_USEDEFAULT,   /* Y */
         winWidth,                  	/* nWidth */
         winHeight,                 	/* nHeight */
         NULL,                       /* hWndParent */
@@ -799,8 +791,11 @@ static bool appWinCreateWindow()
     
     appWinUpdateDimensions();
 
-    // TODO: Have some sort of snapping to the main window
-    MoveWindow(GetConsoleWindow(), rect.left - 200, rect.top, rect.right - rect.left, rect.bottom - rect.top - 200, FALSE);
+    // Adjust console window
+    RECT conRc = gApp.consoleRect;
+    if (conRc.right > conRc.left && conRc.bottom > conRc.top) {
+        MoveWindow(GetConsoleWindow(), conRc.left, conRc.top, conRc.right - conRc.left, conRc.bottom - conRc.top, FALSE);
+    }
     return true;
 }
 
