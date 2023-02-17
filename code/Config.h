@@ -15,7 +15,7 @@
 #endif
 
 // This preprocessor applies a trick for hot functions that need to be inlined even in debug builds
-// only applies to ALWAYS_INLINE functions, but leaves INLINE not inlined
+// inlining only applies to FORCE_INLINE functions, but leaves INLINE not inlined
 // And also, the build should be compiled with /Ob1 flag
 #if !defined(CONFIG_FORCE_INLINE_DEBUG)
     #define CONFIG_FORCE_INLINE_DEBUG 0

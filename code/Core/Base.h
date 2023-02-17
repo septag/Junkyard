@@ -1,5 +1,88 @@
 #pragma once
 
+//
+// Base: This file is pretty much included in every other file. 
+//       So keep this as light as possible and with minimum amount of includes
+//       Most functions and macros here are for potability and usually one/two-liner inlines
+// Note: This header also includes Debug.h, which includes ASSERT macros and basic debugging functions
+//
+//  Macros:
+//      - ARCH_32BIT/ARCH_64BIT: 32 or 64 bit architecture. ARCH_NAME is the string representation
+//      - COMPILER_CLANG/GCC/MSVC: Compiler. COMPILER_[COMPILER]_VERSION sets the version for the compiler
+//      - CPU_ARM/X86: Cpu architecture for the source code. CPU_NAME is the string representation
+//      - PLATFORM_ANDROID/IOS/LINUX/OSX/WINDOWS: source code platform/OS. PLATFORM_NAME is the string representation 
+//      - UNUSED(x): removes the 'unused' compiler warning from variables
+//      - STRINGIZE(x): Turns an expression into string
+//      - CONCAT(a, b): Concats the two expressions with preprocessor
+//      - API: Function attribute for pulibc APIs
+//      - INVALID_INDEX: most functions return invalid index if nothing is found (Array::FindIf). This equals UINT32_MAX
+//      - IS_ASAN_ENABLED: Equals t, if address sanitizer is enabled. CL(/fsanitize=address), clang(-fsanitize=address)
+//      - NO_ASAN: Function attribute that omits from address sanitizer code
+//      - HAS_INCLUDE(include): Preprocessor checks if the file exists
+//      - FORCE_INLINE: Function attribute that forces inlining
+//      - FUNCTION: Pretty representation of function name (string)
+//      - NO_INLINE: Prevents inlining by the compiler
+//      - NO_OPT_BEGIN/END: Begins/End optimization for a specific function. Put Begin/End around the function definition
+//      - INLINE: Inline attribute for functions. Compiler usually decides on itself, but this is useful for debugging.
+//                Setting CONFIG_FORCE_INLINE_DEBUG=1 forces all INLINE keywords to not be inlined, BUT leaves FORCE_INLINE 
+//                to still be inlined. (in CL, you should use this with /Ob1 flag)
+//      - Ignoring warnings with Pragma. The Portable way:
+//        Warnings are different for each compiler of course. so for a piece of code that you need to omit specific warnings:
+//          - Add PRAGMA_DIAGNOSTIC_PUSH() to the beginning
+//          - Put any msvc warning number in PRAGMA_DIAGNOSTIC_IGNORED_MSVC(Number)
+//          - Put any clang/gcc warniing as a string in PRAGMA_DIAGNOSTIC_IGNORED_CLANG_GCC("warning")
+//          - Add PRAGMA_DIAGNOSTIC_POP() to the end
+//      - ENABLE_BITMASK(enum_class): Adds required bitwise operators for `enum class` types
+//      - CACHE_LINE_SIZE: Size of a line of CPU cache, in bytes
+//      - DEBUG_BREAK: Breaks the program with INT interrupt
+//      - ASSERT(e): Breaks the program if the expression is false (only enabled with _DEBUG/CONFIG_ENABLE_ASSERT=1)
+//      - ASSERT_MSG(e, comment_fmt, ...): Breaks the program and throws a formatted comment if the expression is false (only enabled with _DEBUG/CONFIG_ENABLE_ASSERT=1)
+//      - ASSERT_ALWAYS(e, comment_fmt, ...): Same as ASSERT_MSG, but is always enabled regardless of CONFIG_ENABLE_ASSERT
+//
+//  Utility Functions: 
+//      - Max<T>(a, b): Calculates the maximum between two values
+//      - Min<T>(a, b): Calculates the minimum between two values
+//      - Clamp<T>(v, a, b): Clamps the value (v) between two values (a, b)
+//      - Swap<T>(&a, &b): Swaps a with b
+//      - CountOf<T>(a): Returns the count of items in an static array (doesn't work on raw pointers!)
+//      - AlignValue<T>(value, align): Aligns the value's upper bound to the align argument
+//      - DivCeil<T>(value, divider): Returns the upper bound of the division of value with the divider. 
+//      - MakeFourCC(a, b, c, d): Makes fourcc code from 4 characters
+//      - PtrToInt<T>(void*): Turns pointer into an opaque variable
+//      - IntToPtr<T>(T i): Turns integers into pointer
+//      - IndexToId(index): Turns index to Id, mainly for verbosity. Ids start from 1 (=0 invalid) and indexes start from 0 obviously
+//      - IdToIndex(id): Turns Id to index, mainly for verbosity. 
+//  
+//  Helper classes:
+//      - Pair<First, Second>: Makes a struct containing pair of values with any type 
+//      - RelativePtr<T>: Defines a relative pointer of type T (-> gets you T*). 
+//                        Instead of the actual pointer, stores a 32bit offset from the RelativePtr object to the pointer you assign to it
+//                        It is very powerful, but use with care. Because allocate memory should always lineary placed in memory after the RelativePtr
+//      - AtomicLock: Used for SpinLocks. See Atomic.h for the actual locking functions. Placed here to reduce Atomic.h inclusion overhead
+//
+//  Random Generator: Base has a default PCG random number generator, with two approaches:
+//      - Context based random gen: You need to have a RandomContext stored and created. Gives more flexibility but needs bookkeeping
+//        randomGenSeed()/randomCreateContext()/randomNewUint(ctx)/randomNewFloat(ctx)/randomNewFloatInRange(ctx)/randomIntInRange(ctx)
+//      - Context-free random gen: For every thread, there is a RandomContext automatically generated and can be used without any bookkeeping
+//        Notice, the functions below, does not need context and thus context creation. But cannot be seeded manually
+//        randomNewUint()/randomNewFloat()/randomNewFloatInRange()/randomIntInRange()
+//
+
+
+API uint32        randomGenSeed();
+API RandomContext randomCreateContext(uint32 seed = randomGenSeed());
+
+API uint32        randomNewUint(RandomContext* ctx);
+API float         randomNewFloat(RandomContext* ctx);
+API float         randomNewFloatInRange(RandomContext* ctx, float _min, float _max);
+API int           randomNewIntInRange(RandomContext* ctx, int _min, int _max);
+
+// Context Free random functions (Uses thread_local context)
+API uint32        randomNewUint();
+API float         randomNewFloat();
+API float         randomNewFloatInRange(float _min, float _max);
+API int           randomNewIntInRange(int _min, int _max);
+
 #include <stdint.h>     // uint32, int64_t, etc..
 #include <stdbool.h>    // bool
 #include <stddef.h>     // NULL, size_t, offsetof
@@ -22,26 +105,12 @@
 #define CPU_ARM 0
 #define CPU_X86 0
 
-// C Runtime
-#define CRT_BIONIC 0
-#define CRT_GLIBC 0
-#define CRT_LIBCXX 0
-#define CRT_MINGW 0
-#define CRT_MSVC 0
-
-#ifndef CRT_NONE
-    #define CRT_NONE 0
-#endif    // CRT_NONE
-
 // Platform
 #define PLATFORM_ANDROID 0
 #define PLATFORM_IOS 0
 #define PLATFORM_LINUX 0
-#define PLATFORM_NX 0
 #define PLATFORM_OSX 0
 #define PLATFORM_WINDOWS 0
-#define PLATFORM_SCARLETT 0
-#define PLATFORM_PROSPERO 0
 
 // useful macros
 #define __STRINGIZE__(_x) #_x
@@ -143,35 +212,7 @@
 #elif defined(__ENVIRONMENT_MAC_OS_X_VERSION_MIN_REQUIRED__)
     #undef PLATFORM_OSX
     #define PLATFORM_OSX __ENVIRONMENT_MAC_OS_X_VERSION_MIN_REQUIRED__
-#elif defined(__NX__)
-    #undef PLATFORM_NX
-    #define PLATFORM_NX 1
 #endif    //
-
-#if !CRT_NONE
-    // https://sourceforge.net/p/predef/wiki/Libraries/
-    #if defined(__BIONIC__)
-        #undef CRT_BIONIC
-        #define CRT_BIONIC 1
-    #elif defined(_MSC_VER)
-        #undef CRT_MSVC
-        #define CRT_MSVC 1
-    #elif defined(__GLIBC__)
-        #undef CRT_GLIBC
-        #define CRT_GLIBC (__GLIBC__ * 10000 + __GLIBC_MINOR__ * 100)
-    #elif defined(__MINGW32__) || defined(__MINGW64__)
-        #undef CRT_MINGW
-        #define CRT_MINGW 1
-    #elif defined(__apple_build_version__) || defined(__ORBIS__) || defined(__llvm__)
-        #undef CRT_LIBCXX
-        #define CRT_LIBCXX 1
-    #endif    //
-
-    #if !CRT_BIONIC && !CRT_GLIBC && !CRT_LIBCXX && !CRT_MINGW && !CRT_MSVC 
-        #undef CRT_NONE
-        #define CRT_NONE 1
-    #endif    // CRT_*
-#endif        // !CRT_NONE
 
 #if COMPILER_GCC
     #define COMPILER_NAME \
@@ -225,22 +266,6 @@
     #define CPU_NAME "x86"
 #endif    // CPU_
 
-#if CRT_BIONIC
-    #define CRT_NAME "Bionic libc"
-#elif CRT_GLIBC
-    #define CRT_NAME "GNU C Library"
-#elif CRT_MSVC
-    #define CRT_NAME "MSVC C Runtime"
-#elif CRT_MINGW
-    #define CRT_NAME "MinGW C Runtime"
-#elif CRT_LIBCXX
-    #define CRT_NAME "Clang C Library"
-#elif CRT_NONE
-    #define CRT_NAME "None"
-#else
-    #error "Unknown CRT!"
-#endif    // CRT_
-
 #if ARCH_32BIT
     #define ARCH_NAME "32-bit"
 #elif ARCH_64BIT
@@ -262,32 +287,34 @@
 #if COMPILER_GCC || COMPILER_CLANG
     #define FORCE_INLINE static inline __attribute__((__always_inline__))
     #define FUNCTION __PRETTY_FUNCTION__
-    #define NO_OPT __attribute__((optnone))
+    #define NO_OPT_BEGIN __attribute__((optnone))
+    #define NO_OPT_END 
     #define NO_INLINE __attribute__((noinline))
     #define CONSTFN __attribute__((const))
     #define RESTRICT __restrict__
     // https://awesomekling.github.io/Smarter-C++-inlining-with-attribute-flatten/
     #define FLATTEN __attribute__((flatten))    // inline everything in the function body
     #if CONFIG_FORCE_INLINE_DEBUG
-        #define INLINE static 
+        #define INLINE NO_INLINE 
     #else
         #define INLINE static inline 
     #endif
-    #if CRT_MSVC
+    #ifdef _MSC_VER
         #define __stdcall
-    #endif    // CRT_MSVC
+    #endif
     #define NO_VTABLE 
 #elif COMPILER_MSVC
     #define FORCE_INLINE __forceinline
     #define FUNCTION __FUNCTION__
     #define NO_INLINE __declspec(noinline)
-    #define NO_OPT 
+    #define NO_OPT_BEGIN __pragma(optimize("", off)) 
+    #define NO_OPT_END __pragma(optimize("", on)) 
     #define CONSTFN __declspec(noalias)
     #define RESTRICT __restrict
     #define FLATTEN
     #define NO_VTABLE __declspec(novtable)
     #if CONFIG_FORCE_INLINE_DEBUG
-        #define INLINE static 
+        #define INLINE NO_INLINE 
     #else
         #define INLINE static inline 
     #endif
@@ -403,9 +430,6 @@
 
 #define HAS_INCLUDE(incl) __has_include(incl)
 
-// extern "C" int __asan_address_is_poisoned(void const volatile *addr);
-// extern "C" void *__asan_region_is_poisoned(void *beg, size_t size);
-
 // typedef basic opaque times, make them easier to write
 using uint8 = uint8_t;
 using int8 = int8_t;
@@ -503,6 +527,10 @@ template <typename T> T IndexToId(T i);
 template<> inline uint16 IndexToId(uint16 i)  { return i + 1; }
 template<> inline uint32 IndexToId(uint32 i)  { return i + 1; }
 
+template <typename T> T IdToIndex(T i);
+template<> inline uint16 IdToIndex(uint16 i)  { return i - 1; }
+template<> inline uint32 IdToIndex(uint32 i)  { return i - 1; }
+
 // This macro is to enable bitmasks for "enum class" types
 #define ENABLE_BITMASK(_EnumType) \
     FORCE_INLINE _EnumType operator|(_EnumType lhs, _EnumType rhs) {   \
@@ -548,7 +576,7 @@ struct RandomContext
     uint64 state[2];
 };
 
-API uint32        randomGenSeed(void);
+API uint32        randomGenSeed();
 API RandomContext randomCreateContext(uint32 seed = randomGenSeed());
 
 API uint32        randomNewUint(RandomContext* ctx);

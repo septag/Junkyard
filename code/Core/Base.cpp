@@ -45,7 +45,7 @@ static inline uint64 randomAvalanche64(uint64 h)
     return h;
 }
 
-uint32 randomGenSeed(void)
+uint32 randomGenSeed()
 {
     return static_cast<uint32>(time(nullptr));
 }

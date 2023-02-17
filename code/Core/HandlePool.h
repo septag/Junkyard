@@ -1,5 +1,55 @@
 #pragma once
 
+// Handles are widely used in public APIs and the places where we need to export some sort of data to other systems
+// They basically replace pointers in APIs. The data is not tightly packed in the arrays
+// But the upside is that Add/Deletes are very fast, since we keep sparse indexes to data. Just make sure that you keep capacity as small as possible 
+//
+// To declare a handle type, use DEFINE_HANDLE(name) macro. See CommonTypes.h for examples
+// Each handle type contains a 32bit Id, with some bits reserved for Generation and the rest is for index in the buffer
+// 
+// HandlePool is the main container template type. Recommended to be used only on POD (plain-old-data) types
+// Stores both handle tables and a large buffer to hold the data that handles reference to
+//      Memory Management:
+//          Ctor and Dtors don't allocate/deallocate anything as usual.
+//          Allocation happens on the first Add()
+//          Fixed-size custom buffers can be passed to container ctor instead of dynamic allocators. 
+//          In case of Fixed-size custom buffers, call `GetMemoryRequirement` function to calculate needed memory
+//          
+//      How it works:
+//          There are three buffers involved:
+//              - Data: Contains the actual data (only in HandlePool) that handles point to     
+//              - Dense: Stores actual handles [0..count]. You can enumerate all active handles by iterating this array
+//              - Sparse: Stores indexes to dense array [0..capacity]. It's used to maintain the two way relationship between Data index and handles
+//                        For example, when we remove a handle from the container, it looks up the dense index in sparse array 
+//                        and swaps the handle with the last one in dense array
+//
+//          Handles:
+//              - Generation (high-bits): After each new handle is created. This generation counter is increased
+//                                        This way, we can validate that we are not using stale handles in the program
+//              - Index (low-bits): Keeps an index to sparse array and data buffers. 
+//
+//      Usage examples:
+//          Adding and Removing data:
+//              struct Data {
+//                  uint32 a;
+//                  uint32 b;
+//              };
+//              DEFINE_HANDLE(DataHandle);
+//              HandlePool<DataHandle, Data> handlePool;
+//              DataHandle handle = handlePool.Add(Data {})
+//              ...
+//              handlePool.Remove(handle)
+//
+//          Iterating through the active data:
+//              for (Data& data : handlePool)
+//                  ...
+//              OR 
+//              for (uint32 i = 0; i < handlePool.Count(); i++) {
+//                  Data& data = handlePool.Data(handlePool.HandleAt(i))
+//                  ...
+//              }
+//
+
 #include "Memory.h"
 #include "Array.h"
 
@@ -63,8 +113,6 @@ namespace _private
 template <typename _HandleType, typename _DataType, uint32 _Reserve = 32>
 struct HandlePool
 {
-    // Constructors never allocate anything, first allocation happens on Add
-    // However destructors can release memory if not freed before, but it's recommended to Free arrays explicitly
     HandlePool() : HandlePool(memDefaultAlloc()) {}
     explicit HandlePool(Allocator* alloc) : _alloc(alloc), _items(alloc) {}
     explicit HandlePool(void* data, size_t size); 
