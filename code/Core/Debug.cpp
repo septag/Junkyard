@@ -49,7 +49,11 @@ struct DebugFiberProtectorThreadContext
 };
  
 static DebugFiberProtector gFiberProtector;
-static thread_local DebugFiberProtectorThreadContext gFiberProtectorCtx;
+NO_INLINE static DebugFiberProtectorThreadContext& FiberProtectorCtx() 
+{ 
+    static thread_local DebugFiberProtectorThreadContext fiberProtectorCtx;
+    return fiberProtectorCtx; 
+}
 
 void debugBreakMessage(const char* fmt, ...)
 {
@@ -108,12 +112,12 @@ uint16 debugFiberScopeProtector_Push(const char* name)
 {
     if (debugFiberScopeProtector_IsInFiber()) {
         ASSERT(name);
-        DebugFiberProtectorThreadContext::Item* item = gFiberProtectorCtx.items.Push();
+        DebugFiberProtectorThreadContext::Item* item = FiberProtectorCtx().items.Push();
         memset(item, 0x0, sizeof(*item));
         item->name = name;
         if (settingsGetDebug().captureStacktraceForFiberProtector) 
             item->numStackframes = debugCaptureStacktrace(item->stackframes, kDebugMaxFiberProtectorStackframes, 2);
-        uint16 id = ++gFiberProtectorCtx.idGen;
+        uint16 id = ++FiberProtectorCtx().idGen;
         if (id == 0)
             id = 1;
         item->id = id;
@@ -128,20 +132,20 @@ void debugFiberScopeProtector_Pop(uint16 id)
         return;
     
     ASSERT_MSG(debugFiberScopeProtector_IsInFiber(), "Item was pushed in the fiber, but not popping in any fibers");
-    ASSERT(gFiberProtectorCtx.items.Count());
+    ASSERT(FiberProtectorCtx().items.Count());
 
-    uint32 index = gFiberProtectorCtx.items.FindIf([id](const DebugFiberProtectorThreadContext::Item& item) { return item.id == id; });
+    uint32 index = FiberProtectorCtx().items.FindIf([id](const DebugFiberProtectorThreadContext::Item& item) { return item.id == id; });
     ASSERT_MSG(index != UINT32_MAX, "Something went wrong. Very likely, you are not popping the protected item in the correct thread");
-    gFiberProtectorCtx.items.Pop(index);
+    FiberProtectorCtx().items.Pop(index);
 }
 
 void debugFiberScopeProtector_Check()
 {
-    if (gFiberProtectorCtx.items.Count()) {
-        debugBreakMessage("Found %u protected items in the fiber that are not destructed in the scope:", gFiberProtectorCtx.items.Count());
+    if (FiberProtectorCtx().items.Count()) {
+        debugBreakMessage("Found %u protected items in the fiber that are not destructed in the scope:", FiberProtectorCtx().items.Count());
         
         DebugStacktraceEntry stacktraces[kDebugMaxFiberProtectorStackframes];
-        for (const DebugFiberProtectorThreadContext::Item& item : gFiberProtectorCtx.items) {
+        for (const DebugFiberProtectorThreadContext::Item& item : FiberProtectorCtx().items) {
             debugBreakMessage("\t%s:", item.name);
             if (item.numStackframes) {
                 debugResolveStacktrace(item.numStackframes, item.stackframes, stacktraces);

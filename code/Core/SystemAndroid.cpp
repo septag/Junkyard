@@ -163,7 +163,7 @@ void sysAndroidPrintToLog(SysAndroidLogType logType, const char* tag, const char
     __android_log_write(static_cast<int>(logType), tag, text);
 }
 
-JNIEnv* sysAndroidAcquireJniEnv()
+NO_INLINE JNIEnv* sysAndroidAcquireJniEnv()
 {
     if (gJniEnv)
         return gJniEnv;

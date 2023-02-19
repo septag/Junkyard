@@ -143,7 +143,11 @@ struct MemState
 };
 
 static MemState gMem;
-static thread_local MemTempContext gMemTempCtx;
+NO_INLINE static MemTempContext& MemGetTempContext() 
+{ 
+    static thread_local MemTempContext tempCtx;
+    return tempCtx; 
+}
 
 void memSetFailCallback(MemFailCallback callback, void* userdata)
 {
@@ -183,8 +187,8 @@ void memSetDefaultAlloc(Allocator* alloc)
 
 void memTempSetDebugMode(bool enable)
 {
-    ASSERT_MSG(gMemTempCtx.allocStack.Count() == 0, "MemTemp must be at it's initial state");
-    gMemTempCtx.debugMode = enable;
+    ASSERT_MSG(MemGetTempContext().allocStack.Count() == 0, "MemTemp must be at it's initial state");
+    MemGetTempContext().debugMode = enable;
 }
 
 void memTempGetStats(Allocator* alloc, MemTransientAllocatorStats** outStats, uint32* outCount)
@@ -210,40 +214,40 @@ MemTempId memTempPushId()
 {
     // Note that we use an atomic var for syncing between threads and memTempReset caller thread
     // The reason is because while someone Pushed the mem temp stack. Reset might be called and mess things up
-    atomicExchange32Explicit(&gMemTempCtx.isInUse, 1, AtomicMemoryOrder::Release);
+    atomicExchange32Explicit(&MemGetTempContext().isInUse, 1, AtomicMemoryOrder::Release);
 
-    ++gMemTempCtx.generationIdx;
-    ASSERT_MSG(gMemTempCtx.generationIdx <= UINT16_MAX, "Too many push temp allocator, generation overflowed");
+    ++MemGetTempContext().generationIdx;
+    ASSERT_MSG(MemGetTempContext().generationIdx <= UINT16_MAX, "Too many push temp allocator, generation overflowed");
 
-    if (!gMemTempCtx.init) {
-        if (gMemTempCtx.buffer == nullptr && !gMemTempCtx.debugMode) {
-            gMemTempCtx.buffer = (uint8*)memVirtualReserve(kTempMaxBufferSize);
-            gMemTempCtx.bufferSize = kTempPageSize;
-            memVirtualCommit(gMemTempCtx.buffer, gMemTempCtx.bufferSize); 
+    if (!MemGetTempContext().init) {
+        if (MemGetTempContext().buffer == nullptr && !MemGetTempContext().debugMode) {
+            MemGetTempContext().buffer = (uint8*)memVirtualReserve(kTempMaxBufferSize);
+            MemGetTempContext().bufferSize = kTempPageSize;
+            memVirtualCommit(MemGetTempContext().buffer, MemGetTempContext().bufferSize); 
         }
-        gMemTempCtx.init = true;
+        MemGetTempContext().init = true;
     }
 
-    if (!gMemTempCtx.used) {
+    if (!MemGetTempContext().used) {
         MutexScope mtx(gMem.tempMtx);
-        if (gMem.tempCtxs.FindIf([ctx = &gMemTempCtx](const MemTempContext* tmpCtx)->bool { return ctx == tmpCtx; }) == UINT32_MAX) {
-            gMem.tempCtxs.Push(&gMemTempCtx);
-            gMemTempCtx.threadId = threadGetCurrentId();
-            threadGetCurrentThreadName(gMemTempCtx.threadName, sizeof(gMemTempCtx.threadName));
+        if (gMem.tempCtxs.FindIf([ctx = &MemGetTempContext()](const MemTempContext* tmpCtx)->bool { return ctx == tmpCtx; }) == UINT32_MAX) {
+            gMem.tempCtxs.Push(&MemGetTempContext());
+            MemGetTempContext().threadId = threadGetCurrentId();
+            threadGetCurrentThreadName(MemGetTempContext().threadName, sizeof(MemGetTempContext().threadName));
         }
 
-        gMemTempCtx.used = true;
+        MemGetTempContext().used = true;
     }
 
-    uint32 index = gMemTempCtx.allocStack.Count();
+    uint32 index = MemGetTempContext().allocStack.Count();
     ASSERT_MSG(index <= UINT16_MAX, "Temp stack depth is too high! Perhaps a mistake in Push/Pop order");
 
     // Id: High bits is the index to the allocStack
     //     Low bits is the call generation
-    MemTempId id = (index << 16) | (gMemTempCtx.generationIdx & 0xffff);
+    MemTempId id = (index << 16) | (MemGetTempContext().generationIdx & 0xffff);
     
     MemTempStack memStack { 
-        .baseOffset = index > 0 ? (gMemTempCtx.allocStack.Last().baseOffset + gMemTempCtx.allocStack.Last().offset) : 0
+        .baseOffset = index > 0 ? (MemGetTempContext().allocStack.Last().baseOffset + MemGetTempContext().allocStack.Last().offset) : 0
     };
 
     if constexpr(!CONFIG_FINAL_BUILD) {
@@ -251,40 +255,40 @@ MemTempId memTempPushId()
             memStack.numStackframes = debugCaptureStacktrace(memStack.stacktrace, kTempMaxStackframes, 2);
     }
 
-    gMemTempCtx.allocStack.Push(memStack);
+    MemGetTempContext().allocStack.Push(memStack);
     return id;
 }
 
 void memTempPopId(MemTempId id)
 {
     ASSERT(id);
-    ASSERT(gMemTempCtx.used);
-    ASSERT(gMemTempCtx.generationIdx);
+    ASSERT(MemGetTempContext().used);
+    ASSERT(MemGetTempContext().generationIdx);
 
     [[maybe_unused]] uint32 index = id >> 16;
-    ASSERT_MSG(index == gMemTempCtx.allocStack.Count() - 1, "Invalid temp Push/Pop order");
+    ASSERT_MSG(index == MemGetTempContext().allocStack.Count() - 1, "Invalid temp Push/Pop order");
 
-    MemTempStack memStack = gMemTempCtx.allocStack.PopLast();
+    MemTempStack memStack = MemGetTempContext().allocStack.PopLast();
     if (memStack.debugPointers.Count()) {
         for (_private::MemDebugPointer p : memStack.debugPointers)
             gMem.defaultAlloc->Free(p.ptr, p.align);
         memStack.debugPointers.Free();
     }
-    atomicExchange32Explicit(&gMemTempCtx.isInUse, 0, AtomicMemoryOrder::Release);
+    atomicExchange32Explicit(&MemGetTempContext().isInUse, 0, AtomicMemoryOrder::Release);
 }
 
 void* memReallocTemp(MemTempId id, void* ptr, size_t size, uint32 align)
 {
     ASSERT(id);
-    ASSERT(gMemTempCtx.used);
+    ASSERT(MemGetTempContext().used);
     ASSERT(size);
 
     uint32 index = id >> 16;
-    ASSERT_MSG(index == gMemTempCtx.allocStack.Count() - 1, "Invalid temp id, likely doesn't belong to current temp stack scope");
+    ASSERT_MSG(index == MemGetTempContext().allocStack.Count() - 1, "Invalid temp id, likely doesn't belong to current temp stack scope");
 
-    MemTempStack& memStack = gMemTempCtx.allocStack[index];
+    MemTempStack& memStack = MemGetTempContext().allocStack[index];
 
-    if (!gMemTempCtx.debugMode) {
+    if (!MemGetTempContext().debugMode) {
         align = Max(align, CONFIG_MACHINE_ALIGNMENT);
         size = AlignValue<size_t>(size, align);
 
@@ -316,21 +320,21 @@ void* memReallocTemp(MemTempId id, void* ptr, size_t size, uint32 align)
         }
 
         // Grow the buffer if necessary (double size policy)
-        if (endOffset > gMemTempCtx.bufferSize) {
-            size_t newSize = Clamp(gMemTempCtx.bufferSize << 1, endOffset, kTempMaxBufferSize);
+        if (endOffset > MemGetTempContext().bufferSize) {
+            size_t newSize = Clamp(MemGetTempContext().bufferSize << 1, endOffset, kTempMaxBufferSize);
 
             // Align grow size to page size for virtual memory commit
-            size_t growSize = AlignValue(newSize - gMemTempCtx.bufferSize, gMem.pageSize);
-            memVirtualCommit(gMemTempCtx.buffer + gMemTempCtx.bufferSize, growSize);
-            gMemTempCtx.bufferSize += growSize;
+            size_t growSize = AlignValue(newSize - MemGetTempContext().bufferSize, gMem.pageSize);
+            memVirtualCommit(MemGetTempContext().buffer + MemGetTempContext().bufferSize, growSize);
+            MemGetTempContext().bufferSize += growSize;
         }
 
-        gMemTempCtx.curFramePeak = Max<size_t>(gMemTempCtx.curFramePeak, endOffset);
-        gMemTempCtx.peakBytes = Max<size_t>(gMemTempCtx.peakBytes, endOffset);
+        MemGetTempContext().curFramePeak = Max<size_t>(MemGetTempContext().curFramePeak, endOffset);
+        MemGetTempContext().peakBytes = Max<size_t>(MemGetTempContext().peakBytes, endOffset);
 
         // Create the pointer if we are not re-using the previous one
         if (!newPtr) {
-            newPtr = gMemTempCtx.buffer + offset;
+            newPtr = MemGetTempContext().buffer + offset;
 
             // we are not re-using the previous allocation, memcpy the previous block in case of realloc
             if (ptr) {
@@ -353,7 +357,7 @@ void* memReallocTemp(MemTempId id, void* ptr, size_t size, uint32 align)
             memStack.offset += size;
             size_t endOffset = memStack.baseOffset + memStack.offset;
 
-            gMemTempCtx.peakBytes = Max<size_t>(gMemTempCtx.peakBytes, endOffset);
+            MemGetTempContext().peakBytes = Max<size_t>(MemGetTempContext().peakBytes, endOffset);
             memStack.debugPointers.Push(_private::MemDebugPointer {ptr, align});
         }
         return ptr;
@@ -423,15 +427,15 @@ void _private::memTempReset(float dt)
 
                     maxPeakSize = Max<size_t>(kTempPageSize, maxPeakSize);
                     maxPeakSize = AlignValue(maxPeakSize, gMem.pageSize);
-                    if (maxPeakSize > gMemTempCtx.bufferSize) {
-                        size_t growSize = maxPeakSize - gMemTempCtx.bufferSize;
-                        memVirtualCommit(gMemTempCtx.buffer + gMemTempCtx.bufferSize, growSize);
+                    if (maxPeakSize > MemGetTempContext().bufferSize) {
+                        size_t growSize = maxPeakSize - MemGetTempContext().bufferSize;
+                        memVirtualCommit(MemGetTempContext().buffer + MemGetTempContext().bufferSize, growSize);
                     }
-                    else if (maxPeakSize < gMemTempCtx.bufferSize) {
-                        size_t shrinkSize = gMemTempCtx.bufferSize - maxPeakSize;
-                        memVirtualDecommit(gMemTempCtx.buffer + maxPeakSize, shrinkSize);
+                    else if (maxPeakSize < MemGetTempContext().bufferSize) {
+                        size_t shrinkSize = MemGetTempContext().bufferSize - maxPeakSize;
+                        memVirtualDecommit(MemGetTempContext().buffer + maxPeakSize, shrinkSize);
                     }
-                    gMemTempCtx.bufferSize = maxPeakSize;
+                    MemGetTempContext().bufferSize = maxPeakSize;
                 }
 
                 ctx->used = false;
@@ -761,15 +765,15 @@ void MemTempAllocator::Free(void*, uint32)
 size_t MemTempAllocator::GetOffset() const
 {
     uint32 index = _id >> 16;
-    ASSERT_MSG(index == gMemTempCtx.allocStack.Count() - 1, "Invalid temp id, likely doesn't belong to current temp stack scope");
+    ASSERT_MSG(index == MemGetTempContext().allocStack.Count() - 1, "Invalid temp id, likely doesn't belong to current temp stack scope");
 
-    const MemTempStack& memStack = gMemTempCtx.allocStack[index];
+    const MemTempStack& memStack = MemGetTempContext().allocStack[index];
     return memStack.baseOffset + memStack.offset;
 }
 
 size_t MemTempAllocator::GetPointerOffset(void* ptr) const
 {
-    return size_t((uint8*)ptr - gMemTempCtx.buffer);
+    return size_t((uint8*)ptr - MemGetTempContext().buffer);
 }
 
 //------------------------------------------------------------------------

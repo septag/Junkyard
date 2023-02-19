@@ -16,7 +16,11 @@ struct RandomContextCtor
     }
 };
 
-static thread_local RandomContextCtor gRandomCtx;
+NO_INLINE static RandomContextCtor& RandomCtx() 
+{ 
+    static thread_local RandomContextCtor randomCtx;
+    return randomCtx; 
+}
 
 // Convert a randomized uint32_t value to a float value x in the range 0.0f <= x < 1.0f. Contributed by Jonatan Hedborg
 PRAGMA_DIAGNOSTIC_PUSH()
@@ -91,20 +95,20 @@ int randomNewIntInRange(RandomContext* ctx, int _min, int _max)
 
 uint32 randomNewUint()
 {
-    return randomNewUint(&gRandomCtx.ctx);
+    return randomNewUint(&RandomCtx().ctx);
 }
 
 float randomNewFloat()
 {
-    return randomNewFloat(&gRandomCtx.ctx);
+    return randomNewFloat(&RandomCtx().ctx);
 }
 
 float randomNewFloatInRange(float _min, float _max)
 {
-    return randomNewFloatInRange(&gRandomCtx.ctx, _min, _max);
+    return randomNewFloatInRange(&RandomCtx().ctx, _min, _max);
 }
 
 int randomNewIntInRange(int _min, int _max)
 {
-    return randomNewIntInRange(&gRandomCtx.ctx, _min, _max);
+    return randomNewIntInRange(&RandomCtx().ctx, _min, _max);
 }

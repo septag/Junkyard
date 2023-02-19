@@ -426,16 +426,13 @@ FORCE_INLINE bool atomicCompareExchange64StrongExplicit(
 
 // Reference: https://rigtorp.se/spinlock/
 // TODO (consider): https://www.intel.com/content/www/us/en/developer/articles/technical/a-common-construct-to-avoid-the-contention-of-threads-architecture-agnostic-spin-wait-loops.html
+// Another good reference code: https://github.dev/concurrencykit/ck
 FORCE_INLINE void atomicLockEnter(AtomicLock* lock)
 {
-    while (1) {
-        if (atomicExchange32Explicit(&lock->locked, 1, AtomicMemoryOrder::Acquire) == 0)
-            return;
-
-        // spin lock constantly loads the lock variable to see if it's unlocked
-        while (atomicLoad32Explicit(&lock->locked, AtomicMemoryOrder::Relaxed)) {
+    while (atomicExchange32Explicit(&lock->locked, 1, AtomicMemoryOrder::Acquire) == 1) {
+        do {
             atomicPauseCpu();
-        }
+        } while (atomicLoad32Explicit(&lock->locked, AtomicMemoryOrder::Relaxed));
     }
 }
 
@@ -449,3 +446,102 @@ FORCE_INLINE bool atomicLockTryEnter(AtomicLock* lock)
     return atomicLoad32Explicit(&lock->locked, AtomicMemoryOrder::Relaxed) == 0 &&
            atomicExchange32Explicit(&lock->locked, 1, AtomicMemoryOrder::Acquire) == 0;
 }
+
+//----------------------------------------------------------------------------------------------------------------------
+// Anderson's lock: Implementation is a modified form of: https://github.com/concurrencykit/ck/blob/master/include/spinlock/anderson.h
+struct AtomicALockThread
+{
+    uint32 locked;
+    uint32 position;
+};
+
+struct AtomicALock
+{
+    AtomicALockThread* slots;
+    uint32 count;
+    uint32 wrap;
+    uint32 mask;
+    char padding[CACHE_LINE_SIZE - sizeof(uint32)*3 - sizeof(void*)];
+    uint32 next;
+};
+
+FORCE_INLINE void atomicALockInitialize(AtomicALock* lock, uint32 numThreads, AtomicALockThread* threads)
+{
+    ASSERT(threads);
+    ASSERT(numThreads);
+
+    memset(threads, 0x0, sizeof(AtomicALockThread)*numThreads);
+    lock->slots = threads;
+
+    for (uint32 i = 1; i < numThreads; i++) {
+        lock->slots[i].locked = 1;
+        lock->slots[i].position = i;
+    }
+
+    lock->count = numThreads;
+    lock->mask = numThreads - 1;
+
+    if (numThreads & (numThreads - 1)) 
+        lock->wrap = (UINT32_MAX % numThreads) + 1;
+    else
+        lock->wrap = 0;
+
+    c89atomic_compiler_fence();
+}
+
+FORCE_INLINE uint32 atomicALockEnter(AtomicALock* lock)
+{
+    uint32 position, next;
+    uint32 count = lock->count;
+
+    if (lock->wrap) {
+        position = c89atomic_load_explicit_32(&lock->next, c89atomic_memory_order_acquire);
+
+        do {
+            if (position == UINT32_MAX)
+                next = lock->wrap;
+            else 
+                next = position + 1;
+        } while (c89atomic_compare_exchange_strong_32(&lock->next, &position, next) == false);
+
+        position %= count;
+    } else {
+        position = c89atomic_fetch_add_32(&lock->next, 1);
+        position &= lock->mask;
+    }
+
+    c89atomic_thread_fence(c89atomic_memory_order_acq_rel);
+
+    while (c89atomic_load_explicit_32(&lock->slots[position].locked, c89atomic_memory_order_acquire))
+        atomicPauseCpu();
+
+    c89atomic_store_explicit_32(&lock->slots[position].locked, 1, c89atomic_memory_order_release);
+
+    return position;
+}
+
+FORCE_INLINE void atomicALockExit(AtomicALock* lock, uint32 slot)
+{
+    uint32 position;
+
+    c89atomic_thread_fence(c89atomic_memory_order_acq_rel);
+
+    if (lock->wrap == 0)
+        position = (lock->slots[slot].position + 1) & lock->mask;
+    else
+        position = (lock->slots[slot].position + 1) % lock->count;
+
+    c89atomic_store_explicit_32(&lock->slots[position].locked, 0, c89atomic_memory_order_release);
+}
+
+struct AtomicALockScope
+{
+    AtomicALockScope() = delete;
+    AtomicALockScope(const AtomicALockScope& _lock) = delete;
+    inline explicit AtomicALockScope(AtomicALock& _lock) : lock(_lock) { slot = atomicALockEnter(&lock); }
+    inline ~AtomicALockScope() { atomicALockExit(&lock, slot); }
+        
+private:
+    AtomicALock& lock;
+    uint32 slot;
+};
