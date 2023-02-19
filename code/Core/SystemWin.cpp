@@ -332,6 +332,15 @@ void threadSetCurrentThreadName(const char* name)
     #endif
 }
 
+void threadGetCurrentThreadName(char* nameOut, uint32 nameSize)
+{
+    PWSTR namew;
+    if (SUCCEEDED(GetThreadDescription(GetCurrentThread(), &namew)))
+        strWideToUtf8(namew, nameOut, nameSize);
+    else 
+        nameOut[0] = 0;
+}
+
 //--------------------------------------------------------------------------------------------------
 // Timer
 struct TimerState

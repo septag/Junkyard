@@ -128,6 +128,7 @@ API void    threadYield();
 API uint32  threadGetCurrentId();
 API void    threadSetCurrentThreadPriority(ThreadPriority prio);
 API void    threadSetCurrentThreadName(const char* name);
+API void    threadGetCurrentThreadName(char* nameOut, uint32 nameSize);
 API void    threadSleep(uint32 msecs);
 
 //--------------------------------------------------------------------------------------------------

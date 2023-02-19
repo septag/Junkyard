@@ -8,6 +8,7 @@
 
 #include "../Core/Buffers.h"
 #include "../Core/Log.h"
+#include "../Core/TracyHelper.h"
 
 struct ShaderCompiler
 {
@@ -89,6 +90,7 @@ Pair<Shader*, uint32> shaderCompile(const Blob& blob, const char* filepath, cons
                                     char* errorDiag, uint32 errorDiagSize, Allocator* alloc)
 {
     ASSERT(gShaderCompiler.slang);
+    PROFILE_ZONE(true);
 
     SlangCompileRequest* req = spCreateCompileRequest(gShaderCompiler.slang);
 

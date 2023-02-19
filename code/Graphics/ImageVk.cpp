@@ -124,6 +124,8 @@ INLINE GfxFormat gfxImageConvertFormatSRGB(GfxFormat fmt)
 static Pair<GfxImageDataHeader, uint8*> gfxBakeImage(AssetHandle localHandle, const char* filepath, AssetPlatform platform, 
                                                      Allocator* alloc, char* errorDesc, uint32 errorDescSize)    
 {
+    PROFILE_ZONE(true);
+
     struct MipSurface
     {
         uint32 width;

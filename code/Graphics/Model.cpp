@@ -15,6 +15,7 @@
 #include "../Core/System.h"
 #include "../Core/Jobs.h"
 #include "../Core/Log.h"
+#include "../Core/TracyHelper.h"
 
 #include "../Math/Math.h"
 
@@ -612,6 +613,8 @@ static const GfxVertexInputAttributeDesc* modelFindAttribute(const ModelGeometry
 Pair<Model*, uint32> modelLoadGltf(const char* filepath, Allocator* alloc, const ModelLoadParams& params, 
                                    char* errorDesc, uint32 errorDescSize)
 {
+    PROFILE_ZONE(true);
+
     const ModelGeometryLayout& layout = params.layout.vertexBufferStrides[0] ? params.layout : gModelCtx.defaultLayout;
 
     Path fileDir = Path(filepath).GetDirectory();

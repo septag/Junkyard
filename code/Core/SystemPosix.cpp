@@ -200,6 +200,12 @@ void threadSetCurrentThreadName(const char* name)
     #endif
 }
 
+void threadGetCurrentThreadName(char* nameOut, [[maybe_unused]] uint32 nameSize)
+{
+    ASSERT(nameSize > 16);
+    prctl(PR_GET_NAME, nameOut, 0, 0, 0);
+}
+
 void threadYield()
 {
     sched_yield();

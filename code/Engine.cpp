@@ -109,6 +109,8 @@ static void engineOnEvent(const AppEvent& ev, [[maybe_unused]] void* userData)
 
 bool engineInitialize()
 {
+    PROFILE_ZONE(true);
+
     // Set main thread as `realtime` priority
     threadSetCurrentThreadPriority(ThreadPriority::Realtime);
     threadSetCurrentThreadName("Main");

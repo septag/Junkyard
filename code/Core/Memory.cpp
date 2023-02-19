@@ -95,6 +95,8 @@ struct MemTempContext
     size_t bufferSize;
     alignas(CACHE_LINE_SIZE) atomicUint32 isInUse;  // This is atomic because we are accessing it in the memTempReset thread
     float noresetTime;
+    uint32 threadId;
+    char threadName[32];
 
     bool init;      // is Buffer initialized ?
     bool used;      // Temp allocator is used since last reset ?
@@ -179,15 +181,32 @@ void memSetDefaultAlloc(Allocator* alloc)
     gMem.defaultAlloc = alloc != nullptr ? alloc : &gMem.heapAlloc;
 }
 
-
-
 void memTempSetDebugMode(bool enable)
 {
     ASSERT_MSG(gMemTempCtx.allocStack.Count() == 0, "MemTemp must be at it's initial state");
     gMemTempCtx.debugMode = enable;
 }
 
-MemTempId memPushTempId()
+void memTempGetStats(Allocator* alloc, MemTransientAllocatorStats** outStats, uint32* outCount)
+{
+    ASSERT(alloc);
+    ASSERT(outStats);
+    ASSERT(outCount);
+
+    MutexScope mtx(gMem.tempMtx);
+    if (gMem.tempCtxs.Count())
+        *outStats = memAllocTyped<MemTransientAllocatorStats>(gMem.tempCtxs.Count(), alloc);
+    *outCount = gMem.tempCtxs.Count();
+
+    for (uint32 i = 0; i < *outCount; i++) {
+        (*outStats)[i].curPeak = gMem.tempCtxs[i]->curFramePeak;
+        (*outStats)[i].maxPeak = gMem.tempCtxs[i]->peakBytes;
+        (*outStats)[i].threadId = gMem.tempCtxs[i]->threadId;
+        (*outStats)[i].threadName = gMem.tempCtxs[i]->threadName;
+    }
+}
+
+MemTempId memTempPushId()
 {
     // Note that we use an atomic var for syncing between threads and memTempReset caller thread
     // The reason is because while someone Pushed the mem temp stack. Reset might be called and mess things up
@@ -207,7 +226,12 @@ MemTempId memPushTempId()
 
     if (!gMemTempCtx.used) {
         MutexScope mtx(gMem.tempMtx);
-        gMem.tempCtxs.Push(&gMemTempCtx);
+        if (gMem.tempCtxs.FindIf([ctx = &gMemTempCtx](const MemTempContext* tmpCtx)->bool { return ctx == tmpCtx; }) == UINT32_MAX) {
+            gMem.tempCtxs.Push(&gMemTempCtx);
+            gMemTempCtx.threadId = threadGetCurrentId();
+            threadGetCurrentThreadName(gMemTempCtx.threadName, sizeof(gMemTempCtx.threadName));
+        }
+
         gMemTempCtx.used = true;
     }
 
@@ -231,7 +255,7 @@ MemTempId memPushTempId()
     return id;
 }
 
-void memPopTempId(MemTempId id)
+void memTempPopId(MemTempId id)
 {
     ASSERT(id);
     ASSERT(gMemTempCtx.used);
@@ -411,8 +435,6 @@ void _private::memTempReset(float dt)
                 }
 
                 ctx->used = false;
-                gMem.tempCtxs.RemoveAndSwap(i);
-                i--;
             }   // MemTempContext can reset (allocStack is empty)
             else {
                 ctx->noresetTime += dt;
@@ -646,10 +668,27 @@ void memFrameSetDebugMode(bool enable)
     }
 }
 
+Allocator* memFrameAlloc()
+{
+    return &gMem.frameAlloc;
+}
+
+MemTransientAllocatorStats memFrameGetStats()
+{
+    return MemTransientAllocatorStats {
+        .curPeak = gMem.frameAlloc.curFramePeak,
+        .maxPeak = gMem.frameAlloc.peakBytes
+    };
+}
+
 void _private::memFrameReset()
 {
     MemFrameAllocatorInternal& alloc = gMem.frameAlloc;
     AtomicLockScope lock(alloc.spinlock);
+
+    // Invalidate already allocated memory, so we can have better debugging if something is still lingering 
+    if (alloc.offset)
+        memset(alloc.buffer, 0xfe, alloc.offset);
 
     alloc.lastAllocatedPtr = nullptr;
     alloc.offset = 0;
@@ -684,7 +723,7 @@ void _private::memFrameReset()
 //------------------------------------------------------------------------
 // Temp Allocator Scoped
 MemTempAllocator::MemTempAllocator() : 
-    _id(memPushTempId()), 
+    _id(memTempPushId()), 
     _fiberProtectorId(debugFiberScopeProtector_Push("TempAllocator")),
     _ownsId(true) 
 { 
@@ -701,7 +740,7 @@ MemTempAllocator::~MemTempAllocator()
 { 
     debugFiberScopeProtector_Pop(_fiberProtectorId); 
     if (_ownsId) 
-        memPopTempId(_id); 
+        memTempPopId(_id); 
 }
 
 void* MemTempAllocator::Malloc(size_t size, uint32 align) 

@@ -77,13 +77,36 @@ void imguiBudgetHub(float dt, bool* pOpen)
 
         imguiLabel("InitHeap Commited", "%_$llu", engineGetInitHeap()->GetCommitedSize());
 
+        bool transientOpen = strToBool(imguiGetSetting("Budgets.TransientAllocs"));
         bool jobsOpen = strToBool(imguiGetSetting("Budgets.Jobs"));
         bool assetOpen = strToBool(imguiGetSetting("Budgets.AssetManager"));
         bool gfxOpen = strToBool(imguiGetSetting("Budgets.Graphics"));
         bool imguiOpen = strToBool(imguiGetSetting("Budgets.ImGui"));
 
-        jobsOpen = ImGui::CollapsingHeader("Jobs", nullptr, jobsOpen ? ImGuiTreeNodeFlags_DefaultOpen : 0);
+        transientOpen = ImGui::CollapsingHeader("Transient Allocators", nullptr, transientOpen ? ImGuiTreeNodeFlags_DefaultOpen : 0);
+        if (transientOpen) {
+            MemTransientAllocatorStats frameStats = memFrameGetStats();
+            ImGui::TextColored(kTextColor, "FrameAlloc");
+            ImGui::SameLine();
+            ImGui::ProgressBar(imguiDivideInt(frameStats.curPeak, frameStats.maxPeak), ImVec2(-1.0f, 0),
+                               String32::Format("%_$llu/%_$llu", frameStats.curPeak, frameStats.maxPeak).CStr());
 
+            MemTempAllocator tmpAlloc;
+            MemTransientAllocatorStats* tempStats;
+            uint32 numTempStats;
+            memTempGetStats(&tmpAlloc, &tempStats, &numTempStats);
+            for (uint32 i = 0; i < numTempStats; i++) {
+                if (ImGui::TreeNodeEx(String64::Format("#%u: %s (tId: %u)", i+1, tempStats[i].threadName, tempStats[i].threadId).CStr(), 0)) {
+                    ImGui::TextColored(kTextColor, "TempAlloc");
+                    ImGui::SameLine();
+                    ImGui::ProgressBar(imguiDivideInt(tempStats[i].curPeak, tempStats[i].maxPeak), ImVec2(-1.0f, 0),
+                                       String32::Format("%_$llu/%_$llu", tempStats[i].curPeak, tempStats[i].maxPeak).CStr());
+                    ImGui::TreePop();
+                }
+            }
+        }
+
+        jobsOpen = ImGui::CollapsingHeader("Jobs", nullptr, jobsOpen ? ImGuiTreeNodeFlags_DefaultOpen : 0);
         if (jobsOpen) {
             JobsBudgetStats stats;
             jobsGetBudgetStats(&stats);
@@ -268,6 +291,7 @@ void imguiBudgetHub(float dt, bool* pOpen)
         }
 
         //
+        imguiSetSetting("Budgets.TransientAllocs", transientOpen);
         imguiSetSetting("Budgets.Jobs", jobsOpen);
         imguiSetSetting("Budgets.AssetManager", assetOpen);
         imguiSetSetting("Budgets.Graphics", gfxOpen);

@@ -71,12 +71,21 @@ namespace _private
     };
 } // _private
 
+struct MemTransientAllocatorStats
+{
+    size_t curPeak;
+    size_t maxPeak;
+    uint32 threadId;
+    const char* threadName;
+};
+
 //------------------------------------------------------------------------
 // Temp Allocator: Stack-based temp allocator. Grows by page. Only works within a single thread context.
 using MemTempId = uint32;
-[[nodiscard]] MemTempId memPushTempId();
-void memPopTempId(MemTempId id);
+[[nodiscard]] MemTempId memTempPushId();
+void memTempPopId(MemTempId id);
 void memTempSetDebugMode(bool enable);
+void memTempGetStats(Allocator* alloc, MemTransientAllocatorStats** outStats, uint32* outCount);
 
 [[nodiscard]] void* memAllocTemp(MemTempId id, size_t size, uint32 align = CONFIG_MACHINE_ALIGNMENT);
 [[nodiscard]] void* memReallocTemp(MemTempId id, void* ptr, size_t size, uint32 align = CONFIG_MACHINE_ALIGNMENT);
@@ -118,9 +127,9 @@ private:
 //------------------------------------------------------------------------
 // Frame Allocator: Linear-based frame allocator. Grows by page. Resets every frame. 
 //                  Unlike temp allocator, allocations are thread-safe and available within all threads
-struct MemFrameAllocator;
 void memFrameSetDebugMode(bool enable);
-MemFrameAllocator* memFrameAlloc();
+Allocator* memFrameAlloc();
+MemTransientAllocatorStats memFrameGetStats();
 
 namespace _private 
 {

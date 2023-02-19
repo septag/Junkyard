@@ -4,6 +4,8 @@
 
 #include "../External/meshoptimizer/include/meshoptimizer.h"
 
+#include "../Core/TracyHelper.h"
+
 #include "../Graphics/Model.h"
 
 static thread_local Allocator* gMeshOptAlloc = nullptr;
@@ -18,6 +20,8 @@ void _private::meshoptInitialize()
 
 void meshoptOptimizeModel(Model* model, const ModelLoadParams& modelParams)
 {
+    PROFILE_ZONE(true);
+
     MemTempAllocator tmpAlloc;
     gMeshOptAlloc = &tmpAlloc;
 

@@ -313,7 +313,7 @@ bool assetLoadMetaData(const char* filepath, AssetPlatform platform, Allocator* 
     Path assetMetaPath = Path::JoinUnix(path.GetDirectory(), path.GetFileName());
     assetMetaPath.Append(".asset");
     
-    uint32 tempId = memPushTempId();
+    uint32 tempId = memTempPushId();
     MemTempAllocator tmpAlloc(tempId);
 
     Blob blob = vfsReadFile(assetMetaPath.CStr(), VfsFlags::TextFile, &tmpAlloc);
@@ -345,7 +345,7 @@ bool assetLoadMetaData(const char* filepath, AssetPlatform platform, Allocator* 
 
             blob.Free();
             jsonDestroy(jctx);
-            memPopTempId(tempId);
+            memTempPopId(tempId);
             
             // At this point we have popped the current temp allocator and can safely allocate from whatever allocator is coming in
             *outData = memAllocCopy<AssetMetaKeyValue>(keys.Ptr(), keys.Count(), alloc);
@@ -357,11 +357,11 @@ bool assetLoadMetaData(const char* filepath, AssetPlatform platform, Allocator* 
         JsonErrorLocation loc = jsonParseGetErrorLocation(jctx); 
         logWarning("Invalid asset meta data: %s (Json syntax error at %u:%u)", loc.line, loc.col);
         jsonDestroy(jctx);
-        memPopTempId(tempId);
+        memTempPopId(tempId);
         return false;
     }
     else {
-        memPopTempId(tempId);
+        memTempPopId(tempId);
         return false;
     }
 }
