@@ -22,6 +22,3 @@ struct AssetHandleImage : AssetHandle {};
 struct AssetHandleShader : AssetHandle {};
 struct AssetHandleModel : AssetHandle {};
 
-template <typename T> T IdToIndex(T i);
-template<> inline uint16 IdToIndex(uint16 i)  { ASSERT(i);  return i - 1; }
-template<> inline uint32 IdToIndex(uint32 i)  { ASSERT(i);  return i - 1; }

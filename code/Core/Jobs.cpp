@@ -184,7 +184,8 @@ static void jobsJumpOut(mco_coro* co)
     _mco_switch(&context->ctx, &context->back_ctx);
 }
 
-NO_OPT NO_INLINE static void jobsEntryFn(mco_coro* co)
+NO_OPT_BEGIN
+NO_INLINE static void jobsEntryFn(mco_coro* co)
 {
     ASSERT(co);
     JobsFiber* fiber = reinterpret_cast<JobsFiber*>(co->user_data);
@@ -193,6 +194,7 @@ NO_OPT NO_INLINE static void jobsEntryFn(mco_coro* co)
         fiber->callback(fiber->index, fiber->userData);
     }
 }
+NO_OPT_END
 
 static inline void jobsAddToList(JobsWaitingList* list, JobsFiber* node, JobsPriority prio)
 {

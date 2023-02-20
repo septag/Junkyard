@@ -68,7 +68,7 @@ if "%CONFIG%"=="release" (
 set DEFINES=%DEFINES% -D_MBCS -D_CRT_SECURE_NO_WARNINGS -DBUILD_UNITY 
 set COMPILE_FLAGS=%COMPILE_FLAGS% /std:c++20 /GR- /EHs-
 set LINK_FLAGS=%LINK_FLAGS% /INCREMENTAL:NO
-set LIBS=%LIBS% "vulkan-1.lib" "User32.lib" "ws2_32.lib"
+set LIBS=%LIBS% "User32.lib" "ws2_32.lib"
 
 pushd Bin\build_cmd
 set OUTPUT_DIR=%cd%
@@ -78,7 +78,6 @@ cl %DEFINES% ^
    "%ROOT_DIR%\%SOURCE_FILE%" ^
    /link %LINK_FLAGS% ^
    /LIBPATH:"%ROOT_DIR%\code\External\slang\bin\windows-x64\release" ^
-   /LIBPATH:"%ROOT_DIR%\code\External\vulkan\lib\win64" ^
    /LIBPATH:"%ROOT_DIR%\code\External\ispc_texcomp\lib\win64" ^
    /LIBPATH:"%ROOT_DIR%\code\External\meshoptimizer\lib\win64" ^
    %LIBS%

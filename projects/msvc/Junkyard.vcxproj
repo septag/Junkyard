@@ -106,9 +106,13 @@
     <PostBuildEvent>
       <Command>echo No | copy /-Y $(SolutionDir)..\..\code\External\slang\bin\windows-x64\release\slang.dll $(OutDir)
 
+
 echo No | copy /-Y $(SolutionDir)..\..\code\External\slang\bin\windows-x64\release\slang-glslang.dll $(OutDir)
+
 echo No | copy /-Y $(SolutionDir)..\..\code\External\ispc_texcomp\lib\win64\ispc_texcomp.dll $(OutDir)
+
 echo No | copy /-Y $(SolutionDir)..\..\code\External\dbghelp\dbghelp.dll $(OutDir)
+
 echo No | copy /-Y $(SolutionDir)..\..\code\External\meshoptimizer\lib\win64\meshoptimizer.dll $(OutDir)</Command>
     </PostBuildEvent>
     <PostBuildEvent>
@@ -151,9 +155,13 @@ echo No | copy /-Y $(SolutionDir)..\..\code\External\meshoptimizer\lib\win64\mes
     <PostBuildEvent>
       <Command>echo No | copy /-Y $(SolutionDir)..\..\code\External\slang\bin\windows-x64\release\slang.dll $(OutDir)
 
+
 echo No | copy /-Y $(SolutionDir)..\..\code\External\slang\bin\windows-x64\release\slang-glslang.dll $(OutDir)
+
 echo No | copy /-Y $(SolutionDir)..\..\code\External\ispc_texcomp\lib\win64\ispc_texcomp.dll $(OutDir)
+
 echo No | copy /-Y $(SolutionDir)..\..\code\External\dbghelp\dbghelp.dll $(OutDir)
+
 echo No | copy /-Y $(SolutionDir)..\..\code\External\meshoptimizer\lib\win64\meshoptimizer.dll $(OutDir)</Command>
     </PostBuildEvent>
     <PostBuildEvent>
@@ -195,9 +203,13 @@ echo No | copy /-Y $(SolutionDir)..\..\code\External\meshoptimizer\lib\win64\mes
     <PostBuildEvent>
       <Command>echo No | copy /-Y $(SolutionDir)..\..\code\External\slang\bin\windows-x64\release\slang.dll $(OutDir)
 
+
 echo No | copy /-Y $(SolutionDir)..\..\code\External\slang\bin\windows-x64\release\slang-glslang.dll $(OutDir)
+
 echo No | copy /-Y $(SolutionDir)..\..\code\External\ispc_texcomp\lib\win64\ispc_texcomp.dll $(OutDir)
+
 echo No | copy /-Y $(SolutionDir)..\..\code\External\dbghelp\dbghelp.dll $(OutDir)
+
 echo No | copy /-Y $(SolutionDir)..\..\code\External\meshoptimizer\lib\win64\meshoptimizer.dll $(OutDir)</Command>
     </PostBuildEvent>
     <PostBuildEvent>
@@ -394,7 +406,7 @@ echo No | copy /-Y $(SolutionDir)..\..\code\External\meshoptimizer\lib\win64\mes
     <ClInclude Include="..\..\code\Graphics\ImGuiWrapper.h" />
     <ClInclude Include="..\..\code\Graphics\Model.h" />
     <ClInclude Include="..\..\code\Graphics\Shader.h" />
-    <ClInclude Include="..\..\code\Math.h" />
+    <ClInclude Include="..\..\code\Math\Math.h" />
     <ClInclude Include="..\..\code\Math\MathVector.h" />
     <ClInclude Include="..\..\code\Math\MathScalar.h" />
     <ClInclude Include="..\..\code\Math\MathTypes.h" />

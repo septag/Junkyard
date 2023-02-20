@@ -5,6 +5,7 @@
 //       So keep this as light as possible and with minimum amount of includes
 //       Most functions and macros here are for potability and usually one/two-liner inlines
 // Note: This header also includes Debug.h, which includes ASSERT macros and basic debugging functions
+//       Also includes "..\Config.h" which is user defined configurations
 //
 //  Macros:
 //      - ARCH_32BIT/ARCH_64BIT: 32 or 64 bit architecture. ARCH_NAME is the string representation
@@ -67,21 +68,6 @@
 //        Notice, the functions below, does not need context and thus context creation. But cannot be seeded manually
 //        randomNewUint()/randomNewFloat()/randomNewFloatInRange()/randomIntInRange()
 //
-
-
-API uint32        randomGenSeed();
-API RandomContext randomCreateContext(uint32 seed = randomGenSeed());
-
-API uint32        randomNewUint(RandomContext* ctx);
-API float         randomNewFloat(RandomContext* ctx);
-API float         randomNewFloatInRange(RandomContext* ctx, float _min, float _max);
-API int           randomNewIntInRange(RandomContext* ctx, int _min, int _max);
-
-// Context Free random functions (Uses thread_local context)
-API uint32        randomNewUint();
-API float         randomNewFloat();
-API float         randomNewFloatInRange(float _min, float _max);
-API int           randomNewIntInRange(int _min, int _max);
 
 #include <stdint.h>     // uint32, int64_t, etc..
 #include <stdbool.h>    // bool

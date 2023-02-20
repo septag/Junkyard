@@ -388,9 +388,6 @@
     <ClInclude Include="..\..\code\External\meshoptimizer\include\meshoptimizer.h">
       <Filter>Source Files\External\meshoptimizer</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\code\Math.h">
-      <Filter>Header Files\Math</Filter>
-    </ClInclude>
     <ClInclude Include="..\..\code\Core\Array.h">
       <Filter>Header Files\Core</Filter>
     </ClInclude>
@@ -468,6 +465,9 @@
     </ClInclude>
     <ClInclude Include="..\..\code\External\volk\volk.h">
       <Filter>Source Files\External\volk</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\code\Math\Math.h">
+      <Filter>Header Files\Math</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

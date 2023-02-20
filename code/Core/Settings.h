@@ -1,18 +1,18 @@
 #pragma once
-
-//------------------------------------------------------------------------
+//
 // Settings can get loaded from several sources
 // There are two families of settings, "Predefined" and "User". 
-// Predefined are the ones that are already hard coded. see the structs in `SettingsAll` 
+// "Predefined" are the ones that are already hard coded. see the structs in `SettingsAll` 
 //
 // Initialization: First thing you should do before initializing the application is initializing the settings and provide your own hard-defined defaults
 //                 You can also pass the current defaults which are the values you see right next to each setting field below
 //
 // CommandLine: each predefined setting key/value must start with a dash and it's parent subsystem name after. The rest of the setting name would be exactly like it is in the struct
-//              For instance, to enable `SettingsGraphics.validate=true`, you should add `-GraphicsEnable=1` to the command-line arguments
-//                            to connect to server (`SettingsEngine.connectToServer=true`), you should add `-EngineConnectToServer=1` to the args
+//              For instance: 
+//                  - to enable `SettingsGraphics.validate=true`, you should add `-GraphicsValidate=1` to the command-line arguments
+//                  - to connect to server (`SettingsEngine.connectToServer=true`), you should add `-EngineConnectToServer=1` to the args
 //              Note that all arguments are case-insensitive
-//              command arguments that are not detected as part of predefined ones, will go to user-defined ones and can be fetched with `settingsGetValue` function
+//              Command arguments that are part of predefined ones, will go to user-defined ones and can be fetched with `settingsGetValue` function instead.
 //
 // INI file: Settings can be loaded from an INI file. For predefined settings, you must add the exact field you see in the structs below under it's parent category
 //           So for instance, fields in `SettingsGraphics` will go under [graphics] section and `SettingsEngine` will go under [engine]:

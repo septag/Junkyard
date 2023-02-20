@@ -1,14 +1,12 @@
 #pragma once
-
-//--------------------------------------------------------------------------------------------------
-// - RelativePtr: Is actually a pointer wrapper but underneath is an offset to the start of the object. 
-//			      This is very useful in continous buffers where you only need to store offsets instead of actual pointers
-//				  Makes pointers relocatable and copyable, so basically, you can move the continous data around and pointers 
-//				  will work with the newly created data as well
-// - BuffersAllocPOD: POD struct continous allocator. If you have POD structs that contain some buffers and arrays
-//					  You can create all of the buffers in one malloc call with the help of this allocator
-//					  Relative pointers are also supported for member variables, as shown in the example below.
-//					  Example:
+//
+// Contains memory containers and useful buffer manipulation classes
+// All objects can be initialized either with allocator or with user provided buffer/size pair, in the case of latter, use GetMemoryRequirement to get needed memory size before creating
+//
+// BuffersAllocPOD: POD struct continous allocator. If you have POD structs that contain some buffers and arrays
+//              	You can create all of the buffers in one malloc call with the help of this allocator
+//					Relative pointers are also supported for member variables, as shown in the example below.
+//					Example:
 //						struct SomeObject
 //						{
 //						    uint32 a;
@@ -30,6 +28,20 @@
 //						    s->objects[i].b = (uint32)(i*2);
 //						}
 //
+//  RingBuffer: Regular ring-buffer
+//      Writing to ring-buffer: use ExpectWrite method to determine how much memory is available in the ring-buffer before writing
+//      Example:
+//          if (buffer.ExpectWrite() >= sizeof(float))
+//              buffer.Write<float>(value);
+//      Reading: There are two methods for Reading. `Read` progreses the ring-buffer offset. ReadInPlace does not progress the offset
+//
+//  Blob: Readable and Writable blob of memory
+//        Blob can contain static buffer (by explicitly prodiving a buffer pointer and size), or Dynamic growable buffer (by providing allocator)
+//        In the case of dynamic growable memory, you should provide Growing policy with `SetGrowPolicy` method.
+//        
+//  PoolBuffer: Fast pool memory allocator with Fixed sized elements
+//              Pools can grow by adding pages. For that, you need to provide allocator to the pool-buffer instead of pre-allocated pointer/size pair.
+//              
 #include "Memory.h"
 
 //------------------------------------------------------------------------
