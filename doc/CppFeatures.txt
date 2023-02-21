@@ -1,4 +1,4 @@
-https://github.com/AnthonyCalandra/modern-cpp-features#explicitbool
+https://github.com/AnthonyCalandra/modern-cpp-features
 
 c++20: 
     - Designated initializers
@@ -20,4 +20,14 @@ C++14:
     - generalized lambda expressions
     - Extended capturing in lambdas
     - static_assert
-    - decltype
+
+C++11:
+	- constexpr for constants
+	- regular operators for math primitives
+	- Minimal templates (containers/some generic small functions)
+	- Default arguments
+	- Function overrides
+	- Limited use of ctor/dtor
+	- C++ ABI (return structs as value)
+
+

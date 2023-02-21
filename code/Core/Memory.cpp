@@ -25,6 +25,7 @@
 #include "Atomic.h"
 #include "Settings.h"
 #include "Log.h"
+#include "BlitSort.h"
 
 // TODO: Remove this dependency
 #include "TracyHelper.h"
@@ -1063,7 +1064,8 @@ float MemTlsfAllocator::CalculateFragmentation()
         tlsf_walk_pool(tlsf_get_pool(_tlsf), GetAllocs, &data);
 
         if (data.allocs.Count()) {
-            data.allocs.Sort([](const AllocData& a, const AllocData& b) { return a.offset < b.offset ? -1 : 1; });
+            BlitSort<AllocData>(data.allocs.Ptr(), data.allocs.Count(), 
+                [](const AllocData& a, const AllocData& b) { return a.offset < b.offset ? -1 : 1; });
 
             // Start from the first offset
             uint32 lastItemIdx = data.allocs.Count() - 1;

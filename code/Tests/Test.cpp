@@ -120,11 +120,11 @@ struct AppImpl : AppCallbacks
     {
         PROFILE_ZONE(true);
 
-        //jobsDebugThreadStats();
+        // _private::jobsDebugThreadStats();
         JobsHandle handle1 = jobsDispatch(JobsType::ShortTask, EvenTask, nullptr, 1);
-        JobsHandle handle2 = jobsDispatch(JobsType::ShortTask, OddTask, nullptr, 1);
+        //JobsHandle handle2 = jobsDispatch(JobsType::ShortTask, OddTask, nullptr, 1);
         jobsWaitForCompletion(handle1);
-        jobsWaitForCompletion(handle2);
+        //jobsWaitForCompletion(handle2);
         //logDebug("Done");
     }
     

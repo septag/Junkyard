@@ -33,7 +33,7 @@
 //      Example:
 //          if (buffer.ExpectWrite() >= sizeof(float))
 //              buffer.Write<float>(value);
-//      Reading: There are two methods for Reading. `Read` progreses the ring-buffer offset. ReadInPlace does not progress the offset
+//      Reading: There are two methods for Reading. `Read` progreses the ring-buffer offset. `Peek` just reads a buffer and doesn't move the offset
 //
 //  Blob: Readable and Writable blob of memory
 //        Blob can contain static buffer (by explicitly prodiving a buffer pointer and size), or Dynamic growable buffer (by providing allocator)
@@ -99,7 +99,7 @@ struct RingBuffer
 
     void Write(const void* src, size_t size);
     size_t Read(void* dst, size_t size);
-    size_t ReadInPlace(void* dst, size_t size, size_t* pOffset = nullptr);
+    size_t Peek(void* dst, size_t size, size_t* pOffset = nullptr);
 
     template <typename _T> void Write(const _T& src);
     template <typename _T> size_t Read(_T* dst);
@@ -493,7 +493,7 @@ inline size_t RingBuffer::Read(void* dst, size_t size)
     return size;
 }
 
-inline size_t RingBuffer::ReadInPlace(void* dst, size_t size, size_t* pOffset)
+inline size_t RingBuffer::Peek(void* dst, size_t size, size_t* pOffset)
 {
     ASSERT(size > 0);
     

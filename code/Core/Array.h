@@ -1,7 +1,6 @@
 #pragma once
 
 #include "Memory.h"
-#include "BlitSort.h"
 
 // Growable array
 template <typename _T, uint32 _Reserve = 8>
@@ -34,11 +33,9 @@ struct Array
     void Shrink();
     bool IsFull() const;
     const _T* Ptr() const;
+    _T* Ptr();
     void Detach(_T** outBuffer, uint32* outCount);
     void ShiftLeft(uint32 count);
-
-    // _Cmp = [capture](const _T& a, const _T& b)->int 
-    template <typename _Cmp> void Sort(_Cmp cmpFunc);
 
     // _Func = [capture](const _T& item)->bool
     template <typename _Func> uint32 FindIf(_Func findFunc);
@@ -80,9 +77,7 @@ struct StaticArray
     const _T& operator[](uint32 index) const;
     _T& operator[](uint32 index);
     const _T* Ptr() const;
-
-    // _Cmp = [capture](const _T& a, const _T& b)->int 
-    template <typename _Cmp> void Sort(_Cmp cmpFunc);
+    _T* Ptr();
 
     // _Func = [capture](const _T& item)->bool
     template <typename _Func> uint32 FindIf(_Func findFunc);
@@ -287,6 +282,12 @@ inline const _T* Array<_T,_Reserve>::Ptr() const
 }
 
 template <typename _T, uint32 _Reserve>
+inline _T* Array<_T,_Reserve>::Ptr()
+{
+    return _buffer;
+}
+
+template <typename _T, uint32 _Reserve>
 inline void Array<_T,_Reserve>::Detach(_T** outBuffer, uint32* outCount)
 {
     ASSERT(outBuffer);
@@ -326,13 +327,6 @@ inline void Array<_T, _Reserve>::Shrink()
     Reserve(_capacity);
 }
 
-
-template<typename _T, uint32 _Reserve>
-template <typename _Cmp> inline void Array<_T, _Reserve>::Sort(_Cmp cmpFunc)
-{
-    if (_count > 1)
-        BlitSort<_T, _Cmp>(_buffer, _count, cmpFunc);
-}
 
 template<typename _T, uint32 _Reserve>
 template<typename _Func> inline uint32 Array<_T, _Reserve>::FindIf(_Func findFunc)
@@ -430,10 +424,9 @@ inline const _T* StaticArray<_T, _MaxCount>::Ptr() const
 }
 
 template<typename _T, uint32 _MaxCount>
-template <typename _Cmp> inline void StaticArray<_T, _MaxCount>::Sort(_Cmp cmpFunc)
+inline _T* StaticArray<_T, _MaxCount>::Ptr()
 {
-    if (_count > 1)
-        BlitSort<_T, _Cmp>(_buffer, _count, cmpFunc);
+    return reinterpret_cast<_T*>(_buffer);
 }
 
 template<typename _T, uint32 _MaxCount>
