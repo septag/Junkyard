@@ -11,10 +11,8 @@
 #include "Buffers.h"
 #include "Atomic.h"
 #include "String.h"
-#include "Array.h"
 #include "Settings.h"
 #include "TracyHelper.h"
-#include "HashTable.h"
 #include "Hash.h"
 
 // TODO: remove this dependency

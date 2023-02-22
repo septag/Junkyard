@@ -2,11 +2,8 @@
 
 #include "Core/Log.h"
 #include "Core/Hash.h"
-#include "Core/Array.h"
 #include "Core/System.h"
-#include "Core/HashTable.h"
 #include "Core/String.h"
-#include "Core/HandlePool.h"
 #include "Core/JsonParser.h"
 #include "Core/Settings.h"
 #include "Core/Jobs.h"
@@ -121,7 +118,7 @@ bool _private::assetInitialize()
 
     {
         size_t tableSize = HashTable<AssetHandle>::GetMemoryRequirement(_limits::kAssetMaxAssets);
-        gAssetMgr.assetLookup.Initialize(_limits::kAssetMaxAssets, memAlloc(tableSize, initHeap), tableSize);
+        gAssetMgr.assetLookup.Reserve(_limits::kAssetMaxAssets, memAlloc(tableSize, initHeap), tableSize);
     }
 
     {

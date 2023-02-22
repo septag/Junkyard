@@ -20,16 +20,13 @@
     <ClInclude Include="..\..\..\code\Camera.h" />
     <ClInclude Include="..\..\..\code\CommonTypes.h" />
     <ClInclude Include="..\..\..\code\Config.h" />
-    <ClInclude Include="..\..\..\code\Core\Array.h" />
     <ClInclude Include="..\..\..\code\Core\Atomic.h" />
     <ClInclude Include="..\..\..\code\Core\Base.h" />
     <ClInclude Include="..\..\..\code\Core\BlitSort.h" />
     <ClInclude Include="..\..\..\code\Core\Buffers.h" />
     <ClInclude Include="..\..\..\code\Core\Debug.h" />
     <ClInclude Include="..\..\..\code\Core\FileIO.h" />
-    <ClInclude Include="..\..\..\code\Core\HandlePool.h" />
     <ClInclude Include="..\..\..\code\Core\Hash.h" />
-    <ClInclude Include="..\..\..\code\Core\HashTable.h" />
     <ClInclude Include="..\..\..\code\Core\IncludeWin.h" />
     <ClInclude Include="..\..\..\code\Core\Jobs.h" />
     <ClInclude Include="..\..\..\code\Core\JsonParser.h" />
@@ -89,6 +86,7 @@
     <ClCompile Include="..\..\..\code\AssetManager.cpp" />
     <ClCompile Include="..\..\..\code\Camera.cpp" />
     <ClCompile Include="..\..\..\code\Core\Base.cpp" />
+    <ClCompile Include="..\..\..\code\Core\Buffers.cpp" />
     <ClCompile Include="..\..\..\code\Core\Debug.cpp" />
     <ClCompile Include="..\..\..\code\Core\DebugAndroid.cpp" />
     <ClCompile Include="..\..\..\code\Core\DebugWin.cpp">
@@ -103,9 +101,7 @@
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='ReleaseDev|ARM64'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">true</ExcludedFromBuild>
     </ClCompile>
-    <ClCompile Include="..\..\..\code\Core\HandlePool.cpp" />
     <ClCompile Include="..\..\..\code\Core\Hash.cpp" />
-    <ClCompile Include="..\..\..\code\Core\HashTable.cpp" />
     <ClCompile Include="..\..\..\code\Core\Jobs.cpp" />
     <ClCompile Include="..\..\..\code\Core\JsonParser.cpp" />
     <ClCompile Include="..\..\..\code\Core\Log.cpp" />

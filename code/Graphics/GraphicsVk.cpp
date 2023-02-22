@@ -29,11 +29,8 @@
 
 #include "../Core/Memory.h"
 #include "../Core/String.h"
-#include "../Core/Array.h"
 #include "../Core/System.h"
-#include "../Core/HandlePool.h"
 #include "../Core/Hash.h"
-#include "../Core/HashTable.h"
 #include "../Core/Buffers.h"
 #include "../Core/Settings.h"
 #include "../Core/Atomic.h"
@@ -2017,7 +2014,9 @@ bool _private::gfxInitialize()
 
     // shader <-> pipeline management
     gVk.shaderPipelinesTableMtx.Initialize();
-    gVk.shaderPipelinesTable.Initialize(64, &gVk.alloc);
+
+    gVk.shaderPipelinesTable.SetAllocator(&gVk.alloc);
+    gVk.shaderPipelinesTable.Reserve(64);
 
     // Garbage collector
     gVk.garbageMtx.Initialize();
@@ -2150,7 +2149,7 @@ void _private::gfxRelease()
         }
     }
     gVk.shaderPipelinesTableMtx.Release();
-    gVk.shaderPipelinesTable.Release();
+    gVk.shaderPipelinesTable.Free();
     
     if (gVk.device) {
         vkDestroyDescriptorPool(gVk.device, gVk.descriptorPool, &gVk.allocVk);

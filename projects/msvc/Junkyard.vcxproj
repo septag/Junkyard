@@ -231,6 +231,7 @@ echo No | copy /-Y $(SolutionDir)..\..\code\External\meshoptimizer\lib\win64\mes
     <ClCompile Include="..\..\code\AssetManager.cpp" />
     <ClCompile Include="..\..\code\Camera.cpp" />
     <ClCompile Include="..\..\code\Core\Base.cpp" />
+    <ClCompile Include="..\..\code\Core\Buffers.cpp" />
     <ClCompile Include="..\..\code\Core\Debug.cpp" />
     <ClCompile Include="..\..\code\Core\DebugAndroid.cpp">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
@@ -249,9 +250,7 @@ echo No | copy /-Y $(SolutionDir)..\..\code\External\meshoptimizer\lib\win64\mes
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\..\code\Core\FileIOWin.cpp" />
-    <ClCompile Include="..\..\code\Core\HandlePool.cpp" />
     <ClCompile Include="..\..\code\Core\Hash.cpp" />
-    <ClCompile Include="..\..\code\Core\HashTable.cpp" />
     <ClCompile Include="..\..\code\Core\Jobs.cpp" />
     <ClCompile Include="..\..\code\Core\JsonParser.cpp" />
     <ClCompile Include="..\..\code\Core\Log.cpp" />
@@ -350,16 +349,13 @@ echo No | copy /-Y $(SolutionDir)..\..\code\External\meshoptimizer\lib\win64\mes
     <ClInclude Include="..\..\code\Camera.h" />
     <ClInclude Include="..\..\code\CommonTypes.h" />
     <ClInclude Include="..\..\code\Config.h" />
-    <ClInclude Include="..\..\code\Core\Array.h" />
     <ClInclude Include="..\..\code\Core\Atomic.h" />
     <ClInclude Include="..\..\code\Core\Base.h" />
     <ClInclude Include="..\..\code\Core\BlitSort.h" />
     <ClInclude Include="..\..\code\Core\Buffers.h" />
     <ClInclude Include="..\..\code\Core\Debug.h" />
     <ClInclude Include="..\..\code\Core\FileIO.h" />
-    <ClInclude Include="..\..\code\Core\HandlePool.h" />
     <ClInclude Include="..\..\code\Core\Hash.h" />
-    <ClInclude Include="..\..\code\Core\HashTable.h" />
     <ClInclude Include="..\..\code\Core\IncludeWin.h" />
     <ClInclude Include="..\..\code\Core\Jobs.h" />
     <ClInclude Include="..\..\code\Core\JsonParser.h" />

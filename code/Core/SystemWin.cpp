@@ -2,10 +2,10 @@
 
 #if PLATFORM_WINDOWS
 #include "String.h"
-#include "Array.h"
 #include "Memory.h"
 #include "Atomic.h"
 #include "IncludeWin.h"
+
 
 // TODO: Remove dependency
 #include "TracyHelper.h"

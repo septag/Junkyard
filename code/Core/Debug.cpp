@@ -13,8 +13,8 @@
 
 #include "String.h"
 #include "System.h"         // sysAndroidPrintXXX/sysWinDebugger..
-#include "Array.h"
 #include "Settings.h"
+#include "Buffers.h"
 
 #if PLATFORM_ANDROID
 // TODO: remove this dependency

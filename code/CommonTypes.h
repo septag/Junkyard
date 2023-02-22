@@ -1,6 +1,6 @@
 #pragma once
 
-#include "Core/HandlePool.h"
+#include "Core/Buffers.h"
 
 // Memory
 struct Allocator;

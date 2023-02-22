@@ -5,11 +5,10 @@
     // Core library
     #include "Core/Base.cpp"
     #include "Core/Memory.cpp"
+    #include "Core/Buffers.cpp"
     #include "Core/System.cpp"
     #include "Core/String.cpp"
     #include "Core/Log.cpp"
-    #include "Core/HandlePool.cpp"
-    #include "Core/HashTable.cpp"
     #include "Core/Hash.cpp"
     #include "Core/SocketIO.cpp"
     #include "Core/Debug.cpp"

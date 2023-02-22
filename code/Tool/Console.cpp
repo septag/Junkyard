@@ -3,7 +3,6 @@
 #include "../External/mgustavsson/ini.h"
 
 #include "../Core/Memory.h"
-#include "../Core/Array.h"
 #include "../Core/String.h"
 #include "../Core/Buffers.h"
 #include "../Core/System.h"

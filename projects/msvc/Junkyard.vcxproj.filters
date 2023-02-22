@@ -161,13 +161,7 @@
     <ClCompile Include="..\..\code\Core\FileIO.cpp">
       <Filter>Source Files\Core</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\code\Core\HandlePool.cpp">
-      <Filter>Source Files\Core</Filter>
-    </ClCompile>
     <ClCompile Include="..\..\code\Core\Hash.cpp">
-      <Filter>Source Files\Core</Filter>
-    </ClCompile>
-    <ClCompile Include="..\..\code\Core\HashTable.cpp">
       <Filter>Source Files\Core</Filter>
     </ClCompile>
     <ClCompile Include="..\..\code\Core\Jobs.cpp">
@@ -259,6 +253,9 @@
     </ClCompile>
     <ClCompile Include="..\..\code\External\volk\volk.c">
       <Filter>Source Files\External\volk</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\code\Core\Buffers.cpp">
+      <Filter>Source Files\Core</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -388,9 +385,6 @@
     <ClInclude Include="..\..\code\External\meshoptimizer\include\meshoptimizer.h">
       <Filter>Source Files\External\meshoptimizer</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\code\Core\Array.h">
-      <Filter>Header Files\Core</Filter>
-    </ClInclude>
     <ClInclude Include="..\..\code\Core\Atomic.h">
       <Filter>Header Files\Core</Filter>
     </ClInclude>
@@ -409,13 +403,7 @@
     <ClInclude Include="..\..\code\Core\FileIO.h">
       <Filter>Header Files\Core</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\code\Core\HandlePool.h">
-      <Filter>Header Files\Core</Filter>
-    </ClInclude>
     <ClInclude Include="..\..\code\Core\Hash.h">
-      <Filter>Header Files\Core</Filter>
-    </ClInclude>
-    <ClInclude Include="..\..\code\Core\HashTable.h">
       <Filter>Header Files\Core</Filter>
     </ClInclude>
     <ClInclude Include="..\..\code\Core\Jobs.h">

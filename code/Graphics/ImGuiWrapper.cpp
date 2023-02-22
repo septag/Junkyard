@@ -7,13 +7,12 @@
 
 #include "../Core/Memory.h"
 #include "../Core/String.h"
-#include "../Core/Array.h"
 #include "../Core/Hash.h"
-#include "../Core/HashTable.h"
 #include "../Core/FileIO.h"
 #include "../Core/Settings.h"
 #include "../Core/Log.h"
 #include "../Core/TracyHelper.h"
+#include "../Core/Buffers.h"
 
 #include "../Math/Math.h"
 
@@ -104,7 +103,8 @@ ImGuiState gImGui;
 
 static void imguiInitializeSettings()
 {
-    gImGui.settingsCacheTable.Initialize(256, &gImGui.runtimeHeap);
+    gImGui.settingsCacheTable.SetAllocator(&gImGui.runtimeHeap);
+    gImGui.settingsCacheTable.Reserve(256);
 
     // Load extra control settings
     {
@@ -162,7 +162,7 @@ static void imguiReleaseSettings()
         gImGui.settingsIni = nullptr;
     }
 
-    gImGui.settingsCacheTable.Release();
+    gImGui.settingsCacheTable.Free();
 }
 
 static void imguiSetTheme()

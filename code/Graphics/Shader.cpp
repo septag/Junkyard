@@ -2,7 +2,6 @@
 
 #include "../Core/Buffers.h"
 #include "../Core/System.h"
-#include "../Core/Array.h"
 #include "../Core/Settings.h"
 #include "../Core/Log.h"
 #include "../Core/Jobs.h"

@@ -1,8 +1,8 @@
 #include "Settings.h"
 #include "Memory.h"
 #include "String.h"
-#include "Array.h"
-#include "Log.h"     
+#include "Log.h"
+#include "Buffers.h"
 
 // TODO: Remove this dependency
 #include "../VirtualFS.h"

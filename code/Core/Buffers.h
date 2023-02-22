@@ -1,7 +1,19 @@
 #pragma once
 //
 // Contains memory containers and useful buffer manipulation classes
-// All objects can be initialized either with allocator or with user provided buffer/size pair, in the case of latter, use GetMemoryRequirement to get needed memory size before creating
+// All objects can be initialized either with allocator or with user provided buffer/size pair. But doesn't actually allocate anything in ctor or deallocate in dtor.
+// In the case of latter, use `GetMemoryRequirement` to get needed memory size before creating the objects.
+//
+// Array: Regular growable array, very much like std::vector but with some essential differences.
+//        Arrays are meant to be used with POD (plain-old-data) structs only, so it doesn't handle ctor/dtor and all that stuff that comes with OO
+//        It can only grow if you assign allocator to the array, otherwise, in case of buffer/size pair, growing is not supported.
+//        Array does not allocate anything in ctor or deallocate anything in dtor. 
+//        So you should either allocate explicitly with `Reserve` method, or implicitly by calling `Write` method. 
+//        And deallocate explictly with `Free` or implicitly with `Detach`
+//        Removing elements is provided by swaping the element with the last one. 
+//        So beware not to export pointers or indexes of objects from Array if you are about to delete elements. For that purpose, use `HandlePool`.
+//
+// StaticArray: Very much like Array but of course static and on the stack
 //
 // BuffersAllocPOD: POD struct continous allocator. If you have POD structs that contain some buffers and arrays
 //              	You can create all of the buffers in one malloc call with the help of this allocator
@@ -29,7 +41,7 @@
 //						}
 //
 //  RingBuffer: Regular ring-buffer
-//      Writing to ring-buffer: use ExpectWrite method to determine how much memory is available in the ring-buffer before writing
+//      Writing to ring-buffer: use `ExpectWrite` method to determine how much memory is available in the ring-buffer before writing.
 //      Example:
 //          if (buffer.ExpectWrite() >= sizeof(float))
 //              buffer.Write<float>(value);
@@ -38,11 +50,223 @@
 //  Blob: Readable and Writable blob of memory
 //        Blob can contain static buffer (by explicitly prodiving a buffer pointer and size), or Dynamic growable buffer (by providing allocator)
 //        In the case of dynamic growable memory, you should provide Growing policy with `SetGrowPolicy` method.
+//        Blobs don't allocate anything in ctor or deallocate anything in dtor. 
+//        So you should either allocate explicitly with `Reserve` method, or implicitly by calling `Write` method.
+//        And deallocate explictly with `Free` or implicitly with `Detach`
 //        
 //  PoolBuffer: Fast pool memory allocator with Fixed sized elements
-//              Pools can grow by adding pages. For that, you need to provide allocator to the pool-buffer instead of pre-allocated pointer/size pair.
+//              Pools can grow by adding pages implicitly when calling `New`. For that, you need to provide allocator to the pool-buffer instead of pre-allocated pointer/size pair.
 //              
 #include "Memory.h"
+
+//------------------------------------------------------------------------
+template <typename _T, uint32 _Reserve = 8>
+struct Array
+{
+    // Constructors never allocates anything, you either have to call Reserve explicitly or Add something
+    // However, destructor Frees memory if it's not Freed before, but it's recommended to Free manually
+    Array() : Array(memDefaultAlloc()) {}
+    explicit Array(Allocator* alloc) : _alloc(alloc) {}
+    explicit Array(const void* buffer, size_t size);
+
+    void SetAllocator(Allocator* alloc);
+    void Reserve(uint32 capacity);
+    void Reserve(uint32 capacity, void* buffer, size_t size);
+    void Free();
+    static size_t GetMemoryRequirement(uint32 capacity = _Reserve);
+
+    [[nodiscard]] _T* Push();
+    _T* Push(const _T& item);
+    void RemoveAndSwap(uint32 index);
+    uint32 Count() const;
+    void Clear();
+    _T& Last();
+    _T PopLast();
+    _T PopFirst();
+    _T Pop(uint32 index);
+    void Extend(const Array<_T>& arr);
+    const _T& operator[](uint32 index) const;
+    _T& operator[](uint32 index);
+    void Shrink();
+    bool IsFull() const;
+    const _T* Ptr() const;
+    _T* Ptr();
+    void Detach(_T** outBuffer, uint32* outCount);
+    void ShiftLeft(uint32 count);
+
+    // _Func = [capture](const _T& item)->bool
+    template <typename _Func> uint32 FindIf(_Func findFunc);
+    
+    // C++ stl crap compatibility. it's mainly `for(auto t : array)` syntax sugar
+    struct Iterator 
+    {
+        Iterator(_T* ptr) : _ptr(ptr) {}
+        _T& operator*() { return *_ptr; }
+        void operator++() { ++_ptr; }
+        bool operator!=(Iterator it) { return _ptr != it._ptr; }
+        _T* _ptr;
+    };
+
+    Iterator begin()    { return Iterator(&_buffer[0]); }
+    Iterator end()      { return Iterator(&_buffer[_count]); }
+
+    Iterator begin() const    { return Iterator(&_buffer[0]); }
+    Iterator end() const     { return Iterator(&_buffer[_count]); }
+
+private:
+    Allocator* 	    _alloc = nullptr;
+    uint32 			_capacity = 0;
+    uint32 			_count = 0;
+    _T*				_buffer = nullptr;
+};
+
+//------------------------------------------------------------------------
+// Fixed sized array on stack
+template <typename _T, uint32 _MaxCount>
+struct StaticArray
+{
+    _T* Add();
+    _T* Add(const _T& item);
+    void RemoveAndSwap(uint32 index);
+    uint32 Count() const;
+    void Clear();
+    _T& Last();
+    _T& RemoveLast();
+    const _T& operator[](uint32 index) const;
+    _T& operator[](uint32 index);
+    const _T* Ptr() const;
+    _T* Ptr();
+
+    // _Func = [capture](const _T& item)->bool
+    template <typename _Func> uint32 FindIf(_Func findFunc);
+
+    // C++ stl crap compatibility. we just want to use for(auto t : array) syntax sugar
+    struct Iterator 
+    {
+        Iterator(_T* ptr) : _ptr(ptr) {}
+        _T operator*() { return *_ptr; }
+        void operator++() { ++_ptr; }
+        bool operator!=(Iterator it) { return _ptr != it._ptr; }
+        _T* _ptr;
+    };
+    
+    Iterator begin()    { return Iterator(&_buffer[0]); }
+    Iterator end()      { return Iterator(&_buffer[_count]); }
+
+private:
+    uint32	_count = 0;
+    _T		_buffer[_MaxCount];
+};
+
+//------------------------------------------------------------------------
+// HandlePool
+namespace _private 
+{
+    // change number of kHandleGenBits to have more generation range
+    // Whatever the GenBits is, max gen would be 2^GenBits-1 and max index would be 2^(32-GenBits)-1
+    // Handle = [<--- high-bits: Generation --->][<--- low-bits: Index -->]
+    static inline constexpr uint32 kHandleGenBits = 14;
+    static inline constexpr uint32 kHandleIndexMask = (1 << (32 - kHandleGenBits)) - 1;
+    static inline constexpr uint32 kHandleGenMask = (1 << kHandleGenBits) - 1;
+    static inline constexpr uint32 kHandleGenShift  = 32 - kHandleGenBits;
+} // _private
+
+template <typename _T>
+struct Handle
+{
+    Handle() = default;
+    Handle(const Handle<_T>&) = default;
+    explicit Handle(uint32 _id) : id(_id) {}
+
+    void Set(uint32 gen, uint32 index) { id = ((gen & _private::kHandleGenMask)<<_private::kHandleGenShift) | (index&_private::kHandleIndexMask); }
+    explicit operator uint32() const { return id; }
+    uint32 GetSparseIndex() { return id & _private::kHandleIndexMask; }
+    uint32 GetGen() { return (id >> _private::kHandleGenShift) & _private::kHandleGenMask; }
+    bool IsValid() const { return id != 0; }
+    bool operator==(const Handle<_T>& v) const { return id == v.id; }
+    bool operator!=(const Handle<_T>& v) const { return id != v.id; }
+
+    uint32 id = 0;
+};
+
+#define DEFINE_HANDLE(_Name) struct _Name##T; using _Name = Handle<_Name##T>
+
+namespace _private
+{
+    struct HandlePoolTable
+    {
+        uint32  count;
+        uint32  capacity;
+        uint32* dense;          // actual handles are stored in 'dense' array [0..arrayCount]
+        uint32* sparse;         // indices to dense for removal lookup [0..arrayCapacity]
+    };
+
+    API HandlePoolTable* handleCreatePoolTable(uint32 capacity, Allocator* alloc);
+    API void handleDestroyPoolTable(HandlePoolTable* tbl, Allocator* alloc);
+    API bool handleGrowPoolTable(HandlePoolTable** pTbl, Allocator* alloc);
+
+    API uint32 handleNew(HandlePoolTable* tbl);
+    API void   handleDel(HandlePoolTable* tbl, uint32 handle);
+    API void   handleResetPoolTable(HandlePoolTable* tbl);
+    API bool   handleIsValid(const HandlePoolTable* tbl, uint32 handle);
+    API uint32 handleAt(const HandlePoolTable* tbl, uint32 index);
+    API bool   handleFull(const HandlePoolTable* tbl);
+
+    API size_t handleGetMemoryRequirement(uint32 capacity);
+    API HandlePoolTable* handleCreatePoolTableWithBuffer(uint32 capacity, void* buff, size_t size);
+    API bool handleGrowPoolTableWithBuffer(HandlePoolTable** pTbl, void* buff, size_t size);
+} // _private
+
+template <typename _HandleType, typename _DataType, uint32 _Reserve = 32>
+struct HandlePool
+{
+    HandlePool() : HandlePool(memDefaultAlloc()) {}
+    explicit HandlePool(Allocator* alloc) : _alloc(alloc), _items(alloc) {}
+    explicit HandlePool(void* data, size_t size); 
+
+    [[nodiscard]] _HandleType Add(const _DataType& item, _DataType* prevItem = nullptr);
+    void Remove(_HandleType handle);
+    uint32 Count() const;
+    void Clear();
+    bool IsValid(_HandleType handle);
+    _HandleType HandleAt(uint32 index);
+    _DataType& Data(uint32 index);
+    _DataType& Data(_HandleType handle);
+    bool IsFull() const;
+    uint32 Capacity() const;
+
+    void Reserve(uint32 capacity, void* buffer, size_t size);
+    void SetAllocator(Allocator* alloc);
+    void Free();
+
+    static size_t GetMemoryRequirement(uint32 capacity = _Reserve);
+    bool Grow();
+    bool Grow(void* data, size_t size);
+
+    // _Func = [](const _DataType&)->bool
+    template <typename _Func> _HandleType FindIf(_Func findFunc);
+
+    // C++ stl crap compatibility. we just want to use for(auto t : array) syntax sugar
+    struct Iterator 
+    {
+        using HandlePool_t = HandlePool<_HandleType, _DataType, _Reserve>;
+
+        Iterator(HandlePool_t* pool, uint32 index) : _pool(pool), _index(index) {}
+        _DataType& operator*() { return _pool->Data(_index); }
+        void operator++() { ++_index; }
+        bool operator!=(Iterator it) { return _index != it._index; }
+        HandlePool_t* _pool;
+        uint32 _index;
+    };
+    
+    Iterator begin()    { return Iterator(this, 0); }
+    Iterator end()      { return Iterator(this, _handles ? _handles->count : 0); }
+
+private:
+    Allocator*                  _alloc = nullptr;
+    _private::HandlePoolTable*  _handles = nullptr;
+    Array<_DataType>            _items;
+};
 
 //------------------------------------------------------------------------
 template <typename _T, uint32 _MaxFields = 8>
@@ -248,7 +472,533 @@ private:
 };
 
 //------------------------------------------------------------------------
-// BuffersAllocPOD
+// @impl Array
+template <typename _T, uint32 _Reserve>
+inline Array<_T,_Reserve>::Array(const void* buffer, size_t size)
+{
+    ASSERT_MSG(size > _Reserve*sizeof(_T), "Buffer should have at least %u bytes long", _Reserve*sizeof(_T));
+
+    _capacity = size / sizeof(_T);
+    _buffer = buffer;
+}
+
+template <typename _T, uint32 _Reserve>
+inline void Array<_T, _Reserve>::SetAllocator(Allocator* alloc)
+{
+    ASSERT_MSG(_buffer == nullptr, "buffer should be freed/uninitialized before setting allocator");
+    _alloc = alloc;
+}    
+
+template <typename _T, uint32 _Reserve>
+inline _T* Array<_T,_Reserve>::Push()
+{
+    if (_count >= _capacity) {
+        if (_alloc) {
+            Reserve(_capacity ? (_capacity << 1) : _Reserve);
+        } 
+        else {
+            ASSERT(_buffer);
+            ASSERT_MSG(_count < _capacity, "Array overflow, capacity=%u", _capacity);
+            return nullptr;
+        }
+    }
+    
+    return &_buffer[_count++];
+}
+
+template <typename _T, uint32 _Reserve>
+inline _T* Array<_T,_Reserve>::Push(const _T& item)
+{
+    _T* newItem = Push();
+    if (newItem)
+        *newItem = item;
+    return newItem;
+}
+
+template <typename _T, uint32 _Reserve>
+inline void Array<_T,_Reserve>::RemoveAndSwap(uint32 index)
+{
+    ASSERT(_buffer);
+    #ifdef CONFIG_CHECK_OUTOFBOUNDS
+        ASSERT_MSG(index < _count, "Index out of bounds (count: %u, index: %u)", _count, index);
+    #endif
+    --_count;
+    if (index < _count)
+        Swap<_T>(_buffer[index], _buffer[_count]);
+}
+
+template <typename _T, uint32 _Reserve>
+inline uint32 Array<_T,_Reserve>::Count() const
+{
+    return _count;
+}
+
+template <typename _T, uint32 _Reserve>
+inline void Array<_T,_Reserve>::Reserve(uint32 capacity)
+{
+    ASSERT(_alloc);
+    _capacity = Max(capacity, _capacity);
+    _buffer = memReallocTyped<_T>(_buffer, _capacity, _alloc);
+    ASSERT(_buffer);
+}
+
+template <typename _T, uint32 _Reserve>
+inline void Array<_T,_Reserve>::Reserve(uint32 capacity, void* buffer, [[maybe_unused]] size_t size)
+{
+    capacity = Max(capacity, _Reserve);
+
+    ASSERT(buffer);
+    ASSERT_MSG(_buffer == nullptr, "Array should not be initialized before reserve by pointer");
+    ASSERT_MSG(size >= capacity*sizeof(_T), "Buffer should have at least %u bytes long (size=%u)", capacity*sizeof(_T), size);
+    
+    _alloc = nullptr;
+    _capacity = capacity;
+    _buffer = (_T*)buffer;
+}    
+
+template <typename _T, uint32 _Reserve>
+inline void Array<_T,_Reserve>::Clear()
+{
+    _count = 0;
+}
+
+template <typename _T, uint32 _Reserve>
+inline _T& Array<_T,_Reserve>::Last()
+{
+    ASSERT(_count > 0);
+    return _buffer[_count - 1];
+}
+
+template <typename _T, uint32 _Reserve>
+inline _T Array<_T,_Reserve>::PopLast()
+{
+    ASSERT(_count > 0);
+    return _buffer[--_count];
+}
+
+template <typename _T, uint32 _Reserve>
+inline _T Array<_T,_Reserve>::PopFirst()
+{
+    ASSERT(_count > 0);
+    _T first = _buffer[0];
+    // shuffle all items to the left
+    for (uint32 i = 1, c = _count; i < c; i++) {
+        _buffer[i-1] = _buffer[i];
+    }
+    --_count;
+    return first;
+}
+
+template <typename _T, uint32 _Reserve>
+inline _T Array<_T,_Reserve>::Pop(uint32 index)
+{
+    ASSERT(_count > 0);
+    #ifdef CONFIG_CHECK_OUTOFBOUNDS
+        ASSERT_MSG(index <= _count, "Index out of bounds (count: %u, index: %u)", _count, index);
+    #endif
+
+    _T item = _buffer[index];
+    // shuffle all items to the left
+    for (uint32 i = index+1, c = _count; i < c; i++) {
+        _buffer[i-1] = _buffer[i];
+    }
+    --_count;
+    return item;
+}
+
+template <typename _T, uint32 _Reserve>
+inline void Array<_T,_Reserve>::Extend(const Array<_T>& arr)
+{
+    if (arr.Count()) {
+        uint32 newCount = _count + arr._count;
+        uint32 newCapacity = Max(newCount, Min(_capacity, arr._capacity));
+        if (newCapacity > _capacity)
+            Reserve(newCapacity);
+        memcpy(&_buffer[_count], arr._buffer, sizeof(_T)*arr._count);
+        _count = newCount;
+    }
+}
+
+template <typename _T, uint32 _Reserve>
+inline void Array<_T,_Reserve>::ShiftLeft(uint32 count)
+{
+    ASSERT(count <= _count);
+    
+    _count -= count;
+    if (_count)
+        memmove(_buffer, _buffer + sizeof(_T)*count, sizeof(_T)*_count);
+}
+
+template <typename _T, uint32 _Reserve>
+inline const _T& Array<_T,_Reserve>::operator[](uint32 index) const
+{
+    #ifdef CONFIG_CHECK_OUTOFBOUNDS
+        ASSERT_MSG(index <= _count, "Index out of bounds (count: %u, index: %u)", _count, index);
+    #endif
+    return _buffer[index];
+}
+
+template <typename _T, uint32 _Reserve>
+inline _T& Array<_T,_Reserve>::operator[](uint32 index)
+{
+    #ifdef CONFIG_CHECK_OUTOFBOUNDS
+        ASSERT_MSG(index <= _count, "Index out of bounds (count: %u, index: %u)", _count, index);
+    #endif
+    return _buffer[index];
+}
+
+template <typename _T, uint32 _Reserve>
+inline const _T* Array<_T,_Reserve>::Ptr() const
+{
+    return _buffer;
+}
+
+template <typename _T, uint32 _Reserve>
+inline _T* Array<_T,_Reserve>::Ptr()
+{
+    return _buffer;
+}
+
+template <typename _T, uint32 _Reserve>
+inline void Array<_T,_Reserve>::Detach(_T** outBuffer, uint32* outCount)
+{
+    ASSERT(outBuffer);
+    ASSERT(outCount);
+
+    *outBuffer = _buffer;
+    *outCount = _count;
+
+    _buffer = nullptr;
+    _count = 0;
+    _capacity = 0;
+}
+
+template<typename _T, uint32 _Reserve>
+inline bool Array<_T,_Reserve>::IsFull() const
+{
+    return _count >= _capacity;
+}    
+
+template <typename _T, uint32 _Reserve>
+inline void Array<_T, _Reserve>::Free()
+{
+    _count = 0;
+
+    if (_alloc) {
+        memFree(_buffer, _alloc);
+        _capacity = 0;
+        _buffer = nullptr;
+    }
+}
+
+template <typename _T, uint32 _Reserve>
+inline void Array<_T, _Reserve>::Shrink()
+{
+    ASSERT(_alloc);
+    _capacity = Max(_count, _Reserve);
+    Reserve(_capacity);
+}
+
+
+template<typename _T, uint32 _Reserve>
+template<typename _Func> inline uint32 Array<_T, _Reserve>::FindIf(_Func findFunc)
+{
+    for (uint32 i = 0, c = _count; i < c; i++) {
+        if (findFunc(_buffer[i]))
+            return i;
+    }
+
+    return UINT32_MAX;
+}
+
+template<typename _T, uint32 _Reserve>
+inline size_t Array<_T, _Reserve>::GetMemoryRequirement(uint32 capacity)
+{
+    capacity = Max(capacity, _Reserve);
+    return capacity * sizeof(_T);
+}
+
+//------------------------------------------------------------------------
+// @impl StaticArray
+template<typename _T, uint32 _MaxCount>
+inline _T* StaticArray<_T, _MaxCount>::Add()
+{
+    ASSERT_MSG(_count < _MaxCount, "Trying to add more than _MaxCount=%u", _MaxCount);
+    return &_buffer[_count++];
+}
+
+template<typename _T, uint32 _MaxCount>
+inline _T* StaticArray<_T, _MaxCount>::Add(const _T& item)
+{
+    ASSERT_MSG(_count < _MaxCount, "Trying to add more than _MaxCount=%u", _MaxCount);
+    uint32 index = _count++;
+    _buffer[index] = item;
+    return &_buffer[index];
+}
+
+template<typename _T, uint32 _MaxCount>
+inline void StaticArray<_T, _MaxCount>::RemoveAndSwap(uint32 index)
+{
+    ASSERT(_buffer);
+    #ifdef CONFIG_CHECK_OUTOFBOUNDS
+        ASSERT_MSG(index <= _count, "Index out of bounds (count: %u, index: %u)", _count, index);
+    #endif
+    Swap<_T>(_buffer[index], _buffer[--_count]);
+}
+
+template<typename _T, uint32 _MaxCount>
+inline uint32 StaticArray<_T, _MaxCount>::Count() const
+{
+    return _count;
+}
+
+template<typename _T, uint32 _MaxCount>
+inline void StaticArray<_T, _MaxCount>::Clear()
+{
+    _count = 0;
+}
+
+template<typename _T, uint32 _MaxCount>
+inline _T& StaticArray<_T, _MaxCount>::Last()
+{
+    ASSERT(_count > 0);
+    return _buffer[_count - 1];
+}
+
+template<typename _T, uint32 _MaxCount>
+inline _T& StaticArray<_T, _MaxCount>::RemoveLast()
+{
+    ASSERT(_count > 0);
+    return _buffer[--_count];
+}
+
+template<typename _T, uint32 _MaxCount>
+inline const _T& StaticArray<_T, _MaxCount>::operator[](uint32 index) const
+{
+    #ifdef CONFIG_CHECK_OUTOFBOUNDS
+        ASSERT_MSG(index <= _count, "Index out of bounds (count: %u, index: %u)", _count, index);
+    #endif
+    return _buffer[index];
+}
+
+template<typename _T, uint32 _MaxCount>
+inline _T& StaticArray<_T, _MaxCount>::operator[](uint32 index)
+{
+    #ifdef CONFIG_CHECK_OUTOFBOUNDS
+        ASSERT_MSG(index <= _count, "Index out of bounds (count: %u, index: %u)", _count, index);
+    #endif
+    return _buffer[index];
+}
+
+template<typename _T, uint32 _MaxCount>
+inline const _T* StaticArray<_T, _MaxCount>::Ptr() const
+{
+    return reinterpret_cast<const _T*>(_buffer);
+}
+
+template<typename _T, uint32 _MaxCount>
+inline _T* StaticArray<_T, _MaxCount>::Ptr()
+{
+    return reinterpret_cast<_T*>(_buffer);
+}
+
+template<typename _T, uint32 _MaxCount>
+template<typename _Func> inline uint32 StaticArray<_T, _MaxCount>::FindIf(_Func findFunc)
+{
+    for (uint32 i = 0, c = _count; i < c; i++) {
+        if (findFunc(_buffer[i])) {
+            return i;
+        }
+    }
+    
+    return UINT32_MAX;
+}
+
+//------------------------------------------------------------------------
+// @impl HandlePool
+template<typename _HandleType, typename _DataType, uint32 _Reserve>
+inline HandlePool<_HandleType, _DataType, _Reserve>::HandlePool(void* data, size_t size) :
+    _items((uint8*)data + GetMemoryRequirement(), size - GetMemoryRequirement())
+{
+    _handles = _private::handleCreatePoolTableWithBuffer(_Reserve, data, GetMemoryRequirement());
+}
+
+template<typename _HandleType, typename _DataType, uint32 _Reserve>
+void HandlePool<_HandleType, _DataType, _Reserve>::Reserve(uint32 capacity, void* buffer, size_t size)
+{
+    capacity = Max(capacity, _Reserve);
+    ASSERT_MSG(_handles == nullptr, "pool should be freed/uninitialized before reserve by pointer");
+    _alloc = nullptr;
+
+    size_t tableSize = _private::handleGetMemoryRequirement(capacity);
+    ASSERT(tableSize <= size);
+    _handles = _private::handleCreatePoolTableWithBuffer(capacity, buffer, tableSize);
+
+    void* arrayBuffer = reinterpret_cast<uint8*>(buffer) + tableSize;
+    ASSERT(reinterpret_cast<uintptr_t>(arrayBuffer)%CONFIG_MACHINE_ALIGNMENT == 0);
+    _items.Reserve(capacity, arrayBuffer, size - tableSize);
+}
+
+template<typename _HandleType, typename _DataType, uint32 _Reserve>
+void HandlePool<_HandleType, _DataType, _Reserve>::SetAllocator(Allocator* alloc)
+{
+    ASSERT_MSG(_handles == nullptr, "pool should be freed/uninitialized before setting allocator");
+    _alloc = alloc;
+    _items.SetAllocator(_alloc);
+}
+
+template<typename _HandleType, typename _DataType, uint32 _Reserve>
+inline _HandleType HandlePool<_HandleType, _DataType, _Reserve>::Add(const _DataType& item, _DataType* prevItem)
+{
+    if (_handles == nullptr) {
+        ASSERT(_alloc);
+        _handles = _private::handleCreatePoolTable(_Reserve, _alloc);
+    } 
+    else if (_handles->count == _handles->capacity) {
+        if (_alloc) {
+           Grow();
+        }
+        else {
+            ASSERT_MSG(0, "HandlePool overflow, capacity=%u", _handles->capacity);
+        }
+    }
+
+    _HandleType handle(_private::handleNew(_handles));
+    uint32 index = handle.GetSparseIndex();
+    if (index >= _items.Count()) {
+        _items.Push(item);
+        if (prevItem)
+            *prevItem = _DataType {};
+    }
+    else {
+        if (prevItem) 
+            *prevItem = _items[index];
+        _items[index] = item;
+    }
+
+    return handle;
+}
+
+template<typename _HandleType, typename _DataType, uint32 _Reserve>
+inline void HandlePool<_HandleType, _DataType, _Reserve>::Remove(_HandleType handle)
+{
+    ASSERT(_handles);
+    _private::handleDel(_handles, static_cast<uint32>(handle));
+}
+
+template<typename _HandleType, typename _DataType, uint32 _Reserve>
+inline uint32 HandlePool<_HandleType, _DataType, _Reserve>::Count() const
+{
+    return _handles ? _handles->count : 0;
+}
+
+template<typename _HandleType, typename _DataType, uint32 _Reserve>
+inline void HandlePool<_HandleType, _DataType, _Reserve>::Clear()
+{
+    if (_handles)
+        _private::handleResetPoolTable(_handles);
+}
+
+template<typename _HandleType, typename _DataType, uint32 _Reserve>
+inline bool HandlePool<_HandleType, _DataType, _Reserve>::IsValid(_HandleType handle)
+{
+    ASSERT(_handles);
+    return _private::handleIsValid(_handles, static_cast<uint32>(handle));
+}
+
+template<typename _HandleType, typename _DataType, uint32 _Reserve>
+inline _HandleType HandlePool<_HandleType, _DataType, _Reserve>::HandleAt(uint32 index)
+{
+    ASSERT(_handles);
+    return _HandleType(_private::handleAt(_handles, index));
+}
+
+template<typename _HandleType, typename _DataType, uint32 _Reserve>
+inline _DataType& HandlePool<_HandleType, _DataType, _Reserve>::Data(uint32 index)
+{
+    _HandleType handle = HandleAt(index);
+    return _items[handle.GetSparseIndex()];
+}
+
+template<typename _HandleType, typename _DataType, uint32 _Reserve>
+inline _DataType& HandlePool<_HandleType, _DataType, _Reserve>::Data(_HandleType handle)
+{
+    ASSERT(_handles);
+    ASSERT_MSG(IsValid(handle), "Invalid handle (%u): Generation=%u, SparseIndex=%u", 
+               handle.id, handle.GetGen(), handle.GetSparseIndex());
+    return _items[handle.GetSparseIndex()];
+}
+
+template<typename _HandleType, typename _DataType, uint32 _Reserve>
+inline void HandlePool<_HandleType, _DataType, _Reserve>::Free()
+{
+    if (_alloc) {
+        if (_handles) 
+            _private::handleDestroyPoolTable(_handles, _alloc);
+        _items.Free();
+        _handles = nullptr;
+    }
+}
+
+template<typename _HandleType, typename _DataType, uint32 _Reserve>
+template<typename _Func> inline _HandleType HandlePool<_HandleType, _DataType, _Reserve>::FindIf(_Func findFunc)
+{
+    if (_handles) {
+        for (uint32 i = 0, c = _handles->count; i < c; i++) {
+            _HandleType h = _HandleType(_private::handleAt(_handles, i));
+            if (findFunc(_items[h.GetSparseIndex()])) {
+                return h;
+            }
+        }
+    }
+    
+    return _HandleType();
+}
+
+template<typename _HandleType, typename _DataType, uint32 _Reserve>
+inline bool HandlePool<_HandleType, _DataType, _Reserve>::IsFull() const
+{
+    return !_handles && _handles->count == _handles->capacity;
+}
+
+template<typename _HandleType, typename _DataType, uint32 _Reserve>
+inline uint32 HandlePool<_HandleType, _DataType, _Reserve>::Capacity() const
+{
+    return _handles ? _handles->capacity : _Reserve;
+}
+
+template<typename _HandleType, typename _DataType, uint32 _Reserve>
+inline size_t HandlePool<_HandleType, _DataType, _Reserve>::GetMemoryRequirement(uint32 capacity)
+{
+    return _private::handleGetMemoryRequirement(capacity) + Array<_DataType>::GetMemoryRequirement(capacity);
+}
+
+template<typename _HandleType, typename _DataType, uint32 _Reserve>
+inline bool HandlePool<_HandleType, _DataType, _Reserve>::Grow()
+{
+    ASSERT(_alloc);
+    ASSERT(_handles);
+       
+    _items.Reserve(_handles->capacity << 1);
+    return _private::handleGrowPoolTable(&_handles, _alloc);
+}
+
+template<typename _HandleType, typename _DataType, uint32 _Reserve>
+inline bool HandlePool<_HandleType, _DataType, _Reserve>::Grow(void* data, size_t size)
+{
+    ASSERT(!_alloc);
+    ASSERT(_handles);
+
+    uint32 newCapacity = _handles->capacity << 1;
+    size_t handleTableSize = GetMemoryRequirement(newCapacity);
+    ASSERT(handleTableSize < size);
+
+    _items.Reserve(_handles->capacity << 1, (uint8*)data + handleTableSize, size - handleTableSize);
+    return _private::handleGrowPoolTableWithBuffer(&_handles, data, handleTableSize);
+}
+
+//------------------------------------------------------------------------
+// @impl BuffersAllocPOD
 template <typename _T, uint32 _MaxFields>
 inline BuffersAllocPOD<_T, _MaxFields>::BuffersAllocPOD(uint32 align)
 {
@@ -397,7 +1147,7 @@ inline _T*  BuffersAllocPOD<_T, _MaxFields>::Calloc(void* buff, [[maybe_unused]]
 }
 
 //------------------------------------------------------------------------
-// RingBuffer
+// @impl RingBuffer
 inline RingBuffer::RingBuffer(void* buffer, size_t size)
 {
     ASSERT(buffer);
@@ -535,7 +1285,7 @@ inline size_t RingBuffer::Capacity() const
 }
 
 //------------------------------------------------------------------------
-// Blob
+// @impl Blob
 inline Blob::Blob(void* buffer, size_t size)
 {
     ASSERT(buffer && size);
@@ -760,7 +1510,7 @@ inline void Blob::SetGrowPolicy(GrowPolicy policy, uint32 amount)
 }
 
 //------------------------------------------------------------------------
-// PoolBuffer
+// @impl PoolBuffer
 template <typename _T, uint32 _Align>
 inline PoolBuffer<_T, _Align>::PoolBuffer(void* buffer, size_t size)
 {

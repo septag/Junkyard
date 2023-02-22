@@ -7,10 +7,10 @@
 #include "Core/Memory.h"
 #include "Core/String.h"
 #include "Core/System.h"
-#include "Core/Array.h"
 #include "Core/Settings.h"
 #include "Core/IncludeWin.h"
 #include "Core/FileIO.h"
+#include "Core/Buffers.h"
 
 #include "VirtualFS.h"
 #include "RemoteServices.h"

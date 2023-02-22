@@ -3,7 +3,6 @@
 #include "Core/System.h"
 #include "Core/Settings.h"
 #include "Core/SocketIO.h"
-#include "Core/Array.h"
 #include "Core/Buffers.h"
 #include "Core/String.h"
 #include "Core/Log.h"

@@ -4,9 +4,9 @@
 #include "Core/FileIO.h"
 #include "Core/System.h"
 #include "Core/String.h"
-#include "Core/Array.h"
 #include "Core/Settings.h"
 #include "Core/TracyHelper.h"
+#include "Core/Buffers.h"
 
 #if PLATFORM_ANDROID
     #include "Application.h"    // appGetNativeAssetManagerHandle

@@ -21,7 +21,6 @@
 
 #include "System.h"
 #include "Buffers.h"
-#include "Array.h"
 #include "Atomic.h"
 #include "Settings.h"
 #include "Log.h"

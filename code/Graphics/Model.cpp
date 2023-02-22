@@ -9,7 +9,6 @@
 #include "../External/cgltf/cgltf.h"
 
 #include "../Core/Memory.h"
-#include "../Core/HandlePool.h"
 #include "../Core/Buffers.h"
 #include "../Core/String.h"
 #include "../Core/System.h"

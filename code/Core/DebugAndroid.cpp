@@ -9,7 +9,7 @@
 
 #include "String.h"
 #include "Hash.h"
-#include "Array.h"
+#include "Buffers.h"
 
 // skip 1st frame, because it is actually the `debugCaptureStacktrace` call
 #define DEBUG_STACKTRACE_SKIP_FRAMES 1

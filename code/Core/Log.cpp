@@ -7,7 +7,7 @@
 #include "Memory.h"
 #include "TracyHelper.h"
 #include "System.h"
-#include "Array.h"
+#include "Buffers.h"
 
 // TODO: remove dependency 
 #include "../Application.h"
