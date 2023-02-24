@@ -3,9 +3,7 @@
 #include "String.h"
 #include "Log.h"
 #include "Buffers.h"
-
-// TODO: Remove this dependency
-#include "../VirtualFS.h"
+#include "FileIO.h"
 
 #define INI_IMPLEMENTATION
 #define INI_MALLOC(ctx, size)       memAlloc(size, (Allocator*)ctx)
@@ -213,7 +211,19 @@ bool settingsLoadFromINI(const char* iniFilepath)
     ASSERT(gSettings.initialized);
     logDebug("Loading settings from: %s", iniFilepath);
 
-    Blob blob = vfsReadFile(iniFilepath, VfsFlags::TextFile, memDefaultAlloc());
+    File f;
+    Blob blob;
+    if (f.Open(iniFilepath, FileIOFlags::Read | FileIOFlags::SeqScan)) {
+        uint64 size = f.GetSize();
+        if (size) {
+            blob.Reserve(size + 1);
+            size_t bytesRead = f.Read(const_cast<void*>(blob.Data()), size);
+            blob.SetSize(bytesRead);
+            blob.Write<char>('\0');
+        }
+        f.Close();
+    }
+
     if (!blob.IsValid()) {
         logError("Opening ini file '%s' failed", iniFilepath);
         return false;

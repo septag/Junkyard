@@ -5,9 +5,6 @@
 #include "Memory.h"
 #include "Atomic.h"
 #include "IncludeWin.h"
-
-
-// TODO: Remove dependency
 #include "TracyHelper.h"
 
 #include <limits.h>     // LONG_MAX

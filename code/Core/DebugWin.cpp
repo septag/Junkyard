@@ -102,7 +102,8 @@ struct DebugStacktraceContext
             FreeLibrary(dbghelp);
             dbghelp = nullptr;
 
-            DeleteCriticalSection(&mutex);
+            // Note that we do not Delete the critical section here, because it will be used after deinitialization by Tracy
+            // DeleteCriticalSection(&mutex);
         }
     }
 };

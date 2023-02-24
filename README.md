@@ -19,7 +19,6 @@ It's very much WIP, so not much to show off right now.
 - Multiplatform. Supported platforms:
     - Windows (x64)
     - Android (Android29+, ARM64)
-    - *WIP: Mac and iOS with MoltenVk*
 - Fast iteration
     - Quick build/compile times
     - Aim for simple tooling with minimal abstraction or complexity

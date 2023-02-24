@@ -721,11 +721,11 @@ const char* JobsTracyStringPool::NewString(const char* fmt, ...)
 
 JobsTracyStringPool::JobsTracyStringPool()
 {
-    this->stringToOffset.Initialize(256);
+    this->stringToOffset.Reserve(256);
 }
     
 JobsTracyStringPool::~JobsTracyStringPool()
 {
-    this->stringToOffset.Release();
+    this->stringToOffset.Free();
 }
 #endif // TRACY_ENABLE

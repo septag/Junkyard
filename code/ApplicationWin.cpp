@@ -233,8 +233,10 @@ static void appWinLoadInitRects()
     strPrintFmt(iniFilename, sizeof(iniFilename), "%s_windows.ini", appGetName());
 
     Blob data = vfsReadFile(iniFilename, VfsFlags::TextFile|VfsFlags::AbsolutePath);
-    if (data.IsValid())
+    if (data.IsValid()) {
         windowsIni = ini_load((const char*)data.Data(), memDefaultAlloc());
+        data.Free();
+    }
     
     auto GetWindowData = [](ini_t* ini, const char* name, RECT* rc) {
         int id = ini_find_section(ini, name, strLen(name));

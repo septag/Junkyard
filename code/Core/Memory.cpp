@@ -25,8 +25,6 @@
 #include "Settings.h"
 #include "Log.h"
 #include "BlitSort.h"
-
-// TODO: Remove this dependency
 #include "TracyHelper.h"
 
 #if PLATFORM_POSIX
