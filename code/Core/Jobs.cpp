@@ -23,7 +23,10 @@ namespace _limits
     static constexpr uint32 kJobsMaxFibers = 128;
     static constexpr uint32 kJobsMaxInstances = 128;
     static constexpr uint32 kJobsFiberStackSize = kMB;
+
+#ifdef TRACY_ENABLE
     static constexpr uint32 kJobsMaxTracyCStringSize = 4*kMB;
+#endif
 }
 
 #define JOBS_USE_ANDERSON_LOCK

@@ -578,9 +578,9 @@ void* MemFrameAllocator::Realloc(void* ptr, size_t size, uint32 align)
     ASSERT(size);
 
     MemFrameAllocatorInternal& alloc = gMem.frameAlloc;
-    AtomicLockScope lock(alloc.spinlock);
 
     if (!alloc.debugMode) {
+        AtomicLockScope lock(alloc.spinlock);
         align = Max(align, CONFIG_MACHINE_ALIGNMENT);
         size = AlignValue<size_t>(size, align);
 
@@ -645,6 +645,7 @@ void* MemFrameAllocator::Realloc(void* ptr, size_t size, uint32 align)
             ptr = gMem.defaultAlloc->Realloc(ptr, size, align);
 
         if (ptr) {
+            AtomicLockScope lock(alloc.spinlock);
             alloc.offset += size;
             alloc.peakBytes = Max<size_t>(alloc.peakBytes, alloc.offset);
             alloc.debugPointers.Push(_private::MemDebugPointer {ptr, align});
@@ -686,20 +687,20 @@ MemTransientAllocatorStats memFrameGetStats()
 void _private::memFrameReset()
 {
     MemFrameAllocatorInternal& alloc = gMem.frameAlloc;
+
     AtomicLockScope lock(alloc.spinlock);
-
-    // Invalidate already allocated memory, so we can have better debugging if something is still lingering 
-    if (alloc.offset)
-        memset(alloc.buffer, 0xfe, alloc.offset);
-
-    alloc.lastAllocatedPtr = nullptr;
-    alloc.offset = 0;
-
-    alloc.framePeaks[alloc.resetCount] = alloc.curFramePeak;
-    alloc.resetCount = (alloc.resetCount + 1) % kFramePeaksCount;
-    alloc.curFramePeak = 0;
-
     if (!alloc.debugMode) {
+        // Invalidate already allocated memory, so we can have better debugging if something is still lingering 
+        if (alloc.offset)
+            memset(alloc.buffer, 0xfe, alloc.offset);
+
+        alloc.lastAllocatedPtr = nullptr;
+        alloc.offset = 0;
+
+        alloc.framePeaks[alloc.resetCount] = alloc.curFramePeak;
+        alloc.resetCount = (alloc.resetCount + 1) % kFramePeaksCount;
+        alloc.curFramePeak = 0;
+
         // resize buffer to the maximum of the last 4 frames peak allocations
         // So based on the last frames activity, we might grow or shrink the temp buffer
         size_t maxPeakSize = 0;
@@ -719,6 +720,13 @@ void _private::memFrameReset()
             memVirtualDecommit(alloc.buffer + maxPeakSize, shrinkSize);
         }
         alloc.bufferSize = maxPeakSize;
+    }
+    else {
+        alloc.offset = 0;
+
+        for (_private::MemDebugPointer& dbgPtr : alloc.debugPointers) 
+            gMem.defaultAlloc->Free(dbgPtr.ptr, dbgPtr.align);
+        alloc.debugPointers.Clear();
     }
 }
 
