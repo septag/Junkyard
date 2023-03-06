@@ -50,6 +50,7 @@ struct ThreadImpl
     void* userData;
     size_t stackSize;
     pid_t tId;
+    atomicUint32 stopped;
     bool running;
 };
 
@@ -111,6 +112,7 @@ bool Thread::Start(const ThreadDesc& desc)
     thrd->userData = desc.userData;
     thrd->stackSize = Max<uint64>(static_cast<uint64>(desc.stackSize), 64*kKB);
     strCopy(thrd->name, sizeof(thrd->name), desc.name ? desc.name : "");
+    thrd->stopped = 0;
 
     pthread_attr_t attr;
     [[maybe_unused]] int r = pthread_attr_init(&attr);
@@ -147,7 +149,8 @@ int Thread::Stop()
 
     if (thrd->handle) {
         ASSERT_MSG(thrd->running, "Thread is not running!");
-
+       
+        atomicStore32Explicit(&thrd->stopped, 1, AtomicMemoryOrder::Release);
         pthread_join(thrd->handle, &cast.ptr);
     }
 
@@ -160,6 +163,12 @@ bool Thread::IsRunning() const
 {
     const ThreadImpl* thrd = reinterpret_cast<const ThreadImpl*>(this->data);
     return thrd->running;
+}
+
+bool Thread::IsStopped()
+{
+    ThreadImpl* thrd = reinterpret_cast<ThreadImpl*>(this->data);
+    return atomicLoad32Explicit(&thrd->stopped, AtomicMemoryOrder::Acquire) == 1;
 }
 
 void Thread::SetPriority(ThreadPriority prio)

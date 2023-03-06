@@ -39,6 +39,8 @@ xcuserdata
 *.tmp
 /*.ini
 scripts/symbols
+data/images/gen/**
+data/models/gen/**
 
 # Dependency downloads
 code/External/slang/**

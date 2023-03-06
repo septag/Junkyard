@@ -43,7 +43,6 @@ void meshoptOptimizeModel(Model* model, const ModelLoadParams& modelParams)
         size_t numVertices = meshopt_generateVertexRemapMulti(remap, indices, mesh->numIndices, 
                                                               mesh->numVertices, streams, mesh->numVertexBuffers);
         [[maybe_unused]] uint32 numDuplicates = mesh->numVertices - (uint32)numVertices;
-        mesh->numVertices = uint32(numVertices);
 
         for (uint32 k = 0; k < mesh->numVertexBuffers; k++) {
             void* remappedVertices = tmpAlloc.Malloc(numVertices * modelParams.layout.vertexBufferStrides[k]);
@@ -52,6 +51,7 @@ void meshoptOptimizeModel(Model* model, const ModelLoadParams& modelParams)
             memcpy(mesh->cpuBuffers.vertexBuffers[k].Get(), remappedVertices, numVertices * modelParams.layout.vertexBufferStrides[k]);
         }
         meshopt_remapIndexBuffer(indices, indices, mesh->numIndices, remap);
+        mesh->numVertices = uint32(numVertices);
 
         // Vertex cache
         meshopt_optimizeVertexCache(indices, indices, mesh->numIndices, mesh->numVertices);
@@ -66,7 +66,7 @@ void meshoptOptimizeModel(Model* model, const ModelLoadParams& modelParams)
         meshopt_OverdrawStatistics overdrawStats =
             meshopt_analyzeOverdraw(indices, mesh->numIndices, (const float*)positions, mesh->numVertices, positionStride);
         #endif
-
+        
         // Fetch
         for (uint32 k = 0; k < mesh->numVertexBuffers; k++) {
             numVertices = meshopt_optimizeVertexFetchRemap(remap, indices, mesh->numIndices, mesh->numVertices);

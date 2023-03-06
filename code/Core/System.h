@@ -54,7 +54,9 @@ struct alignas(64) Thread
     bool Start(const ThreadDesc& desc);
     int  Stop();
 
+    bool IsStopped();
     bool IsRunning() const;
+
     void SetPriority(ThreadPriority prio);
 
 private:

@@ -40,10 +40,11 @@ struct ThreadImpl
     Semaphore sem;
     ThreadEntryFunc threadFn;
     HANDLE handle;
-    DWORD tId;
     void* userData;
     size_t stackSize;
     char name[32];
+    DWORD tId;
+    atomicUint32 stopped;
     bool running;
 };
 
@@ -79,6 +80,7 @@ bool Thread::Start(const ThreadDesc& desc)
     thrd->threadFn = desc.entryFn;
     thrd->userData = desc.userData;
     thrd->stackSize = Max<size_t>(desc.stackSize, 64*kKB);
+    thrd->stopped = 0;
     strCopy(thrd->name, sizeof(thrd->name), desc.name ? desc.name : "");
 
     thrd->handle = CreateThread(nullptr, thrd->stackSize, (LPTHREAD_START_ROUTINE)threadStubFn, thrd, 0, nullptr);
@@ -100,6 +102,7 @@ int Thread::Stop()
     if (thrd->handle) {
         ASSERT_MSG(thrd->running, "Thread is not running!");
 
+        atomicStore32Explicit(&thrd->stopped, 1, AtomicMemoryOrder::Release);
         WaitForSingleObject(thrd->handle, INFINITE);
         GetExitCodeThread(thrd->handle, &exitCode);
         CloseHandle(thrd->handle);
@@ -115,6 +118,12 @@ bool Thread::IsRunning() const
 {
     const ThreadImpl* thrd = reinterpret_cast<const ThreadImpl*>(this->data);
     return thrd->running;
+}
+
+bool Thread::IsStopped()
+{
+    ThreadImpl* thrd = reinterpret_cast<ThreadImpl*>(this->data);
+    return atomicLoad32Explicit(&thrd->stopped, AtomicMemoryOrder::Acquire) == 1;
 }
 
 void Thread::SetPriority(ThreadPriority prio)

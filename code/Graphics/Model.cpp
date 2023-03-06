@@ -101,6 +101,11 @@ INLINE GfxSamplerWrapMode modelGltfGetWrap(GLTF_Wrap wrap)
     }
 }
 
+static ModelMaterial* modelCreateDefaultMaterial(Allocator* alloc)
+{
+    return memAllocZeroTyped<ModelMaterial>(1, alloc);
+}
+
 static ModelMaterial* modelCreateMaterial(Model* model, cgltf_material* gltfMtl, const char* fileDir, Allocator* alloc)
 {
     auto LoadTextureFromGltf = [alloc](cgltf_texture* gltfTexture, ModelMaterialTexture* tex, const char* fileDir)
@@ -714,7 +719,8 @@ Pair<Model*, uint32> modelLoadGltf(const char* filepath, Allocator* alloc, const
 
             if (prim->material)
                 dstMesh->submeshes[pi].material = modelCreateMaterial(model, prim->material, fileDir.CStr(), &tmpAlloc);
-            // TODO: get blank material as default (missing material)
+            else 
+                dstMesh->submeshes[pi].material = modelCreateDefaultMaterial(&tmpAlloc);
         } // foreach (mesh-primitive)
         ASSERT_ALWAYS(numVertices && numIndices, "Model %s Mesh %s: doesn't have any vertices", filepath, mesh->name);
         dstMesh->numVertices = numVertices;

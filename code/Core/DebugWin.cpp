@@ -85,7 +85,8 @@ struct DebugStacktraceContext
     {
         if constexpr (!CONFIG_FINAL_BUILD) {
             initialized = debugInitializeStacktrace();
-            ASSERT(initialized);
+            // TODO: I had to disable this, because in RenderDoc, this fails. Needs investigation
+            // ASSERT(initialized);
         }
     }
 

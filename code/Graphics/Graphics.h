@@ -951,7 +951,7 @@ API void gfxCmdBindDescriptorSets(uint32 numDescriptorSets, const GfxDescriptorS
 API void gfxCmdBindVertexBuffers(uint32 firstBinding, uint32 numBindings, const GfxBuffer* vertexBuffers, const uint64* offsets);
 API void gfxCmdBindIndexBuffer(GfxBuffer indexBuffer, uint64 offset, GfxIndexType indexType);
 API void gfxCmdPushConstants(GfxPipeline pipeline, GfxShaderStage stage, const void* data, uint32 size);
-API void gfxCmdBeginSwapchainRenderPass();
+API void gfxCmdBeginSwapchainRenderPass(Color bgColor = kColorBlack);
 API void gfxCmdEndSwapchainRenderPass();
 API void gfxCmdDraw(uint32 vertexCount, uint32 instanceCount, uint32 firstVertex, uint32 firstInstance);
 API void gfxCmdDrawIndexed(uint32 indexCount, uint32 instanceCount, uint32 firstIndex, uint32 vertexOffset, uint32 firstInstance);

@@ -3466,7 +3466,7 @@ void gfxDestroyPipeline(GfxPipeline pipeline)
     gVk.pools.pipelines.Remove(pipeline);
 }
 
-void gfxCmdBeginSwapchainRenderPass()
+void gfxCmdBeginSwapchainRenderPass(Color bgColor)
 {
     ASSERT_MSG(gVk.swapchain.imageIdx != UINT32_MAX, "This function must be called within during frame rendering");
 
@@ -3477,8 +3477,9 @@ void gfxCmdBeginSwapchainRenderPass()
 
     uint32 imageIdx = gVk.swapchain.imageIdx;
 
+    Float4 bgColor4f = colorToFloat4(bgColor);
     const VkClearValue clearValues[] = {
-        { .color = {{0.0f, 0.0f, 0.0f, 1.0f}} },
+        { .color = {{bgColor4f.x, bgColor4f.y, bgColor4f.z, bgColor4f.w}} },
         { .depthStencil = {1.0f, 0} }
     };
 

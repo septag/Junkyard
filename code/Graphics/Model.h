@@ -84,7 +84,6 @@ enum ModelMaterialAlphaMode
 
 struct ModelMaterial 
 {
-    String32 name;
     bool hasMetalRoughness;
     bool hasSpecularGlossiness;
     bool hasClearcoat;
