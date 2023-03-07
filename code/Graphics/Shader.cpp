@@ -395,7 +395,7 @@ bool ShaderLoader::ReloadSync(AssetHandle handle, void* prevData)
     UNUSED(prevData);
 
     Shader* oldShader = reinterpret_cast<Shader*>(prevData);
-    Shader* newShader = reinterpret_cast<Shader*>(_private::assetGetDataUnsafe(handle));
+    Shader* newShader = reinterpret_cast<Shader*>(_private::assetGetData(handle));
 
     if (newShader == nullptr)
         return false;
