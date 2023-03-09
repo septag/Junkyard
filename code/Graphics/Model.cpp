@@ -912,15 +912,17 @@ AssetResult ModelLoader::Load(AssetHandle handle, const AssetLoadParams& params,
     #endif
 
     // Create/Load GPU resources
-    if (modelParams.vertexBufferUsage != GfxBufferUsage::Default || modelParams.indexBufferUsage != GfxBufferUsage::Default) {
-        if (!modelSetupGpuBuffers(model, modelParams.vertexBufferUsage, modelParams.indexBufferUsage)) {
-            logError("Creating model GPU buffers failed: %s", params.path);
-            modelDestroy(model, params.alloc);
-            return AssetResult {};
+    if (!modelParams.skipCreatingGpuResources) {
+        if (modelParams.vertexBufferUsage != GfxBufferUsage::Default || modelParams.indexBufferUsage != GfxBufferUsage::Default) {
+            if (!modelSetupGpuBuffers(model, modelParams.vertexBufferUsage, modelParams.indexBufferUsage)) {
+                logError("Creating model GPU buffers failed: %s", params.path);
+                modelDestroy(model, params.alloc);
+                return AssetResult {};
+            }
         }
+    
+        modelLoadTextures(model, params.barrier);
     }
-
-    modelLoadTextures(model, params.barrier);
 
     if (model->numMaterialTextures) {
         uint32 dependsBufferSize;
@@ -1042,17 +1044,19 @@ static void modelHandlerClientFn([[maybe_unused]] uint32 cmd, const Blob& incomi
 
         // Create/Load GPU resources
         const ModelLoadParams& modelParams = request.loadParams;
-        if (modelParams.vertexBufferUsage != GfxBufferUsage::Default || modelParams.indexBufferUsage != GfxBufferUsage::Default) {
-            if (!modelSetupGpuBuffers(model, modelParams.vertexBufferUsage, modelParams.indexBufferUsage)) {
-                logError("Creating model GPU buffers failed");
-                modelDestroy(model, &tmpAlloc);
-                
-                if (request.loadCallback)
-                    request.loadCallback(handle, AssetResult {}, request.loadCallbackUserData);
+        if (!modelParams.skipCreatingGpuResources) {
+            if (modelParams.vertexBufferUsage != GfxBufferUsage::Default || modelParams.indexBufferUsage != GfxBufferUsage::Default) {
+                if (!modelSetupGpuBuffers(model, modelParams.vertexBufferUsage, modelParams.indexBufferUsage)) {
+                    logError("Creating model GPU buffers failed");
+                    modelDestroy(model, &tmpAlloc);
+                    
+                    if (request.loadCallback)
+                        request.loadCallback(handle, AssetResult {}, request.loadCallbackUserData);
+                }
             }
+    
+            modelLoadTextures(model, request.params.barrier);
         }
-
-        modelLoadTextures(model, request.params.barrier);
 
         if (model->numMaterialTextures) {
             uint32 dependsBufferSize;

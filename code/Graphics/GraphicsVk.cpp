@@ -1,6 +1,10 @@
 #ifndef __GRAPHICS_VK_CPP__
 #define __GRAPHICS_VK_CPP__
 
+#ifndef __GRAPHICS_CPP__
+    #error "This file depends on Graphics.cpp for compilation"
+#endif
+
 #include "Graphics.h"
 #include "Shader.h"
 
@@ -151,6 +155,7 @@ struct GfxBufferData
     VkBuffer                buffer;
     VkBuffer                stagingBuffer;
     VmaAllocation           stagingAllocation;
+    void*                   mappedBuffer;
 };
 
 struct GfxImageData
@@ -305,6 +310,8 @@ struct GfxVkState
     VkPhysicalDeviceVulkan11Properties deviceProps11;
     VkPhysicalDeviceVulkan12Properties deviceProps12;
     VkPhysicalDeviceFeatures deviceFeatures;
+    VkPhysicalDeviceVulkan11Features deviceFeatures11;
+    VkPhysicalDeviceVulkan12Features deviceFeatures12;
     VkDevice device;
     uint32 gfxQueueFamilyIndex;
     uint32 presentQueueFamilyIndex;
@@ -353,6 +360,8 @@ struct GfxVkState
     bool hasAstcDecodeMode;     // VK_EXT_astc_decode_mode extension is available. use it for ImageViews
     bool hasPipelineExecutableProperties;
     bool hasMemoryBudget;
+    bool hasHostQueryReset;
+    bool hasFloat16Support;
 };
 
 namespace VkExtensionApi
@@ -373,6 +382,7 @@ namespace VkExtensionApi
     static PFN_vkGetPipelineExecutableInternalRepresentationsKHR vkGetPipelineExecutableInternalRepresentationsKHR;
 
     static PFN_vkGetPhysicalDeviceProperties2KHR vkGetPhysicalDeviceProperties2KHR;
+    static PFN_vkResetQueryPoolEXT vkResetQueryPoolEXT;
 };
 
 static GfxVkState gVk;
@@ -788,6 +798,8 @@ bool gfxBeginCommandBuffer()
     if (gVk.deviceProps.limits.timestampComputeAndGraphics) {
         uint32 expectedValue = 0;
         if (atomicCompareExchange32Weak(&gVk.queryFirstCall, &expectedValue, 1)) {
+            //if (gVk.hasHostQueryReset)
+                VkExtensionApi::vkResetQueryPoolEXT(gVk.device, gVk.queryPool[gVk.currentFrameIdx], 0, 2);
             vkCmdWriteTimestamp(gCmdBufferThreadData.curCmdBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, 
                                 gVk.queryPool[gVk.currentFrameIdx], 0);
         }
@@ -1675,7 +1687,6 @@ bool _private::gfxInitialize()
     // Physical device is created, gather information about driver/hardware and show it before we continue initialization other stuff
     {
         vkGetPhysicalDeviceProperties(gVk.physicalDevice, &gVk.deviceProps);
-        vkGetPhysicalDeviceFeatures(gVk.physicalDevice, &gVk.deviceFeatures);
 
         VkDeviceSize heapSize = 0;
         {
@@ -1735,6 +1746,26 @@ bool _private::gfxInitialize()
                 gVk.deviceProps12.conformanceVersion.subminor,
                 gVk.deviceProps12.conformanceVersion.patch);
         }
+
+        // Get device features based on the vulkan API
+        if (gfxHasVulkanVersion(GfxApiVersion::Vulkan_1_1)) {
+            gVk.deviceFeatures11.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES;
+            VkPhysicalDeviceFeatures2 features2 {
+                .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
+                .pNext = &gVk.deviceFeatures11
+            };
+            
+            if (gfxHasVulkanVersion(GfxApiVersion::Vulkan_1_2)) {
+                gVk.deviceFeatures12.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
+                gVk.deviceFeatures11.pNext = &gVk.deviceFeatures12;
+            }
+
+            vkGetPhysicalDeviceFeatures2(gVk.physicalDevice, &features2);
+            gVk.deviceFeatures = features2.features;
+        }
+        else {
+            vkGetPhysicalDeviceFeatures(gVk.physicalDevice, &gVk.deviceFeatures);
+        }
     }
 
     //------------------------------------------------------------------------
@@ -1787,6 +1818,14 @@ bool _private::gfxInitialize()
     gVk.hasAstcDecodeMode = gfxHasDeviceExtension("VK_EXT_astc_decode_mode");
     gVk.hasMemoryBudget = gfxHasDeviceExtension("VK_EXT_memory_budget");
 
+    gVk.hasHostQueryReset = gfxHasDeviceExtension("VK_EXT_host_query_reset");
+    if (gfxHasVulkanVersion(GfxApiVersion::Vulkan_1_2) && !gVk.deviceFeatures12.hostQueryReset)
+        gVk.hasHostQueryReset = false;
+
+    gVk.hasFloat16Support = gfxHasDeviceExtension("VK_KHR_shader_float16_int8");
+    if (gfxHasVulkanVersion(GfxApiVersion::Vulkan_1_2) && !gVk.deviceFeatures12.shaderFloat16)
+        gVk.hasFloat16Support = false;
+
     StaticArray<const char*, 32> enabledDeviceExtensions;
     if (!settings.headless) {
         if (gfxHasDeviceExtension("VK_KHR_swapchain"))
@@ -1818,27 +1857,43 @@ bool _private::gfxInitialize()
 
     if (gVk.hasMemoryBudget)
         enabledDeviceExtensions.Add("VK_EXT_memory_budget");
+    if (gVk.hasHostQueryReset) {
+        enabledDeviceExtensions.Add("VK_EXT_host_query_reset");
+        VkExtensionApi::vkResetQueryPoolEXT = (PFN_vkResetQueryPoolEXT)vkGetInstanceProcAddr(gVk.instance, "vkResetQueryPoolEXT");
+    }
+    if (gVk.hasFloat16Support)
+        enabledDeviceExtensions.Add("VK_KHR_shader_float16_int8");
 
+    // Enabled layers
     VkDeviceCreateInfo devCreateInfo {
         .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
         .queueCreateInfoCount = queueCreateInfos.Count(),
         .pQueueCreateInfos = queueCreateInfos.Ptr(),
+        .enabledLayerCount = enabledLayers.Count(),
+        .ppEnabledLayerNames = enabledLayers.Ptr(),
         .enabledExtensionCount = enabledDeviceExtensions.Count(),
         .ppEnabledExtensionNames = enabledDeviceExtensions.Ptr(),
         .pEnabledFeatures = &gVk.deviceFeatures,
     };
 
-    if (settings.validate) {
-        devCreateInfo.enabledLayerCount = 1;
-        devCreateInfo.ppEnabledLayerNames = &kVkValidationLayer;
-    }
-
+    // Fill device pNext chain
+    void** deviceNext = const_cast<void**>(&devCreateInfo.pNext);
+    VkPhysicalDevicePipelineExecutablePropertiesFeaturesKHR enableExecProps {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PIPELINE_EXECUTABLE_PROPERTIES_FEATURES_KHR,
+        .pipelineExecutableInfo = VK_TRUE
+    };
     if (settings.shaderDumpProperties && gVk.hasPipelineExecutableProperties) {
-        VkPhysicalDevicePipelineExecutablePropertiesFeaturesKHR enableExecProps {
-            .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PIPELINE_EXECUTABLE_PROPERTIES_FEATURES_KHR,
-            .pipelineExecutableInfo = VK_TRUE
-        };
-        devCreateInfo.pNext = &enableExecProps;
+        *deviceNext = &enableExecProps;
+        deviceNext = &enableExecProps.pNext;
+    }
+    
+    VkPhysicalDeviceHostQueryResetFeatures enableHostReset {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_HOST_QUERY_RESET_FEATURES,
+        .hostQueryReset = true
+    };
+    if (gVk.hasHostQueryReset) {
+        *deviceNext = &enableHostReset;
+        deviceNext = &enableHostReset.pNext;
     }
 
     if (enabledDeviceExtensions.Count()) {
@@ -2061,6 +2116,7 @@ bool _private::gfxInitialize()
     }
 
     gVk.initHeapSize = initHeap->GetOffset() - gVk.initHeapStart;
+    gfxGetPhysicalDeviceProperties();       // call once just to populate the struct
     gVk.initialized = true;
     return true;
 }
@@ -2329,7 +2385,6 @@ void gfxBeginFrame()
         vkWaitForFences(gVk.device, 1, &gVk.inflightFences[gVk.currentFrameIdx], VK_TRUE, UINT64_MAX);
     }
 
-    // Submit deferred commands
     gfxSubmitDeferredCommands();
 
     uint32 frameIdx = gVk.currentFrameIdx;
@@ -2436,7 +2491,7 @@ void gfxEndFrame()
     gfxCollectGarbage(false);
 }
 
-// https://gpuopen-librariesandsdks.github.io/VulkanMemoryAllocator/html/usage_patterns.html
+// https://gpuopen-librariesandsdks.github.io/VulkanMemoryAllocator/html/usage_patterns.html#usage_patterns_advanced_data_uploading
 GfxBuffer gfxCreateBuffer(const GfxBufferDesc& desc)
 {
     ASSERT(desc.size);
@@ -2452,7 +2507,8 @@ GfxBuffer gfxCreateBuffer(const GfxBufferDesc& desc)
     uint32 vmaFlags = 0;
     if (desc.usage == GfxBufferUsage::Stream) {
         vmaFlags |= VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | 
-                    VMA_ALLOCATION_CREATE_HOST_ACCESS_ALLOW_TRANSFER_INSTEAD_BIT;
+                    VMA_ALLOCATION_CREATE_HOST_ACCESS_ALLOW_TRANSFER_INSTEAD_BIT |
+                    VMA_ALLOCATION_CREATE_MAPPED_BIT;
     }
 
     GfxBufferUsage memUsage = desc.usage == GfxBufferUsage::Default ? GfxBufferUsage::Immutable : desc.usage;
@@ -2461,7 +2517,9 @@ GfxBuffer gfxCreateBuffer(const GfxBufferDesc& desc)
         .memUsage = memUsage,
         .size = desc.size
     };
-
+    
+    // We always want to use the buffer as transfer destination for non-stream 
+    // TODO: revisit the part about excluding integrated GPU from TRANSFER_DST
     if (memUsage != GfxBufferUsage::Stream || gVk.deviceProps.deviceType != VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU)
         usageFlags |= VK_BUFFER_USAGE_TRANSFER_DST_BIT;
 
@@ -2488,16 +2546,11 @@ GfxBuffer gfxCreateBuffer(const GfxBufferDesc& desc)
     vmaGetAllocationMemoryProperties(gVk.vma, bufferData.allocation, &bufferData.memFlags);
 
     if (desc.usage == GfxBufferUsage::Immutable) {
-        // For Immutable buffers, we should provide content data and fill it out 
-        // should Staging copy phase
+        // For Immutable buffers, we should provide content data and fill it out. So we have an extra staging copy phase
         ASSERT_MSG(desc.content != nullptr, "Must provide content data for immutable buffers");
 
         if (bufferData.memFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) {
-            void* data = nullptr;
-            vmaMapMemory(gVk.vma, bufferData.allocation, &data);
-            ASSERT(data);
-            memcpy(data, desc.content, desc.size);
-            vmaUnmapMemory(gVk.vma, bufferData.allocation);
+            memcpy(allocInfo.pMappedData, desc.content, desc.size);
         }
         else {
             VkBufferCreateInfo stageBufferCreateInfo {
@@ -2507,25 +2560,20 @@ GfxBuffer gfxCreateBuffer(const GfxBufferDesc& desc)
             };
 
             VmaAllocationCreateInfo stageAllocCreateInfo {
-                .flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT,
+                .flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT,
                 .usage = VMA_MEMORY_USAGE_AUTO,
             };
 
             VkBuffer stagingBuffer;
             VmaAllocation stagingAlloc;
-            if (vmaCreateBuffer(gVk.vma, &stageBufferCreateInfo, &stageAllocCreateInfo, &stagingBuffer, 
-                                &stagingAlloc, &allocInfo) != VK_SUCCESS)
-            {
+            if (vmaCreateBuffer(gVk.vma, &stageBufferCreateInfo, &stageAllocCreateInfo, &stagingBuffer, &stagingAlloc, &allocInfo) != VK_SUCCESS) {
                 vmaDestroyBuffer(gVk.vma, bufferData.buffer, bufferData.allocation);
                 ASSERT_MSG(0, "Create staging buffer failed");
                 return GfxBuffer();
             }
-        
-            void* stagingData = nullptr;
-            vmaMapMemory(gVk.vma, stagingAlloc, &stagingData);
-            ASSERT(stagingData);
-            memcpy(stagingData, desc.content, desc.size);
-            vmaUnmapMemory(gVk.vma, stagingAlloc);
+
+            memcpy(allocInfo.pMappedData, desc.content, desc.size);
+            vmaFlushAllocation(gVk.vma, stagingAlloc, 0, VK_WHOLE_SIZE);
 
             gfxBeginDeferredCommandBuffer();
             VkBufferCopy copyRegion {
@@ -2546,7 +2594,7 @@ GfxBuffer gfxCreateBuffer(const GfxBufferDesc& desc)
         }
     }
     else if (desc.usage == GfxBufferUsage::Stream) {
-        // Stream buffers are either mapped persistent or the device doesn't support it. so we have to create staging buffer
+        // Stream buffers are either mapped persistent or the device doesn't support it. so in that case, we have to create staging buffer
         if ((bufferData.memFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) != VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) {
             VkBufferCreateInfo stageBufferCreateInfo {
                 .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
@@ -2566,6 +2614,11 @@ GfxBuffer gfxCreateBuffer(const GfxBufferDesc& desc)
                 ASSERT_MSG(0, "Create staging buffer failed");
                 return GfxBuffer();
             }
+
+            bufferData.mappedBuffer = allocInfo.pMappedData;
+        }
+        else {
+            bufferData.mappedBuffer = allocInfo.pMappedData;
         }
     }
     else {
@@ -2607,13 +2660,10 @@ void gfxCmdUpdateBuffer(GfxBuffer buffer, const void* data, uint32 size)
     }
     ASSERT(size <= bufferData.size);
     ASSERT_MSG(bufferData.memUsage != GfxBufferUsage::Immutable, "Immutable buffers cannot be updated");
+    ASSERT(bufferData.mappedBuffer);
 
     if (bufferData.memFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) {
-        void* dest = nullptr;
-        vmaMapMemory(gVk.vma, bufferData.allocation, &dest);
-        ASSERT(dest);
-        memcpy(dest, data, size);
-        vmaUnmapMemory(gVk.vma, bufferData.allocation);
+        memcpy(bufferData.mappedBuffer, data, size);
     }
     else {
         ASSERT(bufferData.stagingBuffer);
@@ -2626,13 +2676,10 @@ void gfxCmdUpdateBuffer(GfxBuffer buffer, const void* data, uint32 size)
             .dstOffset = 0,
             .size = size
         };
-        void* stagingData = nullptr;
-        vmaMapMemory(gVk.vma, bufferData.stagingAllocation, &stagingData);
-        ASSERT(stagingData);
-        memcpy(stagingData, data, size);
-        vmaUnmapMemory(gVk.vma, bufferData.stagingAllocation);
+        memcpy(bufferData.mappedBuffer, data, size);
+        vmaFlushAllocation(gVk.vma, bufferData.stagingAllocation, 0, size == bufferData.size ? VK_WHOLE_SIZE : size);
 
-        vkCmdCopyBuffer(cmdBufferVk, bufferData.stagingBuffer, bufferData.buffer, 1, &bufferCopy);
+        gfxCmdCopyBuffer(bufferData.stagingBuffer, bufferData.buffer, 1, &bufferCopy);
     }
 }
 
@@ -4027,13 +4074,23 @@ void _private::gfxRecreatePipelinesWithNewShader(uint32 shaderHash, Shader* shad
     }
 }
 
-const GfxPhysicalDeviceProperties gfxGetPhysicalDeviceProperties()
+const GfxPhysicalDeviceProperties& gfxGetPhysicalDeviceProperties()
 {
-    return GfxPhysicalDeviceProperties {
-        .limits = {
-            .timestampPeriod = gVk.deviceProps.limits.timestampPeriod
-        }
-    };
+    static GfxPhysicalDeviceProperties props;
+    static bool propsInit = false;
+
+    if (!propsInit) {
+        props = GfxPhysicalDeviceProperties {
+            .limits = {
+                .timestampPeriod = gVk.deviceProps.limits.timestampPeriod,
+                .minTexelBufferOffsetAlignment = uint32(gVk.deviceProps.limits.minTexelBufferOffsetAlignment),
+                .minUniformBufferOffsetAlignment = uint32(gVk.deviceProps.limits.minUniformBufferOffsetAlignment),
+                .minStorageBufferOffsetAlignment = uint32(gVk.deviceProps.limits.minStorageBufferOffsetAlignment)
+            }
+        };
+    }
+
+    return props;
 }
 
 void* GfxHeapAllocator::Malloc(size_t size, uint32 align)

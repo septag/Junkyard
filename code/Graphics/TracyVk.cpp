@@ -1,3 +1,10 @@
+#ifndef __TRACY_VK_CPP__
+#define __TRACY_VK_CPP__
+
+#ifndef __GRAPHICS_CPP__
+    #error "This file depends on Graphics.cpp for compilation"
+#endif
+
 #include "../Core/TracyHelper.h"
 
 #ifdef TRACY_ENABLE
@@ -421,3 +428,5 @@ static void gfxProfileCollectSamples()
         ctx->tail = 0;
 }
 #endif // TRACY_ENABLE
+
+#endif // __TRACY_VK_CPP__

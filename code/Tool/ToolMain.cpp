@@ -1,23 +1,13 @@
 #include <stdio.h>
 
-#include "../Core/System.h"
-#include "../Core/Buffers.h"
-#include "../Core/Hash.h"
-#include "../Core/String.h"
-#include "../Core/SocketIO.h"
-#include "../Core/String.h"
 #include "../Core/Settings.h"
 #include "../Core/Log.h"
+#include "../Core/TracyHelper.h"
+#include "../Core/System.h"
 
-#include "../Math/Math.h"
-
-#include "../Engine.h"
 #include "../VirtualFS.h"
-#include "../AssetManager.h"
 #include "../Application.h"
-
-#include "../Graphics/ImGuiWrapper.h"
-#include "../Graphics/Graphics.h"
+#include "../Engine.h"
 
 #include "../UnityBuild.inl"
 

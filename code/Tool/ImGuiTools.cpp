@@ -328,9 +328,8 @@ void imguiQuickInfoHud(float dt, bool *pOpen)
         frameTimes.Read<float>(nullptr);
     frameTimes.Write<float>(dt);
 
-    //ImGui::SetNextWindowSizeConstraints(ImVec2(kFontSize*10, kLineSize*5), ImVec2(kFontSize*20, kLineSize*5));
     ImGui::SetNextWindowPos(ImVec2(0, 0), ImGuiCond_Always);
-    ImGui::SetNextWindowSize(ImVec2(kDisplaySize.x*0.33f, kLineSize*4), ImGuiCond_Always);
+    ImGui::SetNextWindowSize(ImVec2(kDisplaySize.x*0.33f, kLineSize*5), ImGuiCond_Always);
     const uint32 kWndFlags = ImGuiWindowFlags_NoBackground|ImGuiWindowFlags_NoTitleBar|ImGuiWindowFlags_NoScrollbar|
                              ImGuiWindowFlags_NoMove|ImGuiWindowFlags_NoResize|ImGuiWindowFlags_NoInputs;
     if (ImGui::Begin("Frame", pOpen, kWndFlags)) {
@@ -371,16 +370,31 @@ void imguiQuickInfoHud(float dt, bool *pOpen)
         uint32 targetFps = settingsGetGraphics().enableVsync ? gImGuiQuickInfoState.targetFps : uint32(1.0f / avgFt);
         uint32 warningFps = uint32(float(targetFps) * 0.8f);
         uint32 lowFps = targetFps / 2;
-        Color fpsColor;
+
+        Color fpsColor, cpuColor, gpuColor;
         if (fps <= lowFps)             fpsColor = kColorRed;
         else if (fps <= warningFps)    fpsColor = kColorYellow;
         else                           fpsColor = kColorGreen;
+
+        float cpuTimeMs = engineGetCpuFrameTimeMS();
+        float gpuTimeMs = gfxGetRenderTimeNs()/1000000.0f;
+        float warnTimeMs = 1000.0f / float(warningFps);
+        float lowTimeMs = 1000.0f / float(lowFps);
+
+        if (cpuTimeMs >= lowTimeMs)         cpuColor = kColorRed;
+        else if (cpuTimeMs >= warnTimeMs)   cpuColor = kColorYellow;
+        else                                cpuColor = kColorGreen;
+
+        if (gpuTimeMs >= lowTimeMs)         gpuColor = kColorRed;
+        else if (gpuTimeMs >= warnTimeMs)   gpuColor = kColorYellow;
+        else                                gpuColor = kColorGreen;
                         
         imguiLabel(kTextColorU32, fpsColor, "Fps", "%u", fps);
         imguiLabel(kTextColorU32, fpsColor, "AvgFt", "%.1fms", avgFt*1000.0f);
         imguiLabel(kTextColorU32, fpsColor, "MinFt", "%.1fms", minFt*1000.0f);
         imguiLabel(kTextColorU32, fpsColor, "MaxFt", "%.1fms", maxFt*1000.0f);
-        imguiLabel(kTextColorU32, fpsColor, "Gpu", "%.1fms", gfxGetRenderTimeNs()/1000000.0f);
+        imguiLabel(kTextColorU32, cpuColor, "Cpu", "%.1fms", cpuTimeMs);
+        imguiLabel(kTextColorU32, gpuColor, "Gpu", "%.1fms", gpuTimeMs);
         
         ImGui::TableNextColumn();
         ImGui::PushItemWidth(ImGui::GetWindowWidth() - kStyle.WindowPadding.x*2 - ImGui::GetCursorPos().x);

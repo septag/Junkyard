@@ -257,6 +257,9 @@
     <ClCompile Include="..\..\code\Core\Buffers.cpp">
       <Filter>Source Files\Core</Filter>
     </ClCompile>
+    <ClCompile Include="..\..\code\Graphics\GfxTools.cpp">
+      <Filter>Source Files\Graphics</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\..\code\Application.h">
@@ -456,6 +459,9 @@
     </ClInclude>
     <ClInclude Include="..\..\code\Math\Math.h">
       <Filter>Header Files\Math</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\code\Graphics\GfxTools.h">
+      <Filter>Header Files\Graphics</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

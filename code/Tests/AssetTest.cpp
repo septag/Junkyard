@@ -40,6 +40,11 @@ struct AppImpl : AppCallbacks
         Float2 uv;
     };
 
+    struct WorldTransform
+    {
+
+    };
+
     struct FrameTransform 
     {
         Mat4 viewMat;

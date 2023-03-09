@@ -858,6 +858,9 @@ enum class GfxApiVersion : uint32
 struct GfxPhysicalDeviceLimits
 {
     float timestampPeriod;
+    uint32 minTexelBufferOffsetAlignment;
+    uint32 minUniformBufferOffsetAlignment;
+    uint32 minStorageBufferOffsetAlignment;
 };
 
 struct GfxPhysicalDeviceProperties
@@ -914,7 +917,7 @@ struct GfxBudgetStats
 //----------------------------------------------------------------------------------------------------------------------
 API bool gfxHasDeviceExtension(const char* extension);
 API bool gfxHasInstanceExtension(const char* extension);
-API const GfxPhysicalDeviceProperties gfxGetPhysicalDeviceProperties();
+API const GfxPhysicalDeviceProperties& gfxGetPhysicalDeviceProperties();
 
 API void gfxDestroySurfaceAndSwapchain();
 API void gfxRecreateSurfaceAndSwapchain();
@@ -1000,6 +1003,9 @@ API AssetHandleImage assetLoadImage(const char* path, const ImageLoadParams& par
 API GfxImage assetGetImage(AssetHandleImage imageHandle);
 API GfxImageInfo gfxImageGetInfo(GfxImage img);
 API GfxImage gfxImageGetWhite();
+
+// Buffer operations
+
 
 //----------------------------------------------------------------------------------------------------------------------
 namespace _private 

@@ -47,6 +47,8 @@ struct EngineState
     
     double elapsedTime = 0.0;
     atomicUint64 frameIndex = 0;
+    uint64 rawFrameStartTime;
+    uint64 rawFrameTime;        
 
     MemBudgetAllocator initHeap;
 
@@ -316,11 +318,15 @@ void engineBeginFrame(float dt)
         _private::imguiBeginFrame(dt);
         gfxBeginFrame();
     }
+
+    gEng.rawFrameStartTime = timerGetTicks();
 }
 
 void engineEndFrame(float dt)
 {
     ASSERT(gEng.initialized);
+
+    gEng.rawFrameTime = timerDiff(timerGetTicks(), gEng.rawFrameStartTime);
 
     if (!settingsGetGraphics().headless) {
         gfxEndFrame();
@@ -348,6 +354,11 @@ const SysInfo& engineGetSysInfo()
 MemBudgetAllocator* engineGetInitHeap()
 {
     return &gEng.initHeap;
+}
+
+float engineGetCpuFrameTimeMS()
+{
+    return (float)timerToMS(gEng.rawFrameTime);
 }
 
 void engineRegisterShortcut(const char* shortcut, EngineShortcutCallback callback, void* userData)

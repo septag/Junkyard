@@ -13,6 +13,7 @@ API void engineEndFrame(float dt);
 
 API uint64 engineFrameIndex();
 API const SysInfo& engineGetSysInfo();
+API float engineGetCpuFrameTimeMS();
 
 API MemBudgetAllocator* engineGetInitHeap();
 

@@ -173,6 +173,7 @@ struct ModelLoadParams
     ModelGeometryLayout layout;
     GfxBufferUsage vertexBufferUsage = GfxBufferUsage::Default;
     GfxBufferUsage indexBufferUsage = GfxBufferUsage::Default;
+    bool skipCreatingGpuResources = false;
 };
 
 API AssetHandleModel assetLoadModel(const char* path, const ModelLoadParams& params, AssetBarrier barrier = AssetBarrier());

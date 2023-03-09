@@ -1163,11 +1163,13 @@ API void* appWinGetConsoleHandle()
 
 void appCaptureMouse()
 {
+    appSetCursor(AppMouseCursor::None);
     SetCapture(gApp.hwnd);
 }
 
 void appReleaseMouse()
 {
+    appSetCursor(AppMouseCursor::Arrow);
     ReleaseCapture();
 }
 

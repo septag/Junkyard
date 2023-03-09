@@ -1,9 +1,8 @@
 #ifndef __IMAGE_VK_CPP__
 #define __IMAGE_VK_CPP__
 
-// Check for dependencies
-#ifndef __GRAPHICS_VK_CPP__
-    #error "This file depends on GraphicsVk.cpp for compilation"
+#ifndef __GRAPHICS_CPP__
+    #error "This file depends on Graphics.cpp for compilation"
 #endif
 
 #include "../External/vulkan/include/vulkan.h"

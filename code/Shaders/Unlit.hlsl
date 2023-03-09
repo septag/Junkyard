@@ -38,6 +38,6 @@ Psinput VsMain(VsInput input)
 [shader("fragment")]
 float4 PsMain(Psinput input) : SV_Target
 {
-    half4 albedo = (half4)BaseColorTexture.Sample(input.uv);
+    float4 albedo = BaseColorTexture.Sample(input.uv);
     return float4(albedo.xyz, 1.0f);
 }

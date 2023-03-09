@@ -1,32 +1,23 @@
 #include <stdio.h>
 
-#include "../Core/System.h"
-#include "../Core/Buffers.h"
-#include "../Core/Hash.h"
-#include "../Core/String.h"
-#include "../Core/SocketIO.h"
-#include "../Core/String.h"
 #include "../Core/Settings.h"
-#include "../Core/Jobs.h"
-#include "../Core/TracyHelper.h"
-#include "../Core/Atomic.h"
 #include "../Core/Log.h"
+#include "../Core/TracyHelper.h"
+#include "../Core/Jobs.h"
 
 #include "../Math/Math.h"
 
 #include "../AssetManager.h"
 #include "../VirtualFS.h"
-#include "../Camera.h"
-#include "../Engine.h"
 #include "../Application.h"
+#include "../Engine.h"
+#include "../Camera.h"
 
-#include "../Graphics/Graphics.h"
 #include "../Graphics/DebugDraw.h"
-#include "../Graphics/Shader.h"
 #include "../Graphics/Model.h"
+#include "../Graphics/Shader.h"
 
 #include "../Tool/ImGuiTools.h"
-#include "../Tool/Console.h"
 
 #include "../UnityBuild.inl"
 

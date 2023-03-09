@@ -41,13 +41,13 @@ Psinput VsMain(VsInput input)
 [shader("fragment")]
 float4 PsMain(Psinput input) : SV_Target
 {
-    const half3 lightDir = half3(-0.5h, 0.5h, -1.0h);
-    const half3 ambient = half3(0.05h, 0.04h, 0.065h);
+    const float3 lightDir = float3(-0.5, 0.5, -1.0);
+    const float3 ambient = float3(0.05, 0.04, 0.065);
 
-    half3 lv = -normalize(lightDir);
-    half3 n = normalize((half3)input.normal);
-    half NdotL = max(0.0h, dot(n, lv));
+    float3 lv = -normalize(lightDir);
+    float3 n = normalize((float3)input.normal);
+    float NdotL = max(0.0, dot(n, lv));
 
-    half4 albedo = (half4)BaseColorTexture.Sample(input.uv);
-    return float4(half3(NdotL)*albedo.xyz + ambient, 1.0f);
+    float4 albedo = BaseColorTexture.Sample(input.uv);
+    return float4(NdotL*albedo.xyz + ambient, 1.0f);
 }
