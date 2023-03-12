@@ -63,8 +63,6 @@
 template <typename _T, uint32 _Reserve = 8>
 struct Array
 {
-    // Constructors never allocates anything, you either have to call Reserve explicitly or Add something
-    // However, destructor Frees memory if it's not Freed before, but it's recommended to Free manually
     Array() : Array(memDefaultAlloc()) {}
     explicit Array(Allocator* alloc) : _alloc(alloc) {}
     explicit Array(const void* buffer, size_t size);

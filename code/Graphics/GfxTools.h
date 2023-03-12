@@ -11,6 +11,8 @@ struct GfxDyanmicUniformBufferRange
 struct GfxDynamicUniformBuffer
 {
     void* Data(uint32 index);
+    uint32 Offset(uint32 index);
+
     bool IsValid() const;
     void Flush(const GfxDyanmicUniformBufferRange* ranges, uint32 numRanges);
     void Flush(uint32 index, uint32 _count);
@@ -33,6 +35,11 @@ inline void* GfxDynamicUniformBuffer::Data(uint32 index)
     #endif
     
     return bufferPtr + stride*index;
+}
+
+inline uint32 GfxDynamicUniformBuffer::Offset(uint32 index)
+{
+    return stride*index;
 }
 
 inline void GfxDynamicUniformBuffer::Flush(uint32 index, uint32 _count)

@@ -10,8 +10,6 @@ struct Psinput
     float2 uv : TEXCOORD0;
 };
 
-// changes DescriptorTableSlot to PushConstant
-[[vk_push_constant]]
 cbuffer ModelTransform
 {
     float4x4 ModelMat;

@@ -888,6 +888,7 @@ static void gfxCmdCopyBufferToImage(VkBuffer buffer, VkImage image, uint32 width
 
 static void gfxCmdCopyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, uint32 regionCount, const VkBufferCopy* pRegions)
 {
+    // TODO: most likely we need to insert barriers as well
     if (gCmdBufferThreadData.deferredCmdBuffer) {
         MutexScope mtx(gVk.deferredCommandsMtx);
         Blob& b = gVk.deferredCmdBuffer;
@@ -2030,6 +2031,7 @@ bool _private::gfxInitialize()
 
         GfxBudgetStats::DescriptorBudgetStats& descStats = gVk.descriptorStats;
         descStats.maxUniformBuffers = 128;  // TODO
+        descStats.maxDynUniformBuffers = 32;    
         descStats.maxSamplers = 128;
         descStats.maxSampledImages = 128;
         descStats.maxCombinedImageSamplers = 128;
@@ -2038,6 +2040,10 @@ bool _private::gfxInitialize()
         {
             .type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
             .descriptorCount = descStats.maxUniformBuffers,
+        },
+        {
+            .type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC,
+            .descriptorCount = descStats.maxDynUniformBuffers,
         },
         {
             .type = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,
@@ -3581,6 +3587,7 @@ GfxDescriptorSet gfxCreateDescriptorSet(GfxPipeline pipeline)
             for (uint32 b = 0; b < descLayout.numDsLayoutBindings; b++) {
                 switch (descLayout.dsLayoutBindings[b].vkBinding.descriptorType) {
                 case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER:     ++gVk.descriptorStats.numUniformBuffers;     break;
+                case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC: ++gVk.descriptorStats.numDynUniformBuffers; break;
                 case VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE:      ++gVk.descriptorStats.numSampledImages;      break;
                 case VK_DESCRIPTOR_TYPE_SAMPLER:            ++gVk.descriptorStats.numSamplers;           break;
                 case VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER: ++gVk.descriptorStats.numCombinedImageSamplers;    break;
@@ -3638,6 +3645,7 @@ void gfxDestroyDescriptorSet(GfxDescriptorSet dset)
             for (uint32 b = 0; b < descLayout.numDsLayoutBindings; b++) {
                 switch (descLayout.dsLayoutBindings[b].vkBinding.descriptorType) {
                 case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER:     ASSERT(dstats.numUniformBuffers); --dstats.numUniformBuffers;  break;
+                case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC: ASSERT(dstats.numDynUniformBuffers); --dstats.numDynUniformBuffers; break;
                 case VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE:      ASSERT(dstats.numSampledImages);  --dstats.numSampledImages;   break;
                 case VK_DESCRIPTOR_TYPE_SAMPLER:            ASSERT(dstats.numSamplers);       --dstats.numSamplers;       break;
                 case VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER: ASSERT(dstats.numCombinedImageSamplers);    --dstats.numCombinedImageSamplers;  break;
@@ -3716,13 +3724,14 @@ void gfxUpdateDescriptorSet(GfxDescriptorSet dset, uint32 numBindings, const Gfx
 
         switch (binding.type) {
         case GfxDescriptorType::UniformBuffer: 
+        case GfxDescriptorType::UniformBufferDynamic:
         {
             AtomicLockScope lk(gVk.pools.locks[GfxObjectPools::BUFFERS]);
             const GfxBufferData& bufferData = gVk.pools.buffers.Data(binding.buffer.buffer);
             bufferInfos[i] = {
                 .buffer = bufferData.buffer,
                 .offset = binding.buffer.offset,
-                .range = binding.buffer.size == 0 ? bufferData.size : binding.buffer.size
+                .range = binding.buffer.size == 0 ? VK_WHOLE_SIZE : binding.buffer.size
             };
             pBufferInfo = &bufferInfos[i];
             break;
@@ -3787,7 +3796,8 @@ void gfxUpdateDescriptorSet(GfxDescriptorSet dset, uint32 numBindings, const Gfx
     }
 }
 
-void gfxCmdBindDescriptorSets(uint32 numDescriptorSets, const GfxDescriptorSet* descriptorSets)
+void gfxCmdBindDescriptorSets(uint32 numDescriptorSets, const GfxDescriptorSet* descriptorSets, 
+                              const uint32* dynOffsets, uint32 dynOffsetCount)
 {
     ASSERT(numDescriptorSets > 0);
     VkCommandBuffer cmdBufferVk = gCmdBufferThreadData.curCmdBuffer;
@@ -3816,7 +3826,7 @@ void gfxCmdBindDescriptorSets(uint32 numDescriptorSets, const GfxDescriptorSet* 
     }
     
     vkCmdBindDescriptorSets(cmdBufferVk, VK_PIPELINE_BIND_POINT_GRAPHICS, pipLayoutVk, 
-                            0, numDescriptorSets, descriptorSetsVk, 0, nullptr);
+                            0, numDescriptorSets, descriptorSetsVk, dynOffsetCount, dynOffsets);
 }
 
 void gfxCmdBindPipeline(GfxPipeline pipeline)

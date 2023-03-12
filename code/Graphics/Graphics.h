@@ -875,6 +875,9 @@ struct GfxBudgetStats
         uint32 maxUniformBuffers;
         uint32 numUniformBuffers;
 
+        uint32 maxDynUniformBuffers;
+        uint32 numDynUniformBuffers;
+
         uint32 maxSampledImages;
         uint32 numSampledImages;
 
@@ -950,7 +953,8 @@ API void gfxEndCommandBuffer();
 // Command functions
 API void gfxCmdUpdateBuffer(GfxBuffer buffer, const void* data, uint32 size);
 API void gfxCmdBindPipeline(GfxPipeline pipeline);
-API void gfxCmdBindDescriptorSets(uint32 numDescriptorSets, const GfxDescriptorSet* descriptorSets);
+API void gfxCmdBindDescriptorSets(uint32 numDescriptorSets, const GfxDescriptorSet* descriptorSets, 
+                                  const uint32* dynOffsets = nullptr, uint32 dynOffsetCount = 0);
 API void gfxCmdBindVertexBuffers(uint32 firstBinding, uint32 numBindings, const GfxBuffer* vertexBuffers, const uint64* offsets);
 API void gfxCmdBindIndexBuffer(GfxBuffer indexBuffer, uint64 offset, GfxIndexType indexType);
 API void gfxCmdPushConstants(GfxPipeline pipeline, GfxShaderStage stage, const void* data, uint32 size);

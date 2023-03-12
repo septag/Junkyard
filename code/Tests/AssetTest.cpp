@@ -16,15 +16,19 @@
 #include "../Graphics/DebugDraw.h"
 #include "../Graphics/Model.h"
 #include "../Graphics/Shader.h"
+#include "../Graphics/GfxTools.h"
 
 #include "../Tool/ImGuiTools.h"
 
 #include "../UnityBuild.inl"
 
+static constexpr uint32 kNumCubes = 10;
+
 struct AppImpl : AppCallbacks
 {
     GfxPipeline pipeline;
     GfxBuffer uniformBuffer;
+    GfxDynamicUniformBuffer transformsBuffer;
 
     AssetHandleModel modelAsset;
     AssetHandleImage testImageAsset;
@@ -42,7 +46,7 @@ struct AppImpl : AppCallbacks
 
     struct WorldTransform
     {
-
+        Mat4 worldMat;
     };
 
     struct FrameTransform 
@@ -115,8 +119,6 @@ struct AppImpl : AppCallbacks
         float width = (float)appGetFramebufferWidth();
         float height = (float)appGetFramebufferHeight();
 
-        static Mat4 modelMat = kMat4Ident;
-
         { // draw something
             PROFILE_ZONE_NAME("DrawSomething", true);
             PROFILE_GPU_ZONE_NAME("DrawSomething", true);
@@ -144,31 +146,38 @@ struct AppImpl : AppCallbacks
 
             Model* model = assetGetModel(modelAsset);
 
-            for (uint32 i = 0; i < model->numNodes; i++) {
-                const ModelNode& node = model->nodes[i];
-                if (node.meshId) {
-                    Mat4 worldMat = modelMat * transform3DToMat4(node.localTransform);
-                    gfxCmdPushConstants(pipeline, GfxShaderStage::Vertex, &worldMat, sizeof(worldMat));
+            for (uint32 inst = 0; inst < kNumCubes; inst++) {
+                Mat4 modelMat = mat4Translate(float(inst)*1.5f, 0, 0);
+                *((Mat4*)transformsBuffer.Data(inst)) = modelMat;
+            }
+            transformsBuffer.Flush(0u, kNumCubes);
 
-                    const ModelMesh& mesh = model->meshes[IdToIndex(node.meshId)];
-
-                    // Buffers
-                    uint64* offsets = (uint64*)alloca(sizeof(uint64)*mesh.numVertexBuffers);
-                    memset(offsets, 0x0, sizeof(uint64)*mesh.numVertexBuffers);
-                    gfxCmdBindVertexBuffers(0, mesh.numVertexBuffers, mesh.gpuBuffers.vertexBuffers, offsets);
-                    gfxCmdBindIndexBuffer(mesh.gpuBuffers.indexBuffer, 0, GfxIndexType::Uint32);
-
-                    // DescriptorSets
-                    for (uint32 smi = 0; smi < mesh.numSubmeshes; smi++) {
-                        const ModelSubmesh& submesh = mesh.submeshes[smi];
-
-                        GfxDescriptorSet dset(PtrToInt<uint32>(submesh.material->userData));
-                        gfxCmdBindDescriptorSets(1, &dset);
-                        gfxCmdDrawIndexed(mesh.numIndices, 1, 0, 0, 0);
-                    }
-
-                }
-            }            
+            for (uint32 inst = 0; inst < kNumCubes; inst++) {
+                for (uint32 i = 0; i < model->numNodes; i++) {
+                    const ModelNode& node = model->nodes[i];
+                    if (node.meshId) {
+                        const ModelMesh& mesh = model->meshes[IdToIndex(node.meshId)];
+    
+                        // Buffers
+                        uint64* offsets = (uint64*)alloca(sizeof(uint64)*mesh.numVertexBuffers);
+                        memset(offsets, 0x0, sizeof(uint64)*mesh.numVertexBuffers);
+                        gfxCmdBindVertexBuffers(0, mesh.numVertexBuffers, mesh.gpuBuffers.vertexBuffers, offsets);
+                        gfxCmdBindIndexBuffer(mesh.gpuBuffers.indexBuffer, 0, GfxIndexType::Uint32);
+    
+                        // DescriptorSets
+                        for (uint32 smi = 0; smi < mesh.numSubmeshes; smi++) {
+                            const ModelSubmesh& submesh = mesh.submeshes[smi];
+    
+                            GfxDescriptorSet dset(PtrToInt<uint32>(submesh.material->userData));
+                            uint32 dynOffset = transformsBuffer.Offset(inst);
+    
+                            gfxCmdBindDescriptorSets(1, &dset, &dynOffset, 1);
+                            gfxCmdDrawIndexed(mesh.numIndices, 1, 0, 0, 0);
+                        }
+    
+                    }  
+                }       // foreach (node)     
+            }   // foreach (instance)
         }
 
         {
@@ -219,9 +228,8 @@ struct AppImpl : AppCallbacks
         const GfxDescriptorSetLayoutBinding bindingLayout[] = {
             {
                 .name = "ModelTransform",
-                .type = GfxDescriptorType::UniformBuffer,
+                .type = GfxDescriptorType::UniformBufferDynamic,
                 .stages = GfxShaderStage::Vertex,
-                .pushConstantSize = sizeof(Mat4)
             },
             {
                 .name = "FrameTransform",
@@ -285,6 +293,8 @@ struct AppImpl : AppCallbacks
                                         .usage = GfxBufferUsage::Stream
         });
 
+        transformsBuffer = gfxCreateDynamicUniformBuffer(kNumCubes, sizeof(WorldTransform));
+
         Model* model = assetGetModel(modelAsset);
 
         pipeline = gfxCreatePipeline(GfxPipelineDesc {
@@ -321,6 +331,11 @@ struct AppImpl : AppCallbacks
                 
                 GfxDescriptorBindingDesc descBindings[] = {
                     {
+                        .name = "ModelTransform",
+                        .type = GfxDescriptorType::UniformBufferDynamic,
+                        .buffer = {transformsBuffer.buffer, 0, transformsBuffer.stride}
+                    },
+                    {
                         .name = "FrameTransform",
                         .type = GfxDescriptorType::UniformBuffer,
                         .buffer = { uniformBuffer, 0, sizeof(FrameTransform) }
@@ -349,6 +364,7 @@ struct AppImpl : AppCallbacks
             gfxDestroyDescriptorSet(descriptorSets[i]);
         gfxDestroyPipeline(pipeline);
         gfxDestroyBuffer(uniformBuffer);
+        gfxDestroyDynamicUniformBuffer(transformsBuffer);
         descriptorSets.Free();
     }
 };

@@ -54,6 +54,11 @@ void GfxDynamicUniformBuffer::Flush(const GfxDyanmicUniformBufferRange* ranges, 
         AtomicLockScope lk(gVk.pools.locks[GfxObjectPools::BUFFERS]);
         GfxBufferData& bufferData = gVk.pools.buffers.Data(this->buffer);
         allocation = bufferData.allocation;
+
+        // TODO: we currently only assume that uniform buffers are created with HOST_VISIBLE bit.
+        //       For none-host visible, mappedBuffer is still available, but it's for the staging buffer.
+        //       So we have to take care of a copy op and a barrier
+        ASSERT(bufferData.memFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT);
     }
 
     MemTempAllocator tmpAlloc;
