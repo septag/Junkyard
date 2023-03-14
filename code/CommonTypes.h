@@ -10,6 +10,7 @@ DEFINE_HANDLE(GfxBuffer);
 DEFINE_HANDLE(GfxImage);
 DEFINE_HANDLE(GfxPipeline);
 DEFINE_HANDLE(GfxPipelineLayout);
+DEFINE_HANDLE(GfxDescriptorSetLayout);
 DEFINE_HANDLE(GfxRenderPass);
 DEFINE_HANDLE(GfxDescriptorSet);
 

@@ -29,5 +29,6 @@ C++11:
 	- Function overrides
 	- Limited use of ctor/dtor
 	- C++ ABI (return structs as value)
+	- "using" keyword
 
 

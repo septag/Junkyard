@@ -289,7 +289,6 @@ API bool appIsKeyDown(AppKeycode keycode);
 API bool appIsAnyKeysDown(const AppKeycode* keycodes, uint32 numKeycodes);
 API AppKeyModifiers appGetKeyMods();
 
-
 #if PLATFORM_ANDROID
 API AAssetManager*  appAndroidGetAssetManager();
 API void appAndroidSetFramebufferTransform(AppFramebufferTransform transform);

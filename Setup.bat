@@ -45,6 +45,7 @@ choice /c YN /M "Install vulkan 1.3.23"
 if errorlevel 2 goto :InstallPython 
 if errorlevel 1 (
     rem pc
+    echo "Installing Vulkan PC SDK ..."
     if not exist .downloads\VulkanRT-1.3.231.1-Installer.exe (
         powershell Invoke-WebRequest -Uri "https://sdk.lunarg.com/sdk/download/1.3.231.1/windows/VulkanRT-1.3.231.1-Installer.exe" -OutFile .downloads\VulkanRT-1.3.231.1-Installer.exe
         if %errorlevel% neq 1 goto :End
@@ -60,6 +61,7 @@ if errorlevel 1 (
     call .downloads\VulkanSDK-1.3.231.1-Installer.exe
 
     rem android
+    echo "Installing Vulkan Android requirements ..."
     if not exist .downloads\android-binaries-1.3.231.1.zip (
         powershell Invoke-WebRequest -Uri "https://github.com/KhronosGroup/Vulkan-ValidationLayers/releases/download/sdk-1.3.231.1/android-binaries-1.3.231.1.zip" -OutFile .downloads\android-binaries-1.3.231.1.zip
         if %errorlevel% neq 1 goto :End

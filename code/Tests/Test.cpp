@@ -299,7 +299,8 @@ struct AppImpl : AppCallbacks
                     }
                 },
                 .vertexBufferUsage = GfxBufferUsage::Immutable,
-                .indexBufferUsage = GfxBufferUsage::Immutable
+                .indexBufferUsage = GfxBufferUsage::Immutable,
+                .skipCreatingGpuResources = true
             };
 
             modelAsset = assetLoadModel("/data/models/Duck/Duck.gltf", loadParams, b.Barrier());
@@ -394,7 +395,7 @@ int Main(int argc, char* argv[])
     });
 
     if constexpr (PLATFORM_ANDROID)
-        settingsLoadFromINI("/assets/Settings.ini");
+        settingsLoadFromINI("Settings.ini");
     else
         settingsLoadFromCommandLine(argc, argv);
     

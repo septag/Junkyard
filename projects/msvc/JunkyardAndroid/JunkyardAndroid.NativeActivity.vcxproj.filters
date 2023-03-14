@@ -260,9 +260,6 @@
     <ClCompile Include="..\..\..\code\Engine.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\..\code\Tests\Test.cpp">
-      <Filter>Tests</Filter>
-    </ClCompile>
     <ClCompile Include="..\..\..\code\External\imgui\imgui.cpp">
       <Filter>Source Files\External\imgui</Filter>
     </ClCompile>
@@ -415,6 +412,15 @@
     </ClCompile>
     <ClCompile Include="..\..\..\code\Core\Buffers.cpp">
       <Filter>Source Files\Core</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\..\code\Tests\AssetTest.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\..\code\Tests\Test.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\..\code\Tests\TestAndroid.cpp">
+      <Filter>Tests</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>

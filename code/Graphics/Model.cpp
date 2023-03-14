@@ -1058,11 +1058,14 @@ static void modelHandlerClientFn([[maybe_unused]] uint32 cmd, const Blob& incomi
             modelLoadTextures(model, request.params.barrier);
         }
 
+        // Allocate the final model object
+        void* obj = memAllocCopyRawBytes<Model>(model, modelBufferSize, request.params.alloc);
+
         if (model->numMaterialTextures) {
             uint32 dependsBufferSize;
             Pair<AssetDependency*, uint32> depends = modelGatherDependencies(model, request.params, &tmpAlloc, &dependsBufferSize);
             AssetResult result { 
-                .obj = memAllocCopyRawBytes<Model>(model, modelBufferSize, request.params.alloc),  
+                .obj = obj,  
                 .depends =  depends.first,
                 .numDepends = depends.second,
                 .dependsBufferSize = dependsBufferSize
@@ -1072,7 +1075,7 @@ static void modelHandlerClientFn([[maybe_unused]] uint32 cmd, const Blob& incomi
         }
         else {
             if (request.loadCallback) {
-                request.loadCallback(handle, AssetResult { .obj = model, .objBufferSize = modelBufferSize }, 
+                request.loadCallback(handle, AssetResult { .obj = obj, .objBufferSize = modelBufferSize }, 
                     request.loadCallbackUserData);
             }
         }

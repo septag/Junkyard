@@ -638,8 +638,7 @@ static int appAndroidMainEventsFn(int fd, int events, void* data)
         break;
 
     case ANDROID_CMD_CONFIG_CHANGED:
-        AConfiguration_fromAssetManager(gApp.config,
-                                        gApp.activity->assetManager);
+        AConfiguration_fromAssetManager(gApp.config, gApp.activity->assetManager);
         // TODO: print_cur_config(android_app);
         break;
 

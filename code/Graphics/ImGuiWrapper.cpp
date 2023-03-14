@@ -69,6 +69,7 @@ struct ImGuiState
     uint16*      indices;
     GfxBuffer    vertexBuffer;
     GfxBuffer    indexBuffer;
+    GfxDescriptorSetLayout dsLayout;
     GfxPipeline  pipeline;
     GfxImage     fontImage;
     GfxDescriptorSet  descriptorSets[_IMGUI_DESCRIPTORSET_COUNT];
@@ -488,11 +489,13 @@ bool _private::imguiInitialize()
         return false;
     }
 
+    gImGui.dsLayout = gfxCreateDescriptorSetLayout(*assetGetShader(gImGui.imguiShader), dsetBindings, CountOf(dsetBindings));
+
     gImGui.pipeline = gfxCreatePipeline(GfxPipelineDesc {
         .shader = assetGetShader(gImGui.imguiShader),
         .inputAssemblyTopology = GfxPrimitiveTopology::TriangleList,
-        .numDescriptorSetBindings = CountOf(dsetBindings),
-        .descriptorSetBindings = dsetBindings,
+        .numDescriptorSetLayouts = 1,
+        .descriptorSetLayouts = &gImGui.dsLayout,
         .numVertexInputAttributes = CountOf(vertexInputAttDescs),
         .vertexInputAttributes = vertexInputAttDescs,
         .numVertexBufferBindings = 1,
@@ -534,7 +537,7 @@ bool _private::imguiInitialize()
     }
 
     for (uint32 i = 0; i < _IMGUI_DESCRIPTORSET_COUNT; i++)
-        gImGui.descriptorSets[i] = gfxCreateDescriptorSet(gImGui.pipeline);
+        gImGui.descriptorSets[i] = gfxCreateDescriptorSet(gImGui.dsLayout);
 
     gImGui.uniformBuffer = gfxCreateBuffer(GfxBufferDesc {
         .size = sizeof(ImGuiUbo),
@@ -731,7 +734,7 @@ static void imguiDrawFrame()
                 GfxImage img(PtrToInt<uint32>(drawCmd->TextureId));
                 ASSERT_MSG(!img.IsValid() || img == gImGui.fontImage, "Doesn't support multiple images yet");
 
-                gfxCmdBindDescriptorSets(1, img == gImGui.fontImage ? 
+                gfxCmdBindDescriptorSets(gImGui.pipeline, 1, img == gImGui.fontImage ? 
                                          &gImGui.descriptorSets[IMGUI_DESCRIPTORSET_FONT_IMAGE] : 
                                          &gImGui.descriptorSets[IMGUI_DESCRIPTORSET_NO_IMAGE]);
                 
@@ -778,6 +781,7 @@ void _private::imguiRelease()
         gfxDestroyBuffer(gImGui.indexBuffer);
         gfxDestroyBuffer(gImGui.uniformBuffer);
         gfxDestroyPipeline(gImGui.pipeline);
+        gfxDestroyDescriptorSetLayout(gImGui.dsLayout);
         gfxDestroyImage(gImGui.fontImage);
         appUnregisterEventsCallback(imguiOnEvent);
         ImGui::DestroyContext(gImGui.ctx);

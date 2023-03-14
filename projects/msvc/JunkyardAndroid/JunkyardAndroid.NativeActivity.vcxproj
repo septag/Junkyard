@@ -173,7 +173,17 @@
     </ClCompile>
     <ClCompile Include="..\..\..\code\Math\Math.cpp" />
     <ClCompile Include="..\..\..\code\RemoteServices.cpp" />
-    <ClCompile Include="..\..\..\code\Tests\Test.cpp" />
+    <ClCompile Include="..\..\..\code\Tests\AssetTest.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='ReleaseDev|ARM64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">true</ExcludedFromBuild>
+    </ClCompile>
+    <ClCompile Include="..\..\..\code\Tests\Test.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='ReleaseDev|ARM64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">true</ExcludedFromBuild>
+    </ClCompile>
+    <ClCompile Include="..\..\..\code\Tests\TestAndroid.cpp" />
     <ClCompile Include="..\..\..\code\Tool\Console.cpp" />
     <ClCompile Include="..\..\..\code\Tool\ImageEncoder.cpp" />
     <ClCompile Include="..\..\..\code\Tool\ImGuiTools.cpp" />

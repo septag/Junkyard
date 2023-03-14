@@ -220,6 +220,7 @@ static void shaderCompileShaderHandlerClientFn([[maybe_unused]] uint32 cmd, cons
         [[maybe_unused]] size_t readBytes = incomingData.Read<uint32>(&bufferSize);
         ASSERT(readBytes == sizeof(bufferSize));
 
+        // Allocate the final shader info blob
         Shader* info = shaderSerializeFromBlob(incomingData, alloc);
         ASSERT(info);
 

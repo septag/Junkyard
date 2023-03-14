@@ -101,6 +101,7 @@ namespace _limits
     static constexpr uint32 kGfxMaxBuffers = 1024;
     static constexpr uint32 kGfxMaxImages = 1024;
     static constexpr uint32 kGfxMaxDescriptorSets = 256;
+    static constexpr uint32 kGfxMaxDescriptorSetLayouts = 256;
     static constexpr uint32 kGfxMaxPipelines = 256;
     static constexpr uint32 kGfxMaxPipelineLayouts = 256;
     static constexpr uint32 kGfxMaxGarbage = 512;
@@ -180,17 +181,19 @@ struct GfxDescriptorSetLayoutData
         VkDescriptorSetLayoutBinding vkBinding;
     };
 
-    VkDescriptorSetLayout descriptorSetLayout;
-    uint32                numDsLayoutBindings;
-    Binding*              dsLayoutBindings;
+    uint32                hash;
+    VkDescriptorSetLayout layout;
+    uint32                numBindings;
+    uint32                refCount;
+    Binding*              bindings;
 };
 
 struct GfxPipelineLayoutData
 {
     uint32                     hash;
     uint32                     numDescriptorSetLayouts;
-    GfxDescriptorSetLayoutData descriptorSetLayouts[kMaxDescriptorSetLayoutPerPipeline];
-    VkPipelineLayout           pipLayout;
+    GfxDescriptorSetLayout     descriptorSetLayouts[kMaxDescriptorSetLayoutPerPipeline];
+    VkPipelineLayout           layout;
     uint32                     refCount;        // number of cached items referenced by pipeline objects
 };
 
@@ -204,7 +207,7 @@ struct GfxPipelineData
 
 struct GfxDescriptorSetData
 {
-    GfxPipelineLayout pipLayout;
+    GfxDescriptorSetLayout layout;
     VkDescriptorSet descriptorSet;
 };
 
@@ -230,16 +233,18 @@ struct GfxObjectPools
         PIPELINE_LAYOUTS,
         PIPELINES,
         DESCRIPTOR_SETS,
+        DESCRIPTOR_SET_LAYOUTS,
         POOL_COUNT
     };
 
     AtomicLock locks[POOL_COUNT];
 
-    HandlePool<GfxBuffer, GfxBufferData>                    buffers;
-    HandlePool<GfxImage, GfxImageData>                      images;
-    HandlePool<GfxPipelineLayout, GfxPipelineLayoutData>    pipelineLayouts;
-    HandlePool<GfxPipeline, GfxPipelineData>                pipelines;
-    HandlePool<GfxDescriptorSet, GfxDescriptorSetData>      descriptorSets;
+    HandlePool<GfxBuffer, GfxBufferData> buffers;
+    HandlePool<GfxImage, GfxImageData> images;
+    HandlePool<GfxPipelineLayout, GfxPipelineLayoutData> pipelineLayouts;
+    HandlePool<GfxPipeline, GfxPipelineData> pipelines;
+    HandlePool<GfxDescriptorSet, GfxDescriptorSetData> descriptorSets;
+    HandlePool<GfxDescriptorSetLayout, GfxDescriptorSetLayoutData> descriptorSetLayouts;
 
     void Initialize();
     void Release();
@@ -671,17 +676,18 @@ static void gfxDestroySwapchain(GfxSwapchain* swapchain)
     swapchain->init = false;
 }
 
-static GfxPipelineLayout gfxCreatePipelineLayout(uint32 numDsLayoutBindings, 
-                                                 const VkDescriptorSetLayoutBinding* dsLayoutBindings,
-                                                 const char** bindingNames,
+static GfxPipelineLayout gfxCreatePipelineLayout(const GfxDescriptorSetLayout* descriptorSetLayouts,
+                                                 uint32 numDescriptorSetLayouts,
+                                                 const GfxPushConstantDesc* pushConstants,
                                                  uint32 numPushConstants,
-                                                 const VkPushConstantRange* pushConstants)
+                                                 VkPipelineLayout* layoutOut)
 {
+    ASSERT_MSG(numDescriptorSetLayouts <= kMaxDescriptorSetLayoutPerPipeline, "Too many descriptor set layouts per-pipeline");
+
     // hash the layout bindings and look in cache
     HashMurmur32Incremental hasher(0x5eed1);
-    uint32 hash = hasher.Add<VkDescriptorSetLayoutBinding>(dsLayoutBindings, numDsLayoutBindings)
-                        .AddCStringArray(bindingNames, numDsLayoutBindings)
-                        .Add<VkPushConstantRange>(pushConstants, numPushConstants)
+    uint32 hash = hasher.Add<GfxDescriptorSetLayout>(descriptorSetLayouts, numDescriptorSetLayouts)
+                        .Add<GfxPushConstantDesc>(pushConstants, numPushConstants)
                         .Hash();
 
     atomicLockEnter(&gVk.pools.locks[GfxObjectPools::PIPELINE_LAYOUTS]);
@@ -691,44 +697,45 @@ static GfxPipelineLayout gfxCreatePipelineLayout(uint32 numDsLayoutBindings,
         GfxPipelineLayoutData& item = gVk.pools.pipelineLayouts.Data(pipLayout);
         ++item.refCount;
         atomicLockExit(&gVk.pools.locks[GfxObjectPools::PIPELINE_LAYOUTS]);
+        if (layoutOut)
+            *layoutOut = item.layout;
         return pipLayout;
     }
     else {
         atomicLockExit(&gVk.pools.locks[GfxObjectPools::PIPELINE_LAYOUTS]);
-
-        VkDescriptorSetLayoutCreateInfo layoutCreateInfo {
-            .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
-            .bindingCount = numDsLayoutBindings,
-            .pBindings = dsLayoutBindings
-        };
+    
+        MemTempAllocator tempAlloc;
         
-        VkDescriptorSetLayout dsLayout;
-        if (vkCreateDescriptorSetLayout(gVk.device, &layoutCreateInfo, &gVk.allocVk, &dsLayout) != VK_SUCCESS) {
-            logError("Gfx: CreateDescriptorSetLayout failed");
-            return GfxPipelineLayout();
+        VkDescriptorSetLayout* vkDescriptorSetLayouts = nullptr;
+        if (numDescriptorSetLayouts) {   
+            AtomicLockScope lk(gVk.pools.locks[GfxObjectPools::DESCRIPTOR_SET_LAYOUTS]);
+            vkDescriptorSetLayouts = tempAlloc.MallocTyped<VkDescriptorSetLayout>(numDescriptorSetLayouts);
+            for (uint32 i = 0; i < numDescriptorSetLayouts; i++) {
+                GfxDescriptorSetLayoutData& dsLayoutData = gVk.pools.descriptorSetLayouts.Data(descriptorSetLayouts[i]);
+                vkDescriptorSetLayouts[i] = dsLayoutData.layout;
+                ASSERT(dsLayoutData.layout != VK_NULL_HANDLE);
+            }
         }
 
-        // Copy layout bindings (for validation and lazy binding) and add descriptor set layout as Gfx object
-        GfxDescriptorSetLayoutData dsLayoutData {
-            .descriptorSetLayout = dsLayout,
-            .numDsLayoutBindings = numDsLayoutBindings,
-            .dsLayoutBindings = numDsLayoutBindings ? memAllocTyped<GfxDescriptorSetLayoutData::Binding>(numDsLayoutBindings, &gVk.alloc) : nullptr
-        };
-
-        for (uint32 i = 0; i < numDsLayoutBindings; i++) {
-            ASSERT(bindingNames[i]);
-            dsLayoutData.dsLayoutBindings[i].name = bindingNames[i];
-            dsLayoutData.dsLayoutBindings[i].nameHash = hashFnv32Str(bindingNames[i]);
-            memcpy(&dsLayoutData.dsLayoutBindings[i].vkBinding, &dsLayoutBindings[i], sizeof(VkDescriptorSetLayoutBinding));
+        VkPushConstantRange* vkPushConstants = nullptr;
+        if (numPushConstants) {
+            vkPushConstants = tempAlloc.MallocTyped<VkPushConstantRange>(numPushConstants);
+            for (uint32 i = 0; i < numPushConstants; i++) {
+                vkPushConstants[i] = VkPushConstantRange {
+                    .stageFlags = static_cast<VkShaderStageFlags>(pushConstants[i].stages),
+                    .offset = pushConstants[i].range.offset,
+                    .size = pushConstants[i].range.size
+                };
+            }
         }
 
         VkPipelineLayout pipelineLayoutVk;
         VkPipelineLayoutCreateInfo pipelineLayoutInfo {
             .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
-            .setLayoutCount = 1,
-            .pSetLayouts = &dsLayout,
+            .setLayoutCount = numDescriptorSetLayouts,
+            .pSetLayouts = vkDescriptorSetLayouts,
             .pushConstantRangeCount = numPushConstants,
-            .pPushConstantRanges = pushConstants
+            .pPushConstantRanges = vkPushConstants
         };
         
         if (VK_FAILED(vkCreatePipelineLayout(gVk.device, &pipelineLayoutInfo, &gVk.allocVk, &pipelineLayoutVk))) {
@@ -736,21 +743,22 @@ static GfxPipelineLayout gfxCreatePipelineLayout(uint32 numDsLayoutBindings,
             return GfxPipelineLayout();
         }
         
-        // TODO: we can have more than 1 descriptor set layout
         AtomicLockScope mtx(gVk.pools.locks[GfxObjectPools::PIPELINE_LAYOUTS]);
         GfxPipelineLayoutData prevPipLayout;
-        GfxPipelineLayout pipelineLayoutId = gVk.pools.pipelineLayouts.Add({
+        GfxPipelineLayoutData pipLayoutData = GfxPipelineLayoutData {
             .hash = hash,
-            .numDescriptorSetLayouts = 1,
-            .descriptorSetLayouts = { dsLayoutData },
-            .pipLayout = pipelineLayoutVk,
+            .numDescriptorSetLayouts = numDescriptorSetLayouts,
+            .layout = pipelineLayoutVk,
             .refCount = 1
-        }, &prevPipLayout);
+        };
 
-        for (uint32 i = 0; i < prevPipLayout.numDescriptorSetLayouts; i++)
-            memFree(prevPipLayout.descriptorSetLayouts[i].dsLayoutBindings, &gVk.alloc);
+        for (uint32 i = 0; i < numDescriptorSetLayouts; i++)
+            pipLayoutData.descriptorSetLayouts[i] = descriptorSetLayouts[i];
 
-        return pipelineLayoutId;
+        pipLayout = gVk.pools.pipelineLayouts.Add(pipLayoutData);
+        if (layoutOut)
+            *layoutOut = pipelineLayoutVk;
+        return pipLayout;
     }
 }
 
@@ -760,14 +768,8 @@ static void gfxDestroyPipelineLayout(GfxPipelineLayout layout)
     GfxPipelineLayoutData& layoutData = gVk.pools.pipelineLayouts.Data(layout);
     ASSERT(layoutData.refCount > 0);
     if (--layoutData.refCount == 0) {
-        if (layoutData.pipLayout) 
-            vkDestroyPipelineLayout(gVk.device, layoutData.pipLayout, &gVk.allocVk);
-        for (uint32 i = 0; i < layoutData.numDescriptorSetLayouts; i++) {
-            if (layoutData.descriptorSetLayouts[i].descriptorSetLayout)
-                vkDestroyDescriptorSetLayout(gVk.device, layoutData.descriptorSetLayouts[i].descriptorSetLayout, &gVk.allocVk);
-            if (layoutData.descriptorSetLayouts[i].dsLayoutBindings)
-                memFree(layoutData.descriptorSetLayouts[i].dsLayoutBindings, &gVk.alloc);
-        }
+        if (layoutData.layout) 
+            vkDestroyPipelineLayout(gVk.device, layoutData.layout, &gVk.allocVk);
         memset(&layoutData, 0x0, sizeof(layoutData));
 
         gVk.pools.pipelineLayouts.Remove(layout);
@@ -2137,22 +2139,27 @@ void GfxObjectPools::Initialize()
     }
 
     {
-        size_t poolSize = HandlePool<GfxBuffer, GfxImageData>::GetMemoryRequirement(_limits::kGfxMaxImages);
+        size_t poolSize = HandlePool<GfxImage, GfxImageData>::GetMemoryRequirement(_limits::kGfxMaxImages);
         images.Reserve(_limits::kGfxMaxImages, memAlloc(poolSize, initHeap), poolSize);
     }
 
     {
-        size_t poolSize = HandlePool<GfxBuffer, GfxDescriptorSetData>::GetMemoryRequirement(_limits::kGfxMaxDescriptorSets);
+        size_t poolSize = HandlePool<GfxDescriptorSet, GfxDescriptorSetData>::GetMemoryRequirement(_limits::kGfxMaxDescriptorSets);
         descriptorSets.Reserve(_limits::kGfxMaxDescriptorSets, memAlloc(poolSize, initHeap), poolSize);
     }
 
     {
-        size_t poolSize = HandlePool<GfxBuffer, GfxPipelineData>::GetMemoryRequirement(_limits::kGfxMaxPipelines);
+        size_t poolSize = HandlePool<GfxDescriptorSetLayout, GfxDescriptorSetLayoutData>::GetMemoryRequirement(_limits::kGfxMaxDescriptorSetLayouts);
+        descriptorSetLayouts.Reserve(_limits::kGfxMaxDescriptorSetLayouts, memAlloc(poolSize, initHeap), poolSize);
+    }
+
+    {
+        size_t poolSize = HandlePool<GfxPipeline, GfxPipelineData>::GetMemoryRequirement(_limits::kGfxMaxPipelines);
         pipelines.Reserve(_limits::kGfxMaxPipelines, memAlloc(poolSize, initHeap), poolSize);
     }
 
     {
-        size_t poolSize = HandlePool<GfxBuffer, GfxPipelineLayoutData>::GetMemoryRequirement(_limits::kGfxMaxPipelineLayouts);
+        size_t poolSize = HandlePool<GfxPipelineLayout, GfxPipelineLayoutData>::GetMemoryRequirement(_limits::kGfxMaxPipelineLayouts);
         pipelineLayouts.Reserve(_limits::kGfxMaxPipelineLayouts, memAlloc(poolSize, initHeap), poolSize);
     }
 }
@@ -2288,20 +2295,24 @@ void GfxObjectPools::DetectAndReleaseLeaks()
             gfxDestroyDescriptorSet(gVk.pools.descriptorSets.HandleAt(i));
 
     }
+    if (gVk.pools.descriptorSetLayouts.Count()) {
+        logWarning("Gfx: Total %u descriptor sets layouts are not released. cleaning up...", gVk.pools.descriptorSetLayouts.Count());
+        for (uint32 i = 0; i < gVk.pools.descriptorSetLayouts.Count(); i++)
+            gfxDestroyDescriptorSetLayout(gVk.pools.descriptorSetLayouts.HandleAt(i));
+    }
 }
 
 void GfxObjectPools::Release()
 {
-    for (GfxPipelineLayoutData& pipLayout : gVk.pools.pipelineLayouts) {
-        for (uint32 i = 0; i < pipLayout.numDescriptorSetLayouts; i++) 
-            memFree(pipLayout.descriptorSetLayouts[i].dsLayoutBindings, &gVk.alloc);
-    }
+    for (GfxDescriptorSetLayoutData& layout : gVk.pools.descriptorSetLayouts) 
+        memFree(layout.bindings, &gVk.alloc);
 
     gVk.pools.buffers.Free();
     gVk.pools.images.Free();
     gVk.pools.pipelineLayouts.Free();
     gVk.pools.pipelines.Free();
     gVk.pools.descriptorSets.Free();
+    gVk.pools.descriptorSetLayouts.Free();
 }
 
 void gfxResizeSwapchain(uint16 width, uint16 height)
@@ -2699,7 +2710,7 @@ void gfxCmdPushConstants(GfxPipeline pipeline, GfxShaderStage stage, const void*
         AtomicLockScope lk1(gVk.pools.locks[GfxObjectPools::PIPELINES]);
         const GfxPipelineData& pipData = gVk.pools.pipelines.Data(pipeline);
         AtomicLockScope lk2(gVk.pools.locks[GfxObjectPools::PIPELINE_LAYOUTS]);
-        pipLayoutVk = gVk.pools.pipelineLayouts.Data(pipData.pipelineLayout).pipLayout;
+        pipLayoutVk = gVk.pools.pipelineLayouts.Data(pipData.pipelineLayout).layout;
     }
 
     vkCmdPushConstants(cmdBufferVk, pipLayoutVk, static_cast<VkShaderStageFlags>(stage), 0, size, data);
@@ -3267,59 +3278,9 @@ GfxPipeline gfxCreatePipeline(const GfxPipelineDesc& desc)
         .pVertexAttributeDescriptions = vertexInputAtts
     };
 
-    // Descriptor sets
-    VkDescriptorSetLayoutBinding* descriptorSetBindings = (VkDescriptorSetLayoutBinding*)
-        alloca(desc.numDescriptorSetBindings*sizeof(VkDescriptorSetLayoutBinding));
-    const char** names = (const char**)alloca(sizeof(char*)*desc.numDescriptorSetBindings);
-    VkPushConstantRange* pushConstants = (VkPushConstantRange*)alloca(sizeof(VkPushConstantRange)*desc.numDescriptorSetBindings);
-    ASSERT_ALWAYS(descriptorSetBindings && names && pushConstants, "Out of stack memory");
-    
-    uint32 numPushConstants = 0;
-    uint32 numDescriptorSetBindings = 0;
-
-    for (uint32 i = 0; i < desc.numDescriptorSetBindings; i++) {
-        const GfxDescriptorSetLayoutBinding& dsLayoutBinding = desc.descriptorSetBindings[i];
-
-        uint32 paramIdx = UINT32_MAX;
-        for (uint32 k = 0; k < shaderInfo->numParams; k++) {
-            if (strIsEqual(dsLayoutBinding.name, shaderInfo->params[k].name)) {
-                paramIdx = k;
-                break;
-            }
-        }
-
-        ASSERT_MSG(paramIdx != UINT32_MAX, "Shader parameter/uniform '%s' does not exist", dsLayoutBinding.name);
-        const ShaderParameterInfo& shaderParam = shaderInfo->params[paramIdx];
-
-        if (shaderParam.isPushConstant) {
-            if (dsLayoutBinding.pushConstantSize > gVk.deviceProps.limits.maxPushConstantsSize) {
-                logError("PushConstantSize for '%s' (%u bytes) exceeds the device limit of device (%u bytes)",
-                    shaderParam.name, dsLayoutBinding.pushConstantSize, gVk.deviceProps.limits.maxPushConstantsSize);
-                ASSERT(0);
-                return GfxPipeline();
-            }
-
-            pushConstants[numPushConstants++] = VkPushConstantRange {
-                .stageFlags = static_cast<VkShaderStageFlags>(dsLayoutBinding.stages),
-                .offset = 0,
-                .size = dsLayoutBinding.pushConstantSize
-            };
-        }
-        else {
-            ASSERT(dsLayoutBinding.pushConstantSize == 0);
-            uint32 index = numDescriptorSetBindings++;
-            names[index] = shaderParam.name;    // Set the pointer to the field in ShaderParameterInfo because it is garuanteed to stay in mem
-            descriptorSetBindings[index] = VkDescriptorSetLayoutBinding {
-                .binding = shaderParam.bindingIdx,
-                .descriptorType = static_cast<VkDescriptorType>(dsLayoutBinding.type),
-                .descriptorCount = 1,
-                .stageFlags = static_cast<VkShaderStageFlags>(dsLayoutBinding.stages)
-            };
-        }
-    }
-    GfxPipelineLayout pipelineLayout = gfxCreatePipelineLayout(
-        numDescriptorSetBindings, descriptorSetBindings, names,
-        numPushConstants, pushConstants);
+    VkPipelineLayout pipLayout = nullptr;
+    GfxPipelineLayout pipelineLayout = gfxCreatePipelineLayout(desc.descriptorSetLayouts, desc.numDescriptorSetLayouts, 
+                                                               desc.pushConstants, desc.numPushConstants, &pipLayout);
     ASSERT_ALWAYS(pipelineLayout.IsValid(), "Gfx: Create pipeline layout failed");
     
     // InputAssembly
@@ -3423,12 +3384,6 @@ GfxPipeline gfxCreatePipeline(const GfxPipelineDesc& desc)
         .minDepthBounds = desc.depthStencil.minDepthBounds,
         .maxDepthBounds = desc.depthStencil.maxDepthBounds
     };
-
-    VkPipelineLayout pipLayout;
-    { 
-        AtomicLockScope lk(gVk.pools.locks[GfxObjectPools::PIPELINE_LAYOUTS]);
-        pipLayout = gVk.pools.pipelineLayouts.Data(pipelineLayout).pipLayout;
-    }
 
     VkGraphicsPipelineCreateInfo pipelineInfo {
         .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
@@ -3567,49 +3522,140 @@ void gfxCmdEndSwapchainRenderPass()
     }
 }
 
-GfxDescriptorSet gfxCreateDescriptorSet(GfxPipeline pipeline)
+GfxDescriptorSetLayout gfxCreateDescriptorSetLayout(const Shader& shader, const GfxDescriptorSetLayoutBinding* bindings, uint32 numBindings)
 {
-    VkDescriptorSetLayout layout;
-    GfxPipelineLayout pipLayout;
-    {
-        {
-            AtomicLockScope lk1(gVk.pools.locks[GfxObjectPools::PIPELINES]);
-            pipLayout = gVk.pools.pipelines.Data(pipeline).pipelineLayout;
-        }
+    ASSERT(numBindings);
+    ASSERT(bindings);
 
-        AtomicLockScope lk2(gVk.pools.locks[GfxObjectPools::PIPELINE_LAYOUTS]);
-        const GfxPipelineLayoutData& pipLayoutData = gVk.pools.pipelineLayouts.Data(pipLayout);
+    MemTempAllocator tmpAlloc;
 
-        // increment descriptors
-        for (uint32 i = 0; i < pipLayoutData.numDescriptorSetLayouts; i++) {
-            const GfxDescriptorSetLayoutData& descLayout = pipLayoutData.descriptorSetLayouts[i];
-            
-            for (uint32 b = 0; b < descLayout.numDsLayoutBindings; b++) {
-                switch (descLayout.dsLayoutBindings[b].vkBinding.descriptorType) {
-                case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER:     ++gVk.descriptorStats.numUniformBuffers;     break;
-                case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC: ++gVk.descriptorStats.numDynUniformBuffers; break;
-                case VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE:      ++gVk.descriptorStats.numSampledImages;      break;
-                case VK_DESCRIPTOR_TYPE_SAMPLER:            ++gVk.descriptorStats.numSamplers;           break;
-                case VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER: ++gVk.descriptorStats.numCombinedImageSamplers;    break;
-                default:                                    break;
-                }
+    // Construct Vulkan-specific structs for bindings and their names
+    VkDescriptorSetLayoutBinding* descriptorSetBindings = tmpAlloc.MallocTyped<VkDescriptorSetLayoutBinding>(numBindings);
+    const char** names = tmpAlloc.MallocTyped<const char*>(numBindings);
+    
+    for (uint32 i = 0; i < numBindings; i++) {
+        const GfxDescriptorSetLayoutBinding& dsLayoutBinding = bindings[i];
+
+        uint32 paramIdx = UINT32_MAX;
+        for (uint32 k = 0; k < shader.numParams; k++) {
+            if (strIsEqual(dsLayoutBinding.name, shader.params[k].name)) {
+                paramIdx = k;
+                break;
             }
         }
 
-        layout = pipLayoutData.descriptorSetLayouts[0].descriptorSetLayout; // TODO: support multiple layouts
+        ASSERT_MSG(paramIdx != UINT32_MAX, "Shader parameter/uniform '%s' does not exist", dsLayoutBinding.name);
+        const ShaderParameterInfo& shaderParam = shader.params[paramIdx];
+
+        names[i] = shaderParam.name;    // Set the pointer to the field in ShaderParameterInfo because it is garuanteed to stay in mem
+        descriptorSetBindings[i] = VkDescriptorSetLayoutBinding {
+            .binding = shaderParam.bindingIdx,
+            .descriptorType = static_cast<VkDescriptorType>(dsLayoutBinding.type),
+            .descriptorCount = 1,
+            .stageFlags = static_cast<VkShaderStageFlags>(dsLayoutBinding.stages)
+        };
+    }
+
+    // Search in existing descriptor set layouts and try to find a match. 
+    HashMurmur32Incremental hasher(0x5eed1);
+    uint32 hash = hasher.Add<VkDescriptorSetLayoutBinding>(descriptorSetBindings, numBindings)
+                        .AddCStringArray(names, numBindings)
+                        .Hash();
+
+    atomicLockEnter(&gVk.pools.locks[GfxObjectPools::DESCRIPTOR_SET_LAYOUTS]);
+    if (GfxDescriptorSetLayout layout = gVk.pools.descriptorSetLayouts.FindIf(
+        [hash](const GfxDescriptorSetLayoutData& item)->bool { return item.hash == hash; }); layout.IsValid())
+    {
+        GfxDescriptorSetLayoutData& item = gVk.pools.descriptorSetLayouts.Data(layout);
+        ++item.refCount;
+        atomicLockExit(&gVk.pools.locks[GfxObjectPools::DESCRIPTOR_SET_LAYOUTS]);
+        return layout;
+    }
+    else {
+        atomicLockExit(&gVk.pools.locks[GfxObjectPools::DESCRIPTOR_SET_LAYOUTS]);
+
+        VkDescriptorSetLayoutCreateInfo layoutCreateInfo {
+            .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+            .bindingCount = numBindings,
+            .pBindings = descriptorSetBindings
+        };
+        
+        VkDescriptorSetLayout dsLayout;
+        if (vkCreateDescriptorSetLayout(gVk.device, &layoutCreateInfo, &gVk.allocVk, &dsLayout) != VK_SUCCESS) {
+            logError("Gfx: CreateDescriptorSetLayout failed");
+            return GfxDescriptorSetLayout();
+        }
+
+        // Copy layout bindings (for validation and lazy binding) and add descriptor set layout as Gfx object
+        GfxDescriptorSetLayoutData dsLayoutData {
+            .hash = hash,
+            .layout = dsLayout,
+            .numBindings = numBindings,
+            .refCount = 1,
+            .bindings = memAllocTyped<GfxDescriptorSetLayoutData::Binding>(numBindings, &gVk.alloc)
+        };
+
+        for (uint32 i = 0; i < numBindings; i++) {
+            ASSERT(names[i]);
+            dsLayoutData.bindings[i].name = names[i];
+            dsLayoutData.bindings[i].nameHash = hashFnv32Str(names[i]);
+            memcpy(&dsLayoutData.bindings[i].vkBinding, &descriptorSetBindings[i], sizeof(VkDescriptorSetLayoutBinding));
+        }
+
+        AtomicLockScope mtx(gVk.pools.locks[GfxObjectPools::DESCRIPTOR_SET_LAYOUTS]);
+        GfxDescriptorSetLayoutData prevLayout;
+        layout = gVk.pools.descriptorSetLayouts.Add(dsLayoutData, &prevLayout);
+
+        memFree(prevLayout.bindings, &gVk.alloc);
+        return layout;
+    }
+
+}
+
+void gfxDestroyDescriptorSetLayout(GfxDescriptorSetLayout layout)
+{
+    AtomicLockScope lk(gVk.pools.locks[GfxObjectPools::DESCRIPTOR_SET_LAYOUTS]);
+    GfxDescriptorSetLayoutData& layoutData = gVk.pools.descriptorSetLayouts.Data(layout);
+    ASSERT(layoutData.refCount > 0);
+    if (--layoutData.refCount == 0) {
+        if (layoutData.layout)
+            vkDestroyDescriptorSetLayout(gVk.device, layoutData.layout, &gVk.allocVk);
+        if (layoutData.bindings)
+            memFree(layoutData.bindings, &gVk.alloc);
+        memset(&layoutData, 0x0, sizeof(layoutData));
+
+        gVk.pools.descriptorSetLayouts.Remove(layout);
+    }
+}
+
+GfxDescriptorSet gfxCreateDescriptorSet(GfxDescriptorSetLayout layout)
+{
+    VkDescriptorSetLayout vkLayout;
+    {
+        AtomicLockScope lk(gVk.pools.locks[GfxObjectPools::DESCRIPTOR_SET_LAYOUTS]);
+        const GfxDescriptorSetLayoutData& layoutData = gVk.pools.descriptorSetLayouts.Data(layout);
+        vkLayout = layoutData.layout;
+
+        for (uint32 i = 0; i < layoutData.numBindings; i++) {
+            switch (layoutData.bindings[i].vkBinding.descriptorType) {
+            case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER:     ++gVk.descriptorStats.numUniformBuffers;     break;
+            case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC: ++gVk.descriptorStats.numDynUniformBuffers; break;
+            case VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE:      ++gVk.descriptorStats.numSampledImages;      break;
+            case VK_DESCRIPTOR_TYPE_SAMPLER:            ++gVk.descriptorStats.numSamplers;           break;
+            case VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER: ++gVk.descriptorStats.numCombinedImageSamplers;    break;
+            default:                                    break;
+            }
+        }
     }    
 
     VkDescriptorSetAllocateInfo allocInfo {
         .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
         .descriptorPool = gVk.descriptorPool,
         .descriptorSetCount = 1,
-        .pSetLayouts = &layout
+        .pSetLayouts = &vkLayout
     };
 
-    GfxDescriptorSetData descriptorSetData {
-        .pipLayout = pipLayout
-    };
-
+    GfxDescriptorSetData descriptorSetData { .layout = layout };
     if (vkAllocateDescriptorSets(gVk.device, &allocInfo, &descriptorSetData.descriptorSet) != VK_SUCCESS) {
         logError("Gfx: AllocateDescriptorSets failed");
         return GfxDescriptorSet();
@@ -3631,32 +3677,27 @@ void gfxDestroyDescriptorSet(GfxDescriptorSet dset)
     }
 
     {
-        AtomicLockScope lk(gVk.pools.locks[GfxObjectPools::PIPELINE_LAYOUTS]);
-        ASSERT_MSG(gVk.pools.pipelineLayouts.IsValid(dsetData.pipLayout), 
+        AtomicLockScope lk(gVk.pools.locks[GfxObjectPools::DESCRIPTOR_SET_LAYOUTS]);
+        ASSERT_MSG(gVk.pools.descriptorSetLayouts.IsValid(dsetData.layout), 
                    "Cannot destroy descriptor set. Make sure you do not destroy the parent pipeline before this");
-        const GfxPipelineLayoutData& pipLayoutData = gVk.pools.pipelineLayouts.Data(dsetData.pipLayout);
+        const GfxDescriptorSetLayoutData& layoutData = gVk.pools.descriptorSetLayouts.Data(dsetData.layout);
 
         // decrement descriptors
         GfxBudgetStats::DescriptorBudgetStats& dstats = gVk.descriptorStats;
-
-        for (uint32 i = 0; i < pipLayoutData.numDescriptorSetLayouts; i++) {
-            const GfxDescriptorSetLayoutData& descLayout = pipLayoutData.descriptorSetLayouts[i];
-            
-            for (uint32 b = 0; b < descLayout.numDsLayoutBindings; b++) {
-                switch (descLayout.dsLayoutBindings[b].vkBinding.descriptorType) {
-                case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER:     ASSERT(dstats.numUniformBuffers); --dstats.numUniformBuffers;  break;
-                case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC: ASSERT(dstats.numDynUniformBuffers); --dstats.numDynUniformBuffers; break;
-                case VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE:      ASSERT(dstats.numSampledImages);  --dstats.numSampledImages;   break;
-                case VK_DESCRIPTOR_TYPE_SAMPLER:            ASSERT(dstats.numSamplers);       --dstats.numSamplers;       break;
-                case VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER: ASSERT(dstats.numCombinedImageSamplers);    --dstats.numCombinedImageSamplers;  break;
-                default:                                    break;
-                }
+        
+        for (uint32 i = 0; i < layoutData.numBindings; i++) {
+            switch (layoutData.bindings[i].vkBinding.descriptorType) {
+            case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER:     ASSERT(dstats.numUniformBuffers); --dstats.numUniformBuffers;  break;
+            case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC: ASSERT(dstats.numDynUniformBuffers); --dstats.numDynUniformBuffers; break;
+            case VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE:      ASSERT(dstats.numSampledImages);  --dstats.numSampledImages;   break;
+            case VK_DESCRIPTOR_TYPE_SAMPLER:            ASSERT(dstats.numSamplers);       --dstats.numSamplers;       break;
+            case VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER: ASSERT(dstats.numCombinedImageSamplers);    --dstats.numCombinedImageSamplers;  break;
+            default:                                    break;
             }
         }
     }
 
     vkFreeDescriptorSets(gVk.device, gVk.descriptorPool, 1, &dsetData.descriptorSet);
-
     gVk.pools.descriptorSets.Remove(dset);
 }
 
@@ -3673,25 +3714,23 @@ void gfxUpdateDescriptorSet(GfxDescriptorSet dset, uint32 numBindings, const Gfx
     };
 
     GfxDescriptorSetData dsetData; 
-    GfxPipelineLayoutData pipLayoutData; 
+    
     {   
         AtomicLockScope lk1(gVk.pools.locks[GfxObjectPools::DESCRIPTOR_SETS]);
         dsetData = gVk.pools.descriptorSets.Data(dset);
-        AtomicLockScope lk2(gVk.pools.locks[GfxObjectPools::PIPELINE_LAYOUTS]);
-        pipLayoutData = gVk.pools.pipelineLayouts.Data(dsetData.pipLayout);
     }
 
-    GfxDescriptorSetLayoutData::Binding* layoutBindings = pipLayoutData.descriptorSetLayouts[0].dsLayoutBindings;
+    MemTempAllocator tempAlloc;
+
+    AtomicLockScope lk2(gVk.pools.locks[GfxObjectPools::DESCRIPTOR_SET_LAYOUTS]);
+    GfxDescriptorSetLayoutData& layoutData = gVk.pools.descriptorSetLayouts.Data(dsetData.layout);
     bool hasImage = false;
 
-    uint32 numDsLayoutBindings = pipLayoutData.descriptorSetLayouts->numDsLayoutBindings;
-    auto dsWrites = (VkWriteDescriptorSet*)alloca(sizeof(VkWriteDescriptorSet)*numDsLayoutBindings);
-    ASSERT_ALWAYS(dsWrites, "Out of stack memory");
-    ASSERT(numBindings == numDsLayoutBindings); // can be removed in case we wanted to update sets partially
+    VkWriteDescriptorSet* dsWrites = tempAlloc.MallocTyped<VkWriteDescriptorSet>(layoutData.numBindings);
+    ASSERT(numBindings == layoutData.numBindings); // can be removed in case we wanted to update sets partially
 
-    auto bufferInfos = (VkDescriptorBufferInfo*)alloca(sizeof(VkDescriptorBufferInfo)*numBindings);
-    auto imageInfos = (VkDescriptorImageInfo*)alloca(sizeof(VkDescriptorImageInfo)*numBindings);
-    ASSERT_ALWAYS(bufferInfos && imageInfos, "Out of stack memory");
+    VkDescriptorBufferInfo* bufferInfos = tempAlloc.MallocTyped<VkDescriptorBufferInfo>(numBindings);
+    VkDescriptorImageInfo* imageInfos = tempAlloc.MallocTyped<VkDescriptorImageInfo>(numBindings);
 
     for (uint32 i = 0; i < numBindings; i++) {
         const GfxDescriptorBindingDesc& binding = bindings[i];
@@ -3699,11 +3738,11 @@ void gfxUpdateDescriptorSet(GfxDescriptorSet dset, uint32 numBindings, const Gfx
         // TODO: match binding names. if they don't match, try to find it in the list
         uint32 nameHash = hashFnv32Str(binding.name);
         const GfxDescriptorSetLayoutData::Binding* layoutBinding;
-        if (nameHash != layoutBindings[i].nameHash) {
-            if (uint32 bindingIdx = findDescriptorBindingByNameHash(nameHash, numDsLayoutBindings, layoutBindings);
+        if (nameHash != layoutData.bindings[i].nameHash) {
+            if (uint32 bindingIdx = findDescriptorBindingByNameHash(nameHash, layoutData.numBindings, layoutData.bindings);
                 bindingIdx != UINT32_MAX) 
             {
-                layoutBinding = &layoutBindings[bindingIdx];
+                layoutBinding = &layoutData.bindings[bindingIdx];
             }
             else {
                 ASSERT_ALWAYS(0, "Descriptor layout binding '%s' not found", bindings[i].name);
@@ -3711,11 +3750,11 @@ void gfxUpdateDescriptorSet(GfxDescriptorSet dset, uint32 numBindings, const Gfx
             }
         }
         else {
-            layoutBinding = &layoutBindings[i];
+            layoutBinding = &layoutData.bindings[i];
         }
 
         ASSERT_MSG(layoutBinding->vkBinding.descriptorType == static_cast<VkDescriptorType>(binding.type), 
-                    "Descriptor binding type doesn't match with providede argument: (InShader: %u != Arg: %u)", 
+                    "Descriptor binding type doesn't match with the provided argument: (InShader: %u != Arg: %u)", 
                     uint32(layoutBinding->vkBinding.descriptorType), 
                     uint32(binding.type));
 
@@ -3788,41 +3827,35 @@ void gfxUpdateDescriptorSet(GfxDescriptorSet dset, uint32 numBindings, const Gfx
         };
     }
 
-    vkUpdateDescriptorSets(gVk.device, numDsLayoutBindings, dsWrites, 0, nullptr);
+    vkUpdateDescriptorSets(gVk.device, layoutData.numBindings, dsWrites, 0, nullptr);
 
     // Save descriptor set bindings for texture management (reloads)
-    if (hasImage) {
+    if (hasImage)
         gfxUpdateImageDescriptorSetCache(dset, numBindings, bindings);
-    }
 }
 
-void gfxCmdBindDescriptorSets(uint32 numDescriptorSets, const GfxDescriptorSet* descriptorSets, 
+void gfxCmdBindDescriptorSets(GfxPipeline pipeline, uint32 numDescriptorSets, const GfxDescriptorSet* descriptorSets, 
                               const uint32* dynOffsets, uint32 dynOffsetCount)
 {
     ASSERT(numDescriptorSets > 0);
     VkCommandBuffer cmdBufferVk = gCmdBufferThreadData.curCmdBuffer;
-    VkDescriptorSet* descriptorSetsVk = (VkDescriptorSet*)alloca(sizeof(VkDescriptorSet)*numDescriptorSets);
-    ASSERT_ALWAYS(descriptorSetsVk, "Out of stack memory");
 
+    MemTempAllocator tempAlloc;
+    VkDescriptorSet* descriptorSetsVk = tempAlloc.MallocTyped<VkDescriptorSet>(numDescriptorSets);
     VkPipelineLayout pipLayoutVk;
-    GfxPipelineLayout pipLayout;
 
     {
         AtomicLockScope lk(gVk.pools.locks[GfxObjectPools::DESCRIPTOR_SETS]);
         for (uint32 i = 0; i < numDescriptorSets; i++) {
             const GfxDescriptorSetData& dsData = gVk.pools.descriptorSets.Data(descriptorSets[i]);
-            if (i == 0) {
-                pipLayout = dsData.pipLayout;
-            } else {
-                ASSERT_MSG(pipLayout == dsData.pipLayout, "All descriptors should have the same pipeline");
-            }
             descriptorSetsVk[i] = dsData.descriptorSet;
         }
     }
 
     {
-        AtomicLockScope lk(gVk.pools.locks[GfxObjectPools::PIPELINE_LAYOUTS]);
-        pipLayoutVk = gVk.pools.pipelineLayouts.Data(pipLayout).pipLayout;
+        AtomicLockScope lk(gVk.pools.locks[GfxObjectPools::PIPELINES]);
+        AtomicLockScope lk2(gVk.pools.locks[GfxObjectPools::PIPELINE_LAYOUTS]);
+        pipLayoutVk = gVk.pools.pipelineLayouts.Data(gVk.pools.pipelines.Data(pipeline).pipelineLayout).layout;
     }
     
     vkCmdBindDescriptorSets(cmdBufferVk, VK_PIPELINE_BIND_POINT_GRAPHICS, pipLayoutVk, 

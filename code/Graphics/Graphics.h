@@ -444,7 +444,6 @@ struct GfxDescriptorSetLayoutBinding
     const char*         name;               // Binding index is extracted from shader and looked up with the name
     GfxDescriptorType   type;     
     GfxShaderStage      stages;             // Which shader stage the binding is being used (combination of GfxShaderStageFlagBits)
-    uint32              pushConstantSize;   // Used for push-constant ranges only
 };
 
 // 1-1 vulkan
@@ -705,13 +704,29 @@ enum class GfxPrimitiveTopology: uint32
 
 struct Shader;      // declared in Shader.h
 
+struct GfxBufferRange
+{
+    uint32 offset;
+    uint32 size;
+};
+
+struct GfxPushConstantDesc
+{
+    GfxShaderStage stages;
+    GfxBufferRange range;
+};
+
 struct GfxPipelineDesc
 {
     Shader*                 shader;
     GfxPrimitiveTopology    inputAssemblyTopology;
+    
+    uint32 numDescriptorSetLayouts;
+    const GfxDescriptorSetLayout* descriptorSetLayouts;
 
-    uint32                                  numDescriptorSetBindings;
-    const GfxDescriptorSetLayoutBinding*    descriptorSetBindings;
+    uint32 numPushConstants;
+    const GfxPushConstantDesc* pushConstants;
+
     uint32                                  numVertexInputAttributes;
     const GfxVertexInputAttributeDesc*      vertexInputAttributes;
     uint32                                  numVertexBufferBindings;
@@ -939,7 +954,11 @@ API void        gfxDestroyPipeline(GfxPipeline pipeline);
 API GfxRenderPass gfxCreateRenderPass(const GfxRenderPassDesc& desc);
 API void gfxDestroyRenderPass(GfxRenderPass renderPass);
 
-API GfxDescriptorSet gfxCreateDescriptorSet(GfxPipeline pipeline);
+API GfxDescriptorSetLayout gfxCreateDescriptorSetLayout(const Shader& shader, 
+                                                        const GfxDescriptorSetLayoutBinding* bindings, uint32 numBindings);
+API void gfxDestroyDescriptorSetLayout(GfxDescriptorSetLayout layout);
+
+API GfxDescriptorSet gfxCreateDescriptorSet(GfxDescriptorSetLayout layout);
 API void gfxDestroyDescriptorSet(GfxDescriptorSet dset);
 
 // Update descriptor sets
@@ -953,7 +972,7 @@ API void gfxEndCommandBuffer();
 // Command functions
 API void gfxCmdUpdateBuffer(GfxBuffer buffer, const void* data, uint32 size);
 API void gfxCmdBindPipeline(GfxPipeline pipeline);
-API void gfxCmdBindDescriptorSets(uint32 numDescriptorSets, const GfxDescriptorSet* descriptorSets, 
+API void gfxCmdBindDescriptorSets(GfxPipeline pipeline, uint32 numDescriptorSets, const GfxDescriptorSet* descriptorSets, 
                                   const uint32* dynOffsets = nullptr, uint32 dynOffsetCount = 0);
 API void gfxCmdBindVertexBuffers(uint32 firstBinding, uint32 numBindings, const GfxBuffer* vertexBuffers, const uint64* offsets);
 API void gfxCmdBindIndexBuffer(GfxBuffer indexBuffer, uint64 offset, GfxIndexType indexType);

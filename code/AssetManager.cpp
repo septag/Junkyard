@@ -76,6 +76,7 @@ struct AssetManager
     HashTable<AssetHandle> assetLookup;     // key: hash of path+params. 
                                             // This HashTable is used for looking up already loaded assets 
     Array<AssetGarbage> garbage;
+    Mutex assetsMtx;                        // Mutex used for 'assets' HandlePool (see above)
 
     size_t initHeapStart;
     size_t initHeapSize;
@@ -90,6 +91,7 @@ static void assetFileChanged(const char* filepath);
 bool _private::assetInitialize()
 {
     gAssetMgr.initialized = true;
+    gAssetMgr.assetsMtx.Initialize();
 
     MemBudgetAllocator* initHeap = engineGetInitHeap();
     gAssetMgr.initHeapStart = initHeap->GetOffset();
@@ -162,6 +164,7 @@ void _private::assetRelease()
         assetCollectGarbage();
         ASSERT(gAssetMgr.assets.Count() == 0);
 
+        gAssetMgr.assetsMtx.Release();
         gAssetMgr.runtimeHeap.Release();
 
         gAssetMgr.initialized = false;
@@ -216,8 +219,12 @@ static AssetHandle assetCreateNew(uint32 typeMgrIdx, uint32 assetHash, const Ass
         .params = newParams
     };
 
+    AssetHandle handle;
     Asset prevAsset;
-    AssetHandle handle = gAssetMgr.assets.Add(asset, &prevAsset);
+    {
+        MutexScope mtx(gAssetMgr.assetsMtx);
+        handle = gAssetMgr.assets.Add(asset, &prevAsset);
+    }
     ASSERT(!prevAsset.params);
     ASSERT(!prevAsset.metaData);
 
@@ -227,15 +234,17 @@ static AssetHandle assetCreateNew(uint32 typeMgrIdx, uint32 assetHash, const Ass
 
 static AssetResult assetLoadObjLocal(AssetHandle handle, AssetLoaderCallbacks* callbacks, const char* filepath, const AssetLoadParams& loadParams)
 {
-    Asset& asset = gAssetMgr.assets.Data(handle);
-    AssetMetaKeyValue* keys;
-    uint32 numKeys;
-    
-    if (asset.metaData == nullptr && 
-        assetLoadMetaData(filepath, loadParams.platform, &gAssetMgr.runtimeHeap, &keys, &numKeys) && numKeys) 
-    {
-        asset.numMeta = numKeys;
-        asset.metaData = keys;
+    { MutexScope mtx(gAssetMgr.assetsMtx);
+        Asset& asset = gAssetMgr.assets.Data(handle);
+        AssetMetaKeyValue* keys;
+        uint32 numKeys;
+        
+        if (asset.metaData == nullptr && 
+            assetLoadMetaData(filepath, loadParams.platform, &gAssetMgr.runtimeHeap, &keys, &numKeys) && numKeys) 
+        {
+            asset.numMeta = numKeys;
+            asset.metaData = keys;
+        }
     }
 
     return callbacks->Load(handle, loadParams, &gAssetMgr.runtimeHeap);
@@ -358,6 +367,7 @@ bool assetLoadMetaData(AssetHandle handle, Allocator* alloc, AssetMetaKeyValue**
 {
     ASSERT(handle.IsValid());
 
+    MutexScope mtx(gAssetMgr.assetsMtx);
     Asset& asset = gAssetMgr.assets.Data(handle);
     if (asset.numMeta) {
         ASSERT(asset.metaData);
@@ -392,9 +402,11 @@ static void assetLoadTask(uint32 groupIndex, void* userData)
     AssetHandle handle { static_cast<uint32>(userValue >> 32) };
     TimerStopWatch timer;
 
+    gAssetMgr.assetsMtx.Enter();
     Asset& asset = gAssetMgr.assets.Data(handle);
     const char* filepath = asset.params->path;
     const AssetTypeManager& typeMgr = gAssetMgr.typeManagers[asset.typeMgrIdx];
+    gAssetMgr.assetsMtx.Exit();
         
     AssetResult result;
     if (method == AssetLoadMethod::Local) 
@@ -406,6 +418,7 @@ static void assetLoadTask(uint32 groupIndex, void* userData)
         result = AssetResult {};
     }
 
+    MutexScope mtx(gAssetMgr.assetsMtx);
     asset = gAssetMgr.assets.Data(handle);  // Update the asset pointer once again
     if (asset.obj != typeMgr.asyncObj)
         prevObj = asset.obj;
@@ -457,6 +470,7 @@ static void assetLoadTask(uint32 groupIndex, void* userData)
 
 static void assetFileChanged(const char* filepath)
 {
+    MutexScope mtx(gAssetMgr.assetsMtx);
     for (uint32 i = 0; i < gAssetMgr.assets.Count(); i++) {
         AssetHandle handle = gAssetMgr.assets.HandleAt(i);
         Asset& asset = gAssetMgr.assets.Data(handle);
@@ -495,10 +509,12 @@ AssetHandle assetLoad(const AssetLoadParams& params, const void* extraParams)
     uint32 assetHash = assetMakeHash(params, typeMgr.extraParamTypeSize, extraParams);
     AssetHandle handle = gAssetMgr.assetLookup.FindAndFetch(assetHash, AssetHandle());
     if (handle.IsValid()) {
+        MutexScope mtx(gAssetMgr.assetsMtx);
         Asset& asset = gAssetMgr.assets.Data(handle);
         ++asset.refCount;
     }
     else {
+        MutexScope mtx(gAssetMgr.assetsMtx);
         handle = assetCreateNew(typeMgrIdx, assetHash, params, extraParams);
         Asset& asset = gAssetMgr.assets.Data(handle);
         asset.state = AssetState::Loading;
@@ -525,6 +541,7 @@ void assetUnload(AssetHandle handle)
 {
     if (handle.IsValid()) {
         ASSERT(gAssetMgr.initialized);
+        MutexScope mtx(gAssetMgr.assetsMtx);
         Asset& asset = gAssetMgr.assets.Data(handle);
         ASSERT_ALWAYS(asset.state == AssetState::Alive, "Asset '%s' is either failed or already released", 
             asset.params->path);
@@ -550,6 +567,15 @@ void assetUnload(AssetHandle handle)
 void* _private::assetGetData(AssetHandle handle)
 {
     ASSERT(gAssetMgr.initialized);
+    
+    MutexScope mtx(gAssetMgr.assetsMtx);
+    Asset& asset = gAssetMgr.assets.Data(handle);
+    return asset.obj;
+}
+
+void* _private::assetGetDataUnsafe(AssetHandle handle)
+{
+    ASSERT(gAssetMgr.initialized);
 
     Asset& asset = gAssetMgr.assets.Data(handle);
     return asset.obj;
@@ -560,6 +586,7 @@ AssetInfo assetGetInfo(AssetHandle handle)
     ASSERT(gAssetMgr.initialized);
     ASSERT(handle.IsValid());
 
+    MutexScope mtx(gAssetMgr.assetsMtx);
     Asset& asset = gAssetMgr.assets.Data(handle);
 
     return AssetInfo {
@@ -578,6 +605,7 @@ bool assetIsAlive(AssetHandle handle)
     ASSERT(gAssetMgr.initialized);
     ASSERT(handle.IsValid());
 
+    MutexScope mtx(gAssetMgr.assetsMtx);
     Asset& asset = gAssetMgr.assets.Data(handle);
     return asset.state == AssetState::Alive;
 }
@@ -651,6 +679,7 @@ bool assetWait(AssetBarrier barrier, uint32 msecs)
 
 void assetCollectGarbage()
 {
+    MutexScope mtx(gAssetMgr.assetsMtx);
     for (AssetGarbage& garbage : gAssetMgr.garbage) {
         AssetTypeManager* typeMgr = &gAssetMgr.typeManagers[garbage.typeMgrIdx];
         if (!typeMgr->unregistered) {

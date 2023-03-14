@@ -129,15 +129,6 @@ bool _private::ddInitialize()
         return false;
 
     {   // Wireframe 
-        const GfxDescriptorSetLayoutBinding bindings[] = {
-            {
-                .name = "Transform",
-                .type = GfxDescriptorType::UniformBuffer,
-                .stages = GfxShaderStage::Vertex,
-                .pushConstantSize = sizeof(Mat4)
-            }        
-        };
-
         GfxVertexBufferBindingDesc vertexBufferBindingDesc = {
             .binding = 0,
             .stride = sizeof(DebugDrawContext::Vertex),
@@ -167,11 +158,16 @@ bool _private::ddInitialize()
         if (!assetIsAlive(gDebugDraw.shaderAsset))
             return false;
 
+        GfxPushConstantDesc pushConstant = GfxPushConstantDesc {
+            .stages = GfxShaderStage::Vertex,
+            .range = { 0, sizeof(Mat4) }
+        };
+
         gDebugDraw.pipeline = gfxCreatePipeline(GfxPipelineDesc {
             .shader = assetGetShader(gDebugDraw.shaderAsset),
             .inputAssemblyTopology = GfxPrimitiveTopology::LineList,
-            .numDescriptorSetBindings = CountOf(bindings),
-            .descriptorSetBindings = bindings,
+            .numPushConstants = 1,
+            .pushConstants = &pushConstant,
             .numVertexInputAttributes = CountOf(vertexInputAttDescs),
             .vertexInputAttributes = vertexInputAttDescs,
             .numVertexBufferBindings = 1,

@@ -30,6 +30,12 @@ PRAGMA_DIAGNOSTIC_IGNORED_CLANG_GCC("-Wunused-function")
 #include "../External/sokol/sokol_args.h"
 PRAGMA_DIAGNOSTIC_POP()
 
+// TODO: gotta remove the dependency to application
+#if PLATFORM_ANDROID
+#include "../Application.h"    // appGetNativeAssetManagerHandle
+#include <android/asset_manager.h>
+#endif
+
 struct SettingsKeyValue
 {
     String32 key;
@@ -213,6 +219,21 @@ bool settingsLoadFromINI(const char* iniFilepath)
 
     File f;
     Blob blob;
+#if PLATFORM_ANDROID
+    AAsset* asset = AAssetManager_open(appAndroidGetAssetManager(), iniFilepath, AASSET_MODE_BUFFER);
+    if (asset && AAsset_getLength(asset) > 0) {
+        off_t size = AAsset_getLength(asset);
+        blob.Reserve(size + 1);
+        int bytesRead = AAsset_read(asset, const_cast<void*>(blob.Data()), size);
+        
+        if (bytesRead > 0) {
+            blob.SetSize(bytesRead);
+            blob.Write<char>('\0');
+        }
+
+        AAsset_close(asset);
+    }
+#else
     if (f.Open(iniFilepath, FileIOFlags::Read | FileIOFlags::SeqScan)) {
         uint64 size = f.GetSize();
         if (size) {
@@ -223,6 +244,7 @@ bool settingsLoadFromINI(const char* iniFilepath)
         }
         f.Close();
     }
+#endif
 
     if (!blob.IsValid()) {
         logError("Opening ini file '%s' failed", iniFilepath);

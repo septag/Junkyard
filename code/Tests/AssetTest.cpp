@@ -29,6 +29,7 @@ struct AppImpl : AppCallbacks
     GfxPipeline pipeline;
     GfxBuffer uniformBuffer;
     GfxDynamicUniformBuffer transformsBuffer;
+    GfxDescriptorSetLayout dsLayout;
 
     AssetHandleModel modelAsset;
     AssetHandleImage testImageAsset;
@@ -171,10 +172,9 @@ struct AppImpl : AppCallbacks
                             GfxDescriptorSet dset(PtrToInt<uint32>(submesh.material->userData));
                             uint32 dynOffset = transformsBuffer.Offset(inst);
     
-                            gfxCmdBindDescriptorSets(1, &dset, &dynOffset, 1);
+                            gfxCmdBindDescriptorSets(pipeline, 1, &dset, &dynOffset, 1);
                             gfxCmdDrawIndexed(mesh.numIndices, 1, 0, 0, 0);
-                        }
-    
+                        }    
                     }  
                 }       // foreach (node)     
             }   // foreach (instance)
@@ -225,24 +225,6 @@ struct AppImpl : AppCallbacks
     bool CreateGraphicsObjects()
     {
         // Graphics Objects
-        const GfxDescriptorSetLayoutBinding bindingLayout[] = {
-            {
-                .name = "ModelTransform",
-                .type = GfxDescriptorType::UniformBufferDynamic,
-                .stages = GfxShaderStage::Vertex,
-            },
-            {
-                .name = "FrameTransform",
-                .type = GfxDescriptorType::UniformBuffer,
-                .stages = GfxShaderStage::Vertex
-            },
-            {
-                .name = "BaseColorTexture",
-                .type = GfxDescriptorType::CombinedImageSampler,
-                .stages = GfxShaderStage::Fragment
-            }
-        };
-
         GfxVertexBufferBindingDesc vertexBufferBindingDesc {
             .binding = 0,
             .stride = sizeof(Vertex),
@@ -287,6 +269,29 @@ struct AppImpl : AppCallbacks
         if (!assetIsAlive(modelAsset) || !assetIsAlive(modelShaderAsset))
             return false;
 
+
+        {
+            const GfxDescriptorSetLayoutBinding bindingLayout[] = {
+                {
+                    .name = "ModelTransform",
+                    .type = GfxDescriptorType::UniformBufferDynamic,
+                    .stages = GfxShaderStage::Vertex,
+                },
+                {
+                    .name = "FrameTransform",
+                    .type = GfxDescriptorType::UniformBuffer,
+                    .stages = GfxShaderStage::Vertex
+                },
+                {
+                    .name = "BaseColorTexture",
+                    .type = GfxDescriptorType::CombinedImageSampler,
+                    .stages = GfxShaderStage::Fragment
+                }
+            };
+
+            dsLayout = gfxCreateDescriptorSetLayout(*assetGetShader(modelShaderAsset), bindingLayout, CountOf(bindingLayout));
+        }
+
         uniformBuffer = gfxCreateBuffer(GfxBufferDesc {
                                         .size = sizeof(FrameTransform),
                                         .type = GfxBufferType::Uniform,
@@ -300,8 +305,8 @@ struct AppImpl : AppCallbacks
         pipeline = gfxCreatePipeline(GfxPipelineDesc {
             .shader = assetGetShader(modelShaderAsset),
             .inputAssemblyTopology = GfxPrimitiveTopology::TriangleList,
-            .numDescriptorSetBindings = CountOf(bindingLayout),
-            .descriptorSetBindings = bindingLayout,
+            .numDescriptorSetLayouts = 1,
+            .descriptorSetLayouts = &dsLayout,
             .numVertexInputAttributes = CountOf(vertexInputAttDescs),
             .vertexInputAttributes = vertexInputAttDescs,
             .numVertexBufferBindings = 1,
@@ -327,7 +332,7 @@ struct AppImpl : AppCallbacks
                 ModelMaterial* material = mesh.submeshes[smi].material.Get();
 
                 GfxImage albedo = assetGetImage(testImageAsset);
-                GfxDescriptorSet dset = gfxCreateDescriptorSet(pipeline);
+                GfxDescriptorSet dset = gfxCreateDescriptorSet(dsLayout);
                 
                 GfxDescriptorBindingDesc descBindings[] = {
                     {
@@ -363,6 +368,7 @@ struct AppImpl : AppCallbacks
         for (uint32 i = 0; i < descriptorSets.Count(); i++) 
             gfxDestroyDescriptorSet(descriptorSets[i]);
         gfxDestroyPipeline(pipeline);
+        gfxDestroyDescriptorSetLayout(dsLayout);
         gfxDestroyBuffer(uniformBuffer);
         gfxDestroyDynamicUniformBuffer(transformsBuffer);
         descriptorSets.Free();
@@ -378,7 +384,7 @@ int Main(int argc, char* argv[])
     });
 
     if constexpr (PLATFORM_ANDROID)
-        settingsLoadFromINI("/assets/Settings.ini");
+        settingsLoadFromINI("Settings.ini");
     else
         settingsLoadFromCommandLine(argc, argv);
 

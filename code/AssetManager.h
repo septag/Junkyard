@@ -153,7 +153,12 @@ namespace _private
     bool assetInitialize();
     void assetRelease();
 
+    // This is the type-unsafe and generic version to get asset data
+    // We wrap this function inside whatever asset implementation is out there
+    // See Graphics.h:assetGetImage for an example
     void* assetGetData(AssetHandle handle);
+
+    void* assetGetDataUnsafe(AssetHandle handle);
 
     void assetDetectAndReleaseLeaks();
 }
