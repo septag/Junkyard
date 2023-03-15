@@ -175,6 +175,7 @@ struct Handle
     Handle() = default;
     Handle(const Handle<_T>&) = default;
     explicit Handle(uint32 _id) : id(_id) {}
+    Handle<_T>& operator=(const Handle<_T>&) = default;
 
     void Set(uint32 gen, uint32 index) { id = ((gen & _private::kHandleGenMask)<<_private::kHandleGenShift) | (index&_private::kHandleIndexMask); }
     explicit operator uint32() const { return id; }

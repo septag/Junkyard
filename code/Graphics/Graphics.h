@@ -444,6 +444,7 @@ struct GfxDescriptorSetLayoutBinding
     const char*         name;               // Binding index is extracted from shader and looked up with the name
     GfxDescriptorType   type;     
     GfxShaderStage      stages;             // Which shader stage the binding is being used (combination of GfxShaderStageFlagBits)
+    uint32              arrayCount = 1;      
 };
 
 // 1-1 vulkan
@@ -836,11 +837,13 @@ struct GfxDescriptorBindingDesc
 {   
     const char* name;
     GfxDescriptorType type;
+    uint32 imageArrayCount;
 
     union
     {
         GfxDescriptorBufferDesc buffer;
         GfxImage                image;
+        const GfxImage*         imageArray;
     };
 };
 

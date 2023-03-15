@@ -32,9 +32,9 @@ struct AppImpl : AppCallbacks
     GfxDescriptorSetLayout dsLayout;
 
     AssetHandleModel modelAsset;
-    AssetHandleImage testImageAsset;
+    AssetHandleImage testImageAssets[kNumCubes];
     AssetHandleShader modelShaderAsset;
-    Array<GfxDescriptorSet> descriptorSets;
+    GfxDescriptorSet descriptorSet;
     CameraFPS   fpsCam;
     CameraOrbit orbitCam;
     Camera*     cam;
@@ -98,7 +98,8 @@ struct AppImpl : AppCallbacks
     {
         ReleaseGraphicsObjects();
 
-        assetUnload(testImageAsset);
+        for (uint32 i = 0; i < kNumCubes; i++) 
+            assetUnload(testImageAssets[i]);
         assetUnload(modelAsset);
         assetUnload(modelShaderAsset);
 
@@ -167,12 +168,9 @@ struct AppImpl : AppCallbacks
     
                         // DescriptorSets
                         for (uint32 smi = 0; smi < mesh.numSubmeshes; smi++) {
-                            const ModelSubmesh& submesh = mesh.submeshes[smi];
-    
-                            GfxDescriptorSet dset(PtrToInt<uint32>(submesh.material->userData));
                             uint32 dynOffset = transformsBuffer.Offset(inst);
     
-                            gfxCmdBindDescriptorSets(pipeline, 1, &dset, &dynOffset, 1);
+                            gfxCmdBindDescriptorSets(pipeline, 1, &descriptorSet, &dynOffset, 1);
                             gfxCmdDrawIndexed(mesh.numIndices, 1, 0, 0, 0);
                         }    
                     }  
@@ -264,7 +262,11 @@ struct AppImpl : AppCallbacks
 
             modelAsset = assetLoadModel("/data/models/HighPolyBox/HighPolyBox.gltf", loadParams, b.Barrier());
             modelShaderAsset = assetLoadShader("/code/shaders/Unlit.hlsl", ShaderCompileDesc {}, b.Barrier());
-            testImageAsset = assetLoadImage("/data/images/gen/1.png", ImageLoadParams {}, b.Barrier());
+            testImageAssets[0] = assetLoadImage("/data/images/gen/1.png", ImageLoadParams {}, b.Barrier());
+            for (uint32 i = 1; i < kNumCubes; i++) {
+                assetAddRef(testImageAssets[0]);
+                testImageAssets[i] = testImageAssets[0];
+            }
         }
         if (!assetIsAlive(modelAsset) || !assetIsAlive(modelShaderAsset))
             return false;
@@ -283,9 +285,10 @@ struct AppImpl : AppCallbacks
                     .stages = GfxShaderStage::Vertex
                 },
                 {
-                    .name = "BaseColorTexture",
+                    .name = "BaseColorTextures",
                     .type = GfxDescriptorType::CombinedImageSampler,
-                    .stages = GfxShaderStage::Fragment
+                    .stages = GfxShaderStage::Fragment,
+                    .arrayCount = kNumCubes
                 }
             };
 
@@ -299,8 +302,6 @@ struct AppImpl : AppCallbacks
         });
 
         transformsBuffer = gfxCreateDynamicUniformBuffer(kNumCubes, sizeof(WorldTransform));
-
-        Model* model = assetGetModel(modelAsset);
 
         pipeline = gfxCreatePipeline(GfxPipelineDesc {
             .shader = assetGetShader(modelShaderAsset),
@@ -326,52 +327,40 @@ struct AppImpl : AppCallbacks
         });
 
         // TODO: TEMP create descriptor sets and assign them to material userData for later rendering
-        for (uint32 i = 0; i < model->numMeshes; i++) {
-            ModelMesh& mesh = model->meshes[i];
-            for (uint32 smi = 0; smi < mesh.numSubmeshes; smi++) {
-                ModelMaterial* material = mesh.submeshes[smi].material.Get();
-
-                GfxImage albedo = assetGetImage(testImageAsset);
-                GfxDescriptorSet dset = gfxCreateDescriptorSet(dsLayout);
-                
-                GfxDescriptorBindingDesc descBindings[] = {
-                    {
-                        .name = "ModelTransform",
-                        .type = GfxDescriptorType::UniformBufferDynamic,
-                        .buffer = {transformsBuffer.buffer, 0, transformsBuffer.stride}
-                    },
-                    {
-                        .name = "FrameTransform",
-                        .type = GfxDescriptorType::UniformBuffer,
-                        .buffer = { uniformBuffer, 0, sizeof(FrameTransform) }
-                    },
-                    {
-                        .name = "BaseColorTexture",
-                        .type = GfxDescriptorType::CombinedImageSampler,
-                        .image = albedo
-                    }
-                };
-
-                gfxUpdateDescriptorSet(dset, CountOf(descBindings), descBindings);
-
-                material->userData = IntToPtr<uint32>(dset.id);
-                descriptorSets.Push(dset);
+        GfxImage images[kNumCubes];
+        for (uint32 i = 0; i < kNumCubes; i++)
+            images[i] = assetGetImage(testImageAssets[0]);
+        descriptorSet = gfxCreateDescriptorSet(dsLayout);
+        GfxDescriptorBindingDesc descBindings[] = {
+            {
+                .name = "ModelTransform",
+                .type = GfxDescriptorType::UniformBufferDynamic,
+                .buffer = {transformsBuffer.buffer, 0, transformsBuffer.stride}
+            },
+            {
+                .name = "FrameTransform",
+                .type = GfxDescriptorType::UniformBuffer,
+                .buffer = { uniformBuffer, 0, sizeof(FrameTransform) }
+            },
+            {
+                .name = "BaseColorTextures",
+                .type = GfxDescriptorType::CombinedImageSampler,
+                .imageArrayCount = kNumCubes,
+                .imageArray = images
             }
-        }
-
+        };
+        gfxUpdateDescriptorSet(descriptorSet, CountOf(descBindings), descBindings);
         return true;
     }
 
     void ReleaseGraphicsObjects()
     {
         gfxWaitForIdle();
-        for (uint32 i = 0; i < descriptorSets.Count(); i++) 
-            gfxDestroyDescriptorSet(descriptorSets[i]);
+        gfxDestroyDescriptorSet(descriptorSet);
         gfxDestroyPipeline(pipeline);
         gfxDestroyDescriptorSetLayout(dsLayout);
         gfxDestroyBuffer(uniformBuffer);
         gfxDestroyDynamicUniformBuffer(transformsBuffer);
-        descriptorSets.Free();
     }
 };
 

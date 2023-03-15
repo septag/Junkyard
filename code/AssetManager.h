@@ -115,6 +115,7 @@ API AssetHandle assetLoad(const AssetLoadParams& params, const void* extraParams
 API void assetUnload(AssetHandle handle);
 API AssetInfo assetGetInfo(AssetHandle handle);
 API bool assetIsAlive(AssetHandle handle);
+API AssetHandle assetAddRef(AssetHandle handle);
 
 API AssetBarrier assetCreateBarrier();
 API void assetDestroyBarrier(AssetBarrier barrier);

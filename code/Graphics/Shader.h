@@ -60,7 +60,8 @@ enum class ShaderParameterType : uint32
 {
     Uniformbuffer,
     Samplerstate,
-    Resource
+    Resource,
+    Array
 };
 
 struct ShaderParameterInfo

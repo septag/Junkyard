@@ -178,6 +178,7 @@ struct GfxDescriptorSetLayoutData
     {
         const char* name;
         uint32      nameHash;
+        uint32      variableDescCount;
         VkDescriptorSetLayoutBinding vkBinding;
     };
 
@@ -367,6 +368,7 @@ struct GfxVkState
     bool hasMemoryBudget;
     bool hasHostQueryReset;
     bool hasFloat16Support;
+    bool hasDescriptorIndexing;
 };
 
 namespace VkExtensionApi
@@ -1829,6 +1831,8 @@ bool _private::gfxInitialize()
     if (gfxHasVulkanVersion(GfxApiVersion::Vulkan_1_2) && !gVk.deviceFeatures12.shaderFloat16)
         gVk.hasFloat16Support = false;
 
+    gVk.hasDescriptorIndexing = gfxHasDeviceExtension("VK_EXT_descriptor_indexing");
+
     StaticArray<const char*, 32> enabledDeviceExtensions;
     if (!settings.headless) {
         if (gfxHasDeviceExtension("VK_KHR_swapchain"))
@@ -1866,6 +1870,8 @@ bool _private::gfxInitialize()
     }
     if (gVk.hasFloat16Support)
         enabledDeviceExtensions.Add("VK_KHR_shader_float16_int8");
+    if (gVk.hasDescriptorIndexing)
+        enabledDeviceExtensions.Add("VK_EXT_descriptor_indexing");
 
     // Enabled layers
     VkDeviceCreateInfo devCreateInfo {
@@ -1897,6 +1903,17 @@ bool _private::gfxInitialize()
     if (gVk.hasHostQueryReset) {
         *deviceNext = &enableHostReset;
         deviceNext = &enableHostReset.pNext;
+    }
+
+    VkPhysicalDeviceDescriptorIndexingFeatures enableDescriptorIndexing {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES_EXT,
+        .shaderSampledImageArrayNonUniformIndexing = VK_TRUE,
+        .descriptorBindingVariableDescriptorCount = VK_TRUE,
+        .runtimeDescriptorArray = VK_TRUE
+    };
+    if (gVk.hasDescriptorIndexing) {
+        *deviceNext = &enableDescriptorIndexing;
+        deviceNext = &enableDescriptorIndexing.pNext;
     }
 
     if (enabledDeviceExtensions.Count()) {
@@ -3533,8 +3550,10 @@ GfxDescriptorSetLayout gfxCreateDescriptorSetLayout(const Shader& shader, const 
     VkDescriptorSetLayoutBinding* descriptorSetBindings = tmpAlloc.MallocTyped<VkDescriptorSetLayoutBinding>(numBindings);
     const char** names = tmpAlloc.MallocTyped<const char*>(numBindings);
     
+    bool hasArrays = false;
     for (uint32 i = 0; i < numBindings; i++) {
         const GfxDescriptorSetLayoutBinding& dsLayoutBinding = bindings[i];
+        ASSERT(dsLayoutBinding.arrayCount > 0);
 
         uint32 paramIdx = UINT32_MAX;
         for (uint32 k = 0; k < shader.numParams; k++) {
@@ -3551,9 +3570,11 @@ GfxDescriptorSetLayout gfxCreateDescriptorSetLayout(const Shader& shader, const 
         descriptorSetBindings[i] = VkDescriptorSetLayoutBinding {
             .binding = shaderParam.bindingIdx,
             .descriptorType = static_cast<VkDescriptorType>(dsLayoutBinding.type),
-            .descriptorCount = 1,
+            .descriptorCount = dsLayoutBinding.arrayCount,
             .stageFlags = static_cast<VkShaderStageFlags>(dsLayoutBinding.stages)
         };
+
+        hasArrays = dsLayoutBinding.arrayCount > 1;
     }
 
     // Search in existing descriptor set layouts and try to find a match. 
@@ -3579,6 +3600,19 @@ GfxDescriptorSetLayout gfxCreateDescriptorSetLayout(const Shader& shader, const 
             .bindingCount = numBindings,
             .pBindings = descriptorSetBindings
         };
+
+        // VK_EXT_descriptor_indexing
+        VkDescriptorSetLayoutBindingFlagsCreateInfoEXT layoutBindingFlags {
+            .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO_EXT,
+            .bindingCount = numBindings
+        };
+        if (hasArrays && gVk.hasDescriptorIndexing) {
+            VkDescriptorBindingFlagsEXT* bindingFlags = tmpAlloc.MallocTyped<VkDescriptorBindingFlagsEXT>(numBindings);
+            for (uint32 i = 0; i < numBindings; i++)
+                bindingFlags[i] = bindings[i].arrayCount > 1 ? VK_DESCRIPTOR_BINDING_VARIABLE_DESCRIPTOR_COUNT_BIT_EXT : 0;
+            layoutBindingFlags.pBindingFlags = bindingFlags;
+            layoutCreateInfo.pNext = &layoutBindingFlags;
+        }
         
         VkDescriptorSetLayout dsLayout;
         if (vkCreateDescriptorSetLayout(gVk.device, &layoutCreateInfo, &gVk.allocVk, &dsLayout) != VK_SUCCESS) {
@@ -3599,6 +3633,7 @@ GfxDescriptorSetLayout gfxCreateDescriptorSetLayout(const Shader& shader, const 
             ASSERT(names[i]);
             dsLayoutData.bindings[i].name = names[i];
             dsLayoutData.bindings[i].nameHash = hashFnv32Str(names[i]);
+            dsLayoutData.bindings[i].variableDescCount = bindings[i].arrayCount;
             memcpy(&dsLayoutData.bindings[i].vkBinding, &descriptorSetBindings[i], sizeof(VkDescriptorSetLayoutBinding));
         }
 
@@ -3630,11 +3665,18 @@ void gfxDestroyDescriptorSetLayout(GfxDescriptorSetLayout layout)
 
 GfxDescriptorSet gfxCreateDescriptorSet(GfxDescriptorSetLayout layout)
 {
+    MemTempAllocator tempAlloc;
     VkDescriptorSetLayout vkLayout;
+
+    uint32* variableDescCounts = nullptr;
+    uint32 numVariableDescCounts = 0;
+
     {
         AtomicLockScope lk(gVk.pools.locks[GfxObjectPools::DESCRIPTOR_SET_LAYOUTS]);
         const GfxDescriptorSetLayoutData& layoutData = gVk.pools.descriptorSetLayouts.Data(layout);
         vkLayout = layoutData.layout;
+
+        variableDescCounts = tempAlloc.MallocTyped<uint32>(layoutData.numBindings);
 
         for (uint32 i = 0; i < layoutData.numBindings; i++) {
             switch (layoutData.bindings[i].vkBinding.descriptorType) {
@@ -3645,6 +3687,9 @@ GfxDescriptorSet gfxCreateDescriptorSet(GfxDescriptorSetLayout layout)
             case VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER: ++gVk.descriptorStats.numCombinedImageSamplers;    break;
             default:                                    break;
             }
+
+            if (layoutData.bindings[i].variableDescCount > 1) 
+                variableDescCounts[numVariableDescCounts++] = layoutData.bindings[i].variableDescCount;
         }
     }    
 
@@ -3654,6 +3699,17 @@ GfxDescriptorSet gfxCreateDescriptorSet(GfxDescriptorSetLayout layout)
         .descriptorSetCount = 1,
         .pSetLayouts = &vkLayout
     };
+
+    // VK_EXT_descriptor_indexing
+    if (gVk.hasDescriptorIndexing) {
+        VkDescriptorSetVariableDescriptorCountAllocateInfoEXT variableDescriptorCountAllocInfo {
+            .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_VARIABLE_DESCRIPTOR_COUNT_ALLOCATE_INFO_EXT,
+            .descriptorSetCount = numVariableDescCounts,
+            .pDescriptorCounts = numVariableDescCounts ? variableDescCounts : nullptr
+        };
+
+        allocInfo.pNext = &variableDescriptorCountAllocInfo;
+    }
 
     GfxDescriptorSetData descriptorSetData { .layout = layout };
     if (vkAllocateDescriptorSets(gVk.device, &allocInfo, &descriptorSetData.descriptorSet) != VK_SUCCESS) {
@@ -3760,6 +3816,7 @@ void gfxUpdateDescriptorSet(GfxDescriptorSet dset, uint32 numBindings, const Gfx
 
         VkDescriptorBufferInfo* pBufferInfo = nullptr;
         VkDescriptorImageInfo* pImageInfo = nullptr;
+        uint32 descriptorCount = 1;
 
         switch (binding.type) {
         case GfxDescriptorType::UniformBuffer: 
@@ -3788,13 +3845,29 @@ void gfxUpdateDescriptorSet(GfxDescriptorSet dset, uint32 numBindings, const Gfx
         case GfxDescriptorType::CombinedImageSampler:
         {
             AtomicLockScope lk(gVk.pools.locks[GfxObjectPools::IMAGES]);
-            const GfxImageData* imageData = binding.image.IsValid() ? &gVk.pools.images.Data(binding.image) : nullptr;
-            imageInfos[i] = {
-                .sampler = imageData ? imageData->sampler : VK_NULL_HANDLE,
-                .imageView = imageData ? imageData->view : VK_NULL_HANDLE,
-                .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
-            };
-            pImageInfo = &imageInfos[i];
+            if (!binding.imageArrayCount) {
+                const GfxImageData* imageData = binding.image.IsValid() ? &gVk.pools.images.Data(binding.image) : nullptr;
+                imageInfos[i] = VkDescriptorImageInfo {
+                    .sampler = imageData ? imageData->sampler : VK_NULL_HANDLE,
+                    .imageView = imageData ? imageData->view : VK_NULL_HANDLE,
+                    .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+                };
+                pImageInfo = &imageInfos[i];
+            }
+            else {
+                // VK_EXT_descriptor_indexing
+                // TODO: (DescriptorIndexing) do the same for SampledImages ? need to see how Samplers end up like
+                descriptorCount = binding.imageArrayCount;
+                pImageInfo = tempAlloc.MallocTyped<VkDescriptorImageInfo>(binding.imageArrayCount);
+                for (uint32 img = 0; img < binding.imageArrayCount; img++) {
+                    const GfxImageData* imageData = binding.imageArray[img].IsValid() ? &gVk.pools.images.Data(binding.imageArray[img]) : nullptr;
+                    pImageInfo[img] = VkDescriptorImageInfo {
+                        .sampler = imageData ? imageData->sampler : VK_NULL_HANDLE,
+                        .imageView = imageData ? imageData->view : VK_NULL_HANDLE,
+                        .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+                    };
+                }
+            }
             hasImage = true;
             break;
         }
@@ -3819,7 +3892,7 @@ void gfxUpdateDescriptorSet(GfxDescriptorSet dset, uint32 numBindings, const Gfx
             .dstSet = dsetData.descriptorSet,
             .dstBinding = layoutBinding->vkBinding.binding,
             .dstArrayElement = 0,
-            .descriptorCount = 1,
+            .descriptorCount = descriptorCount,
             .descriptorType = layoutBinding->vkBinding.descriptorType,
             .pImageInfo = pImageInfo,
             .pBufferInfo = pBufferInfo,

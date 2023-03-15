@@ -226,6 +226,7 @@ Pair<Shader*, uint32> shaderCompile(const Blob& blob, const char* filepath, cons
         case slang::TypeReflection::Kind::ConstantBuffer:    paramInfo->type = ShaderParameterType::Uniformbuffer;  break;
         case slang::TypeReflection::Kind::SamplerState:      paramInfo->type = ShaderParameterType::Samplerstate;  break;
         case slang::TypeReflection::Kind::Resource:          paramInfo->type = ShaderParameterType::Resource; break;
+        case slang::TypeReflection::Kind::Array:             paramInfo->type = ShaderParameterType::Array; break;
         default:                                             ASSERT_MSG(false, "Shader parameter type is not supported");   break;
         }
     }

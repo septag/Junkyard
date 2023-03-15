@@ -610,6 +610,17 @@ bool assetIsAlive(AssetHandle handle)
     return asset.state == AssetState::Alive;
 }
 
+AssetHandle assetAddRef(AssetHandle handle)
+{
+    ASSERT(gAssetMgr.initialized);
+    ASSERT(handle.IsValid());
+
+    MutexScope mtx(gAssetMgr.assetsMtx);
+    Asset& asset = gAssetMgr.assets.Data(handle);
+    ++asset.refCount;
+    return handle;
+}
+
 void assetRegister(const AssetTypeDesc& desc)
 {
     ASSERT(gAssetMgr.initialized);

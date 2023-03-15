@@ -4,3 +4,5 @@ del *.spv
 del *.hlsl
 del *.glsl
 del *.asm
+del *.unknown
+
