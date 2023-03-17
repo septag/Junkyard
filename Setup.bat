@@ -44,8 +44,9 @@ if %errorlevel% neq 0 goto :End
 choice /c YN /M "Install vulkan 1.3.23"
 if errorlevel 2 goto :InstallPython 
 if errorlevel 1 (
+    rem make sure to update the vulkan android layers (below) as well
     rem pc
-    echo "Installing Vulkan PC SDK ..."
+    echo "Installing Vulkan PC SDK runtime..."
     if not exist .downloads\VulkanRT-1.3.231.1-Installer.exe (
         powershell Invoke-WebRequest -Uri "https://sdk.lunarg.com/sdk/download/1.3.231.1/windows/VulkanRT-1.3.231.1-Installer.exe" -OutFile .downloads\VulkanRT-1.3.231.1-Installer.exe
         if %errorlevel% neq 1 goto :End
@@ -53,22 +54,13 @@ if errorlevel 1 (
 
     call .downloads\VulkanRT-1.3.231.1-Installer.exe 
 
+    echo "Installing Vulkan PC SDK tools and layers..."
     if not exist .downloads\VulkanSDK-1.3.231.1-Installer.exe (
         powershell Invoke-WebRequest -Uri "https://sdk.lunarg.com/sdk/download/1.3.231.1/windows/VulkanSDK-1.3.231.1-Installer.exe" -OutFile .downloads\VulkanSDK-1.3.231.1-Installer.exe
         if %errorlevel% neq 1 goto :End
     )
 
     call .downloads\VulkanSDK-1.3.231.1-Installer.exe
-
-    rem android
-    echo "Installing Vulkan Android requirements ..."
-    if not exist .downloads\android-binaries-1.3.231.1.zip (
-        powershell Invoke-WebRequest -Uri "https://github.com/KhronosGroup/Vulkan-ValidationLayers/releases/download/sdk-1.3.231.1/android-binaries-1.3.231.1.zip" -OutFile .downloads\android-binaries-1.3.231.1.zip
-        if %errorlevel% neq 1 goto :End
-    )
-
-    powershell Expand-Archive -Force -Path .downloads\android-binaries-1.3.231.1.zip -DestinationPath code\External\vulkan\bin\android
-    if %errorlevel% neq 1 goto :End
 )
 
 :InstallPython
@@ -100,7 +92,7 @@ if errorlevel 1 goto :AndroidSettingsIni
 
 :AndroidSettingsIni
 choice /c YN /M "Create android app Settings.ini"
-if errorlevel 2 goto :AndroidScrCpy
+if errorlevel 2 goto :AndroidLayers
 if errorlevel 1 goto :AndroidSettingsIniStart
 
 :AndroidSettingsIniStart
@@ -121,8 +113,23 @@ for /f "usebackq tokens=2 delims=:" %%f in (`ipconfig ^| findstr /c:%ip_address_
     echo Found IP Address: %%f 
     powershell Invoke-Item %android_config_ini%
 
-    goto :AndroidScrCpy
+    goto :AndroidLayers
 )
+
+:AndroidLayers
+choice /c YN /M "Install vulkan android layers"
+if errorlevel 2 goto :AndroidScrCpy
+if errorlevel 1 goto :AndroidLayersStart
+
+:AndroidLayersStart
+echo Installing Vulkan Android layers ...
+if not exist .downloads\android-binaries-1.3.231.1.zip (
+    powershell Invoke-WebRequest -Uri "https://github.com/KhronosGroup/Vulkan-ValidationLayers/releases/download/sdk-1.3.231.1/android-binaries-1.3.231.1.zip" -OutFile .downloads\android-binaries-1.3.231.1.zip
+    if %errorlevel% neq 1 goto :End
+)
+
+powershell Expand-Archive -Force -Path .downloads\android-binaries-1.3.231.1.zip -DestinationPath code\External\vulkan\bin\android
+if %errorlevel% neq 1 goto :End
 
 :AndroidScrCpy
 choice /c YN /M "Download ScrCpy (for remote viewing)"

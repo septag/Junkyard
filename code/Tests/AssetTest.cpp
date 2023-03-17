@@ -165,6 +165,9 @@ struct AppImpl : AppCallbacks
                         memset(offsets, 0x0, sizeof(uint64)*mesh.numVertexBuffers);
                         gfxCmdBindVertexBuffers(0, mesh.numVertexBuffers, mesh.gpuBuffers.vertexBuffers, offsets);
                         gfxCmdBindIndexBuffer(mesh.gpuBuffers.indexBuffer, 0, GfxIndexType::Uint32);
+
+                        uint32 materialData[] = {inst, 0, 0, 0};
+                        gfxCmdPushConstants(pipeline, GfxShaderStage::Fragment, materialData, sizeof(materialData));
     
                         // DescriptorSets
                         for (uint32 smi = 0; smi < mesh.numSubmeshes; smi++) {
@@ -262,10 +265,10 @@ struct AppImpl : AppCallbacks
 
             modelAsset = assetLoadModel("/data/models/HighPolyBox/HighPolyBox.gltf", loadParams, b.Barrier());
             modelShaderAsset = assetLoadShader("/code/shaders/Unlit.hlsl", ShaderCompileDesc {}, b.Barrier());
-            testImageAssets[0] = assetLoadImage("/data/images/gen/1.png", ImageLoadParams {}, b.Barrier());
-            for (uint32 i = 1; i < kNumCubes; i++) {
-                assetAddRef(testImageAssets[0]);
-                testImageAssets[i] = testImageAssets[0];
+            for (uint32 i = 0; i < kNumCubes; i++) {
+                char imagePath[128];
+                strPrintFmt(imagePath, sizeof(imagePath), "/data/images/gen/%u.png", i+1);
+                testImageAssets[i] = assetLoadImage(imagePath, ImageLoadParams {}, b.Barrier());
             }
         }
         if (!assetIsAlive(modelAsset) || !assetIsAlive(modelShaderAsset))
@@ -303,11 +306,18 @@ struct AppImpl : AppCallbacks
 
         transformsBuffer = gfxCreateDynamicUniformBuffer(kNumCubes, sizeof(WorldTransform));
 
+        GfxPushConstantDesc pushConstant = {
+            .stages = GfxShaderStage::Fragment,
+            .range = {0, sizeof(uint32)*4}
+        };
+
         pipeline = gfxCreatePipeline(GfxPipelineDesc {
             .shader = assetGetShader(modelShaderAsset),
             .inputAssemblyTopology = GfxPrimitiveTopology::TriangleList,
             .numDescriptorSetLayouts = 1,
             .descriptorSetLayouts = &dsLayout,
+            .numPushConstants = 1,
+            .pushConstants = &pushConstant,
             .numVertexInputAttributes = CountOf(vertexInputAttDescs),
             .vertexInputAttributes = vertexInputAttDescs,
             .numVertexBufferBindings = 1,
@@ -329,7 +339,7 @@ struct AppImpl : AppCallbacks
         // TODO: TEMP create descriptor sets and assign them to material userData for later rendering
         GfxImage images[kNumCubes];
         for (uint32 i = 0; i < kNumCubes; i++)
-            images[i] = assetGetImage(testImageAssets[0]);
+            images[i] = assetGetImage(testImageAssets[i]);
         descriptorSet = gfxCreateDescriptorSet(dsLayout);
         GfxDescriptorBindingDesc descBindings[] = {
             {

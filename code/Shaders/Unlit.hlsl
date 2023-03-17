@@ -21,6 +21,14 @@ cbuffer FrameTransform
     float4x4 ProjMat;
 };
 
+[[vk::push_constant]]
+cbuffer Material
+{
+    uint4 Indexes;
+};
+
+#define TextureID Indexes.x
+
 Sampler2D BaseColorTextures[];
 
 [shader("vertex")]
@@ -36,6 +44,6 @@ Psinput VsMain(VsInput input)
 [shader("fragment")]
 float4 PsMain(Psinput input) : SV_Target
 {
-    float4 albedo = BaseColorTextures[0].Sample(input.uv);
+    float4 albedo = BaseColorTextures[TextureID].Sample(input.uv);
     return float4(albedo.xyz, 1.0f);
 }
