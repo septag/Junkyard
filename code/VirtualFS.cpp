@@ -100,29 +100,27 @@ struct VfsManager
 
 static VfsManager gVfs;
 
-static bool vfsDiskResolvePath(char* dstPath, uint32 dstPathSize, const char* path, VfsFlags flags)
+static uint32 vfsDiskResolvePath(char* dstPath, uint32 dstPathSize, const char* path, VfsFlags flags)
 {
     if ((flags & VfsFlags::AbsolutePath) == VfsFlags::AbsolutePath) {
-        strCopy(dstPath, dstPathSize, path);
-        return true;
+        return UINT32_MAX;
     }
     else {
         // search in mount points
         if (path[0] == '/') 
             path = path + 1;
 
-        uint32 idx = gVfs.mounts.FindIf([path](const VfsMountPoint& mount)->bool 
-            { return strIsEqualCount(path, mount.alias.CStr(), mount.alias.Length()) && 
-                     path[mount.alias.Length()] == '/';
-            });
+        uint32 idx = gVfs.mounts.FindIf([path](const VfsMountPoint& mount)->bool { 
+            return strIsEqualCount(path, mount.alias.CStr(), mount.alias.Length()) && path[mount.alias.Length()] == '/';
+        });
         if (idx != UINT32_MAX) {
             char tmpPath[kMaxPath];
             strCopy(tmpPath, sizeof(tmpPath), path + gVfs.mounts[idx].alias.Length());
             pathJoinUnixStyle(dstPath, dstPathSize, gVfs.mounts[idx].path.CStr(), tmpPath);
-            return true;
+            return idx;
         }
         else {
-            return false;
+            return UINT32_MAX;
         }
     }
 }
@@ -161,7 +159,7 @@ static Blob vfsDiskReadFile(const char* path, VfsFlags flags, Allocator* alloc)
     ASSERT_MSG(vfsGetMountType(path) != VfsMountType::Remote, "Remote mounts cannot read files in blocking mode");
 
     char resolvedPath[kMaxPath];
-    if (vfsDiskResolvePath(resolvedPath, sizeof(resolvedPath), path, flags)) {
+    if (vfsDiskResolvePath(resolvedPath, sizeof(resolvedPath), path, flags) != UINT32_MAX) {
         return LoadFromDisk(resolvedPath, flags, alloc);
     }
     else {
@@ -190,12 +188,35 @@ static size_t vfsDiskWriteFile(const char* path, VfsFlags flags, const Blob& blo
         return 0;
     };
 
+    auto CheckAndCreateDirsRecursive = [](const char* resolvedPath, const char* mountRootDir) {
+        Path dirname = Path(resolvedPath).GetDirectory();
+        if (!dirname.IsDir()) {
+            uint32 mountRootDirLen = mountRootDir ? strLen(mountRootDir) : 0;
+            uint32 slashIdx = mountRootDirLen;
+            while ((slashIdx = dirname.FindChar('/', slashIdx + 1)) != UINT32_MAX) {
+                Path subDir(dirname.SubStr(0, slashIdx));
+                if (!subDir.IsDir()) {
+                    [[maybe_unused]] bool r = pathCreateDir(subDir.CStr());
+                    ASSERT(r);
+                }
+            }
+            if (!dirname.IsDir()) {
+                [[maybe_unused]] bool r = pathCreateDir(dirname.CStr());
+                ASSERT(r);
+            }
+        }
+    };
+
     ASSERT_MSG(vfsGetMountType(path) != VfsMountType::Remote, "Remote mounts cannot read files in blocking mode");
     char resolvedPath[kMaxPath];
-    if (vfsDiskResolvePath(resolvedPath, sizeof(resolvedPath), path, flags)) {
+    if (uint32 mountIdx = vfsDiskResolvePath(resolvedPath, sizeof(resolvedPath), path, flags); mountIdx != UINT32_MAX) {
+        if ((flags & VfsFlags::CreateDirs) == VfsFlags::CreateDirs) 
+            CheckAndCreateDirsRecursive(resolvedPath, gVfs.mounts[mountIdx].path.CStr());
         return SaveToDisk(resolvedPath, flags, blob);
     }
     else {
+        if ((flags & VfsFlags::CreateDirs) == VfsFlags::CreateDirs) 
+            CheckAndCreateDirsRecursive(path, nullptr);
         return SaveToDisk(path, flags, blob);
     }
 }
@@ -892,11 +913,23 @@ uint64 vfsGetLastModified(const char* path)
     ASSERT_MSG(vfsGetMountType(path) != VfsMountType::Remote, "Remote mounts cannot read files in blocking mode");
 
     char resolvedPath[kMaxPath];
-    if (vfsDiskResolvePath(resolvedPath, sizeof(resolvedPath), path, VfsFlags::None)) {
+    if (vfsDiskResolvePath(resolvedPath, sizeof(resolvedPath), path, VfsFlags::None) != UINT32_MAX)
         return pathStat(resolvedPath).lastModified;
+    else
+        return pathStat(resolvedPath).lastModified;
+}
+
+bool vfsStripMountPath(char* outPath, uint32 outPathSize, const char* path)
+{
+    uint32 index = vfsFindMount(path);
+    if (index != UINT32_MAX) {
+        const char* stripped = path + gVfs.mounts[index].path.Length();
+        strCopy(outPath, outPathSize, stripped);
+        return true;
     }
     else {
-        return 0;
+        strCopy(outPath, outPathSize, path);
+        return false;
     }
 }
 
@@ -929,6 +962,9 @@ bool vfsMountPackageBundle(const char*)
 
 Blob vfsReadFile(const char* path, VfsFlags flags, Allocator* alloc)
 {
+    ASSERT((flags & VfsFlags::CreateDirs) != VfsFlags::CreateDirs);
+    ASSERT((flags & VfsFlags::Append) != VfsFlags::Append);
+
     uint32 idx = vfsFindMount(path);
     if (idx != UINT32_MAX) {
         VfsMountType type = gVfs.mounts[idx].type;

@@ -706,6 +706,11 @@ PathInfo pathStat(const char* path)
     };
 }
 
+bool pathCreateDir(const char* path)
+{
+    return bool(CreateDirectoryA(path, nullptr));
+}
+
 bool sysIsDebuggerPresent()
 {
     return IsDebuggerPresent();

@@ -23,82 +23,19 @@ struct ShaderLoadRequest
     void* loadCallbackUserData;
 };
 
-struct ShaderLoader : AssetLoaderCallbacks
+struct ShaderLoader final : AssetLoaderCallbacks
 {
     AssetResult Load(AssetHandle handle, const AssetLoadParams& params, Allocator* dependsAlloc) override;
-    void  LoadRemote(AssetHandle handle, const AssetLoadParams& params, void* userData, AssetLoaderAsyncCallback loadCallback) override;
-    bool  ReloadSync(AssetHandle handle, void* prevData) override;
-    void  Release(void* data, Allocator*) override;
+    void LoadRemote(AssetHandle handle, const AssetLoadParams& params, void* userData, AssetLoaderAsyncCallback loadCallback) override;
+    bool InitializeResources(void* obj, const AssetLoadParams& params) override { return true; }
+    bool ReloadSync(AssetHandle handle, void* prevData) override;
+    void Release(void* data, Allocator*) override;
 
     Mutex requestsMtx;
     Array<ShaderLoadRequest> requests;
 };
 
 static ShaderLoader gShaderLoader;
-
-[[maybe_unused]] static void shaderSerializeToBlob(Shader* info, Blob* blob)
-{
-    ASSERT(info);
-    blob->Write<uint32>(info->numStages);
-    blob->Write<uint32>(info->numParams);
-    blob->Write<uint32>(info->numVertexAttributes);
-
-    for (uint32 i = 0; i < info->numStages; i++) {
-        const ShaderStageInfo& stage = info->stages[i];
-        blob->Write<ShaderStage>(stage.stage);
-        blob->Write<char[32]>(stage.entryName);
-        blob->Write<int64>(stage.blob.size);
-        if (stage.blob.size > 0) 
-            blob->Write(stage.blob.data, stage.blob.size);
-    }
-
-    if (info->numParams)
-        blob->Write(info->params, sizeof(ShaderParameterInfo)*info->numParams);
-
-    if (info->numVertexAttributes)
-        blob->Write(info->vertexAttributes, sizeof(ShaderVertexAttributeInfo)*info->numVertexAttributes);
-}
-
-static Shader* shaderSerializeFromBlob(const Blob& blob, Allocator* alloc)
-{
-    ASSERT(alloc);
-
-    uint32 numStages = 0, numParams = 0, numVertexAttributes = 0;
-    blob.Read<uint32>(&numStages);
-    blob.Read<uint32>(&numParams);
-    blob.Read<uint32>(&numVertexAttributes);
-
-    BuffersAllocPOD<Shader> shaderInfoAlloc;
-    if (numStages)
-        shaderInfoAlloc.AddMemberField<ShaderStageInfo>(offsetof(Shader, stages), numStages);
-    if (numParams)
-        shaderInfoAlloc.AddMemberField<ShaderParameterInfo>(offsetof(Shader, params), numParams);
-    if (numVertexAttributes)
-        shaderInfoAlloc.AddMemberField<ShaderVertexAttributeInfo>(offsetof(Shader, vertexAttributes), numVertexAttributes);
-    Shader* info = shaderInfoAlloc.Calloc(alloc);
-    
-    for (uint32 i = 0; i < numStages; i++) {
-        ShaderStageInfo& stage = info->stages[i];
-        blob.Read<ShaderStage>(&stage.stage);
-        blob.Read(stage.entryName, sizeof(stage.entryName));
-        blob.Read<int64>(&stage.blob.size);
-        if (stage.blob.size) {
-            stage.blob.data = memAlloc(stage.blob.size, alloc);
-            blob.Read(stage.blob.data, stage.blob.size);
-        }
-    }
-
-    if (numParams)
-        blob.Read(info->params, sizeof(ShaderParameterInfo)*numParams);
-    if (numVertexAttributes)
-        blob.Read(info->vertexAttributes, sizeof(ShaderVertexAttributeInfo)*numVertexAttributes);
-
-    info->numStages = numStages;
-    info->numParams = numParams;
-    info->numVertexAttributes = numVertexAttributes;
-    info->alloc = alloc;
-    return info;
-}
 
 // MT: runs in task threads, dispatched by asset server
 #if CONFIG_TOOLMODE
@@ -136,11 +73,14 @@ static void shaderCompileLoadTask(uint32 groupIndex, void* userData)
 
         // Compilation
         char compileErrorDesc[512];
-        Pair<Shader*, uint32> shader = shaderCompile(fileBlob, filepath, compileDesc, compileErrorDesc, 
-                                                     sizeof(compileErrorDesc), &tmpAlloc);
-        if (shader.first) {
-            outgoingBlob.Write<uint32>(shader.second);
-            shaderSerializeToBlob(shader.first, &outgoingBlob);
+        Pair<Shader*, uint32> shaderCompileResult = shaderCompile(fileBlob, filepath, compileDesc, compileErrorDesc, 
+                                                                  sizeof(compileErrorDesc), memDefaultAlloc());
+        Shader* shader = shaderCompileResult.first;
+        uint32 shaderDataSize = shaderCompileResult.second;
+
+        if (shader) {
+            outgoingBlob.Write<uint32>(shaderDataSize);
+            outgoingBlob.Write(shader, shaderDataSize);
             remoteSendResponse(kRemoteCmdCompileShader, outgoingBlob, false, nullptr);
             logVerbose("Shader loaded: %s (%.1f ms)", filepath, timer.ElapsedMS());
         }
@@ -150,6 +90,7 @@ static void shaderCompileLoadTask(uint32 groupIndex, void* userData)
             remoteSendResponse(kRemoteCmdCompileShader, outgoingBlob, true, errorMsg);
             logVerbose(errorMsg);
         }
+        memFree(shader);
     }
     else {
         char errorMsg[kRemoteErrorDescSize];
@@ -158,10 +99,7 @@ static void shaderCompileLoadTask(uint32 groupIndex, void* userData)
         logVerbose(errorMsg);
     }
 
-    fileBlob.Free();
-    outgoingBlob.Free();
     blob->Free();
-    blob->~Blob();
     memFree(blob);
 }
 #else
@@ -186,8 +124,7 @@ static bool shaderCompileShaderHandlerServerFn([[maybe_unused]] uint32 cmd, cons
 }
 
 // MT: runs within RemoteServices client-thread context
-static void shaderCompileShaderHandlerClientFn([[maybe_unused]] uint32 cmd, const Blob& incomingData, void* userData, 
-    bool error, const char* errorDesc)
+static void shaderCompileShaderHandlerClientFn([[maybe_unused]] uint32 cmd, const Blob& incomingData, void* userData, bool error, const char* errorDesc)
 {
     ASSERT(cmd == kRemoteCmdCompileShader);
     UNUSED(userData);
@@ -216,17 +153,16 @@ static void shaderCompileShaderHandlerClientFn([[maybe_unused]] uint32 cmd, cons
     }
 
     if (!error) {
-        uint32 bufferSize;
-        [[maybe_unused]] size_t readBytes = incomingData.Read<uint32>(&bufferSize);
-        ASSERT(readBytes == sizeof(bufferSize));
+        uint32 shaderBufferSize;
+        [[maybe_unused]] size_t readBytes = incomingData.Read<uint32>(&shaderBufferSize);
+        ASSERT(readBytes == sizeof(shaderBufferSize));
 
-        // Allocate the final shader info blob
-        Shader* info = shaderSerializeFromBlob(incomingData, alloc);
-        ASSERT(info);
+        void* shaderData = memAlloc(shaderBufferSize, alloc);
+        incomingData.Read(shaderData, shaderBufferSize);
 
-        info->hash = handle.id;
+        ((Shader*)shaderData)->hash = handle.id;
         if (loadCallback)
-            loadCallback(handle, AssetResult {info}, loadCallbackUserData);
+            loadCallback(handle, AssetResult { .obj = shaderData, .objBufferSize = shaderBufferSize }, loadCallbackUserData);
     }
     else {
         logError(errorDesc);
@@ -291,25 +227,21 @@ Shader* assetGetShader(AssetHandleShader shaderHandle)
     return reinterpret_cast<Shader*>(_private::assetGetData(shaderHandle));
 }
 
-static void shaderDestroy(Shader* info)
+const ShaderStageInfo* shaderGetStage(const Shader& info, ShaderStage stage)
 {
-    ASSERT(info);
-
-    if (info->alloc) {
-        for (uint32 i = 0; i < info->numStages; i++) {
-            if (info->stages[i].blob.data) 
-                memFree(info->stages[i].blob.data, info->alloc);
+    for (uint32 i = 0; i < info.numStages; i++) {
+        if (info.stages[i].stage == stage) {
+            return &info.stages[i];
         }
-        memFree(info, info->alloc);
     }
+    return nullptr;
 }
 
-const ShaderStageInfo* shaderGetStage(const Shader* info, ShaderStage stage)
+const ShaderParameterInfo* shaderGetParam(const Shader& info, const char* name)
 {
-    for (uint32 i = 0; i < info->numStages; i++) {
-        if (info->stages[i].stage == stage) {
-            return &info->stages[i];
-        }
+    for (uint32 i = 0; i < info.numParams; i++) {
+        if (strIsEqual(info.params[i].name, name))
+            return &info.params[i];
     }
     return nullptr;
 }
@@ -412,13 +344,13 @@ bool ShaderLoader::ReloadSync(AssetHandle handle, void* prevData)
     if (oldShader->numVertexAttributes != newShader->numVertexAttributes)
         return false;
 
-    if (memcmp(oldShader->vertexAttributes, newShader->vertexAttributes, 
+    if (memcmp(oldShader->vertexAttributes.Get(), newShader->vertexAttributes.Get(), 
         newShader->numVertexAttributes*sizeof(ShaderVertexAttributeInfo)) != 0)
     {
         return false;
     }
 
-    if (memcmp(oldShader->params, newShader->params, 
+    if (memcmp(oldShader->params.Get(), newShader->params.Get(), 
         newShader->numParams*sizeof(ShaderParameterInfo)) != 0)
     {
         return false;
@@ -428,13 +360,9 @@ bool ShaderLoader::ReloadSync(AssetHandle handle, void* prevData)
     return true;
 }
 
-void ShaderLoader::Release(void* data, Allocator*)
+void ShaderLoader::Release(void* data, Allocator* alloc)
 {
-    ASSERT(data);
-
-    shaderDestroy(reinterpret_cast<Shader*>(data));
+    memFree(data, alloc);
 }
-
-
 
 

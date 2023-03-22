@@ -42,13 +42,13 @@ struct ModelLoadRequest
     AssetLoadParams params;
 };
 
-struct ModelLoader : AssetLoaderCallbacks 
+struct ModelLoader final : AssetLoaderCallbacks 
 {
     AssetResult Load(AssetHandle handle, const AssetLoadParams& params, Allocator* dependsAlloc) override;
-    void  LoadRemote(AssetHandle handle, const AssetLoadParams& params, 
-                             void* userData, AssetLoaderAsyncCallback loadCallback) override;
-    void  Release(void* data, Allocator* alloc) override;
-    bool  ReloadSync(AssetHandle handle, void* prevData) override;
+    void LoadRemote(AssetHandle handle, const AssetLoadParams& params, void* userData, AssetLoaderAsyncCallback loadCallback) override;
+    bool InitializeResources(void* obj, const AssetLoadParams& params) override;
+    void Release(void* data, Allocator* alloc) override;
+    bool ReloadSync(AssetHandle handle, void* prevData) override;
 };
 
 struct ModelContext 
@@ -614,6 +614,7 @@ static const GfxVertexInputAttributeDesc* modelFindAttribute(const ModelGeometry
     return nullptr;
 }
 
+// Note: `alloc` shouldn't be temp allocator
 Pair<Model*, uint32> modelLoadGltf(const char* filepath, Allocator* alloc, const ModelLoadParams& params, 
                                    char* errorDesc, uint32 errorDescSize)
 {
@@ -911,19 +912,6 @@ AssetResult ModelLoader::Load(AssetHandle handle, const AssetLoadParams& params,
         meshoptOptimizeModel(model, modelParams);
     #endif
 
-    // Create/Load GPU resources
-    if (!modelParams.skipCreatingGpuResources) {
-        if (modelParams.vertexBufferUsage != GfxBufferUsage::Default || modelParams.indexBufferUsage != GfxBufferUsage::Default) {
-            if (!modelSetupGpuBuffers(model, modelParams.vertexBufferUsage, modelParams.indexBufferUsage)) {
-                logError("Creating model GPU buffers failed: %s", params.path);
-                modelDestroy(model, params.alloc);
-                return AssetResult {};
-            }
-        }
-    
-        modelLoadTextures(model, params.barrier);
-    }
-
     if (model->numMaterialTextures) {
         uint32 dependsBufferSize;
         Pair<AssetDependency*, uint32> depends = modelGatherDependencies(model, params, &tmpAlloc, &dependsBufferSize);
@@ -970,6 +958,8 @@ static void modelLoadTask(uint32 groupIndex, void* userData)
     if (!model) {
         remoteSendResponse(kRemoteCmdLoadModel, outgoingBlob, true, errorMsg);
         logVerbose(errorMsg);
+        blob->Free();
+        memFree(blob);
         return;
     }
 
@@ -1007,8 +997,7 @@ static bool modelHandlerServerFn([[maybe_unused]] uint32 cmd, const Blob& incomi
     return true;
 }
 
-static void modelHandlerClientFn([[maybe_unused]] uint32 cmd, const Blob& incomingData, void* userData, bool error, 
-                                 const char* errorDesc)
+static void modelHandlerClientFn([[maybe_unused]] uint32 cmd, const Blob& incomingData, void* userData, bool error, const char* errorDesc)
 {
     ASSERT(cmd == kRemoteCmdLoadModel);
     UNUSED(userData);
@@ -1042,22 +1031,6 @@ static void modelHandlerClientFn([[maybe_unused]] uint32 cmd, const Blob& incomi
         ASSERT(readBytes == modelBufferSize);
         Model* model = reinterpret_cast<Model*>(modelData);
 
-        // Create/Load GPU resources
-        const ModelLoadParams& modelParams = request.loadParams;
-        if (!modelParams.skipCreatingGpuResources) {
-            if (modelParams.vertexBufferUsage != GfxBufferUsage::Default || modelParams.indexBufferUsage != GfxBufferUsage::Default) {
-                if (!modelSetupGpuBuffers(model, modelParams.vertexBufferUsage, modelParams.indexBufferUsage)) {
-                    logError("Creating model GPU buffers failed");
-                    modelDestroy(model, &tmpAlloc);
-                    
-                    if (request.loadCallback)
-                        request.loadCallback(handle, AssetResult {}, request.loadCallbackUserData);
-                }
-            }
-    
-            modelLoadTextures(model, request.params.barrier);
-        }
-
         // Allocate the final model object
         void* obj = memAllocCopyRawBytes<Model>(model, modelBufferSize, request.params.alloc);
 
@@ -1068,16 +1041,15 @@ static void modelHandlerClientFn([[maybe_unused]] uint32 cmd, const Blob& incomi
                 .obj = obj,  
                 .depends =  depends.first,
                 .numDepends = depends.second,
-                .dependsBufferSize = dependsBufferSize
+                .dependsBufferSize = dependsBufferSize,
+                .objBufferSize = modelBufferSize
             };
             if (request.loadCallback)
                 request.loadCallback(handle, result, request.loadCallbackUserData);
         }
         else {
-            if (request.loadCallback) {
-                request.loadCallback(handle, AssetResult { .obj = obj, .objBufferSize = modelBufferSize }, 
-                    request.loadCallbackUserData);
-            }
+            if (request.loadCallback)
+                request.loadCallback(handle, AssetResult { .obj = obj, .objBufferSize = modelBufferSize }, request.loadCallbackUserData);
         }
     }
     else {
@@ -1118,6 +1090,19 @@ void ModelLoader::LoadRemote(AssetHandle handle, const AssetLoadParams& params, 
 
     remoteExecuteCommand(kRemoteCmdLoadModel, outgoingBlob);
     outgoingBlob.Free();
+}
+
+bool ModelLoader::InitializeResources(void* obj, const AssetLoadParams& params)
+{
+    Model* model = reinterpret_cast<Model*>(obj);
+    const ModelLoadParams& modelParams = *reinterpret_cast<const ModelLoadParams*>(params.next.Get());
+    if (modelParams.vertexBufferUsage != GfxBufferUsage::Default || modelParams.indexBufferUsage != GfxBufferUsage::Default) {
+        if (!modelSetupGpuBuffers(model, modelParams.vertexBufferUsage, modelParams.indexBufferUsage))
+            return false;
+    }
+
+    modelLoadTextures(model, params.barrier);
+    return true;
 }
 
 void ModelLoader::Release(void* data, Allocator* alloc)

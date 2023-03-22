@@ -159,6 +159,7 @@ bool _private::ddInitialize()
             return false;
 
         GfxPushConstantDesc pushConstant = GfxPushConstantDesc {
+            .name = "Transform",
             .stages = GfxShaderStage::Vertex,
             .range = { 0, sizeof(Mat4) }
         };

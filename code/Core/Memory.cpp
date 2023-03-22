@@ -55,7 +55,7 @@ static constexpr size_t kFrameMaxBufferSize = 2*kGB;
 static constexpr uint32 kFramePageSize = 256*kKB;
 static constexpr uint32 kFramePeaksCount = 4;
 
-struct MemHeapAllocator : Allocator 
+struct MemHeapAllocator final : Allocator 
 {
     void* Malloc(size_t size, uint32 align) override;
     void* Realloc(void* ptr, size_t size, uint32 align) override;
@@ -103,7 +103,7 @@ struct MemTempContext
     ~MemTempContext();
 };
 
-struct MemFrameAllocatorInternal : MemFrameAllocator
+struct MemFrameAllocatorInternal final : MemFrameAllocator
 {
     MemFrameAllocatorInternal();
     ~MemFrameAllocatorInternal();
@@ -464,7 +464,7 @@ void _private::memTempReset(float dt)
     }
 }
 
-void* MemHeapAllocator::Malloc(size_t size, uint32 align)
+inline void* MemHeapAllocator::Malloc(size_t size, uint32 align)
 {
     void* ptr;
     if (align <= CONFIG_MACHINE_ALIGNMENT) {
@@ -488,7 +488,7 @@ void* MemHeapAllocator::Malloc(size_t size, uint32 align)
     return ptr;
 }
     
-void* MemHeapAllocator::Realloc(void* ptr, size_t size, uint32 align)
+inline void* MemHeapAllocator::Realloc(void* ptr, size_t size, uint32 align)
 {
     [[maybe_unused]] void* freePtr = ptr;
 
@@ -515,7 +515,7 @@ void* MemHeapAllocator::Realloc(void* ptr, size_t size, uint32 align)
     return ptr;
 }
     
-void MemHeapAllocator::Free(void* ptr, uint32 align)
+inline void MemHeapAllocator::Free(void* ptr, uint32 align)
 {
     if (ptr != nullptr) {
         if (align <= CONFIG_MACHINE_ALIGNMENT) {

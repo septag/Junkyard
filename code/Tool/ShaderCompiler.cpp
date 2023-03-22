@@ -85,7 +85,6 @@ static GfxFormat shaderTranslateVertexInputFormat([[maybe_unused]] uint32 rows, 
     return GfxFormat::Undefined;
 }
 
-
 Pair<Shader*, uint32> shaderCompile(const Blob& blob, const char* filepath, const ShaderCompileDesc& desc, 
                                     char* errorDiag, uint32 errorDiagSize, Allocator* alloc)
 {
@@ -150,21 +149,21 @@ Pair<Shader*, uint32> shaderCompile(const Blob& blob, const char* filepath, cons
         }
     }
 
-    BuffersAllocPOD<Shader> podAlloc;
-    podAlloc.AddMemberField<ShaderStageInfo>(offsetof(Shader, stages), refl->getEntryPointCount());
-    podAlloc.AddMemberField<ShaderParameterInfo>(offsetof(Shader, params), refl->getParameterCount());
-    if (numVertexAttributes)
-        podAlloc.AddMemberField<ShaderVertexAttributeInfo>(offsetof(Shader, vertexAttributes), numVertexAttributes);
-    Shader* shaderInfo = podAlloc.Calloc(alloc);
-    
-    pathFileName(filepath, shaderInfo->name, sizeof(shaderInfo->name));
-    shaderInfo->alloc = alloc;
-    shaderInfo->numStages = static_cast<uint32>(refl->getEntryPointCount());
-    shaderInfo->numVertexAttributes = numVertexAttributes;
+    MemTempAllocator tmpAlloc;
+    Shader* shader = tmpAlloc.MallocZeroTyped<Shader>();
 
-    for (uint32 i = 0; i < shaderInfo->numStages; i++) {
+    shader->stages = tmpAlloc.MallocZeroTyped<ShaderStageInfo>((uint32)refl->getEntryPointCount());
+    shader->params = tmpAlloc.MallocZeroTyped<ShaderParameterInfo>((uint32)refl->getParameterCount());
+    if (numVertexAttributes)
+        shader->vertexAttributes = tmpAlloc.MallocZeroTyped<ShaderVertexAttributeInfo>(numVertexAttributes);
+
+    pathFileName(filepath, shader->name, sizeof(shader->name));
+    shader->numStages = static_cast<uint32>(refl->getEntryPointCount());
+    shader->numVertexAttributes = numVertexAttributes;
+
+    for (uint32 i = 0; i < shader->numStages; i++) {
         slang::EntryPointReflection* entryPoint = refl->getEntryPointByIndex(i);
-        ShaderStageInfo* stageInfo = &shaderInfo->stages[i];
+        ShaderStageInfo* stageInfo = &shader->stages[i];
 
         stageInfo->stage = shaderTranslateStage(entryPoint->getStage());
         strCopy(stageInfo->entryName, sizeof(stageInfo->entryName), entryPoint->getName()); 
@@ -173,19 +172,20 @@ Pair<Shader*, uint32> shaderCompile(const Blob& blob, const char* filepath, cons
         const void* data = spGetEntryPointCode(req, i, &dataSize);
 
         if (dataSize > 0) {
-            stageInfo->blob.data = memAlloc(dataSize, alloc);
-            stageInfo->blob.size = dataSize;
-            memcpy(stageInfo->blob.data, data, dataSize);
+            ASSERT(dataSize < UINT32_MAX);
+            stageInfo->dataSize = uint32(dataSize);
+            stageInfo->data = tmpAlloc.MallocTyped<uint8>(uint32(dataSize));
+            memcpy(stageInfo->data.Get(), data, dataSize);
         }
 
         // Vertex inputs
         if (stageInfo->stage == ShaderStage::Vertex && vertexInputParamIdx != UINT32_MAX) {
-            ASSERT(shaderInfo->vertexAttributes[0].format == GfxFormat::Undefined);
+            ASSERT(shader->vertexAttributes[0].format == GfxFormat::Undefined);
 
             slang::VariableLayoutReflection* vertexInputParam = entryPoint->getParameterByIndex(vertexInputParamIdx);
             slang::TypeLayoutReflection* typeLayout = vertexInputParam->getTypeLayout();
             for (uint32 f = 0, fc = typeLayout->getFieldCount(); f < fc; f++) {
-                ShaderVertexAttributeInfo* vertexAtt = &shaderInfo->vertexAttributes[f];
+                ShaderVertexAttributeInfo* vertexAtt = &shader->vertexAttributes[f];
 
                 slang::VariableLayoutReflection* field = typeLayout->getFieldByIndex(f);
                 slang::TypeReflection::ScalarType scalarType = field->getType()->getScalarType();
@@ -202,20 +202,18 @@ Pair<Shader*, uint32> shaderCompile(const Blob& blob, const char* filepath, cons
         }
     }
     
-    shaderInfo->numParams = (uint32)refl->getParameterCount();
+    shader->numParams = (uint32)refl->getParameterCount();
     for (uint32 i = 0; i < refl->getParameterCount(); i++) {
-        ShaderParameterInfo* paramInfo = &shaderInfo->params[i];
+        ShaderParameterInfo* paramInfo = &shader->params[i];
 
         slang::VariableLayoutReflection* param = refl->getParameterByIndex(i);
         slang::TypeReflection* type = param->getType();
 
         slang::ParameterCategory cat = param->getCategory();
-        if (cat == slang::PushConstantBuffer) {
+        if (cat == slang::PushConstantBuffer)
             paramInfo->isPushConstant = true;
-        }
-        else {
+        else
             ASSERT(param->getCategory() == slang::DescriptorTableSlot);
-        }
         
         strCopy(paramInfo->name, sizeof(paramInfo->name), param->getName());
         // TODO: get the stage that this parameter is being used (param->getStage() returns nothing)
@@ -231,7 +229,8 @@ Pair<Shader*, uint32> shaderCompile(const Blob& blob, const char* filepath, cons
         }
     }
 
-    return Pair<Shader*, uint32>(shaderInfo, uint32(podAlloc.GetSize()));
+    uint32 shaderBufferSize = uint32(tmpAlloc.GetOffset() - tmpAlloc.GetPointerOffset(shader));
+    return Pair<Shader*, uint32>(memAllocCopyRawBytes<Shader>(shader, shaderBufferSize, alloc), shaderBufferSize);
 }
 
 bool _private::shaderInitializeCompiler()

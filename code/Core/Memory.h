@@ -33,7 +33,7 @@ struct NO_VTABLE Allocator
     virtual void* Malloc(size_t size, uint32 align) = 0;
     virtual void* Realloc(void* ptr, size_t size, uint32 align) = 0;
     virtual void  Free(void* ptr, uint32 align) = 0;
-    virtual AllocatorType GetType() const { return AllocatorType::Unknown; };
+    virtual AllocatorType GetType() const = 0;
 };
 
 using MemFailCallback = void(*)(void* userData);
@@ -93,7 +93,7 @@ void memTempGetStats(Allocator* alloc, MemTransientAllocatorStats** outStats, ui
 template<typename _T> _T* memAllocTempTyped(MemTempId id, uint32 count = 1, uint32 align = CONFIG_MACHINE_ALIGNMENT);
 template<typename _T> _T* memAllocTempZeroTyped(MemTempId id, uint32 count = 1, uint32 align = CONFIG_MACHINE_ALIGNMENT);
 
-struct MemTempAllocator : Allocator
+struct MemTempAllocator final : Allocator
 {
     MemTempAllocator();
     explicit MemTempAllocator(MemTempId id);
@@ -138,7 +138,7 @@ namespace _private
 
 //------------------------------------------------------------------------
 // Budget allocator: Linear-based budget allocator. Fixed capacity. Persists in memory in a higher lifetime
-struct MemBudgetAllocator : Allocator
+struct MemBudgetAllocator final : Allocator
 {
     explicit MemBudgetAllocator(const char* name);
 
@@ -192,7 +192,7 @@ protected:
     bool   _debugMode = false;
 };
 
-struct MemTlsfAllocator_ThreadSafe : MemTlsfAllocator
+struct MemTlsfAllocator_ThreadSafe final : MemTlsfAllocator
 {
     [[nodiscard]] void* Malloc(size_t size, uint32 align = CONFIG_MACHINE_ALIGNMENT) override;
     [[nodiscard]] void* Realloc(void* ptr, size_t size, uint32 align = CONFIG_MACHINE_ALIGNMENT) override;

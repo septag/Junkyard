@@ -713,6 +713,7 @@ struct GfxBufferRange
 
 struct GfxPushConstantDesc
 {
+    const char* name;
     GfxShaderStage stages;
     GfxBufferRange range;
 };

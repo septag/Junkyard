@@ -21,6 +21,15 @@ enum class AssetPlatform : uint32
     Android
 };
 
+INLINE const char* assetPlatformGetStr(AssetPlatform platform)
+{
+    switch (platform) {
+    case AssetPlatform::PC:         return "pc";
+    case AssetPlatform::Android:    return "android";
+    default:                        return "unknown";
+    }
+}
+
 struct AssetLoadParams  
 {
     const char* path;
@@ -30,6 +39,7 @@ struct AssetLoadParams
     AssetPlatform platform;
     AssetBarrier barrier;       // Barriers are a way to sync and group multiple assets. With barriers, you can wait on a group of assets to get loaded
     RelativePtr<uint8> next;    // pointer to the next arbitary struct. the type of 'next' depends on user-defined asset-loader 
+    bool dontCreateResources;   // Skip creating GPU/External resources (LoadResources function is not called)
 };
 
 enum class AssetState : uint32
@@ -90,9 +100,10 @@ using AssetLoaderAsyncCallback = void(*)(AssetHandle handle, const AssetResult& 
 struct NO_VTABLE AssetLoaderCallbacks 
 {
     virtual AssetResult Load(AssetHandle handle, const AssetLoadParams& params, Allocator* dependsAlloc) = 0;
-    virtual void  LoadRemote(AssetHandle handle, const AssetLoadParams& params, 
-                             void* userData, AssetLoaderAsyncCallback loadCallback) = 0;
-    virtual void  Release(void* data, Allocator* alloc) = 0;
+    virtual void LoadRemote(AssetHandle handle, const AssetLoadParams& params, void* userData, AssetLoaderAsyncCallback loadCallback) = 0;
+    virtual bool InitializeResources(void* obj, const AssetLoadParams& params) = 0;
+    virtual void Release(void* obj, Allocator* alloc) = 0;
+
     // Return true if the asset can be reloaded, otherwise returning 'false' indicates that the asset could not get reloaded and old one stays in memory
     virtual bool  ReloadSync(AssetHandle handle, void* prevData) = 0;
 };

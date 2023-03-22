@@ -43,17 +43,12 @@ enum class ShaderStage : uint32
     Compute,
 };
 
-struct ShaderBlob
-{
-    void* data;
-    int64 size;
-};
-
 struct ShaderStageInfo
 {
-    ShaderStage     stage;
-    char            entryName[32];
-    ShaderBlob      blob;
+    ShaderStage stage;
+    char entryName[32];
+    uint32 dataSize;
+    RelativePtr<uint8> data;
 };
 
 enum class ShaderParameterType : uint32
@@ -84,19 +79,19 @@ struct ShaderVertexAttributeInfo
 
 struct Shader
 {
-    char                            name[32];
-    uint32                          hash;           // This is actually the AssetId of the shader
-    uint32                          numStages;
-    uint32                          numParams;
-    uint32                          numVertexAttributes;
-    Allocator*                      alloc;
-    ShaderStageInfo*                stages;
-    ShaderParameterInfo*            params;
-    ShaderVertexAttributeInfo*      vertexAttributes;
+    char   name[32];
+    uint32 hash;           // This is actually the AssetId of the shader
+    uint32 numStages;
+    uint32 numParams;
+    uint32 numVertexAttributes;
+    RelativePtr<ShaderStageInfo> stages;
+    RelativePtr<ShaderParameterInfo> params;
+    RelativePtr<ShaderVertexAttributeInfo> vertexAttributes;
 };
 #pragma pack(pop)
 
-API const ShaderStageInfo* shaderGetStage(const Shader* info, ShaderStage stage);
+API const ShaderStageInfo* shaderGetStage(const Shader& info, ShaderStage stage);
+API const ShaderParameterInfo* shaderGetParam(const Shader& info, const char* name);
 
 API AssetHandleShader assetLoadShader(const char* path, const ShaderCompileDesc& desc, AssetBarrier barrier = AssetBarrier());
 API Shader* assetGetShader(AssetHandleShader shaderHandle);

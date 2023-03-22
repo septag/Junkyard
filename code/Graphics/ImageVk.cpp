@@ -69,10 +69,11 @@ struct GfxImageLoadRequest
     ImageLoadParams loadParams;
 };
 
-struct GfxImageLoader : AssetLoaderCallbacks
+struct GfxImageLoader final : AssetLoaderCallbacks
 {
     AssetResult Load(AssetHandle handle, const AssetLoadParams& params, Allocator* dependsAlloc) override;
-    void  LoadRemote(AssetHandle handle, const AssetLoadParams& params, void* userData, AssetLoaderAsyncCallback loadCallback) override;
+    void LoadRemote(AssetHandle handle, const AssetLoadParams& params, void* userData, AssetLoaderAsyncCallback loadCallback) override;
+    bool InitializeResources(void* obj, const AssetLoadParams& params) override;
     bool ReloadSync(AssetHandle handle, void* prevData) override;
     void Release(void* data, Allocator*) override;
 };
@@ -88,8 +89,9 @@ struct GfxImageManager
 };
 
 #pragma pack(push, 8)
-struct GfxImageDataHeader
+struct Image
 {
+    GfxImage handle;
     uint32 width;
     uint32 height;
     uint32 depth;
@@ -97,6 +99,7 @@ struct GfxImageDataHeader
     GfxFormat format;
     uint32 contentSize;
     uint32 mipOffsets[kGfxMaxMips];
+    RelativePtr<uint8> content;
 };
 #pragma pack(pop)
 
@@ -120,8 +123,8 @@ INLINE GfxFormat gfxImageConvertFormatSRGB(GfxFormat fmt)
 
 // This function is the main loader/baker
 // Depending on the local meta-data, we either directly load the image from the disk or encode it with block compression
-static Pair<GfxImageDataHeader, uint8*> gfxBakeImage(AssetHandle localHandle, const char* filepath, AssetPlatform platform, 
-                                                     Allocator* alloc, char* errorDesc, uint32 errorDescSize)    
+static Pair<Image*, uint32> gfxBakeImage(AssetHandle localHandle, const char* filepath, AssetPlatform platform, 
+                                         Allocator* alloc, char* errorDesc, uint32 errorDescSize)    
 {
     PROFILE_ZONE(true);
 
@@ -290,19 +293,23 @@ static Pair<GfxImageDataHeader, uint8*> gfxBakeImage(AssetHandle localHandle, co
         contentBlob.Attach(pixels, imageSize, &tmpAlloc);
     }
     
-    GfxImageDataHeader header {
-        .width = static_cast<uint32>(imgWidth),
-        .height = static_cast<uint32>(imgHeight),
+    Image* header = tmpAlloc.MallocTyped<Image>();
+    *header = Image {
+        .width = uint32(imgWidth),
+        .height = uint32(imgHeight),
         .depth = 1, // TODO
         .numMips = numMips, 
         .format = imageFormat,
-        .contentSize = static_cast<uint32>(contentBlob.Size())
+        .contentSize = uint32(contentBlob.Size()),
     };
 
     for (uint32 i = 0; i < numMips; i++)
-        header.mipOffsets[i] = mips[i].offset;
+        header->mipOffsets[i] = mips[i].offset;
 
-    return Pair<GfxImageDataHeader, uint8*>(header, memAllocCopy<uint8>((uint8*)contentBlob.Data(), (uint32)contentBlob.Size(), alloc));
+    header->content = memAllocCopy<uint8>((uint8*)contentBlob.Data(), (uint32)contentBlob.Size(), &tmpAlloc);
+
+    uint32 bufferSize = uint32(tmpAlloc.GetOffset() - tmpAlloc.GetPointerOffset(header));
+    return Pair<Image*, uint32>(memAllocCopyRawBytes<Image>(header, bufferSize, alloc), bufferSize);
 }
 
 // MT: runs from a task thread (server-side)
@@ -329,17 +336,16 @@ static void gfxLoadImageTask(uint32 groupIndex, void* userData)
     outgoingBlob.Write<uint32>(handle);
 
     TimerStopWatch timer;
-    Pair<GfxImageDataHeader, uint8*> img = gfxBakeImage(AssetHandle(), filepath, platform, memDefaultAlloc(), 
-                                                        errorMsg, sizeof(errorMsg));
+    Pair<Image*, uint32> img = gfxBakeImage(AssetHandle(), filepath, platform, memDefaultAlloc(), errorMsg, sizeof(errorMsg));
    
-    if (img.second) {
-        const GfxImageDataHeader& header = img.first;
-        uint8* content = img.second;
-        outgoingBlob.Write<GfxImageDataHeader>(header);
-        outgoingBlob.Write(content, header.contentSize);
+    Image* header = img.first;
+    if (header) {
+        uint32 bufferSize = img.second;
+        outgoingBlob.Write<uint32>(bufferSize);
+        outgoingBlob.Write(header, bufferSize);
 
         remoteSendResponse(kRemoteCmdLoadImage, outgoingBlob, false, nullptr);
-        memFree(content);
+        memFree(header, memDefaultAlloc());
         logVerbose("Image loaded: %s (%.1f ms)", filepath, timer.ElapsedMS());
     }
     else {
@@ -369,8 +375,7 @@ static bool gfxImageHandlerServerFn([[maybe_unused]] uint32 cmd, const Blob& inc
 }
 
 // MT: called from RemoteServices thread
-static void gfxImageHandlerClientFn([[maybe_unused]] uint32 cmd, const Blob& incomingData, void* userData, bool error, 
-                                    const char* errorDesc)
+static void gfxImageHandlerClientFn([[maybe_unused]] uint32 cmd, const Blob& incomingData, void* userData, bool error, const char* errorDesc)
 {
     ASSERT(cmd == kRemoteCmdLoadImage);
     UNUSED(userData);
@@ -394,37 +399,16 @@ static void gfxImageHandlerClientFn([[maybe_unused]] uint32 cmd, const Blob& inc
     }
 
     if (!error) {
-        GfxImageDataHeader header;
-        incomingData.Read<GfxImageDataHeader>(&header);
-        ASSERT(header.contentSize);
+        uint32 bufferSize = 0;
+        incomingData.Read<uint32>(&bufferSize);
+        ASSERT(bufferSize);
         
         MemTempAllocator tmpAlloc;
-        void* imgData = tmpAlloc.Malloc(header.contentSize);
-        incomingData.Read(imgData, header.contentSize);
+        void* imgData = tmpAlloc.Malloc(bufferSize);
+        incomingData.Read(imgData, bufferSize);
 
-        // TODO: make this thread-safe, because it's getting called from another thread
-        GfxImage image = gfxCreateImage(GfxImageDesc {
-            .width = header.width,
-            .height = header.height,
-            .numMips = header.numMips,
-            .format = header.format,
-            .samplerFilter = request.loadParams.samplerFilter,
-            .samplerWrap = request.loadParams.samplerWrap,
-            .sampled = true,
-            .size = header.contentSize,
-            .content = imgData,
-            .mipOffsets = header.mipOffsets
-        });
-
-        if (image.IsValid()) {
-            if (request.loadCallback) 
-                request.loadCallback(handle, AssetResult { IntToPtr<uint32>(image.id) }, request.loadCallbackUserData);
-        }
-        else {
-            logError("Failed to create graphics image object");
-            if (request.loadCallback) 
-                request.loadCallback(handle, AssetResult {}, request.loadCallbackUserData);
-        }
+        if (request.loadCallback) 
+            request.loadCallback(handle, AssetResult { .obj = imgData, .objBufferSize = bufferSize }, request.loadCallbackUserData);
     }
     else {
         logError(errorDesc);
@@ -548,47 +532,22 @@ AssetHandleImage assetLoadImage(const char* path, const ImageLoadParams& params,
 
 GfxImage assetGetImage(AssetHandleImage imageHandle)
 {
-    return GfxImage { PtrToInt<uint32>(_private::assetGetData(imageHandle)) };
+    return reinterpret_cast<Image*>(_private::assetGetData(imageHandle))->handle;
 }
 
 // MT: runs from a task thread (AssetManager)
 AssetResult GfxImageLoader::Load(AssetHandle handle, const AssetLoadParams& params, Allocator*)
 {
     ASSERT(params.next);
-    const ImageLoadParams* textureParams = reinterpret_cast<ImageLoadParams*>(params.next.Get());
-    
+
     char errorDesc[512];
-    // TODO: use temp allocator instead of alloc for 'content'
-    Pair<GfxImageDataHeader, uint8*> img = gfxBakeImage(handle, params.path, AssetPlatform::Auto, memDefaultAlloc(), 
-                                                        errorDesc, sizeof(errorDesc));
-    if (img.second == nullptr) {
+    Pair<Image*, uint32> img = gfxBakeImage(handle, params.path, AssetPlatform::Auto, params.alloc, errorDesc, sizeof(errorDesc));
+    if (img.first == nullptr) {
         logError(errorDesc);
         return AssetResult {};
     }
 
-    const GfxImageDataHeader& header = img.first;
-
-    // TODO: make this thread-safe, because it's getting called from another thread
-    GfxImage image = gfxCreateImage(GfxImageDesc {
-        .width = header.width,
-        .height = header.height,
-        .numMips = header.numMips,
-        .format = header.format,
-        .samplerFilter = textureParams->samplerFilter,
-        .samplerWrap = textureParams->samplerWrap,
-        .sampled = true,
-        .size = header.contentSize,
-        .content = img.second,
-        .mipOffsets = header.mipOffsets
-    });
-
-    memFree(img.second, params.alloc);
-    if (!image.IsValid()) {
-        logError("Gfx: Creating image failed: %s", params.path);
-        return AssetResult {};
-    }
-
-    return AssetResult { IntToPtr(image.id) };
+    return AssetResult { .obj = img.first, .objBufferSize = img.second };
 }
 
 void GfxImageLoader::LoadRemote(AssetHandle handle, const AssetLoadParams& params, void* userData, AssetLoaderAsyncCallback loadCallback)
@@ -623,6 +582,28 @@ void GfxImageLoader::LoadRemote(AssetHandle handle, const AssetLoadParams& param
     outgoingBlob.Free();
 }
 
+bool GfxImageLoader::InitializeResources(void* obj, const AssetLoadParams& params)
+{
+    Image* header = reinterpret_cast<Image*>(obj);
+    const ImageLoadParams& loadParams = *reinterpret_cast<const ImageLoadParams*>(params.next.Get());
+
+    GfxImage image = gfxCreateImage(GfxImageDesc {
+        .width = header->width,
+        .height = header->height,
+        .numMips = header->numMips,
+        .format = header->format,
+        .samplerFilter = loadParams.samplerFilter,
+        .samplerWrap = loadParams.samplerWrap,
+        .sampled = true,
+        .size = header->contentSize,
+        .content = header->content.Get(),
+        .mipOffsets = header->mipOffsets
+    });
+
+    header->handle = image;
+    return image.IsValid();
+}
+
 bool GfxImageLoader::ReloadSync(AssetHandle handle, void* prevData)
 {
     GfxImage oldImageHandle { PtrToInt<uint32>(prevData) };
@@ -651,14 +632,15 @@ bool GfxImageLoader::ReloadSync(AssetHandle handle, void* prevData)
     return true;
 }
 
-void GfxImageLoader::Release(void* data, Allocator*)
+void GfxImageLoader::Release(void* data, Allocator* alloc)
 {
     ASSERT(data);
-    GfxImage image(PtrToInt<uint32>(data));
-    gfxDestroyImage(image);
 
-    GfxImage handle { PtrToInt<uint32>(data) };
-    
+    Image* image = reinterpret_cast<Image*>(data);
+    GfxImage handle = image->handle;
+
+    gfxDestroyImage(handle);
+
     // look in all descriptor cache items and decrease reference count. if it's zero then free it
     for (uint32 i = 0; i < gImageMgr.updateCache.Count(); i++) {
         GfxDescriptorUpdateCacheItem* item = gImageMgr.updateCache[i];
@@ -674,6 +656,8 @@ void GfxImageLoader::Release(void* data, Allocator*)
             }
         } // foreach binding
     } // For each item in descriptor set update cache
+
+    memFree(image, alloc);
 }
 
 #endif // __IMAGE_VK_CPP__

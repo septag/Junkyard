@@ -613,6 +613,11 @@ PathInfo pathStat(const char* path)
     };
 }
 
+bool pathCreateDir(const char* path)
+{
+    return mkdir(path, S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH) == 0;
+}
+
 //------------------------------------------------------------------------
 // Virtual memory
 struct MemVirtualStatsAtomic 

@@ -280,11 +280,12 @@ struct GfxDeferredCommand
     ExecuteCallback executeFn;
 };
 
-struct GfxHeapAllocator : Allocator
+struct GfxHeapAllocator final : Allocator
 {
     void* Malloc(size_t size, uint32 align) override;
     void* Realloc(void* ptr, size_t size, uint32 align) override;
     void  Free(void* ptr, uint32 align) override;
+    AllocatorType GetType() const override { return AllocatorType::Heap; }
     
     static void* vkAlloc(void* pUserData, size_t size, size_t align, VkSystemAllocationScope allocScope);
     static void* vkRealloc(void* pUserData, void* pOriginal, size_t size, size_t align, VkSystemAllocationScope allocScope);
@@ -678,7 +679,8 @@ static void gfxDestroySwapchain(GfxSwapchain* swapchain)
     swapchain->init = false;
 }
 
-static GfxPipelineLayout gfxCreatePipelineLayout(const GfxDescriptorSetLayout* descriptorSetLayouts,
+static GfxPipelineLayout gfxCreatePipelineLayout(const Shader& shader,
+                                                 const GfxDescriptorSetLayout* descriptorSetLayouts,
                                                  uint32 numDescriptorSetLayouts,
                                                  const GfxPushConstantDesc* pushConstants,
                                                  uint32 numPushConstants,
@@ -723,6 +725,11 @@ static GfxPipelineLayout gfxCreatePipelineLayout(const GfxDescriptorSetLayout* d
         if (numPushConstants) {
             vkPushConstants = tempAlloc.MallocTyped<VkPushConstantRange>(numPushConstants);
             for (uint32 i = 0; i < numPushConstants; i++) {
+                ASSERT(pushConstants[i].name);
+                [[maybe_unused]] const ShaderParameterInfo* paramInfo = shaderGetParam(shader, pushConstants[i].name);
+                ASSERT_MSG(paramInfo, "PushConstant '%s' not found in shader '%s'", pushConstants[i].name, shader.name);
+                ASSERT_MSG(paramInfo->isPushConstant, "Parameter '%s' is not a push constant in shader '%s'", paramInfo->name, shader.name);
+
                 vkPushConstants[i] = VkPushConstantRange {
                     .stageFlags = static_cast<VkShaderStageFlags>(pushConstants[i].stages),
                     .offset = pushConstants[i].range.offset,
@@ -3081,15 +3088,15 @@ static VkGraphicsPipelineCreateInfo* gfxDuplicateGraphicsPipelineCreateInfo(cons
     return pipInfoNew;
 }
 
-static VkShaderModule gfxCreateShaderModuleVk(const char* name, const ShaderBlob& blob)
+static VkShaderModule gfxCreateShaderModuleVk(const char* name, const uint8* data, uint32 dataSize)
 {
-    ASSERT(blob.data);
-    ASSERT(blob.size);
+    ASSERT(data);
+    ASSERT(dataSize);
         
     VkShaderModuleCreateInfo createInfo = {
         .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
-        .codeSize = (uint32)blob.size,
-        .pCode = (uint32*)blob.data
+        .codeSize = dataSize,
+        .pCode = reinterpret_cast<const uint32*>(data)
     };
         
     VkShaderModule shaderModule;
@@ -3228,27 +3235,27 @@ static void gfxSavePipelineBinaryProperties(const char* name, VkPipeline pip)
 
 GfxPipeline gfxCreatePipeline(const GfxPipelineDesc& desc)
 {
+    MemTempAllocator tempAlloc;
+
     // Shaders
     Shader* shaderInfo = desc.shader;
     ASSERT(shaderInfo);
     
-    const ShaderStageInfo* vsInfo = shaderGetStage(shaderInfo, ShaderStage::Vertex);
-    const ShaderStageInfo* fsInfo = shaderGetStage(shaderInfo, ShaderStage::Fragment);
+    const ShaderStageInfo* vsInfo = shaderGetStage(*shaderInfo, ShaderStage::Vertex);
+    const ShaderStageInfo* fsInfo = shaderGetStage(*shaderInfo, ShaderStage::Fragment);
     if (!vsInfo || !fsInfo) {
         logError("Gfx: Pipeline failed. Shader doesn't have vs/fs stages: %s", shaderInfo->name);
         return GfxPipeline();
     }
 
     VkPipelineShaderStageCreateInfo shaderStages[] = {
-        gfxCreateShaderStageVk(*vsInfo, gfxCreateShaderModuleVk(shaderInfo->name, vsInfo->blob)),
-        gfxCreateShaderStageVk(*fsInfo, gfxCreateShaderModuleVk(shaderInfo->name, fsInfo->blob))
+        gfxCreateShaderStageVk(*vsInfo, gfxCreateShaderModuleVk(shaderInfo->name, vsInfo->data.Get(), vsInfo->dataSize)),
+        gfxCreateShaderStageVk(*fsInfo, gfxCreateShaderModuleVk(shaderInfo->name, fsInfo->data.Get(), fsInfo->dataSize))
     };
 
     // Vertex inputs: combine bindings from the compiled shader and provided descriptions
     ASSERT_ALWAYS(desc.numVertexBufferBindings > 0, "Must provide vertex buffer bindings");
-    auto vertexBindingDescs = (VkVertexInputBindingDescription*)
-        alloca(desc.numVertexBufferBindings*sizeof(VkVertexInputBindingDescription));
-    ASSERT_ALWAYS(vertexBindingDescs, "Out of stack memory");
+    VkVertexInputBindingDescription* vertexBindingDescs = tempAlloc.MallocTyped<VkVertexInputBindingDescription>(desc.numVertexBufferBindings);
     for (uint32 i = 0; i < desc.numVertexBufferBindings; i++) {
         vertexBindingDescs[i] = {
             .binding = desc.vertexBufferBindings[i].binding,
@@ -3260,10 +3267,7 @@ GfxPipeline gfxCreatePipeline(const GfxPipelineDesc& desc)
     ASSERT_ALWAYS(desc.numVertexInputAttributes == shaderInfo->numVertexAttributes, 
         "Provided number of vertex attributes does not match with the compiled shader");
     
-    auto vertexInputAtts = (VkVertexInputAttributeDescription*)
-        alloca(desc.numVertexInputAttributes*sizeof(VkVertexInputAttributeDescription));
-    ASSERT_ALWAYS(vertexInputAtts, "Out of stack memory");
-    
+    VkVertexInputAttributeDescription* vertexInputAtts = tempAlloc.MallocTyped<VkVertexInputAttributeDescription>(desc.numVertexInputAttributes);    
     for (uint32 i = 0; i < desc.numVertexInputAttributes; i++) {
         // Validation:
         // Semantic/SemanticIndex
@@ -3296,7 +3300,8 @@ GfxPipeline gfxCreatePipeline(const GfxPipelineDesc& desc)
     };
 
     VkPipelineLayout pipLayout = nullptr;
-    GfxPipelineLayout pipelineLayout = gfxCreatePipelineLayout(desc.descriptorSetLayouts, desc.numDescriptorSetLayouts, 
+    GfxPipelineLayout pipelineLayout = gfxCreatePipelineLayout(*shaderInfo, 
+                                                               desc.descriptorSetLayouts, desc.numDescriptorSetLayouts, 
                                                                desc.pushConstants, desc.numPushConstants, &pipLayout);
     ASSERT_ALWAYS(pipelineLayout.IsValid(), "Gfx: Create pipeline layout failed");
     
@@ -3334,12 +3339,9 @@ GfxPipeline gfxCreatePipeline(const GfxPipelineDesc& desc)
 
     // Blending
     uint32 numBlendAttachments = Max(desc.blend.numAttachments, 1u);
-    const GfxBlendAttachmentDesc* blendAttachmentDescs = 
-        desc.blend.attachments == nullptr ? gfxBlendAttachmentDescGetDefault() : desc.blend.attachments;
+    const GfxBlendAttachmentDesc* blendAttachmentDescs = !desc.blend.attachments ? gfxBlendAttachmentDescGetDefault() : desc.blend.attachments;
         
-    auto colorBlendAttachments = (VkPipelineColorBlendAttachmentState*)
-        alloca(sizeof(VkPipelineColorBlendAttachmentState)*numBlendAttachments);
-    ASSERT_ALWAYS(colorBlendAttachments, "Out of stack memory");
+    VkPipelineColorBlendAttachmentState* colorBlendAttachments = tempAlloc.MallocTyped<VkPipelineColorBlendAttachmentState>(numBlendAttachments);
     for (uint32 i = 0; i < numBlendAttachments; i++) {
         const GfxBlendAttachmentDesc& ba = blendAttachmentDescs[i];
         VkPipelineColorBlendAttachmentState state {
@@ -3376,7 +3378,7 @@ GfxPipeline gfxCreatePipeline(const GfxPipelineDesc& desc)
     };
     VkPipelineDynamicStateCreateInfo dynamicState {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
-        .dynamicStateCount = sizeof(dynamicStates)/sizeof(VkDynamicState),
+        .dynamicStateCount = CountOf(dynamicStates),
         .pDynamicStates = dynamicStates
     };
 
@@ -3428,11 +3430,9 @@ GfxPipeline gfxCreatePipeline(const GfxPipelineDesc& desc)
         return GfxPipeline();
     }
 
-    if (gVk.hasPipelineExecutableProperties) {
+    if (gVk.hasPipelineExecutableProperties)
         gfxSavePipelineBinaryProperties(desc.shader->name, pipeline);
-    }
 
-    // TODO: I can cache the modules ? 
     for (uint32 i = 0; i < CountOf(shaderStages); i++)
         vkDestroyShaderModule(gVk.device, shaderStages[i].module, &gVk.allocVk);
 
@@ -3555,20 +3555,13 @@ GfxDescriptorSetLayout gfxCreateDescriptorSetLayout(const Shader& shader, const 
         const GfxDescriptorSetLayoutBinding& dsLayoutBinding = bindings[i];
         ASSERT(dsLayoutBinding.arrayCount > 0);
 
-        uint32 paramIdx = UINT32_MAX;
-        for (uint32 k = 0; k < shader.numParams; k++) {
-            if (strIsEqual(dsLayoutBinding.name, shader.params[k].name)) {
-                paramIdx = k;
-                break;
-            }
-        }
+        const ShaderParameterInfo* shaderParam = shaderGetParam(shader, dsLayoutBinding.name);
+        ASSERT_MSG(shaderParam != nullptr, "Shader parameter '%s' does not exist in shader '%s'", dsLayoutBinding.name, shader.name);
+        ASSERT_MSG(!shaderParam->isPushConstant, "Shader parameter '%s' is a push-constant in shader '%s'. cannot be used as regular uniform", dsLayoutBinding.name, shader.name);
 
-        ASSERT_MSG(paramIdx != UINT32_MAX, "Shader parameter/uniform '%s' does not exist", dsLayoutBinding.name);
-        const ShaderParameterInfo& shaderParam = shader.params[paramIdx];
-
-        names[i] = shaderParam.name;    // Set the pointer to the field in ShaderParameterInfo because it is garuanteed to stay in mem
+        names[i] = shaderParam->name;    // Set the pointer to the field in ShaderParameterInfo because it is garuanteed to stay in mem
         descriptorSetBindings[i] = VkDescriptorSetLayoutBinding {
-            .binding = shaderParam.bindingIdx,
+            .binding = shaderParam->bindingIdx,
             .descriptorType = static_cast<VkDescriptorType>(dsLayoutBinding.type),
             .descriptorCount = dsLayoutBinding.arrayCount,
             .stageFlags = static_cast<VkShaderStageFlags>(dsLayoutBinding.stages)
@@ -3649,6 +3642,9 @@ GfxDescriptorSetLayout gfxCreateDescriptorSetLayout(const Shader& shader, const 
 
 void gfxDestroyDescriptorSetLayout(GfxDescriptorSetLayout layout)
 {
+    if (!layout.IsValid())
+        return;
+
     AtomicLockScope lk(gVk.pools.locks[GfxObjectPools::DESCRIPTOR_SET_LAYOUTS]);
     GfxDescriptorSetLayoutData& layoutData = gVk.pools.descriptorSetLayouts.Data(layout);
     ASSERT(layoutData.refCount > 0);
@@ -4151,16 +4147,16 @@ void _private::gfxRecreatePipelinesWithNewShader(uint32 shaderHash, Shader* shad
             const GfxPipelineData& pipData = pipDatas[i];
            
             // Recreate shaders only
-            const ShaderStageInfo* vsInfo = shaderGetStage(shader, ShaderStage::Vertex);
-            const ShaderStageInfo* fsInfo = shaderGetStage(shader, ShaderStage::Fragment);
+            const ShaderStageInfo* vsInfo = shaderGetStage(*shader, ShaderStage::Vertex);
+            const ShaderStageInfo* fsInfo = shaderGetStage(*shader, ShaderStage::Fragment);
             if (!vsInfo || !fsInfo) {
                 logError("Gfx: Pipeline failed. Shader doesn't have vs/fs stages: %s", shader->name);
                 return;
             }
 
             VkPipelineShaderStageCreateInfo shaderStages[] = {
-                gfxCreateShaderStageVk(*vsInfo, gfxCreateShaderModuleVk(shader->name, vsInfo->blob)),
-                gfxCreateShaderStageVk(*fsInfo, gfxCreateShaderModuleVk(shader->name, fsInfo->blob))
+                gfxCreateShaderStageVk(*vsInfo, gfxCreateShaderModuleVk(shader->name, vsInfo->data.Get(), vsInfo->dataSize)),
+                gfxCreateShaderStageVk(*fsInfo, gfxCreateShaderModuleVk(shader->name, fsInfo->data.Get(), fsInfo->dataSize))
             };
 
             memcpy((void*)pipData.gfxCreateInfo->pStages, shaderStages, 

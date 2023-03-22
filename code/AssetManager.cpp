@@ -130,6 +130,14 @@ bool _private::assetInitialize()
     gAssetMgr.initHeapSize = initHeap->GetOffset() - gAssetMgr.initHeapStart;
 
     vfsRegisterFileChangeCallback(assetFileChanged);
+
+    // Create and mount cache directory
+    if constexpr (PLATFORM_WINDOWS || PLATFORM_OSX || PLATFORM_LINUX) {
+        if (!pathIsDir(".cache"))
+            pathCreateDir(".cache");
+        vfsMountLocal(".cache", "cache", false);
+    }
+
     return true;
 }
 
@@ -203,11 +211,11 @@ static AssetHandle assetCreateNew(uint32 typeMgrIdx, uint32 assetHash, const Ass
 
     // Set the asset platform to the platform that we are running on in Auto mode
     if (params.platform == AssetPlatform::Auto) {
-        #if PLATFORM_WINDOWS || PLATFORM_LINUX || PLATFORM_OSX
+        if constexpr (PLATFORM_WINDOWS || PLATFORM_LINUX || PLATFORM_OSX)
            newParams->platform = AssetPlatform::PC;
-        #elif PLATFORM_ANDROID
+        else if constexpr (PLATFORM_ANDROID)
            newParams->platform = AssetPlatform::Android;
-        #endif
+       
         ASSERT(newParams->platform != AssetPlatform::Auto);
     }
     
@@ -392,36 +400,103 @@ const char* assetGetMetaValue(const AssetMetaKeyValue* data, uint32 count, const
     return nullptr;
 }
 
+static AssetResult assetLoadFromCache(const AssetTypeManager& typeMgr, const AssetLoadParams& params)
+{
+    // TODO: the approach is different in remote mode
+    //       we have to send the modified date to the server and that will decide wither it should make a new asset and send it to us
+    //       or load the asset from the local cache
+    uint64 lastModifiedOriginal = vfsGetLastModified(params.path);
+
+    HashMurmur32Incremental hasher(ASSET_HASH_SEED);
+    uint32 hash = hasher.Add<char>(params.path, strLen(params.path))
+                        .AddAny(params.next.Get(), typeMgr.extraParamTypeSize)
+                        .Hash();
+
+    Path strippedPath;
+    vfsStripMountPath(strippedPath.Ptr(), sizeof(strippedPath), params.path);
+
+    char hashStr[64];
+    strPrintFmt(hashStr, sizeof(hashStr), "_%x", hash);
+
+    Path cachePath("/cache");
+    cachePath.Append(strippedPath.GetDirectory())
+             .Append(strippedPath.GetFileName())
+             .Append(hashStr)
+             .Append(".")
+             .Append(typeMgr.name.CStr());    
+
+    MemTempAllocator tempAlloc;
+    Blob cache = vfsReadFile(cachePath.CStr(), VfsFlags::None, &tempAlloc);
+
+    if (cache.IsValid()) {
+        AssetResult result {};
+
+        // TODO: add file versioning and whatnot 
+        uint64 lastModified;
+        cache.Read<uint64>(&lastModified);
+        if (lastModified != lastModifiedOriginal)
+            return AssetResult {};      // Cache is outdated
+
+        cache.Read<uint32>(&result.numDepends);
+        cache.Read<uint32>(&result.dependsBufferSize);
+        cache.Read<uint32>(&result.objBufferSize);
+
+        if (result.dependsBufferSize) {
+            result.depends = (AssetDependency*)memAlloc(result.dependsBufferSize, params.alloc);
+            cache.Read(result.depends, result.dependsBufferSize);
+        }
+
+        ASSERT(result.objBufferSize);
+        result.obj = memAlloc(result.objBufferSize, params.alloc);
+        cache.Read(result.obj, result.objBufferSize);
+
+        return result;
+    } 
+    else {
+        return AssetResult {};
+    }
+}
+
 // Runs from worker thread
 static void assetLoadTask(uint32 groupIndex, void* userData)
 {
     UNUSED(groupIndex);
     void* prevObj = nullptr;
     uint64 userValue = PtrToInt<uint64>(userData);
-    AssetLoadMethod method = static_cast<AssetLoadMethod>(userValue & 0xffffffff);
-    AssetHandle handle { static_cast<uint32>(userValue >> 32) };
+    AssetLoadMethod method = AssetLoadMethod(userValue & 0xffffffff);
+    AssetHandle handle { uint32(userValue >> 32) };
     TimerStopWatch timer;
 
     gAssetMgr.assetsMtx.Enter();
     Asset& asset = gAssetMgr.assets.Data(handle);
     const char* filepath = asset.params->path;
     const AssetTypeManager& typeMgr = gAssetMgr.typeManagers[asset.typeMgrIdx];
+    const AssetLoadParams& loadParams = *asset.params;
     gAssetMgr.assetsMtx.Exit();
-        
+
     AssetResult result;
     if (method == AssetLoadMethod::Local) 
-        result = assetLoadObjLocal(handle, typeMgr.callbacks, filepath, *asset.params);
+        result = assetLoadObjLocal(handle, typeMgr.callbacks, filepath, loadParams);
     else if (method == AssetLoadMethod::Remote)
-        result = assetLoadObjRemote(handle, typeMgr.callbacks, *asset.params);
+        result = assetLoadObjRemote(handle, typeMgr.callbacks, loadParams);
     else {
         ASSERT(0);
         result = AssetResult {};
     }
 
     MutexScope mtx(gAssetMgr.assetsMtx);
-    asset = gAssetMgr.assets.Data(handle);  // Update the asset pointer once again
+    asset = gAssetMgr.assets.Data(handle);  
     if (asset.obj != typeMgr.asyncObj)
         prevObj = asset.obj;
+
+    // Load external asset resources
+    if (result.obj && !loadParams.dontCreateResources) {
+        if (!typeMgr.callbacks->InitializeResources(result.obj, loadParams)) {
+            logError("Failed creating resources for %s: %s", typeMgr.name.CStr(), filepath);
+            typeMgr.callbacks->Release(result.obj, loadParams.alloc);
+            result.obj = nullptr;
+        }
+    }
 
     if (result.obj) {
         asset.state = AssetState::Alive;

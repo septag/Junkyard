@@ -76,7 +76,7 @@ struct String
     bool IsEqualNoCase(const char* cstr) const;
     bool IsEqual(const char* cstr, uint32 count) const;
 
-    uint32 FindChar(char ch) const;
+    uint32 FindChar(char ch, uint32 startIndex = 0) const;
     uint32 FindCharRev(char ch) const;
     uint32 FindString(const char* cstr) const;
     bool EndsWith(char ch) const;
@@ -88,6 +88,8 @@ struct String
 
     String<_Size>& Trim();
     String<_Size>& Trim(char ch);
+
+    String<_Size> SubStr(uint32 start, uint32 end = UINT32_MAX);
 
 protected:
     char _str[_Size];
@@ -246,11 +248,12 @@ inline bool String<_Size>::IsEqual(const char* cstr, uint32 count) const
 }
 
 template <uint32 _Size> 
-inline uint32 String<_Size>::FindChar(char ch) const
+inline uint32 String<_Size>::FindChar(char ch, uint32 startIndex) const
 {
-    const char* r = strFindChar(_str, ch);
+    ASSERT(startIndex <= _len);
+    const char* r = strFindChar(_str + startIndex, ch);
     if (r)
-        return PtrToInt<uint32>(r - _str);
+        return PtrToInt<uint32>((void*)(r - _str));
     else
         return UINT32_MAX;
 }
@@ -284,7 +287,7 @@ inline bool String<_Size>::EndsWith(char ch) const
 template <uint32 _Size> 
 inline bool String<_Size>::EndsWith(const char* cstr) const
 {
-    uint32 cstrLen = strlen(cstr);
+    uint32 cstrLen = strLen(cstr);
     return _len >= cstrLen && strFindStr(&_str[_len - cstrLen], cstr) != nullptr;
 }
 
@@ -328,4 +331,16 @@ inline String<_Size>& String<_Size>::Trim(char ch)
     strTrim(_str, _Size, _str, ch);
     _len = strLen(_str);
     return *this;
+}
+
+template <uint32 _Size>
+inline String<_Size> String<_Size>::SubStr(uint32 start, uint32 end)
+{
+    end = end == UINT32_MAX ? _len : end;
+
+    String<_Size> r;
+    strCopyCount(r._str, _Size, _str + start, end - start);
+    r._len = end - start;
+
+    return r;
 }

@@ -8,7 +8,8 @@ enum class VfsFlags : uint32
     None = 0x0,
     AbsolutePath = 0x1,
     TextFile = 0x2,
-    Append = 0x4
+    Append = 0x4,
+    CreateDirs = 0x8
 };
 ENABLE_BITMASK(VfsFlags);
 
@@ -37,14 +38,12 @@ API Blob vfsReadFile(const char* path, VfsFlags flags, Allocator* alloc = memDef
 // If file fails to write, it will return 0, otherwise, it will return the number of bytes written
 API size_t vfsWriteFile(const char* path, const Blob& blob, VfsFlags flags);
 
-API void vfsReadFileAsync(const char* path, VfsFlags flags, VfsReadAsyncCallback readResultFn, void* user, 
-                          Allocator* alloc = memDefaultAlloc());
-
-API void vfsWriteFileAsync(const char* path, const Blob& blob, VfsFlags flags, VfsWriteAsyncCallback writeResultFn, 
-                           void* user);
+API void vfsReadFileAsync(const char* path, VfsFlags flags, VfsReadAsyncCallback readResultFn, void* user, Allocator* alloc = memDefaultAlloc());
+API void vfsWriteFileAsync(const char* path, const Blob& blob, VfsFlags flags, VfsWriteAsyncCallback writeResultFn, void* user);
 
 API VfsMountType vfsGetMountType(const char* path);
 API uint64 vfsGetLastModified(const char* path);
+API bool vfsStripMountPath(char* outPath, uint32 outPathSize, const char* path);
 
 API void vfsRegisterFileChangeCallback(vfsFileChangeCallback callback);
 

@@ -328,6 +328,6 @@ void logRegisterCallback(LogCallback callback, void* userData)
 void logUnregisterCallback(LogCallback callback)
 {
     uint32 index = gLog.callbacks.FindIf([callback](const Pair<LogCallback, void*>& p) { return p.first == callback; });
-    ASSERT(index != UINT32_MAX);
-    gLog.callbacks.RemoveAndSwap(index);
+    if (index != UINT32_MAX)
+        gLog.callbacks.RemoveAndSwap(index);
 }

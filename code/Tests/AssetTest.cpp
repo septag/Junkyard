@@ -307,6 +307,7 @@ struct AppImpl : AppCallbacks
         transformsBuffer = gfxCreateDynamicUniformBuffer(kNumCubes, sizeof(WorldTransform));
 
         GfxPushConstantDesc pushConstant = {
+            .name = "Material",
             .stages = GfxShaderStage::Fragment,
             .range = {0, sizeof(uint32)*4}
         };

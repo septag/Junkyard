@@ -287,11 +287,13 @@ API PathInfo pathStat(const char* path);
 INLINE bool pathExists(const char* path);
 INLINE bool pathIsFile(const char* path);
 INLINE bool pathIsDir(const char* path);
+API bool pathCreateDir(const char* path);
 
 struct Path : String<kMaxPath>
 {
     Path() = default;
     Path(const char* cstr) : String<kMaxPath>(cstr) {}
+    Path(const String<kMaxPath>& str) : String<kMaxPath>(str) {}
 
     Path& SetToCurrentDir();
 
