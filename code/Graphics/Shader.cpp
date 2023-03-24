@@ -27,7 +27,7 @@ struct ShaderLoader final : AssetLoaderCallbacks
 {
     AssetResult Load(AssetHandle handle, const AssetLoadParams& params, Allocator* dependsAlloc) override;
     void LoadRemote(AssetHandle handle, const AssetLoadParams& params, void* userData, AssetLoaderAsyncCallback loadCallback) override;
-    bool InitializeResources(void* obj, const AssetLoadParams& params) override { return true; }
+    bool InitializeResources(void*, const AssetLoadParams&) override { return true; }
     bool ReloadSync(AssetHandle handle, void* prevData) override;
     void Release(void* data, Allocator*) override;
 

@@ -400,6 +400,14 @@ const char* assetGetMetaValue(const AssetMetaKeyValue* data, uint32 count, const
     return nullptr;
 }
 
+INLINE uint32 assetMakeCacheHash(const AssetTypeManager& typeMgr, const AssetLoadParams& params)
+{
+    HashMurmur32Incremental hasher(ASSET_HASH_SEED);
+    return hasher.Add<char>(params.path, strLen(params.path))
+                 .AddAny(params.next.Get(), typeMgr.extraParamTypeSize)
+                 .Hash();
+}
+
 static AssetResult assetLoadFromCache(const AssetTypeManager& typeMgr, const AssetLoadParams& params)
 {
     // TODO: the approach is different in remote mode
@@ -407,16 +415,11 @@ static AssetResult assetLoadFromCache(const AssetTypeManager& typeMgr, const Ass
     //       or load the asset from the local cache
     uint64 lastModifiedOriginal = vfsGetLastModified(params.path);
 
-    HashMurmur32Incremental hasher(ASSET_HASH_SEED);
-    uint32 hash = hasher.Add<char>(params.path, strLen(params.path))
-                        .AddAny(params.next.Get(), typeMgr.extraParamTypeSize)
-                        .Hash();
-
     Path strippedPath;
     vfsStripMountPath(strippedPath.Ptr(), sizeof(strippedPath), params.path);
 
     char hashStr[64];
-    strPrintFmt(hashStr, sizeof(hashStr), "_%x", hash);
+    strPrintFmt(hashStr, sizeof(hashStr), "_%x", assetMakeCacheHash(typeMgr, params));
 
     Path cachePath("/cache");
     cachePath.Append(strippedPath.GetDirectory())
@@ -455,6 +458,11 @@ static AssetResult assetLoadFromCache(const AssetTypeManager& typeMgr, const Ass
     else {
         return AssetResult {};
     }
+}
+
+static void assetSaveToCache(const AssetTypeManager& typeMgr, const AssetLoadParams& params)
+{
+
 }
 
 // Runs from worker thread
