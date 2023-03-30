@@ -1,5 +1,7 @@
 #pragma once
 
+#include "../External/cj5/cj5.h"
+
 #include "Base.h"
 #include "Memory.h"
 
@@ -13,23 +15,27 @@ struct JsonErrorLocation
     uint32 col;
 };
 
+struct JsonContext
+{
+    cj5_result r;
+    Allocator* alloc;
+};
+
 // Returns number of tokens needed for 'jsonParse'
 // Returns 0 if there was an error parsing the file
 API uint32 jsonGetTokenCount(const char* json5, uint32 json5Len);
-API size_t jsonGetMemoryRequirement(uint32 numTokens);
 
-API JsonContext* jsonParse(const char* json5, uint32 json5Len, uint32 maxTokens, Allocator* alloc = memDefaultAlloc());
-API JsonContext* jsonParse(const char* json5, uint32 json5Len, uint32 maxTokens, void* buffer, size_t size);
-
-API bool jsonParseHasError(JsonContext* ctx);
-API JsonErrorLocation jsonParseGetErrorLocation(JsonContext* ctx);
+API bool jsonParse(JsonContext* ctx, const char* json5, uint32 json5Len, Allocator* alloc = memDefaultAlloc());
+API bool jsonParse(JsonContext* ctx, const char* json5, uint32 json5Len, cj5_token* tokens, uint32 maxTokens);
 API void jsonDestroy(JsonContext* ctx);
+
+API JsonErrorLocation jsonParseGetErrorLocation(JsonContext* ctx);
 
 struct JsonNode
 {
     JsonNode() = default;
-    explicit JsonNode(JsonContext* _ctx);
-    explicit JsonNode(JsonContext* _ctx, int _tokenId, int _itemIndex = 0);
+    explicit JsonNode(JsonContext& _ctx);
+    explicit JsonNode(JsonContext& _ctx, int _tokenId, int _itemIndex = 0);
 
     bool HasChild(const char* _childNode) const;    
 
@@ -62,10 +68,8 @@ private:
 };
 
 //------------------------------------------------------------------------
-#include "../External/cj5/cj5.h"
-
-inline JsonNode::JsonNode(JsonContext* _ctx) : ctx(_ctx), tokenId(0), itemIndex(0) {}
-inline JsonNode::JsonNode(JsonContext* _ctx, int _tokenId, int _itemIndex) : ctx(_ctx), tokenId(_tokenId), itemIndex(_itemIndex) {}
+inline JsonNode::JsonNode(JsonContext& _ctx) : ctx(&_ctx), tokenId(0), itemIndex(0) {}
+inline JsonNode::JsonNode(JsonContext& _ctx, int _tokenId, int _itemIndex) : ctx(&_ctx), tokenId(_tokenId), itemIndex(_itemIndex) {}
 
 inline bool JsonNode::HasChild(const char* _childNode) const
 {
@@ -75,7 +79,7 @@ inline bool JsonNode::HasChild(const char* _childNode) const
 inline JsonNode JsonNode::GetChild(const char* _childNode) const
 {
     int id = cj5_seek(reinterpret_cast<cj5_result*>(ctx), tokenId, _childNode);
-    return JsonNode(ctx, id);
+    return JsonNode(*ctx, id);
 }
 
 inline bool JsonNode::IsValid() const

@@ -41,6 +41,7 @@ xcuserdata
 scripts/symbols
 data/images/gen/**
 data/models/gen/**
+.cache
 
 # Dependency downloads
 code/External/slang/**

@@ -11,14 +11,6 @@
 #include "Buffers.h"
 #include "String.h"
 
-struct JsonContext
-{
-    cj5_result r;
-    cj5_token* tokenCache;
-    Allocator* alloc;
-    uint32 maxTokens;
-};
-
 uint32 jsonGetTokenCount(const char* json5, uint32 json5Len)
 {
     json5Len = json5Len == 0 ? json5Len : strLen(json5);
@@ -28,58 +20,56 @@ uint32 jsonGetTokenCount(const char* json5, uint32 json5Len)
     return (r.error == CJ5_ERROR_OVERFLOW) ? static_cast<uint32>(r.num_tokens) : 0u;
 }
 
-size_t jsonGetMemoryRequirement(uint32 numTokens)
-{
-    ASSERT(numTokens);
-    BuffersAllocPOD<JsonContext> ctxAlloc;
-    return ctxAlloc.AddMemberField<cj5_token>(offsetof(JsonContext, tokenCache), numTokens).GetMemoryRequirement();
-}
-
-static JsonContext* jsonParseInternal(JsonContext* ctx, const char* json5, uint32 json5Len)
+bool jsonParse(JsonContext* ctx, const char* json5, uint32 json5Len, Allocator* alloc)
 {
     ASSERT(json5Len < INT32_MAX);
-    ASSERT(ctx->maxTokens && ctx->maxTokens < INT32_MAX);
+    ASSERT(alloc);
+
+    *ctx = JsonContext {};
+
+    Array<cj5_token> tokens(alloc);
+    tokens.Reserve(64);
+
+    auto CreateToken = [](void* user)->cj5_token* { return ((Array<cj5_token>*)user)->Push(); };
+    auto GetAll = [](void* user)->cj5_token* { return ((Array<cj5_token>*)user)->Ptr(); };
+    cj5_factory factory {
+        .create_token = CreateToken,
+        .get_all = GetAll,
+        .user_data = &tokens
+    };
 
     json5Len = json5Len == 0 ? json5Len : strLen(json5);
-    ctx->r = cj5_parse(json5, (int)json5Len, ctx->tokenCache, (int)ctx->maxTokens);
+    ctx->r = cj5_parse_with_factory(json5, (int)json5Len, factory);
 
-    return ctx;   
+    if (ctx->r.error == CJ5_ERROR_NONE) {
+        ctx->alloc = alloc;
+        return true;
+    }
+    else {
+        tokens.Free();
+        return false;
+    }
 }
 
-JsonContext* jsonParse(const char* json5, uint32 json5Len, uint32 maxTokens, Allocator* alloc)
+bool jsonParse(JsonContext* ctx, const char* json5, uint32 json5Len, cj5_token* tokens, uint32 maxTokens)
 {
-    ASSERT(maxTokens);
+    ASSERT(json5Len < INT32_MAX);
+    ASSERT(maxTokens && maxTokens < INT32_MAX);
 
-    BuffersAllocPOD<JsonContext> ctxAlloc;
-    ctxAlloc.AddMemberField<cj5_token>(offsetof(JsonContext, tokenCache), maxTokens);
-    JsonContext* ctx = ctxAlloc.Calloc(alloc);
-    ctx->alloc = alloc;
-    ctx->maxTokens = maxTokens;
+    *ctx = JsonContext {};
 
-    return jsonParseInternal(ctx, json5, json5Len);
-}
+    json5Len = json5Len == 0 ? json5Len : strLen(json5);
+    ctx->r = cj5_parse(json5, (int)json5Len, tokens, (int)maxTokens);
 
-JsonContext* jsonParse(const char* json5, uint32 json5Len, uint32 maxTokens, void* buffer, size_t size)
-{
-    ASSERT(buffer);
-
-    BuffersAllocPOD<JsonContext> ctxAlloc;
-    ctxAlloc.AddMemberField<cj5_token>(offsetof(JsonContext, tokenCache), maxTokens);
-    JsonContext* ctx = ctxAlloc.Calloc(buffer, size);
-    ctx->maxTokens = maxTokens;
-
-    return jsonParseInternal(ctx, json5, json5Len);
+    return ctx->r.error != CJ5_ERROR_NONE;
 }
 
 void jsonDestroy(JsonContext* ctx)
 {
-    if (ctx && ctx->alloc) 
-        memFree(ctx, ctx->alloc);
-}
-
-bool jsonParseHasError(JsonContext* ctx)
-{
-    return ctx->r.error != CJ5_ERROR_NONE;
+    ASSERT(ctx);
+    if (ctx->alloc)
+        memFree(const_cast<cj5_token*>(ctx->r.tokens), ctx->alloc);
+    memset(ctx, 0x0, sizeof(JsonContext));
 }
 
 JsonErrorLocation jsonParseGetErrorLocation(JsonContext* ctx)
@@ -119,7 +109,7 @@ uint32 JsonNode::GetArrayCount() const
 
 bool JsonNode::IsArray() const
 {
-    return ctx->tokenCache[tokenId].type == CJ5_TOKEN_ARRAY;
+    return ctx->r.tokens[tokenId].type == CJ5_TOKEN_ARRAY;
 }
 
 bool JsonNode::IsObject() const
@@ -168,11 +158,11 @@ JsonNode JsonNode::GetChildItem(uint32 _index) const
         ASSERT(r->tokens[i].type == CJ5_TOKEN_STRING);
         if (r->tokens[i].parent_id == tokenId) {
             if (count == index)
-                return JsonNode(ctx, i + 1, index);       // get next 'value' token
+                return JsonNode(*ctx, i + 1, index);       // get next 'value' token
             count++;
         }
     }
-    return JsonNode(ctx, -1);
+    return JsonNode(*ctx, -1);
 }
 
 JsonNode JsonNode::GetNextChildItem(const JsonNode& curChildItem) const
@@ -184,14 +174,14 @@ JsonNode JsonNode::GetNextChildItem(const JsonNode& curChildItem) const
 
     int nextIndex = curChildItem.itemIndex + 1;
     if (nextIndex == tok->size) 
-        return JsonNode(ctx, -1);
+        return JsonNode(*ctx, -1);
 
     for (int i = curChildItem.tokenId + 1, ic = r->num_tokens; i < ic; i+=2) {
         if (r->tokens[i].parent_id == tokenId)
-            return JsonNode(ctx, i + 1, nextIndex);
+            return JsonNode(*ctx, i + 1, nextIndex);
     }
 
-    return JsonNode(ctx, -1);
+    return JsonNode(*ctx, -1);
 }
 
 JsonNode JsonNode::GetArrayItem(uint32 _index) const
@@ -204,11 +194,11 @@ JsonNode JsonNode::GetArrayItem(uint32 _index) const
     for (int i = tokenId + 1, count = 0, ic = r->num_tokens; i < ic && count < tok->size; i++) {
         if (r->tokens[i].parent_id == tokenId) {
             if (count == index)
-                return JsonNode(ctx, i, _index);
+                return JsonNode(*ctx, i, _index);
             count++;
         }
     }
-    return JsonNode(ctx, -1);
+    return JsonNode(*ctx, -1);
 }
 
 JsonNode JsonNode::GetNextArrayItem(const JsonNode& curItem) const
@@ -219,12 +209,12 @@ JsonNode JsonNode::GetNextArrayItem(const JsonNode& curItem) const
     ASSERT(tok->type == CJ5_TOKEN_ARRAY);
 
     if (index == tok->size) 
-        return JsonNode(ctx, -1);
+        return JsonNode(*ctx, -1);
 
     int startId = curItem.tokenId <= 0 ? (tokenId + 1) : (curItem.tokenId + 1);
     for (int i = startId, ic = r->num_tokens; i < ic; i++) {
         if (r->tokens[i].parent_id == tokenId)
-            return JsonNode(ctx, i, index);
+            return JsonNode(*ctx, i, index);
     }
-    return JsonNode(ctx, -1);
+    return JsonNode(*ctx, -1);
 }

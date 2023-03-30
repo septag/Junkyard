@@ -374,7 +374,7 @@ struct Blob
     template <typename _T> size_t Read(_T* dst) const;
     inline size_t WriteStringBinary(const char* str, uint32 len);
     inline size_t ReadStringBinary(char* outStr, uint32 outStrSize) const;
-
+    
     inline size_t Size() const;
     inline size_t Capacity() const;
     inline size_t ReadOffset() const;

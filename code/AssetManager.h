@@ -142,6 +142,7 @@ API const char* assetGetMetaValue(const AssetMetaKeyValue* data, uint32 count, c
 template <typename _T> _T assetGetMetaValue(const AssetMetaKeyValue* data, uint32 count, const char* key, _T defaultValue);
 
 API void assetGetBudgetStats(AssetBudgetStats* stats);
+API void assetSaveCacheLookup();
 
 // Scope RAII classes are only recommended for use within a single function scope only
 struct AssetBarrierScope

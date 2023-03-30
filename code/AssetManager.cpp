@@ -56,6 +56,7 @@ struct Asset
     uint32 typeMgrIdx;          // index to gAssetMgr.typeManagers
     uint32 refCount;        
     uint32 hash;
+    uint32 cacheHash;
     uint32 numMeta;
     uint32 numDepends;
     uint32 objBufferSize;
@@ -64,6 +65,7 @@ struct Asset
     AssetLoadParams* params;    // might include extra param buffer at the end
     AssetMetaKeyValue* metaData;
     AssetDependency* depends;
+    uint64 cacheFileVersion;
 };
 
 struct AssetManager
@@ -75,6 +77,8 @@ struct AssetManager
     HandlePool<AssetBarrier, Signal> barriers;
     HashTable<AssetHandle> assetLookup;     // key: hash of path+params. 
                                             // This HashTable is used for looking up already loaded assets 
+    
+    HashTable<uint64> cacheLookupTable;     // key: Asset hash for caches (see `assetMakeCacheHash`). value: cacheFileVersion (lastModified)
     Array<AssetGarbage> garbage;
     Mutex assetsMtx;                        // Mutex used for 'assets' HandlePool (see above)
 
@@ -87,6 +91,37 @@ struct AssetManager
 static AssetManager gAssetMgr;
 
 static void assetFileChanged(const char* filepath);
+
+void assetSaveCacheLookup()
+{
+    MemTempAllocator tempAlloc;
+
+    Blob blob(&tempAlloc);
+    blob.SetGrowPolicy(Blob::GrowPolicy::Linear, 32*kKB);
+    char line[1024];
+
+    blob.Write("[\n", 2);
+    for (Asset& asset : gAssetMgr.assets) {
+        strPrintFmt(line, sizeof(line), 
+                    "\t{\n"
+                    "\t\tfilepath: \"%s\",\n"
+                    "\t\tfileVersion: 0x%llx,\n"
+                    "\t\thash: 0x%x\n"
+                    "\t},\n",
+                    asset.params->path,
+                    asset.cacheFileVersion,
+                    asset.cacheHash);
+        blob.Write(line, strLen(line));
+    }
+    blob.Write("]\n", 2);
+
+    vfsWriteFileAsync("/cache/lookup.json5", blob, VfsFlags::TextFile, 
+                      [](const char* path, size_t, const Blob&, void*) { logInfo("Asset lookup cache written to: %s", path); }, nullptr);
+}
+
+static void assetLoadCacheLookup()
+{
+}
 
 bool _private::assetInitialize()
 {
@@ -179,17 +214,6 @@ void _private::assetRelease()
     }
 }
 
-static uint32 assetMakeHash(const AssetLoadParams& params, uint32 extraParamsSize, const void* extraParams)
-{
-    HashMurmur32Incremental hasher(ASSET_HASH_SEED);
-    
-    return hasher.Add<char>(params.path, strLen(params.path))
-                 .Add<uint32>(&params.tags)
-                 .Add<Allocator>(params.alloc)
-                 .AddAny(extraParams, extraParamsSize)
-                 .Hash();
-}
-
 static AssetHandle assetCreateNew(uint32 typeMgrIdx, uint32 assetHash, const AssetLoadParams& params, const void* extraParams)
 {
     const AssetTypeManager& typeMgr = gAssetMgr.typeManagers[typeMgrIdx];
@@ -240,7 +264,8 @@ static AssetHandle assetCreateNew(uint32 typeMgrIdx, uint32 assetHash, const Ass
     return handle;
 }
 
-static AssetResult assetLoadObjLocal(AssetHandle handle, AssetLoaderCallbacks* callbacks, const char* filepath, const AssetLoadParams& loadParams)
+static AssetResult assetLoadObjLocal(AssetHandle handle, AssetLoaderCallbacks* callbacks, const char* filepath, 
+                                     const AssetLoadParams& loadParams)
 {
     { MutexScope mtx(gAssetMgr.assetsMtx);
         Asset& asset = gAssetMgr.assets.Data(handle);
@@ -323,16 +348,8 @@ bool assetLoadMetaData(const char* filepath, AssetPlatform platform, Allocator* 
 
     Blob blob = vfsReadFile(assetMetaPath.CStr(), VfsFlags::TextFile, &tmpAlloc);
     if (blob.IsValid()) {
-        uint32 numTokens = jsonGetTokenCount((const char*)blob.Data(), static_cast<uint32>(blob.Size()));
-        JsonContext* jctx = nullptr;
-        if (numTokens) {
-            size_t jsonSize = jsonGetMemoryRequirement(numTokens);
-
-            jctx = jsonParse((const char*)blob.Data(), static_cast<uint32>(blob.Size()), numTokens, 
-                             tmpAlloc.Malloc(jsonSize), jsonSize);
-        }
-        
-        if (jctx && !jsonParseHasError(jctx)) {
+        JsonContext jctx;
+        if (jsonParse(&jctx, (const char*)blob.Data(), uint32(blob.Size()), &tmpAlloc)) {
             JsonNode jroot(jctx);
             StaticArray<AssetMetaKeyValue, 64> keys;
 
@@ -349,7 +366,7 @@ bool assetLoadMetaData(const char* filepath, AssetPlatform platform, Allocator* 
                 collectKeyValues(jplatform, &keys);
 
             blob.Free();
-            jsonDestroy(jctx);
+            jsonDestroy(&jctx);
             memTempPopId(tempId);
             
             // At this point we have popped the current temp allocator and can safely allocate from whatever allocator is coming in
@@ -359,9 +376,8 @@ bool assetLoadMetaData(const char* filepath, AssetPlatform platform, Allocator* 
         }
         
         blob.Free();
-        JsonErrorLocation loc = jsonParseGetErrorLocation(jctx); 
-        logWarning("Invalid asset meta data: %s (Json syntax error at %u:%u)", loc.line, loc.col);
-        jsonDestroy(jctx);
+        JsonErrorLocation loc = jsonParseGetErrorLocation(&jctx); 
+        logWarning("Invalid asset meta data: %s (Json syntax error at %u:%u)", assetMetaPath.CStr(), loc.line, loc.col);
         memTempPopId(tempId);
         return false;
     }
@@ -402,6 +418,7 @@ const char* assetGetMetaValue(const AssetMetaKeyValue* data, uint32 count, const
 
 INLINE uint32 assetMakeCacheHash(const AssetTypeManager& typeMgr, const AssetLoadParams& params)
 {
+    // TODO: We should also hash meta data
     HashMurmur32Incremental hasher(ASSET_HASH_SEED);
     return hasher.Add<char>(params.path, strLen(params.path))
                  .AddAny(params.next.Get(), typeMgr.extraParamTypeSize)
@@ -589,7 +606,13 @@ AssetHandle assetLoad(const AssetLoadParams& params, const void* extraParams)
     }
 
     // check if asset is already loaded
-    uint32 assetHash = assetMakeHash(params, typeMgr.extraParamTypeSize, extraParams);
+    HashMurmur32Incremental hasher(ASSET_HASH_SEED);    
+    uint32 assetHash = hasher.Add<char>(params.path, strLen(params.path))
+                             .Add<uint32>(&params.tags)
+                             .Add<Allocator>(params.alloc)
+                             .AddAny(extraParams, typeMgr.extraParamTypeSize)
+                             .Hash();
+
     AssetHandle handle = gAssetMgr.assetLookup.FindAndFetch(assetHash, AssetHandle());
     if (handle.IsValid()) {
         MutexScope mtx(gAssetMgr.assetsMtx);

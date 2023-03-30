@@ -241,6 +241,8 @@ bool engineInitialize()
 
 void engineRelease()
 {
+    assetSaveCacheLookup();
+
     const SettingsGraphics& gfxSettings = settingsGetGraphics();
     logInfo("Releasing engine sub systems ...");
     gEng.initialized = false;

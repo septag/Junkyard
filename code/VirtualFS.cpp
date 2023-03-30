@@ -175,12 +175,7 @@ static size_t vfsDiskWriteFile(const char* path, VfsFlags flags, const Blob& blo
     {
         File f;
         if (f.Open(path, FileIOFlags::Write)) {
-
-            if ((flags & VfsFlags::TextFile) == VfsFlags::TextFile)
-                const_cast<Blob&>(blob).Write<char>('\0');
-
             size_t bytesWritten = f.Write(blob.Data(), blob.Size());
-
             f.Close();
             return bytesWritten;
         }
@@ -545,6 +540,7 @@ void vfsWriteFileAsync(const char* path, const Blob& blob, VfsFlags flags, VfsWr
         VfsLocalDiskManager* diskMgr = &gVfs.diskMgr;
         MutexScope mtx(diskMgr->requestsMtx);
         req.blob.SetAllocator(gVfs.alloc);
+
         blob.CopyTo(&req.blob);
         diskMgr->requests.Push(req);
         diskMgr->semaphore.Post();
