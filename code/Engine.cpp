@@ -333,6 +333,8 @@ void engineEndFrame(float dt)
         assetCollectGarbage();
     }
 
+    _private::assetUpdateCache(dt);
+
     _private::memTempReset(dt);
     _private::memFrameReset();
 

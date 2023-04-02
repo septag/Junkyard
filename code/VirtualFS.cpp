@@ -919,7 +919,9 @@ bool vfsStripMountPath(char* outPath, uint32 outPathSize, const char* path)
 {
     uint32 index = vfsFindMount(path);
     if (index != UINT32_MAX) {
-        const char* stripped = path + gVfs.mounts[index].path.Length();
+        if (path[0] == '/')
+            ++path;
+        const char* stripped = path + gVfs.mounts[index].alias.Length();
         strCopy(outPath, outPathSize, stripped);
         return true;
     }

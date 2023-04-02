@@ -91,6 +91,7 @@ struct AssetResult
     uint32 numDepends;
     uint32 dependsBufferSize;   // Only used in assetLoadObjRemote where we need to copy the whole depends buffer 
     uint32 objBufferSize;
+    bool loadedFromCache;
 };
 
 using AssetLoaderAsyncCallback = void(*)(AssetHandle handle, const AssetResult& result, void* userData);
@@ -135,7 +136,7 @@ API bool assetWait(AssetBarrier barrier, uint32 msecs = UINT32_MAX);
 API void assetCollectGarbage();
 
 API bool assetLoadMetaData(const char* filepath, AssetPlatform platform, Allocator* alloc,
-                           AssetMetaKeyValue** outData, uint32* outKeyCount);
+                           AssetMetaKeyValue** outData, uint32* outKeyCoun, uint32* outMetaHash = nullptr);
 API bool assetLoadMetaData(AssetHandle handle, Allocator* alloc, AssetMetaKeyValue** outData, uint32* outKeyCount);
 API const char* assetGetMetaValue(const AssetMetaKeyValue* data, uint32 count, const char* key);
 template <typename _T> _T assetGetMetaValue(const AssetMetaKeyValue* data, uint32 count, const char* key, _T defaultValue);
@@ -171,6 +172,7 @@ namespace _private
 
     void* assetGetDataUnsafe(AssetHandle handle);
 
+    void assetUpdateCache(float dt);
     void assetDetectAndReleaseLeaks();
 }
 

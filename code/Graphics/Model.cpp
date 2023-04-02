@@ -895,6 +895,7 @@ AssetResult ModelLoader::Load(AssetHandle handle, const AssetLoadParams& params,
     char errorDesc[512];
     Pair<Model*, uint32> modelBuffer = modelLoadGltf(params.path, params.alloc, modelParams, errorDesc, sizeof(errorDesc));
     Model* model = modelBuffer.first;
+    uint32 modelBufferSize = modelBuffer.second;
     if (!model) {
         logError(errorDesc);
         return AssetResult {};
@@ -919,11 +920,12 @@ AssetResult ModelLoader::Load(AssetHandle handle, const AssetLoadParams& params,
             .obj = model,  
             .depends = memAllocCopyRawBytes<AssetDependency>(depends.first, dependsBufferSize, dependsAlloc),
             .numDepends = depends.second,
-            .dependsBufferSize = dependsBufferSize
+            .dependsBufferSize = dependsBufferSize,
+            .objBufferSize = modelBufferSize                
         };
     }
     else {
-        return AssetResult { model };
+        return AssetResult { .obj = model, .objBufferSize = modelBufferSize };
     }
 }
 
