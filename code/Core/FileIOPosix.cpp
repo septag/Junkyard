@@ -23,7 +23,8 @@ struct FilePosix
 {
     int         id;
     FileIOFlags flags;
-    size_t     size;    
+    uint64      size;  
+    uint64      lastModifiedTime;
 };
 
 bool fileOpen(FileData* file, const char* filepath, FileIOFlags flags)
@@ -76,7 +77,8 @@ bool fileOpen(FileData* file, const char* filepath, FileIOFlags flags)
 
     f->id = fileId;
     f->flags = flags;
-    f->size = static_cast<size_t>(_stat.st_size);
+    f->size = static_cast<uint64>(_stat.st_size);
+    f->lastModifiedTime = static_cast<uint64>(_stat.st_mtime);
     return true;
 }
 
@@ -138,12 +140,20 @@ size_t fileSeek(FileData* file, size_t offset, FileIOSeekMode mode)
     return static_cast<size_t>(lseek(f->id, static_cast<off_t>(offset), _whence));
 }
 
-size_t fileGetSize(FileData* file)
+size_t fileGetSize(const FileData* file)
 {
     ASSERT(file);
 
     FilePosix* f = (FilePosix*)file;
     return f->size;
+}
+
+uint64 fileGetLastModified(const FileData* file)
+{
+    ASSERT(file);
+
+    FilePosix* f = (FilePosix*)file;
+    return f->lastModifiedTime;
 }
 
 bool fileIsOpen(FileData* file)

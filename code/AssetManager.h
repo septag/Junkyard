@@ -136,13 +136,11 @@ API void assetCollectGarbage();
 
 API bool assetLoadMetaData(const char* filepath, AssetPlatform platform, Allocator* alloc,
                            AssetMetaKeyValue** outData, uint32* outKeyCount);
-API bool assetLoadMetaData(AssetHandle handle, Allocator* alloc,
-                           AssetMetaKeyValue** outData, uint32* outKeyCount);
+API bool assetLoadMetaData(AssetHandle handle, Allocator* alloc, AssetMetaKeyValue** outData, uint32* outKeyCount);
 API const char* assetGetMetaValue(const AssetMetaKeyValue* data, uint32 count, const char* key);
 template <typename _T> _T assetGetMetaValue(const AssetMetaKeyValue* data, uint32 count, const char* key, _T defaultValue);
 
 API void assetGetBudgetStats(AssetBudgetStats* stats);
-API void assetSaveCacheLookup();
 
 // Scope RAII classes are only recommended for use within a single function scope only
 struct AssetBarrierScope

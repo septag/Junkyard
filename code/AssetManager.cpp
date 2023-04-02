@@ -14,9 +14,6 @@
 
 #define ASSET_HASH_SEED 0x4354a
 
-// TODO: implement dependencies for each asset
-//       Basically make models work gracefully 
-
 namespace _limits
 {
     static constexpr uint32 kAssetMaxTypes = 8;
@@ -92,7 +89,7 @@ static AssetManager gAssetMgr;
 
 static void assetFileChanged(const char* filepath);
 
-void assetSaveCacheLookup()
+static void assetSaveCacheLookup()
 {
     MemTempAllocator tempAlloc;
 
@@ -420,6 +417,7 @@ INLINE uint32 assetMakeCacheHash(const AssetTypeManager& typeMgr, const AssetLoa
 {
     // TODO: We should also hash meta data
     HashMurmur32Incremental hasher(ASSET_HASH_SEED);
+
     return hasher.Add<char>(params.path, strLen(params.path))
                  .AddAny(params.next.Get(), typeMgr.extraParamTypeSize)
                  .Hash();

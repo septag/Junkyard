@@ -26,7 +26,7 @@ enum class FileIOSeekMode
 
 struct alignas(16) FileData 
 {
-    uint8 data[32];
+    uint8 data[64];
 };
 
 API bool fileOpen(FileData* file, const char* filepath, FileIOFlags flags);
@@ -37,7 +37,8 @@ API bool fileIsOpen(FileData* file);
 API size_t fileRead(FileData* file, void* dst, size_t size);
 API size_t fileWrite(FileData* file, const void* src, size_t size);
 API size_t fileSeek(FileData* file, size_t offset, FileIOSeekMode mode);
-API size_t fileGetSize(FileData* file);
+API size_t fileGetSize(const FileData* file);
+API uint64 fileGetLastModified(const FileData* file);
 
 struct File
 {
@@ -54,7 +55,8 @@ struct File
     template <typename _T> uint32 Read(_T* dst, uint32 count);
     template <typename _T> uint32 Write(_T* dst, uint32 count);
 
-    inline size_t GetSize();
+    inline size_t GetSize() const;
+    inline uint64 GetLastModified() const;
     inline bool IsOpen();
 
 private:
@@ -97,9 +99,14 @@ inline size_t File::Seek(size_t offset, FileIOSeekMode mode)
     return fileSeek(&_data, offset, mode);
 }
 
-inline size_t File::GetSize()
+inline size_t File::GetSize() const
 {
     return fileGetSize(&_data);
+}
+
+inline uint64 File::GetLastModified() const
+{
+    return fileGetLastModified(&_data);
 }
 
 inline bool File::IsOpen()

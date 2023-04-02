@@ -8,7 +8,8 @@ struct FileWin
 {
     HANDLE      handle;
     FileIOFlags flags;
-    size_t      size;
+    uint64      size;
+    uint64      lastModifiedTime;
 };
 
 bool fileOpen(FileData* file, const char* filepath, FileIOFlags flags)
@@ -46,14 +47,12 @@ bool fileOpen(FileData* file, const char* filepath, FileIOFlags flags)
 
     f->handle = hfile;
     f->flags = flags;
-    if ((flags & (FileIOFlags::Read|FileIOFlags::Append)) != FileIOFlags::None) {
-        LARGE_INTEGER llsize;
-        GetFileSizeEx(hfile, &llsize);
-        f->size = (int64)llsize.QuadPart;
-    } 
-    else {
-        f->size = 0;
-    }
+
+    BY_HANDLE_FILE_INFORMATION fileInfo {};
+    GetFileInformationByHandle(hfile, &fileInfo);
+    f->size = (flags & (FileIOFlags::Read|FileIOFlags::Append)) != FileIOFlags::None ? 
+              (uint64(fileInfo.nFileSizeHigh)<<32 | uint64(fileInfo.nFileSizeLow)) : 0;
+    f->lastModifiedTime = uint64(fileInfo.ftLastAccessTime.dwHighDateTime)<<32 | uint64(fileInfo.ftLastAccessTime.dwLowDateTime);
 
     return true;
 }
@@ -135,12 +134,20 @@ size_t fileSeek(FileData* file, size_t offset, FileIOSeekMode mode)
     return SIZE_MAX;
 }
 
-size_t fileGetSize(FileData* file)
+size_t fileGetSize(const FileData* file)
 {
     ASSERT(file);
 
     FileWin* f = (FileWin*)file;
-    return f->size;    
+    return static_cast<size_t>(f->size);    
+}
+
+uint64 fileGetLastModified(const FileData* file)
+{
+    ASSERT(file);
+
+    FileWin* f = (FileWin*)file;
+    return f->lastModifiedTime;
 }
 
 bool fileIsOpen(FileData* file)
