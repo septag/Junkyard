@@ -45,7 +45,7 @@ struct ModelLoadRequest
 struct ModelLoader final : AssetLoaderCallbacks 
 {
     AssetResult Load(AssetHandle handle, const AssetLoadParams& params, Allocator* dependsAlloc) override;
-    void LoadRemote(AssetHandle handle, const AssetLoadParams& params, void* userData, AssetLoaderAsyncCallback loadCallback) override;
+    void LoadRemote(AssetHandle handle, const AssetLoadParams& params, uint32 cacheHash, void* userData, AssetLoaderAsyncCallback loadCallback) override;
     bool InitializeResources(void* obj, const AssetLoadParams& params) override;
     void Release(void* data, Allocator* alloc) override;
     bool ReloadSync(AssetHandle handle, void* prevData) override;
@@ -1061,11 +1061,13 @@ static void modelHandlerClientFn([[maybe_unused]] uint32 cmd, const Blob& incomi
     }
 }
 
-void ModelLoader::LoadRemote(AssetHandle handle, const AssetLoadParams& params, void* userData, AssetLoaderAsyncCallback loadCallback)
+void ModelLoader::LoadRemote(AssetHandle handle, const AssetLoadParams& params, uint32 cacheHash, void* userData, 
+                             AssetLoaderAsyncCallback loadCallback)
 {
     ASSERT(params.next);
     ASSERT(loadCallback);
     ASSERT(remoteIsConnected());
+    UNUSED(cacheHash);
 
     const ModelLoadParams* modelParams = reinterpret_cast<ModelLoadParams*>(params.next.Get());
 

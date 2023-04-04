@@ -91,7 +91,8 @@ struct AssetResult
     uint32 numDepends;
     uint32 dependsBufferSize;   // Only used in assetLoadObjRemote where we need to copy the whole depends buffer 
     uint32 objBufferSize;
-    bool loadedFromCache;
+    uint32 cacheHash;
+    bool isFromCache;
 };
 
 using AssetLoaderAsyncCallback = void(*)(AssetHandle handle, const AssetResult& result, void* userData);
@@ -101,7 +102,8 @@ using AssetLoaderAsyncCallback = void(*)(AssetHandle handle, const AssetResult& 
 struct NO_VTABLE AssetLoaderCallbacks 
 {
     virtual AssetResult Load(AssetHandle handle, const AssetLoadParams& params, Allocator* dependsAlloc) = 0;
-    virtual void LoadRemote(AssetHandle handle, const AssetLoadParams& params, void* userData, AssetLoaderAsyncCallback loadCallback) = 0;
+    virtual void LoadRemote(AssetHandle handle, const AssetLoadParams& params, uint32 cacheHash, 
+                            void* userData, AssetLoaderAsyncCallback loadCallback) = 0;
     virtual bool InitializeResources(void* obj, const AssetLoadParams& params) = 0;
     virtual void Release(void* obj, Allocator* alloc) = 0;
 

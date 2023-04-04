@@ -72,7 +72,7 @@ struct GfxImageLoadRequest
 struct GfxImageLoader final : AssetLoaderCallbacks
 {
     AssetResult Load(AssetHandle handle, const AssetLoadParams& params, Allocator* dependsAlloc) override;
-    void LoadRemote(AssetHandle handle, const AssetLoadParams& params, void* userData, AssetLoaderAsyncCallback loadCallback) override;
+    void LoadRemote(AssetHandle handle, const AssetLoadParams& params, uint32 cacheHash, void* userData, AssetLoaderAsyncCallback loadCallback) override;
     bool InitializeResources(void* obj, const AssetLoadParams& params) override;
     bool ReloadSync(AssetHandle handle, void* prevData) override;
     void Release(void* data, Allocator*) override;
@@ -550,11 +550,13 @@ AssetResult GfxImageLoader::Load(AssetHandle handle, const AssetLoadParams& para
     return AssetResult { .obj = img.first, .objBufferSize = img.second };
 }
 
-void GfxImageLoader::LoadRemote(AssetHandle handle, const AssetLoadParams& params, void* userData, AssetLoaderAsyncCallback loadCallback)
+void GfxImageLoader::LoadRemote(AssetHandle handle, const AssetLoadParams& params, uint32 cacheHash, void* userData, 
+                                AssetLoaderAsyncCallback loadCallback)
 {
     ASSERT(params.next);
     ASSERT(loadCallback);
     ASSERT(remoteIsConnected());
+    UNUSED(cacheHash);
 
     const ImageLoadParams* textureParams = reinterpret_cast<ImageLoadParams*>(params.next.Get());
 

@@ -110,8 +110,11 @@ static AssetResult assetLoadFromCache(const AssetTypeManager& typeMgr, const Ass
     MemTempAllocator tempAlloc;
     Blob cache = vfsReadFile(cachePath.CStr(), VfsFlags::None, &tempAlloc);
 
+    AssetResult result {
+        .cacheHash = cacheHash
+    };
+
     if (cache.IsValid()) {
-        AssetResult result {};
 
         // TODO: add file versioning and whatnot 
         cache.Read<uint32>(&result.numDepends);
@@ -127,24 +130,20 @@ static AssetResult assetLoadFromCache(const AssetTypeManager& typeMgr, const Ass
         result.obj = memAlloc(result.objBufferSize, params.alloc);
         cache.Read(result.obj, result.objBufferSize);
 
-
-
         return result;
     } 
     else {
-        return AssetResult {};
+        return result;
     }
 }
 
-static void assetSaveToCache(const AssetTypeManager& typeMgr, const AssetLoadParams& params, const AssetResult& result, uint32 cacheHash)
+static void assetSaveToCache(const AssetTypeManager& typeMgr, const AssetLoadParams& params, const AssetResult& result)
 {
-    ASSERT(cacheHash);
-
     Path strippedPath;
     vfsStripMountPath(strippedPath.Ptr(), sizeof(strippedPath), params.path);
 
     char hashStr[64];
-    strPrintFmt(hashStr, sizeof(hashStr), "_%x", cacheHash);
+    strPrintFmt(hashStr, sizeof(hashStr), "_%x", result.cacheHash);
 
     Path cachePath("/cache");
     cachePath.Append(strippedPath.GetDirectory())
@@ -379,8 +378,7 @@ static AssetHandle assetCreateNew(uint32 typeMgrIdx, uint32 assetHash, const Ass
     return handle;
 }
 
-static AssetResult assetLoadObjLocal(AssetHandle handle, const AssetTypeManager& typeMgr, const char* filepath, 
-                                     const AssetLoadParams& loadParams, uint32* outCacheHash)
+static AssetResult assetLoadObjLocal(AssetHandle handle, const AssetTypeManager& typeMgr, const char* filepath, const AssetLoadParams& loadParams)
 {
     HashMurmur32Incremental hasher(ASSET_HASH_SEED);
     hasher.Add<char>(loadParams.path, strLen(loadParams.path));
@@ -407,34 +405,49 @@ static AssetResult assetLoadObjLocal(AssetHandle handle, const AssetTypeManager&
     uint32 cacheHash = hasher.Hash();
     AssetResult result = assetLoadFromCache(typeMgr, loadParams, cacheHash);
 
-    *outCacheHash = cacheHash;
     if (!result.obj) {
         return typeMgr.callbacks->Load(handle, loadParams, &gAssetMgr.runtimeHeap);
     } 
     else {
-        result.loadedFromCache = true;
+        result.isFromCache = true;
         return result;
     }
 }
 
-static AssetResult assetLoadObjRemote(AssetHandle handle, AssetLoaderCallbacks* callbacks, const AssetLoadParams& loadParams)
+static AssetResult assetLoadObjRemote(AssetHandle handle, const AssetTypeManager& typeMgr, const AssetLoadParams& loadParams)
 {
     Signal waitSignal;      // Used to serialize the async code
     waitSignal.Initialize();
+
+    // TODO: fetch his cacheHash from database
+    uint32 cacheHash = 0;
     
     struct AsyncLoadData
     {
         AssetResult result;
         Signal* signal;
+        const AssetTypeManager* typeMgr;
+        const AssetLoadParams* loadParams;
+
     };
 
     AsyncLoadData asyncLoadData {
-        .signal = &waitSignal
+        .signal = &waitSignal,
+        .typeMgr = &typeMgr,
+        .loadParams = &loadParams
     };
 
-    callbacks->LoadRemote(handle, loadParams, &asyncLoadData, [](AssetHandle, const AssetResult& result, void* userData) {
+    typeMgr.callbacks->LoadRemote(handle, loadParams, cacheHash, &asyncLoadData, [](AssetHandle, const AssetResult& result, void* userData) {
         AsyncLoadData* data = reinterpret_cast<AsyncLoadData*>(userData);
-        data->result.obj = result.obj;
+
+        if (result.isFromCache) {
+            data->result = assetLoadFromCache(*data->typeMgr, *data->loadParams, result.cacheHash);
+        }
+        else {
+            data->result = result;
+        }
+
+        // We need to copy the dependencies over again in order to bring them over to persistent memory
         if (result.numDepends) {
             ASSERT(result.depends);
             ASSERT(result.dependsBufferSize);   // Only remote loads should implement this
@@ -571,12 +584,11 @@ static void assetLoadTask(uint32 groupIndex, void* userData)
     gAssetMgr.assetsMtx.Exit();
 
     AssetResult result;
-    uint32 cacheHash = 0;
 
     if (method == AssetLoadMethod::Local) 
-        result = assetLoadObjLocal(handle, typeMgr, filepath, loadParams, &cacheHash);
+        result = assetLoadObjLocal(handle, typeMgr, filepath, loadParams);
     else if (method == AssetLoadMethod::Remote)
-        result = assetLoadObjRemote(handle, typeMgr.callbacks, loadParams);
+        result = assetLoadObjRemote(handle, typeMgr, loadParams);
     else {
         ASSERT(0);
         result = AssetResult {};
@@ -600,12 +612,12 @@ static void assetLoadTask(uint32 groupIndex, void* userData)
         asset.state = AssetState::Alive;
         asset.obj = result.obj;
         asset.objBufferSize = result.objBufferSize;
-        logVerbose("(load) %s: %s (%.1f ms)%s", typeMgr.name.CStr(), filepath, timer.ElapsedMS(), result.loadedFromCache ? " [cached]" : "");
+        logVerbose("(load) %s: %s (%.1f ms)%s", typeMgr.name.CStr(), filepath, timer.ElapsedMS(), result.isFromCache ? " [cached]" : "");
 
-        if (!result.loadedFromCache) {
+        if (!result.isFromCache) {
             gAssetMgr.cacheSyncInvalidated = true;
             gAssetMgr.cacheSyncDelayTm = 0;
-            assetSaveToCache(typeMgr, loadParams, result, cacheHash);
+            assetSaveToCache(typeMgr, loadParams, result);
         }
     }
     else {
