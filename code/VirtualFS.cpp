@@ -171,7 +171,7 @@ static size_t vfsDiskWriteFile(const char* path, VfsFlags flags, const Blob& blo
 {
     PROFILE_ZONE_WITH_TEXT(path, strLen(path), true);
 
-    auto SaveToDisk = [](const char* path, VfsFlags flags, const Blob& blob)->size_t 
+    auto SaveToDisk = [](const char* path, VfsFlags, const Blob& blob)->size_t 
     {
         File f;
         if (f.Open(path, FileIOFlags::Write)) {

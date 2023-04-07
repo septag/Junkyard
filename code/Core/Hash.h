@@ -118,6 +118,7 @@ struct HashTable
     void Clear();
 
     const _T& Get(uint32 index) const;
+    void Set(uint32 index, const _T& value);
     _T& GetMutable(uint32 index);
     void Remove(uint32 index);
 
@@ -288,6 +289,12 @@ template <typename _T>
 inline const _T& HashTable<_T>::Get(uint32 index) const
 {
     return reinterpret_cast<_T*>(_ht->values)[index];
+}
+
+template <typename _T>
+inline void HashTable<_T>::Set(uint32 index, const _T& value)
+{
+    reinterpret_cast<_T*>(_ht->values)[index] = value;
 }
 
 template <typename _T>

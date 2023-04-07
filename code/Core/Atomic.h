@@ -147,9 +147,9 @@ FORCE_INLINE uint64 atomicCycleClock()
 #elif PLATFORM_WINDOWS
     return __rdtsc();
 #elif CPU_ARM && ARCH_64BIT
-    uint64 virtual_timer_value;
-    asm volatile("mrs %0, cntvct_el0" : "=r"(virtual_timer_value));
-    return virtual_timer_value;
+    uint64 vtm;
+    asm volatile("mrs %0, cntvct_el0" : "=r"(vtm));
+    return vtm;
 #elif CPU_ARM
 #   if (__ARM_ARCH >= 6)
     uint32 pmccntr;

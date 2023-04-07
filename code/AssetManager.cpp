@@ -73,11 +73,14 @@ struct AssetManager
     Array<AssetTypeManager> typeManagers;
     HandlePool<AssetHandle, Asset> assets;  // Holds all the active asset handles (can be 'failed', 'loading' or 'alive')
     HandlePool<AssetBarrier, Signal> barriers;
-    HashTable<AssetHandle> assetLookup;     // key: hash of path+params. 
+    HashTable<AssetHandle> assetLookup;     // key: hash of the asset (path+params)
                                             // This HashTable is used for looking up already loaded assets 
     
     Array<AssetGarbage> garbage;
     Mutex assetsMtx;                        // Mutex used for 'assets' HandlePool (see above)
+
+    Mutex hashLookupMtx;
+    HashTable<uint32> hashLookup;           // Key: hash of the asset(path+params), value: cache hash
 
     size_t initHeapStart;
     size_t initHeapSize;
@@ -137,7 +140,7 @@ static AssetResult assetLoadFromCache(const AssetTypeManager& typeMgr, const Ass
     }
 }
 
-static void assetSaveToCache(const AssetTypeManager& typeMgr, const AssetLoadParams& params, const AssetResult& result)
+static void assetSaveToCache(const AssetTypeManager& typeMgr, const AssetLoadParams& params, const AssetResult& result, uint32 assetHash)
 {
     Path strippedPath;
     vfsStripMountPath(strippedPath.Ptr(), sizeof(strippedPath), params.path);
@@ -164,83 +167,95 @@ static void assetSaveToCache(const AssetTypeManager& typeMgr, const AssetLoadPar
         cache.Write(result.depends, result.dependsBufferSize);
     ASSERT(result.objBufferSize);
     cache.Write(result.obj, result.objBufferSize);
+
+    uint64 userData = (uint64(assetHash) << 32) | result.cacheHash;
     
     vfsWriteFileAsync(cachePath.CStr(), cache, VfsFlags::CreateDirs, 
-                      [](const char* path, size_t, const Blob&, void*) {
+                      [](const char* path, size_t, const Blob&, void* user) {
                          logVerbose("(save) AssetCache: %s", path);
-                      }, nullptr);
+                         
+                         uint64 userData = PtrToInt<uint64>(user);
+                         uint32 hash = uint32((userData >> 32)&0xffffffff);
+                         uint32 cacheHash = uint32(userData&0xffffffff);
+                         MutexScope mtx(gAssetMgr.hashLookupMtx);
+                         if (uint32 index = gAssetMgr.hashLookup.Find(hash); index != UINT32_MAX) 
+                             gAssetMgr.hashLookup.Set(index, cacheHash);
+                         else
+                             gAssetMgr.hashLookup.Add(hash, cacheHash);
+                         
+                      }, IntToPtr(userData));
 }
 
-
-static void assetSyncCacheLookup()
+static void assetLoadCacheHashDatabase()
 {
     MemTempAllocator tempAlloc;
 
-    Array<AssetHandle> newCacheAssets;
+    Blob blob = vfsReadFile("/cache/database.json5", VfsFlags::TextFile, &tempAlloc);
+    if (blob.IsValid()) {
+        JsonContext jctx;
+        char* json;
+        size_t jsonSize;
 
-    // Load the cache and populate our lookup database
-    {
-        Blob blob = vfsReadFile("/cache/lookup.json5", VfsFlags::TextFile, &tempAlloc);
-        if (blob.IsValid()) {
-            JsonContext jctx;
-            char* json;
-            size_t jsonSize;
+        blob.Detach((void**)&json, &jsonSize);
+        if (jsonParse(&jctx, json, uint32(jsonSize), &tempAlloc)) {
+            JsonNode jroot(jctx);
 
-            blob.Detach((void**)&json, &jsonSize);
-            if (jsonParse(&jctx, json, uint32(jsonSize), &tempAlloc)) {
-                JsonNode jroot(jctx);
-                JsonNode jitem = jroot.GetArrayItem();
-                while (jitem.IsValid()) {
-                    uint32 hash = jitem.GetChildValue<uint32>("hash", 0);
-                    uint32 cacheHash = jitem.GetChildValue<uint32>("cacheHash", 0);
+            MutexScope mtx(gAssetMgr.hashLookupMtx);
+            JsonNode jitem = jroot.GetArrayItem();
+            while (jitem.IsValid()) {
+                uint32 hash = jitem.GetChildValue<uint32>("hash", 0);
+                uint32 cacheHash = jitem.GetChildValue<uint32>("cacheHash", 0);
 
-                    AssetHandle handle = gAssetMgr.assetLookup.FindAndFetch(hash, AssetHandle());
-                    if (handle.IsValid()) {
-                        Asset& asset = gAssetMgr.assets.Data(handle);
-                        if (asset.cacheHash != cacheHash) 
-                            newCacheAssets.Push(handle);
-                    }
-                    
-                    jitem = jroot.GetNextArrayItem(jitem);
-                }
-                jsonDestroy(&jctx);
+                if (uint32 index = gAssetMgr.hashLookup.Find(hash); index != UINT32_MAX)
+                    gAssetMgr.hashLookup.Set(index, cacheHash);
+                else
+                    gAssetMgr.hashLookup.Add(hash, cacheHash);
+                
+                jitem = jroot.GetNextArrayItem(jitem);
             }
-        } 
+            jsonDestroy(&jctx);
+        }
+    } 
+}
 
-    }
+static void assetSaveCacheHashDatabase()
+{
+    MemTempAllocator tempAlloc;
 
-
-    // Only add the items that we don't have in cache database
-
+    Blob blob(&tempAlloc);
+    blob.SetGrowPolicy(Blob::GrowPolicy::Linear, 32*kKB);
+    char line[1024];
     
+    blob.Write("[\n", 2);
 
-    // Save it if we added any stuff
-    {
-        Blob blob(&tempAlloc);
-        blob.SetGrowPolicy(Blob::GrowPolicy::Linear, 32*kKB);
-        char line[1024];
-    
-        blob.Write("[\n", 2);
-        for (Asset& asset : gAssetMgr.assets) {
+    MutexScope mtx(gAssetMgr.hashLookupMtx);
+    const uint32* keys = gAssetMgr.hashLookup.Keys();
+    const uint32* values = gAssetMgr.hashLookup.Values();
+
+    for (uint32 i = 0; i < gAssetMgr.hashLookup.Capacity(); i++) {
+        if (keys[i]) {
             strPrintFmt(line, sizeof(line), 
                         "\t{\n"
-                        "\t\tfilepath: \"%s\",\n"
                         "\t\thash: 0x%x\n"
-                        "\t},\n",
-                        asset.params->path,
-                        asset.cacheHash);
+                        "\t\tcacheHash: 0x%x\n"
+                        "\t},\n", 
+                        keys[i], values[i]);
             blob.Write(line, strLen(line));
         }
-        blob.Write("]\n", 2);
-    
-        vfsWriteFile("/cache/lookup.json5", blob, VfsFlags::TextFile);
     }
+    blob.Write("]\n", 2);
+    
+    vfsWriteFileAsync("/cache/lookup.json5", blob, VfsFlags::TextFile, 
+                      [](const char* path, size_t, const Blob&, void*) { logVerbose("Asset cache database saved to: %s", path); }, nullptr);
+
 }
+
 
 bool _private::assetInitialize()
 {
     gAssetMgr.initialized = true;
     gAssetMgr.assetsMtx.Initialize();
+    gAssetMgr.hashLookupMtx.Initialize();
 
     MemBudgetAllocator* initHeap = engineGetInitHeap();
     gAssetMgr.initHeapStart = initHeap->GetOffset();
@@ -271,6 +286,11 @@ bool _private::assetInitialize()
     }
 
     {
+        size_t tableSize = HashTable<uint32>::GetMemoryRequirement(_limits::kAssetMaxAssets);
+        gAssetMgr.hashLookup.Reserve(_limits::kAssetMaxAssets, memAlloc(tableSize, initHeap), tableSize);
+    }
+
+    {
         size_t bufferSize = MemTlsfAllocator::GetMemoryRequirement(_limits::kAssetRuntimeSize);
         gAssetMgr.runtimeHeap.Initialize(_limits::kAssetRuntimeSize, memAlloc(bufferSize, initHeap), bufferSize,
                                          settingsGetEngine().debugAllocations);
@@ -286,6 +306,8 @@ bool _private::assetInitialize()
             pathCreateDir(".cache");
         vfsMountLocal(".cache", "cache", false);
     }
+
+    assetLoadCacheHashDatabase();
 
     return true;
 }
@@ -321,6 +343,7 @@ void _private::assetRelease()
         assetCollectGarbage();
         ASSERT(gAssetMgr.assets.Count() == 0);
 
+        gAssetMgr.hashLookupMtx.Release();
         gAssetMgr.assetsMtx.Release();
         gAssetMgr.runtimeHeap.Release();
 
@@ -403,14 +426,16 @@ static AssetResult assetLoadObjLocal(AssetHandle handle, const AssetTypeManager&
     uint64 lastModified = vfsGetLastModified(loadParams.path);
     hasher.Add<uint64>(&lastModified);
     uint32 cacheHash = hasher.Hash();
-    AssetResult result = assetLoadFromCache(typeMgr, loadParams, cacheHash);
+    AssetResult cacheResult = assetLoadFromCache(typeMgr, loadParams, cacheHash);
 
-    if (!result.obj) {
-        return typeMgr.callbacks->Load(handle, loadParams, &gAssetMgr.runtimeHeap);
+    if (!cacheResult.obj) {
+        AssetResult result = typeMgr.callbacks->Load(handle, loadParams, &gAssetMgr.runtimeHeap);
+        result.cacheHash = cacheResult.cacheHash;
+        return result;
     } 
     else {
-        result.isFromCache = true;
-        return result;
+        cacheResult.isFromCache = true;
+        return cacheResult;
     }
 }
 
@@ -617,7 +642,7 @@ static void assetLoadTask(uint32 groupIndex, void* userData)
         if (!result.isFromCache) {
             gAssetMgr.cacheSyncInvalidated = true;
             gAssetMgr.cacheSyncDelayTm = 0;
-            assetSaveToCache(typeMgr, loadParams, result);
+            assetSaveToCache(typeMgr, loadParams, result, asset.hash);
         }
     }
     else {
@@ -927,8 +952,9 @@ void _private::assetUpdateCache(float dt)
         if (gAssetMgr.cacheSyncDelayTm >= kAssetCacheSaveDelay)  {
             gAssetMgr.cacheSyncDelayTm = 0;
             gAssetMgr.cacheSyncInvalidated = false;
-            // jobsDispatchAuto(JobsType::LongTask, [](uint32 groupIndex, void* userData) { assetSyncCacheLookup(); });
-            logDebug("SyncCache");
+            jobsDispatchAuto(JobsType::LongTask, [](uint32, void*) { assetSaveCacheHashDatabase(); });
+            // logDebug("SyncCache");
+            
         }            
     }
 }
