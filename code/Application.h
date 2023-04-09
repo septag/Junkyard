@@ -3,7 +3,8 @@
 #include "Core/Base.h"
 
 #if PLATFORM_ANDROID
-typedef struct AAssetManager AAssetManager; // from <android/asset_manager.h>
+typedef struct AAssetManager AAssetManager; // <android/asset_manager.h>
+typedef struct ANativeActivity ANativeActivity; // <android/native_activity.h>
 #endif
 
 inline constexpr uint32 kAppMaxTouchPoints = 8;
@@ -292,6 +293,7 @@ API AppKeyModifiers appGetKeyMods();
 #if PLATFORM_ANDROID
 API AAssetManager*  appAndroidGetAssetManager();
 API void appAndroidSetFramebufferTransform(AppFramebufferTransform transform);
+API ANativeActivity* appAndroidGetActivity();
 #endif 
 
 #if PLATFORM_WINDOWS

@@ -92,7 +92,6 @@ struct AssetResult
     uint32 dependsBufferSize;   // Only used in assetLoadObjRemote where we need to copy the whole depends buffer 
     uint32 objBufferSize;
     uint32 cacheHash;
-    bool isFromCache;
 };
 
 using AssetLoaderAsyncCallback = void(*)(AssetHandle handle, const AssetResult& result, void* userData);
@@ -101,14 +100,14 @@ using AssetLoaderAsyncCallback = void(*)(AssetHandle handle, const AssetResult& 
 // See assetRegister/assetUnregister functions
 struct NO_VTABLE AssetLoaderCallbacks 
 {
-    virtual AssetResult Load(AssetHandle handle, const AssetLoadParams& params, Allocator* dependsAlloc) = 0;
+    virtual AssetResult Load(AssetHandle handle, const AssetLoadParams& params, uint32 cacheHash, Allocator* dependsAlloc) = 0;
     virtual void LoadRemote(AssetHandle handle, const AssetLoadParams& params, uint32 cacheHash, 
                             void* userData, AssetLoaderAsyncCallback loadCallback) = 0;
     virtual bool InitializeResources(void* obj, const AssetLoadParams& params) = 0;
     virtual void Release(void* obj, Allocator* alloc) = 0;
 
     // Return true if the asset can be reloaded, otherwise returning 'false' indicates that the asset could not get reloaded and old one stays in memory
-    virtual bool  ReloadSync(AssetHandle handle, void* prevData) = 0;
+    virtual bool ReloadSync(AssetHandle handle, void* prevData) = 0;
 };
 
 struct AssetTypeDesc
@@ -120,6 +119,16 @@ struct AssetTypeDesc
     uint32 extraParamTypeSize;
     void* failedObj;
     void* asyncObj;
+};
+
+struct AssetCacheDesc
+{
+    const char* filepath;
+    const void* loadParams;
+    uint32 loadParamsSize;
+    const AssetMetaKeyValue* metaData;
+    uint32 numMeta;
+    uint64 lastModified;
 };
 
 API void assetRegister(const AssetTypeDesc& desc);
@@ -138,10 +147,12 @@ API bool assetWait(AssetBarrier barrier, uint32 msecs = UINT32_MAX);
 API void assetCollectGarbage();
 
 API bool assetLoadMetaData(const char* filepath, AssetPlatform platform, Allocator* alloc,
-                           AssetMetaKeyValue** outData, uint32* outKeyCoun, uint32* outMetaHash = nullptr);
+                           AssetMetaKeyValue** outData, uint32* outKeyCount);
 API bool assetLoadMetaData(AssetHandle handle, Allocator* alloc, AssetMetaKeyValue** outData, uint32* outKeyCount);
 API const char* assetGetMetaValue(const AssetMetaKeyValue* data, uint32 count, const char* key);
 template <typename _T> _T assetGetMetaValue(const AssetMetaKeyValue* data, uint32 count, const char* key, _T defaultValue);
+
+API uint32 assetMakeCacheHash(const AssetCacheDesc& desc);
 
 API void assetGetBudgetStats(AssetBudgetStats* stats);
 

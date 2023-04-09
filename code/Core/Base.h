@@ -625,6 +625,7 @@ struct RelativePtr
     _T* operator->() { ASSERT(_offset); return Get(); }
     const _T* operator->() const { ASSERT(_offset); return Get(); }
     RelativePtr<_T>& operator=(_T* ptr) { _offset = ptr ? uint32((uint8*)ptr - (uint8*)this) : 0; return *this; }
+    RelativePtr<_T>& operator=(const _T* ptr) { _offset = ptr ? uint32((uint8*)ptr - (uint8*)this) : 0; return *this; }
     _T& operator[](uint32 index) { ASSERT(_offset); return ((_T*)(((uint8*)&_offset) + _offset))[index]; }
     const _T& operator[](uint32 index) const { ASSERT(_offset); return ((_T*)(((uint8*)&_offset) + _offset))[index]; }
     bool IsNull() const { return _offset == 0; };

@@ -13,7 +13,6 @@ static inline constexpr uint32 kShaderMaxIncludeDirs = 2;
 
 struct Blob;
 
-#pragma pack(push, 8)
 struct ShaderDefine
 {
     String32 define;
@@ -88,7 +87,6 @@ struct Shader
     RelativePtr<ShaderParameterInfo> params;
     RelativePtr<ShaderVertexAttributeInfo> vertexAttributes;
 };
-#pragma pack(pop)
 
 API const ShaderStageInfo* shaderGetStage(const Shader& info, ShaderStage stage);
 API const ShaderParameterInfo* shaderGetParam(const Shader& info, const char* name);

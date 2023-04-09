@@ -25,6 +25,7 @@ struct AppImpl : AppCallbacks
 {
     GfxPipeline pipeline;
     GfxBuffer uniformBuffer;
+    GfxDescriptorSetLayout dsLayout;
 
     AssetHandleModel modelAsset;
     AssetHandleShader modelShaderAsset;
@@ -184,7 +185,7 @@ struct AppImpl : AppCallbacks
                         const ModelSubmesh& submesh = mesh.submeshes[smi];
 
                         GfxDescriptorSet dset(PtrToInt<uint32>(submesh.material->userData));
-                        gfxCmdBindDescriptorSets(1, &dset);
+                        gfxCmdBindDescriptorSets(pipeline, 1, &dset);
                         gfxCmdDrawIndexed(mesh.numIndices, 1, 0, 0, 0);
                     }
 
@@ -241,12 +242,6 @@ struct AppImpl : AppCallbacks
         // Graphics Objects
         const GfxDescriptorSetLayoutBinding bindingLayout[] = {
             {
-                .name = "ModelTransform",
-                .type = GfxDescriptorType::UniformBuffer,
-                .stages = GfxShaderStage::Vertex,
-                .pushConstantSize = sizeof(Mat4)
-            },
-            {
                 .name = "FrameTransform",
                 .type = GfxDescriptorType::UniformBuffer,
                 .stages = GfxShaderStage::Vertex
@@ -256,6 +251,12 @@ struct AppImpl : AppCallbacks
                 .type = GfxDescriptorType::CombinedImageSampler,
                 .stages = GfxShaderStage::Fragment
             }
+        };
+
+        GfxPushConstantDesc pushConstant = GfxPushConstantDesc {
+            .name = "ModelTransform",
+            .stages = GfxShaderStage::Vertex,
+            .range = { 0, sizeof(Mat4) }
         };
 
         GfxVertexBufferBindingDesc vertexBufferBindingDesc {
@@ -300,7 +301,6 @@ struct AppImpl : AppCallbacks
                 },
                 .vertexBufferUsage = GfxBufferUsage::Immutable,
                 .indexBufferUsage = GfxBufferUsage::Immutable,
-                .skipCreatingGpuResources = true
             };
 
             modelAsset = assetLoadModel("/data/models/Duck/Duck.gltf", loadParams, b.Barrier());
@@ -315,13 +315,17 @@ struct AppImpl : AppCallbacks
                                         .usage = GfxBufferUsage::Stream
         });
 
+        dsLayout = gfxCreateDescriptorSetLayout(*assetGetShader(modelShaderAsset), bindingLayout, CountOf(bindingLayout));
+
         Model* model = assetGetModel(modelAsset);
 
         pipeline = gfxCreatePipeline(GfxPipelineDesc {
             .shader = assetGetShader(modelShaderAsset),
             .inputAssemblyTopology = GfxPrimitiveTopology::TriangleList,
-            .numDescriptorSetBindings = CountOf(bindingLayout),
-            .descriptorSetBindings = bindingLayout,
+            .numDescriptorSetLayouts = 1,
+            .descriptorSetLayouts = &dsLayout,
+            .numPushConstants = 1,
+            .pushConstants = &pushConstant,
             .numVertexInputAttributes = CountOf(vertexInputAttDescs),
             .vertexInputAttributes = vertexInputAttDescs,
             .numVertexBufferBindings = 1,
@@ -340,7 +344,6 @@ struct AppImpl : AppCallbacks
             }
         });
 
-        // TODO: TEMP create descriptor sets and assign them to material userData for later rendering
         for (uint32 i = 0; i < model->numMeshes; i++) {
             ModelMesh& mesh = model->meshes[i];
             for (uint32 smi = 0; smi < mesh.numSubmeshes; smi++) {
@@ -350,7 +353,7 @@ struct AppImpl : AppCallbacks
                     assetGetImage(material->pbrMetallicRoughness.baseColorTex.texture) :
                     GfxImage();
 
-                GfxDescriptorSet dset = gfxCreateDescriptorSet(pipeline);
+                GfxDescriptorSet dset = gfxCreateDescriptorSet(dsLayout);
                 
                 GfxDescriptorBindingDesc descBindings[] = {
                     {

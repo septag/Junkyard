@@ -372,18 +372,17 @@ template <typename _T>
 inline const _T& HashTable<_T>::FindAndFetch(uint32 key, const _T& not_found_value /*= {0}*/) const
 {
     ASSERT(_ht);
-    int index = _private::hashtableFind(_ht, key);
-    return index != -1 ? Get(index) : not_found_value;
+    uint32 index = _private::hashtableFind(_ht, key);
+    return index != UINT32_MAX ? Get(index) : not_found_value;
 }
 
 template <typename _T>
 inline void HashTable<_T>::FindAndRemove(uint32 key)
 {
     ASSERT(_ht);
-    int index = _private::hashtableFind(_ht, key);
-    if (index != -1) {
+    uint32 index = _private::hashtableFind(_ht, key);
+    if (index != UINT32_MAX)
         Remove(index);
-    }
 }
 
 template <typename _T>

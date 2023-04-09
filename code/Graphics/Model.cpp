@@ -44,7 +44,7 @@ struct ModelLoadRequest
 
 struct ModelLoader final : AssetLoaderCallbacks 
 {
-    AssetResult Load(AssetHandle handle, const AssetLoadParams& params, Allocator* dependsAlloc) override;
+    AssetResult Load(AssetHandle handle, const AssetLoadParams& params, uint32 cacheHash, Allocator* dependsAlloc) override;
     void LoadRemote(AssetHandle handle, const AssetLoadParams& params, uint32 cacheHash, void* userData, AssetLoaderAsyncCallback loadCallback) override;
     bool InitializeResources(void* obj, const AssetLoadParams& params) override;
     void Release(void* data, Allocator* alloc) override;
@@ -887,45 +887,56 @@ static Pair<AssetDependency*, uint32> modelGatherDependencies(const Model* model
     return result;
 }
 
-AssetResult ModelLoader::Load(AssetHandle handle, const AssetLoadParams& params, Allocator* dependsAlloc)
+AssetResult ModelLoader::Load(AssetHandle handle, const AssetLoadParams& params, uint32 cacheHash, Allocator* dependsAlloc)
 {
     ASSERT(params.next);
     const ModelLoadParams& modelParams = *reinterpret_cast<ModelLoadParams*>(params.next.Get());
-
-    char errorDesc[512];
-    Pair<Model*, uint32> modelBuffer = modelLoadGltf(params.path, params.alloc, modelParams, errorDesc, sizeof(errorDesc));
-    Model* model = modelBuffer.first;
-    uint32 modelBufferSize = modelBuffer.second;
-    if (!model) {
-        logError(errorDesc);
-        return AssetResult {};
-    }
-
-    // load local meta data
     MemTempAllocator tmpAlloc;
+
     AssetMetaKeyValue* metaData;
     uint32 numMeta;
-    bool hasMetaData = assetLoadMetaData(handle, &tmpAlloc, &metaData, &numMeta);
-    UNUSED(hasMetaData);
+    assetLoadMetaData(handle, &tmpAlloc, &metaData, &numMeta);
+    uint32 newCacheHash = assetMakeCacheHash(AssetCacheDesc {
+        .filepath = params.path,
+        .loadParams = params.next.Get(), 
+        .loadParamsSize = sizeof(ModelLoadParams),
+        .metaData = metaData,
+        .numMeta = numMeta,
+        .lastModified = vfsGetLastModified(params.path)
+    });
 
-    // Optimize
-    #if CONFIG_TOOLMODE
-        meshoptOptimizeModel(model, modelParams);
-    #endif
-
-    if (model->numMaterialTextures) {
-        uint32 dependsBufferSize;
-        Pair<AssetDependency*, uint32> depends = modelGatherDependencies(model, params, &tmpAlloc, &dependsBufferSize);
-        return AssetResult { 
-            .obj = model,  
-            .depends = memAllocCopyRawBytes<AssetDependency>(depends.first, dependsBufferSize, dependsAlloc),
-            .numDepends = depends.second,
-            .dependsBufferSize = dependsBufferSize,
-            .objBufferSize = modelBufferSize                
-        };
+    if (newCacheHash != cacheHash) {
+        char errorDesc[512];
+        Pair<Model*, uint32> modelBuffer = modelLoadGltf(params.path, params.alloc, modelParams, errorDesc, sizeof(errorDesc));
+        Model* model = modelBuffer.first;
+        uint32 modelBufferSize = modelBuffer.second;
+        if (!model) {
+            logError(errorDesc);
+            return AssetResult {};
+        }
+    
+        #if CONFIG_TOOLMODE
+            meshoptOptimizeModel(model, modelParams);
+        #endif
+    
+        if (model->numMaterialTextures) {
+            uint32 dependsBufferSize;
+            Pair<AssetDependency*, uint32> depends = modelGatherDependencies(model, params, &tmpAlloc, &dependsBufferSize);
+            return AssetResult { 
+                .obj = model,  
+                .depends = memAllocCopyRawBytes<AssetDependency>(depends.first, dependsBufferSize, dependsAlloc),
+                .numDepends = depends.second,
+                .dependsBufferSize = dependsBufferSize,
+                .objBufferSize = modelBufferSize,
+                .cacheHash = newCacheHash
+            };
+        }
+        else {
+            return AssetResult { .obj = model, .objBufferSize = modelBufferSize, .cacheHash = newCacheHash };
+        }
     }
     else {
-        return AssetResult { .obj = model, .objBufferSize = modelBufferSize };
+        return AssetResult { .cacheHash = newCacheHash };
     }
 }
 
@@ -944,43 +955,58 @@ static void modelLoadTask(uint32 groupIndex, void* userData)
     ModelLoadParams loadModelParams;
 
     uint32 handle;
+    uint32 oldCacheHash;
     blob->Read<uint32>(&handle);
+    blob->Read<uint32>(&oldCacheHash);
     blob->ReadStringBinary(filepath, sizeof(filepath));
     blob->Read<uint32>(reinterpret_cast<uint32*>(&platform));
     blob->Read(&loadModelParams, sizeof(loadModelParams));
 
-    // Handle back the handle before doing anything else
     outgoingBlob.Write<uint32>(handle);
 
-    TimerStopWatch timer;
-    Pair<Model*, uint32> result = modelLoadGltf(filepath, memDefaultAlloc(), loadModelParams, errorMsg, sizeof(errorMsg));
-    Model* model = result.first;
-    uint32 modelBufferSize = result.second;
-
-    if (!model) {
-        remoteSendResponse(kRemoteCmdLoadModel, outgoingBlob, true, errorMsg);
-        logVerbose(errorMsg);
-        blob->Free();
-        memFree(blob);
-        return;
-    }
-
-    // Load meta-data on the asset server
     AssetMetaKeyValue* metaData;
     uint32 numMeta;
-    bool hasMetaData = assetLoadMetaData(filepath, platform, &tmpAlloc, &metaData, &numMeta);
-    UNUSED(hasMetaData);
+    assetLoadMetaData(filepath, platform, &tmpAlloc, &metaData, &numMeta);
 
-    #if CONFIG_TOOLMODE
-        meshoptOptimizeModel(model, loadModelParams);
-    #endif
+    uint32 cacheHash = assetMakeCacheHash(AssetCacheDesc {
+        .filepath = filepath,
+        .loadParams = &loadModelParams,
+        .loadParamsSize = sizeof(loadModelParams),
+        .metaData = metaData,
+        .numMeta = numMeta,
+        .lastModified = vfsGetLastModified(filepath)
+    });
 
-    outgoingBlob.Write<uint32>(modelBufferSize);
-    outgoingBlob.Write(model, modelBufferSize);
-    remoteSendResponse(kRemoteCmdLoadModel, outgoingBlob, false, nullptr);
-    logVerbose("Model loaded: %s (%.1f ms)", filepath, timer.ElapsedMS());
+    if (cacheHash != oldCacheHash) {
+        TimerStopWatch timer;
+        Pair<Model*, uint32> result = modelLoadGltf(filepath, memDefaultAlloc(), loadModelParams, errorMsg, sizeof(errorMsg));
+        Model* model = result.first;
+        uint32 modelBufferSize = result.second;
+    
+        if (model) {
+            #if CONFIG_TOOLMODE
+                meshoptOptimizeModel(model, loadModelParams);
+            #endif
+        
+            outgoingBlob.Write<uint32>(cacheHash);
+            outgoingBlob.Write<uint32>(modelBufferSize);
+            outgoingBlob.Write(model, modelBufferSize);
+            remoteSendResponse(kRemoteCmdLoadModel, outgoingBlob, false, nullptr);
+            logVerbose("Model loaded: %s (%.1f ms)", filepath, timer.ElapsedMS());
+            memFree(model);
+        }
+        else {
+            remoteSendResponse(kRemoteCmdLoadModel, outgoingBlob, true, errorMsg);
+            logVerbose(errorMsg);
+        }
+    }
+    else {
+        outgoingBlob.Write<uint32>(cacheHash);
+        outgoingBlob.Write<uint32>(0);  // nothing has loaded. it's safe to load from client's local cache
+        remoteSendResponse(kRemoteCmdLoadModel, outgoingBlob, false, nullptr);
+        logVerbose("Model: %s [cached]", filepath);
+    }
 
-    memFree(model);
     blob->Free();
     memFree(blob);
 }
@@ -1009,7 +1035,8 @@ static void modelHandlerClientFn([[maybe_unused]] uint32 cmd, const Blob& incomi
     ASSERT(handle.IsValid());
 
     ModelLoadRequest request {};
-    {   MutexScope mtx(gModelCtx.requestsMutex);
+    {   
+        MutexScope mtx(gModelCtx.requestsMutex);
         if (uint32 reqIndex = gModelCtx.requests.FindIf([handle](const ModelLoadRequest& req) { return req.handle == handle; });
             reqIndex != UINT32_MAX)
         {
@@ -1022,36 +1049,41 @@ static void modelHandlerClientFn([[maybe_unused]] uint32 cmd, const Blob& incomi
     }
 
     if (!error) {    
-        uint32 modelBufferSize;
-        size_t readBytes = incomingData.Read<uint32>(&modelBufferSize);
-        ASSERT(readBytes == sizeof(modelBufferSize));
-        ASSERT(modelBufferSize);
+        uint32 modelBufferSize= 0;
+        uint32 cacheHash = 0;
+        incomingData.Read<uint32>(&cacheHash);
+        incomingData.Read<uint32>(&modelBufferSize);
         
-        MemTempAllocator tmpAlloc;
-        void* modelData = tmpAlloc.Malloc(modelBufferSize);
-        readBytes  = incomingData.Read(modelData, modelBufferSize);
-        ASSERT(readBytes == modelBufferSize);
-        Model* model = reinterpret_cast<Model*>(modelData);
+        if (modelBufferSize) {
+            void* modelData = memAlloc(modelBufferSize, request.params.alloc);
+            incomingData.Read(modelData, modelBufferSize);
 
-        // Allocate the final model object
-        void* obj = memAllocCopyRawBytes<Model>(model, modelBufferSize, request.params.alloc);
-
-        if (model->numMaterialTextures) {
-            uint32 dependsBufferSize;
-            Pair<AssetDependency*, uint32> depends = modelGatherDependencies(model, request.params, &tmpAlloc, &dependsBufferSize);
-            AssetResult result { 
-                .obj = obj,  
-                .depends =  depends.first,
-                .numDepends = depends.second,
-                .dependsBufferSize = dependsBufferSize,
-                .objBufferSize = modelBufferSize
-            };
-            if (request.loadCallback)
-                request.loadCallback(handle, result, request.loadCallbackUserData);
+            Model* model = reinterpret_cast<Model*>(modelData);
+            if (model->numMaterialTextures) {
+                MemTempAllocator tmpAlloc;
+                uint32 dependsBufferSize;
+                Pair<AssetDependency*, uint32> depends = modelGatherDependencies(model, request.params, &tmpAlloc, &dependsBufferSize);
+                AssetResult result { 
+                    .obj = modelData,  
+                    .depends =  depends.first,
+                    .numDepends = depends.second,
+                    .dependsBufferSize = dependsBufferSize,
+                    .objBufferSize = modelBufferSize,
+                    .cacheHash = cacheHash
+                };
+                if (request.loadCallback)
+                    request.loadCallback(handle, result, request.loadCallbackUserData);
+            }
+            else {
+                if (request.loadCallback) {
+                    request.loadCallback(handle, AssetResult { .obj = modelData, .objBufferSize = modelBufferSize, .cacheHash = cacheHash }, 
+                                         request.loadCallbackUserData);
+                }
+            }
         }
         else {
-            if (request.loadCallback)
-                request.loadCallback(handle, AssetResult { .obj = obj, .objBufferSize = modelBufferSize }, request.loadCallbackUserData);
+            if (request.loadCallback) 
+                request.loadCallback(handle, AssetResult { .cacheHash = cacheHash }, request.loadCallbackUserData);
         }
     }
     else {
@@ -1067,13 +1099,13 @@ void ModelLoader::LoadRemote(AssetHandle handle, const AssetLoadParams& params, 
     ASSERT(params.next);
     ASSERT(loadCallback);
     ASSERT(remoteIsConnected());
-    UNUSED(cacheHash);
 
     const ModelLoadParams* modelParams = reinterpret_cast<ModelLoadParams*>(params.next.Get());
 
     // Gotta copy the damn strings in vertex attributes
 
-    {   MutexScope mtx(gModelCtx.requestsMutex);
+    {   
+        MutexScope mtx(gModelCtx.requestsMutex);
         gModelCtx.requests.Push(ModelLoadRequest {
             .handle = handle,
             .loadCallback = loadCallback,
@@ -1088,6 +1120,7 @@ void ModelLoader::LoadRemote(AssetHandle handle, const AssetLoadParams& params, 
     outgoingBlob.SetGrowPolicy(Blob::GrowPolicy::Multiply);
 
     outgoingBlob.Write<uint32>(handle.id);
+    outgoingBlob.Write<uint32>(cacheHash);
     outgoingBlob.WriteStringBinary(params.path, strLen(params.path));
     outgoingBlob.Write<uint32>(uint32(params.platform));
     outgoingBlob.Write<ModelLoadParams>(*modelParams);

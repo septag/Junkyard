@@ -211,4 +211,26 @@ bool sysIsDebuggerPresent()
     return isConnected;
 }
 
+Path sysAndroidGetCacheDirectory(ANativeActivity* activity)
+{
+    JNIEnv* jniEnv = sysAndroidGetJniEnv();
+
+    jobject context = activity->clazz;
+    jclass contextClass = jniEnv->GetObjectClass(context);
+
+    // jclass contextClass = jniEnv->FindClass("android/content/Context");
+    jmethodID getCacheDirMethod = jniEnv->GetMethodID(contextClass, "getCacheDir", "()Ljava/io/File;");
+    jobject cacheDir = jniEnv->CallObjectMethod(context, getCacheDirMethod);
+
+    jclass fileClass = jniEnv->GetObjectClass(cacheDir);
+    jmethodID getPathMethod = jniEnv->GetMethodID(fileClass, "getPath", "()Ljava/lang/String;");
+    jstring pathString = (jstring) jniEnv->CallObjectMethod(cacheDir, getPathMethod);
+
+    const char* path = jniEnv->GetStringUTFChars(pathString, nullptr);
+    Path r(path);
+    jniEnv->ReleaseStringUTFChars(pathString, path);
+
+    return r;
+}
+
 #endif // PLATFORM_ANDROID

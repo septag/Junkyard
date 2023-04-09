@@ -1062,6 +1062,11 @@ AAssetManager* appAndroidGetAssetManager()
     return gApp.activity->assetManager;
 }
 
+ANativeActivity* appAndroidGetActivity()
+{
+    return gApp.activity;
+}
+
 AppDisplayInfo appGetDisplayInfo()
 {
     // TODO

@@ -71,7 +71,7 @@ struct GfxImageLoadRequest
 
 struct GfxImageLoader final : AssetLoaderCallbacks
 {
-    AssetResult Load(AssetHandle handle, const AssetLoadParams& params, Allocator* dependsAlloc) override;
+    AssetResult Load(AssetHandle handle, const AssetLoadParams& params, uint32 cacheHash, Allocator* dependsAlloc) override;
     void LoadRemote(AssetHandle handle, const AssetLoadParams& params, uint32 cacheHash, void* userData, AssetLoaderAsyncCallback loadCallback) override;
     bool InitializeResources(void* obj, const AssetLoadParams& params) override;
     bool ReloadSync(AssetHandle handle, void* prevData) override;
@@ -88,7 +88,6 @@ struct GfxImageManager
     Array<GfxImageLoadRequest> requests;
 };
 
-#pragma pack(push, 8)
 struct Image
 {
     GfxImage handle;
@@ -101,7 +100,6 @@ struct Image
     uint32 mipOffsets[kGfxMaxMips];
     RelativePtr<uint8> content;
 };
-#pragma pack(pop)
 
 static GfxImageManager gImageMgr;
 
@@ -123,8 +121,8 @@ INLINE GfxFormat gfxImageConvertFormatSRGB(GfxFormat fmt)
 
 // This function is the main loader/baker
 // Depending on the local meta-data, we either directly load the image from the disk or encode it with block compression
-static Pair<Image*, uint32> gfxBakeImage(AssetHandle localHandle, const char* filepath, AssetPlatform platform, 
-                                         Allocator* alloc, char* errorDesc, uint32 errorDescSize)    
+static Pair<Image*, uint32> gfxBakeImage(const char* filepath, Allocator* alloc, const AssetMetaKeyValue* metaData, uint32 numMeta,
+                                         char* outErrorDesc, uint32 errorDescSize)    
 {
     PROFILE_ZONE(true);
 
@@ -139,7 +137,7 @@ static Pair<Image*, uint32> gfxBakeImage(AssetHandle localHandle, const char* fi
 
     Blob blob = vfsReadFile(filepath, VfsFlags::None, &tmpAlloc);
     if (!blob.IsValid()) {
-        strPrintFmt(errorDesc, errorDescSize, "Opening image failed: %s", filepath);
+        strPrintFmt(outErrorDesc, errorDescSize, "Opening image failed: %s", filepath);
         return {};
     }
 
@@ -148,13 +146,10 @@ static Pair<Image*, uint32> gfxBakeImage(AssetHandle localHandle, const char* fi
     stbi_uc* pixels = stbi_load_from_memory(reinterpret_cast<const stbi_uc*>(blob.Data()), (int)blob.Size(), 
         &imgWidth, &imgHeight, &imgChannels, STBI_rgb_alpha);
     if (!pixels) {
-        strPrintFmt(errorDesc, errorDescSize, "Loading image failed: %s", filepath);
+        strPrintFmt(outErrorDesc, errorDescSize, "Loading image failed: %s", filepath);
         return {};
     }
     
-    AssetMetaKeyValue* metaData;
-    uint32 numMeta;
-
     GfxFormat imageFormat = GfxFormat::R8G8B8A8_UNORM;
     uint32 imageSize = imgWidth * imgHeight * 4;
     uint32 numMips = 1;
@@ -165,13 +160,7 @@ static Pair<Image*, uint32> gfxBakeImage(AssetHandle localHandle, const char* fi
     Blob contentBlob(&tmpAlloc);
     contentBlob.SetGrowPolicy(Blob::GrowPolicy::Multiply);
 
-    // Choose different meta-data loading methods if user provides a valid localHandle
-    // - When we have a localHandle, it means that asset currently has a valid asset on disk and we can fetch it's meta-data from asset-data
-    // - Otherwise, we assume no meta-data is loaded in the asset database, so directly try to load it from the disk
-    bool hasMetaData = localHandle.IsValid() ? 
-        assetLoadMetaData(localHandle, &tmpAlloc, &metaData, &numMeta) : 
-        assetLoadMetaData(filepath, platform, &tmpAlloc, &metaData, &numMeta);
-    if (hasMetaData) {
+    if (metaData) {
         String32 formatStr = assetGetMetaValue<String32>(metaData, numMeta, "format", "");
         bool sRGB = assetGetMetaValue<bool>(metaData, numMeta, "sRGB", false);
         bool generateMips = assetGetMetaValue<bool>(metaData, numMeta, "generateMips", false);
@@ -235,7 +224,7 @@ static Pair<Image*, uint32> gfxBakeImage(AssetHandle localHandle, const char* fi
             #if CONFIG_TOOLMODE
                 ImageEncoderCompression compression = GetCompressionEnum(formatStr.CStr());
                 if (compression == ImageEncoderCompression::_Count) {
-                    strPrintFmt(errorDesc, errorDescSize, 
+                    strPrintFmt(outErrorDesc, errorDescSize, 
                         "Loading image '%s' failed. Image format not supported in meta-data '%s'", filepath, formatStr.CStr());
                     return {};
                 }
@@ -274,7 +263,7 @@ static Pair<Image*, uint32> gfxBakeImage(AssetHandle localHandle, const char* fi
                         compressedContentBlob.Write(compressedBlob.Data(), compressedBlob.Size());
                     }
                     else {
-                        strPrintFmt(errorDesc, errorDescSize, "Encoding image '%s' to '%s' failed.", filepath, formatStr.CStr());
+                        strPrintFmt(outErrorDesc, errorDescSize, "Encoding image '%s' to '%s' failed.", filepath, formatStr.CStr());
                         return {};
                     }
                 } // foreach mip
@@ -328,33 +317,55 @@ static void gfxLoadImageTask(uint32 groupIndex, void* userData)
     char errorMsg[kRemoteErrorDescSize];
 
     uint32 handle;
+    uint32 oldCacheHash;
     blob->Read<uint32>(&handle);
+    blob->Read<uint32>(&oldCacheHash);
     blob->ReadStringBinary(filepath, sizeof(filepath));
     blob->Read<uint32>(reinterpret_cast<uint32*>(&platform));
     blob->Read(&loadImageParams, sizeof(loadImageParams));
 
     outgoingBlob.Write<uint32>(handle);
 
-    TimerStopWatch timer;
-    Pair<Image*, uint32> img = gfxBakeImage(AssetHandle(), filepath, platform, memDefaultAlloc(), errorMsg, sizeof(errorMsg));
-   
-    Image* header = img.first;
-    if (header) {
-        uint32 bufferSize = img.second;
-        outgoingBlob.Write<uint32>(bufferSize);
-        outgoingBlob.Write(header, bufferSize);
+    AssetMetaKeyValue* metaData;
+    uint32 numMeta;
+    assetLoadMetaData(filepath, platform, &tmpAlloc, &metaData, &numMeta);
+    
+    uint32 cacheHash = assetMakeCacheHash(AssetCacheDesc {
+        .filepath = filepath,
+        .loadParams = &loadImageParams,
+        .loadParamsSize = sizeof(loadImageParams),
+        .metaData = metaData,
+        .numMeta = numMeta,
+        .lastModified = vfsGetLastModified(filepath)
+    });
+    
+    if (cacheHash != oldCacheHash) {
+        TimerStopWatch timer;
+        Pair<Image*, uint32> img = gfxBakeImage(filepath, memDefaultAlloc(), metaData, numMeta, errorMsg, sizeof(errorMsg));
+        Image* header = img.first;
+        if (header) {
+            uint32 bufferSize = img.second;
+            outgoingBlob.Write<uint32>(cacheHash);
+            outgoingBlob.Write<uint32>(bufferSize);
+            outgoingBlob.Write(header, bufferSize);
 
-        remoteSendResponse(kRemoteCmdLoadImage, outgoingBlob, false, nullptr);
-        memFree(header, memDefaultAlloc());
-        logVerbose("Image loaded: %s (%.1f ms)", filepath, timer.ElapsedMS());
+            remoteSendResponse(kRemoteCmdLoadImage, outgoingBlob, false, nullptr);
+            logVerbose("Image loaded: %s (%.1f ms)", filepath, timer.ElapsedMS());
+
+            memFree(header, memDefaultAlloc());
+        }
+        else {
+            remoteSendResponse(kRemoteCmdLoadImage, outgoingBlob, true, errorMsg);
+            logVerbose(errorMsg);
+        }
     }
     else {
-        remoteSendResponse(kRemoteCmdLoadImage, outgoingBlob, true, errorMsg);
-        logVerbose(errorMsg);
+        outgoingBlob.Write<uint32>(cacheHash);
+        outgoingBlob.Write<uint32>(0);  // nothing has loaded. it's safe to load from client's local cache
+        remoteSendResponse(kRemoteCmdLoadImage, outgoingBlob, false, nullptr);
+        logVerbose("Image: %s [cached]", filepath);
     }
-    
-    outgoingBlob.Free();
-        
+       
     blob->Free();
     memFree(blob);
 }
@@ -386,7 +397,8 @@ static void gfxImageHandlerClientFn([[maybe_unused]] uint32 cmd, const Blob& inc
 
     GfxImageLoadRequest request {};
 
-    { MutexScope mtx(gImageMgr.requestsMtx);
+    { 
+        MutexScope mtx(gImageMgr.requestsMtx);
         if (uint32 reqIndex = gImageMgr.requests.FindIf([handle](const GfxImageLoadRequest& req) { return req.handle == handle; });
             reqIndex != UINT32_MAX)
         {
@@ -399,16 +411,21 @@ static void gfxImageHandlerClientFn([[maybe_unused]] uint32 cmd, const Blob& inc
     }
 
     if (!error) {
+        uint32 cacheHash = 0;
         uint32 bufferSize = 0;
+        void* imgData = nullptr;
+        incomingData.Read<uint32>(&cacheHash);
         incomingData.Read<uint32>(&bufferSize);
-        ASSERT(bufferSize);
         
-        MemTempAllocator tmpAlloc;
-        void* imgData = tmpAlloc.Malloc(bufferSize);
-        incomingData.Read(imgData, bufferSize);
+        if (bufferSize) {
+            imgData = memAlloc(bufferSize, request.alloc);
+            incomingData.Read(imgData, bufferSize);
+        }
 
-        if (request.loadCallback) 
-            request.loadCallback(handle, AssetResult { .obj = imgData, .objBufferSize = bufferSize }, request.loadCallbackUserData);
+        if (request.loadCallback) {
+            request.loadCallback(handle, AssetResult { .obj = imgData, .objBufferSize = bufferSize, .cacheHash = cacheHash }, 
+                                 request.loadCallbackUserData);
+        }
     }
     else {
         logError(errorDesc);
@@ -433,18 +450,28 @@ static bool gfxInitializeImageManager()
             .size = sizeof(kWhitePixel),
             .content = reinterpret_cast<const void*>(&kWhitePixel)
         });
-    
         if (!gImageMgr.imageWhite.IsValid())
             return false;
-    
+
+        static Image whiteImage = {
+            .handle = gImageMgr.imageWhite,
+            .width = 1,
+            .height = 1,
+            .depth = 1,
+            .numMips = 1,
+            .format = GfxFormat::R8G8B8A8_UNORM,
+            .contentSize = sizeof(kWhitePixel)
+        };
+        whiteImage.content = reinterpret_cast<const uint8*>(&kWhitePixel);
+
         assetRegister(AssetTypeDesc {
             .fourcc = kImageAssetType,
             .name = "Image",
             .callbacks = &gImageMgr.imageLoader,
             .extraParamTypeName = "ImageLoadParams",
             .extraParamTypeSize = sizeof(ImageLoadParams),
-            .failedObj = IntToPtr(gImageMgr.imageWhite.id),
-            .asyncObj = IntToPtr(gImageMgr.imageWhite.id)
+            .failedObj = &whiteImage,
+            .asyncObj = &whiteImage
         });
     
         gImageMgr.updateCacheMtx.Initialize();
@@ -536,18 +563,39 @@ GfxImage assetGetImage(AssetHandleImage imageHandle)
 }
 
 // MT: runs from a task thread (AssetManager)
-AssetResult GfxImageLoader::Load(AssetHandle handle, const AssetLoadParams& params, Allocator*)
+AssetResult GfxImageLoader::Load(AssetHandle handle, const AssetLoadParams& params, uint32 cacheHash, Allocator*)
 {
     ASSERT(params.next);
 
-    char errorDesc[512];
-    Pair<Image*, uint32> img = gfxBakeImage(handle, params.path, AssetPlatform::Auto, params.alloc, errorDesc, sizeof(errorDesc));
-    if (img.first == nullptr) {
-        logError(errorDesc);
-        return AssetResult {};
+    MemTempAllocator tmpAlloc;
+
+    AssetMetaKeyValue* metaData;
+    uint32 numMeta;
+    assetLoadMetaData(handle, &tmpAlloc, &metaData, &numMeta);
+    uint32 newCacheHash = assetMakeCacheHash(AssetCacheDesc {
+        .filepath = params.path,
+        .loadParams = params.next.Get(), 
+        .loadParamsSize = sizeof(ImageLoadParams),
+        .metaData = metaData,
+        .numMeta = numMeta,
+        .lastModified = vfsGetLastModified(params.path)
+    });
+
+    if (newCacheHash != cacheHash) {
+        char errorDesc[512];
+        Pair<Image*, uint32> img = gfxBakeImage(params.path, params.alloc, metaData, numMeta, errorDesc, sizeof(errorDesc));
+        if (img.first != nullptr) {
+            return AssetResult { .obj = img.first, .objBufferSize = img.second, .cacheHash = newCacheHash };
+        }
+        else {
+            logError(errorDesc);
+            return AssetResult {};
+        }
+    }
+    else {
+        return AssetResult { .cacheHash = newCacheHash };
     }
 
-    return AssetResult { .obj = img.first, .objBufferSize = img.second };
 }
 
 void GfxImageLoader::LoadRemote(AssetHandle handle, const AssetLoadParams& params, uint32 cacheHash, void* userData, 
@@ -556,11 +604,11 @@ void GfxImageLoader::LoadRemote(AssetHandle handle, const AssetLoadParams& param
     ASSERT(params.next);
     ASSERT(loadCallback);
     ASSERT(remoteIsConnected());
-    UNUSED(cacheHash);
 
     const ImageLoadParams* textureParams = reinterpret_cast<ImageLoadParams*>(params.next.Get());
 
-    { MutexScope mtx(gImageMgr.requestsMtx);
+    { 
+        MutexScope mtx(gImageMgr.requestsMtx);
         gImageMgr.requests.Push(GfxImageLoadRequest {
             .handle = handle,
             .alloc = params.alloc,
@@ -575,6 +623,7 @@ void GfxImageLoader::LoadRemote(AssetHandle handle, const AssetLoadParams& param
     outgoingBlob.SetGrowPolicy(Blob::GrowPolicy::Multiply);
 
     outgoingBlob.Write<uint32>(handle.id);
+    outgoingBlob.Write<uint32>(cacheHash);
     outgoingBlob.WriteStringBinary(params.path, strLen(params.path));
     outgoingBlob.Write<uint32>(static_cast<uint32>(params.platform));
     outgoingBlob.Write(textureParams, sizeof(ImageLoadParams));

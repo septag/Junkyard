@@ -11,6 +11,7 @@
 #include "Engine.h"
 #include "VirtualFS.h"
 #include "RemoteServices.h"
+#include "Application.h"
 
 #define ASSET_HASH_SEED 0x4354a
 
@@ -23,7 +24,10 @@ namespace _limits
     static constexpr size_t kAssetRuntimeSize = kMB;
 }
 
-static constexpr float kAssetCacheSaveDelay = 1.0;
+static constexpr uint32 kAssetCacheFileId = MakeFourCC('A', 'C', 'C', 'H');
+static constexpr uint32 kAssetCacheVersion = 1;
+static constexpr float kAssetCacheSaveDelay = 2.0;
+static constexpr const char* kAssetCacheDatabasePath = "/cache/database.json5";
 
 struct AssetTypeManager
 {
@@ -55,7 +59,6 @@ struct Asset
     uint32 typeMgrIdx;          // index to gAssetMgr.typeManagers
     uint32 refCount;        
     uint32 hash;
-    uint32 cacheHash;
     uint32 numMeta;
     uint32 numDepends;
     uint32 objBufferSize;
@@ -94,7 +97,7 @@ static AssetManager gAssetMgr;
 
 static void assetFileChanged(const char* filepath);
 
-static AssetResult assetLoadFromCache(const AssetTypeManager& typeMgr, const AssetLoadParams& params, uint32 cacheHash)
+static AssetResult assetLoadFromCache(const AssetTypeManager& typeMgr, const AssetLoadParams& params, uint32 cacheHash, bool* outSuccess)
 {
     Path strippedPath;
     vfsStripMountPath(strippedPath.Ptr(), sizeof(strippedPath), params.path);
@@ -116,28 +119,36 @@ static AssetResult assetLoadFromCache(const AssetTypeManager& typeMgr, const Ass
     AssetResult result {
         .cacheHash = cacheHash
     };
+    *outSuccess = false;
 
     if (cache.IsValid()) {
-
-        // TODO: add file versioning and whatnot 
-        cache.Read<uint32>(&result.numDepends);
-        cache.Read<uint32>(&result.dependsBufferSize);
-        cache.Read<uint32>(&result.objBufferSize);
-
-        if (result.dependsBufferSize) {
-            result.depends = (AssetDependency*)memAlloc(result.dependsBufferSize, params.alloc);
-            cache.Read(result.depends, result.dependsBufferSize);
+        uint32 fileId = 0;
+        uint32 cacheVersion = 0;
+        cache.Read<uint32>(&fileId);
+        if (fileId == kAssetCacheFileId) {
+            cache.Read<uint32>(&cacheVersion);
+            if (cacheVersion == 1) {
+                cache.Read<uint32>(&result.numDepends);
+                cache.Read<uint32>(&result.dependsBufferSize);
+                cache.Read<uint32>(&result.objBufferSize);
+    
+                if (result.dependsBufferSize) {
+                    result.depends = (AssetDependency*)memAlloc(result.dependsBufferSize, params.alloc);
+                    cache.Read(result.depends, result.dependsBufferSize);
+                }
+    
+                ASSERT(result.objBufferSize);
+                result.obj = memAlloc(result.objBufferSize, params.alloc);
+                cache.Read(result.obj, result.objBufferSize);
+                *outSuccess = true;
+            }
         }
-
-        ASSERT(result.objBufferSize);
-        result.obj = memAlloc(result.objBufferSize, params.alloc);
-        cache.Read(result.obj, result.objBufferSize);
-
-        return result;
-    } 
-    else {
-        return result;
     }
+
+    if (!*outSuccess)
+        logError("Loading asset cache failed: %s (Source: %s)", cachePath.CStr(), params.path);
+
+    return result;
 }
 
 static void assetSaveToCache(const AssetTypeManager& typeMgr, const AssetLoadParams& params, const AssetResult& result, uint32 assetHash)
@@ -160,6 +171,8 @@ static void assetSaveToCache(const AssetTypeManager& typeMgr, const AssetLoadPar
     Blob cache(&tempAlloc);
     cache.SetGrowPolicy(Blob::GrowPolicy::Multiply);
 
+    cache.Write<uint32>(kAssetCacheFileId);
+    cache.Write<uint32>(kAssetCacheVersion);
     cache.Write<uint32>(result.numDepends);
     cache.Write<uint32>(result.dependsBufferSize);
     cache.Write<uint32>(result.objBufferSize);
@@ -171,26 +184,28 @@ static void assetSaveToCache(const AssetTypeManager& typeMgr, const AssetLoadPar
     uint64 userData = (uint64(assetHash) << 32) | result.cacheHash;
     
     vfsWriteFileAsync(cachePath.CStr(), cache, VfsFlags::CreateDirs, 
-                      [](const char* path, size_t, const Blob&, void* user) {
-                         logVerbose("(save) AssetCache: %s", path);
+                      [](const char* path, size_t, const Blob&, void* user) 
+    {
+        logVerbose("(save) AssetCache: %s", path);
+        
+        uint64 userData = PtrToInt<uint64>(user);
+        uint32 hash = uint32((userData >> 32)&0xffffffff);
+        uint32 cacheHash = uint32(userData&0xffffffff);
+
+        MutexScope mtx(gAssetMgr.hashLookupMtx);
+        if (uint32 index = gAssetMgr.hashLookup.Find(hash); index != UINT32_MAX) 
+            gAssetMgr.hashLookup.Set(index, cacheHash); // TODO: get delete the old file
+        else
+            gAssetMgr.hashLookup.Add(hash, cacheHash);
                          
-                         uint64 userData = PtrToInt<uint64>(user);
-                         uint32 hash = uint32((userData >> 32)&0xffffffff);
-                         uint32 cacheHash = uint32(userData&0xffffffff);
-                         MutexScope mtx(gAssetMgr.hashLookupMtx);
-                         if (uint32 index = gAssetMgr.hashLookup.Find(hash); index != UINT32_MAX) 
-                             gAssetMgr.hashLookup.Set(index, cacheHash);
-                         else
-                             gAssetMgr.hashLookup.Add(hash, cacheHash);
-                         
-                      }, IntToPtr(userData));
+    }, IntToPtr(userData));
 }
 
 static void assetLoadCacheHashDatabase()
 {
     MemTempAllocator tempAlloc;
 
-    Blob blob = vfsReadFile("/cache/database.json5", VfsFlags::TextFile, &tempAlloc);
+    Blob blob = vfsReadFile(kAssetCacheDatabasePath, VfsFlags::TextFile, &tempAlloc);
     if (blob.IsValid()) {
         JsonContext jctx;
         char* json;
@@ -207,13 +222,15 @@ static void assetLoadCacheHashDatabase()
                 uint32 cacheHash = jitem.GetChildValue<uint32>("cacheHash", 0);
 
                 if (uint32 index = gAssetMgr.hashLookup.Find(hash); index != UINT32_MAX)
-                    gAssetMgr.hashLookup.Set(index, cacheHash);
+                    gAssetMgr.hashLookup.Set(index, cacheHash); // TODO: can delete the old file
                 else
                     gAssetMgr.hashLookup.Add(hash, cacheHash);
                 
                 jitem = jroot.GetNextArrayItem(jitem);
             }
             jsonDestroy(&jctx);
+
+            logInfo("Loaded cache database: %s", kAssetCacheDatabasePath);
         }
     } 
 }
@@ -236,7 +253,7 @@ static void assetSaveCacheHashDatabase()
         if (keys[i]) {
             strPrintFmt(line, sizeof(line), 
                         "\t{\n"
-                        "\t\thash: 0x%x\n"
+                        "\t\thash: 0x%x,\n"
                         "\t\tcacheHash: 0x%x\n"
                         "\t},\n", 
                         keys[i], values[i]);
@@ -245,7 +262,7 @@ static void assetSaveCacheHashDatabase()
     }
     blob.Write("]\n", 2);
     
-    vfsWriteFileAsync("/cache/lookup.json5", blob, VfsFlags::TextFile, 
+    vfsWriteFileAsync(kAssetCacheDatabasePath, blob, VfsFlags::TextFile, 
                       [](const char* path, size_t, const Blob&, void*) { logVerbose("Asset cache database saved to: %s", path); }, nullptr);
 
 }
@@ -301,11 +318,13 @@ bool _private::assetInitialize()
     vfsRegisterFileChangeCallback(assetFileChanged);
 
     // Create and mount cache directory
-    if constexpr (PLATFORM_WINDOWS || PLATFORM_OSX || PLATFORM_LINUX) {
+    #if PLATFORM_WINDOWS || PLATFORM_OSX || PLATFORM_LINUX
         if (!pathIsDir(".cache"))
             pathCreateDir(".cache");
         vfsMountLocal(".cache", "cache", false);
-    }
+    #elif PLATFORM_ANDROID
+        vfsMountLocal(sysAndroidGetCacheDirectory(appAndroidGetActivity()).CStr(), "cache", false);
+    #endif
 
     assetLoadCacheHashDatabase();
 
@@ -351,6 +370,18 @@ void _private::assetRelease()
     }
 }
 
+INLINE AssetPlatform assetGetCurrentPlatform()
+{
+    if constexpr (PLATFORM_WINDOWS || PLATFORM_LINUX || PLATFORM_OSX)
+           return AssetPlatform::PC;
+    else if constexpr (PLATFORM_ANDROID)
+           return AssetPlatform::Android;
+    else {
+        ASSERT(0);
+        return AssetPlatform::Auto;
+    }
+}
+
 static AssetHandle assetCreateNew(uint32 typeMgrIdx, uint32 assetHash, const AssetLoadParams& params, const void* extraParams)
 {
     const AssetTypeManager& typeMgr = gAssetMgr.typeManagers[typeMgrIdx];
@@ -371,14 +402,8 @@ static AssetHandle assetCreateNew(uint32 typeMgrIdx, uint32 assetHash, const Ass
         memcpy(newParams->next.Get(), extraParams, typeMgr.extraParamTypeSize);
 
     // Set the asset platform to the platform that we are running on in Auto mode
-    if (params.platform == AssetPlatform::Auto) {
-        if constexpr (PLATFORM_WINDOWS || PLATFORM_LINUX || PLATFORM_OSX)
-           newParams->platform = AssetPlatform::PC;
-        else if constexpr (PLATFORM_ANDROID)
-           newParams->platform = AssetPlatform::Android;
-       
-        ASSERT(newParams->platform != AssetPlatform::Auto);
-    }
+    if (params.platform == AssetPlatform::Auto)
+        newParams->platform = assetGetCurrentPlatform();
     
     Asset asset {
         .typeMgrIdx = typeMgrIdx,
@@ -401,51 +426,53 @@ static AssetHandle assetCreateNew(uint32 typeMgrIdx, uint32 assetHash, const Ass
     return handle;
 }
 
-static AssetResult assetLoadObjLocal(AssetHandle handle, const AssetTypeManager& typeMgr, const char* filepath, const AssetLoadParams& loadParams)
+uint32 assetMakeCacheHash(const AssetCacheDesc& desc)
 {
     HashMurmur32Incremental hasher(ASSET_HASH_SEED);
-    hasher.Add<char>(loadParams.path, strLen(loadParams.path));
-    hasher.AddAny(loadParams.next.Get(), typeMgr.extraParamTypeSize);
 
-    { MutexScope mtx(gAssetMgr.assetsMtx);
-        Asset& asset = gAssetMgr.assets.Data(handle);
-        AssetMetaKeyValue* keys;
-        uint32 numKeys;
-        uint32 metaHash;
-        
-        if (asset.metaData == nullptr && 
-            assetLoadMetaData(filepath, loadParams.platform, &gAssetMgr.runtimeHeap, &keys, &numKeys, &metaHash) && numKeys) 
-        {
-            asset.numMeta = numKeys;
-            asset.metaData = keys;
-
-            hasher.Add<uint32>(&metaHash);
-        }
-    }
-
-    uint64 lastModified = vfsGetLastModified(loadParams.path);
-    hasher.Add<uint64>(&lastModified);
-    uint32 cacheHash = hasher.Hash();
-    AssetResult cacheResult = assetLoadFromCache(typeMgr, loadParams, cacheHash);
-
-    if (!cacheResult.obj) {
-        AssetResult result = typeMgr.callbacks->Load(handle, loadParams, &gAssetMgr.runtimeHeap);
-        result.cacheHash = cacheResult.cacheHash;
-        return result;
-    } 
-    else {
-        cacheResult.isFromCache = true;
-        return cacheResult;
-    }
+    return hasher.Add<char>(desc.filepath, strLen(desc.filepath))
+                 .AddAny(desc.loadParams, desc.loadParamsSize)
+                 .AddAny(desc.metaData, sizeof(AssetMetaKeyValue)*desc.numMeta)
+                 .Add<uint64>(&desc.lastModified)
+                 .Hash();
 }
 
-static AssetResult assetLoadObjRemote(AssetHandle handle, const AssetTypeManager& typeMgr, const AssetLoadParams& loadParams)
+static AssetResult assetLoadObjLocal(AssetHandle handle, const AssetTypeManager& typeMgr, const AssetLoadParams& loadParams, uint32 hash, 
+                                     bool* outLoadedFromCache)
+{
+    uint32 cacheHash;
+    {
+        MutexScope mtx(gAssetMgr.hashLookupMtx);
+        cacheHash = gAssetMgr.hashLookup.FindAndFetch(hash, 0);
+    }
+
+    AssetResult result = typeMgr.callbacks->Load(handle, loadParams, cacheHash, &gAssetMgr.runtimeHeap);
+    if (result.cacheHash == cacheHash) {
+        ASSERT(result.obj == nullptr);
+        result = assetLoadFromCache(typeMgr, loadParams, cacheHash, outLoadedFromCache);
+
+        if (!*outLoadedFromCache) {
+            MutexScope mtx(gAssetMgr.hashLookupMtx);
+            gAssetMgr.hashLookup.FindAndRemove(hash);
+
+            gAssetMgr.cacheSyncInvalidated = true;
+            gAssetMgr.cacheSyncDelayTm = 0;
+        }
+    }
+    return result;
+}
+
+static AssetResult assetLoadObjRemote(AssetHandle handle, const AssetTypeManager& typeMgr, const AssetLoadParams& loadParams, uint32 hash,
+                                      bool* outLoadedFromCache)
 {
     Signal waitSignal;      // Used to serialize the async code
     waitSignal.Initialize();
 
-    // TODO: fetch his cacheHash from database
-    uint32 cacheHash = 0;
+    uint32 cacheHash;
+    {
+        MutexScope mtx(gAssetMgr.hashLookupMtx);
+        cacheHash = gAssetMgr.hashLookup.FindAndFetch(hash, 0);
+    }
     
     struct AsyncLoadData
     {
@@ -453,36 +480,51 @@ static AssetResult assetLoadObjRemote(AssetHandle handle, const AssetTypeManager
         Signal* signal;
         const AssetTypeManager* typeMgr;
         const AssetLoadParams* loadParams;
-
+        uint32 hash;
+        uint32 cacheHash;
+        bool* loadedFromCache;
     };
 
     AsyncLoadData asyncLoadData {
         .signal = &waitSignal,
         .typeMgr = &typeMgr,
-        .loadParams = &loadParams
+        .loadParams = &loadParams,
+        .hash = hash,
+        .cacheHash = cacheHash,
+        .loadedFromCache = outLoadedFromCache
     };
 
     typeMgr.callbacks->LoadRemote(handle, loadParams, cacheHash, &asyncLoadData, [](AssetHandle, const AssetResult& result, void* userData) {
-        AsyncLoadData* data = reinterpret_cast<AsyncLoadData*>(userData);
+        AsyncLoadData* params = reinterpret_cast<AsyncLoadData*>(userData);
+        
+        if (result.cacheHash == params->cacheHash) {
+            ASSERT(result.obj == nullptr);
+            params->result = assetLoadFromCache(*params->typeMgr, *params->loadParams, result.cacheHash, params->loadedFromCache);
 
-        if (result.isFromCache) {
-            data->result = assetLoadFromCache(*data->typeMgr, *data->loadParams, result.cacheHash);
+            if (!*params->loadedFromCache) {
+                MutexScope mtx(gAssetMgr.hashLookupMtx);
+                gAssetMgr.hashLookup.FindAndRemove(params->hash);
+
+                gAssetMgr.cacheSyncInvalidated = true;
+                gAssetMgr.cacheSyncDelayTm = 0;
+            }
         }
         else {
-            data->result = result;
+            ASSERT(result.obj);
+            params->result = result;
         }
 
         // We need to copy the dependencies over again in order to bring them over to persistent memory
         if (result.numDepends) {
             ASSERT(result.depends);
             ASSERT(result.dependsBufferSize);   // Only remote loads should implement this
-            data->result.depends = (AssetDependency*)memAlloc(result.dependsBufferSize, &gAssetMgr.runtimeHeap);
-            memcpy(data->result.depends, result.depends, result.dependsBufferSize);
-            data->result.numDepends = result.numDepends;
+            params->result.depends = (AssetDependency*)memAlloc(result.dependsBufferSize, &gAssetMgr.runtimeHeap);
+            memcpy(params->result.depends, result.depends, result.dependsBufferSize);
+            params->result.numDepends = result.numDepends;
         }
 
-        data->signal->Set();
-        data->signal->Raise();
+        params->signal->Set();
+        params->signal->Raise();
     });
     waitSignal.Wait();
     waitSignal.Release();
@@ -491,8 +533,11 @@ static AssetResult assetLoadObjRemote(AssetHandle handle, const AssetTypeManager
 }
 
 bool assetLoadMetaData(const char* filepath, AssetPlatform platform, Allocator* alloc, 
-                       AssetMetaKeyValue** outData, uint32* outKeyCount, uint32* outMetaHash)
+                       AssetMetaKeyValue** outData, uint32* outKeyCount)
 {
+    ASSERT(outData);
+    ASSERT(outKeyCount);
+
     auto collectKeyValues = [](JsonNode jroot, StaticArray<AssetMetaKeyValue, 64>* keys) {
         char key[32];
         char value[32];
@@ -520,9 +565,6 @@ bool assetLoadMetaData(const char* filepath, AssetPlatform platform, Allocator* 
 
     Blob blob = vfsReadFile(assetMetaPath.CStr(), VfsFlags::TextFile, &tmpAlloc);
     if (blob.IsValid()) {
-        if (outMetaHash) 
-            *outMetaHash = hashMurmur32(blob.Data(), uint32(blob.Size()), 0);
-
         JsonContext jctx;
         if (jsonParse(&jctx, (const char*)blob.Data(), uint32(blob.Size()), &tmpAlloc)) {
             JsonNode jroot(jctx);
@@ -549,6 +591,10 @@ bool assetLoadMetaData(const char* filepath, AssetPlatform platform, Allocator* 
             *outKeyCount = keys.Count();
             return true;
         }
+        else {
+            *outData = nullptr;
+            *outKeyCount = 0;
+        }
         
         blob.Free();
         JsonErrorLocation loc = jsonParseGetErrorLocation(&jctx); 
@@ -557,6 +603,9 @@ bool assetLoadMetaData(const char* filepath, AssetPlatform platform, Allocator* 
         return false;
     }
     else {
+        *outData = nullptr;
+        *outKeyCount = 0;
+
         memTempPopId(tempId);
         return false;
     }
@@ -568,17 +617,22 @@ bool assetLoadMetaData(AssetHandle handle, Allocator* alloc, AssetMetaKeyValue**
 
     MutexScope mtx(gAssetMgr.assetsMtx);
     Asset& asset = gAssetMgr.assets.Data(handle);
-    if (asset.numMeta) {
-        ASSERT(asset.metaData);
-
+    if (asset.numMeta && asset.metaData) {
         *outData = memAllocCopy<AssetMetaKeyValue>(asset.metaData, asset.numMeta, alloc);
         *outKeyCount = asset.numMeta;
         return true;
     }
     else {
-        *outData = nullptr;
-        *outKeyCount = 0;
-        return false;
+        if (assetLoadMetaData(asset.params->path, assetGetCurrentPlatform(), &gAssetMgr.runtimeHeap, &asset.metaData, &asset.numMeta)) {
+            *outData = memAllocCopy<AssetMetaKeyValue>(asset.metaData, asset.numMeta, alloc);
+            *outKeyCount = asset.numMeta;
+            return true;
+        }
+        else {
+            *outData = nullptr;
+            *outKeyCount = 0;
+            return false;
+        }
     }
 }
 
@@ -606,14 +660,16 @@ static void assetLoadTask(uint32 groupIndex, void* userData)
     const char* filepath = asset.params->path;
     const AssetTypeManager& typeMgr = gAssetMgr.typeManagers[asset.typeMgrIdx];
     const AssetLoadParams& loadParams = *asset.params;
+    uint32 hash = asset.hash;
     gAssetMgr.assetsMtx.Exit();
 
     AssetResult result;
+    bool loadedFromCache = false;
 
     if (method == AssetLoadMethod::Local) 
-        result = assetLoadObjLocal(handle, typeMgr, filepath, loadParams);
+        result = assetLoadObjLocal(handle, typeMgr, loadParams, hash, &loadedFromCache);
     else if (method == AssetLoadMethod::Remote)
-        result = assetLoadObjRemote(handle, typeMgr, loadParams);
+        result = assetLoadObjRemote(handle, typeMgr, loadParams, hash, &loadedFromCache);
     else {
         ASSERT(0);
         result = AssetResult {};
@@ -637,9 +693,9 @@ static void assetLoadTask(uint32 groupIndex, void* userData)
         asset.state = AssetState::Alive;
         asset.obj = result.obj;
         asset.objBufferSize = result.objBufferSize;
-        logVerbose("(load) %s: %s (%.1f ms)%s", typeMgr.name.CStr(), filepath, timer.ElapsedMS(), result.isFromCache ? " [cached]" : "");
+        logVerbose("(load) %s: %s (%.1f ms)%s", typeMgr.name.CStr(), filepath, timer.ElapsedMS(), loadedFromCache ? " [cached]" : "");
 
-        if (!result.isFromCache) {
+        if (!loadedFromCache) {
             gAssetMgr.cacheSyncInvalidated = true;
             gAssetMgr.cacheSyncDelayTm = 0;
             assetSaveToCache(typeMgr, loadParams, result, asset.hash);
@@ -725,7 +781,6 @@ AssetHandle assetLoad(const AssetLoadParams& params, const void* extraParams)
     HashMurmur32Incremental hasher(ASSET_HASH_SEED);    
     uint32 assetHash = hasher.Add<char>(params.path, strLen(params.path))
                              .Add<uint32>(&params.tags)
-                             .Add<Allocator>(params.alloc)
                              .AddAny(extraParams, typeMgr.extraParamTypeSize)
                              .Hash();
 
@@ -765,8 +820,11 @@ void assetUnload(AssetHandle handle)
         ASSERT(gAssetMgr.initialized);
         MutexScope mtx(gAssetMgr.assetsMtx);
         Asset& asset = gAssetMgr.assets.Data(handle);
-        ASSERT_ALWAYS(asset.state == AssetState::Alive, "Asset '%s' is either failed or already released", 
-            asset.params->path);
+
+        if (asset.state != AssetState::Alive) {
+            logWarning("Asset is either failed or already released: %s", asset.params->path);
+            return;
+        }
     
         if (--asset.refCount == 0) {
             AssetLoaderCallbacks* callbacks = gAssetMgr.typeManagers[asset.typeMgrIdx].callbacks;

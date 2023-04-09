@@ -33,8 +33,6 @@
 inline constexpr uint32 kModelMaxVertexAttributes = 16;
 inline constexpr uint32 kModelMaxVertexBuffersPerShader = 8;
 
-#pragma pack(push, 8)
-
 //------------------------------------------------------------------------
 // Material
 struct ModelMaterialTexture 
@@ -163,7 +161,6 @@ struct Model
     RelativePtr<ModelMesh> meshes;
     ModelGeometryLayout layout;
 };
-#pragma pack(pop)
 
 // provide this for loading "model" asset
 // if layout is zero initialized, default layout will be used:

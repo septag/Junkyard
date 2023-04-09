@@ -25,7 +25,7 @@ struct ShaderLoadRequest
 
 struct ShaderLoader final : AssetLoaderCallbacks
 {
-    AssetResult Load(AssetHandle handle, const AssetLoadParams& params, Allocator* dependsAlloc) override;
+    AssetResult Load(AssetHandle handle, const AssetLoadParams& params, uint32 cacheHash, Allocator* dependsAlloc) override;
     void LoadRemote(AssetHandle handle, const AssetLoadParams& params, uint32 cacheHash, void* userData, AssetLoaderAsyncCallback loadCallback) override;
     bool InitializeResources(void*, const AssetLoadParams&) override { return true; }
     bool ReloadSync(AssetHandle handle, void* prevData) override;
@@ -53,50 +53,69 @@ static void shaderCompileLoadTask(uint32 groupIndex, void* userData)
     AssetPlatform platform;
 
     uint32 handle;
+    uint32 oldCacheHash;
     blob->Read<uint32>(&handle);
+    blob->Read<uint32>(&oldCacheHash);
     blob->ReadStringBinary(filepath, sizeof(filepath));
     blob->Read<uint32>(reinterpret_cast<uint32*>(&platform));
     blob->Read(&compileDesc, sizeof(compileDesc));
 
     outgoingBlob.Write<uint32>(handle);
+
+    AssetMetaKeyValue* metaData;
+    uint32 numMeta;
+    if (assetLoadMetaData(filepath, platform, &tmpAlloc, &metaData, &numMeta)) {
+        compileDesc.dumpIntermediates |= assetGetMetaValue(metaData, numMeta, "dumpIntermediates", false);
+        compileDesc.debug |= assetGetMetaValue(metaData, numMeta, "debug", false);
+    }
+
+    uint32 cacheHash = assetMakeCacheHash(AssetCacheDesc {
+        .filepath = filepath,
+        .loadParams = &compileDesc,
+        .loadParamsSize = sizeof(ShaderCompileDesc),
+        .metaData = metaData,
+        .numMeta = numMeta,
+        .lastModified = vfsGetLastModified(filepath)
+    });
     
-    TimerStopWatch timer;
-    Blob fileBlob = vfsReadFile(filepath, VfsFlags::None, &tmpAlloc);
-    if (fileBlob.IsValid()) {
-        // Load meta-data
-        AssetMetaKeyValue* metaData;
-        uint32 numMeta;
-        if (assetLoadMetaData(filepath, platform, &tmpAlloc, &metaData, &numMeta)) {
-            compileDesc.dumpIntermediates |= assetGetMetaValue(metaData, numMeta, "dumpIntermediates", false);
-            compileDesc.debug |= assetGetMetaValue(metaData, numMeta, "debug", false);
-        }
+    if (cacheHash != oldCacheHash) {
+        TimerStopWatch timer;
+        Blob fileBlob = vfsReadFile(filepath, VfsFlags::None, &tmpAlloc);
+        if (fileBlob.IsValid()) {
+            // Compilation
+            char compileErrorDesc[512];
+            Pair<Shader*, uint32> shaderCompileResult = shaderCompile(fileBlob, filepath, compileDesc, compileErrorDesc, 
+                                                                      sizeof(compileErrorDesc), memDefaultAlloc());
+            Shader* shader = shaderCompileResult.first;
+            uint32 shaderDataSize = shaderCompileResult.second;
 
-        // Compilation
-        char compileErrorDesc[512];
-        Pair<Shader*, uint32> shaderCompileResult = shaderCompile(fileBlob, filepath, compileDesc, compileErrorDesc, 
-                                                                  sizeof(compileErrorDesc), memDefaultAlloc());
-        Shader* shader = shaderCompileResult.first;
-        uint32 shaderDataSize = shaderCompileResult.second;
-
-        if (shader) {
-            outgoingBlob.Write<uint32>(shaderDataSize);
-            outgoingBlob.Write(shader, shaderDataSize);
-            remoteSendResponse(kRemoteCmdCompileShader, outgoingBlob, false, nullptr);
-            logVerbose("Shader loaded: %s (%.1f ms)", filepath, timer.ElapsedMS());
+            if (shader) {
+                outgoingBlob.Write<uint32>(cacheHash);
+                outgoingBlob.Write<uint32>(shaderDataSize);
+                outgoingBlob.Write(shader, shaderDataSize);
+                remoteSendResponse(kRemoteCmdCompileShader, outgoingBlob, false, nullptr);
+                logVerbose("Shader loaded: %s (%.1f ms)", filepath, timer.ElapsedMS());
+            }
+            else {
+                char errorMsg[kRemoteErrorDescSize];
+                strPrintFmt(errorMsg, sizeof(errorMsg), "Compiling shader '%s' failed: %s", filepath, compileErrorDesc);
+                remoteSendResponse(kRemoteCmdCompileShader, outgoingBlob, true, errorMsg);
+                logVerbose(errorMsg);
+            }
+            memFree(shader);
         }
         else {
             char errorMsg[kRemoteErrorDescSize];
-            strPrintFmt(errorMsg, sizeof(errorMsg), "Compiling shader '%s' failed: %s", filepath, compileErrorDesc);
+            strPrintFmt(errorMsg, sizeof(errorMsg), "Opening shader file failed: %s", filepath);
             remoteSendResponse(kRemoteCmdCompileShader, outgoingBlob, true, errorMsg);
             logVerbose(errorMsg);
         }
-        memFree(shader);
     }
     else {
-        char errorMsg[kRemoteErrorDescSize];
-        strPrintFmt(errorMsg, sizeof(errorMsg), "Opening shader file failed: %s", filepath);
-        remoteSendResponse(kRemoteCmdCompileShader, outgoingBlob, true, errorMsg);
-        logVerbose(errorMsg);
+        outgoingBlob.Write<uint32>(cacheHash);
+        outgoingBlob.Write<uint32>(0);  // nothing has loaded. it's safe to load from client's local cache
+        remoteSendResponse(kRemoteCmdCompileShader, outgoingBlob, false, nullptr);
+        logVerbose("Shader: %s [cached]", filepath);
     }
 
     blob->Free();
@@ -153,16 +172,22 @@ static void shaderCompileShaderHandlerClientFn([[maybe_unused]] uint32 cmd, cons
     }
 
     if (!error) {
-        uint32 shaderBufferSize;
-        [[maybe_unused]] size_t readBytes = incomingData.Read<uint32>(&shaderBufferSize);
-        ASSERT(readBytes == sizeof(shaderBufferSize));
+        uint32 cacheHash = 0;
+        uint32 shaderBufferSize = 0;
+        void* shaderData = nullptr;
+        incomingData.Read<uint32>(&cacheHash);
+        incomingData.Read<uint32>(&shaderBufferSize);
 
-        void* shaderData = memAlloc(shaderBufferSize, alloc);
-        incomingData.Read(shaderData, shaderBufferSize);
+        if (shaderBufferSize) {
+            shaderData = memAlloc(shaderBufferSize, alloc);
+            incomingData.Read(shaderData, shaderBufferSize);
+            ((Shader*)shaderData)->hash = handle.id;
+        }
 
-        ((Shader*)shaderData)->hash = handle.id;
-        if (loadCallback)
-            loadCallback(handle, AssetResult { .obj = shaderData, .objBufferSize = shaderBufferSize }, loadCallbackUserData);
+        if (loadCallback) {
+            loadCallback(handle, AssetResult { .obj = shaderData, .objBufferSize = shaderBufferSize, .cacheHash = cacheHash }, 
+                         loadCallbackUserData);
+        }
     }
     else {
         logError(errorDesc);
@@ -247,40 +272,51 @@ const ShaderParameterInfo* shaderGetParam(const Shader& info, const char* name)
 }
 
 // MT: Runs from a task thread (AssetManager)
-AssetResult ShaderLoader::Load(AssetHandle handle, const AssetLoadParams& params, Allocator*)
+AssetResult ShaderLoader::Load(AssetHandle handle, const AssetLoadParams& params, uint32 cacheHash, Allocator*)
 {
     #if CONFIG_TOOLMODE
         ASSERT(params.next);
-        ShaderCompileDesc compileDesc = *reinterpret_cast<ShaderCompileDesc*>(params.next.Get());
         MemTempAllocator tmpAlloc;
-        Blob blob = vfsReadFile(params.path, VfsFlags::None, &tmpAlloc);
-        if (!blob.IsValid()) {
-            logError("Opening shader file failed: %s", params.path);
-            return AssetResult {};
-        }
+        ShaderCompileDesc compileDesc = *reinterpret_cast<ShaderCompileDesc*>(params.next.Get());
 
-        // Load meta-data
-        const SettingsGraphics& graphicsSettings = settingsGetGraphics();
         AssetMetaKeyValue* metaData;
         uint32 numMeta;
+        const SettingsGraphics& graphicsSettings = settingsGetGraphics();
         if (assetLoadMetaData(handle, &tmpAlloc, &metaData, &numMeta)) {
-            compileDesc.dumpIntermediates |= assetGetMetaValue(metaData, numMeta, "dumpIntermediates", graphicsSettings.shaderDumpIntermediates);
-            compileDesc.debug |= assetGetMetaValue(metaData, numMeta, "debug", graphicsSettings.shaderDebug);
+            compileDesc.dumpIntermediates |= assetGetMetaValue(metaData, numMeta, "dumpIntermediates", false);
+            compileDesc.debug |= assetGetMetaValue(metaData, numMeta, "debug", false);
         }
-        else {
-            compileDesc.dumpIntermediates |= graphicsSettings.shaderDumpIntermediates;
-            compileDesc.debug |= graphicsSettings.shaderDebug;
-        }
+        
+        compileDesc.dumpIntermediates |= graphicsSettings.shaderDumpIntermediates;
+        compileDesc.debug |= graphicsSettings.shaderDebug;
 
-        char errorDiag[512];
-        Pair<Shader*, uint32> shader = shaderCompile(blob, params.path, compileDesc, errorDiag, sizeof(errorDiag), params.alloc);
-        if (shader.first) {
-            shader.first->hash = handle.id;
+        uint32 newCacheHash = assetMakeCacheHash(AssetCacheDesc {
+            .filepath = params.path,
+            .loadParams = params.next.Get(), 
+            .loadParamsSize = sizeof(ShaderCompileDesc),
+            .metaData = metaData,
+            .numMeta = numMeta,
+            .lastModified = vfsGetLastModified(params.path)
+        });
+
+        if (newCacheHash != cacheHash) {
+            Blob blob = vfsReadFile(params.path, VfsFlags::None, &tmpAlloc);
+            if (!blob.IsValid()) {
+                logError("Opening shader file failed: %s", params.path);
+                return AssetResult {};
+            }
+
+            char errorDiag[1024];
+            Pair<Shader*, uint32> shader = shaderCompile(blob, params.path, compileDesc, errorDiag, sizeof(errorDiag), params.alloc);
+            if (shader.first)
+                shader.first->hash = handle.id;
+            else 
+                logError("Compiling shader '%s' failed: %s", params.path, errorDiag);
+            return AssetResult { .obj = shader.first, .objBufferSize = shader.second, .cacheHash = newCacheHash };
         }
         else {
-            logError("Compiling shader '%s' failed: %s", params.path, errorDiag);
+            return AssetResult { .cacheHash = newCacheHash };
         }
-        return AssetResult { .obj = shader.first, .objBufferSize = shader.second };
     #else
         ASSERT_MSG(0, "None ToolMode builds does not support shader compilation");
         return AssetResult {};
@@ -293,11 +329,11 @@ void ShaderLoader::LoadRemote(AssetHandle handle, const AssetLoadParams& params,
     ASSERT(params.next);
     ASSERT(loadCallback);
     ASSERT(remoteIsConnected());
-    UNUSED(cacheHash);
 
     ShaderCompileDesc compileDesc = *reinterpret_cast<ShaderCompileDesc*>(params.next.Get());
 
-    { MutexScope mtx(gShaderLoader.requestsMtx);
+    { 
+        MutexScope mtx(gShaderLoader.requestsMtx);
         gShaderLoader.requests.Push(ShaderLoadRequest {
             .handle = handle,
             .alloc = params.alloc,
@@ -315,6 +351,7 @@ void ShaderLoader::LoadRemote(AssetHandle handle, const AssetLoadParams& params,
     outgoingBlob.SetGrowPolicy(Blob::GrowPolicy::Multiply);
 
     outgoingBlob.Write<uint32>(handle.id);
+    outgoingBlob.Write<uint32>(cacheHash);
     outgoingBlob.WriteStringBinary(params.path, strLen(params.path));
     outgoingBlob.Write<uint32>(static_cast<uint32>(params.platform));
     outgoingBlob.Write(&compileDesc, sizeof(compileDesc));

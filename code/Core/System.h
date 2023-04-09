@@ -180,82 +180,6 @@ void memVirtualRelease(void* ptr, size_t size);
 MemVirtualStats memVirtualGetStats();
 
 //--------------------------------------------------------------------------------------------------
-// General OS
-using DLLHandle = void*;
-
-enum class SysCpuFamily 
-{
-    Unknown = 0,
-    ARM,
-    x86_64,
-    ARM64
-};
-
-struct SysInfo
-{
-    char         cpuName[32];
-    char         cpuModel[64];
-    SysCpuFamily cpuFamily;
-    size_t       pageSize;
-    size_t       physicalMemorySize;
-    uint32       coreCount;
-    uint32       cpuCapsSSE : 1;
-    uint32       cpuCapsSSE2 : 1;
-    uint32       cpuCapsSSE3 : 1;
-    uint32       cpuCapsSSE41 : 1;
-    uint32       cpuCapsSSE42: 1;
-    uint32       cpuCapsAVX : 1;
-    uint32       cpuCapsAVX2 : 1;
-    uint32       cpuCapsAVX512 : 1;
-    uint32       cpuCapsNeon : 1;
-};
-
-API [[nodiscard]] DLLHandle sysLoadDLL(const char* filepath, char** pErrorMsg = nullptr);
-API void sysUnloadDLL(DLLHandle dll);
-API void* sysSymbolAddress(DLLHandle dll, const char* symbolName);
-API size_t sysGetPageSize();
-API void sysGetSysInfo(SysInfo* info);
-API bool sysIsDebuggerPresent();
-
-// Platform specific 
-#if PLATFORM_WINDOWS
-    API void* sysWin32RunProcess(int argc, const char* argv[]);
-    API bool sysWin32IsProcessRunning(const char* execName);
-    API bool sysWin32GetRegisterLocalMachineString(const char* subkey, const char* value, 
-                                                   char* dst, size_t dstSize);
-    API void sysWin32PrintToDebugger(const char* text);
-
-    enum class SysWin32ConsoleColor : uint16
-    {
-        Blue      = 0x0001,
-        Green     = 0x0002,
-        Red       = 0x0004,
-        Intensity = 0x0008
-    };
-    ENABLE_BITMASK(SysWin32ConsoleColor);
-
-    API void sysWin32SetConsoleColor(void* handle, SysWin32ConsoleColor color);
-#elif PLATFORM_ANDROID
-    enum class SysAndroidLogType 
-    {
-        Unknown = 0,
-        Default,
-        Verbose,
-        Debug,
-        Info,
-        Warn,
-        Error,
-        Fatal,
-        Silent,
-    };
-
-    API void sysAndroidPrintToLog(SysAndroidLogType logType, const char* tag, const char* text);
-    API JNIEnv* sysAndroidAcquireJniEnv();
-    API void sysAndroidReleaseJniEnv();    
-    API JNIEnv* sysAndroidGetJniEnv();
-#endif  // PLATFORM_ANDROID
-
-//--------------------------------------------------------------------------------------------------
 // Path 
 enum class PathType
 {
@@ -314,6 +238,85 @@ struct Path : String<kMaxPath>
     bool IsFile() const;
     bool IsDir() const;
 };
+
+//--------------------------------------------------------------------------------------------------
+// General OS
+using DLLHandle = void*;
+
+enum class SysCpuFamily 
+{
+    Unknown = 0,
+    ARM,
+    x86_64,
+    ARM64
+};
+
+struct SysInfo
+{
+    char         cpuName[32];
+    char         cpuModel[64];
+    SysCpuFamily cpuFamily;
+    size_t       pageSize;
+    size_t       physicalMemorySize;
+    uint32       coreCount;
+    uint32       cpuCapsSSE : 1;
+    uint32       cpuCapsSSE2 : 1;
+    uint32       cpuCapsSSE3 : 1;
+    uint32       cpuCapsSSE41 : 1;
+    uint32       cpuCapsSSE42: 1;
+    uint32       cpuCapsAVX : 1;
+    uint32       cpuCapsAVX2 : 1;
+    uint32       cpuCapsAVX512 : 1;
+    uint32       cpuCapsNeon : 1;
+};
+
+API [[nodiscard]] DLLHandle sysLoadDLL(const char* filepath, char** pErrorMsg = nullptr);
+API void sysUnloadDLL(DLLHandle dll);
+API void* sysSymbolAddress(DLLHandle dll, const char* symbolName);
+API size_t sysGetPageSize();
+API void sysGetSysInfo(SysInfo* info);
+API bool sysIsDebuggerPresent();
+
+// Platform specific 
+#if PLATFORM_WINDOWS
+API void* sysWin32RunProcess(int argc, const char* argv[]);
+API bool sysWin32IsProcessRunning(const char* execName);
+API bool sysWin32GetRegisterLocalMachineString(const char* subkey, const char* value, 
+                                            char* dst, size_t dstSize);
+API void sysWin32PrintToDebugger(const char* text);
+
+enum class SysWin32ConsoleColor : uint16
+{
+    Blue      = 0x0001,
+    Green     = 0x0002,
+    Red       = 0x0004,
+    Intensity = 0x0008
+};
+ENABLE_BITMASK(SysWin32ConsoleColor);
+
+API void sysWin32SetConsoleColor(void* handle, SysWin32ConsoleColor color);
+#elif PLATFORM_ANDROID  
+typedef struct ANativeActivity ANativeActivity; // <android/native_activity.h>
+
+enum class SysAndroidLogType 
+{
+    Unknown = 0,
+    Default,
+    Verbose,
+    Debug,
+    Info,
+    Warn,
+    Error,
+    Fatal,
+    Silent,
+};
+
+API void sysAndroidPrintToLog(SysAndroidLogType logType, const char* tag, const char* text);
+API JNIEnv* sysAndroidAcquireJniEnv();
+API void sysAndroidReleaseJniEnv();    
+API JNIEnv* sysAndroidGetJniEnv();
+API Path sysAndroidGetCacheDirectory(ANativeActivity* activity);
+#endif
 
 //------------------------------------------------------------------------
 INLINE bool pathExists(const char* path)
