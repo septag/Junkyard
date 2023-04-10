@@ -132,8 +132,9 @@ static AssetResult assetLoadFromCache(const AssetTypeManager& typeMgr, const Ass
                 cache.Read<uint32>(&result.dependsBufferSize);
                 cache.Read<uint32>(&result.objBufferSize);
     
+                // Allocate and Copy dependencies from runtimeHeap. This is where internal asset manager expects them to be.
                 if (result.dependsBufferSize) {
-                    result.depends = (AssetDependency*)memAlloc(result.dependsBufferSize, params.alloc);
+                    result.depends = (AssetDependency*)memAlloc(result.dependsBufferSize, &gAssetMgr.runtimeHeap);
                     cache.Read(result.depends, result.dependsBufferSize);
                 }
     
@@ -514,7 +515,7 @@ static AssetResult assetLoadObjRemote(AssetHandle handle, const AssetTypeManager
             params->result = result;
         }
 
-        // We need to copy the dependencies over again in order to bring them over to persistent memory
+        // We need to copy the dependencies over again in order to bring them over to persistent memory (runtimeHeap)
         if (result.numDepends) {
             ASSERT(result.depends);
             ASSERT(result.dependsBufferSize);   // Only remote loads should implement this
@@ -532,8 +533,7 @@ static AssetResult assetLoadObjRemote(AssetHandle handle, const AssetTypeManager
     return asyncLoadData.result;
 }
 
-bool assetLoadMetaData(const char* filepath, AssetPlatform platform, Allocator* alloc, 
-                       AssetMetaKeyValue** outData, uint32* outKeyCount)
+bool assetLoadMetaData(const char* filepath, AssetPlatform platform, Allocator* alloc, AssetMetaKeyValue** outData, uint32* outKeyCount)
 {
     ASSERT(outData);
     ASSERT(outKeyCount);
@@ -611,6 +611,7 @@ bool assetLoadMetaData(const char* filepath, AssetPlatform platform, Allocator* 
     }
 }
 
+// Note: This version of LoadMetaData (provide local asset handle instead of filepath), Allocates asset's meta-data from runtimeHeap
 bool assetLoadMetaData(AssetHandle handle, Allocator* alloc, AssetMetaKeyValue** outData, uint32* outKeyCount)
 {
     ASSERT(handle.IsValid());
