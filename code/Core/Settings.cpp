@@ -185,6 +185,10 @@ static bool settingsParsePredefinedSetting(SettingsCategory category, const char
             graphics->enableVsync = strToBool(value);
             return true;
         }
+        else if (strIsEqualNoCase(key, "trackResourceLeaks")) {
+            graphics->trackResourceLeaks = strToBool(value);
+            return true;
+        }
     }
     else if (category == SettingsCategory::Tooling) {
         SettingsTooling* tooling = &gSettings.predefined.tooling;

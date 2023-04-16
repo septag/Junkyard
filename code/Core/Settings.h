@@ -43,6 +43,7 @@ struct SettingsGraphics
     bool enableGpuProfile = false;          // Enables GPU Profiling with Tracy and other tools
     bool enableImGui = true;                // Enables ImGui GUI
     bool enableVsync = true;                // Enables Vsync. Some hardware doesn't support this feature
+    bool trackResourceLeaks = false;        // Store buffers/image/etc. resource stacktraces and shows leakage information at exit
 };
 
 struct SettingsTooling

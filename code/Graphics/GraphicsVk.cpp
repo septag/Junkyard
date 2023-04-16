@@ -157,6 +157,11 @@ struct GfxBufferData
     VkBuffer                stagingBuffer;
     VmaAllocation           stagingAllocation;
     void*                   mappedBuffer;
+
+#if !CONFIG_FINAL_BUILD
+    void*                   stackframes[8];
+    uint16                  numStackframes;
+#endif
 };
 
 struct GfxImageData
@@ -170,6 +175,11 @@ struct GfxImageData
     VkImageView    view;
     VkSampler      sampler;
     VmaAllocation  allocation;
+
+#if !CONFIG_FINAL_BUILD
+    void*          stackframes[8];
+    uint16         numStackframes;
+#endif
 };
 
 struct GfxDescriptorSetLayoutData
@@ -187,6 +197,11 @@ struct GfxDescriptorSetLayoutData
     uint32                numBindings;
     uint32                refCount;
     Binding*              bindings;
+
+#if !CONFIG_FINAL_BUILD
+    void*          stackframes[8];
+    uint16         numStackframes;
+#endif
 };
 
 struct GfxPipelineLayoutData
@@ -196,6 +211,11 @@ struct GfxPipelineLayoutData
     GfxDescriptorSetLayout     descriptorSetLayouts[kMaxDescriptorSetLayoutPerPipeline];
     VkPipelineLayout           layout;
     uint32                     refCount;        // number of cached items referenced by pipeline objects
+
+#if !CONFIG_FINAL_BUILD
+    void*          stackframes[8];
+    uint16         numStackframes;
+#endif
 };
 
 struct GfxPipelineData
@@ -204,12 +224,22 @@ struct GfxPipelineData
     GfxPipelineLayout pipelineLayout;
     VkGraphicsPipelineCreateInfo* gfxCreateInfo;    // Keep this to be able recreate pipelines anytime
     uint32 shaderHash;
+
+#if !CONFIG_FINAL_BUILD
+    void*          stackframes[8];
+    uint16         numStackframes;
+#endif
 };
 
 struct GfxDescriptorSetData
 {
     GfxDescriptorSetLayout layout;
     VkDescriptorSet descriptorSet;
+
+#if !CONFIG_FINAL_BUILD
+    void*          stackframes[8];
+    uint16         numStackframes;
+#endif
 };
 
 struct GfxCommandBufferThreadData
@@ -763,6 +793,11 @@ static GfxPipelineLayout gfxCreatePipelineLayout(const Shader& shader,
 
         for (uint32 i = 0; i < numDescriptorSetLayouts; i++)
             pipLayoutData.descriptorSetLayouts[i] = descriptorSetLayouts[i];
+
+        #if !CONFIG_FINAL_BUILD
+            if (settingsGetGraphics().trackResourceLeaks)
+                pipLayoutData.numStackframes = debugCaptureStacktrace(pipLayoutData.stackframes, (uint16)CountOf(pipLayoutData.stackframes), 2);
+        #endif
 
         pipLayout = gVk.pools.pipelineLayouts.Add(pipLayoutData);
         if (layoutOut)
@@ -2293,36 +2328,103 @@ void _private::gfxRelease()
 
 void GfxObjectPools::DetectAndReleaseLeaks()
 {
+    auto PrintStacktrace = [](const char* resourceName, void* ptr, void* const* stackframes, uint16 numStackframes) 
+    {
+        DebugStacktraceEntry entries[8];
+        debugResolveStacktrace(numStackframes, stackframes, entries);
+        logDebug("\t%s: 0x%llx", resourceName, ptr);
+        for (uint16 si = 0; si < numStackframes; si++) 
+            logDebug("\t\t- %s(%u)", entries[si].filename, entries[si].line);
+    };
+
+    [[maybe_unused]] bool trackResourceLeaks = settingsGetGraphics().trackResourceLeaks;
+
     if (gVk.pools.buffers.Count()) {
         logWarning("Gfx: Total %u buffers are not released. cleaning up...", gVk.pools.buffers.Count());
-        for (uint32 i = 0; i < gVk.pools.buffers.Count(); i++)
-            gfxDestroyBuffer(gVk.pools.buffers.HandleAt(i));
+        for (uint32 i = 0; i < gVk.pools.buffers.Count(); i++) {
+            GfxBuffer handle = gVk.pools.buffers.HandleAt(i);
+            #if !CONFIG_FINAL_BUILD
+                if (trackResourceLeaks) {
+                    const GfxBufferData& bufferData = gVk.pools.buffers.Data(handle);
+                    PrintStacktrace("Buffer", bufferData.buffer, bufferData.stackframes, bufferData.numStackframes);
+                }
+            #endif
+            gfxDestroyBuffer(handle);
+        }
     }
+
     if (gVk.pools.images.Count()) {
         logWarning("Gfx: Total %u images are not released. cleaning up...", gVk.pools.images.Count());
-        for (uint32 i = 0; i < gVk.pools.images.Count(); i++)
-            gfxDestroyImage(gVk.pools.images.HandleAt(i));
+        for (uint32 i = 0; i < gVk.pools.images.Count(); i++) {
+            GfxImage handle = gVk.pools.images.HandleAt(i);
+            #if !CONFIG_FINAL_BUILD
+                if (trackResourceLeaks) {
+                    const GfxImageData& imageData = gVk.pools.images.Data(handle);
+                    PrintStacktrace("Image", imageData.image, imageData.stackframes, imageData.numStackframes);
+                }
+            #endif
+
+            gfxDestroyImage(handle);
+        }
     }
+
     if (gVk.pools.pipelineLayouts.Count()) {
         logWarning("Gfx: Total %u pipeline layout are not released. cleaning up...", gVk.pools.pipelineLayouts.Count());
-        for (uint32 i = 0; i < gVk.pools.pipelineLayouts.Count(); i++)
-            gfxDestroyPipelineLayout(gVk.pools.pipelineLayouts.HandleAt(i));
+        for (uint32 i = 0; i < gVk.pools.pipelineLayouts.Count(); i++) {
+            GfxPipelineLayout handle = gVk.pools.pipelineLayouts.HandleAt(i);
+            #if !CONFIG_FINAL_BUILD
+                if (trackResourceLeaks) {
+                    const GfxPipelineLayoutData& pipLayout = gVk.pools.pipelineLayouts.Data(handle);
+                    PrintStacktrace("PipelineLayout", pipLayout.layout, pipLayout.stackframes, pipLayout.numStackframes);
+                }
+            #endif
+
+            gfxDestroyPipelineLayout(handle);
+        }
     }
+
     if (gVk.pools.pipelines.Count()) {
         logWarning("Gfx: Total %u pipelines are not released. cleaning up...", gVk.pools.pipelines.Count());
-        for (uint32 i = 0; i < gVk.pools.pipelines.Count(); i++)
-            gfxDestroyPipeline(gVk.pools.pipelines.HandleAt(i));
+        for (uint32 i = 0; i < gVk.pools.pipelines.Count(); i++) {
+            GfxPipeline handle = gVk.pools.pipelines.HandleAt(i);
+            #if !CONFIG_FINAL_BUILD
+                if (trackResourceLeaks) {
+                    const GfxPipelineData& pipData = gVk.pools.pipelines.Data(handle);
+                    PrintStacktrace("Pipeline", pipData.pipeline, pipData.stackframes, pipData.numStackframes);
+                }
+            #endif
+            gfxDestroyPipeline(handle);
+        }
     }
+
     if (gVk.pools.descriptorSets.Count()) {
         logWarning("Gfx: Total %u descriptor sets are not released. cleaning up...", gVk.pools.descriptorSets.Count());
-        for (uint32 i = 0; i < gVk.pools.descriptorSets.Count(); i++)
-            gfxDestroyDescriptorSet(gVk.pools.descriptorSets.HandleAt(i));
+        for (uint32 i = 0; i < gVk.pools.descriptorSets.Count(); i++) {
+            GfxDescriptorSet handle = gVk.pools.descriptorSets.HandleAt(i);
+            #if !CONFIG_FINAL_BUILD
+                if (trackResourceLeaks) {
+                    const GfxDescriptorSetData& dsData = gVk.pools.descriptorSets.Data(handle);
+                    PrintStacktrace("DescriptorSet", dsData.descriptorSet, dsData.stackframes, dsData.numStackframes);
+                }
+            #endif
 
+            gfxDestroyDescriptorSet(handle);
+        }
     }
+
     if (gVk.pools.descriptorSetLayouts.Count()) {
         logWarning("Gfx: Total %u descriptor sets layouts are not released. cleaning up...", gVk.pools.descriptorSetLayouts.Count());
-        for (uint32 i = 0; i < gVk.pools.descriptorSetLayouts.Count(); i++)
-            gfxDestroyDescriptorSetLayout(gVk.pools.descriptorSetLayouts.HandleAt(i));
+        for (uint32 i = 0; i < gVk.pools.descriptorSetLayouts.Count(); i++) {
+            GfxDescriptorSetLayout handle = gVk.pools.descriptorSetLayouts.HandleAt(i);
+            #if !CONFIG_FINAL_BUILD
+                if (trackResourceLeaks) {
+                    const GfxDescriptorSetLayoutData& dsLayoutData = gVk.pools.descriptorSetLayouts.Data(handle);
+                    PrintStacktrace("DescriptorSetLayout", dsLayoutData.layout, dsLayoutData.stackframes, dsLayoutData.numStackframes);
+                }
+            #endif
+
+            gfxDestroyDescriptorSetLayout(handle);
+        }
     }
 }
 
@@ -2666,6 +2768,11 @@ GfxBuffer gfxCreateBuffer(const GfxBufferDesc& desc)
         ASSERT_MSG(0, "Not Implemented");
     }
 
+    #if !CONFIG_FINAL_BUILD
+        if (settingsGetGraphics().trackResourceLeaks)
+            bufferData.numStackframes = debugCaptureStacktrace(bufferData.stackframes, (uint16)CountOf(bufferData.stackframes), 2);
+    #endif
+
     AtomicLockScope lk(gVk.pools.locks[GfxObjectPools::BUFFERS]);
     return gVk.pools.buffers.Add(bufferData);
 }
@@ -2939,6 +3046,11 @@ GfxImage gfxCreateImage(const GfxImageDesc& desc)
     }
     
     gfxEndDeferredCommandBuffer();
+
+#if !CONFIG_FINAL_BUILD
+    if (settingsGetGraphics().trackResourceLeaks)
+        imageData.numStackframes = debugCaptureStacktrace(imageData.stackframes, (uint16)CountOf(imageData.stackframes), 2);
+#endif
 
     // MutexScope mtx(gVk.pools.mutex);
     return gVk.pools.images.Add(imageData);
@@ -3436,13 +3548,23 @@ GfxPipeline gfxCreatePipeline(const GfxPipelineDesc& desc)
     for (uint32 i = 0; i < CountOf(shaderStages); i++)
         vkDestroyShaderModule(gVk.device, shaderStages[i].module, &gVk.allocVk);
 
-    // MutexScope mtx(gVk.pools.mutex);
-    GfxPipeline pip = gVk.pools.pipelines.Add(GfxPipelineData {
+    GfxPipelineData pipData {
         .pipeline = pipeline,
         .pipelineLayout = pipelineLayout,
         .gfxCreateInfo = gfxDuplicateGraphicsPipelineCreateInfo(pipelineInfo),
         .shaderHash = shaderInfo->hash
-    });
+    };
+
+    #if !CONFIG_FINAL_BUILD
+        if (settingsGetGraphics().trackResourceLeaks)
+            pipData.numStackframes = debugCaptureStacktrace(pipData.stackframes, (uint16)CountOf(pipData.stackframes), 2);
+    #endif
+    
+    GfxPipeline pip;
+    {
+        AtomicLockScope lk(gVk.pools.locks[GfxObjectPools::PIPELINES]);
+        pip = gVk.pools.pipelines.Add(pipData);
+    }
 
     { // Add to shader's used piplines list, so later we could iterate over them to recreate the pipelines
         MutexScope pipTableMtx(gVk.shaderPipelinesTableMtx);
@@ -3630,6 +3752,11 @@ GfxDescriptorSetLayout gfxCreateDescriptorSetLayout(const Shader& shader, const 
             memcpy(&dsLayoutData.bindings[i].vkBinding, &descriptorSetBindings[i], sizeof(VkDescriptorSetLayoutBinding));
         }
 
+        #if !CONFIG_FINAL_BUILD
+            if (settingsGetGraphics().trackResourceLeaks)
+                dsLayoutData.numStackframes = debugCaptureStacktrace(dsLayoutData.stackframes, (uint16)CountOf(dsLayoutData.stackframes), 2);
+        #endif
+
         AtomicLockScope mtx(gVk.pools.locks[GfxObjectPools::DESCRIPTOR_SET_LAYOUTS]);
         GfxDescriptorSetLayoutData prevLayout;
         layout = gVk.pools.descriptorSetLayouts.Add(dsLayoutData, &prevLayout);
@@ -3712,6 +3839,11 @@ GfxDescriptorSet gfxCreateDescriptorSet(GfxDescriptorSetLayout layout)
         logError("Gfx: AllocateDescriptorSets failed");
         return GfxDescriptorSet();
     }
+
+    #if !CONFIG_FINAL_BUILD
+        if (settingsGetGraphics().trackResourceLeaks)
+            descriptorSetData.numStackframes = debugCaptureStacktrace(descriptorSetData.stackframes, (uint16)CountOf(descriptorSetData.stackframes), 2);
+    #endif
 
     AtomicLockScope lk(gVk.pools.locks[GfxObjectPools::DESCRIPTOR_SETS]);
     return gVk.pools.descriptorSets.Add(descriptorSetData);

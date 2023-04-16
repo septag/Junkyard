@@ -194,6 +194,7 @@ bool _private::ddInitialize()
 
 void _private::ddRelease()
 {
+    gfxDestroyBuffer(gDebugDraw.vertexBuffer);
     gfxDestroyPipeline(gDebugDraw.pipeline);
     assetUnload(gDebugDraw.shaderAsset);
 }
