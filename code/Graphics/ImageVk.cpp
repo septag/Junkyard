@@ -572,6 +572,7 @@ AssetResult GfxImageLoader::Load(AssetHandle handle, const AssetLoadParams& para
     AssetMetaKeyValue* metaData;
     uint32 numMeta;
     assetLoadMetaData(handle, &tmpAlloc, &metaData, &numMeta);
+
     uint32 newCacheHash = assetMakeCacheHash(AssetCacheDesc {
         .filepath = params.path,
         .loadParams = params.next.Get(), 

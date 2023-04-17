@@ -548,7 +548,12 @@ bool assetLoadMetaData(const char* filepath, AssetPlatform platform, Allocator* 
                 if (!jitem.IsArray() && !jitem.IsObject()) {
                     jitem.GetKey(key, sizeof(key));
                     jitem.GetValue(value, sizeof(value));
-                    keys->Add(AssetMetaKeyValue { .key = key, .value = value });
+
+                    AssetMetaKeyValue item;
+                    memset(&item, 0x0, sizeof(item));
+                    item.key = key;
+                    item.value = value;
+                    keys->Add(item);
                 }
 
                 jitem = jroot.GetNextChildItem(jitem);

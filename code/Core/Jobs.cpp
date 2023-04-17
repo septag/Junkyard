@@ -296,7 +296,7 @@ NO_INLINE static JobsFiber* jobsCreateFiber(JobsFiberProperties* props)
     };
 
     #ifdef TRACY_ENABLE
-        fiber.debugName = gJobs.tracyStringPool.NewString("Fiber_%p", params.instance);
+        fiber.debugName = gJobs.tracyStringPool.NewString("Fiber_%p", props->instance);
     #endif
 
     mco_push(co, &fiber, sizeof(fiber));
