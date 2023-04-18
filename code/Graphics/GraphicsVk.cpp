@@ -3824,15 +3824,13 @@ GfxDescriptorSet gfxCreateDescriptorSet(GfxDescriptorSetLayout layout)
     };
 
     // VK_EXT_descriptor_indexing
-    if (gVk.hasDescriptorIndexing) {
-        VkDescriptorSetVariableDescriptorCountAllocateInfoEXT variableDescriptorCountAllocInfo {
-            .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_VARIABLE_DESCRIPTOR_COUNT_ALLOCATE_INFO_EXT,
-            .descriptorSetCount = numVariableDescCounts,
-            .pDescriptorCounts = numVariableDescCounts ? variableDescCounts : nullptr
-        };
-
+    VkDescriptorSetVariableDescriptorCountAllocateInfoEXT variableDescriptorCountAllocInfo {
+        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_VARIABLE_DESCRIPTOR_COUNT_ALLOCATE_INFO_EXT,
+        .descriptorSetCount = numVariableDescCounts,
+        .pDescriptorCounts = numVariableDescCounts ? variableDescCounts : nullptr
+    };
+    if (gVk.hasDescriptorIndexing)
         allocInfo.pNext = &variableDescriptorCountAllocInfo;
-    }
 
     GfxDescriptorSetData descriptorSetData { .layout = layout };
     if (vkAllocateDescriptorSets(gVk.device, &allocInfo, &descriptorSetData.descriptorSet) != VK_SUCCESS) {
