@@ -327,10 +327,12 @@ inline uint32 HashTable<_T>::Find(uint32 key) const
 template <typename _T>
 inline uint32 HashTable<_T>::AddIfNotFound(uint32 key, const _T& value)
 {
-    if (Find(key) == INVALID_INDEX)
+    uint32 index = Find(key);
+
+    if (index == INVALID_INDEX)
         return Add(key, value);
     else
-        return INVALID_INDEX;
+        return index;
 }
 
 template <typename _T>

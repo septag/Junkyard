@@ -95,7 +95,7 @@ struct ModelMaterial
     Float3 emissiveFactor;
     ModelMaterialAlphaMode alphaMode;
     float alphaCutoff;
-    void* userData;
+    void* userData;     // TODO: we can remove this later
     bool doubleSided;
     bool unlit;
 };
@@ -111,7 +111,7 @@ struct ModelSubmesh
 {
     uint32 startIndex;
     uint32 numIndices;
-    RelativePtr<ModelMaterial> material;
+    uint32 materialId;
 };
 
 struct ModelMesh 
@@ -153,12 +153,14 @@ struct Model
 {
     uint32 numMeshes;
     uint32 numNodes;
+    uint32 numMaterials;
     uint32 numMaterialTextures;
 
     Transform3D rootTransform;
 
     RelativePtr<ModelNode> nodes;
     RelativePtr<ModelMesh> meshes;
+    RelativePtr<RelativePtr<ModelMaterial>> materials;
     ModelGeometryLayout layout;
 };
 

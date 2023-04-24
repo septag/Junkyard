@@ -15,6 +15,7 @@
 #include "../Core/Jobs.h"
 #include "../Core/Log.h"
 #include "../Core/TracyHelper.h"
+#include "../Core/Hash.h"
 
 #include "../Math/Math.h"
 
@@ -101,14 +102,12 @@ INLINE GfxSamplerWrapMode modelGltfGetWrap(GLTF_Wrap wrap)
     }
 }
 
-static ModelMaterial* modelCreateDefaultMaterial(Allocator* alloc)
+// Returns the hash of the material data
+static ModelMaterial* modelCreateMaterial(uint32* outNumTextures, uint32* outHash, cgltf_material* gltfMtl, const char* fileDir, Allocator* alloc)
 {
-    return memAllocZeroTyped<ModelMaterial>(1, alloc);
-}
+    ASSERT(gltfMtl);
 
-static ModelMaterial* modelCreateMaterial(Model* model, cgltf_material* gltfMtl, const char* fileDir, Allocator* alloc)
-{
-    auto LoadTextureFromGltf = [alloc](cgltf_texture* gltfTexture, ModelMaterialTexture* tex, const char* fileDir)
+    auto LoadTextureFromGltf = [alloc](cgltf_texture* gltfTexture, ModelMaterialTexture* tex, const char* fileDir, HashMurmur32Incremental& hasher)
     {
         ASSERT(gltfTexture);
         char texturePath[kMaxPath];
@@ -130,8 +129,12 @@ static ModelMaterial* modelCreateMaterial(Model* model, cgltf_material* gltfMtl,
             tparams.samplerWrap = modelGltfGetWrap((GLTF_Wrap)gltfTexture->sampler->wrap_s);
         }
 
-        tex->texturePath = memAllocCopy<char>(texturePath, strLen(texturePath)+1, alloc);
+        uint32 texturePathLen = strLen(texturePath);
+        tex->texturePath = memAllocCopy<char>(texturePath, texturePathLen+1, alloc);
         tex->params = tparams;
+
+        hasher.Add(texturePath, texturePathLen);
+        hasher.Add<ImageLoadParams>(&tparams);
     };
 
     ModelMaterialAlphaMode alphaMode;
@@ -186,32 +189,38 @@ static ModelMaterial* modelCreateMaterial(Model* model, cgltf_material* gltfMtl,
         .unlit = (bool)gltfMtl->unlit
     };
 
+    HashMurmur32Incremental hasher(0x669);
+    hasher.Add<ModelMaterial>(mtl);
+
+    uint32 numTextures = 0;
     if (gltfMtl->has_pbr_metallic_roughness) {
         cgltf_texture* tex = gltfMtl->pbr_metallic_roughness.base_color_texture.texture;
         if (tex) {
-            LoadTextureFromGltf(tex, &mtl->pbrMetallicRoughness.baseColorTex, fileDir);
-            ++model->numMaterialTextures;
+            LoadTextureFromGltf(tex, &mtl->pbrMetallicRoughness.baseColorTex, fileDir, hasher);
+            ++numTextures;
         }
 
         tex = gltfMtl->pbr_metallic_roughness.metallic_roughness_texture.texture;
         if (tex) {
-            LoadTextureFromGltf(tex, &mtl->pbrMetallicRoughness.metallicRoughnessTex, fileDir);
-            ++model->numMaterialTextures;
+            LoadTextureFromGltf(tex, &mtl->pbrMetallicRoughness.metallicRoughnessTex, fileDir, hasher);
+            ++numTextures;
         }
 
         tex = gltfMtl->normal_texture.texture;
         if (tex) {
-            LoadTextureFromGltf(tex, &mtl->normalTexture, fileDir);
-            ++model->numMaterialTextures;
+            LoadTextureFromGltf(tex, &mtl->normalTexture, fileDir, hasher);
+            ++numTextures;
         }
 
         tex = gltfMtl->occlusion_texture.texture;
         if (tex) {
-            LoadTextureFromGltf(tex, &mtl->occlusionTexture, fileDir);
-            ++model->numMaterialTextures;
+            LoadTextureFromGltf(tex, &mtl->occlusionTexture, fileDir, hasher);
+            ++numTextures;
         }
     }
 
+    *outNumTextures = numTextures;
+    *outHash = hasher.Hash();
     return mtl;
 }   
 
@@ -548,7 +557,9 @@ static void modelLoadTextures(Model* model, AssetBarrier barrier)
         const ModelMesh& mesh = model->meshes[i];
         for (uint32 smi = 0; smi < mesh.numSubmeshes; smi++) {
             const ModelSubmesh& submesh = mesh.submeshes[smi];
-            ModelMaterial* mtl = submesh.material.Get();
+            if (submesh.materialId == 0)
+                continue;
+            ModelMaterial* mtl = model->materials[IdToIndex(submesh.materialId)].Get();
             if (!mtl->pbrMetallicRoughness.baseColorTex.texturePath.IsNull()) {
                 // ASSERT(!mtl->pbrMetallicRoughness.baseColorTex.texture.IsValid());
                 mtl->pbrMetallicRoughness.baseColorTex.texture =
@@ -581,7 +592,9 @@ static void modelUnloadTextures(Model* model)
         const ModelMesh& mesh = model->meshes[i];
         for (uint32 smi = 0; smi < mesh.numSubmeshes; smi++) {
             const ModelSubmesh& submesh = mesh.submeshes[smi];
-            ModelMaterial* mtl = submesh.material.Get();
+            if (submesh.materialId == 0)
+                continue;
+            ModelMaterial* mtl = model->materials[IdToIndex(submesh.materialId)].Get();
             if (mtl->pbrMetallicRoughness.baseColorTex.texture.IsValid()) {
                 assetUnload(mtl->pbrMetallicRoughness.baseColorTex.texture);
                 mtl->pbrMetallicRoughness.baseColorTex.texture = AssetHandleImage();
@@ -679,7 +692,47 @@ Pair<Model*, uint32> modelLoadGltf(const char* filepath, Allocator* alloc, const
         data->buffers[i].data_free_method = cgltf_data_free_method_memory_free;
     }
 
-    // Start creating the model
+    // Gather materials and remove duplicates by looking up data hash
+    struct MaterialData
+    {
+        ModelMaterial* mtl;
+        uint32 size;
+        uint32 id;
+        uint32 hash;
+    };
+
+    uint32 numTotalTextures = 0;
+    Array<MaterialData> materials(&tmpAlloc);
+    Array<uint32> materialsMap(&tmpAlloc);     // count = NumMeshes*NumSubmeshPerMesh: maps each gltf material index to materials array
+
+    for (uint32 i = 0; i < uint32(data->meshes_count); i++) {
+        cgltf_mesh* mesh = &data->meshes[i];
+        for (uint32 pi = 0; pi < uint32(mesh->primitives_count); pi++) {
+            cgltf_primitive* prim = &mesh->primitives[pi];
+
+            if (prim->material) {
+                uint32 hash;
+                uint32 numTextures;
+                ModelMaterial* mtl = modelCreateMaterial(&numTextures, &hash, prim->material, fileDir.CStr(), &tmpAlloc);
+
+                numTotalTextures += numTextures;
+
+                uint32 index = materials.FindIf([hash](const MaterialData& m)->bool { return m.hash == hash; });
+                if (index == UINT32_MAX) {
+                    index = materials.Count();
+                    materials.Push(MaterialData { 
+                        .mtl = mtl, 
+                        .size = uint32(tmpAlloc.GetOffset() - tmpAlloc.GetPointerOffset(mtl)), 
+                        .id = IndexToId(index),
+                        .hash = hash });
+                }
+
+                materialsMap.Push(index);
+            }
+        }
+    }
+
+    // Start creating the model. This is where the blob data starts
     Model* model = tmpAlloc.MallocZeroTyped<Model>();
     model->rootTransform = kTransform3DIdent;
     model->layout = layout;
@@ -687,6 +740,8 @@ Pair<Model*, uint32> modelLoadGltf(const char* filepath, Allocator* alloc, const
     // Meshes
     model->meshes = tmpAlloc.MallocZeroTyped<ModelMesh>((uint32)data->meshes_count);
     model->numMeshes = (uint32)data->meshes_count;
+    uint32 mtlIndex = 0;
+
     for (uint32 i = 0; i < (uint32)data->meshes_count; i++) {
         cgltf_mesh* mesh = &data->meshes[i];
         ModelMesh* dstMesh = &model->meshes[i];
@@ -701,7 +756,7 @@ Pair<Model*, uint32> modelLoadGltf(const char* filepath, Allocator* alloc, const
         dstMesh->submeshes = tmpAlloc.MallocZeroTyped<ModelSubmesh>((uint32)mesh->primitives_count);
         dstMesh->numSubmeshes = (uint32)mesh->primitives_count;
 
-        // NumVertices/Indices/Materials
+        // NumVertices/Indices/MaterialsIds
         uint32 numVertices = 0;
         uint32 numIndices = 0;
         for (uint32 pi = 0; pi < (uint32)mesh->primitives_count; pi++) {
@@ -721,9 +776,7 @@ Pair<Model*, uint32> modelLoadGltf(const char* filepath, Allocator* alloc, const
             numIndices += (uint32)mesh->primitives[pi].indices->count;
 
             if (prim->material)
-                dstMesh->submeshes[pi].material = modelCreateMaterial(model, prim->material, fileDir.CStr(), &tmpAlloc);
-            else 
-                dstMesh->submeshes[pi].material = modelCreateDefaultMaterial(&tmpAlloc);
+                dstMesh->submeshes[pi].materialId = materials[materialsMap[mtlIndex++]].id;
         } // foreach (mesh-primitive)
         ASSERT_ALWAYS(numVertices && numIndices, "Model %s Mesh %s: doesn't have any vertices", filepath, mesh->name);
         dstMesh->numVertices = numVertices;
@@ -739,9 +792,19 @@ Pair<Model*, uint32> modelLoadGltf(const char* filepath, Allocator* alloc, const
         dstMesh->numVertexBuffers = bufferIdx;
 
         dstMesh->cpuBuffers.indexBuffer = tmpAlloc.MallocTyped<uint32>(numIndices);
-
         modelSetupBuffers(dstMesh, layout, mesh);
     } // foreach (mesh)
+
+
+    // Construct materials (from previously created array
+    if (materials.Count()) {
+        model->numMaterials = materials.Count();
+        model->materials = tmpAlloc.MallocZeroTyped<RelativePtr<ModelMaterial>>(materials.Count());
+        for (uint32 i = 0; i < materials.Count(); i++) {
+            const MaterialData& m = materials[i];
+            model->materials[i] = memAllocCopyRawBytes<ModelMaterial>(m.mtl, m.size, &tmpAlloc);
+        }
+    }
 
     // Nodes
     model->nodes = tmpAlloc.MallocZeroTyped<ModelNode>((uint32)data->nodes_count);
@@ -869,7 +932,7 @@ static Pair<AssetDependency*, uint32> modelGatherDependencies(const Model* model
         const ModelMesh& mesh = model->meshes[i];
         for (uint32 smi = 0; smi < mesh.numSubmeshes; smi++) {
             const ModelSubmesh& submesh = mesh.submeshes[smi];
-            const ModelMaterial* mtl = submesh.material.Get();
+            const ModelMaterial* mtl = model->materials[IdToIndex(submesh.materialId)].Get();
             if (!mtl->pbrMetallicRoughness.baseColorTex.texturePath.IsNull())
                 AddDependencyTextureStruct(&depends, params, mtl->pbrMetallicRoughness.baseColorTex);
             if (!mtl->pbrMetallicRoughness.metallicRoughnessTex.texturePath.IsNull()) 

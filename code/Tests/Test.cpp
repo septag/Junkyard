@@ -183,8 +183,8 @@ struct AppImpl : AppCallbacks
                     // DescriptorSets
                     for (uint32 smi = 0; smi < mesh.numSubmeshes; smi++) {
                         const ModelSubmesh& submesh = mesh.submeshes[smi];
-
-                        GfxDescriptorSet dset(PtrToInt<uint32>(submesh.material->userData));
+                        const ModelMaterial* mtl = model->materials[IdToIndex(submesh.materialId)].Get();
+                        GfxDescriptorSet dset(PtrToInt<uint32>(mtl->userData));
                         gfxCmdBindDescriptorSets(pipeline, 1, &dset);
                         gfxCmdDrawIndexed(mesh.numIndices, 1, 0, 0, 0);
                     }
@@ -347,7 +347,7 @@ struct AppImpl : AppCallbacks
         for (uint32 i = 0; i < model->numMeshes; i++) {
             ModelMesh& mesh = model->meshes[i];
             for (uint32 smi = 0; smi < mesh.numSubmeshes; smi++) {
-                ModelMaterial* material = mesh.submeshes[smi].material.Get();
+                ModelMaterial* material = model->materials[IdToIndex(mesh.submeshes[smi].materialId)].Get();
 
                 GfxImage albedo = material->pbrMetallicRoughness.baseColorTex.texture.IsValid() ?
                     assetGetImage(material->pbrMetallicRoughness.baseColorTex.texture) :
@@ -383,6 +383,7 @@ struct AppImpl : AppCallbacks
         gfxWaitForIdle();
         for (uint32 i = 0; i < descriptorSets.Count(); i++) 
             gfxDestroyDescriptorSet(descriptorSets[i]);
+        gfxDestroyDescriptorSetLayout(dsLayout);
         gfxDestroyPipeline(pipeline);
         gfxDestroyBuffer(uniformBuffer);
         descriptorSets.Free();
