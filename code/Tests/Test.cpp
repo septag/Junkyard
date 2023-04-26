@@ -101,21 +101,31 @@ struct AppImpl : AppCallbacks
         //logDebug("OddTask - %u", threadId);
     }
 
-    static void EvenTask(uint32 groupIndex, void*)
+    static void EvenTask(uint32 groupIndex, void* user)
     {
         PROFILE_ZONE(true);
         //logDebug("EvenTask - %u", threadId);
         // threadSleep(100);
+
+        logDebug("EvenTask");
+        threadSleep(1000);
+
+        ((JobsSignal*)user)->Set();
+        ((JobsSignal*)user)->Raise();
     }
 
     static void SomeTask(uint32 groupIndex, void*)
     {
         PROFILE_ZONE(true);
 
+        JobsSignal signal;
+        signal.Initialize();
         // _private::jobsDebugThreadStats();
-        JobsHandle handle1 = jobsDispatch(JobsType::ShortTask, EvenTask, nullptr, 1);
-        //JobsHandle handle2 = jobsDispatch(JobsType::ShortTask, OddTask, nullptr, 1);
-        jobsWaitForCompletion(handle1);
+        jobsDispatchAuto(JobsType::ShortTask, EvenTask, &signal, 1);
+        logDebug("Waiting on EvenTask");
+        signal.Wait();
+        logDebug("Done");
+        //jobsWaitForCompletion(handle1);
         //jobsWaitForCompletion(handle2);
         //logDebug("Done");
     }
@@ -124,7 +134,11 @@ struct AppImpl : AppCallbacks
     {
         PROFILE_ZONE(true);
 
-        // JobsHandle handle = jobsDispatch(JobsType::LongTask, SomeTask, nullptr, 1);
+        static bool one = false;
+        if (!one) {
+            one = true;
+            jobsDispatchAuto(JobsType::LongTask, SomeTask, nullptr, 1);
+        }
 
         cam->HandleMovementKeyboard(dt, 10.0f, 5.0f);
 

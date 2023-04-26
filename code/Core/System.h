@@ -78,18 +78,16 @@ private:
     uint8 data[128];
 };
 
-#ifdef __cplusplus
-    struct MutexScope
-    {
-        MutexScope( ) = delete;
-        MutexScope(const MutexScope& mtx) = delete;
-        explicit MutexScope(Mutex& mtx) : _mtx(mtx) { _mtx.Enter(); }
-        ~MutexScope( ) { _mtx.Exit(); }
+struct MutexScope
+{
+    MutexScope( ) = delete;
+    MutexScope(const MutexScope& mtx) = delete;
+    explicit MutexScope(Mutex& mtx) : _mtx(mtx) { _mtx.Enter(); }
+    ~MutexScope( ) { _mtx.Exit(); }
 
-      private:
-        Mutex& _mtx;
-    };
-#endif
+private:
+    Mutex& _mtx;
+};
 
 //--------------------------------------------------------------------------------------------------
 // Semaphore

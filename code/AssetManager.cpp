@@ -466,7 +466,7 @@ static AssetResult assetLoadObjLocal(AssetHandle handle, const AssetTypeManager&
 static AssetResult assetLoadObjRemote(AssetHandle handle, const AssetTypeManager& typeMgr, const AssetLoadParams& loadParams, uint32 hash,
                                       bool* outLoadedFromCache)
 {
-    Signal waitSignal;      // Used to serialize the async code
+    JobsSignal waitSignal;      // Used to serialize the async code
     waitSignal.Initialize();
 
     uint32 cacheHash;
@@ -478,7 +478,7 @@ static AssetResult assetLoadObjRemote(AssetHandle handle, const AssetTypeManager
     struct AsyncLoadData
     {
         AssetResult result;
-        Signal* signal;
+        JobsSignal* signal;
         const AssetTypeManager* typeMgr;
         const AssetLoadParams* loadParams;
         uint32 hash;
@@ -686,30 +686,34 @@ static void assetLoadTask(uint32 groupIndex, void* userData)
     if (asset.obj != typeMgr.asyncObj)
         prevObj = asset.obj;
 
-    // Load external asset resources
-    if (result.obj && !loadParams.dontCreateResources) {
-        if (!typeMgr.callbacks->InitializeResources(result.obj, loadParams)) {
-            logError("Failed creating resources for %s: %s", typeMgr.name.CStr(), filepath);
-            typeMgr.callbacks->Release(result.obj, loadParams.alloc);
-            result.obj = nullptr;
-        }
-    }
-
     if (result.obj) {
         asset.state = AssetState::Alive;
         asset.obj = result.obj;
         asset.objBufferSize = result.objBufferSize;
-        logVerbose("(load) %s: %s (%.1f ms)%s", typeMgr.name.CStr(), filepath, timer.ElapsedMS(), loadedFromCache ? " [cached]" : "");
 
         if (!loadedFromCache) {
             gAssetMgr.cacheSyncInvalidated = true;
             gAssetMgr.cacheSyncDelayTm = 0;
             assetSaveToCache(typeMgr, loadParams, result, asset.hash);
         }
+
+        // Load external asset resources right after we saved the blob to cache.
+        // LoadResources can cause the original data to be changed or set some external handles/pointers. 
+        if (!loadParams.dontCreateResources) {
+            if (!typeMgr.callbacks->InitializeResources(result.obj, loadParams)) {
+                logError("Failed creating resources for %s: %s", typeMgr.name.CStr(), filepath);
+                typeMgr.callbacks->Release(result.obj, loadParams.alloc);
+                result.obj = nullptr;
+            }
+        }
     }
-    else {
+
+    if (!result.obj) {
         asset.state = AssetState::LoadFailed;
         asset.obj = typeMgr.failedObj;
+    }
+    else {
+        logVerbose("(load) %s: %s (%.1f ms)%s", typeMgr.name.CStr(), filepath, timer.ElapsedMS(), loadedFromCache ? " [cached]" : "");
     }
 
     asset.depends = result.depends;

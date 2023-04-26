@@ -71,6 +71,14 @@ struct JobsFiberProperties
     uint32 stackSize;
 };
 
+struct JobsSignalInternal
+{
+    atomicUint32 signaled;
+    uint8 reserved[CACHE_LINE_SIZE-4];
+    atomicUint32 value;
+};
+static_assert(sizeof(JobsSignalInternal) <= sizeof(JobsSignal), "Mismatch sizes between JobsSignal and JobsSignalInternal");
+
 struct JobsFiber
 {
     uint32 ownerTid;
@@ -83,6 +91,7 @@ struct JobsFiber
     void* userData;
     atomicUint32* childCounter;
     JobsFiberProperties* props;
+    JobsSignalInternal* signal;
 
     #ifdef TRACY_ENABLE
         const char* debugName;     // Tracy debug name: Stays resident in memory
@@ -367,7 +376,6 @@ static void jobsSetFiberToCurrentThread(JobsFiber* fiber)
     else {
         // Yielding, Coming back from WaitForCompletion
         ASSERT(fiber->co->state == MCO_SUSPENDED);
-        ASSERT(JobsGetThreadData()->waitInstance);
         fiber->childCounter = &JobsGetThreadData()->waitInstance->counter;
         JobsGetThreadData()->waitInstance = nullptr;
         uint32 typeIndex = uint32(inst->type);
@@ -393,6 +401,7 @@ static int jobsThreadFn(void* userData)
         JobsGetThreadData()->threadId = threadGetCurrentId();
     }
 
+    uint32 spinCount = !PLATFORM_MOBILE;
     uint32 typeIndex = uint32(JobsGetThreadData()->type);
     while (!gJobs.quit) {
         gJobs.semaphores[typeIndex].Wait();
@@ -410,10 +419,17 @@ static int jobsThreadFn(void* userData)
                 while (props) {
                     waitingListIsLive = true;
 
-                    if (props->fiber == nullptr || props->fiber->childCounter == nullptr || 
-                             atomicLoad32Explicit(props->fiber->childCounter, AtomicMemoryOrder::Acquire) == 0)
+                    // Choose the fiber to continue based on these 3 conditions:
+                    //  1) There is no fiber assigned to props. so it's the first run
+                    //  2) Fiber is not waiting on any children jobs
+                    //  3) Fiber is not waiting on a signal
+                    JobsFiber* tmpFiber = props->fiber;
+                    atomicUint32 one = 1;
+                    if (tmpFiber == nullptr || 
+                        (tmpFiber->childCounter == nullptr || atomicLoad32Explicit(tmpFiber->childCounter, AtomicMemoryOrder::Acquire) == 0) &&
+                        (tmpFiber->signal == nullptr || atomicCompareExchange32Strong(&tmpFiber->signal->signaled, &one, 0)))
                     {
-                        if (props->fiber == nullptr)
+                        if (tmpFiber == nullptr)
                             props->fiber = jobsCreateFiber(props);
 
                         fiber = props->fiber;
@@ -434,8 +450,13 @@ static int jobsThreadFn(void* userData)
         }
         else if (waitingListIsLive) {
             // Try picking another fiber cuz there are still workers in the waiting list but we couldn't pick them up
+            // TODO: we probably need to modify something here to not spin the threads with waiting signals
             gJobs.semaphores[typeIndex].Post();
-            atomicPauseCpu();
+
+            if (spinCount & 1023) 
+                atomicPauseCpu();
+            else
+                threadYield();
         }
     }
 
@@ -506,7 +527,7 @@ void jobsWaitForCompletion(JobsInstance* instance)
     PROFILE_ZONE(JobsGetThreadData() == nullptr);
     ASSERT(!instance->isAutoDelete);
 
-    uint32 spinCount = 0;
+    uint32 spinCount = !PLATFORM_MOBILE;    // On mobile hardware, we start from yielding then proceed with Pause
     while (atomicLoad32Explicit(&instance->counter, AtomicMemoryOrder::Acquire)) {
         // If current thread has a fiber assigned and running, put it in waiting list and jump out of it 
         // so one of the threads can continue picking up more workers
@@ -520,14 +541,10 @@ void jobsWaitForCompletion(JobsInstance* instance)
             jobsJumpOut(curFiber->co);  // Back to `jobsThreadFn::jobsSetFiberToCurrentThread`
         }
         else {
-            if (spinCount++ < 32) {
+            if (spinCount++ & 1023)
                 atomicPauseCpu();   // Main thread just loops 
-            }
-            else {
-                spinCount = 0;
+            else
                 threadYield();
-            }
-            // TODO: use better approach here
         }
     }
 
@@ -700,6 +717,72 @@ void _private::jobsResetBudgetStats()
 uint32 jobsGetWorkerThreadsCount()
 {
     return gJobs.numThreads;
+}
+
+void JobsSignal::Initialize()
+{
+    JobsSignalInternal* self = reinterpret_cast<JobsSignalInternal*>(data);
+    self->signaled = 0;
+    self->value = 0;
+}
+
+void JobsSignal::Release()
+{
+}
+
+void JobsSignal::Raise()
+{
+    JobsSignalInternal* self = reinterpret_cast<JobsSignalInternal*>(data);
+    atomicExchange32Explicit(&self->signaled, 1, AtomicMemoryOrder::Release);
+}
+
+void JobsSignal::Wait()
+{
+    WaitOnCondition([](int value, int reference)->bool { return value == reference; }, 0);
+}
+
+void JobsSignal::WaitOnCondition(bool(*condFn)(int value, int reference), int reference)
+{
+    JobsSignalInternal* self = reinterpret_cast<JobsSignalInternal*>(data);
+
+    uint32 spinCount = !PLATFORM_MOBILE;
+    while (condFn(atomicLoad32Explicit(&self->value, AtomicMemoryOrder::Acquire), reference)) {
+        if (JobsGetThreadData()) {
+            ASSERT_MSG(JobsGetThreadData()->curFiber, "Worker threads should always have a fiber assigned when 'Wait' is called");
+
+            JobsFiber* curFiber = JobsGetThreadData()->curFiber;
+            curFiber->ownerTid = JobsGetThreadData()->threadId;    // save ownerTid as a hint so we can pick this up again on the same thread context
+            curFiber->signal = self;
+
+            jobsJumpOut(curFiber->co);  // Back to `jobsThreadFn::jobsSetFiberToCurrentThread`
+
+            curFiber->signal = nullptr;
+        }
+        else {
+            if (spinCount++ & 1023)
+                atomicPauseCpu();   // Main thread just loops 
+            else
+                threadYield();
+        }
+    }
+}
+
+void JobsSignal::Set(int value)
+{
+    JobsSignalInternal* self = reinterpret_cast<JobsSignalInternal*>(data);
+    atomicExchange32Explicit(&self->value, uint32(value), AtomicMemoryOrder::Release);
+}
+
+void JobsSignal::Decrement()
+{
+    JobsSignalInternal* self = reinterpret_cast<JobsSignalInternal*>(data);
+    atomicFetchAdd32Explicit(&self->value, 1, AtomicMemoryOrder::Release);
+}
+
+void JobsSignal::Increment()
+{
+    JobsSignalInternal* self = reinterpret_cast<JobsSignalInternal*>(data);
+    atomicFetchSub32Explicit(&self->value, 1, AtomicMemoryOrder::Release);
 }
 
 inline void JobsFiberPropertiesPool::Initialize(Allocator* alloc)

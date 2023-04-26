@@ -63,6 +63,22 @@ struct JobsBudgetStats
     size_t initHeapSize;
 };
 
+struct alignas(CACHE_LINE_SIZE) JobsSignal
+{
+    void Initialize();
+    void Release();
+
+    void Raise();
+    void Wait();
+    void Decrement();
+    void Increment();
+    void WaitOnCondition(bool(*condFn)(int value, int reference), int reference = 0);
+    void Set(int value = 1);
+
+private:
+    uint8 data[128];
+};
+
 // Dispatches the job and returns the handle. Handle _must_ be waited on later, with a call to `jobsWaitForCompletion`
 API [[nodiscard]] JobsHandle jobsDispatch(JobsType type, JobsCallback callback, void* userData = nullptr, 
                                           uint32 groupSize = 1, JobsPriority prio = JobsPriority::Normal, uint32 stackSize = 0);

@@ -427,11 +427,16 @@ FORCE_INLINE bool atomicCompareExchange64StrongExplicit(
 // Reference: https://rigtorp.se/spinlock/
 // TODO (consider): https://www.intel.com/content/www/us/en/developer/articles/technical/a-common-construct-to-avoid-the-contention-of-threads-architecture-agnostic-spin-wait-loops.html
 // Another good reference code: https://github.dev/concurrencykit/ck
+void threadYield(); // System.h
 FORCE_INLINE void atomicLockEnter(AtomicLock* lock)
 {
     while (atomicExchange32Explicit(&lock->locked, 1, AtomicMemoryOrder::Acquire) == 1) {
+        uint32 spinCount = !PLATFORM_MOBILE;    // On mobile hardware, we start from yielding then proceed with Pause
         do {
-            atomicPauseCpu();
+            if (spinCount++ & 1023)
+                atomicPauseCpu();
+            else
+                threadYield();
         } while (atomicLoad32Explicit(&lock->locked, AtomicMemoryOrder::Relaxed));
     }
 }

@@ -561,24 +561,24 @@ static void modelLoadTextures(Model* model, AssetBarrier barrier)
                 continue;
             ModelMaterial* mtl = model->materials[IdToIndex(submesh.materialId)].Get();
             if (!mtl->pbrMetallicRoughness.baseColorTex.texturePath.IsNull()) {
-                // ASSERT(!mtl->pbrMetallicRoughness.baseColorTex.texture.IsValid());
+                ASSERT(!mtl->pbrMetallicRoughness.baseColorTex.texture.IsValid());
                 mtl->pbrMetallicRoughness.baseColorTex.texture =
                     assetLoadImage(mtl->pbrMetallicRoughness.baseColorTex.texturePath.Get(), 
                                    mtl->pbrMetallicRoughness.baseColorTex.params, barrier);
             }
             if (!mtl->pbrMetallicRoughness.metallicRoughnessTex.texturePath.IsNull()) {
-                // ASSERT(!mtl->pbrMetallicRoughness.metallicRoughnessTex.texture.IsValid());
+                ASSERT(!mtl->pbrMetallicRoughness.metallicRoughnessTex.texture.IsValid());
                 mtl->pbrMetallicRoughness.metallicRoughnessTex.texture = 
                     assetLoadImage(mtl->pbrMetallicRoughness.metallicRoughnessTex.texturePath.Get(), 
                                    mtl->pbrMetallicRoughness.metallicRoughnessTex.params, barrier);
             }
             if (!mtl->normalTexture.texturePath.IsNull()) {
-                // ASSERT(!mtl->normalTexture.texture.IsValid());
+                ASSERT(!mtl->normalTexture.texture.IsValid());
                 mtl->normalTexture.texture = 
                     assetLoadImage(mtl->normalTexture.texturePath.Get(), mtl->normalTexture.params, barrier);
             }
             if (!mtl->occlusionTexture.texturePath.IsNull()) {
-                // ASSERT(!mtl->occlusionTexture.texture.IsValid());
+                ASSERT(!mtl->occlusionTexture.texture.IsValid());
                 mtl->occlusionTexture.texture = 
                     assetLoadImage(mtl->occlusionTexture.texturePath.Get(), mtl->occlusionTexture.params, barrier);
             }
