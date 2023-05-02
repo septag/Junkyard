@@ -422,12 +422,12 @@ static int jobsThreadFn(void* userData)
                     // Choose the fiber to continue based on these 3 conditions:
                     //  1) There is no fiber assigned to props. so it's the first run
                     //  2) Fiber is not waiting on any children jobs
-                    //  3) Fiber is not waiting on a signal
+                    //  3) Fiber is not waiting on a signal (if so, check if the signal is fired and reset it)
                     JobsFiber* tmpFiber = props->fiber;
                     atomicUint32 one = 1;
                     if (tmpFiber == nullptr || 
-                        (tmpFiber->childCounter == nullptr || atomicLoad32Explicit(tmpFiber->childCounter, AtomicMemoryOrder::Acquire) == 0) &&
-                        (tmpFiber->signal == nullptr || atomicCompareExchange32Strong(&tmpFiber->signal->signaled, &one, 0)))
+                        ((tmpFiber->childCounter == nullptr || atomicLoad32Explicit(tmpFiber->childCounter, AtomicMemoryOrder::Acquire) == 0) &&
+                        (tmpFiber->signal == nullptr || atomicCompareExchange32Strong(&tmpFiber->signal->signaled, &one, 0))))
                     {
                         if (tmpFiber == nullptr)
                             props->fiber = jobsCreateFiber(props);

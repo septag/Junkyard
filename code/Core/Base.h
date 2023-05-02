@@ -621,19 +621,31 @@ template <typename _T>
 struct RelativePtr
 {
     RelativePtr() : _offset(0) {}
-    RelativePtr(_T* ptr) { _offset = ptr ? uint32((uint8*)ptr - (uint8*)this) : 0; }
-    _T* operator->() { ASSERT(_offset); return Get(); }
-    const _T* operator->() const { ASSERT(_offset); return Get(); }
-    RelativePtr<_T>& operator=(_T* ptr) { _offset = ptr ? uint32((uint8*)ptr - (uint8*)this) : 0; return *this; }
-    RelativePtr<_T>& operator=(const _T* ptr) { _offset = ptr ? uint32((uint8*)ptr - (uint8*)this) : 0; return *this; }
-    _T& operator[](uint32 index) { ASSERT(_offset); return ((_T*)(((uint8*)&_offset) + _offset))[index]; }
-    const _T& operator[](uint32 index) const { ASSERT(_offset); return ((_T*)(((uint8*)&_offset) + _offset))[index]; }
+    RelativePtr(_T* ptr) { Set(ptr); }
+    _T* operator->() { return Get(); }
+    const _T* operator->() const { return Get(); }
+    RelativePtr<_T>& operator=(_T* ptr) { Set(ptr); return *this; }
+    RelativePtr<_T>& operator=(const _T* ptr) { Set(ptr); return *this; }
+    _T& operator[](uint32 index) { return Get()[index]; }
+    const _T& operator[](uint32 index) const { return Get()[index]; }
     bool IsNull() const { return _offset == 0; };
     void SetNull() { _offset = 0; }
     bool operator!() const { return IsNull(); }
     operator bool() const { return !IsNull(); }
     _T& operator*() const { return *Get(); }
-    _T* Get() const { return (_T*)(((uint8*)&_offset) + _offset); }
+
+    void Set(const _T* ptr) 
+    { 
+        ASSERT(ptr != nullptr); 
+        ASSERT(uintptr_t(ptr) > uintptr_t(this)); 
+        _offset = uint32((uint8*)ptr - (uint8*)this);
+    }
+
+    _T* Get() const 
+    { 
+        ASSERT(_offset);
+        return (_T*)(((uint8*)&_offset) + _offset); 
+    }
 
 private:
     uint32 _offset;
