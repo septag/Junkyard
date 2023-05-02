@@ -441,15 +441,17 @@ static bool gfxInitializeImageManager()
     // - Asset loaders for the images
     // - Descriptor cache management for reloads
     if (!settingsGetGraphics().headless) {
-        static constexpr uint32 kWhitePixel = 0xffffffff;
-        gImageMgr.imageWhite = gfxCreateImage(GfxImageDesc {
+        const uint32 kWhitePixel = 0xffffffff;
+        GfxImageDesc imageDesc = GfxImageDesc {
             .width = 1,
             .height = 1,
             .format = GfxFormat::R8G8B8A8_UNORM,
             .sampled = true,
             .size = sizeof(kWhitePixel),
-            .content = reinterpret_cast<const void*>(&kWhitePixel)
-        });
+            .content = &kWhitePixel
+        };
+        //imageDesc.content = &kWhitePixel;
+        gImageMgr.imageWhite = gfxCreateImage(imageDesc);
         if (!gImageMgr.imageWhite.IsValid())
             return false;
 
@@ -459,10 +461,8 @@ static bool gfxInitializeImageManager()
             .height = 1,
             .depth = 1,
             .numMips = 1,
-            .format = GfxFormat::R8G8B8A8_UNORM,
-            .contentSize = sizeof(kWhitePixel)
+            .format = GfxFormat::R8G8B8A8_UNORM
         };
-        whiteImage.content = reinterpret_cast<const uint8*>(&kWhitePixel);
 
         assetRegister(AssetTypeDesc {
             .fourcc = kImageAssetType,
