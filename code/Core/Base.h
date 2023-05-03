@@ -617,10 +617,11 @@ struct alignas(CACHE_LINE_SIZE) AtomicLock
 #include "Debug.h"
 
 //------------------------------------------------------------------------
+// RelativePointer: https://septag.dev/blog/posts/junkyard-relativeptr/
 template <typename _T>
 struct RelativePtr
 {
-    RelativePtr() : _offset(0) {}
+    RelativePtr() : offset(0) {}
     RelativePtr(_T* ptr) { Set(ptr); }
     _T* operator->() { return Get(); }
     const _T* operator->() const { return Get(); }
@@ -628,26 +629,26 @@ struct RelativePtr
     RelativePtr<_T>& operator=(const _T* ptr) { Set(ptr); return *this; }
     _T& operator[](uint32 index) { return Get()[index]; }
     const _T& operator[](uint32 index) const { return Get()[index]; }
-    bool IsNull() const { return _offset == 0; };
-    void SetNull() { _offset = 0; }
+    bool IsNull() const { return offset == 0; };
+    void SetNull() { offset = 0; }
     bool operator!() const { return IsNull(); }
     operator bool() const { return !IsNull(); }
     _T& operator*() const { return *Get(); }
 
-    void Set(const _T* ptr) 
+    inline void Set(const _T* ptr) 
     { 
         ASSERT(ptr != nullptr); 
         ASSERT(uintptr_t(ptr) > uintptr_t(this)); 
-        _offset = uint32((uint8*)ptr - (uint8*)this);
+        offset = uint32((uint8*)ptr - (uint8*)this);
     }
 
-    _T* Get() const 
+    inline _T* Get() const 
     { 
-        ASSERT(_offset);
-        return (_T*)(((uint8*)&_offset) + _offset); 
+        ASSERT(offset);
+        return (_T*)((uint8*)this + offset); 
     }
 
 private:
-    uint32 _offset;
+    uint32 offset;
 };
 

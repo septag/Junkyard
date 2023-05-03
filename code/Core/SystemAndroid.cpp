@@ -59,7 +59,8 @@ void sysGetSysInfo(SysInfo* info)
 
     // For memory, read /proc/meminfo
     {
-        if (File f = File("/proc/meminfo", FileIOFlags::Read|FileIOFlags::SeqScan); f.IsOpen()) {
+        File f;
+        if (f.Open("/proc/meminfo", FileOpenFlags::Read|FileOpenFlags::SeqScan)) {
             Blob data;
             data.SetGrowPolicy(Blob::GrowPolicy::Linear);
             size_t numChars;
@@ -97,7 +98,8 @@ void sysGetSysInfo(SysInfo* info)
 
     // For processor model, read /proc/cpuinfo
     {
-        if (File f = File("/proc/cpuinfo", FileIOFlags::Read|FileIOFlags::SeqScan); f.IsOpen()) {
+        File f;
+        if (f.Open("/proc/cpuinfo", FileOpenFlags::Read|FileOpenFlags::SeqScan)) {
             Blob data;
             data.SetGrowPolicy(Blob::GrowPolicy::Linear);
             size_t numChars;

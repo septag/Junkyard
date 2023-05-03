@@ -21,6 +21,8 @@
 
 #include "../UnityBuild.inl"
 
+#include "../Tool/Console.h"
+
 struct AppImpl : AppCallbacks
 {
     GfxPipeline pipeline;
@@ -129,7 +131,7 @@ struct AppImpl : AppCallbacks
         //jobsWaitForCompletion(handle2);
         //logDebug("Done");
     }
-    
+
     void Update(fl32 dt) override
     {
         PROFILE_ZONE(true);

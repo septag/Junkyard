@@ -362,6 +362,10 @@ namespace _private
 #define NEW(_alloc, _type) PLACEMENT_NEW(memAlloc(sizeof(_type), _alloc), _type)
 #define ALIGNED_NEW(_alloc, _type, _align) PLACEMENT_NEW(memAllocAligned(sizeof(_type), _align, _alloc), _type)
 
+#define PLACEMENT_NEW_ARRAY(_ptr, _type, _n) new(_private::PlacementNewTag(), _ptr) _type[_n]
+#define NEW_ARRAY(_alloc, _type, _n) PLACEMENT_NEW_ARRAY(memAlloc(sizeof(_type)*_n, _alloc), _type, _n)
+
 inline void* operator new(size_t, _private::PlacementNewTag, void* _ptr) { return _ptr; }
+inline void* operator new[](size_t, _private::PlacementNewTag, void* _ptr) { return _ptr; }
 inline void  operator delete(void*, _private::PlacementNewTag, void*) throw() {}
 

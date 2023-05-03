@@ -303,7 +303,8 @@
     </Link>
     <PostBuildEvent>
       <Command>call $(SolutionDir)..\..\..\scripts\android-export-symbols.cmd $(TargetName) $(TargetPath) $(LLVMToolchainPrebuiltRoot)
-call $(SolutionDir)..\..\..\scripts\close-logcats.cmd com.JunkyardAndroid
+
+
 </Command>
       <Message>
       </Message>
@@ -325,7 +326,8 @@ call $(SolutionDir)..\..\..\scripts\close-logcats.cmd com.JunkyardAndroid
     </Link>
     <PostBuildEvent>
       <Command>call $(SolutionDir)..\..\..\scripts\android-export-symbols.cmd $(TargetName) $(TargetPath) $(LLVMToolchainPrebuiltRoot)
-call $(SolutionDir)..\..\..\scripts\close-logcats.cmd com.JunkyardAndroid
+
+
 </Command>
       <Message>
       </Message>
@@ -351,7 +353,8 @@ call $(SolutionDir)..\..\..\scripts\close-logcats.cmd com.JunkyardAndroid
     </Link>
     <PostBuildEvent>
       <Command>call $(SolutionDir)..\..\..\scripts\android-export-symbols.cmd $(TargetName) $(TargetPath) $(LLVMToolchainPrebuiltRoot)
-call $(SolutionDir)..\..\..\scripts\close-logcats.cmd com.JunkyardAndroid
+
+
 </Command>
       <Message>
       </Message>

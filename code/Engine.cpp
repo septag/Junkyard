@@ -167,7 +167,7 @@ bool engineInitialize()
 
         // We have the connection, open up some tools on the host, based on the platform
         if constexpr (PLATFORM_ANDROID) {
-            conExecuteRemote("exec scripts/android-logcat.bat");
+            conExecuteRemote("exec scripts\\close-logcats.cmd com.JunkyardAndroid && scripts\\android-logcat.bat");
             conExecuteRemote("exec-once {ScrCpy}");
         }
     }

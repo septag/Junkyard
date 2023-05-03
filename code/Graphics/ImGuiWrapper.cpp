@@ -152,7 +152,8 @@ static void imguiReleaseSettings()
             char* data = memAllocTyped<char>(size);
             ini_save(gImGui.settingsIni, data, size);
     
-            if (File f = File(iniFilename, FileIOFlags::Write); f.IsOpen()) {
+            File f;
+            if (f.Open(iniFilename, FileOpenFlags::Write)) {
                 f.Write<char>(data, static_cast<size_t>(size));
                 f.Close();
             }

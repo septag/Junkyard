@@ -131,7 +131,7 @@ static Blob vfsDiskReadFile(const char* path, VfsFlags flags, Allocator* alloc)
 
     auto LoadFromDisk = [](const char* path, VfsFlags flags, Allocator* alloc)->Blob {
         File f;
-        if (f.Open(path, FileIOFlags::Read | FileIOFlags::SeqScan)) {
+        if (f.Open(path, FileOpenFlags::Read | FileOpenFlags::SeqScan)) {
             Blob blob(alloc ? alloc : gVfs.alloc);
             
             uint64 size = f.GetSize();
@@ -174,7 +174,7 @@ static size_t vfsDiskWriteFile(const char* path, VfsFlags flags, const Blob& blo
     auto SaveToDisk = [](const char* path, VfsFlags, const Blob& blob)->size_t 
     {
         File f;
-        if (f.Open(path, FileIOFlags::Write)) {
+        if (f.Open(path, FileOpenFlags::Write)) {
             size_t bytesWritten = f.Write(blob.Data(), blob.Size());
             f.Close();
             return bytesWritten;

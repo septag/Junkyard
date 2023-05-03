@@ -614,7 +614,7 @@ void _private::jobsInitialize()
 
     // Initialize and start the threads
     // LongTasks
-    gJobs.threads[uint32(JobsType::LongTask)] = memAllocZeroTyped<Thread>(numThreads, initHeap);
+    gJobs.threads[uint32(JobsType::LongTask)] = NEW_ARRAY(initHeap, Thread, numThreads);
 
     for (uint32 i = 0; i < numThreads; i++) {
         char name[32];
@@ -631,7 +631,7 @@ void _private::jobsInitialize()
     }
     
     // ShortTasks
-    gJobs.threads[uint32(JobsType::ShortTask)] = memAllocZeroTyped<Thread>(numThreads, initHeap);
+    gJobs.threads[uint32(JobsType::ShortTask)] = NEW_ARRAY(initHeap, Thread, numThreads);
 
     for (uint32 i = 0; i < numThreads; i++) {
         char name[32];

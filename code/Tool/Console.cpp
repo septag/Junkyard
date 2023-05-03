@@ -215,12 +215,25 @@ bool _private::conInitialize()
 
     // Some common commands
     // Execute process
-    auto execFn = [](int argc, const char* argv[], char* outResponse, uint32 responseSize, void*)->bool {
+    auto ExecFn = [](int argc, const char* argv[], char* outResponse, uint32 responseSize, void*)->bool {
         UNUSED(outResponse);
         UNUSED(responseSize);
         #if PLATFORM_WINDOWS
-            void* process = sysWin32RunProcess(argc - 1, argv + 1);
-            return process ? true : false;
+            ASSERT(argc > 1);
+
+            Path ext = Path(argv[1]).GetFileExtension();
+            SysWin32ProcessFlags flags = SysWin32ProcessFlags::None;
+            if (ext.IsEqualNoCase(".bat") || ext.IsEqualNoCase(".cmd"))
+                flags |= SysWin32ProcessFlags::BatchFile;
+
+            char* cmdline;
+            uint32 cmdlineSize;
+            SysWin32Process::GenerateCmdLineFromArgcArgv(argc - 1, &argv[1], &cmdline, &cmdlineSize);
+            SysWin32Process process;
+            bool r = process.Run(cmdline, flags);
+            memFree(cmdline);
+
+            return r;
         #else
             return false;
         #endif
@@ -229,21 +242,33 @@ bool _private::conInitialize()
     conRegisterCommand(ConCommandDesc {
         .name = "exec",
         .help = "execute a process with command-line",
-        .callback = execFn,
+        .callback = ExecFn,
         .minArgc = 2
     });
 
-    auto execUniqueFn = [](int argc, const char* argv[], char* outResponse, uint32 responseSize, void*)->bool {
+    auto ExecUniqueFn = [](int argc, const char* argv[], char* outResponse, uint32 responseSize, void*)->bool {
         UNUSED(outResponse);
         UNUSED(responseSize);
         #if PLATFORM_WINDOWS
             ASSERT(argc > 1);
             Path processName = Path(argv[1]).GetFileNameAndExt();
             if (!sysWin32IsProcessRunning(processName.CStr())) {
-                void* process = sysWin32RunProcess(argc - 1, argv + 1);
-                return process ? true : false;
+                Path ext = Path(argv[1]).GetFileExtension();
+                SysWin32ProcessFlags flags = SysWin32ProcessFlags::None;
+                if (ext.IsEqualNoCase(".bat") || ext.IsEqualNoCase(".cmd"))
+                    flags |= SysWin32ProcessFlags::BatchFile;
+
+                char* cmdline;
+                uint32 cmdlineSize;
+                SysWin32Process::GenerateCmdLineFromArgcArgv(argc - 1, &argv[1], &cmdline, &cmdlineSize);
+                SysWin32Process process;
+                bool r = process.Run(cmdline, flags);
+                memFree(cmdline);
+                return r;
             }
-            return true;
+            else {
+                return true;
+            }
         #else
             return false;
         #endif
@@ -252,7 +277,7 @@ bool _private::conInitialize()
     conRegisterCommand(ConCommandDesc {
         .name = "exec-once",
         .help = "execute the process once, meaning that it will skip execution if the process is already running",
-        .callback = execUniqueFn,
+        .callback = ExecUniqueFn,
         .minArgc = 2
     });
 

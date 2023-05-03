@@ -238,7 +238,7 @@ bool settingsLoadFromINI(const char* iniFilepath)
         AAsset_close(asset);
     }
 #else
-    if (f.Open(iniFilepath, FileIOFlags::Read | FileIOFlags::SeqScan)) {
+    if (f.Open(iniFilepath, FileOpenFlags::Read | FileOpenFlags::SeqScan)) {
         uint64 size = f.GetSize();
         if (size) {
             blob.Reserve(size + 1);

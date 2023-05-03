@@ -4,6 +4,7 @@
 #include "String.h"
 #include "Memory.h"
 #include "Atomic.h"
+#include "Buffers.h"
 #include "IncludeWin.h"
 #include "TracyHelper.h"
 
@@ -68,13 +69,21 @@ static DWORD WINAPI threadStubFn(LPVOID arg)
 
 Thread::Thread()
 {
-    memset(this->data, 0x0, sizeof(Thread));
+    ThreadImpl* thrd = reinterpret_cast<ThreadImpl*>(this->data);
+    thrd->threadFn = nullptr;
+    thrd->handle = INVALID_HANDLE_VALUE;
+    thrd->userData = nullptr;
+    thrd->stackSize = 0;
+    thrd->name[0] = 0;
+    thrd->tId = 0;
+    thrd->stopped = false;
+    thrd->running = false;
 }
 
 bool Thread::Start(const ThreadDesc& desc)
 {
     ThreadImpl* thrd = reinterpret_cast<ThreadImpl*>(this->data);
-    ASSERT(thrd->handle == nullptr && !thrd->running);
+    ASSERT(thrd->handle == INVALID_HANDLE_VALUE && !thrd->running);
 
     thrd->sem.Initialize();
     thrd->threadFn = desc.entryFn;
@@ -99,7 +108,7 @@ int Thread::Stop()
 {
     ThreadImpl* thrd = reinterpret_cast<ThreadImpl*>(this->data);
     DWORD exitCode = 0;
-    if (thrd->handle) {
+    if (thrd->handle != INVALID_HANDLE_VALUE) {
         ASSERT_MSG(thrd->running, "Thread is not running!");
 
         atomicStore32Explicit(&thrd->stopped, 1, AtomicMemoryOrder::Release);
@@ -108,9 +117,10 @@ int Thread::Stop()
         CloseHandle(thrd->handle);
         thrd->sem.Release();
 
-        thrd->handle = nullptr;
-        thrd->running = false;
+        thrd->handle = INVALID_HANDLE_VALUE;
     }
+
+    thrd->running = false;
     return static_cast<int>(exitCode);
 }
 
@@ -181,24 +191,29 @@ void Semaphore::Initialize()
 {
     SemaphoreImpl* _sem = reinterpret_cast<SemaphoreImpl*>(this->data);
     _sem->handle = CreateSemaphoreA(nullptr, 0, LONG_MAX, nullptr);
-    ASSERT_ALWAYS(_sem->handle != nullptr, "Failed to create semaphore");
+    ASSERT_ALWAYS(_sem->handle != INVALID_HANDLE_VALUE, "Failed to create semaphore");
 }
 
 void Semaphore::Release()
 {
     SemaphoreImpl* _sem = reinterpret_cast<SemaphoreImpl*>(this->data);
-    CloseHandle(_sem->handle);
+    if (_sem->handle != INVALID_HANDLE_VALUE) {
+        CloseHandle(_sem->handle);
+        _sem->handle = INVALID_HANDLE_VALUE;
+    }
 }
 
 void Semaphore::Post(uint32 count)
 {
     SemaphoreImpl* _sem = reinterpret_cast<SemaphoreImpl*>(this->data);
+    ASSERT(_sem->handle != INVALID_HANDLE_VALUE);
     ReleaseSemaphore(_sem->handle, count, nullptr);
 }
 
 bool Semaphore::Wait(uint32 msecs)
 {
     SemaphoreImpl* _sem = reinterpret_cast<SemaphoreImpl*>(this->data);
+    ASSERT(_sem->handle != INVALID_HANDLE_VALUE);
     return WaitForSingleObject(_sem->handle, (DWORD)msecs) == WAIT_OBJECT_0;
 }
 
@@ -586,47 +601,190 @@ void sysGetSysInfo(SysInfo* info)
     extData.Free();
 }
 
-void* sysWin32RunProcess(int argc, const char* argv[])
+SysWin32Process::SysWin32Process() : 
+    process(INVALID_HANDLE_VALUE),
+    stdoutPipeRead(INVALID_HANDLE_VALUE),
+    stderrPipeRead(INVALID_HANDLE_VALUE)
 {
-    ASSERT(argc > 0);
+}
 
-    STARTUPINFOA si { sizeof(STARTUPINFOA) };
-    PROCESS_INFORMATION pi {};
+SysWin32Process::~SysWin32Process()
+{
+    if (stdoutPipeRead != INVALID_HANDLE_VALUE) 
+        CloseHandle(stdoutPipeRead);
+    if (stderrPipeRead != INVALID_HANDLE_VALUE)
+        CloseHandle(stderrPipeRead);
+    if (process != INVALID_HANDLE_VALUE)
+        CloseHandle(process);
+}
 
-    si.dwFlags = STARTF_USESTDHANDLES | STARTF_USESHOWWINDOW;
-    si.wShowWindow = SW_SHOWNORMAL;
+bool SysWin32Process::Run(const char* cmdline, SysWin32ProcessFlags flags, uint32 outputPipeSize)
+{
+    ASSERT(process == INVALID_HANDLE_VALUE);
 
-    // trim any quote/double-quotes from argv[0]
-    char procPath[kMaxPath];
-    strTrim(procPath, sizeof(procPath), argv[0], '\'');
-    strTrim(procPath, sizeof(procPath), procPath, '"');
-    strReplaceChar(procPath, sizeof(procPath), '/', '\\');
+    HANDLE stdOutPipeWrite = INVALID_HANDLE_VALUE;
+    HANDLE stdErrPipeWrite = INVALID_HANDLE_VALUE;
 
-    // join argv into a single command-line with space as separator
-    uint32 totalLen = strLen(procPath) + 1;
-    for (int i = 1; i < argc; i++)
-        totalLen += strLen(argv[i]) + 1;
+    if ((flags & SysWin32ProcessFlags::CaptureOutput) == SysWin32ProcessFlags::CaptureOutput) {
+        SECURITY_ATTRIBUTES saAttr {}; 
+        saAttr.nLength = sizeof(SECURITY_ATTRIBUTES); 
+        saAttr.bInheritHandle = TRUE; 
 
-    MemTempAllocator tmpAlloc;
-    char* cmdline = tmpAlloc.MallocTyped<char>(totalLen + 1);
-    cmdline[0] = 0;
+        if (!CreatePipe(&stdoutPipeRead, &stdOutPipeWrite, &saAttr, static_cast<DWORD>(outputPipeSize)))
+            return false;
+        if (!SetHandleInformation(stdoutPipeRead, HANDLE_FLAG_INHERIT, 0))
+            return false;
 
-    char* _cmdline = strCopy(cmdline, totalLen + 1, procPath);
-    totalLen -= strLen(procPath);
-    if (argc > 1)
-        _cmdline = strConcat(_cmdline, totalLen + 1, " ");
-
-    for (int i = 1; i < argc; i++) {
-        _cmdline = strConcat(_cmdline, totalLen + 1, argv[i]);
-        totalLen -= strLen(argv[i]);
-        if (i < argc - 1) {
-            _cmdline = strConcat(_cmdline, totalLen + 1, " ");
-            totalLen -= 1;
+        if ((flags & SysWin32ProcessFlags::StdErrOutput) == SysWin32ProcessFlags::StdErrOutput) {
+            if (!CreatePipe(&stderrPipeRead, &stdErrPipeWrite, &saAttr, static_cast<DWORD>(outputPipeSize)))
+                return false;
+            if (!SetHandleInformation(stderrPipeRead, HANDLE_FLAG_INHERIT, 0))
+                return false;
         }
     }
 
-    bool ok = !!CreateProcessA(procPath, cmdline, nullptr, nullptr, false, CREATE_NEW_CONSOLE, nullptr, nullptr, &si, &pi);
-    return ok ? pi.hProcess : nullptr;
+    PROCESS_INFORMATION procInfo {};
+    STARTUPINFOA startInfo {};
+    startInfo.cb = sizeof(startInfo);
+    if ((flags & SysWin32ProcessFlags::CaptureOutput) == SysWin32ProcessFlags::CaptureOutput) {
+        startInfo.dwFlags = STARTF_USESTDHANDLES;
+        startInfo.hStdOutput = stdOutPipeWrite;
+        startInfo.hStdError = (flags & SysWin32ProcessFlags::StdErrOutput) == SysWin32ProcessFlags::StdErrOutput ? stdErrPipeWrite : stdOutPipeWrite;
+        startInfo.hStdInput = INVALID_HANDLE_VALUE;
+    }
+
+    char* cmdLineCopy;
+    if ((flags & SysWin32ProcessFlags::BatchFile) == SysWin32ProcessFlags::BatchFile) {
+        uint32 cmdlineSize = strLen(cmdline) + 16;
+        cmdLineCopy = memAllocTyped<char>(cmdlineSize);
+        strCopy(cmdLineCopy, cmdlineSize, "cmd.exe /c ");
+        strConcat(cmdLineCopy, cmdlineSize, cmdline);
+    }
+    else {
+        cmdLineCopy = memAllocCopy<char>(cmdline, strLen(cmdline)+1);
+    }
+
+    DWORD createProcessFlags = 0;
+    if ((flags & SysWin32ProcessFlags::BatchFile) == SysWin32ProcessFlags::BatchFile &&
+        (flags & SysWin32ProcessFlags::CaptureOutput) != SysWin32ProcessFlags::CaptureOutput)
+    {
+        createProcessFlags |= CREATE_NEW_CONSOLE;
+    }
+    else if ((flags & SysWin32ProcessFlags::CaptureOutput) == SysWin32ProcessFlags::CaptureOutput)
+    {
+        createProcessFlags |= CREATE_NO_WINDOW;
+    }
+    bool r = CreateProcessA(nullptr, cmdLineCopy, nullptr, nullptr, TRUE, createProcessFlags, NULL, NULL, &startInfo, &procInfo);
+    memFree(cmdLineCopy);
+    if (!r)
+        return false;
+
+    CloseHandle(procInfo.hThread);
+
+    if ((flags & SysWin32ProcessFlags::CaptureOutput) == SysWin32ProcessFlags::CaptureOutput) {
+        CloseHandle(stdOutPipeWrite);
+        if ((flags & SysWin32ProcessFlags::StdErrOutput) == SysWin32ProcessFlags::StdErrOutput)
+            CloseHandle(stdErrPipeWrite);
+    }
+
+    process = procInfo.hProcess;
+
+    return true;
+}
+
+bool SysWin32Process::Wait(uint32 timeoutMs) const
+{
+    ASSERT(process != INVALID_HANDLE_VALUE);
+    return WaitForSingleObject(process, timeoutMs) == WAIT_OBJECT_0;
+}
+
+uint32 SysWin32Process::GetReturnCode() const
+{
+    ASSERT(process != INVALID_HANDLE_VALUE);
+    DWORD exitCode = UINT32_MAX;
+    GetExitCodeProcess(process, &exitCode);
+    return static_cast<uint32>(exitCode);
+}
+
+static bool SysWin32ProcessReadStdInternal(HANDLE pipe, char** outString, uint32* outStringLen, Allocator* alloc)
+{
+    ASSERT(outString);
+    ASSERT(outStringLen);
+
+    if (pipe != INVALID_HANDLE_VALUE) 
+    {
+        Blob blob(alloc);
+        blob.SetGrowPolicy(Blob::GrowPolicy::Linear);
+
+        char buffer[4096];
+        DWORD bytesRead;
+        for (;;) 
+        {
+            BOOL r = ReadFile(pipe, buffer, sizeof(buffer), &bytesRead, nullptr);
+            if (!r || bytesRead == 0)
+                break;
+            
+            blob.Write(buffer, bytesRead);
+        }
+        blob.Write<char>(0);
+
+        size_t len;
+        blob.Detach((void**)outString, &len);
+        ASSERT(len < UINT32_MAX);
+        *outStringLen = static_cast<uint32>(len);
+
+        return true;
+    }
+    else {
+        *outString = nullptr;
+        *outStringLen = 0;
+        return false;
+    }
+}
+
+bool SysWin32Process::GetStdOutText(char** outString, uint32* outStringLen, Allocator* alloc)
+{
+    return SysWin32ProcessReadStdInternal((HANDLE)this->stdoutPipeRead, outString, outStringLen, alloc);
+}
+
+bool SysWin32Process::GetStdErrText(char** outString, uint32* outStringLen, Allocator* alloc)
+{
+    return stderrPipeRead != INVALID_HANDLE_VALUE ? 
+        SysWin32ProcessReadStdInternal((HANDLE)stderrPipeRead, outString, outStringLen, alloc) : 
+        SysWin32ProcessReadStdInternal((HANDLE)stdoutPipeRead, outString, outStringLen, alloc);
+}
+    
+void SysWin32Process::WaitOnAll(const SysWin32Process* processes, uint32 numProcesses, uint32 timeoutMs)
+{
+    ASSERT(processes);
+    ASSERT(numProcesses <= MAXIMUM_WAIT_OBJECTS);
+
+    HANDLE nativeProc[MAXIMUM_WAIT_OBJECTS];
+    for (uint32 i = 0; i < numProcesses; i++) 
+        nativeProc[i] = processes[i].process;
+
+    WaitForMultipleObjects(static_cast<DWORD>(numProcesses), nativeProc, TRUE, timeoutMs);
+}
+
+void SysWin32Process::GenerateCmdLineFromArgcArgv(int argc, const char* argv[], char** outString, uint32* outStringLen, Allocator* alloc)
+{
+    ASSERT(outString);
+    ASSERT(outStringLen);
+
+    Blob blob(alloc);
+    blob.SetGrowPolicy(Blob::GrowPolicy::Linear, 256);
+
+    // TODO: perform escaping on the strings
+    for (int i = 0; i < argc; i++) {
+        blob.Write(argv[i], strLen(argv[i]));
+        if (i != argc - 1)
+            blob.Write<char>(32);
+    }
+    blob.Write<char>(0);
+
+    size_t len;
+    blob.Detach((void**)outString, &len);
+    *outStringLen = static_cast<uint32>(len);
 }
 
 bool sysWin32IsProcessRunning(const char* execName)

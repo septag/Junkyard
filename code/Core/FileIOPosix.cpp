@@ -22,27 +22,36 @@
 struct FilePosix
 {
     int         id;
-    FileIOFlags flags;
+    FileOpenFlags flags;
     uint64      size;  
     uint64      lastModifiedTime;
 };
+static_assert(sizeof(FilePosix) <= sizeof(File));
 
-bool fileOpen(FileData* file, const char* filepath, FileIOFlags flags)
+File::File()
 {
-    ASSERT((flags & (FileIOFlags::Read|FileIOFlags::Write)) != (FileIOFlags::Read|FileIOFlags::Write));
-    ASSERT((flags & (FileIOFlags::Read|FileIOFlags::Write)) != FileIOFlags::None);
+    FilePosix* f = (FilePosix*)this->_data;
+    f->id = -1;
+    f->flags = FileOpenFlags::None;
+    f->size = 0;
+    f->lastModifiedTime = 0;
+}
 
-    FilePosix* f = (FilePosix*)file;
-    memset(f, 0x0, sizeof(FilePosix));
+bool File::Open(const char* filepath, FileOpenFlags flags)
+{
+    ASSERT((flags & (FileOpenFlags::Read|FileOpenFlags::Write)) != (FileOpenFlags::Read|FileOpenFlags::Write));
+    ASSERT((flags & (FileOpenFlags::Read|FileOpenFlags::Write)) != FileOpenFlags::None);
+
+    FilePosix* f = (FilePosix*)this->_data;
 
     int openFlags = __O_LARGEFILE;
     mode_t mode = 0;
 
-    if ((flags & FileIOFlags::Read) == FileIOFlags::Read) {
+    if ((flags & FileOpenFlags::Read) == FileOpenFlags::Read) {
         openFlags |= O_RDONLY;
-    } else if ((flags & FileIOFlags::Write) == FileIOFlags::Write) {
+    } else if ((flags & FileOpenFlags::Write) == FileOpenFlags::Write) {
         openFlags |= O_WRONLY;
-        if ((flags & FileIOFlags::Append) == FileIOFlags::Append) {
+        if ((flags & FileOpenFlags::Append) == FileOpenFlags::Append) {
             openFlags |= O_APPEND;
         } else {
             openFlags |= (O_CREAT | O_TRUNC);
@@ -51,7 +60,7 @@ bool fileOpen(FileData* file, const char* filepath, FileIOFlags flags)
     }
 
     #if (PLATFORM_LINUX || PLATFORM_ANDROID)
-        if ((flags & FileIOFlags::Temp) == FileIOFlags::Temp) {
+        if ((flags & FileOpenFlags::Temp) == FileOpenFlags::Temp) {
             openFlags |= __O_TMPFILE;
         }
     #endif
@@ -61,7 +70,7 @@ bool fileOpen(FileData* file, const char* filepath, FileIOFlags flags)
         return false;
 
     #if PLATFORM_APPLE
-        if (flags & FileIOFlags::Nocache) {
+        if (flags & FileOpenFlags::Nocache) {
             if (fcntl(fileId, F_NOCACHE) != 0) {
                 return false;
             }
@@ -82,22 +91,22 @@ bool fileOpen(FileData* file, const char* filepath, FileIOFlags flags)
     return true;
 }
 
-void fileClose(FileData* file)
+void File::Close()
 {
-    FilePosix* f = (FilePosix*)file;
-    if (f && f->id) {
+    FilePosix* f = (FilePosix*)this->_data;
+
+    if (f->id != -1) {
         close(f->id);
-        f->id = 0;
+        f->id = -1;
     }
 }
 
-size_t fileRead(FileData* file, void* dst, size_t size)
+size_t File::Read(void* dst, size_t size)
 {
-    ASSERT(file);
-    FilePosix* f = (FilePosix*)file;
-    ASSERT(f->id && f->id != -1);
+    FilePosix* f = (FilePosix*)this->_data;
+    ASSERT(f->id != -1);
     
-    if ((f->flags & FileIOFlags::NoCache) == FileIOFlags::NoCache) {
+    if ((f->flags & FileOpenFlags::NoCache) == FileOpenFlags::NoCache) {
         static size_t pagesz = 0;
         if (pagesz == 0)
             pagesz = sysGetPageSize();
@@ -107,12 +116,11 @@ size_t fileRead(FileData* file, void* dst, size_t size)
     return r != -1 ? r : SIZE_MAX;
 }
 
-size_t fileWrite(FileData* file, const void* src, size_t size)
+size_t File::Write(const void* src, size_t size)
 {
-    ASSERT(file);
-    FilePosix* f = (FilePosix*)file;
+    FilePosix* f = (FilePosix*)this->_data;
+    ASSERT(f->id != -1);
 
-    ASSERT(f->id && f->id != -1);
     int64_t bytesWritten = write(f->id, src, size);
     if (bytesWritten > -1) {
         f->size += bytesWritten; 
@@ -123,43 +131,37 @@ size_t fileWrite(FileData* file, const void* src, size_t size)
     }    
 }
 
-size_t fileSeek(FileData* file, size_t offset, FileIOSeekMode mode)
+size_t File::Seek(size_t offset, FileSeekMode mode)
 {
-    ASSERT(file);
-
-    FilePosix* f = (FilePosix*)file;
-    ASSERT(f->id && f->id != -1);
+    FilePosix* f = (FilePosix*)this->_data;
+    ASSERT(f->id != -1);
 
     int _whence = 0;
     switch (mode) {
-        case FileIOSeekMode::Current:    _whence = SEEK_CUR; break;
-        case FileIOSeekMode::Start:      _whence = SEEK_SET; break;
-        case FileIOSeekMode::End:        _whence = SEEK_END; break;
+    case FileSeekMode::Current:    _whence = SEEK_CUR; break;
+    case FileSeekMode::Start:      _whence = SEEK_SET; break;
+    case FileSeekMode::End:        _whence = SEEK_END; break;
     }
 
-    return static_cast<size_t>(lseek(f->id, static_cast<off_t>(offset), _whence));
+    return size_t(lseek(f->id, static_cast<off_t>(offset), _whence));
 }
 
-size_t fileGetSize(const FileData* file)
+size_t File::GetSize() const
 {
-    ASSERT(file);
-
-    FilePosix* f = (FilePosix*)file;
+    const FilePosix* f = (const FilePosix*)this->_data;
     return f->size;
 }
 
-uint64 fileGetLastModified(const FileData* file)
+uint64 File::GetLastModified() const
 {
-    ASSERT(file);
-
-    FilePosix* f = (FilePosix*)file;
+    const FilePosix* f = (const FilePosix*)this->_data;
     return f->lastModifiedTime;
 }
 
-bool fileIsOpen(FileData* file)
+bool File::IsOpen() const
 {
-    FilePosix* f = (FilePosix*)file;
-    return f && f->id != 0;
+    FilePosix* f = (FilePosix*)this->_data;
+    return f->id != -1;
 }
 
 #endif // PLATFORM_POSIX

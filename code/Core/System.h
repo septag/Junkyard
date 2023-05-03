@@ -12,6 +12,7 @@
 // - Path functions: Functions for manipulating paths and working with File-system
 //
 #include "String.h"
+#include "Memory.h"
 
 #if PLATFORM_ANDROID
     struct _JNIEnv;
@@ -277,10 +278,40 @@ API bool sysIsDebuggerPresent();
 
 // Platform specific 
 #if PLATFORM_WINDOWS
-API void* sysWin32RunProcess(int argc, const char* argv[]);
+enum class SysWin32ProcessFlags
+{
+    None = 0,
+    CaptureOutput = 0x1,
+    StdErrOutput = 0x2,
+    BatchFile = 0x4
+};
+ENABLE_BITMASK(SysWin32ProcessFlags);
+
+struct SysWin32Process
+{
+    SysWin32Process();
+    ~SysWin32Process();
+
+    bool Run(const char* cmdline, SysWin32ProcessFlags flags, uint32 outputPipeSize = 0);
+    bool Wait(uint32 timeoutMs = UINT32_MAX) const;
+    bool IsRunning() const { return !Wait(0); }
+
+    uint32 GetReturnCode() const;
+    bool GetStdOutText(char** outString, uint32* outStringLen, Allocator* alloc = memDefaultAlloc()); 
+    bool GetStdErrText(char** outString, uint32* outStringLen, Allocator* alloc = memDefaultAlloc());
+    
+    static void WaitOnAll(const SysWin32Process* processes, uint32 numProcesses, uint32 timeoutMs = UINT32_MAX);
+    static void GenerateCmdLineFromArgcArgv(int argc, const char* argv[], char** outString, uint32* outStringLen, 
+                                            Allocator* alloc = memDefaultAlloc());
+
+private:
+    void* process;
+    void* stdoutPipeRead;
+    void* stderrPipeRead;
+};
+
 API bool sysWin32IsProcessRunning(const char* execName);
-API bool sysWin32GetRegisterLocalMachineString(const char* subkey, const char* value, 
-                                            char* dst, size_t dstSize);
+API bool sysWin32GetRegisterLocalMachineString(const char* subkey, const char* value, char* dst, size_t dstSize);
 API void sysWin32PrintToDebugger(const char* text);
 
 enum class SysWin32ConsoleColor : uint16
