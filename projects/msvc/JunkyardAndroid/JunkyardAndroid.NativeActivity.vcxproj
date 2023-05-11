@@ -25,7 +25,6 @@
     <ClInclude Include="..\..\..\code\Core\BlitSort.h" />
     <ClInclude Include="..\..\..\code\Core\Buffers.h" />
     <ClInclude Include="..\..\..\code\Core\Debug.h" />
-    <ClInclude Include="..\..\..\code\Core\FileIO.h" />
     <ClInclude Include="..\..\..\code\Core\Hash.h" />
     <ClInclude Include="..\..\..\code\Core\IncludeWin.h" />
     <ClInclude Include="..\..\..\code\Core\Jobs.h" />
@@ -33,7 +32,6 @@
     <ClInclude Include="..\..\..\code\Core\Log.h" />
     <ClInclude Include="..\..\..\code\Core\Memory.h" />
     <ClInclude Include="..\..\..\code\Core\Settings.h" />
-    <ClInclude Include="..\..\..\code\Core\SocketIO.h" />
     <ClInclude Include="..\..\..\code\Core\String.h" />
     <ClInclude Include="..\..\..\code\Core\System.h" />
     <ClInclude Include="..\..\..\code\Core\TracyHelper.h" />
@@ -94,20 +92,12 @@
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='ReleaseDev|ARM64'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">true</ExcludedFromBuild>
     </ClCompile>
-    <ClCompile Include="..\..\..\code\Core\FileIO.cpp" />
-    <ClCompile Include="..\..\..\code\Core\FileIOPosix.cpp" />
-    <ClCompile Include="..\..\..\code\Core\FileIOWin.cpp">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='ReleaseDev|ARM64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">true</ExcludedFromBuild>
-    </ClCompile>
     <ClCompile Include="..\..\..\code\Core\Hash.cpp" />
     <ClCompile Include="..\..\..\code\Core\Jobs.cpp" />
     <ClCompile Include="..\..\..\code\Core\JsonParser.cpp" />
     <ClCompile Include="..\..\..\code\Core\Log.cpp" />
     <ClCompile Include="..\..\..\code\Core\Memory.cpp" />
     <ClCompile Include="..\..\..\code\Core\Settings.cpp" />
-    <ClCompile Include="..\..\..\code\Core\SocketIO.cpp" />
     <ClCompile Include="..\..\..\code\Core\String.cpp" />
     <ClCompile Include="..\..\..\code\Core\StringWin.cpp">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">true</ExcludedFromBuild>

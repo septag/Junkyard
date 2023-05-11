@@ -2,7 +2,6 @@
 
 #include "Core/System.h"
 #include "Core/Settings.h"
-#include "Core/SocketIO.h"
 #include "Core/Buffers.h"
 #include "Core/String.h"
 #include "Core/Log.h"
@@ -17,14 +16,14 @@ static constexpr uint32 kResultOk = MakeFourCC('O', 'K', '0', '0');
 
 struct RemoteServicesContext
 {
-    Socket serverSock;
-    Socket serverPeerSock;
+    SocketTCP serverSock;
+    SocketTCP serverPeerSock;
     Mutex serverPeerMtx;
     Thread serverThread;
     bool serverQuit;
     Array<RemoteCommandDesc> commands;
 
-    Socket clientSock;
+    SocketTCP clientSock;
     Mutex clientMtx;
     Thread clientThread;
     RemoteDisconnectCallback disconnectFn;
@@ -42,8 +41,8 @@ void remoteSendResponse(uint32 cmdCode, const Blob& data, bool error, const char
     uint32 cmdIdx = gRemoteServices.commands.FindIf([cmdCode](const RemoteCommandDesc& cmd) { return cmd.cmdFourCC == cmdCode; });
     if (cmdIdx != INVALID_INDEX) {
         MutexScope mtx(gRemoteServices.serverPeerMtx);
-        Socket* sock = &gRemoteServices.serverPeerSock;
-        if (socketIsValid(sock) && socketIsConnected(sock)) {
+        SocketTCP* sock = &gRemoteServices.serverPeerSock;
+        if (sock->IsValid() && sock->IsConnected()) {
             uint32 dataSize = static_cast<uint32>(data.Size());
             const uint32 cmdHeader[] = {kCmdFlag, cmdCode, !error ? kResultOk : kResultError, dataSize};
 
@@ -62,7 +61,7 @@ void remoteSendResponse(uint32 cmdCode, const Blob& data, bool error, const char
                 dataOut.WriteStringBinary(errorDesc, strLen(errorDesc));
             }
 
-            socketWrite(sock, dataOut.Data(), static_cast<uint32>(dataOut.Size()));
+            sock->Write(dataOut.Data(), static_cast<uint32>(dataOut.Size()));
             dataOut.Free();
         }
     }
@@ -75,21 +74,21 @@ void remoteSendResponse(uint32 cmdCode, const Blob& data, bool error, const char
 static int serverPeerThreadFn(void* userData)
 {
     uint8 tmpBuffer[4096];
-    Socket* sock = reinterpret_cast<Socket*>(userData);
+    SocketTCP* sock = reinterpret_cast<SocketTCP*>(userData);
 
     bool saidHello = false;
     bool quit = false;
 
     while (!gRemoteServices.serverQuit && !quit) {
         uint32 packet[3] = {0, 0, 0};       // {kCmdFlag, CmdCode, DataSize}
-        uint32 bytesRead = socketRead(sock, packet, sizeof(packet));
+        uint32 bytesRead = sock->Read(packet, sizeof(packet));
         if (bytesRead == UINT32_MAX || bytesRead == 0) {
-            SocketErrorCode errCode = socketGetError(sock);
+            SocketErrorCode errCode = sock->GetErrorCode();
             if (errCode == SocketErrorCode::ConnectionReset || bytesRead == 0) {
                 logInfo("RemoteServices: Disconnected from client '%s'", gRemoteServices.peerUrl.CStr());
             }
             else {
-                logDebug("RemoteServices: Socket Error: %s", socketGetErrorString(errCode));
+                logDebug("RemoteServices: Socket Error: %s", socketErrorCodeGetStr(errCode));
             }
             break;
         }
@@ -104,14 +103,14 @@ static int serverPeerThreadFn(void* userData)
         if (!saidHello && cmdCode == kCmdHello) {
             // Hello back
             const uint32 hello[] = {kCmdFlag, kCmdHello, 0};
-            socketWrite(sock, hello, sizeof(hello));
+            sock->Write(hello, sizeof(hello));
             saidHello = true;
         }
         else if (saidHello) {
             if (cmdCode == kCmdBye) {
                 // bye back and close
                 const uint32 bye[] = {kCmdFlag, kCmdBye, 0};
-                socketWrite(sock, bye, sizeof(bye));
+                sock->Write(bye, sizeof(bye));
                 saidHello = false;
                 quit = true;
             }   
@@ -132,14 +131,14 @@ static int serverPeerThreadFn(void* userData)
                         dataBlob.Reserve(dataSize);
                         
                         while (dataSize) {
-                            bytesRead = socketRead(sock, tmpBuffer, Min<uint32>(dataSize, sizeof(tmpBuffer)));
+                            bytesRead = sock->Read(tmpBuffer, Min<uint32>(dataSize, sizeof(tmpBuffer)));
                             if (bytesRead == UINT32_MAX) {
-                                SocketErrorCode errCode = socketGetError(sock);
+                                SocketErrorCode errCode = sock->GetErrorCode();
                                 if (errCode == SocketErrorCode::ConnectionReset) {
                                     logInfo("RemoteServices: Disconnected from client '%s'", gRemoteServices.peerUrl.CStr());
                                 }
                                 else {
-                                    logDebug("RemoteServices: Socket Error: %s", socketGetErrorString(errCode));
+                                    logDebug("RemoteServices: Socket Error: %s", socketErrorCodeGetStr(errCode));
                                 }
                                 quit = true;
                                 break;
@@ -176,19 +175,19 @@ static int serverPeerThreadFn(void* userData)
         }
     }
     
-    socketClose(sock);
+    sock->Close();
     return 0;
 }
 
 static int serverThreadFn(void*)
 {
-    gRemoteServices.serverSock = socketOpenServer();
+    gRemoteServices.serverSock = SocketTCP::CreateListener();
     
-    if (socketListen(&gRemoteServices.serverSock, settingsGetTooling().serverPort, 1)) {
+    if (gRemoteServices.serverSock.Listen(settingsGetTooling().serverPort, 1)) {
         char peerUrl[128];
         while (!gRemoteServices.serverQuit) {
-            gRemoteServices.serverPeerSock = socketAccept(&gRemoteServices.serverSock, peerUrl, sizeof(peerUrl));
-            if (socketIsValid(&gRemoteServices.serverPeerSock)) {
+            gRemoteServices.serverPeerSock = gRemoteServices.serverSock.Accept(peerUrl, sizeof(peerUrl));
+            if (gRemoteServices.serverPeerSock.IsValid()) {
                 logInfo("RemoteServices: Incoming connection: %s", peerUrl);
                 gRemoteServices.peerUrl = peerUrl;
 
@@ -204,7 +203,7 @@ static int serverThreadFn(void*)
         }
     }
 
-    socketClose(&gRemoteServices.serverSock);    
+    gRemoteServices.serverSock.Close();
     return 0;
 }
 
@@ -229,15 +228,15 @@ bool _private::remoteInitialize()
 void _private::remoteRelease()
 {
     gRemoteServices.serverQuit = true;
-    if (socketIsValid(&gRemoteServices.serverPeerSock))
-        socketClose(&gRemoteServices.serverPeerSock);
-    if (socketIsValid(&gRemoteServices.serverSock))
-        socketClose(&gRemoteServices.serverSock);
+    if (gRemoteServices.serverPeerSock.IsValid())
+        gRemoteServices.serverPeerSock.Close();
+    if (gRemoteServices.serverSock.IsValid())
+        gRemoteServices.serverSock.Close();
     gRemoteServices.serverThread.Stop();
 
     gRemoteServices.clientQuit = true;
-    if (socketIsValid(&gRemoteServices.clientSock)) 
-        socketClose(&gRemoteServices.clientSock);
+    if (gRemoteServices.clientSock.IsValid()) 
+        gRemoteServices.clientSock.Close();
     gRemoteServices.clientThread.Stop();
     
     gRemoteServices.serverPeerMtx.Release();
@@ -248,15 +247,15 @@ void _private::remoteRelease()
 static int remoteClientThreadFn(void*)
 {
     uint8 tmpBuffer[4096];
-    Socket* sock = &gRemoteServices.clientSock;
-    ASSERT(socketIsValid(sock));
+    SocketTCP* sock = &gRemoteServices.clientSock;
+    ASSERT(sock->IsValid());
 
     bool quit = false;
     while (!gRemoteServices.clientQuit && !quit) {
         uint32 packet[4] = {0, 0, 0, 0};       // {kCmdFlag, CmdCode, ErrorIndicator, DataSize}
-        uint32 bytesRead = socketRead(sock, packet, sizeof(packet));
+        uint32 bytesRead = sock->Read(packet, sizeof(packet));
         if (bytesRead == UINT32_MAX) {
-            logDebug("RemoteServices: Socket Error: %s", socketGetErrorString(socketGetError(sock)));
+            logDebug("RemoteServices: Socket Error: %s", socketErrorCodeGetStr(sock->GetErrorCode()));
             break;
         }
 
@@ -270,7 +269,7 @@ static int remoteClientThreadFn(void*)
         if (cmdCode == kCmdBye) {
             // bye back and close
             const uint32 bye[] = {kCmdFlag, kCmdBye, 0};
-            socketWrite(sock, bye, sizeof(bye));
+            sock->Write(bye, sizeof(bye));
             quit = true;
         }
         else {
@@ -288,9 +287,9 @@ static int remoteClientThreadFn(void*)
                     incomingDataBlob.Reserve(dataSize);
                         
                     while (dataSize) {
-                        bytesRead = socketRead(sock, tmpBuffer, Min<uint32>(dataSize, sizeof(tmpBuffer)));
+                        bytesRead = sock->Read(tmpBuffer, Min<uint32>(dataSize, sizeof(tmpBuffer)));
                         if (bytesRead == UINT32_MAX) {
-                            logDebug("RemoteServices: Socket Error: %s", socketGetErrorString(socketGetError(sock)));
+                            logDebug("RemoteServices: Socket Error: %s", socketErrorCodeGetStr(sock->GetErrorCode()));
                             quit = true;
                             break;
                         }
@@ -305,9 +304,9 @@ static int remoteClientThreadFn(void*)
 
                 if (packet[2] == kResultError) {
                     uint32 errorLen;
-                    socketRead<uint32>(sock, &errorLen);
+                    sock->Read(&errorLen, sizeof(errorLen));
                     if (errorLen)
-                        socketRead(sock, errorDesc, sizeof(errorDesc));
+                        sock->Read(errorDesc, sizeof(errorDesc));
                 }
                 else {
                     ASSERT(packet[2] == kResultOk);
@@ -322,8 +321,8 @@ static int remoteClientThreadFn(void*)
         }
     }   // while not quit
 
-    SocketErrorCode errCode = socketGetError(sock);
-    socketClose(sock);
+    SocketErrorCode errCode = sock->GetErrorCode();
+    sock->Close();
 
     if (gRemoteServices.disconnectFn)
         gRemoteServices.disconnectFn(gRemoteServices.peerUrl.CStr(), gRemoteServices.clientQuit, errCode);
@@ -339,35 +338,35 @@ bool _private::remoteConnect(const char* url, RemoteDisconnectCallback disconnec
     MutexScope mtx(gRemoteServices.clientMtx);
     
     if (gRemoteServices.clientIsConnected) {
-        ASSERT(socketIsConnected(&gRemoteServices.clientSock));
+        ASSERT(gRemoteServices.clientSock.IsConnected());
         return true;
     }
 
     gRemoteServices.clientThread.Stop();
     logInfo("(init) RemoteServices: Connecting to remote server: %s ...", url);
 
-    Socket* sock = &gRemoteServices.clientSock;
-    *sock = socketConnect(url);
-    if (!socketIsValid(sock) || !socketIsConnected(sock)) {
+    gRemoteServices.clientSock = SocketTCP::Connect(url);
+    SocketTCP* sock = &gRemoteServices.clientSock;
+    if (!sock->IsValid() || !sock->IsConnected()) {
         logError("RemoteServices: Connecting to remote url '%s' failed", url);
         return false;
     }
 
     // Say hello
     const uint32 hello[] = {kCmdFlag, kCmdHello, 0};
-    if (socketWrite(sock, hello, sizeof(hello)) != sizeof(hello)) {
+    if (sock->Write(hello, sizeof(hello)) != sizeof(hello)) {
         logError("RemoteServices: Connecting to remote url '%s' failed", url);
-        socketClose(sock);
+        sock->Close();
         return false;        
     }
 
     // Receive hello and complete the handshake
     uint32 response[3];
-    if (socketRead(sock, response, sizeof(response)) != sizeof(response) ||
+    if (sock->Read(response, sizeof(response)) != sizeof(response) ||
         response[0] != kCmdFlag || response[1] != kCmdHello)
     {
         logError("RemoteServices: Invalid response from disk server: %s", url);
-        socketClose(sock);
+        sock->Close();
         return false;
     }
     
@@ -387,8 +386,8 @@ bool _private::remoteConnect(const char* url, RemoteDisconnectCallback disconnec
 void _private::remoteDisconnect()
 {
     gRemoteServices.clientQuit = true;
-    if (socketIsValid(&gRemoteServices.clientSock)) 
-        socketClose(&gRemoteServices.clientSock);
+    if (gRemoteServices.clientSock.IsValid()) 
+        gRemoteServices.clientSock.Close();
     gRemoteServices.clientThread.Stop();
     gRemoteServices.clientQuit = false;
     gRemoteServices.disconnectFn = nullptr;
@@ -398,7 +397,7 @@ void _private::remoteDisconnect()
 bool remoteIsConnected()
 {
     MutexScope mtx(gRemoteServices.clientMtx);
-    return gRemoteServices.clientIsConnected && socketIsConnected(&gRemoteServices.clientSock);
+    return gRemoteServices.clientIsConnected && gRemoteServices.clientSock.IsConnected();
 }
 
 // MT: This function is thread-safe, multiple calls to remoteExecuteCommand from several threads locks it
@@ -407,8 +406,8 @@ void remoteExecuteCommand(uint32 cmdCode, const Blob& data)
     uint32 cmdIdx = gRemoteServices.commands.FindIf([cmdCode](const RemoteCommandDesc& cmd) { return cmd.cmdFourCC == cmdCode; });
     if (cmdIdx != INVALID_INDEX) {
         MutexScope mtx(gRemoteServices.clientMtx);
-        Socket* sock = &gRemoteServices.clientSock;
-        if (socketIsValid(sock) && socketIsConnected(sock)) {
+        SocketTCP* sock = &gRemoteServices.clientSock;
+        if (sock->IsValid() && sock->IsConnected()) {
             uint32 dataSize = static_cast<uint32>(data.Size());
             const uint32 cmdHeader[] = {kCmdFlag, cmdCode, dataSize};
 
@@ -417,7 +416,7 @@ void remoteExecuteCommand(uint32 cmdCode, const Blob& data)
             outgoing.Write(cmdHeader, sizeof(cmdHeader));
             if (dataSize)
                 outgoing.Write(data.Data(), dataSize);
-            socketWrite(sock, outgoing.Data(), static_cast<uint32>(outgoing.Size()));
+            sock->Write(outgoing.Data(), static_cast<uint32>(outgoing.Size()));
             outgoing.Free();
         }
     }

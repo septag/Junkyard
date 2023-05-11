@@ -1,9 +1,9 @@
 #pragma once
 
 #include "Core/Base.h"
-#include "Core/SocketIO.h"
 
 struct Blob;
+enum class SocketErrorCode : uint16;
 
 static constexpr uint32 kRemoteErrorDescSize = 1024;
 

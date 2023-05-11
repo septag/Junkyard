@@ -1,7 +1,7 @@
 #pragma once
 
 //--------------------------------------------------------------------------------------------------
-// Stuff that is currently in System
+// Stuff that are currently in the System.h/cpp
 // - Thread: Regular threads implementation, along with helpers like sleep/yield. 'Destroy' waits for the thread to return
 // - Mutex/MutexScope: Mutexes (CriticalSection), with scoped RAII helper
 // - Semaphore: Semaphore, 'Post' increases the semaphore count, each 'Wait' decreases the count
@@ -10,9 +10,15 @@
 // - HighRes timer functions (timerXXX): 'timerInitialize' must be called before calling any other functions
 // - GeneralOS functions: like Loading DLLs, Getting symbols, PageSize, etc.
 // - Path functions: Functions for manipulating paths and working with File-system
+// - Virtual memory functions
+// - File: Local disk file wrapper
+// - SocketTCP: server/client TCP socket
 //
 #include "String.h"
-#include "Memory.h"
+
+// fwd
+struct NO_VTABLE Allocator;
+Allocator* memDefaultAlloc();
 
 #if PLATFORM_ANDROID
     struct _JNIEnv;
@@ -239,6 +245,105 @@ struct Path : String<kMaxPath>
 };
 
 //--------------------------------------------------------------------------------------------------
+// File
+enum class FileOpenFlags : uint32
+{
+    None         = 0,
+    Read         = 0x01, // Open for reading
+    Write        = 0x02, // Open for writing
+    Append       = 0x03, // Append to the end of the file (write-mode only)
+    NoCache      = 0x08, // Disable IO cache, suitable for very large files, remember to align buffers to virtual memory pages
+    Writethrough = 0x10, // Write-through writes meta information to disk immediately
+    SeqScan      = 0x20, // Optimize cache for sequential read (not to be used with NOCACHE)
+    RandomAccess = 0x40, // Optimize cache for random access read (not to be used with NOCACHE)
+    Temp         = 0x80  // Indicate that the file is temperary
+};
+ENABLE_BITMASK(FileOpenFlags);
+
+enum class FileSeekMode
+{
+    Start = 0,
+    Current,
+    End 
+};
+
+struct File
+{
+    File();
+
+    bool Open(const char* filepath, FileOpenFlags flags);
+    void Close();
+
+    size_t Read(void* dst, size_t size);
+    size_t Write(const void* src, size_t size);
+    size_t Seek(size_t offset, FileSeekMode mode = FileSeekMode::Start);
+
+    template <typename _T> uint32 Read(_T* dst, uint32 count);
+    template <typename _T> uint32 Write(_T* dst, uint32 count);
+
+    size_t GetSize() const;
+    uint64 GetLastModified() const;
+    bool IsOpen() const;
+
+private:
+    uint8 _data[64];
+};
+
+//----------------------------------------------------------------------------------------------------------------------
+// SocketTCP
+enum class SocketErrorCode : uint16
+{
+    None = 0,
+    AddressInUse,
+    AddressNotAvailable,
+    AddressUnsupported,
+    AlreadyConnected,
+    ConnectionRefused,
+    Timeout,
+    HostUnreachable,
+    ConnectionReset,
+    SocketShutdown,
+    MessageTooLarge,
+    NotConnected,
+    Unknown
+};
+INLINE const char* socketErrorCodeGetStr(SocketErrorCode code);
+
+#if PLATFORM_WINDOWS
+using SocketHandle = uint64;
+#else 
+using SocketHandle = int;
+#endif
+
+
+struct SocketTCP
+{
+    SocketTCP();
+
+    void Close();
+    bool IsValid() const;
+    bool IsConnected() const { return this->live; }
+    SocketErrorCode GetErrorCode() const { return this->errCode; }
+
+    // Returns number of bytes written/read
+    // Returns 0 if connection is closed gracefully
+    // Returns UINT32_MAX if there was an error. check socketGetError()
+    uint32 Write(const void* src, uint32 size);
+    uint32 Read(void* dst, uint32 dstSize);
+
+    static SocketTCP CreateListener();
+    SocketTCP Accept(char* clientUrl = nullptr, uint32 clientUrlSize = 0);
+    bool Listen(uint16 port, uint32 maxConnections = UINT32_MAX);
+
+    static SocketTCP Connect(const char* url);
+
+private:
+    SocketHandle s;
+    SocketErrorCode errCode;
+    uint16 live;
+};
+
+//--------------------------------------------------------------------------------------------------
 // General OS
 using DLLHandle = void*;
 
@@ -347,7 +452,7 @@ API JNIEnv* sysAndroidGetJniEnv();
 API Path sysAndroidGetCacheDirectory(ANativeActivity* activity);
 #endif
 
-//------------------------------------------------------------------------
+//----------------------------------------------------------------------------------------------------------------------
 INLINE bool pathExists(const char* path)
 {
     return pathStat(path).type != PathType::Invalid;
@@ -508,3 +613,30 @@ inline double TimerStopWatch::ElapsedUS() const
     return timerToUS(Elapsed());
 }
 
+template <typename _T> inline uint32 File::Read(_T* dst, uint32 count)
+{
+    return static_cast<uint32>(Read((void*)dst, sizeof(_T)*count)/sizeof(_T));
+}
+
+template <typename _T> inline uint32 File::Write(_T* dst, uint32 count)
+{
+    return static_cast<uint32>(Write((const void*)dst, sizeof(_T)*count)/sizeof(_T));
+}
+
+INLINE const char* socketErrorCodeGetStr(SocketErrorCode errCode)
+{
+    switch (errCode) {
+    case SocketErrorCode::AddressInUse:         return "AddressInUse";
+    case SocketErrorCode::AddressNotAvailable:  return "AddressNotAvailable";
+    case SocketErrorCode::AddressUnsupported:   return "AddressUnsupported";
+    case SocketErrorCode::AlreadyConnected:     return "AlreadyConnected";
+    case SocketErrorCode::ConnectionRefused:    return "ConnectionRefused";        
+    case SocketErrorCode::Timeout:              return "Timeout";
+    case SocketErrorCode::HostUnreachable:      return "HostUnreachable";
+    case SocketErrorCode::ConnectionReset:      return "ConnectionReset";
+    case SocketErrorCode::SocketShutdown:       return "SocketShutdown";
+    case SocketErrorCode::MessageTooLarge:      return "MessageTooLarge";
+    case SocketErrorCode::NotConnected:         return "NotConnected";
+    default:                                    return "Unknown";
+    }
+}

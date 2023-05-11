@@ -216,9 +216,6 @@
     <ClInclude Include="..\..\..\code\Core\Debug.h">
       <Filter>Header Files\Core</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\..\code\Core\FileIO.h">
-      <Filter>Header Files\Core</Filter>
-    </ClInclude>
     <ClInclude Include="..\..\..\code\Core\Hash.h">
       <Filter>Header Files\Core</Filter>
     </ClInclude>
@@ -238,9 +235,6 @@
       <Filter>Header Files\Core</Filter>
     </ClInclude>
     <ClInclude Include="..\..\..\code\Core\Settings.h">
-      <Filter>Header Files\Core</Filter>
-    </ClInclude>
-    <ClInclude Include="..\..\..\code\Core\SocketIO.h">
       <Filter>Header Files\Core</Filter>
     </ClInclude>
     <ClInclude Include="..\..\..\code\Core\String.h">
@@ -323,15 +317,6 @@
     <ClCompile Include="..\..\..\code\Core\DebugWin.cpp">
       <Filter>Source Files\Core</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\..\code\Core\FileIO.cpp">
-      <Filter>Source Files\Core</Filter>
-    </ClCompile>
-    <ClCompile Include="..\..\..\code\Core\FileIOPosix.cpp">
-      <Filter>Source Files\Core</Filter>
-    </ClCompile>
-    <ClCompile Include="..\..\..\code\Core\FileIOWin.cpp">
-      <Filter>Source Files\Core</Filter>
-    </ClCompile>
     <ClCompile Include="..\..\..\code\Core\Hash.cpp">
       <Filter>Source Files\Core</Filter>
     </ClCompile>
@@ -348,9 +333,6 @@
       <Filter>Source Files\Core</Filter>
     </ClCompile>
     <ClCompile Include="..\..\..\code\Core\Settings.cpp">
-      <Filter>Source Files\Core</Filter>
-    </ClCompile>
-    <ClCompile Include="..\..\..\code\Core\SocketIO.cpp">
       <Filter>Source Files\Core</Filter>
     </ClCompile>
     <ClCompile Include="..\..\..\code\Core\String.cpp">

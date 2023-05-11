@@ -9,7 +9,6 @@
 #include "Core/System.h"
 #include "Core/Settings.h"
 #include "Core/IncludeWin.h"
-#include "Core/FileIO.h"
 #include "Core/Buffers.h"
 
 #include "VirtualFS.h"

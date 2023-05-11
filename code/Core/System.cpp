@@ -176,3 +176,48 @@ uint64 timerLapTime(uint64* lastTime)
     *lastTime = now;
     return dt;
 }
+
+namespace _private 
+{
+    bool socketParseUrl(const char* url, char* address, size_t addressSize, char* port, size_t portSize, const char** pResource)
+    {
+        uint32 urlLen = strLen(url);
+    
+        // skip the 'protocol://' part
+        if (const char* addressBegin = strFindStr(url, "://"); addressBegin)
+            url = addressBegin + 2;
+    
+        // find end of address part of url
+        char const* addressEnd = strFindChar(url, ':');
+        if (!addressEnd) addressEnd = strFindChar(url, '/');
+        if (!addressEnd) addressEnd = url + urlLen;
+        
+        // extract address
+        uint32 addressLen = PtrToInt<uint32>((void*)(addressEnd - url));
+        if(addressLen >= addressSize) 
+            return false;
+        memcpy(address, url, addressLen);
+        address[addressLen] = '\0';
+        
+        // check if there's a port defined
+        char const* portEnd = addressEnd;
+        if (*addressEnd == ':') {
+            ++addressEnd;
+            portEnd = strFindChar(addressEnd, '/');
+            if (!portEnd) 
+                portEnd = addressEnd + strLen(addressEnd);
+            uint32 portLen = PtrToInt<uint32>((void*)(portEnd - addressEnd));
+            if (portLen >= portSize) 
+                return false;
+            memcpy(port, addressEnd, portLen);
+            port[portLen] = '\0';
+        }
+        else {
+            return false;
+        }    
+    
+        if (pResource)
+            *pResource = portEnd;    
+        return true;    
+    }
+}   // namespace _private

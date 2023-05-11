@@ -7,12 +7,15 @@
 #include "Buffers.h"
 #include "IncludeWin.h"
 #include "TracyHelper.h"
+#include "Log.h"
 
 #include <limits.h>     // LONG_MAX
 #include <synchapi.h>   // InitializeCriticalSectionAndSpinCount, InitializeCriticalSection, ...
 #include <sysinfoapi.h> // GetPhysicallyInstalledSystemMemory
 #include <intrin.h>     // __cpuid
 #include <tlhelp32.h>   // CreateToolhelp32Snapshot
+#include <winsock2.h>
+#include <ws2tcpip.h>
 
 namespace _limits 
 {
@@ -933,6 +936,401 @@ MemVirtualStats memVirtualGetStats()
 void sysWin32SetConsoleColor(void* handle, SysWin32ConsoleColor color)
 {
     SetConsoleTextAttribute(handle, uint16(color));
+}
+
+//----------------------------------------------------------------------------
+// File
+struct FileWin
+{
+    HANDLE      handle;
+    FileOpenFlags flags;
+    uint64      size;
+    uint64      lastModifiedTime;
+};
+static_assert(sizeof(FileWin) <= sizeof(File));
+
+//------------------------------------------------------------------------
+File::File()
+{
+    FileWin* f = (FileWin*)this->_data;
+
+    f->handle = INVALID_HANDLE_VALUE;
+    f->flags = FileOpenFlags::None;
+    f->size = 0;
+    f->lastModifiedTime = 0;
+}
+
+bool File::Open(const char* filepath, FileOpenFlags flags)
+{
+    ASSERT((flags & (FileOpenFlags::Read|FileOpenFlags::Write)) != (FileOpenFlags::Read|FileOpenFlags::Write));
+    ASSERT((flags & (FileOpenFlags::Read|FileOpenFlags::Write)) != FileOpenFlags::None);
+
+    FileWin* f = (FileWin*)this->_data;
+
+    uint32 accessFlags = GENERIC_READ;
+    uint32 attrs = FILE_ATTRIBUTE_NORMAL;
+    uint32 createFlags = 0;
+    uint32 shareFlags = 0;
+
+    if ((flags & FileOpenFlags::Read) == FileOpenFlags::Read) {
+        createFlags = OPEN_EXISTING;
+        shareFlags |= FILE_SHARE_READ;
+    } else if ((flags & FileOpenFlags::Write) == FileOpenFlags::Write) {
+        shareFlags |= FILE_SHARE_WRITE;
+        accessFlags |= GENERIC_WRITE;
+        createFlags |= (flags & FileOpenFlags::Append) == FileOpenFlags::Append ? 
+            OPEN_EXISTING : CREATE_ALWAYS;
+    }
+
+    if ((flags & FileOpenFlags::NoCache) == FileOpenFlags::NoCache)             attrs |= FILE_FLAG_NO_BUFFERING;
+    if ((flags & FileOpenFlags::Writethrough) == FileOpenFlags::Writethrough)   attrs |= FILE_FLAG_WRITE_THROUGH;
+    if ((flags & FileOpenFlags::SeqScan) == FileOpenFlags::SeqScan)             attrs |= FILE_FLAG_SEQUENTIAL_SCAN;
+    if ((flags & FileOpenFlags::RandomAccess) == FileOpenFlags::RandomAccess)   attrs |= FILE_FLAG_RANDOM_ACCESS;
+    if ((flags & FileOpenFlags::Temp) == FileOpenFlags::Temp)                   attrs |= FILE_ATTRIBUTE_TEMPORARY;
+
+    HANDLE hfile = CreateFileA(filepath, accessFlags, shareFlags, NULL, createFlags, attrs, NULL);
+    if (hfile == INVALID_HANDLE_VALUE)
+        return false;
+
+    f->handle = hfile;
+    f->flags = flags;
+
+    BY_HANDLE_FILE_INFORMATION fileInfo {};
+    GetFileInformationByHandle(hfile, &fileInfo);
+    f->size = (flags & (FileOpenFlags::Read|FileOpenFlags::Append)) != FileOpenFlags::None ? 
+        (uint64(fileInfo.nFileSizeHigh)<<32 | uint64(fileInfo.nFileSizeLow)) : 0;
+    f->lastModifiedTime = uint64(fileInfo.ftLastAccessTime.dwHighDateTime)<<32 | uint64(fileInfo.ftLastAccessTime.dwLowDateTime);
+
+    return true;
+
+}
+
+void File::Close()
+{
+    FileWin* f = (FileWin*)this->_data;
+
+    if (f->handle != INVALID_HANDLE_VALUE) {
+        CloseHandle(f->handle);
+        f->handle = INVALID_HANDLE_VALUE;
+    }
+}
+
+size_t File::Read(void* dst, size_t size)
+{
+    FileWin* f = (FileWin*)this->_data;
+    ASSERT(f->handle != INVALID_HANDLE_VALUE);
+
+    if ((f->flags & FileOpenFlags::NoCache) == FileOpenFlags::NoCache) {
+        static size_t pagesz = 0;
+        if (pagesz == 0) {
+            pagesz = sysGetPageSize();
+        }
+        ASSERT_ALWAYS((uintptr_t)dst % pagesz == 0, "buffers must be aligned with NoCache flag");
+    }
+
+    DWORD bytesRead;
+    if (!ReadFile(f->handle, dst, (DWORD)size, &bytesRead, NULL))
+        return SIZE_MAX;
+
+    return size_t(bytesRead);
+}
+
+size_t File::Write(const void* src, size_t size)
+{
+    FileWin* f = (FileWin*)this->_data;
+    ASSERT(f->handle != INVALID_HANDLE_VALUE);
+
+    DWORD bytesWritten;
+    if (!WriteFile(f->handle, src, (DWORD)size, &bytesWritten, NULL))
+        return SIZE_MAX;
+    f->size += bytesWritten;
+
+    return bytesWritten;
+}
+
+size_t File::Seek(size_t offset, FileSeekMode mode)
+{
+    FileWin* f = (FileWin*)this->_data;
+    ASSERT(f->handle != INVALID_HANDLE_VALUE);
+
+    DWORD moveMethod = 0;
+    switch (mode) {
+    case FileSeekMode::Start:
+        moveMethod = FILE_BEGIN;
+        break;
+    case FileSeekMode::Current:
+        moveMethod = FILE_CURRENT;
+        break;
+    case FileSeekMode::End:
+        ASSERT(offset <= f->size);
+        moveMethod = FILE_END;
+        break;
+    }
+
+    LARGE_INTEGER largeOff;
+    LARGE_INTEGER largeRet;
+    largeOff.QuadPart = (LONGLONG)offset;
+
+    if (SetFilePointerEx(f->handle, largeOff, &largeRet, moveMethod))
+        return (int64_t)largeRet.QuadPart;
+
+    return SIZE_MAX;
+}
+
+size_t File::GetSize() const
+{
+    FileWin* f = (FileWin*)this->_data;
+    return size_t(f->size);    
+}
+
+uint64 File::GetLastModified() const
+{
+    FileWin* f = (FileWin*)this->_data;
+    return f->lastModifiedTime;
+}
+
+bool File::IsOpen() const
+{
+    FileWin* f = (FileWin*)this->_data;
+    return f->handle != INVALID_HANDLE_VALUE;
+}
+
+//----------------------------------------------------------------------------------------------------------------------
+// SocketTCP
+namespace _private
+{
+    static bool gSocketInitialized;
+    static void socketInitializeWin32()
+    {
+        if (!gSocketInitialized) {
+            logDebug("SocketTCP: Initialize");
+            WSADATA wsaData;
+            if (WSAStartup(MAKEWORD(1, 0), &wsaData) != 0) {
+                ASSERT_ALWAYS(false, "Windows sockets initialization failed");
+                return;
+            }
+        
+            gSocketInitialized = true;
+        }
+    }
+
+    static SocketErrorCode socketTranslatePlatformErrorCode()
+    {
+        int errorCode = WSAGetLastError();
+        switch (errorCode) {
+        case WSAEADDRINUSE:     return SocketErrorCode::AddressInUse;
+        case WSAECONNREFUSED:   return SocketErrorCode::ConnectionRefused;
+        case WSAEISCONN:        return SocketErrorCode::AlreadyConnected;
+        case WSAENETUNREACH: 
+        case WSAENETDOWN:
+        case WSAEHOSTUNREACH:   return SocketErrorCode::HostUnreachable;
+        case WSAETIMEDOUT:      return SocketErrorCode::Timeout;
+        case WSAECONNRESET:
+        case WSAEINTR:
+        case WSAENETRESET:      return SocketErrorCode::ConnectionReset;
+        case WSAEADDRNOTAVAIL:  return SocketErrorCode::AddressNotAvailable;
+        case WSAEAFNOSUPPORT:   return SocketErrorCode::AddressUnsupported;
+        case WSAESHUTDOWN:      return SocketErrorCode::SocketShutdown;
+        case WSAEMSGSIZE:       return SocketErrorCode::MessageTooLarge;
+        case WSAENOTCONN:       return SocketErrorCode::NotConnected;
+        default:                ASSERT_MSG(0, "Unknown socket error: %d", WSAGetLastError()); return SocketErrorCode::Unknown;
+        }
+    }
+
+    bool socketParseUrl(const char* url, char* address, size_t addressSize, char* port, size_t portSize, const char** pResource = nullptr);
+} // namespace _private
+
+// Implemented in System.cpp
+
+#define SOCKET_INVALID INVALID_SOCKET
+SocketTCP::SocketTCP() :
+    s(SOCKET_INVALID),
+    errCode(SocketErrorCode::None),
+    live(0)
+{
+}
+
+void SocketTCP::Close()
+{
+    if (this->s != SOCKET_INVALID) {
+        if (this->live)
+            shutdown(this->s, SD_BOTH);
+        closesocket(this->s);
+
+        this->s = SOCKET_INVALID;
+        this->errCode = SocketErrorCode::None;
+        this->live = false;
+    }
+}
+
+SocketTCP SocketTCP::CreateListener()
+{
+    _private::socketInitializeWin32();
+
+    SocketTCP sock;
+
+    sock.s = socket(AF_INET, SOCK_STREAM, 0);
+    if (sock.s == SOCKET_INVALID) {
+        sock.errCode = _private::socketTranslatePlatformErrorCode();
+        logError("SocketTCP: Opening the socket failed");
+        return sock;
+    }
+    return sock;    
+}
+
+bool SocketTCP::Listen(uint16 port, uint32 maxConnections)
+{
+    ASSERT(IsValid());
+
+    struct sockaddr_in addr;
+    addr.sin_family = AF_INET;
+    addr.sin_addr.s_addr = INADDR_ANY;
+    addr.sin_port = htons(port);
+
+    if (bind(this->s, (struct sockaddr*)&addr, sizeof(addr)) < 0) {
+        this->errCode = _private::socketTranslatePlatformErrorCode();
+        logError("SocketTCP: failed binding the socket to port: %d", port);
+        return false;
+    }
+
+    logVerbose("SocketTCP: Listening on port '%d' for incoming connections ...", port);
+    int _maxConnections = maxConnections > INT32_MAX ? INT32_MAX : static_cast<int>(maxConnections);
+    bool success = listen(this->s, _maxConnections) >= 0;
+    
+    if (!success) 
+        this->errCode = _private::socketTranslatePlatformErrorCode();
+    else
+        this->live = true;
+
+    return success;
+}
+
+SocketTCP SocketTCP::Accept(char* clientUrl, uint32 clientUrlSize)
+{
+    ASSERT(IsValid());
+
+    SocketTCP newSock;
+
+    struct sockaddr_in addr;
+    socklen_t addrlen = sizeof(addr);
+    newSock.s = accept(this->s, (struct sockaddr*)&addr, &addrlen);
+    if (this->live && newSock.s == SOCKET_INVALID) {
+        newSock.errCode = _private::socketTranslatePlatformErrorCode();
+        logError("SocketTCP: failed to accept the new socket");
+        return newSock;
+    }
+
+    if (clientUrl && clientUrlSize) {
+        char ip[256];
+        inet_ntop(AF_INET, &addr.sin_addr, ip, sizeof(ip));
+        uint16 port = htons(addr.sin_port);
+        
+        strPrintFmt(clientUrl, clientUrlSize, "%s:%d", ip, port);
+    }
+
+    newSock.live = true;
+    return newSock;
+}
+
+SocketTCP SocketTCP::Connect(const char* url)
+{
+    _private::socketInitializeWin32();
+
+    SocketTCP sock;
+
+    char address[256];
+    char port[16];
+    if (!_private::socketParseUrl(url, address, sizeof(address), port, sizeof(port))) {
+        logError("SocketTCP: failed parsing the url: %s", url);
+        return sock;
+    }
+
+    struct addrinfo hints;
+    memset(&hints, 0x0, sizeof(hints));
+    hints.ai_family = AF_UNSPEC;
+    hints.ai_flags = AI_PASSIVE;
+    hints.ai_socktype = SOCK_STREAM;
+    hints.ai_protocol = IPPROTO_TCP;
+
+    struct addrinfo* addri = nullptr;
+    if (getaddrinfo(address, port, &hints, &addri) != 0) {
+        logError("SocketTCP: failed to resolve url: %s", url);
+        return sock;
+    }
+
+    sock.s = socket(addri->ai_family, addri->ai_socktype, addri->ai_protocol);
+    if (sock.s == SOCKET_INVALID) {
+        freeaddrinfo(addri);
+        logError("SocketTCP: failed to create socket");
+        return sock;
+    }
+
+    if (connect(sock.s, addri->ai_addr, (int)addri->ai_addrlen) == -1) {
+        freeaddrinfo(addri);
+        sock.errCode = _private::socketTranslatePlatformErrorCode();
+        logError("SocketTCP: failed to connect to url: %s", url);
+        sock.Close();
+        return sock;
+    }
+
+    freeaddrinfo(addri);
+
+    sock.live = true;
+    return sock;
+}
+
+uint32 SocketTCP::Write(const void* src, uint32 size)
+{
+    ASSERT(IsValid());
+    ASSERT(this->live);
+    uint32 totalBytesSent = 0;
+
+    while (size > 0) {
+        int bytesSent = send(this->s, reinterpret_cast<const char*>(src) + totalBytesSent, size, 0);
+        if (bytesSent == 0) {
+            break;
+        }
+        else if (bytesSent == -1) {
+            this->errCode = _private::socketTranslatePlatformErrorCode();
+            if (this->errCode == SocketErrorCode::SocketShutdown ||
+                this->errCode == SocketErrorCode::NotConnected)
+            {
+                logDebug("SocketTCP: socket connection closed forcefully by the peer");
+                this->live = false;
+            }
+            return UINT32_MAX;
+        }
+
+        totalBytesSent += static_cast<uint32>(bytesSent);
+        size -= static_cast<uint32>(bytesSent);
+    }
+
+    return totalBytesSent;
+}
+
+uint32 SocketTCP::Read(void* dst, uint32 dstSize)
+{
+    ASSERT(IsValid());
+    ASSERT(this->live);
+
+    int bytesRecv = recv(this->s, reinterpret_cast<char*>(dst), dstSize, 0);
+    if (bytesRecv == -1) {
+        this->errCode = _private::socketTranslatePlatformErrorCode();
+        if (this->errCode == SocketErrorCode::SocketShutdown ||
+            this->errCode == SocketErrorCode::NotConnected)
+        {
+            logDebug("SocketTCP: socket connection closed forcefully by the peer");
+            this->live = false;
+        }
+        return UINT32_MAX;
+    }
+
+    return static_cast<uint32>(bytesRecv);
+}
+
+bool SocketTCP::IsValid() const
+{
+    return this->s != SOCKET_INVALID;
 }
 
 #endif // PLATFORM_WINDOWS

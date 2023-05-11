@@ -1,7 +1,6 @@
 #include "VirtualFS.h"
 
 #include "Core/Log.h"
-#include "Core/FileIO.h"
 #include "Core/System.h"
 #include "Core/String.h"
 #include "Core/Settings.h"

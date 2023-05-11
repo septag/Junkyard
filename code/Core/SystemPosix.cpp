@@ -5,18 +5,25 @@
 #include <unistd.h>             // sysconf, gettid
 #include <dlfcn.h>              // dlopen, dlclose, dlsym
 #include <pthread.h>            // pthread_t and family
+#include <sys/types.h>
+#include <sys/socket.h>         // socket funcs
 #include <sys/prctl.h>          // prctl
+#include <sys/stat.h>           // stat
+#include <sys/mman.h>           // mmap/munmap/mprotect/..
 #include <limits.h> 
 #include <stdlib.h>             // realpath
-#include <sys/stat.h>           // stat
 #include <errno.h>
-#include <sys/mman.h>           // mmap/munmap/mprotect/..
+#include <fcntl.h>
+#include <netdb.h>              // getaddrinfo, freeaddrinfo
+#include <netinet/in.h>         // sockaddr_in
+#include <arpa/inet.h>          // inet_ntop
 
 #include "../External/tracy/TracyC.h"
 
 #include "String.h"
 #include "Atomic.h"
 #include "Memory.h"
+#include "Log.h"
 
 // "Adaptive" mutex implementation using early spinlock
 struct MutexImpl 
@@ -684,6 +691,377 @@ MemVirtualStats memVirtualGetStats()
         .commitedBytes = gVMStats.commitedBytes,
         .reservedBytes = gVMStats.reservedBytes
     };
+}
+
+//----------------------------------------------------------------------------------------------------------------------
+// File
+#undef _LARGEFILE64_SOURCE
+#ifndef __O_LARGEFILE4
+    #define __O_LARGEFILE 0
+#endif
+
+struct FilePosix
+{
+    int         id;
+    FileOpenFlags flags;
+    uint64      size;  
+    uint64      lastModifiedTime;
+};
+static_assert(sizeof(FilePosix) <= sizeof(File));
+
+File::File()
+{
+    FilePosix* f = (FilePosix*)this->_data;
+    f->id = -1;
+    f->flags = FileOpenFlags::None;
+    f->size = 0;
+    f->lastModifiedTime = 0;
+}
+
+bool File::Open(const char* filepath, FileOpenFlags flags)
+{
+    ASSERT((flags & (FileOpenFlags::Read|FileOpenFlags::Write)) != (FileOpenFlags::Read|FileOpenFlags::Write));
+    ASSERT((flags & (FileOpenFlags::Read|FileOpenFlags::Write)) != FileOpenFlags::None);
+
+    FilePosix* f = (FilePosix*)this->_data;
+
+    int openFlags = __O_LARGEFILE;
+    mode_t mode = 0;
+
+    if ((flags & FileOpenFlags::Read) == FileOpenFlags::Read) {
+        openFlags |= O_RDONLY;
+    } else if ((flags & FileOpenFlags::Write) == FileOpenFlags::Write) {
+        openFlags |= O_WRONLY;
+        if ((flags & FileOpenFlags::Append) == FileOpenFlags::Append) {
+            openFlags |= O_APPEND;
+        } else {
+            openFlags |= (O_CREAT | O_TRUNC);
+            mode |= (S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH); 
+        }
+    }
+
+    #if (PLATFORM_LINUX || PLATFORM_ANDROID)
+        if ((flags & FileOpenFlags::Temp) == FileOpenFlags::Temp) {
+            openFlags |= __O_TMPFILE;
+        }
+    #endif
+
+    int fileId = open(filepath, openFlags, mode);
+    if (fileId == -1) 
+        return false;
+
+    #if PLATFORM_APPLE
+        if (flags & FileOpenFlags::Nocache) {
+            if (fcntl(fileId, F_NOCACHE) != 0) {
+                return false;
+            }
+        }
+    #endif
+
+    struct stat _stat;
+    int sr = fstat(fileId, &_stat);
+    if (sr != 0) {
+        ASSERT_MSG(0, "stat failed!");
+        return false;
+    }
+
+    f->id = fileId;
+    f->flags = flags;
+    f->size = static_cast<uint64>(_stat.st_size);
+    f->lastModifiedTime = static_cast<uint64>(_stat.st_mtime);
+    return true;
+}
+
+void File::Close()
+{
+    FilePosix* f = (FilePosix*)this->_data;
+
+    if (f->id != -1) {
+        close(f->id);
+        f->id = -1;
+    }
+}
+
+size_t File::Read(void* dst, size_t size)
+{
+    FilePosix* f = (FilePosix*)this->_data;
+    ASSERT(f->id != -1);
+    
+    if ((f->flags & FileOpenFlags::NoCache) == FileOpenFlags::NoCache) {
+        static size_t pagesz = 0;
+        if (pagesz == 0)
+            pagesz = sysGetPageSize();
+        ASSERT_ALWAYS((uintptr_t)dst % pagesz == 0, "buffers must be aligned with NoCache flag");
+    }
+    ssize_t r = read(f->id, dst, size);
+    return r != -1 ? r : SIZE_MAX;
+}
+
+size_t File::Write(const void* src, size_t size)
+{
+    FilePosix* f = (FilePosix*)this->_data;
+    ASSERT(f->id != -1);
+
+    int64_t bytesWritten = write(f->id, src, size);
+    if (bytesWritten > -1) {
+        f->size += bytesWritten; 
+        return bytesWritten;
+    }
+    else {
+        return SIZE_MAX;
+    }    
+}
+
+size_t File::Seek(size_t offset, FileSeekMode mode)
+{
+    FilePosix* f = (FilePosix*)this->_data;
+    ASSERT(f->id != -1);
+
+    int _whence = 0;
+    switch (mode) {
+    case FileSeekMode::Current:    _whence = SEEK_CUR; break;
+    case FileSeekMode::Start:      _whence = SEEK_SET; break;
+    case FileSeekMode::End:        _whence = SEEK_END; break;
+    }
+
+    return size_t(lseek(f->id, static_cast<off_t>(offset), _whence));
+}
+
+size_t File::GetSize() const
+{
+    const FilePosix* f = (const FilePosix*)this->_data;
+    return f->size;
+}
+
+uint64 File::GetLastModified() const
+{
+    const FilePosix* f = (const FilePosix*)this->_data;
+    return f->lastModifiedTime;
+}
+
+bool File::IsOpen() const
+{
+    FilePosix* f = (FilePosix*)this->_data;
+    return f->id != -1;
+}
+
+//----------------------------------------------------------------------------------------------------------------------
+// Socket
+#define SOCKET_INVALID -1
+#define SOCKET_ERROR -1
+
+namespace _private
+{
+    static SocketErrorCode socketTranslatePlatformErrorCode()
+    {
+        switch (errno) {
+        case EADDRINUSE:        return SocketErrorCode::AddressInUse;
+        case ECONNREFUSED:      return SocketErrorCode::ConnectionRefused;
+        case EISCONN:           return SocketErrorCode::AlreadyConnected;
+        case EHOSTUNREACH: 
+        case ENETUNREACH:       return SocketErrorCode::HostUnreachable;
+        case EWOULDBLOCK:
+        case ETIMEDOUT:         return SocketErrorCode::Timeout;
+        case ECONNRESET:        return SocketErrorCode::ConnectionReset;
+        case EADDRNOTAVAIL:     return SocketErrorCode::AddressNotAvailable;
+        case EAFNOSUPPORT:      return SocketErrorCode::AddressUnsupported;
+        case ESHUTDOWN:         return SocketErrorCode::SocketShutdown;
+        case EMSGSIZE:          return SocketErrorCode::MessageTooLarge;
+        case ENOTCONN:          return SocketErrorCode::NotConnected;
+        default:                return SocketErrorCode::Unknown;
+        }
+    }
+
+    bool socketParseUrl(const char* url, char* address, size_t addressSize, char* port, size_t portSize, const char** pResource = nullptr);
+} // namespace _private
+
+#define SOCKET_INVALID -1
+#define SOCKET_ERROR -1
+
+SocketTCP::SocketTCP() :
+    s(SOCKET_INVALID),
+    errCode(SocketErrorCode::None),
+    live(0)
+{
+}
+
+void SocketTCP::Close()
+{
+    if (this->s != SOCKET_INVALID) {
+        if (this->live)
+            shutdown(this->s, SHUT_RDWR);
+        close(this->s);
+
+        this->s = SOCKET_INVALID;
+        this->errCode = SocketErrorCode::None;
+        this->live = false;
+    }
+}
+
+SocketTCP SocketTCP::CreateListener()
+{
+    SocketTCP sock;
+
+    sock.s = socket(AF_INET, SOCK_STREAM, 0);
+    if (sock.s == SOCKET_INVALID) {
+        sock.errCode = _private::socketTranslatePlatformErrorCode();
+        logError("SocketTCP: Opening the socket failed");
+        return sock;
+    }
+    return sock;    
+}
+
+bool SocketTCP::Listen(uint16 port, uint32 maxConnections)
+{
+    ASSERT(IsValid());
+
+    struct sockaddr_in addr;
+    addr.sin_family = AF_INET;
+    addr.sin_addr.s_addr = INADDR_ANY;
+    addr.sin_port = htons(port);
+
+    if (bind(this->s, (struct sockaddr*)&addr, sizeof(addr)) < 0) {
+        this->errCode = _private::socketTranslatePlatformErrorCode();
+        logError("SocketTCP: failed binding the socket to port: %d", port);
+        return false;
+    }
+
+    logVerbose("SocketTCP: Listening on port '%d' for incoming connections ...", port);
+    int _maxConnections = maxConnections > INT32_MAX ? INT32_MAX : static_cast<int>(maxConnections);
+    bool success = listen(this->s, _maxConnections) >= 0;
+    
+    if (!success) 
+        this->errCode = _private::socketTranslatePlatformErrorCode();
+    else
+        this->live = true;
+
+    return success;
+}
+
+SocketTCP SocketTCP::Accept(char* clientUrl, uint32 clientUrlSize)
+{
+    ASSERT(IsValid());
+
+    SocketTCP newSock;
+
+    struct sockaddr_in addr;
+    socklen_t addrlen = sizeof(addr);
+    newSock.s = accept(this->s, (struct sockaddr*)&addr, &addrlen);
+    if (this->live && newSock.s == SOCKET_INVALID) {
+        newSock.errCode = _private::socketTranslatePlatformErrorCode();
+        logError("SocketTCP: failed to accept the new socket");
+        return newSock;
+    }
+
+    if (clientUrl && clientUrlSize) {
+        char ip[256];
+        inet_ntop(AF_INET, &addr.sin_addr, ip, sizeof(ip));
+        uint16 port = htons(addr.sin_port);
+        
+        strPrintFmt(clientUrl, clientUrlSize, "%s:%d", ip, port);
+    }
+
+    newSock.live = true;
+    return newSock;
+}
+
+SocketTCP SocketTCP::Connect(const char* url)
+{
+    SocketTCP sock;
+
+    char address[256];
+    char port[16];
+    if (!_private::socketParseUrl(url, address, sizeof(address), port, sizeof(port))) {
+        logError("SocketTCP: failed parsing the url: %s", url);
+        return sock;
+    }
+
+    struct addrinfo hints;
+    memset(&hints, 0x0, sizeof(hints));
+    hints.ai_family = AF_UNSPEC;
+    hints.ai_flags = AI_PASSIVE;
+    hints.ai_socktype = SOCK_STREAM;
+    hints.ai_protocol = IPPROTO_TCP;
+
+    struct addrinfo* addri = nullptr;
+    if (getaddrinfo(address, port, &hints, &addri) != 0) {
+        logError("SocketTCP: failed to resolve url: %s", url);
+        return sock;
+    }
+
+    sock.s = socket(addri->ai_family, addri->ai_socktype, addri->ai_protocol);
+    if (sock.s == SOCKET_INVALID) {
+        freeaddrinfo(addri);
+        logError("SocketTCP: failed to create socket");
+        return sock;
+    }
+
+    if (connect(sock.s, addri->ai_addr, (int)addri->ai_addrlen) == -1) {
+        freeaddrinfo(addri);
+        sock.errCode = _private::socketTranslatePlatformErrorCode();
+        logError("SocketTCP: failed to connect to url: %s", url);
+        sock.Close();
+        return sock;
+    }
+
+    freeaddrinfo(addri);
+
+    sock.live = true;
+    return sock;
+}
+
+uint32 SocketTCP::Write(const void* src, uint32 size)
+{
+    ASSERT(IsValid());
+    ASSERT(this->live);
+    uint32 totalBytesSent = 0;
+
+    while (size > 0) {
+        int bytesSent = send(this->s, reinterpret_cast<const char*>(src) + totalBytesSent, size, 0);
+        if (bytesSent == 0) {
+            break;
+        }
+        else if (bytesSent == -1) {
+            this->errCode = _private::socketTranslatePlatformErrorCode();
+            if (this->errCode == SocketErrorCode::SocketShutdown ||
+                this->errCode == SocketErrorCode::NotConnected)
+            {
+                logDebug("SocketTCP: socket connection closed forcefully by the peer");
+                this->live = false;
+            }
+            return UINT32_MAX;
+        }
+
+        totalBytesSent += static_cast<uint32>(bytesSent);
+        size -= static_cast<uint32>(bytesSent);
+    }
+
+    return totalBytesSent;
+}
+
+uint32 SocketTCP::Read(void* dst, uint32 dstSize)
+{
+    ASSERT(IsValid());
+    ASSERT(this->live);
+
+    int bytesRecv = recv(this->s, reinterpret_cast<char*>(dst), dstSize, 0);
+    if (bytesRecv == -1) {
+        this->errCode = _private::socketTranslatePlatformErrorCode();
+        if (this->errCode == SocketErrorCode::SocketShutdown ||
+            this->errCode == SocketErrorCode::NotConnected)
+        {
+            logDebug("SocketTCP: socket connection closed forcefully by the peer");
+            this->live = false;
+        }
+        return UINT32_MAX;
+    }
+
+    return static_cast<uint32>(bytesRecv);
+}
+
+bool SocketTCP::IsValid() const
+{
+    return this->s != SOCKET_INVALID;
 }
 
 #endif // PLATFORM_POSIX
