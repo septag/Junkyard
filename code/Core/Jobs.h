@@ -14,8 +14,7 @@
 //      Priority: Higher priorities have a chance of executing sooner than lower ones
 //
 // Thread Model:
-//      Thread pool is created nased on SettingsEngine.jobsThreadCount member (see Settings.h), if this value is not provided by the user,
-//      then threadCount will be fetched from the engine being equal to CpuCoreCount - 1. Note that this is actual PhysicalCores, not the Logical ones
+//      threadCount will be fetched from the engine being equal to CpuCoreCount - 1 if set to 0 on initialize. Note that this is actual PhysicalCores, not the Logical ones
 //      
 //      ShortTask: As the name suggests, short tasks are expected to do small amount of work. They should also finish before the current frame ends. 
 //                 There are numCores-1 threads of this type in the thread pool by default
@@ -25,6 +24,7 @@
 //
 #include "Base.h"
 
+struct MemBudgetAllocator;
 struct JobsInstance;
 using JobsHandle = JobsInstance*;
 using JobsCallback = void(*)(uint32 groupIndex, void* userData);
@@ -79,6 +79,9 @@ private:
     uint8 data[128];
 };
 
+API void jobsInitialize(MemBudgetAllocator* initHeap, uint32 numThreads = 0, bool debugAllocations = false);
+API void jobsRelease();
+
 // Dispatches the job and returns the handle. Handle _must_ be waited on later, with a call to `jobsWaitForCompletion`
 API [[nodiscard]] JobsHandle jobsDispatch(JobsType type, JobsCallback callback, void* userData = nullptr, 
                                           uint32 groupSize = 1, JobsPriority prio = JobsPriority::Normal, uint32 stackSize = 0);
@@ -90,14 +93,6 @@ API void jobsDispatchAuto(JobsType type, JobsCallback callback, void* userData =
                           uint32 groupSize = 1, JobsPriority prio = JobsPriority::Normal, uint32 stackSize = 0);
 
 API void jobsGetBudgetStats(JobsBudgetStats* stats);
+API void jobsResetBudgetStats();
 API uint32 jobsGetWorkerThreadsCount();
-
-namespace _private
-{
-    void jobsInitialize();
-    void jobsRelease();
-    void jobsResetBudgetStats();
-
-    void jobsDebugThreadStats();    // TEMP
-} // _private
 

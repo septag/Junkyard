@@ -8,6 +8,7 @@
 #include "../VirtualFS.h"
 #include "../Application.h"
 #include "../Engine.h"
+#include "../JunkyardSettings.h"
 
 #include "../UnityBuild.inl"
 
@@ -16,7 +17,7 @@ struct AppImpl : AppCallbacks
     bool Initialize() override
     {
         // Mount file-systems before initializing engine
-        if (settingsGetEngine().connectToServer) {
+        if (settingsGet().engine.connectToServer) {
             vfsMountRemote("data", true);
             vfsMountRemote("code", true);
         }
@@ -55,16 +56,13 @@ struct AppImpl : AppCallbacks
 
 int main(int argc, char* argv[])
 {
-    settingsInitialize(SettingsAll {
-        .engine = {
-            .logLevel = SettingsEngine::LogLevel::Debug,
-        },
+    settingsInitializeJunkyard(SettingsJunkyard {
         .graphics = {
             .headless = true
         }
     });
 
-    settingsLoadFromCommandLine(argc, argv);
+    settingsInitializeFromCommandLine(argc, argv);
 
     static AppImpl impl;
     appInitialize(AppDesc { 

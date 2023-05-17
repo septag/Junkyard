@@ -92,6 +92,7 @@ struct Array
     void Detach(_T** outBuffer, uint32* outCount);
     void ShiftLeft(uint32 count);
 
+    uint32 Find(const _T& value);
     // _Func = [capture](const _T& item)->bool
     template <typename _Func> uint32 FindIf(_Func findFunc);
     
@@ -135,6 +136,7 @@ struct StaticArray
     const _T* Ptr() const;
     _T* Ptr();
 
+    uint32 Find(const _T& value);
     // _Func = [capture](const _T& item)->bool
     template <typename _Func> uint32 FindIf(_Func findFunc);
 
@@ -698,6 +700,16 @@ inline void Array<_T, _Reserve>::Shrink()
     Reserve(_capacity);
 }
 
+template <typename _T, uint32 _Reserve> 
+inline uint32 Array<_T, _Reserve>::Find(const _T& value)
+{
+    for (uint32 i = 0; i < _count; i++) {
+        if (_buffer[i] == value)
+            return i;
+    }
+
+    return UINT32_MAX;
+}
 
 template<typename _T, uint32 _Reserve>
 template<typename _Func> inline uint32 Array<_T, _Reserve>::FindIf(_Func findFunc)
@@ -801,8 +813,18 @@ inline _T* StaticArray<_T, _MaxCount>::Ptr()
     return reinterpret_cast<_T*>(_buffer);
 }
 
-template<typename _T, uint32 _MaxCount>
-template<typename _Func> inline uint32 StaticArray<_T, _MaxCount>::FindIf(_Func findFunc)
+template <typename _T, uint32 _MaxCount> 
+inline uint32 StaticArray<_T, _MaxCount>::Find(const _T& value)
+{
+    for (uint32 i = 0; i < _count; i++) {
+        if (_buffer[i] == value)
+            return i;
+    }
+    return UINT32_MAX;
+}
+
+template <typename _T, uint32 _MaxCount>
+template <typename _Func> inline uint32 StaticArray<_T, _MaxCount>::FindIf(_Func findFunc)
 {
     for (uint32 i = 0, c = _count; i < c; i++) {
         if (findFunc(_buffer[i])) {

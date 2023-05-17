@@ -1,6 +1,6 @@
 #include "Camera.h"
 
-#include "Math/MathVector.h"
+#include "Core/MathVector.h"
 
 #include "Application.h"
 

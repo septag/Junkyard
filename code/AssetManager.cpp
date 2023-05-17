@@ -12,6 +12,7 @@
 #include "VirtualFS.h"
 #include "RemoteServices.h"
 #include "Application.h"
+#include "JunkyardSettings.h"
 
 #define ASSET_HASH_SEED 0x4354a
 
@@ -311,7 +312,7 @@ bool _private::assetInitialize()
     {
         size_t bufferSize = MemTlsfAllocator::GetMemoryRequirement(_limits::kAssetRuntimeSize);
         gAssetMgr.runtimeHeap.Initialize(_limits::kAssetRuntimeSize, memAlloc(bufferSize, initHeap), bufferSize,
-                                         settingsGetEngine().debugAllocations);
+                                         settingsGet().engine.debugAllocations);
     }
 
     gAssetMgr.initHeapSize = initHeap->GetOffset() - gAssetMgr.initHeapStart;

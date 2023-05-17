@@ -1,6 +1,6 @@
 #pragma once
 
-#include "Math/MathTypes.h"
+#include "Core/MathTypes.h"
 
 struct AppEvent;    // Application.h
 struct CameraFrustumPoints

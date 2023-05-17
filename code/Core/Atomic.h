@@ -2,9 +2,7 @@
 
 #include "Base.h"
 
-PRAGMA_DIAGNOSTIC_PUSH()
-#include "../External/c89atomic/c89atomic.h"
-PRAGMA_DIAGNOSTIC_PUSH()
+#include "External/c89atomic/c89atomic.h"
 
 using atomicUint32 = c89atomic_uint32;
 using atomicUint64 = c89atomic_uint64;

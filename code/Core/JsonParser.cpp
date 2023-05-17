@@ -2,10 +2,10 @@
 #define CJ5_IMPLEMENT
 #define CJ5_ASSERT(e) ASSERT(e)
 #define CJ5_SKIP_ASAN NO_ASAN
-#include "../External/cj5/cj5.h"
+#include "External/cj5/cj5.h"
 #undef CJ5_IMPLEMENT
 
-// Include jsonParser after, because we are including it in the header
+// Include jsonParser after, because we are already including cj5.h in the header
 #include "JsonParser.h"
 
 #include "Buffers.h"

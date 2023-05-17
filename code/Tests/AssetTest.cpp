@@ -4,14 +4,14 @@
 #include "../Core/Log.h"
 #include "../Core/TracyHelper.h"
 #include "../Core/Jobs.h"
-
-#include "../Math/Math.h"
+#include "../Core/Math.h"
 
 #include "../AssetManager.h"
 #include "../VirtualFS.h"
 #include "../Application.h"
 #include "../Engine.h"
 #include "../Camera.h"
+#include "../JunkyardSettings.h"
 
 #include "../Graphics/DebugDraw.h"
 #include "../Graphics/Model.h"
@@ -59,7 +59,7 @@ struct AppImpl : AppCallbacks
     bool Initialize() override
     {
         // Mount file-systems before initializing engine
-        if (settingsGetEngine().connectToServer) {
+        if (settingsGet().engine.connectToServer) {
             vfsMountRemote("data", true);
             vfsMountRemote("code", true);
         }
@@ -377,16 +377,13 @@ struct AppImpl : AppCallbacks
 
 int Main(int argc, char* argv[])
 {
-    settingsInitialize(SettingsAll {
-        .engine = {
-            .logLevel = SettingsEngine::LogLevel::Debug,
-        }
-    });
+    settingsInitializeJunkyard({});
 
-    if constexpr (PLATFORM_ANDROID)
-        settingsLoadFromINI("Settings.ini");
-    else
-        settingsLoadFromCommandLine(argc, argv);
+    #if PLATFORM_ANDROID
+        settingsInitializeFromAndroidAsset(appAndroidGetAssetManager(), "Settings.ini");
+    #else
+        settingsInitializeFromCommandLine(argc, argv);
+    #endif
 
     logDebug("Initializing engine.");
     

@@ -3,7 +3,7 @@
 #include <stdarg.h>
 
 #include "../External/imgui/imgui.h"
-#include "../External/mgustavsson/ini.h"
+#include "../Core/External/mgustavsson/ini.h"
 
 #include "../Core/Memory.h"
 #include "../Core/String.h"
@@ -12,8 +12,7 @@
 #include "../Core/Log.h"
 #include "../Core/TracyHelper.h"
 #include "../Core/Buffers.h"
-
-#include "../Math/Math.h"
+#include "../Core/Math.h"
 
 #include "Graphics.h"
 #include "Shader.h"
@@ -23,6 +22,7 @@
 #include "../Engine.h"
 #include "../AssetManager.h"
 #include "../VirtualFS.h"
+#include "../JunkyardSettings.h"
 
 #include "../Tool/ImGuiTools.h"
 
@@ -364,7 +364,7 @@ bool _private::imguiInitialize()
     {
         size_t poolSize = MemTlsfAllocator::GetMemoryRequirement(_limits::kImGuiRuntimeHeapSize);
         gImGui.runtimeHeap.Initialize(_limits::kImGuiRuntimeHeapSize, memAlloc(poolSize, initHeap), poolSize,\
-                                      settingsGetEngine().debugAllocations);
+                                      settingsGet().engine.debugAllocations);
     }
     
     SetAllocatorFunctions(

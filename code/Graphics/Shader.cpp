@@ -9,6 +9,7 @@
 #include "../RemoteServices.h"
 #include "../AssetManager.h"
 #include "../VirtualFS.h"
+#include "../JunkyardSettings.h"
 
 #include "../Tool/ShaderCompiler.h"
 
@@ -281,7 +282,7 @@ AssetResult ShaderLoader::Load(AssetHandle handle, const AssetLoadParams& params
 
         AssetMetaKeyValue* metaData;
         uint32 numMeta;
-        const SettingsGraphics& graphicsSettings = settingsGetGraphics();
+        const SettingsGraphics& graphicsSettings = settingsGet().graphics;
         if (assetLoadMetaData(handle, &tmpAlloc, &metaData, &numMeta)) {
             compileDesc.dumpIntermediates |= assetGetMetaValue(metaData, numMeta, "dumpIntermediates", false);
             compileDesc.debug |= assetGetMetaValue(metaData, numMeta, "debug", false);
@@ -342,7 +343,7 @@ void ShaderLoader::LoadRemote(AssetHandle handle, const AssetLoadParams& params,
         });
     }
 
-    const SettingsGraphics& graphicsSettings = settingsGetGraphics();
+    const SettingsGraphics& graphicsSettings = settingsGet().graphics;
     compileDesc.debug |= graphicsSettings.shaderDebug;
     compileDesc.dumpIntermediates |= graphicsSettings.shaderDumpIntermediates;
 

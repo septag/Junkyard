@@ -16,9 +16,11 @@
 #include "Core/String.h"
 #include "Core/Settings.h"
 #include "Core/Buffers.h"
+#include "Core/Log.h"
 
 #include "VirtualFS.h"
 #include "RemoteServices.h"
+#include "JunkyardSettings.h"
 
 inline constexpr uint32 kAppMaxKeycodes = 512;
 
@@ -709,10 +711,16 @@ bool appInitialize(const AppDesc& desc)
 
     // Initialize settings if not initialied before
     // Since this is not a recommended way, we also throw an assert
-    if (!settingsIsInitialized()) {
+    if (!settingsIsInitializedJunkyard()) {
         ASSERT_MSG(0, "Settings must be initialized before this call. See settingsInitialize() function");
-        settingsInitialize({}); // initialize with default settings anyway
+        settingsInitializeJunkyard({}); // initialize with default settings
     }
+
+    // Set some initial settings
+    memEnableMemPro(settingsGet().engine.enableMemPro);
+    memTempSetCaptureStackTrace(settingsGet().debug.captureStacktraceForTempAllocator);
+    debugSetCaptureStacktraceForFiberProtector(settingsGet().debug.captureStacktraceForFiberProtector);
+    logSetSettings(static_cast<LogLevel>(settingsGet().engine.logLevel), settingsGet().engine.breakOnErrors, settingsGet().engine.treatWarningsAsErrors);
 
     // RemoteServices
     if (!_private::remoteInitialize()) {
@@ -876,7 +884,7 @@ static void* appAndroidMainThreadFn(void* userData)
 {
     UNUSED(userData);
 
-    sysAndroidAcquireJniEnv();
+    sysAndroidAcquireJniEnv(gApp.activity);
 
     // Just call the main function "AndroidMain" which is implemented by the user just like the usual "main"
     // `AndroidMain` basically implements callbacks, calls `appInitialize` or whatever initialization and returns
@@ -912,7 +920,7 @@ static void* appAndroidMainThreadFn(void* userData)
     }
 
 
-    sysAndroidReleaseJniEnv();
+    sysAndroidReleaseJniEnv(gApp.activity);
     return (void*)static_cast<uintptr_t>(r);
 }
 

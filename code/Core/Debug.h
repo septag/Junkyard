@@ -17,6 +17,7 @@ struct DebugStacktraceEntry
 
 API void debugBreakMessage(const char* fmt, ...);
 API void debugPrint(const char* text);
+API void debugSetCaptureStacktraceForFiberProtector(bool capture);
 
 API uint16 debugCaptureStacktrace(void** stackframes, uint16 maxStackframes, uint16 framesToSkip = 1, uint32* pHash = nullptr);
 API void debugResolveStacktrace(uint16 numStacktrace, void* const* stackframes, DebugStacktraceEntry* entries);

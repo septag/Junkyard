@@ -17,6 +17,7 @@
 #include "AssetManager.h"
 #include "RemoteServices.h"
 #include "Application.h"
+#include "JunkyardSettings.h"
 
 #include "Tool/Console.h"
 #include "Tool/ImGuiTools.h"
@@ -120,9 +121,9 @@ bool engineInitialize()
     // Initialize heaps
     // TODO: make all heaps commit all memory upfront in RELEASE builds
     gEng.shortcuts.SetAllocator(memDefaultAlloc());
-    gEng.initHeap.Initialize(kHeapInitBudget, kMB, false, settingsGetEngine().debugAllocations);
+    gEng.initHeap.Initialize(kHeapInitBudget, kMB, false, settingsGet().engine.debugAllocations);
 
-    if (settingsGetEngine().debugAllocations) {
+    if (settingsGet().engine.debugAllocations) {
         memTempSetDebugMode(true);
         memFrameSetDebugMode(true);
     }
@@ -158,10 +159,10 @@ bool engineInitialize()
     }
 
     _private::conInitialize();
-    _private::jobsInitialize();
+    jobsInitialize(&gEng.initHeap, gEng.sysInfo.coreCount - 1, settingsGet().engine.debugAllocations);
 
-    if (settingsGetEngine().connectToServer) {
-        if (!_private::remoteConnect(settingsGetEngine().remoteServicesUrl.CStr(), engineRemoteDisconnected)) {
+    if (settingsGet().engine.connectToServer) {
+        if (!_private::remoteConnect(settingsGet().engine.remoteServicesUrl.CStr(), engineRemoteDisconnected)) {
             return false;
         }
 
@@ -191,7 +192,7 @@ bool engineInitialize()
     }
 
     // Graphics
-    const SettingsGraphics& gfxSettings = settingsGetGraphics();
+    const SettingsGraphics& gfxSettings = settingsGet().graphics;
     if (gfxSettings.enable) {
         if (!gfxSettings.headless) {
             AppDisplayInfo dinfo = appGetDisplayInfo();
@@ -241,7 +242,7 @@ bool engineInitialize()
 
 void engineRelease()
 {
-    const SettingsGraphics& gfxSettings = settingsGetGraphics();
+    const SettingsGraphics& gfxSettings = settingsGet().graphics;
     logInfo("Releasing engine sub systems ...");
     gEng.initialized = false;
 
@@ -263,10 +264,10 @@ void engineRelease()
         _private::gfxRelease();
     _private::assetRelease();
 
-    if (settingsGetEngine().connectToServer)
+    if (settingsGet().engine.connectToServer)
         _private::remoteDisconnect();
 
-    _private::jobsRelease();
+    jobsRelease();
     _private::conRelease();
 
     gEng.shortcuts.Free();
@@ -283,7 +284,7 @@ void engineBeginFrame(float dt)
 
     gEng.elapsedTime += dt;
 
-    const SettingsEngine& engineSettings = settingsGetEngine();
+    const SettingsEngine& engineSettings = settingsGet().engine;
 
     // Reconnect to remote server if it's disconnected
     if (engineSettings.connectToServer && gEng.remoteReconnect) {
@@ -308,13 +309,13 @@ void engineBeginFrame(float dt)
     {
         gEng.refreshStatsTime += dt;
         if (gEng.refreshStatsTime > kRefreshStatsInterval) {
-            _private::jobsResetBudgetStats();
+            jobsResetBudgetStats();
             gEng.refreshStatsTime = 0;
         }
     }
 
     // Begin graphics
-    if (!settingsGetGraphics().headless) {
+    if (!settingsGet().graphics.headless) {
         _private::imguiBeginFrame(dt);
         gfxBeginFrame();
     }
@@ -328,7 +329,7 @@ void engineEndFrame(float dt)
 
     gEng.rawFrameTime = timerDiff(timerGetTicks(), gEng.rawFrameStartTime);
 
-    if (!settingsGetGraphics().headless) {
+    if (!settingsGet().graphics.headless) {
         gfxEndFrame();
         assetCollectGarbage();
     }

@@ -933,11 +933,6 @@ MemVirtualStats memVirtualGetStats()
     return gVMStats;
 }
 
-void sysWin32SetConsoleColor(void* handle, SysWin32ConsoleColor color)
-{
-    SetConsoleTextAttribute(handle, uint16(color));
-}
-
 //----------------------------------------------------------------------------
 // File
 struct FileWin

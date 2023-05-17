@@ -41,12 +41,12 @@
 #include "../Core/Log.h"
 #include "../Core/BlitSort.h"
 #include "../Core/TracyHelper.h"
-
-#include "../Math/Math.h"
+#include "../Core/Math.h"
 
 #include "../Engine.h"
 #include "../VirtualFS.h"
 #include "../Application.h"
+#include "../JunkyardSettings.h"
 
 #include "ValidateEnumsVk.inl"
 
@@ -529,7 +529,7 @@ static VKAPI_ATTR VkBool32 VKAPI_CALL gfxDebugUtilsMessageFn(
         logInfo("Gfx: %s%s", typeStr, callbackData->pMessage);
         break;
     case VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT:
-        if (!settingsGetGraphics().enableAdrenoDebug) {
+        if (!settingsGet().graphics.enableAdrenoDebug) {
             if (strFindStr(callbackData->pMessage, "VKDBGUTILWARN"))
                 return VK_FALSE;
         }
@@ -795,7 +795,7 @@ static GfxPipelineLayout gfxCreatePipelineLayout(const Shader& shader,
             pipLayoutData.descriptorSetLayouts[i] = descriptorSetLayouts[i];
 
         #if !CONFIG_FINAL_BUILD
-            if (settingsGetGraphics().trackResourceLeaks)
+            if (settingsGet().graphics.trackResourceLeaks)
                 pipLayoutData.numStackframes = debugCaptureStacktrace(pipLayoutData.stackframes, (uint16)CountOf(pipLayoutData.stackframes), 2);
         #endif
 
@@ -1234,7 +1234,7 @@ static GfxSwapchain gfxCreateSwapchain(VkSurfaceKHR surface, uint16 width, uint1
     VkSurfaceFormatKHR format {};
     for (uint32 i = 0; i < gVk.swapchainSupport.numFormats; i++) {
         VkFormat fmt = gVk.swapchainSupport.formats[i].format;
-        if (settingsGetGraphics().surfaceSRGB) {
+        if (settingsGet().graphics.surfaceSRGB) {
             if((fmt == VK_FORMAT_B8G8R8A8_SRGB || fmt == VK_FORMAT_R8G8B8A8_SRGB) &&
                gVk.swapchainSupport.formats[i].colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) 
             {
@@ -1251,7 +1251,7 @@ static GfxSwapchain gfxCreateSwapchain(VkSurfaceKHR surface, uint16 width, uint1
     }
     ASSERT_ALWAYS(format.format != VK_FORMAT_UNDEFINED, "Gfx: SwapChain PixelFormat is not supported");
 
-    VkPresentModeKHR presentMode = settingsGetGraphics().enableVsync ? VK_PRESENT_MODE_FIFO_KHR : VK_PRESENT_MODE_MAILBOX_KHR;
+    VkPresentModeKHR presentMode = settingsGet().graphics.enableVsync ? VK_PRESENT_MODE_FIFO_KHR : VK_PRESENT_MODE_MAILBOX_KHR;
 
     // Verify that SwapChain has support for this present mode
     bool presentModeIsSupported = false;
@@ -1424,10 +1424,10 @@ bool _private::gfxInitialize()
     {
         size_t bufferSize = MemTlsfAllocator::GetMemoryRequirement(_limits::kGfxRuntimeSize);
         gVk.runtimeHeap.Initialize(_limits::kGfxRuntimeSize, memAlloc(bufferSize, initHeap), bufferSize, 
-                                   settingsGetEngine().debugAllocations);
+                                   settingsGet().engine.debugAllocations);
     }
 
-    const SettingsGraphics& settings = settingsGetGraphics();
+    const SettingsGraphics& settings = settingsGet().graphics;
 
     gVk.allocVk = VkAllocationCallbacks {
         .pUserData = &gVk.alloc,
@@ -2337,7 +2337,7 @@ void GfxObjectPools::DetectAndReleaseLeaks()
             logDebug("\t\t- %s(%u)", entries[si].filename, entries[si].line);
     };
 
-    [[maybe_unused]] bool trackResourceLeaks = settingsGetGraphics().trackResourceLeaks;
+    [[maybe_unused]] bool trackResourceLeaks = settingsGet().graphics.trackResourceLeaks;
 
     if (gVk.pools.buffers.Count()) {
         logWarning("Gfx: Total %u buffers are not released. cleaning up...", gVk.pools.buffers.Count());
@@ -2769,7 +2769,7 @@ GfxBuffer gfxCreateBuffer(const GfxBufferDesc& desc)
     }
 
     #if !CONFIG_FINAL_BUILD
-        if (settingsGetGraphics().trackResourceLeaks)
+        if (settingsGet().graphics.trackResourceLeaks)
             bufferData.numStackframes = debugCaptureStacktrace(bufferData.stackframes, (uint16)CountOf(bufferData.stackframes), 2);
     #endif
 
@@ -2816,7 +2816,7 @@ void gfxCmdUpdateBuffer(GfxBuffer buffer, const void* data, uint32 size)
     else {
         ASSERT(bufferData.stagingBuffer);
 
-        VkCommandBuffer cmdBufferVk = gCmdBufferThreadData.curCmdBuffer;
+        [[maybe_unused]] VkCommandBuffer cmdBufferVk = gCmdBufferThreadData.curCmdBuffer;
         ASSERT_MSG(cmdBufferVk, "CmdXXX functions must come between Begin/End CommandBuffer calls");
 
         VkBufferCopy bufferCopy {
@@ -3048,7 +3048,7 @@ GfxImage gfxCreateImage(const GfxImageDesc& desc)
     gfxEndDeferredCommandBuffer();
 
 #if !CONFIG_FINAL_BUILD
-    if (settingsGetGraphics().trackResourceLeaks)
+    if (settingsGet().graphics.trackResourceLeaks)
         imageData.numStackframes = debugCaptureStacktrace(imageData.stackframes, (uint16)CountOf(imageData.stackframes), 2);
 #endif
 
@@ -3556,7 +3556,7 @@ GfxPipeline gfxCreatePipeline(const GfxPipelineDesc& desc)
     };
 
     #if !CONFIG_FINAL_BUILD
-        if (settingsGetGraphics().trackResourceLeaks)
+        if (settingsGet().graphics.trackResourceLeaks)
             pipData.numStackframes = debugCaptureStacktrace(pipData.stackframes, (uint16)CountOf(pipData.stackframes), 2);
     #endif
     
@@ -3753,7 +3753,7 @@ GfxDescriptorSetLayout gfxCreateDescriptorSetLayout(const Shader& shader, const 
         }
 
         #if !CONFIG_FINAL_BUILD
-            if (settingsGetGraphics().trackResourceLeaks)
+            if (settingsGet().graphics.trackResourceLeaks)
                 dsLayoutData.numStackframes = debugCaptureStacktrace(dsLayoutData.stackframes, (uint16)CountOf(dsLayoutData.stackframes), 2);
         #endif
 
@@ -3839,7 +3839,7 @@ GfxDescriptorSet gfxCreateDescriptorSet(GfxDescriptorSetLayout layout)
     }
 
     #if !CONFIG_FINAL_BUILD
-        if (settingsGetGraphics().trackResourceLeaks)
+        if (settingsGet().graphics.trackResourceLeaks)
             descriptorSetData.numStackframes = debugCaptureStacktrace(descriptorSetData.stackframes, (uint16)CountOf(descriptorSetData.stackframes), 2);
     #endif
 

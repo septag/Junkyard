@@ -440,7 +440,7 @@ static bool gfxInitializeImageManager()
     // - placeholder images
     // - Asset loaders for the images
     // - Descriptor cache management for reloads
-    if (!settingsGetGraphics().headless) {
+    if (!settingsGet().graphics.headless) {
         const uint32 kWhitePixel = 0xffffffff;
         GfxImageDesc imageDesc = GfxImageDesc {
             .width = 1,
@@ -497,7 +497,7 @@ void _private::gfxReleaseImageManager()
     gImageMgr.requests.Free();
     gImageMgr.requestsMtx.Release();
 
-    if (!settingsGetGraphics().headless) {
+    if (!settingsGet().graphics.headless) {
         gfxDestroyImage(gImageMgr.imageWhite);
 
         for (GfxDescriptorUpdateCacheItem* item : gImageMgr.updateCache)

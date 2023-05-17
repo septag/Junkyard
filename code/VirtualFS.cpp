@@ -7,6 +7,8 @@
 #include "Core/TracyHelper.h"
 #include "Core/Buffers.h"
 
+#include "JunkyardSettings.h"
+
 #if PLATFORM_ANDROID
     #include "Application.h"    // appGetNativeAssetManagerHandle
     #include <android/asset_manager.h>
@@ -332,7 +334,7 @@ static void vfsDmonFn(dmon_watch_id watchId, dmon_action action, const char* roo
                         }
                     }
                     
-                    if (settingsGetTooling().enableServer) {
+                    if (settingsGet().tooling.enableServer) {
                         MutexScope mtx(gVfs.fileChangesMtx);
                         gVfs.fileChanges.Push(VfsFileChangeEvent { .filepath = aliasFilepath });
                     }
@@ -390,8 +392,8 @@ int vfsReqFileChangesThreadFn(void*)
 
 bool vfsMountRemote(const char* alias, bool watch)
 {
-    ASSERT_MSG(settingsGetEngine().connectToServer, "Remote services is not enabled in settings");
-    const char* url = settingsGetEngine().remoteServicesUrl.CStr();
+    ASSERT_MSG(settingsGet().engine.connectToServer, "Remote services is not enabled in settings");
+    const char* url = settingsGet().engine.remoteServicesUrl.CStr();
     
     VfsMountPoint mount {
         .type = VfsMountType::Remote,

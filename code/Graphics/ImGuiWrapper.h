@@ -1,7 +1,7 @@
 #pragma once
 
 #include "../Core/Base.h"
-#include "../Math/MathTypes.h"
+#include "../Core/MathTypes.h"
 
 #include "../External/imgui/imgui.h"
 

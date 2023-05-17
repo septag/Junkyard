@@ -7,9 +7,8 @@
 #include "../Core/Atomic.h"
 #include "../Core/Jobs.h"
 #include "../Core/System.h"
-
-#include "../Math/MathTypes.h"
-#include "../Math/MathScalar.h"
+#include "../Core/MathTypes.h"
+#include "../Core/MathScalar.h"
 
 #include "../Graphics/ImGuiWrapper.h"
 #include "../Graphics/Graphics.h"
@@ -17,6 +16,7 @@
 #include "../AssetManager.h"
 #include "../Engine.h"
 #include "../Application.h"
+#include "../JunkyardSettings.h"
 
 inline constexpr float kImGuiFragUpdateInterval = 1.0f;
 
@@ -367,7 +367,7 @@ void imguiQuickInfoHud(float dt, bool *pOpen)
         }
         avgFt /= float(valuesRead);
 
-        uint32 targetFps = settingsGetGraphics().enableVsync ? gImGuiQuickInfoState.targetFps : uint32(1.0f / avgFt);
+        uint32 targetFps = settingsGet().graphics.enableVsync ? gImGuiQuickInfoState.targetFps : uint32(1.0f / avgFt);
         uint32 warningFps = uint32(float(targetFps) * 0.8f);
         uint32 lowFps = targetFps / 2;
 
@@ -401,7 +401,7 @@ void imguiQuickInfoHud(float dt, bool *pOpen)
 
         float maxDt;
         float minDt;
-        if (settingsGetGraphics().enableVsync) {
+        if (settingsGet().graphics.enableVsync) {
             maxDt = 1.0f / float(warningFps);
             minDt = 1.0f / float(targetFps*2);
         }

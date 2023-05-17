@@ -18,7 +18,7 @@
 #include <netinet/in.h>         // sockaddr_in
 #include <arpa/inet.h>          // inet_ntop
 
-#include "../External/tracy/TracyC.h"
+#include "External/tracy/TracyC.h"
 
 #include "String.h"
 #include "Atomic.h"

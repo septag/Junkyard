@@ -16,7 +16,7 @@ PRAGMA_DIAGNOSTIC_IGNORED_CLANG_GCC("-Wunused-variable")
     #undef PLATFORM_WINDOWS
 #endif
 #define TRACY_UNWIND(_stackframes, _depth) debugCaptureStacktrace(_stackframes, _depth, 2)
-#include "../External/tracy/TracyClient.cpp"
+#include "External/tracy/TracyClient.cpp"
 PRAGMA_DIAGNOSTIC_POP()
 
 #include "String.h"

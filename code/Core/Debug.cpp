@@ -13,20 +13,60 @@
 
 #include "String.h"
 #include "System.h"         // sysAndroidPrintXXX/sysWinDebugger..
-#include "Settings.h"
 #include "Buffers.h"
+#include "Log.h"
 
-#if PLATFORM_ANDROID
-// TODO: remove this dependency
-#include "../Application.h"
-#endif
+static bool gDebugCaptureStacktraceForFiberProtector;
 
+void debugBreakMessage(const char* fmt, ...)
+{
+    char msgFmt[4972];
+    char msg[4972];
+    
+    va_list args;
+    va_start(args, fmt);
+    strPrintFmtArgs(msgFmt, sizeof(msgFmt), fmt, args);
+    va_end(args);
+
+    strConcat(strCopy(msg, sizeof(msg), "[ASSERT_FAIL] "), sizeof(msg), msgFmt);
+
+    puts(msg);
+    
+    #if PLATFORM_WINDOWS
+        if (sysIsDebuggerPresent()) {
+            strConcat(msg, sizeof(msg), "\n");
+            sysWin32PrintToDebugger(msg);
+        }
+    #elif PLATFORM_ANDROID
+        sysAndroidPrintToLog(SysAndroidLogType::Debug, logGetAppNameAndroid(), msg);
+    #endif
+}
+
+void debugPrint(const char* text)
+{
+    #if PLATFORM_WINDOWS
+        if (sysIsDebuggerPresent()) {
+            sysWin32PrintToDebugger(text);
+        }
+    #elif PLATFORM_ANDROID
+        sysAndroidPrintToLog(SysAndroidLogType::Debug, logGetAppNameAndroid(), text);
+    #else
+        UNUSED(text);
+    #endif
+}
+
+void debugSetCaptureStacktraceForFiberProtector(bool capture)
+{
+    gDebugCaptureStacktraceForFiberProtector = capture;
+}
+
+#if CONFIG_ENABLE_ASSERT
 static constexpr uint16 kDebugMaxFiberProtectorStackframes = 8;
 
 using DebugFiberScopeProtectorCallbackPair = Pair<DebugFiberScopeProtectorCallback, void*>;
 struct DebugFiberProtector
 {
-   StaticArray<DebugFiberScopeProtectorCallbackPair, 4> callbacks;
+    StaticArray<DebugFiberScopeProtectorCallbackPair, 4> callbacks;
 };
 
 struct DebugFiberProtectorThreadContext
@@ -55,44 +95,6 @@ NO_INLINE static DebugFiberProtectorThreadContext& FiberProtectorCtx()
     return fiberProtectorCtx; 
 }
 
-void debugBreakMessage(const char* fmt, ...)
-{
-    char msgFmt[4972];
-    char msg[4972];
-    
-    va_list args;
-    va_start(args, fmt);
-    strPrintFmtArgs(msgFmt, sizeof(msgFmt), fmt, args);
-    va_end(args);
-
-    strConcat(strCopy(msg, sizeof(msg), "[ASSERT_FAIL] "), sizeof(msg), msgFmt);
-
-    puts(msg);
-    
-    #if PLATFORM_WINDOWS
-        if (sysIsDebuggerPresent()) {
-            strConcat(msg, sizeof(msg), "\n");
-            sysWin32PrintToDebugger(msg);
-        }
-    #elif PLATFORM_ANDROID
-        sysAndroidPrintToLog(SysAndroidLogType::Debug, appGetName(), msg);
-    #endif
-}
-
-void debugPrint(const char* text)
-{
-    #if PLATFORM_WINDOWS
-        if (sysIsDebuggerPresent()) {
-            sysWin32PrintToDebugger(text);
-        }
-    #elif PLATFORM_ANDROID
-        sysAndroidPrintToLog(SysAndroidLogType::Debug, appGetName(), text);
-    #else
-        UNUSED(text);
-    #endif
-}
-
-#if CONFIG_ENABLE_ASSERT
 void debugFiberScopeProtector_RegisterCallback(DebugFiberScopeProtectorCallback callback, void* userData)
 {
     ASSERT_MSG(gFiberProtector.callbacks.FindIf([callback](const DebugFiberScopeProtectorCallbackPair& p) { return p.first == callback; }) == UINT32_MAX,
@@ -115,7 +117,7 @@ uint16 debugFiberScopeProtector_Push(const char* name)
         DebugFiberProtectorThreadContext::Item* item = FiberProtectorCtx().items.Push();
         memset(item, 0x0, sizeof(*item));
         item->name = name;
-        if (settingsGetDebug().captureStacktraceForFiberProtector) 
+        if (gDebugCaptureStacktraceForFiberProtector) 
             item->numStackframes = debugCaptureStacktrace(item->stackframes, kDebugMaxFiberProtectorStackframes, 2);
         uint16 id = ++FiberProtectorCtx().idGen;
         if (id == 0)

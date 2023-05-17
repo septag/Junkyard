@@ -10,14 +10,7 @@
     #define TRACY_FIBERS
 #endif
 
-#include "../External/tracy/TracyC.h"
-
-#include "../CommonTypes.h"        // GfxCommandBuffer
-
-// TODO: remove dependency from Graphics.h
-// Fwd: Graphics.h
-API void gfxProfileZoneBegin(uint64 srcloc);
-API void gfxProfileZoneEnd();
+#include "External/tracy/TracyC.h"
 
 #ifdef TRACY_ENABLE
     namespace _private
@@ -43,25 +36,6 @@ API void gfxProfileZoneEnd();
             TracyCZoneScope() = delete;
             explicit TracyCZoneScope(TracyCZoneCtx ctx) : _ctx(ctx) {}
             ~TracyCZoneScope() { TracyCZoneEnd(_ctx); }
-        };
-
-        struct TracyGpuZoneScope
-        {
-            bool _active;
-
-            TracyGpuZoneScope() = delete;
-            explicit TracyGpuZoneScope(bool active, uint64 srcloc) : 
-                _active(active) 
-            {
-                if (active)
-                    gfxProfileZoneBegin(srcloc);
-            }
-            
-            ~TracyGpuZoneScope()
-            {
-                if (_active)
-                    gfxProfileZoneEnd();
-            }
         };
     }
 
@@ -106,29 +80,12 @@ API void gfxProfileZoneEnd();
             _private::TracyCZoneScope CONCAT(__tracy_ctx,__LINE__)(___tracy_emit_zone_begin( &CONCAT(__tracy_source_location,__LINE__), active )); \
             TracyCZoneText(CONCAT(__tracy_ctx,__LINE__)._ctx, text, textLen)
     #endif // else: TRACY_HAS_CALLBACK
-    
-    #define PROFILE_GPU_ZONE(active) \
-        _private::TracyGpuZoneScope(active, _private::__tracy_alloc_source_loc(__LINE__, __FILE__, __func__))
-    #define PROFILE_GPU_ZONE_NAME(name, active) \
-        _private::TracyGpuZoneScope(active, _private::__tracy_alloc_source_loc(__LINE__, __FILE__, __func__, name))
-    #define PROFILE_GPU_ZONE_BEGIN(active) \
-        do { if (active) _private::profileGpuZoneBegin(_private::__tracy_alloc_source_loc(__LINE__, __FILE__, __func__));  } while(0)
-    #define PROFILE_GPU_ZONE_NAME_BEGIN(name, active) \
-        do { if (active) _private::profileGpuZoneBegin(_private::__tracy_alloc_source_loc(__LINE__, __FILE__, __func__, name));  } while(0)
-    #define PROFILE_GPU_ZONE_END(active)  \
-        do { if (active) _private::profileGpuZoneEnd();  } while(0)
-    
 #else
     #define PROFILE_ZONE(active)
     #define PROFILE_ZONE_NAME(name, active)
     #define PROFILE_ZONE_COLOR(color, active)
     #define PROFILE_ZONE_NAME_COLOR(name, color, active)
     #define PROFILE_ZONE_WITH_TEXT(text, textLen, active)
-
-    #define PROFILE_GPU_ZONE(active)
-    #define PROFILE_GPU_ZONE_NAME(name, active)
-    #define PROFILE_GPU_ZONE_BEGIN(active)
-    #define PROFILE_GPU_ZONE_END(active)
 
     #define TracyCRealloc(oldPtr, ptr, size)
 #endif  // TRACY_ENABLE

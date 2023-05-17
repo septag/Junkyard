@@ -4,19 +4,15 @@
 #define MINICORO_IMPL
 #define MCO_ASSERT(c) ASSERT(c)
 #define MCO_LOG(e) logError(e)
-#include "../External/minicoro/minicoro.h"
+#include "External/minicoro/minicoro.h"
 
 #include "Memory.h"
 #include "System.h"
 #include "Buffers.h"
 #include "Atomic.h"
 #include "String.h"
-#include "Settings.h"
 #include "TracyHelper.h"
 #include "Hash.h"
-
-// TODO: remove this dependency
-#include "../Engine.h"
 
 namespace _limits
 {
@@ -24,7 +20,7 @@ namespace _limits
     static constexpr uint32 kJobsMaxInstances = 128;
     static constexpr uint32 kJobsMaxPending = 512;
 
-#ifdef TRACY_ENABLE
+#if defined(TRACY_ENABLE) && CONFIG_ENABLE_ASSERT
     static constexpr uint32 kJobsMaxTracyCStringSize = 4*kMB;
 #endif
 }
@@ -134,7 +130,6 @@ struct JobsFiberPropertiesPool
 
 struct JobsState
 {
-    Allocator* alloc;
     Thread* threads[static_cast<uint32>(JobsType::_Count)];
     uint32 numThreads;
     MemTlsfAllocator_ThreadSafe fiberAlloc;
@@ -177,6 +172,8 @@ struct JobsState
 static JobsState gJobs;
 
 static thread_local JobsThreadData* gJobsThreadData = nullptr;      // Only worker threads initialize this
+
+// Use no_inline function to return our TL var. To avoid compiler confusion with thread-locals when switching fibers
 NO_INLINE static JobsThreadData* JobsGetThreadData() { return gJobsThreadData; }
 
 static void* jobsMcoMallocFn(size_t size, void* allocator_data)
@@ -394,7 +391,7 @@ static int jobsThreadFn(void* userData)
     // Allocate and initialize thread-data for worker threads
     if (!JobsGetThreadData()) {
         uint64 param = PtrToInt<uint64>(userData);
-        gJobsThreadData = memAllocZeroTyped<JobsThreadData>(1, gJobs.alloc);
+        gJobsThreadData = memAllocZeroTyped<JobsThreadData>(1);
 
         JobsGetThreadData()->threadIndex = (param >> 32) & 0xffffffff;
         JobsGetThreadData()->type = static_cast<JobsType>(uint32(param & 0xffffffff));
@@ -566,15 +563,15 @@ void jobsDispatchAuto(JobsType type, JobsCallback callback, void* userData, uint
     jobsDispatchInternal(true, type, callback, userData, groupSize, prio, stackSize);
 }
 
-void _private::jobsInitialize()
+void jobsInitialize(MemBudgetAllocator* initHeap, uint32 numThreads, bool debugAllocations)
 {
-    gJobs.alloc = memDefaultAlloc();
-
-    MemBudgetAllocator* initHeap = engineGetInitHeap();
     gJobs.initHeapStart = initHeap->GetOffset();
 
-    const SettingsEngine& engineSettings = settingsGetEngine();
-    uint32 numThreads = engineSettings.jobsThreadCount ? engineSettings.jobsThreadCount : (engineGetSysInfo().coreCount - 1);
+    if (numThreads == 0) {
+        SysInfo info {};
+        sysGetSysInfo(&info);
+        numThreads = info.coreCount - 1;
+    }
     numThreads = Max<uint32>(1, numThreads);        // We should have at least 1 worker thread, come on!
 
     // TODO: On android platforms, we have different core types, performance and efficiency
@@ -596,7 +593,7 @@ void _private::jobsInitialize()
     {
         size_t allocSize = 2*numThreads*kMB;
         size_t poolSize = MemTlsfAllocator::GetMemoryRequirement(allocSize);
-        gJobs.fiberAlloc.Initialize(allocSize, memAlloc(poolSize, initHeap), poolSize, settingsGetEngine().debugAllocations);
+        gJobs.fiberAlloc.Initialize(allocSize, memAlloc(poolSize, initHeap), poolSize, debugAllocations);
         gJobs.fiberHeapTotal = allocSize;
     }
 
@@ -654,7 +651,7 @@ void _private::jobsInitialize()
     logInfo("(init) Job dispatcher: %u threads", numThreads);
 }
 
-void _private::jobsRelease()
+void jobsRelease()
 {
     gJobs.quit = true;
 
@@ -678,14 +675,6 @@ void _private::jobsRelease()
     gJobs.semaphores[uint32(JobsType::LongTask)].Release();
 }
 
-void _private::jobsDebugThreadStats()
-{
-    if (JobsGetThreadData()) {
-        logInfo("Thread Index: %u, Id: %u, JobsGetThreadData(): %p", 
-            JobsGetThreadData()->threadIndex, JobsGetThreadData()->threadId, JobsGetThreadData());
-    }
-}
-
 void jobsGetBudgetStats(JobsBudgetStats* stats)
 {
     JobsState::MaxValues m = gJobs.maxValues[1];
@@ -707,7 +696,7 @@ void jobsGetBudgetStats(JobsBudgetStats* stats)
     stats->initHeapSize = gJobs.initHeapSize;
 }
 
-void _private::jobsResetBudgetStats()
+void jobsResetBudgetStats()
 {
     JobsState::MaxValues* m = &gJobs.maxValues[0];
     gJobs.maxValues[1] = *m;

@@ -5,8 +5,7 @@
 
 #include "../Core/Memory.h"
 #include "../Core/Log.h"
-
-#include "../Math/MathVector.h"
+#include "../Core/MathVector.h"
 
 #include "../Camera.h"
 #include "../AssetManager.h"

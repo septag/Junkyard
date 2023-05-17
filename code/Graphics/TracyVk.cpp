@@ -299,7 +299,7 @@ static void gfxReleaseProfiler()
     }
 }
 
-void gfxProfileZoneBegin(uint64 srcloc)
+void _private::gfxProfileZoneBegin(uint64 srcloc)
 {
     if (!gGfxProfile.initialized)
         return;
@@ -320,7 +320,7 @@ void gfxProfileZoneBegin(uint64 srcloc)
     });
 }
 
-void gfxProfileZoneEnd()
+void _private::gfxProfileZoneEnd()
 {
     if (!gGfxProfile.initialized)
         return;

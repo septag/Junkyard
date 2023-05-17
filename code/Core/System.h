@@ -418,17 +418,6 @@ private:
 API bool sysWin32IsProcessRunning(const char* execName);
 API bool sysWin32GetRegisterLocalMachineString(const char* subkey, const char* value, char* dst, size_t dstSize);
 API void sysWin32PrintToDebugger(const char* text);
-
-enum class SysWin32ConsoleColor : uint16
-{
-    Blue      = 0x0001,
-    Green     = 0x0002,
-    Red       = 0x0004,
-    Intensity = 0x0008
-};
-ENABLE_BITMASK(SysWin32ConsoleColor);
-
-API void sysWin32SetConsoleColor(void* handle, SysWin32ConsoleColor color);
 #elif PLATFORM_ANDROID  
 typedef struct ANativeActivity ANativeActivity; // <android/native_activity.h>
 
@@ -446,8 +435,8 @@ enum class SysAndroidLogType
 };
 
 API void sysAndroidPrintToLog(SysAndroidLogType logType, const char* tag, const char* text);
-API JNIEnv* sysAndroidAcquireJniEnv();
-API void sysAndroidReleaseJniEnv();    
+API JNIEnv* sysAndroidAcquireJniEnv(ANativeActivity* activity);
+API void sysAndroidReleaseJniEnv(ANativeActivity* activity);    
 API JNIEnv* sysAndroidGetJniEnv();
 API Path sysAndroidGetCacheDirectory(ANativeActivity* activity);
 #endif

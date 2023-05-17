@@ -2,7 +2,7 @@
 
 #if PLATFORM_WINDOWS
 
-#include "External/mgustavsson/ini.h"
+#include "Core/External/mgustavsson/ini.h"
 
 #include "Core/Memory.h"
 #include "Core/String.h"
@@ -10,9 +10,11 @@
 #include "Core/Settings.h"
 #include "Core/IncludeWin.h"
 #include "Core/Buffers.h"
+#include "Core/Log.h"
 
 #include "VirtualFS.h"
 #include "RemoteServices.h"
+#include "JunkyardSettings.h"
 
 // from <windowsx.h>
 #ifndef GET_X_LPARAM
@@ -79,7 +81,6 @@ struct AppWindowsState
 
     HANDLE hStdin;
     HANDLE hStdOut;
-    DWORD consoleOldMode;
 
     float dpiScale;
     float windowScale;
@@ -788,7 +789,7 @@ static bool appWinCreateWindow()
     if (!gApp.hwnd)
         return false;
     
-    ShowWindow(gApp.hwnd, settingsGetApp().launchMinimized ? SW_MINIMIZE : SW_SHOW);
+    ShowWindow(gApp.hwnd, settingsGet().app.launchMinimized ? SW_MINIMIZE : SW_SHOW);
     gApp.inCreateWindow = false;
     
     appWinUpdateDimensions();
@@ -845,11 +846,19 @@ bool appInitialize(const AppDesc& desc)
     pathFileName(moduleFilename, moduleFilename, sizeof(moduleFilename));
     strCopy(gApp.name, sizeof(gApp.name), moduleFilename);
 
-    if (settingsGetApp().launchMinimized)
+    if (settingsGet().app.launchMinimized)
         ShowWindow(GetConsoleWindow(), SW_MINIMIZE);
 
     gApp.hStdin = GetStdHandle(STD_INPUT_HANDLE);
     gApp.hStdOut = GetStdHandle(STD_OUTPUT_HANDLE);
+
+    {
+        DWORD consoleMode = 0;
+        GetConsoleMode(gApp.hStdOut, &consoleMode);
+        consoleMode |= ENABLE_VIRTUAL_TERMINAL_PROCESSING | ENABLE_PROCESSED_OUTPUT;
+        [[maybe_unused]] BOOL r = SetConsoleMode(gApp.hStdOut, consoleMode);
+        ASSERT(r);
+    }
 
     // Default console handler
     SetConsoleCtrlHandler([](DWORD type)->BOOL { 
@@ -865,10 +874,16 @@ bool appInitialize(const AppDesc& desc)
 
     // Initialize settings if not initialied before
     // Since this is not a recommended way, we also throw an assert
-    if (!settingsIsInitialized()) {
+    if (!settingsIsInitializedJunkyard()) {
         ASSERT_MSG(0, "Settings must be initialized before this call. See settingsInitialize() function");
-        settingsInitialize({}); // initialize with default settings anyway
+        settingsInitializeJunkyard({}); // initialize with default settings
     }
+
+    // Set some initial settings
+    memEnableMemPro(settingsGet().engine.enableMemPro);
+    memTempSetCaptureStackTrace(settingsGet().debug.captureStacktraceForTempAllocator);
+    debugSetCaptureStacktraceForFiberProtector(settingsGet().debug.captureStacktraceForFiberProtector);
+    logSetSettings(static_cast<LogLevel>(settingsGet().engine.logLevel), settingsGet().engine.breakOnErrors, settingsGet().engine.treatWarningsAsErrors);
 
     // RemoteServices
     if (!_private::remoteInitialize()) {
@@ -885,7 +900,7 @@ bool appInitialize(const AppDesc& desc)
     appWinLoadInitRects();  // may modify window/framebuffer dimensions 
     appWinInitKeyTable();
 
-    bool headless = settingsGetGraphics().headless;
+    bool headless = settingsGet().graphics.headless;
     if (!headless) {
         appWinInitDpi();
         if (!appWinCreateWindow()) {
@@ -1154,11 +1169,6 @@ bool appIsAnyKeysDown(const AppKeycode* keycodes, uint32 numKeycodes)
 AppFramebufferTransform appGetFramebufferTransform()
 {
     return AppFramebufferTransform::None;
-}
-
-API void* appWinGetConsoleHandle()
-{
-    return gApp.hStdOut;
 }
 
 void appCaptureMouse()

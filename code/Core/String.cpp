@@ -12,7 +12,7 @@ PRAGMA_DIAGNOSTIC_IGNORED_CLANG_GCC("-Wsign-compare")
 PRAGMA_DIAGNOSTIC_IGNORED_CLANG_GCC("-Wstrict-aliasing")
 PRAGMA_DIAGNOSTIC_IGNORED_CLANG_GCC("-Wconditional-uninitialized")
 PRAGMA_DIAGNOSTIC_IGNORED_MSVC(4505)
-#include "../External/stb/stb_sprintf.h"
+#include "External/stb/stb_sprintf.h"
 PRAGMA_DIAGNOSTIC_POP();
 
 #ifdef BUILD_UNITY

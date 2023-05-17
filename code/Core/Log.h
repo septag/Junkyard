@@ -28,6 +28,12 @@ struct LogEntry
 using LogCallback = void(*)(const LogEntry& entry, void* userData);
 API void logRegisterCallback(LogCallback callback, void* userData);
 API void logUnregisterCallback(LogCallback callback);
+API void logSetSettings(LogLevel logLevel, bool breakOnErrors, bool treatWarningsAsErrors);
+
+#if PLATFORM_ANDROID
+API void logSetAppNameAndroid(const char* appName);
+API const char* logGetAppNameAndroid();
+#endif
 
 namespace _private
 {

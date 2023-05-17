@@ -1,6 +1,6 @@
 #include "Console.h"
 
-#include "../External/mgustavsson/ini.h"
+#include "../Core/External/mgustavsson/ini.h"
 
 #include "../Core/Memory.h"
 #include "../Core/String.h"

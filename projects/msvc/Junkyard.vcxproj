@@ -26,20 +26,20 @@
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
     <ConfigurationType>StaticLibrary</ConfigurationType>
     <UseDebugLibraries>true</UseDebugLibraries>
-    <PlatformToolset>v142</PlatformToolset>
+    <PlatformToolset>v143</PlatformToolset>
     <CharacterSet>MultiByte</CharacterSet>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
     <ConfigurationType>StaticLibrary</ConfigurationType>
     <UseDebugLibraries>false</UseDebugLibraries>
-    <PlatformToolset>v142</PlatformToolset>
+    <PlatformToolset>v143</PlatformToolset>
     <WholeProgramOptimization>true</WholeProgramOptimization>
     <CharacterSet>MultiByte</CharacterSet>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='ReleaseDev|x64'" Label="Configuration">
     <ConfigurationType>StaticLibrary</ConfigurationType>
     <UseDebugLibraries>false</UseDebugLibraries>
-    <PlatformToolset>v142</PlatformToolset>
+    <PlatformToolset>v143</PlatformToolset>
     <WholeProgramOptimization>true</WholeProgramOptimization>
     <CharacterSet>MultiByte</CharacterSet>
   </PropertyGroup>
@@ -243,6 +243,7 @@ echo No | copy /-Y $(SolutionDir)..\..\code\External\meshoptimizer\lib\win64\mes
     <ClCompile Include="..\..\code\Core\Jobs.cpp" />
     <ClCompile Include="..\..\code\Core\JsonParser.cpp" />
     <ClCompile Include="..\..\code\Core\Log.cpp" />
+    <ClCompile Include="..\..\code\Core\Math.cpp" />
     <ClCompile Include="..\..\code\Core\Memory.cpp" />
     <ClCompile Include="..\..\code\Core\Settings.cpp" />
     <ClCompile Include="..\..\code\Core\String.cpp" />
@@ -280,23 +281,6 @@ echo No | copy /-Y $(SolutionDir)..\..\code\External\meshoptimizer\lib\win64\mes
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='ReleaseDev|x64'">false</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\..\code\External\imgui\imgui_widgets.cpp" />
-    <ClCompile Include="..\..\code\External\mempro\MemPro.cpp">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='ReleaseDev|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
-    </ClCompile>
-    <ClCompile Include="..\..\code\External\tlsf\tlsf.c">
-      <AdditionalOptions Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">/wd5105 %(AdditionalOptions)</AdditionalOptions>
-      <AdditionalOptions Condition="'$(Configuration)|$(Platform)'=='ReleaseDev|x64'">/wd5105 %(AdditionalOptions)</AdditionalOptions>
-      <AdditionalOptions Condition="'$(Configuration)|$(Platform)'=='Release|x64'">/wd5105 %(AdditionalOptions)</AdditionalOptions>
-    </ClCompile>
-    <ClCompile Include="..\..\code\External\tracy\TracyClient.cpp">
-      <AdditionalOptions Condition="'$(Configuration)|$(Platform)'=='ReleaseDev|x64'">/wd4530 /wd4702 %(AdditionalOptions)</AdditionalOptions>
-      <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='ReleaseDev|x64'">TRACY_FIBERS;TRACY_CALLSTACK=6;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='ReleaseDev|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
-    </ClCompile>
     <ClCompile Include="..\..\code\External\volk\volk.c">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='ReleaseDev|x64'">true</ExcludedFromBuild>
@@ -327,7 +311,7 @@ echo No | copy /-Y $(SolutionDir)..\..\code\External\meshoptimizer\lib\win64\mes
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='ReleaseDev|x64'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
     </ClCompile>
-    <ClCompile Include="..\..\code\Math\Math.cpp" />
+    <ClCompile Include="..\..\code\JunkyardSettings.cpp" />
     <ClCompile Include="..\..\code\RemoteServices.cpp" />
     <ClCompile Include="..\..\code\Tool\Console.cpp" />
     <ClCompile Include="..\..\code\Tool\ImageEncoder.cpp" />
@@ -341,27 +325,37 @@ echo No | copy /-Y $(SolutionDir)..\..\code\External\meshoptimizer\lib\win64\mes
     <ClInclude Include="..\..\code\AssetManager.h" />
     <ClInclude Include="..\..\code\Camera.h" />
     <ClInclude Include="..\..\code\CommonTypes.h" />
-    <ClInclude Include="..\..\code\Config.h" />
     <ClInclude Include="..\..\code\Core\Atomic.h" />
     <ClInclude Include="..\..\code\Core\Base.h" />
     <ClInclude Include="..\..\code\Core\BlitSort.h" />
     <ClInclude Include="..\..\code\Core\Buffers.h" />
     <ClInclude Include="..\..\code\Core\Debug.h" />
+    <ClInclude Include="..\..\code\Core\External\c89atomic\c89atomic.h" />
+    <ClInclude Include="..\..\code\Core\External\cj5\cj5.h" />
+    <ClInclude Include="..\..\code\Core\External\mempro\MemPro.h" />
+    <ClInclude Include="..\..\code\Core\External\mgustavsson\ini.h" />
+    <ClInclude Include="..\..\code\Core\External\minicoro\minicoro.h" />
+    <ClInclude Include="..\..\code\Core\External\sokol\sokol_args.h" />
+    <ClInclude Include="..\..\code\Core\External\stb\stb_sprintf.h" />
+    <ClInclude Include="..\..\code\Core\External\tlsf\tlsf.h" />
+    <ClInclude Include="..\..\code\Core\External\tracy\TracyC.h" />
     <ClInclude Include="..\..\code\Core\Hash.h" />
     <ClInclude Include="..\..\code\Core\IncludeWin.h" />
     <ClInclude Include="..\..\code\Core\Jobs.h" />
     <ClInclude Include="..\..\code\Core\JsonParser.h" />
     <ClInclude Include="..\..\code\Core\Log.h" />
+    <ClInclude Include="..\..\code\Core\Math.h" />
+    <ClInclude Include="..\..\code\Core\MathScalar.h" />
+    <ClInclude Include="..\..\code\Core\MathTypes.h" />
+    <ClInclude Include="..\..\code\Core\MathVector.h" />
     <ClInclude Include="..\..\code\Core\Memory.h" />
     <ClInclude Include="..\..\code\Core\Settings.h" />
     <ClInclude Include="..\..\code\Core\String.h" />
     <ClInclude Include="..\..\code\Core\System.h" />
     <ClInclude Include="..\..\code\Core\TracyHelper.h" />
     <ClInclude Include="..\..\code\Engine.h" />
-    <ClInclude Include="..\..\code\External\c89atomic\c89atomic.h" />
     <ClInclude Include="..\..\code\External\cgltf\cgltf.h" />
     <ClInclude Include="..\..\code\External\cgltf\cgltf_write.h" />
-    <ClInclude Include="..\..\code\External\cj5\cj5.h" />
     <ClInclude Include="..\..\code\External\dmon\dmon.h" />
     <ClInclude Include="..\..\code\External\ImGuizmo\ImGuizmo.h" />
     <ClInclude Include="..\..\code\External\imgui\imconfig.h" />
@@ -371,21 +365,10 @@ echo No | copy /-Y $(SolutionDir)..\..\code\External\meshoptimizer\lib\win64\mes
     <ClInclude Include="..\..\code\External\imgui\imstb_textedit.h" />
     <ClInclude Include="..\..\code\External\imgui\imstb_truetype.h" />
     <ClInclude Include="..\..\code\External\ispc_texcomp\include\ispc_texcomp.h" />
-    <ClInclude Include="..\..\code\External\mempro\MemPro.h">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">false</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='ReleaseDev|x64'">false</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">false</ExcludedFromBuild>
-    </ClInclude>
     <ClInclude Include="..\..\code\External\meshoptimizer\include\meshoptimizer.h" />
-    <ClInclude Include="..\..\code\External\mgustavsson\ini.h" />
-    <ClInclude Include="..\..\code\External\minicoro\minicoro.h" />
     <ClInclude Include="..\..\code\External\slang\slang.h" />
-    <ClInclude Include="..\..\code\External\sokol\sokol_args.h" />
     <ClInclude Include="..\..\code\External\stb\stb_image.h" />
     <ClInclude Include="..\..\code\External\stb\stb_image_resize.h" />
-    <ClInclude Include="..\..\code\External\stb\stb_sprintf.h" />
-    <ClInclude Include="..\..\code\External\tlsf\tlsf.h" />
-    <ClInclude Include="..\..\code\External\tracy\TracyC.h" />
     <ClInclude Include="..\..\code\External\vma\include\vk_mem_alloc.h" />
     <ClInclude Include="..\..\code\External\volk\volk.h" />
     <ClInclude Include="..\..\code\Graphics\DebugDraw.h" />
@@ -394,17 +377,13 @@ echo No | copy /-Y $(SolutionDir)..\..\code\External\meshoptimizer\lib\win64\mes
     <ClInclude Include="..\..\code\Graphics\ImGuiWrapper.h" />
     <ClInclude Include="..\..\code\Graphics\Model.h" />
     <ClInclude Include="..\..\code\Graphics\Shader.h" />
-    <ClInclude Include="..\..\code\Math\Math.h" />
-    <ClInclude Include="..\..\code\Math\MathVector.h" />
-    <ClInclude Include="..\..\code\Math\MathScalar.h" />
-    <ClInclude Include="..\..\code\Math\MathTypes.h" />
+    <ClInclude Include="..\..\code\JunkyardSettings.h" />
     <ClInclude Include="..\..\code\RemoteServices.h" />
     <ClInclude Include="..\..\code\Tool\Console.h" />
     <ClInclude Include="..\..\code\Tool\ImageEncoder.h" />
     <ClInclude Include="..\..\code\Tool\ImGuiTools.h" />
     <ClInclude Include="..\..\code\Tool\MeshOptimizer.h" />
     <ClInclude Include="..\..\code\Tool\ShaderCompiler.h" />
-    <ClInclude Include="..\..\code\TracyHelper.h" />
     <ClInclude Include="..\..\code\VirtualFS.h" />
   </ItemGroup>
   <ItemGroup>

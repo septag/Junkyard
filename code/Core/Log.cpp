@@ -3,38 +3,36 @@
 #include <stdarg.h> // va_list
 #include <stdio.h>  // puts
 
-#include "Settings.h"
 #include "Memory.h"
 #include "TracyHelper.h"
 #include "System.h"
 #include "Buffers.h"
 
-// TODO: remove dependency 
-#include "../Application.h"
-
-#if PLATFORM_WINDOWS || PLATFORM_IOS || PLATFORM_ANDROID
+#if PLATFORM_MOBILE
     #define TERM_COLOR_RESET     ""
     #define TERM_COLOR_RED       ""
     #define TERM_COLOR_YELLOW    ""
     #define TERM_COLOR_GREEN     ""
-    #define TERM_COLOR_DIM       ""
+    #define TERM_COLOR_CYAN      ""
+    #define TERM_COLOR_WHITE     ""
 #else
     #define TERM_COLOR_RESET     "\033[0m"
     #define TERM_COLOR_RED       "\033[31m"
     #define TERM_COLOR_YELLOW    "\033[33m"
     #define TERM_COLOR_GREEN     "\033[32m"
-    #define TERM_COLOR_DIM       "\033[2m"
+    #define TERM_COLOR_CYAN      "\033[36m"
+    #define TERM_COLOR_WHITE     "\033[97m"
 #endif
-
-static_assert(uint32(LogLevel::Error) == uint32(SettingsEngine::LogLevel::Error));
-static_assert(uint32(LogLevel::Warning) == uint32(SettingsEngine::LogLevel::Warning));
-static_assert(uint32(LogLevel::Verbose) == uint32(SettingsEngine::LogLevel::Verbose));
-static_assert(uint32(LogLevel::Debug) == uint32(SettingsEngine::LogLevel::Debug));
-static_assert(uint32(LogLevel::Info) == uint32(SettingsEngine::LogLevel::Info));
 
 struct LogContext
 {
     StaticArray<Pair<LogCallback, void*>, 8> callbacks;
+    LogLevel logLevel = LogLevel::Info;
+    bool breakOnErrors;
+    bool treatWarningsAsErrors;
+#if PLATFORM_ANDROID
+    char appName[32];
+#endif
 };
 
 static LogContext gLog;
@@ -49,6 +47,15 @@ static const char* kLogEntryTypes[static_cast<uint32>(LogLevel::_Count)] = {
     "[DEBUG] "
 };
 
+void logSetSettings(LogLevel logLevel, bool breakOnErrors, bool treatWarningsAsErrors)
+{
+    ASSERT(logLevel != LogLevel::Default);
+
+    gLog.logLevel = logLevel;
+    gLog.breakOnErrors = breakOnErrors;
+    gLog.treatWarningsAsErrors = treatWarningsAsErrors;
+}
+
 static void logPrintToTerminal(const LogEntry& entry)
 {
     uint32 newSize = entry.textLen + 128;
@@ -61,35 +68,14 @@ static void logPrintToTerminal(const LogEntry& entry)
         const char* closeFmt = "";
 
         // terminal coloring
-        #if PLATFORM_WINDOWS
-            switch (entry.type) {
-            case LogLevel::Info:	    
-                sysWin32SetConsoleColor(appWinGetConsoleHandle(), SysWin32ConsoleColor::Blue|SysWin32ConsoleColor::Green|SysWin32ConsoleColor::Red);
-                break;
-            case LogLevel::Debug:	    
-                sysWin32SetConsoleColor(appWinGetConsoleHandle(), SysWin32ConsoleColor::Blue|SysWin32ConsoleColor::Green);
-                break;
-            case LogLevel::Verbose:	
-                sysWin32SetConsoleColor(appWinGetConsoleHandle(), SysWin32ConsoleColor::Intensity);
-                break;
-            case LogLevel::Warning:	
-                sysWin32SetConsoleColor(appWinGetConsoleHandle(), SysWin32ConsoleColor::Red|SysWin32ConsoleColor::Green|SysWin32ConsoleColor::Intensity);
-                break;
-            case LogLevel::Error:	    
-                sysWin32SetConsoleColor(appWinGetConsoleHandle(), SysWin32ConsoleColor::Red|SysWin32ConsoleColor::Intensity);
-                break;
-            default:
-                break;
-            }
-        #else
-            switch (entry.type) {
-            case LogLevel::Debug:	openFmt = TERM_COLOR_DIM; closeFmt = TERM_COLOR_RESET; break;
-            case LogLevel::Verbose:	openFmt = TERM_COLOR_DIM; closeFmt = TERM_COLOR_RESET; break;
-            case LogLevel::Warning:	openFmt = TERM_COLOR_YELLOW; closeFmt = TERM_COLOR_RESET; break;
-            case LogLevel::Error:	openFmt = TERM_COLOR_RED; closeFmt = TERM_COLOR_RESET; break;
-            default:			    break;
-            }
-        #endif
+        switch (entry.type) {
+        case LogLevel::Info:    openFmt = TERM_COLOR_WHITE; closeFmt = TERM_COLOR_WHITE; break;
+        case LogLevel::Debug:	openFmt = TERM_COLOR_CYAN; closeFmt = TERM_COLOR_RESET; break;
+        case LogLevel::Verbose:	openFmt = TERM_COLOR_RESET; closeFmt = TERM_COLOR_RESET; break;
+        case LogLevel::Warning:	openFmt = TERM_COLOR_YELLOW; closeFmt = TERM_COLOR_RESET; break;
+        case LogLevel::Error:	openFmt = TERM_COLOR_RED; closeFmt = TERM_COLOR_RESET; break;
+        default:			    break;
+        }
 
         strPrintFmt(text, newSize, "%s%s%s%s", 
             openFmt, 
@@ -104,6 +90,16 @@ static void logPrintToTerminal(const LogEntry& entry)
 }
 
 #if PLATFORM_ANDROID
+void logSetAppNameAndroid(const char* appName)
+{
+    strCopy(gLog.appName, sizeof(gLog.appName), appName);
+}
+
+const char* logGetAppNameAndroid()
+{
+    return gLog.appName;
+}
+
 static void logPrintToAndroidLog(const LogEntry& entry)
 {
     SysAndroidLogType androidLogType;
@@ -116,7 +112,7 @@ static void logPrintToAndroidLog(const LogEntry& entry)
     default:			    androidLogType = SysAndroidLogType::Unknown;
     }
         
-    sysAndroidPrintToLog(androidLogType, appGetName(), entry.text);
+    sysAndroidPrintToLog(androidLogType, gLog.appName, entry.text);
 }
 #endif // PLATFORM_ANDROID
 
@@ -179,14 +175,14 @@ static void engineDispatchLogEntry(const LogEntry& entry)
     for (Pair<LogCallback, void*> c : gLog.callbacks)
         c.first(entry, c.second);
 
-    if (entry.type == LogLevel::Error && settingsGetEngine().breakOnErrors) {
+    if (entry.type == LogLevel::Error && gLog.breakOnErrors) {
         ASSERT_MSG(0, "Breaking on error");
     }
 }
 
 void _private::logPrintInfo(uint32 channels, const char* sourceFile, uint32 line, const char* fmt, ...)
 {
-    if (settingsGetEngine().logLevel < SettingsEngine::LogLevel::Info)
+    if (gLog.logLevel < LogLevel::Info)
         return;
 
     MemTempAllocator tmp;
@@ -209,11 +205,11 @@ void _private::logPrintInfo(uint32 channels, const char* sourceFile, uint32 line
     });
 }
 
-// LogDebug only works in debug builds
+// LogDebug only works in none final builds
 void _private::logPrintDebug(uint32 channels, const char* sourceFile, uint32 line, const char* fmt, ...)
 {
-    #ifdef _DEBUG
-        if (settingsGetEngine().logLevel < SettingsEngine::LogLevel::Debug)
+    #if !CONFIG_FINAL_BUILD
+        if (gLog.logLevel < LogLevel::Debug)
             return;
         
         MemTempAllocator tmp;
@@ -244,7 +240,7 @@ void _private::logPrintDebug(uint32 channels, const char* sourceFile, uint32 lin
 
 void _private::logPrintVerbose(uint32 channels, const char* sourceFile, uint32 line, const char* fmt, ...)
 {
-    if (settingsGetEngine().logLevel < SettingsEngine::LogLevel::Verbose)
+    if (gLog.logLevel < LogLevel::Verbose)
         return;
 
     MemTempAllocator tmp;
@@ -269,7 +265,7 @@ void _private::logPrintVerbose(uint32 channels, const char* sourceFile, uint32 l
 
 void _private::logPrintWarning(uint32 channels, const char* sourceFile, uint32 line, const char* fmt, ...)
 {
-    if (settingsGetEngine().logLevel < SettingsEngine::LogLevel::Warning)
+    if (gLog.logLevel < LogLevel::Warning)
         return;
 
     MemTempAllocator tmp;
@@ -282,7 +278,7 @@ void _private::logPrintWarning(uint32 channels, const char* sourceFile, uint32 l
     va_end(args);
 
     engineDispatchLogEntry({
-        .type = !settingsGetEngine().treatWarningsAsErrors ? LogLevel::Warning : LogLevel::Error,
+        .type = !gLog.treatWarningsAsErrors ? LogLevel::Warning : LogLevel::Error,
         .channels = channels,
         .textLen = strLen(text),
         .sourceFileLen = sourceFile ? strLen(sourceFile) : 0,
@@ -294,7 +290,7 @@ void _private::logPrintWarning(uint32 channels, const char* sourceFile, uint32 l
 
 void _private::logPrintError(uint32 channels, const char* sourceFile, uint32 line, const char* fmt, ...)
 {
-    if (settingsGetEngine().logLevel < SettingsEngine::LogLevel::Error)
+    if (gLog.logLevel < LogLevel::Error)
         return;
 
     MemTempAllocator tmp;

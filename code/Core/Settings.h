@@ -25,89 +25,27 @@
 //           Note that all arguments are case-insensitive
 //
 #include "Base.h"
-#include "String.h"
 
-struct SettingsGraphics
+struct NO_VTABLE SettingsCustomCallbacks
 {
-    bool enable = true;             // Enable graphics subsystem. (cmdline="enableGraphics")
-    bool validate = false;          // Enable validation layers. (cmdline="validateGraphics")
-    bool headless = false;          // Device is created, but with no views/swapchain/gfx-queue. only used for comput. (cmdline="headlessGraphics")
-    bool surfaceSRGB = false;       // SRGB surface for Swap-chain
-    bool listExtensions = false;    // Show device extensions upon initialization
-    bool enableAdrenoDebug = false; // Tries to enable VK_LAYER_ADRENO_debug layer if available, validate should be enabled
-    bool validateBestPractices = false;   // see VK_EXT_validation_features
-    bool validateSynchronization = false;   // see VK_EXT_validation_features
-    bool shaderDumpIntermediates = false;   // Dumps all shader intermediates (glsl/spv/asm) in the current working dir
-    bool shaderDumpProperties = false;      // Dumps all internal shader properties, if device supports VK_KHR_pipeline_executable_properties
-    bool shaderDebug = false;               // Adds debugging information to all shaders
-    bool enableGpuProfile = false;          // Enables GPU Profiling with Tracy and other tools
-    bool enableImGui = true;                // Enables ImGui GUI
-    bool enableVsync = true;                // Enables Vsync. Some hardware doesn't support this feature
-    bool trackResourceLeaks = false;        // Store buffers/image/etc. resource stacktraces and shows leakage information at exit
+    // 'key' in FindCategoryId can be either a full key name or just the section name inside INI file
+    //  in either case, the check should be performed with 
+    virtual uint32 GetCategoryCount() const = 0;
+    virtual const char* GetCategory(uint32 id) const = 0;
+    virtual bool ParseSetting(uint32 categoryId, const char* key, const char* value) = 0;
 };
 
-struct SettingsTooling
-{
-    bool enableServer = false;          // Starts server service (ShaderCompiler/Baking/etc.)
-    uint16 serverPort = 6006;           // Local server port number       
-};
+API void settingsAddCustomCallbacks(SettingsCustomCallbacks* callbacks);
+API void settingsRemoveCustomCallbacks(SettingsCustomCallbacks* callbacks);
 
-struct SettingsApp
-{
-    bool launchMinimized = false;       // Launch application minimized (Desktop builds only)
-};
+API bool settingsInitializeFromINI(const char* iniFilepath);
+API bool settingsInitializeFromCommandLine(int argc, char* argv[]);
+#if PLATFORM_ANDROID
+typedef struct AAssetManager AAssetManager; 
+API bool settingsInitializeFromAndroidAsset(AAssetManager* assetMgr, const char* iniFilepath);
+#endif
 
-struct SettingsEngine
-{
-    enum class LogLevel
-    {
-        Default = 0,
-        Error,
-        Warning,
-        Info,
-        Verbose,
-        Debug,
-        _Count
-    };
-
-    bool connectToServer = false;               // Connects to server
-    String<256> remoteServicesUrl = "127.0.0.1:6006";   // Url to server. Divide port number with colon
-    LogLevel logLevel = LogLevel::Info;         // Log filter. LogLevel below this value will not be shown
-    uint32 jobsThreadCount = 0;                 // Number of threads to spawn for each job type (Long/Short)
-    bool debugAllocations = false;              // Use heap allocator instead for major allocators, like temp/budget/etc.
-    bool breakOnErrors = false;                 // Break when logError happens
-    bool treatWarningsAsErrors = false;         // Break when logWarning happens
-    bool enableMemPro = false;                  // Enables MemPro instrumentation (https://www.puredevsoftware.com/mempro/index.htm)
-};
-
-struct SettingsDebug
-{
-    bool captureStacktraceForFiberProtector = false;    // Capture stacktraces for Fiber protector (see Debug.cpp)
-    bool captureStacktraceForTempAllocator = false;     // Capture stacktraces for Temp allocators (see Memory.cpp)
-};
-
-struct SettingsAll
-{
-    SettingsApp app;
-    SettingsEngine engine;
-    SettingsGraphics graphics;
-    SettingsTooling tooling;
-    SettingsDebug debug;
-};
-
-API bool settingsInitialize(const SettingsAll& conf);
 API void settingsRelease();
-API bool settingsIsInitialized();
-
-API bool settingsLoadFromINI(const char* iniFilepath);
-API bool settingsLoadFromCommandLine(int argc, char* argv[]);
-
-API const SettingsAll& settingsGet();
-API const SettingsApp& settingsGetApp();
-API const SettingsGraphics& settingsGetGraphics();
-API const SettingsTooling& settingsGetTooling();
-API const SettingsEngine& settingsGetEngine();
-API const SettingsDebug& settingsGetDebug();
 
 // Custom key/values
 API void settingsSetValue(const char* key, const char* value);

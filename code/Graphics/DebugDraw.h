@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../Math/MathTypes.h"
+#include "../Core/MathTypes.h"
 
 union Mat4;
 struct Camera;

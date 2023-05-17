@@ -1,11 +1,11 @@
 #pragma once
 
-#include "../External/cj5/cj5.h"
+#include "External/cj5/cj5.h"
 
 #include "Base.h"
 #include "Memory.h"
 
-#include "../Math/MathTypes.h"
+#include "MathTypes.h"
 
 struct JsonContext;
 

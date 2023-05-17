@@ -19,26 +19,34 @@
     <ClInclude Include="..\..\..\code\AssetManager.h" />
     <ClInclude Include="..\..\..\code\Camera.h" />
     <ClInclude Include="..\..\..\code\CommonTypes.h" />
-    <ClInclude Include="..\..\..\code\Config.h" />
     <ClInclude Include="..\..\..\code\Core\Atomic.h" />
     <ClInclude Include="..\..\..\code\Core\Base.h" />
     <ClInclude Include="..\..\..\code\Core\BlitSort.h" />
     <ClInclude Include="..\..\..\code\Core\Buffers.h" />
     <ClInclude Include="..\..\..\code\Core\Debug.h" />
+    <ClInclude Include="..\..\..\code\Core\External\c89atomic\c89atomic.h" />
+    <ClInclude Include="..\..\..\code\Core\External\cj5\cj5.h" />
+    <ClInclude Include="..\..\..\code\Core\External\cpufeatures\cpu-features.h" />
+    <ClInclude Include="..\..\..\code\Core\External\mgustavsson\ini.h" />
+    <ClInclude Include="..\..\..\code\Core\External\minicoro\minicoro.h" />
+    <ClInclude Include="..\..\..\code\Core\External\stb\stb_sprintf.h" />
+    <ClInclude Include="..\..\..\code\Core\External\tlsf\tlsf.h" />
+    <ClInclude Include="..\..\..\code\Core\External\tracy\TracyC.h" />
     <ClInclude Include="..\..\..\code\Core\Hash.h" />
     <ClInclude Include="..\..\..\code\Core\IncludeWin.h" />
     <ClInclude Include="..\..\..\code\Core\Jobs.h" />
     <ClInclude Include="..\..\..\code\Core\JsonParser.h" />
     <ClInclude Include="..\..\..\code\Core\Log.h" />
+    <ClInclude Include="..\..\..\code\Core\Math.h" />
+    <ClInclude Include="..\..\..\code\Core\MathScalar.h" />
+    <ClInclude Include="..\..\..\code\Core\MathTypes.h" />
+    <ClInclude Include="..\..\..\code\Core\MathVector.h" />
     <ClInclude Include="..\..\..\code\Core\Memory.h" />
     <ClInclude Include="..\..\..\code\Core\Settings.h" />
     <ClInclude Include="..\..\..\code\Core\String.h" />
     <ClInclude Include="..\..\..\code\Core\System.h" />
     <ClInclude Include="..\..\..\code\Core\TracyHelper.h" />
     <ClInclude Include="..\..\..\code\Engine.h" />
-    <ClInclude Include="..\..\..\code\External\c89atomic\c89atomic.h" />
-    <ClInclude Include="..\..\..\code\External\cj5\cj5.h" />
-    <ClInclude Include="..\..\..\code\External\cpufeatures\cpu-features.h" />
     <ClInclude Include="..\..\..\code\External\dds-ktx\dds-ktx.h" />
     <ClInclude Include="..\..\..\code\External\ImGuizmo\ImGuizmo.h" />
     <ClInclude Include="..\..\..\code\External\imgui\imconfig.h" />
@@ -47,13 +55,8 @@
     <ClInclude Include="..\..\..\code\External\imgui\imstb_rectpack.h" />
     <ClInclude Include="..\..\..\code\External\imgui\imstb_textedit.h" />
     <ClInclude Include="..\..\..\code\External\imgui\imstb_truetype.h" />
-    <ClInclude Include="..\..\..\code\External\mgustavsson\ini.h" />
-    <ClInclude Include="..\..\..\code\External\minicoro\minicoro.h" />
     <ClInclude Include="..\..\..\code\External\stb\stb_image.h" />
-    <ClInclude Include="..\..\..\code\External\stb\stb_sprintf.h" />
-    <ClInclude Include="..\..\..\code\External\tlsf\tlsf.h" />
-    <ClInclude Include="..\..\..\code\External\tracy\TracyC.h" />
-    <ClInclude Include="..\..\..\code\External\tracy\TracyVulkan.hpp" />
+    <ClInclude Include="..\..\..\code\External\stb\stb_image_resize.h" />
     <ClInclude Include="..\..\..\code\External\vma\include\vk_mem_alloc.h" />
     <ClInclude Include="..\..\..\code\Graphics\CousineFont.h" />
     <ClInclude Include="..\..\..\code\Graphics\DebugDraw.h" />
@@ -61,10 +64,6 @@
     <ClInclude Include="..\..\..\code\Graphics\ImGuiWrapper.h" />
     <ClInclude Include="..\..\..\code\Graphics\Model.h" />
     <ClInclude Include="..\..\..\code\Graphics\Shader.h" />
-    <ClInclude Include="..\..\..\code\Math\Math.h" />
-    <ClInclude Include="..\..\..\code\Math\MathScalar.h" />
-    <ClInclude Include="..\..\..\code\Math\MathTypes.h" />
-    <ClInclude Include="..\..\..\code\Math\MathVector.h" />
     <ClInclude Include="..\..\..\code\RemoteServices.h" />
     <ClInclude Include="..\..\..\code\Tool\Console.h" />
     <ClInclude Include="..\..\..\code\Tool\ImageEncoder.h" />
@@ -96,6 +95,7 @@
     <ClCompile Include="..\..\..\code\Core\Jobs.cpp" />
     <ClCompile Include="..\..\..\code\Core\JsonParser.cpp" />
     <ClCompile Include="..\..\..\code\Core\Log.cpp" />
+    <ClCompile Include="..\..\..\code\Core\Math.cpp" />
     <ClCompile Include="..\..\..\code\Core\Memory.cpp" />
     <ClCompile Include="..\..\..\code\Core\Settings.cpp" />
     <ClCompile Include="..\..\..\code\Core\String.cpp" />
@@ -133,14 +133,6 @@
     <ClCompile Include="..\..\..\code\External\imgui\imgui_draw.cpp" />
     <ClCompile Include="..\..\..\code\External\imgui\imgui_tables.cpp" />
     <ClCompile Include="..\..\..\code\External\imgui\imgui_widgets.cpp" />
-    <ClCompile Include="..\..\..\code\External\tlsf\tlsf.c" />
-    <ClCompile Include="..\..\..\code\External\tracy\TracyClient.cpp">
-      <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='ReleaseDev|ARM64'">TRACY_FIBERS;TRACY_CALLSTACK=6;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <AdditionalOptions Condition="'$(Configuration)|$(Platform)'=='ReleaseDev|ARM64'">-Wno-sometimes-uninitialized %(AdditionalOptions)</AdditionalOptions>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='ReleaseDev|ARM64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">true</ExcludedFromBuild>
-    </ClCompile>
     <ClCompile Include="..\..\..\code\Graphics\DebugDraw.cpp" />
     <ClCompile Include="..\..\..\code\Graphics\Graphics.cpp" />
     <ClCompile Include="..\..\..\code\Graphics\GraphicsVk.cpp">
@@ -161,7 +153,6 @@
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='ReleaseDev|ARM64'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">true</ExcludedFromBuild>
     </ClCompile>
-    <ClCompile Include="..\..\..\code\Math\Math.cpp" />
     <ClCompile Include="..\..\..\code\RemoteServices.cpp" />
     <ClCompile Include="..\..\..\code\Tests\AssetTest.cpp">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">true</ExcludedFromBuild>
@@ -329,7 +320,7 @@
       <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
       <CompileAs>CompileAsCpp</CompileAs>
       <CppLanguageStandard>c++1z</CppLanguageStandard>
-      <PreprocessorDefinitions>TRACY_ENABLE</PreprocessorDefinitions>
+      <PreprocessorDefinitions>TRACY_ENABLE;CONFIG_ENABLE_ASSERT</PreprocessorDefinitions>
       <TreatWarningAsError>true</TreatWarningAsError>
       <OmitFramePointers>false</OmitFramePointers>
       <DebugInformationFormat>FullDebug</DebugInformationFormat>

@@ -6,6 +6,8 @@
 #include "Core/String.h"
 #include "Core/Log.h"
 
+#include "JunkyardSettings.h"
+
 static constexpr uint32 kCmdFlag = MakeFourCC('U', 'S', 'R', 'C');
 static constexpr uint32 kCmdHello = MakeFourCC('H', 'E', 'L', 'O');
 static constexpr uint32 kCmdBye = MakeFourCC('B', 'Y', 'E', '0');
@@ -183,7 +185,7 @@ static int serverThreadFn(void*)
 {
     gRemoteServices.serverSock = SocketTCP::CreateListener();
     
-    if (gRemoteServices.serverSock.Listen(settingsGetTooling().serverPort, 1)) {
+    if (gRemoteServices.serverSock.Listen(settingsGet().tooling.serverPort, 1)) {
         char peerUrl[128];
         while (!gRemoteServices.serverQuit) {
             gRemoteServices.serverPeerSock = gRemoteServices.serverSock.Accept(peerUrl, sizeof(peerUrl));
@@ -213,8 +215,8 @@ bool _private::remoteInitialize()
     gRemoteServices.serverPeerMtx.Initialize();
     gRemoteServices.clientMtx.Initialize();
 
-    if (settingsGetTooling().enableServer) {
-        logInfo("(init) RemoteServices: Starting RemoteServices server in port %u...", settingsGetTooling().serverPort);
+    if (settingsGet().tooling.enableServer) {
+        logInfo("(init) RemoteServices: Starting RemoteServices server in port %u...", settingsGet().tooling.serverPort);
         gRemoteServices.serverThread.Start(ThreadDesc {
             .entryFn = serverThreadFn, 
             .name = "RemoteServicesServer"

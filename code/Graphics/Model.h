@@ -26,7 +26,7 @@
 //
 
 #include "../Core/String.h"
-#include "../Math/MathTypes.h"
+#include "../Core/MathTypes.h"
 #include "../Graphics/Graphics.h"
 #include "../CommonTypes.h"
 

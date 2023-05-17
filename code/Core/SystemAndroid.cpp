@@ -7,20 +7,21 @@
 #include <android/native_activity.h>
 #include <jni.h>
 
-#include "../External/cpufeatures/cpu-features.h"
+#include "External/cpufeatures/cpu-features.h"
 PRAGMA_DIAGNOSTIC_PUSH()
 PRAGMA_DIAGNOSTIC_IGNORED_CLANG_GCC("-Wunused-function")
-    #include "../External/cpufeatures/cpu-features.c"
+#include "External/cpufeatures/cpu-features.c"
 PRAGMA_DIAGNOSTIC_POP()
 
 #include "Atomic.h"
 #include "Buffers.h"
 
-#include "../Application.h"
-
 static thread_local JNIEnv* gJniEnv = nullptr;
 static atomicUint32 gJniAttachedThreadCount;
+
+#if CONFIG_ENABLE_ASSERT
 static constexpr uint32 kJniMaxAttachedThreadCount = 5;
+#endif
 
 // https://en.wikipedia.org/wiki/CPUID
 // https://docs.microsoft.com/en-us/cpp/intrinsics/cpuid-cpuidex?redirectedfrom=MSDN&view=msvc-170
@@ -164,11 +165,10 @@ void sysAndroidPrintToLog(SysAndroidLogType logType, const char* tag, const char
     __android_log_write(static_cast<int>(logType), tag, text);
 }
 
-NO_INLINE JNIEnv* sysAndroidAcquireJniEnv()
+JNIEnv* sysAndroidAcquireJniEnv(ANativeActivity* activity)
 {
     if (gJniEnv)
         return gJniEnv;
-    auto activity = (ANativeActivity*)appGetNativeAppHandle();
     ASSERT(activity);
 
     [[maybe_unused]] jint ret = activity->vm->AttachCurrentThread(&gJniEnv, nullptr);	// required to call JNIEnv functions on this thread
@@ -178,9 +178,8 @@ NO_INLINE JNIEnv* sysAndroidAcquireJniEnv()
     return gJniEnv;
 }
 
-void sysAndroidReleaseJniEnv()
+void sysAndroidReleaseJniEnv(ANativeActivity* activity)
 {
-    auto activity = (ANativeActivity*)appGetNativeAppHandle();
     ASSERT(activity);
     activity->vm->DetachCurrentThread();		// jni cleanup
     atomicFetchSub32(&gJniAttachedThreadCount, 1);

@@ -73,7 +73,7 @@
 #include <stdbool.h>    // bool
 #include <stddef.h>     // NULL, size_t, offsetof
 
-#include "../Config.h"
+#include "Config.h"
 
 // Cpu Architecture  
 #define ARCH_32BIT 0
@@ -160,7 +160,7 @@
 #endif    //
 
 // http://sourceforge.net/apps/mediawiki/predef/index.php?title=Operating_Systems
-#if defined(__ANDROID__) || defined(ANDROID) || defined(__ANDROID_API__)
+#if defined(__ANDROID__) || defined(__android__) || defined(ANDROID) || defined(__ANDROID_API__)
     // Android compiler defines __linux__
     #include <sys/cdefs.h>    // Defines __BIONIC__ and includes android/api-level.h
     #undef PLATFORM_ANDROID

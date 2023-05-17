@@ -16,8 +16,7 @@
 #include "../Core/Log.h"
 #include "../Core/TracyHelper.h"
 #include "../Core/Hash.h"
-
-#include "../Math/Math.h"
+#include "../Core/Math.h"
 
 #include "../AssetManager.h"
 #include "../VirtualFS.h"

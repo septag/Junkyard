@@ -43,6 +43,7 @@ API void memRunFailCallback();
 API void* memAlignPointer(void* ptr, size_t extra, uint32 align);
 API Allocator* memDefaultAlloc();
 API void memSetDefaultAlloc(Allocator* alloc);
+API void memEnableMemPro(bool enable);
 
 #define MEMORY_FAIL() do { memRunFailCallback(); ASSERT_ALWAYS(0, "Out of memory"); } while (0)
 
@@ -85,6 +86,7 @@ using MemTempId = uint32;
 [[nodiscard]] MemTempId memTempPushId();
 void memTempPopId(MemTempId id);
 void memTempSetDebugMode(bool enable);
+void memTempSetCaptureStackTrace(bool capture);
 void memTempGetStats(Allocator* alloc, MemTransientAllocatorStats** outStats, uint32* outCount);
 
 [[nodiscard]] void* memAllocTemp(MemTempId id, size_t size, uint32 align = CONFIG_MACHINE_ALIGNMENT);

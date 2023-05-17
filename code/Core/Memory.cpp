@@ -3,26 +3,27 @@
 #include <stdlib.h>
 
 // MemPro
-#define OVERRIDE_NEW_DELETE
-#define WAIT_FOR_CONNECT true
-#define MEMPRO_BACKTRACE(_stackframes, _maxStackframes, _hashPtr) debugCaptureStacktrace(_stackframes, _maxStackframes, 3, _hashPtr)
-#include "../External/mempro/MemPro.cpp"
-
 #if MEMPRO_ENABLED
+    #define OVERRIDE_NEW_DELETE
+    #define WAIT_FOR_CONNECT true
+    #define MEMPRO_BACKTRACE(_stackframes, _maxStackframes, _hashPtr) debugCaptureStacktrace(_stackframes, _maxStackframes, 3, _hashPtr)
+    #include "External/mempro/MemPro.cpp"
+
     #define MEMPRO_TRACK_REALLOC(oldPtr, ptr, size) \
         do { if (oldPtr)  { \
         MEMPRO_TRACK_FREE(oldPtr);   \
         } \
         MEMPRO_TRACK_ALLOC(ptr, size);} while(0)
 #else
+    #define MEMPRO_TRACK_ALLOC(ptr, size) 
     #define MEMPRO_TRACK_REALLOC(oldPtr, ptr, size)
+    #define MEMPRO_TRACK_FREE(ptr)
 #endif
 //
 
 #include "System.h"
 #include "Buffers.h"
 #include "Atomic.h"
-#include "Settings.h"
 #include "Log.h"
 #include "BlitSort.h"
 #include "TracyHelper.h"
@@ -33,7 +34,12 @@
     #include <malloc.h>
 #endif
 
-#include "../External/tlsf/tlsf.h"
+#include "External/tlsf/tlsf.h"
+PRAGMA_DIAGNOSTIC_PUSH()
+PRAGMA_DIAGNOSTIC_IGNORED_MSVC(5054)
+PRAGMA_DIAGNOSTIC_IGNORED_MSVC(4245)
+#include "External/tlsf/tlsf.c"
+PRAGMA_DIAGNOSTIC_POP()
 
 #if PLATFORM_WINDOWS
     #define aligned_malloc(_align, _size) _aligned_malloc(_size, _align)
@@ -135,6 +141,8 @@ struct MemState
     size_t           pageSize           = sysGetPageSize();
     Mutex            tempMtx;
     Array<MemTempContext*> tempCtxs; 
+    bool             captureTempStackTrace;
+    bool             enableMemPro;
 
     MemState()  { tempMtx.Initialize(); ASSERT(kTempPageSize % pageSize == 0); }
     ~MemState() { tempMtx.Release(); tempCtxs.Free(); }
@@ -183,10 +191,20 @@ void memSetDefaultAlloc(Allocator* alloc)
     gMem.defaultAlloc = alloc != nullptr ? alloc : &gMem.heapAlloc;
 }
 
+void memEnableMemPro(bool enable)
+{
+    gMem.enableMemPro = enable;
+}
+
 void memTempSetDebugMode(bool enable)
 {
     ASSERT_MSG(MemGetTempContext().allocStack.Count() == 0, "MemTemp must be at it's initial state");
     MemGetTempContext().debugMode = enable;
+}
+
+void memTempSetCaptureStackTrace(bool capture)
+{
+    gMem.captureTempStackTrace = capture;
 }
 
 void memTempGetStats(Allocator* alloc, MemTransientAllocatorStats** outStats, uint32* outCount)
@@ -249,7 +267,7 @@ MemTempId memTempPushId()
     };
 
     if constexpr(!CONFIG_FINAL_BUILD) {
-        if (settingsGetDebug().captureStacktraceForTempAllocator)
+        if (gMem.captureTempStackTrace)
             memStack.numStackframes = debugCaptureStacktrace(memStack.stacktrace, kTempMaxStackframes, 2);
     }
 
@@ -445,7 +463,7 @@ void _private::memTempReset(float dt)
                     ctx->noresetTime = 0;
 
                     if constexpr(!CONFIG_FINAL_BUILD) {
-                        if (settingsGetDebug().captureStacktraceForTempAllocator) {
+                        if (gMem.captureTempStackTrace) {
                             DebugStacktraceEntry entries[kTempMaxStackframes];
                             uint32 index = 0;
                             logDebug("Callstacks for each remaining MemTempPush:");
@@ -482,7 +500,7 @@ inline void* MemHeapAllocator::Malloc(size_t size, uint32 align)
     TracyCAlloc(ptr, size);        
 
     if constexpr (MEMPRO_ENABLED) {
-        if (settingsGetEngine().enableMemPro)
+        if (gMem.enableMemPro)
             MEMPRO_TRACK_ALLOC(ptr, size);
     }
     return ptr;
@@ -508,7 +526,7 @@ inline void* MemHeapAllocator::Realloc(void* ptr, size_t size, uint32 align)
     TracyCRealloc(freePtr, ptr, size);
 
     if constexpr (MEMPRO_ENABLED) {
-        if (settingsGetEngine().enableMemPro) 
+        if (gMem.enableMemPro) 
             MEMPRO_TRACK_REALLOC(freePtr, ptr, size);
     }
    
@@ -528,7 +546,7 @@ inline void MemHeapAllocator::Free(void* ptr, uint32 align)
         TracyCFree(ptr);
 
         if constexpr (MEMPRO_ENABLED) {
-            if (settingsGetEngine().enableMemPro) 
+            if (gMem.enableMemPro) 
                 MEMPRO_TRACK_FREE(ptr);
         }
     }
@@ -958,7 +976,7 @@ void* MemTlsfAllocator::Malloc(size_t size, uint32 align)
             TracyCAlloc(ptr, size);
 
             if constexpr (MEMPRO_ENABLED) {
-                if (settingsGetEngine().enableMemPro)
+                if (gMem.enableMemPro)
                     MEMPRO_TRACK_ALLOC(ptr, size);
             }
             return ptr;
@@ -988,7 +1006,7 @@ void* MemTlsfAllocator::Realloc(void* ptr, size_t size, uint32 align)
             TracyCRealloc(freePtr, ptr, size);
 
             if constexpr (MEMPRO_ENABLED) {
-                if (settingsGetEngine().enableMemPro)
+                if (gMem.enableMemPro)
                     MEMPRO_TRACK_REALLOC(freePtr, ptr, size);
             }
             return ptr;
@@ -1014,7 +1032,7 @@ void MemTlsfAllocator::Free(void* ptr, uint32 align)
             TracyCFree(ptr);
 
             if constexpr (MEMPRO_ENABLED) {
-                if (settingsGetEngine().enableMemPro)
+                if (gMem.enableMemPro)
                     MEMPRO_TRACK_FREE(ptr);
             }
         }

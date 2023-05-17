@@ -295,7 +295,3 @@ API AAssetManager*  appAndroidGetAssetManager();
 API void appAndroidSetFramebufferTransform(AppFramebufferTransform transform);
 API ANativeActivity* appAndroidGetActivity();
 #endif 
-
-#if PLATFORM_WINDOWS
-API void* appWinGetConsoleHandle();
-#endif

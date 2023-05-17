@@ -2,8 +2,7 @@
 
 #include "../Core/Base.h"
 #include "../Core/String.h" 
-
-#include "../Math/MathTypes.h"
+#include "../Core/MathTypes.h"
 
 #include "../CommonTypes.h"
 
@@ -1001,9 +1000,51 @@ API float gfxGetRenderTimeNs();  // Note: This functions calls Vk functions. So 
 API Mat4 gfxGetClipspaceTransform();
 API bool gfxIsRenderingToSwapchain();
 
+// Tracy GPU Profiling 
 #ifdef TRACY_ENABLE
-    API void gfxProfileZoneBegin(uint64 srcloc);
-    API void gfxProfileZoneEnd();
+    #include "../Core/TracyHelper.h"
+
+    namespace _private
+    {
+        API void gfxProfileZoneBegin(uint64 srcloc);
+        API void gfxProfileZoneEnd();
+
+        struct TracyGpuZoneScope
+        {
+            bool _active;
+
+            TracyGpuZoneScope() = delete;
+            explicit TracyGpuZoneScope(bool active, uint64 srcloc) : 
+                _active(active) 
+            {
+                if (active)
+                    gfxProfileZoneBegin(srcloc);
+            }
+            
+            ~TracyGpuZoneScope()
+            {
+                if (_active)
+                    gfxProfileZoneEnd();
+            }
+        };
+
+    }   // _private
+
+    #define PROFILE_GPU_ZONE(active) \
+        _private::TracyGpuZoneScope(active, _private::__tracy_alloc_source_loc(__LINE__, __FILE__, __func__))
+    #define PROFILE_GPU_ZONE_NAME(name, active) \
+        _private::TracyGpuZoneScope(active, _private::__tracy_alloc_source_loc(__LINE__, __FILE__, __func__, name))
+    #define PROFILE_GPU_ZONE_BEGIN(active) \
+        do { if (active) _private::profileGpuZoneBegin(_private::__tracy_alloc_source_loc(__LINE__, __FILE__, __func__));  } while(0)
+    #define PROFILE_GPU_ZONE_NAME_BEGIN(name, active) \
+        do { if (active) _private::profileGpuZoneBegin(_private::__tracy_alloc_source_loc(__LINE__, __FILE__, __func__, name));  } while(0)
+    #define PROFILE_GPU_ZONE_END(active)  \
+        do { if (active) _private::profileGpuZoneEnd();  } while(0)
+#else
+    #define PROFILE_GPU_ZONE(active)
+    #define PROFILE_GPU_ZONE_NAME(name, active)
+    #define PROFILE_GPU_ZONE_BEGIN(active)
+    #define PROFILE_GPU_ZONE_END(active)
 #endif // TRACY_ENABLE
 
 //----------------------------------------------------------------------------------------------------------------------

@@ -1,7 +1,4 @@
 #ifdef BUILD_UNITY
-    // External
-    #include "External/tlsf/tlsf.c"
-
     // Core library
     #include "Core/Base.cpp"
     #include "Core/Memory.cpp"
@@ -10,16 +7,14 @@
     #include "Core/String.cpp"
     #include "Core/Log.cpp"
     #include "Core/Hash.cpp"
-    #include "Core/SocketIO.cpp"
     #include "Core/Debug.cpp"
     #include "Core/Jobs.cpp"
     #include "Core/JsonParser.cpp"
     #include "Core/Settings.cpp"
-    #include "Core/FileIO.cpp"
-
-    #include "Math/Math.cpp"
-
+    #include "Core/Math.cpp"
+    
     // General
+    #include "JunkyardSettings.cpp"
     #include "Application.cpp"
     #include "Engine.cpp"
     #include "VirtualFS.cpp"

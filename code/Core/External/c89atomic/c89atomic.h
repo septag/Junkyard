@@ -252,6 +252,14 @@ The following types and functions are implemented:
 extern "C" {
 #endif
 
+#if defined(__clang__) || (defined(__GNUC__) && (__GNUC__ > 4 || (__GNUC__ == 4 && __GNUC_MINOR__ >= 6)))
+    #pragma GCC diagnostic push
+    #pragma GCC diagnostic ignored "-Wlong-long"
+    #if defined(__clang__)
+        #pragma GCC diagnostic ignored "-Wc++11-long-long"
+    #endif
+#endif
+
 typedef   signed char           c89atomic_int8;
 typedef unsigned char           c89atomic_uint8;
 typedef   signed short          c89atomic_int16;
@@ -262,18 +270,8 @@ typedef unsigned int            c89atomic_uint32;
     typedef   signed __int64    c89atomic_int64;
     typedef unsigned __int64    c89atomic_uint64;
 #else
-    #if defined(__clang__) || (defined(__GNUC__) && (__GNUC__ > 4 || (__GNUC__ == 4 && __GNUC_MINOR__ >= 6)))
-        #pragma GCC diagnostic push
-        #pragma GCC diagnostic ignored "-Wlong-long"
-        #if defined(__clang__)
-            #pragma GCC diagnostic ignored "-Wc++11-long-long"
-        #endif
-    #endif
     typedef   signed long long  c89atomic_int64;
     typedef unsigned long long  c89atomic_uint64;
-    #if defined(__clang__) || (defined(__GNUC__) && (__GNUC__ > 4 || (__GNUC__ == 4 && __GNUC_MINOR__ >= 6)))
-        #pragma GCC diagnostic pop
-    #endif
 #endif
 
 typedef int                     c89atomic_memory_order;
@@ -1284,10 +1282,30 @@ typedef unsigned char           c89atomic_bool;
     #define c89atomic_fetch_and_explicit_32(dst, src, order)        __atomic_fetch_and(dst, src, order)
     #define c89atomic_fetch_and_explicit_64(dst, src, order)        __atomic_fetch_and(dst, src, order)
 
-    #define c89atomic_compare_and_swap_8 (dst, expected, desired)   __sync_val_compare_and_swap(dst, expected, desired)
-    #define c89atomic_compare_and_swap_16(dst, expected, desired)   __sync_val_compare_and_swap(dst, expected, desired)
-    #define c89atomic_compare_and_swap_32(dst, expected, desired)   __sync_val_compare_and_swap(dst, expected, desired)
-    #define c89atomic_compare_and_swap_64(dst, expected, desired)   __sync_val_compare_and_swap(dst, expected, desired)
+    /* CAS needs to be implemented as a function because _atomic_compare_exchange_n() needs to take the address of the expected value. */
+    static C89ATOMIC_INLINE c89atomic_uint8 c89atomic_compare_and_swap_8(volatile c89atomic_uint8* dst, c89atomic_uint8 expected, c89atomic_uint8 desired)
+    {
+        __atomic_compare_exchange_n(dst, &expected, desired, 0, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST);
+        return expected;
+    }
+
+    static C89ATOMIC_INLINE c89atomic_uint16 c89atomic_compare_and_swap_16(volatile c89atomic_uint16* dst, c89atomic_uint16 expected, c89atomic_uint16 desired)
+    {
+        __atomic_compare_exchange_n(dst, &expected, desired, 0, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST);
+        return expected;
+    }
+
+    static C89ATOMIC_INLINE c89atomic_uint32 c89atomic_compare_and_swap_32(volatile c89atomic_uint32* dst, c89atomic_uint32 expected, c89atomic_uint32 desired)
+    {
+        __atomic_compare_exchange_n(dst, &expected, desired, 0, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST);
+        return expected;
+    }
+
+    static C89ATOMIC_INLINE c89atomic_uint64 c89atomic_compare_and_swap_64(volatile c89atomic_uint64* dst, c89atomic_uint64 expected, c89atomic_uint64 desired)
+    {
+        __atomic_compare_exchange_n(dst, &expected, desired, 0, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST);
+        return expected;
+    }
 
     typedef c89atomic_uint8 c89atomic_flag;
     #define c89atomic_flag_test_and_set_explicit(dst, order)        (c89atomic_bool)__atomic_test_and_set(dst, order)
@@ -2669,6 +2687,9 @@ static C89ATOMIC_INLINE void c89atomic_spinlock_unlock(volatile c89atomic_spinlo
 }
 
 
+#if defined(__clang__) || (defined(__GNUC__) && (__GNUC__ > 4 || (__GNUC__ == 4 && __GNUC_MINOR__ >= 6)))
+    #pragma GCC diagnostic pop  /* long long warnings with Clang. */
+#endif
 
 #if defined(__cplusplus)
 }

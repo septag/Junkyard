@@ -1,7 +1,6 @@
 #include "Settings.h"
 #include "Memory.h"
 #include "String.h"
-#include "Log.h"
 #include "Buffers.h"
 #include "System.h"
 
@@ -14,7 +13,7 @@
 
 PRAGMA_DIAGNOSTIC_PUSH()
 PRAGMA_DIAGNOSTIC_IGNORED_CLANG_GCC("-Wsign-compare")
-#include "../External/mgustavsson/ini.h"
+#include "External/mgustavsson/ini.h"
 PRAGMA_DIAGNOSTIC_POP()
 
 #define SOKOL_ARGS_IMPL
@@ -27,12 +26,10 @@ PRAGMA_DIAGNOSTIC_POP()
 PRAGMA_DIAGNOSTIC_PUSH()
 PRAGMA_DIAGNOSTIC_IGNORED_MSVC(4505)
 PRAGMA_DIAGNOSTIC_IGNORED_CLANG_GCC("-Wunused-function")
-#include "../External/sokol/sokol_args.h"
+#include "External/sokol/sokol_args.h"
 PRAGMA_DIAGNOSTIC_POP()
 
-// TODO: gotta remove the dependency to application
 #if PLATFORM_ANDROID
-#include "../Application.h"    // appGetNativeAssetManagerHandle
 #include <android/asset_manager.h>
 #endif
 
@@ -44,187 +41,88 @@ struct SettingsKeyValue
 
 struct SettingsContext
 {
-    SettingsAll predefined;
     Array<SettingsKeyValue> keyValuePairs;
-    bool initialized;
+    StaticArray<SettingsCustomCallbacks*, 8> customCallbacks;
 };
-
-enum class SettingsCategory : uint32
-{
-    App = 0,
-    Engine,
-    Graphics,
-    Tooling,
-    Debug,
-    _Count
-};
-
-static constexpr const char* kSettingCategoryNames[uint32(SettingsCategory::_Count)] = {
-    "App",
-    "Engine",
-    "Graphics",
-    "Tooling",
-    "Debug"
-};
-
-static_assert(CountOf(kSettingCategoryNames) == uint32(SettingsCategory::_Count));
 
 static SettingsContext gSettings;
 
-static SettingsEngine::LogLevel settingsParseEngineLogLevel(const char* strLogLevel)
+void settingsAddCustomCallbacks(SettingsCustomCallbacks* callbacks)
 {
-    if (strIsEqualNoCase(strLogLevel, "Error"))           return SettingsEngine::LogLevel::Error;
-    else if (strIsEqualNoCase(strLogLevel, "Warning"))    return SettingsEngine::LogLevel::Warning;
-    else if (strIsEqualNoCase(strLogLevel, "Info"))       return SettingsEngine::LogLevel::Info;
-    else if (strIsEqualNoCase(strLogLevel, "Verbose"))    return SettingsEngine::LogLevel::Verbose;
-    else if (strIsEqualNoCase(strLogLevel, "Debug"))      return SettingsEngine::LogLevel::Debug;
-    else                                                  return SettingsEngine::LogLevel::Default;
+    ASSERT(callbacks);
+
+    uint32 index = gSettings.customCallbacks.Find(callbacks);
+    if (index == UINT32_MAX) 
+        gSettings.customCallbacks.Add(callbacks);
 }
 
-static bool settingsParsePredefinedSetting(SettingsCategory category, const char* key, const char* value)
+void settingsRemoveCustomCallbacks(SettingsCustomCallbacks* callbacks)
 {
-    ASSERT(category != SettingsCategory::_Count);
+    ASSERT(callbacks);
 
-    if (category == SettingsCategory::App) {
-        SettingsApp* app = &gSettings.predefined.app;
-        if (strIsEqualNoCase(key, "launchMinimized")) {
-            app->launchMinimized = strToBool(value);
-            return true;
-        }
-    }
-    else if (category == SettingsCategory::Engine) {
-        SettingsEngine* engine = &gSettings.predefined.engine;
-        if (strIsEqualNoCase(key, "connectToServer")) {
-            engine->connectToServer = strToBool(value);
-            return true;
-        }
-        else if (strIsEqualNoCase(key, "remoteServicesUrl")) {
-            engine->remoteServicesUrl = value;
-            return true;
-        }
-        else if (strIsEqualNoCase(key, "logLevel")) {
-            engine->logLevel = settingsParseEngineLogLevel(value);
-            return true;
-        }
-        else if (strIsEqualNoCase(key, "jobsThreadCount")) {
-            engine->jobsThreadCount = strToBool(value);
-            return true;
-        }
-        else if (strIsEqualNoCase(key, "debugAllocations")) {
-            engine->debugAllocations = strToBool(value);
-            return true;
-        }
-        else if (strIsEqualNoCase(key, "breakOnErrors")) {
-            engine->breakOnErrors = strToBool(value);
-            return true;
-        }
-        else if (strIsEqualNoCase(key, "treatWarningsAsErrors")) {
-            engine->treatWarningsAsErrors = strToBool(value);
-            return true;
-        }
-        else if (strIsEqualNoCase(key, "enableMemPro")) {
-            engine->enableMemPro = strToBool(value);
-            return true;            
-        }
-    }
-    else if (category == SettingsCategory::Graphics) {
-        SettingsGraphics* graphics = &gSettings.predefined.graphics;
-        if (strIsEqualNoCase(key, "enable")) {
-            graphics->enable = strToBool(value);
-            return true;
-        }
-        else if (strIsEqualNoCase(key, "validate")) {
-            graphics->validate = strToBool(value);
-            return true;
-        }
-        else if (strIsEqualNoCase(key, "headless")) {
-            graphics->headless = strToBool(value);
-            return true;
-        }
-        else if (strIsEqualNoCase(key, "SurfaceSRGB")) {
-            graphics->surfaceSRGB = strToBool(value);
-            return true;
-        }
-        else if (strIsEqualNoCase(key, "listExtensions")) {
-            graphics->listExtensions = strToBool(value);
-            return true;
-        }
-        else if (strIsEqualNoCase(key, "enableAdrenoDebug")) {
-            graphics->enableAdrenoDebug = strToBool(value);
-            return true;
-        }
-        else if (strIsEqualNoCase(key, "validateBestPractices")) {
-            graphics->validateBestPractices = strToBool(value);
-            return true;
-        }
-        else if (strIsEqualNoCase(key, "validateSynchronization")) {
-            graphics->validateSynchronization = strToBool(value);
-            return true;
-        }
-        else if (strIsEqualNoCase(key, "shaderDumpIntermediates")) {
-            graphics->shaderDumpIntermediates = strToBool(value);
-            return true;
-        }
-        else if (strIsEqualNoCase(key, "shaderDumpProperties")) {
-            graphics->shaderDumpProperties = strToBool(value);
-            return true;
-        }
-        else if (strIsEqualNoCase(key, "shaderDebug")) {
-            graphics->shaderDebug = strToBool(value);
-            return true;
-        }
-        else if (strIsEqualNoCase(key, "enableGpuProfile")) {
-            graphics->enableGpuProfile = strToBool(value);
-            return true;
-        }
-        else if (strIsEqualNoCase(key, "enableImGui")) {
-            graphics->enableImGui = strToBool(value);
-            return true;
-        }
-        else if (strIsEqualNoCase(key, "enableVsync")) {
-            graphics->enableVsync = strToBool(value);
-            return true;
-        }
-        else if (strIsEqualNoCase(key, "trackResourceLeaks")) {
-            graphics->trackResourceLeaks = strToBool(value);
-            return true;
-        }
-    }
-    else if (category == SettingsCategory::Tooling) {
-        SettingsTooling* tooling = &gSettings.predefined.tooling;
-        if (strIsEqualNoCase(key, "enableServer")) {
-            tooling->enableServer = strToBool(value);
-            return true;
-        }
-        else if (strIsEqualNoCase(key, "serverPort")) {
-            tooling->serverPort = static_cast<uint16>(strToInt(value));
-            return true;
-        }
-    }
-    else if (category == SettingsCategory::Debug) {
-        SettingsDebug* debug = &gSettings.predefined.debug;
-        if (strIsEqualNoCase(key, "captureStacktraceForFiberProtector")) {
-            debug->captureStacktraceForFiberProtector = true;
-            return true;
-        }
-        else if (strIsEqualNoCase(key, "captureStacktraceForTempAllocator")) {
-            debug->captureStacktraceForTempAllocator = true;
-            return true;
-        }
-    }
-
-    return false;
+    uint32 index = gSettings.customCallbacks.Find(callbacks);
+    if (index != UINT32_MAX) 
+        gSettings.customCallbacks.RemoveAndSwap(index);
 }
 
-bool settingsLoadFromINI(const char* iniFilepath)
+static bool settingsLoadFromINIInternal(const Blob& blob)
 {
-    ASSERT(gSettings.initialized);
-    logDebug("Loading settings from: %s", iniFilepath);
+    ASSERT(blob.IsValid());
 
-    File f;
-    Blob blob;
+    ini_t* ini = ini_load(reinterpret_cast<const char*>(blob.Data()), memDefaultAlloc());
+    if (!ini)
+        return false;
+
+    char keyTrimmed[64];
+    char valueTrimmed[256];
+    uint32 count = 0;
+
+    for (int i = 0; i < ini_section_count(ini); i++) {
+        const char* sectionName = ini_section_name(ini, i);
+
+        for (uint32 c = 0; c < gSettings.customCallbacks.Count(); c++) {
+            SettingsCustomCallbacks* callbacks = gSettings.customCallbacks[c];
+
+            uint32 foundCatId = UINT32_MAX;
+            for (uint32 catId = 0, catIdCount = callbacks->GetCategoryCount(); catId < catIdCount; catId++) {
+                if (strIsEqualNoCase(sectionName, callbacks->GetCategory(catId))) {
+                    foundCatId = catId;
+                    break;
+                }
+            }
+
+            for (int j = 0; j < ini_property_count(ini, i); j++) {
+                const char* key = ini_property_name(ini, i, j);
+                const char* value = ini_property_value(ini, i, j);
+                strTrim(keyTrimmed, sizeof(keyTrimmed), key);
+                strTrim(valueTrimmed, sizeof(valueTrimmed), value);
+
+                bool predefined = foundCatId != UINT32_MAX ? callbacks->ParseSetting(foundCatId, sectionName, value) : false;
+
+                // if doesn't exist in the predefined settings, add to the general settings
+                if (!predefined)
+                    settingsSetValue(keyTrimmed, valueTrimmed);
+
+                char msg[256];
+                strPrintFmt(msg, sizeof(msg), "\t%u) %s%s = %s\n", ++count, keyTrimmed, !predefined ? "(*)" : "", valueTrimmed);
+                debugPrint(msg);
+            }
+        } // for each custom settings parser
+    }
+
+    ini_destroy(ini);
+    return true;
+}
+
 #if PLATFORM_ANDROID
-    AAsset* asset = AAssetManager_open(appAndroidGetAssetManager(), iniFilepath, AASSET_MODE_BUFFER);
+bool settingsInitializeFromAndroidAsset(AAssetManager* assetMgr, const char* iniFilepath)
+{
+    char msg[256];
+    strPrintFmt(msg, sizeof(msg), "Loading settings from assets: %s\n", iniFilepath);
+    debugPrint(msg);
+
+    Blob blob;
+    AAsset* asset = AAssetManager_open(assetMgr, iniFilepath, AASSET_MODE_BUFFER);
     if (asset && AAsset_getLength(asset) > 0) {
         off_t size = AAsset_getLength(asset);
         blob.Reserve(size + 1);
@@ -237,7 +135,32 @@ bool settingsLoadFromINI(const char* iniFilepath)
 
         AAsset_close(asset);
     }
-#else
+
+    if (!blob.IsValid()) {
+        strPrintFmt(msg, sizeof(msg), "Opening ini file '%s' failed\n", iniFilepath);
+        debugPrint(msg);
+        return false;
+    }
+
+    bool r = settingsLoadFromINIInternal(blob);
+    blob.Free();
+
+    if (!r) {
+        strPrintFmt(msg, sizeof(msg), "Parsing ini file '%s' failed\n", iniFilepath);
+        debugPrint(msg);
+    }
+    return r;
+}
+#endif  // PLATFORM_ANDROID
+
+bool settingsInitializeFromINI(const char* iniFilepath)
+{
+    char msg[256];
+    strPrintFmt(msg, sizeof(msg), "Loading settings from file: %s", iniFilepath);
+    debugPrint(msg);
+
+    Blob blob;
+    File f;
     if (f.Open(iniFilepath, FileOpenFlags::Read | FileOpenFlags::SeqScan)) {
         uint64 size = f.GetSize();
         if (size) {
@@ -248,64 +171,33 @@ bool settingsLoadFromINI(const char* iniFilepath)
         }
         f.Close();
     }
-#endif
 
     if (!blob.IsValid()) {
-        logError("Opening ini file '%s' failed", iniFilepath);
+        strPrintFmt(msg, sizeof(msg), "Opening ini file '%s' failed", iniFilepath);
+        debugPrint(msg);
         return false;
     }
 
-    ini_t* ini = ini_load(reinterpret_cast<const char*>(blob.Data()), memDefaultAlloc());
-    if (!ini) {
-        blob.Free();
-        logError("Parsing INI file '%s' failed", iniFilepath);
-        return false;
-    }
-
-    char keyTrimmed[64];
-    char valueTrimmed[256];
-    uint32 count = 0;
-
-    for (int i = 0; i < ini_section_count(ini); i++) {
-        const char* sectionName = ini_section_name(ini, i);
-        SettingsCategory cat = SettingsCategory::_Count;
-        for (uint32 c = 0; c < static_cast<uint32>(SettingsCategory::_Count); c++) {
-            if (strIsEqualNoCase(sectionName, kSettingCategoryNames[c])) {
-                cat = static_cast<SettingsCategory>(c);
-                break;
-            }
-        }
-
-        for (int j = 0; j < ini_property_count(ini, i); j++) {
-            const char* key = ini_property_name(ini, i, j);
-            const char* value = ini_property_value(ini, i, j);
-            strTrim(keyTrimmed, sizeof(keyTrimmed), key);
-            strTrim(valueTrimmed, sizeof(valueTrimmed), value);
-            bool predefined = cat != SettingsCategory::_Count ? 
-                settingsParsePredefinedSetting(cat, keyTrimmed, valueTrimmed) : false;
-            
-            if (!predefined)
-                settingsSetValue(keyTrimmed, valueTrimmed);
-
-            logDebug("\t%u) %s%s = %s", ++count, keyTrimmed, !predefined ? "(*)" : "", valueTrimmed);
-        }
-    }
-    ini_destroy(ini);
+    bool r = settingsLoadFromINIInternal(blob);
     blob.Free();
-    return true;
+
+    if (!r) {
+        strPrintFmt(msg, sizeof(msg), "Parsing ini file '%s' failed", iniFilepath);
+        debugPrint(msg);
+    }
+    return r;
 }
 
-bool settingsLoadFromCommandLine(int argc, char* argv[])
+bool settingsInitializeFromCommandLine(int argc, char* argv[])
 {
-    ASSERT(gSettings.initialized);
-
     sargs_state* args = sargs_create(sargs_desc {
         .argc = argc,
         .argv = argv
     });
 
     if (sargs_num_args(args) > 0) 
-        logDebug("Loading settings from CommandLine:");
+        debugPrint("Loading settings from CommandLine:\n");
+
     for (int i = 0; i < sargs_num_args(args); i++) {
         const char* key = sargs_key_at(args, i);
         const char* value = sargs_value_at(args, i);
@@ -315,24 +207,35 @@ bool settingsLoadFromCommandLine(int argc, char* argv[])
             continue;
         ++key;
 
-        // check predefined settings. For that, first check the first word for predefined categories
-        bool predefined = false;
-        for (uint32 c = 0; c < static_cast<uint32>(SettingsCategory::_Count); c++) {
-            const char* catName = kSettingCategoryNames[c];
-            uint32 catNameLen = strLen(catName);
-            if (strIsEqualNoCaseCount(key, catName, catNameLen)) 
-                predefined = settingsParsePredefinedSetting(static_cast<SettingsCategory>(c), key + catNameLen, value);
-        }
-        
-        // if doesn't exist in the predefined settings, add to the custom settings
-        if (!predefined)
-            settingsSetValue(key, value);
+        for (uint32 c = 0; c < gSettings.customCallbacks.Count(); c++) {
+            SettingsCustomCallbacks* callbacks = gSettings.customCallbacks[c];
 
-        logDebug("\t%d) %s%s = %s", i+1, key, !predefined ? "(*)" : "", value);
+            // check predefined settings. For that, first check the first word for predefined categories
+            uint32 foundCatId = UINT32_MAX;
+            uint32 catLen = 0;
+            for (uint32 catId = 0, catIdCount = callbacks->GetCategoryCount(); catId < catIdCount; catId++) {
+                const char* cat = callbacks->GetCategory(catId);
+                catLen = strLen(cat);
+                if (strIsEqualNoCaseCount(key, cat, catLen)) {
+                    foundCatId = catId;
+                    break;
+                }
+            }
+    
+            bool predefined = foundCatId != UINT32_MAX ? callbacks->ParseSetting(foundCatId, key + catLen, value) : false;
+
+            // if doesn't exist in the predefined settings, add to the general settings
+            if (!predefined)
+                settingsSetValue(key, value);
+
+            char msg[256];
+            strPrintFmt(msg, sizeof(msg), "\t%d) %s%s = %s\n", i+1, key, !predefined ? "(*)" : "", value);
+            debugPrint(msg);
+        }        
+
     }
 
     sargs_destroy(args);
-
     return true;
 }
 
@@ -357,54 +260,8 @@ const char* settingsGetValue(const char* key, const char* defaultValue)
     return index != UINT32_MAX ? gSettings.keyValuePairs[index].value.CStr() : defaultValue;
 }
 
-bool settingsInitialize(const SettingsAll& conf)
-{
-    Allocator* alloc = memDefaultAlloc();
-
-    gSettings.predefined = conf;
-    gSettings.keyValuePairs.SetAllocator(alloc);
-    
-    gSettings.initialized = true;
-    return false;
-}
-
 void settingsRelease()
 {
     gSettings.keyValuePairs.Free();
-    gSettings.initialized = false;
 }
 
-const SettingsAll& settingsGet()
-{
-    return gSettings.predefined;  
-}
-
-const SettingsApp& settingsGetApp()
-{
-    return gSettings.predefined.app;
-}
-
-const SettingsGraphics& settingsGetGraphics()
-{
-    return gSettings.predefined.graphics;
-}
-
-const SettingsTooling& settingsGetTooling()
-{
-    return gSettings.predefined.tooling;
-}
-
-const SettingsEngine& settingsGetEngine()
-{
-    return gSettings.predefined.engine;
-}
-
-const SettingsDebug& settingsGetDebug()
-{
-    return gSettings.predefined.debug;
-}
-
-bool settingsIsInitialized()
-{
-    return gSettings.initialized;
-}

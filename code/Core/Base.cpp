@@ -35,7 +35,7 @@ static inline float randomFloatNormalized(uint32 value)
 }
 PRAGMA_DIAGNOSTIC_POP()
 
-static inline uint64 randomAvalanche64(uint64 h)
+INLINE uint64 randomAvalanche64(uint64 h)
 {
     h ^= h >> 33;
     h *= 0xff51afd7ed558ccd;
