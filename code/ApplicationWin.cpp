@@ -870,7 +870,6 @@ bool appInitialize(const AppDesc& desc)
     }, TRUE);
 
     timerInitialize();
-    uint64 tmPrev = 0;
 
     // Initialize settings if not initialied before
     // Since this is not a recommended way, we also throw an assert
@@ -912,6 +911,7 @@ bool appInitialize(const AppDesc& desc)
     gApp.valid = true;
 
     // Main loop
+    uint64 tmPrev = 0;
     bool done = false;
     while (!(done || gApp.quitOrdered)) {
         if (!headless) {
