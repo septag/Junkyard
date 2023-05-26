@@ -125,7 +125,6 @@ bool engineInitialize()
 
     if (settingsGet().engine.debugAllocations) {
         memTempSetDebugMode(true);
-        memFrameSetDebugMode(true);
     }
 
     {   // Cpu/Memory info
@@ -336,8 +335,7 @@ void engineEndFrame(float dt)
 
     _private::assetUpdateCache(dt);
 
-    _private::memTempReset(dt);
-    _private::memFrameReset();
+    memTempReset(dt);
 
     TracyCFrameMark;
 

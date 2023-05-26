@@ -85,12 +85,6 @@ void imguiBudgetHub(float dt, bool* pOpen)
 
         transientOpen = ImGui::CollapsingHeader("Transient Allocators", nullptr, transientOpen ? ImGuiTreeNodeFlags_DefaultOpen : 0);
         if (transientOpen) {
-            MemTransientAllocatorStats frameStats = memFrameGetStats();
-            ImGui::TextColored(kTextColor, "FrameAlloc");
-            ImGui::SameLine();
-            ImGui::ProgressBar(imguiDivideInt(frameStats.curPeak, frameStats.maxPeak), ImVec2(-1.0f, 0),
-                               String32::Format("%_$llu/%_$llu", frameStats.curPeak, frameStats.maxPeak).CStr());
-
             MemTempAllocator tmpAlloc;
             MemTransientAllocatorStats* tempStats;
             uint32 numTempStats;

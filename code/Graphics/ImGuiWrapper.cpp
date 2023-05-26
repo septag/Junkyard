@@ -29,8 +29,6 @@
 // Extra modules
 #include "../External/ImGuizmo/ImGuizmo.h"
 
-using namespace ImGui;
-
 namespace _limits 
 {
     static constexpr uint32 kImGuiMaxVertices = 30000;
@@ -367,18 +365,18 @@ bool _private::imguiInitialize()
                                       settingsGet().engine.debugAllocations);
     }
     
-    SetAllocatorFunctions(
+    ImGui::SetAllocatorFunctions(
         [](size_t size, void*)->void* { return memAlloc(size, &gImGui.runtimeHeap); },
         [](void* ptr, void*) { memFree(ptr, &gImGui.runtimeHeap); });
     
     gImGui.lastCursor = ImGuiMouseCursor_COUNT;
-    gImGui.ctx = CreateContext();
+    gImGui.ctx = ImGui::CreateContext();
     if (!gImGui.ctx) {
         logError("ImGui: CreateContext failed");
         return false;
     }
 
-    ImGuiIO& conf = GetIO();
+    ImGuiIO& conf = ImGui::GetIO();
 
     static char iniFilename[64];
     strPrintFmt(iniFilename, sizeof(iniFilename), "%s_imgui.ini", appGetName());

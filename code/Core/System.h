@@ -397,7 +397,7 @@ struct SysWin32Process
     SysWin32Process();
     ~SysWin32Process();
 
-    bool Run(const char* cmdline, SysWin32ProcessFlags flags, uint32 outputPipeSize = 0);
+    bool Run(const char* cmdline, SysWin32ProcessFlags flags);
     bool Wait(uint32 timeoutMs = UINT32_MAX) const;
     bool IsRunning() const { return !Wait(0); }
 
@@ -409,10 +409,11 @@ struct SysWin32Process
     static void GenerateCmdLineFromArgcArgv(int argc, const char* argv[], char** outString, uint32* outStringLen, 
                                             Allocator* alloc = memDefaultAlloc());
 
-private:
-    void* process;
-    void* stdoutPipeRead;
-    void* stderrPipeRead;
+    void* process;              // HANDLE
+    void* stdoutPipeRead;       // HANDLE
+    void* stderrPipeRead;       // HANDLE
+    Path cwd;
+    uint32 outputPipeSize;
 };
 
 API bool sysWin32IsProcessRunning(const char* execName);

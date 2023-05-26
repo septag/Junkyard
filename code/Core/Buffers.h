@@ -91,6 +91,7 @@ struct Array
     _T* Ptr();
     void Detach(_T** outBuffer, uint32* outCount);
     void ShiftLeft(uint32 count);
+    void CopyTo(Array<_T, _Reserve>* otherArray);
 
     uint32 Find(const _T& value);
     // _Func = [capture](const _T& item)->bool
@@ -628,6 +629,20 @@ inline void Array<_T,_Reserve>::ShiftLeft(uint32 count)
     _count -= count;
     if (_count)
         memmove(_buffer, _buffer + sizeof(_T)*count, sizeof(_T)*_count);
+}
+
+template <typename _T, uint32 _Reserve>
+inline void Array<_T, _Reserve>::CopyTo(Array<_T, _Reserve>* otherArray)
+{
+    ASSERT(otherArray);
+
+    if (this->_capacity)
+        otherArray->Reserve(this->_capacity);
+
+    if (this->_count) {
+        otherArray->_count = this->_count;
+        memcpy(otherArray->_buffer, this->_buffer, sizeof(_T)*this->_count);
+    }
 }
 
 template <typename _T, uint32 _Reserve>

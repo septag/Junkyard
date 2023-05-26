@@ -287,7 +287,7 @@ FORCE_INLINE float mathFract(float _a)
     return _a - mathTrunc(_a);
 }
 
-// Returns the fl32ing-point remainder of the division operation _a/_b.
+// Returns the floating-point remainder of the division operation _a/_b.
 FORCE_INLINE float mathMod(float _a, float _b)
 {
     return _a - _b * mathFloor(_a / _b);

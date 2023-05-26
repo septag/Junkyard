@@ -607,7 +607,8 @@ void sysGetSysInfo(SysInfo* info)
 SysWin32Process::SysWin32Process() : 
     process(INVALID_HANDLE_VALUE),
     stdoutPipeRead(INVALID_HANDLE_VALUE),
-    stderrPipeRead(INVALID_HANDLE_VALUE)
+    stderrPipeRead(INVALID_HANDLE_VALUE),
+    outputPipeSize(0)
 {
 }
 
@@ -621,7 +622,7 @@ SysWin32Process::~SysWin32Process()
         CloseHandle(process);
 }
 
-bool SysWin32Process::Run(const char* cmdline, SysWin32ProcessFlags flags, uint32 outputPipeSize)
+bool SysWin32Process::Run(const char* cmdline, SysWin32ProcessFlags flags)
 {
     ASSERT(process == INVALID_HANDLE_VALUE);
 
@@ -633,15 +634,15 @@ bool SysWin32Process::Run(const char* cmdline, SysWin32ProcessFlags flags, uint3
         saAttr.nLength = sizeof(SECURITY_ATTRIBUTES); 
         saAttr.bInheritHandle = TRUE; 
 
-        if (!CreatePipe(&stdoutPipeRead, &stdOutPipeWrite, &saAttr, static_cast<DWORD>(outputPipeSize)))
+        if (!CreatePipe(&this->stdoutPipeRead, &stdOutPipeWrite, &saAttr, static_cast<DWORD>(this->outputPipeSize)))
             return false;
-        if (!SetHandleInformation(stdoutPipeRead, HANDLE_FLAG_INHERIT, 0))
+        if (!SetHandleInformation(this->stdoutPipeRead, HANDLE_FLAG_INHERIT, 0))
             return false;
 
         if ((flags & SysWin32ProcessFlags::StdErrOutput) == SysWin32ProcessFlags::StdErrOutput) {
-            if (!CreatePipe(&stderrPipeRead, &stdErrPipeWrite, &saAttr, static_cast<DWORD>(outputPipeSize)))
+            if (!CreatePipe(&this->stderrPipeRead, &stdErrPipeWrite, &saAttr, static_cast<DWORD>(this->outputPipeSize)))
                 return false;
-            if (!SetHandleInformation(stderrPipeRead, HANDLE_FLAG_INHERIT, 0))
+            if (!SetHandleInformation(this->stderrPipeRead, HANDLE_FLAG_INHERIT, 0))
                 return false;
         }
     }
@@ -677,7 +678,8 @@ bool SysWin32Process::Run(const char* cmdline, SysWin32ProcessFlags flags, uint3
     {
         createProcessFlags |= CREATE_NO_WINDOW;
     }
-    bool r = CreateProcessA(nullptr, cmdLineCopy, nullptr, nullptr, TRUE, createProcessFlags, NULL, NULL, &startInfo, &procInfo);
+    bool r = CreateProcessA(nullptr, cmdLineCopy, nullptr, nullptr, TRUE, createProcessFlags, NULL, 
+                            this->cwd.IsEmpty() ? nullptr : this->cwd.CStr(), &startInfo, &procInfo);
     memFree(cmdLineCopy);
     if (!r)
         return false;
@@ -690,7 +692,7 @@ bool SysWin32Process::Run(const char* cmdline, SysWin32ProcessFlags flags, uint3
             CloseHandle(stdErrPipeWrite);
     }
 
-    process = procInfo.hProcess;
+    this->process = procInfo.hProcess;
 
     return true;
 }
@@ -753,8 +755,8 @@ bool SysWin32Process::GetStdOutText(char** outString, uint32* outStringLen, Allo
 bool SysWin32Process::GetStdErrText(char** outString, uint32* outStringLen, Allocator* alloc)
 {
     return stderrPipeRead != INVALID_HANDLE_VALUE ? 
-        SysWin32ProcessReadStdInternal((HANDLE)stderrPipeRead, outString, outStringLen, alloc) : 
-        SysWin32ProcessReadStdInternal((HANDLE)stdoutPipeRead, outString, outStringLen, alloc);
+        SysWin32ProcessReadStdInternal((HANDLE)this->stderrPipeRead, outString, outStringLen, alloc) : 
+        SysWin32ProcessReadStdInternal((HANDLE)this->stdoutPipeRead, outString, outStringLen, alloc);
 }
     
 void SysWin32Process::WaitOnAll(const SysWin32Process* processes, uint32 numProcesses, uint32 timeoutMs)

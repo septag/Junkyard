@@ -57,24 +57,12 @@ static constexpr uint32 kTempPageSize = 256*kKB;
 static constexpr float  kTempValidateResetTime = 5.0f;
 static constexpr uint32 kTempMaxStackframes = 8;
 
-static constexpr size_t kFrameMaxBufferSize = 2*kGB;
-static constexpr uint32 kFramePageSize = 256*kKB;
-static constexpr uint32 kFramePeaksCount = 4;
-
 struct MemHeapAllocator final : Allocator 
 {
     void* Malloc(size_t size, uint32 align) override;
     void* Realloc(void* ptr, size_t size, uint32 align) override;
     void  Free(void* ptr, uint32 align) override;
     AllocatorType GetType() const override { return AllocatorType::Heap; }
-};
-
-struct MemFrameAllocator : Allocator 
-{
-    void* Malloc(size_t size, uint32 align) override;
-    void* Realloc(void* ptr, size_t size, uint32 align) override;
-    void  Free(void* ptr, uint32 align) override;
-    AllocatorType GetType() const override { return AllocatorType::Frame; }
 };
 
 struct MemTempStack
@@ -109,35 +97,12 @@ struct MemTempContext
     ~MemTempContext();
 };
 
-struct MemFrameAllocatorInternal final : MemFrameAllocator
-{
-    MemFrameAllocatorInternal();
-    ~MemFrameAllocatorInternal();
-
-    void Initialize();
-    void Release();
-
-    size_t curFramePeak = 0;
-    size_t peakBytes = 0;
-    size_t framePeaks[kTempFramePeaksCount];
-    uint32 resetCount;
-
-    uint8* buffer = nullptr;
-    size_t bufferSize = 0;
-    size_t offset = 0;
-    void* lastAllocatedPtr = 0;
-    Array<_private::MemDebugPointer> debugPointers;
-    AtomicLock spinlock;
-    bool debugMode = false;
-};
-
 struct MemState
 {
     MemFailCallback  memFailFn			= nullptr;
     void* 			 memFailUserdata	= nullptr;
     Allocator*		 defaultAlloc       = &heapAlloc;
     MemHeapAllocator heapAlloc;
-    MemFrameAllocatorInternal frameAlloc;
     size_t           pageSize           = sysGetPageSize();
     Mutex            tempMtx;
     Array<MemTempContext*> tempCtxs; 
@@ -414,7 +379,7 @@ void* memAllocTempZero(MemTempId id, size_t size, uint32 align)
     return ptr;
 }
 
-void _private::memTempReset(float dt)
+void memTempReset(float dt)
 {
     MutexScope mtx(gMem.tempMtx);
     for (uint32 i = 0; i < gMem.tempCtxs.Count(); i++) {
@@ -554,97 +519,96 @@ inline void MemHeapAllocator::Free(void* ptr, uint32 align)
 
 //------------------------------------------------------------------------
 // Frame allocator
-void MemFrameAllocatorInternal::Initialize()
+void MemLinearVMAllocator::Initialize(size_t reserveSize_, size_t pageSize_, bool debugMode_)
 {
+    this->debugMode = debugMode_;
+
     // We use RAII reserve/release here because FrameAllocator remains during the lifetime of the program
-    if (!this->debugMode)
-        this->buffer = (uint8*)memVirtualReserve(kFrameMaxBufferSize);
+    if (!debugMode_) {
+        ASSERT(reserveSize_);
+        ASSERT(pageSize_);
+
+        this->buffer = (uint8*)memVirtualReserve(reserveSize_);
+        if (!this->buffer) 
+            MEMORY_FAIL();
+
+        this->pageSize = pageSize_;
+        this->reserveSize = reserveSize_;
+    }
+    else {
+        this->debugPointers = NEW(gMem.defaultAlloc, Array<_private::MemDebugPointer>);
+    }
 }
 
-void MemFrameAllocatorInternal::Release()
+void MemLinearVMAllocator::Release()
 {
     if (this->buffer) {
-        if (this->bufferSize)
-            memVirtualDecommit(this->buffer, this->bufferSize);
-        memVirtualRelease(this->buffer, this->bufferSize);
+        if (this->commitSize)
+            memVirtualDecommit(this->buffer, this->commitSize);
+        memVirtualRelease(this->buffer, this->reserveSize);
     }
-
+    
     if (this->debugMode) {
-        for (_private::MemDebugPointer p : this->debugPointers)
+        for (_private::MemDebugPointer p : *this->debugPointers)
             gMem.defaultAlloc->Free(p.ptr, p.align);
-        this->debugPointers.Free();
+        this->debugPointers->Free();
+        memFree(this->debugPointers, gMem.defaultAlloc);
     }
 }
 
-MemFrameAllocatorInternal::MemFrameAllocatorInternal()
-{
-    Initialize();
-}
-
-MemFrameAllocatorInternal::~MemFrameAllocatorInternal()
-{
-    Release();
-}
-
-void* MemFrameAllocator::Malloc(size_t size, uint32 align)
+void* MemLinearVMAllocator::Malloc(size_t size, uint32 align)
 {
     return Realloc(nullptr, size, align);
 }
 
-void* MemFrameAllocator::Realloc(void* ptr, size_t size, uint32 align)
+void* MemLinearVMAllocator::Realloc(void* ptr, size_t size, uint32 align)
 {
     ASSERT(size);
 
-    MemFrameAllocatorInternal& alloc = gMem.frameAlloc;
-
-    if (!alloc.debugMode) {
-        AtomicLockScope lock(alloc.spinlock);
+    if (!this->debugMode) {
         align = Max(align, CONFIG_MACHINE_ALIGNMENT);
         size = AlignValue<size_t>(size, align);
 
         // For a common case that we call realloc several times (dynamic Arrays), we can reuse the last allocated pointer
         void* newPtr = nullptr;
         size_t lastSize = 0;
-        if (ptr && alloc.lastAllocatedPtr == ptr) {
+        if (ptr && this->lastAllocatedPtr == ptr) {
             lastSize = *((size_t*)ptr - 1);
             ASSERT(size > lastSize);
             newPtr = ptr;
         }
 
         // align to requested alignment
-        size_t offset = alloc.offset;
+        size_t offset_ = this->offset;
         if (newPtr == nullptr) {
-            offset += sizeof(size_t);
-            if (offset % align != 0) 
-                offset = AlignValue<size_t>(offset, align);
+            offset_ += sizeof(size_t);
+            if (offset_ % align != 0) 
+                offset_ = AlignValue<size_t>(offset_, align);
         }
         else {
-            ASSERT(offset % align == 0);
+            ASSERT(offset_ % align == 0);
         }
     
-        size_t endOffset = offset + (size - lastSize);
+        size_t endOffset = offset_ + (size - lastSize);
 
-        if (endOffset > kFrameMaxBufferSize) {
+        if (endOffset > this->reserveSize) {
             MEMORY_FAIL();
             return nullptr;
         }
 
         // Grow the buffer if necessary (double size policy)
-        if (endOffset > alloc.bufferSize) {
-            size_t newSize = Clamp(alloc.bufferSize ? alloc.bufferSize << 1 : kFramePageSize, endOffset, kFrameMaxBufferSize);
+        if (endOffset > this->commitSize) {
+            size_t newSize = endOffset;
 
             // Align grow size to page size for virtual memory commit
-            size_t growSize = AlignValue(newSize - alloc.bufferSize, gMem.pageSize);
-            memVirtualCommit(alloc.buffer + alloc.bufferSize, growSize);
-            alloc.bufferSize += growSize;
+            size_t growSize = AlignValue(newSize - this->commitSize, this->pageSize);
+            memVirtualCommit(this->buffer + this->commitSize, growSize);
+            this->commitSize += growSize;
         }
-
-        alloc.curFramePeak = Max<size_t>(alloc.curFramePeak, endOffset);
-        alloc.peakBytes = Max<size_t>(alloc.peakBytes, endOffset);
 
         // Create the pointer if we are not re-using the previous one
         if (!newPtr) {
-            newPtr = alloc.buffer + offset;
+            newPtr = this->buffer + offset_;
 
             // we are not re-using the previous allocation, memcpy the previous block in case of realloc
             if (ptr)
@@ -652,8 +616,8 @@ void* MemFrameAllocator::Realloc(void* ptr, size_t size, uint32 align)
         }
 
         *((size_t*)newPtr - 1) = size;
-        alloc.offset = endOffset;
-        alloc.lastAllocatedPtr = newPtr;
+        this->offset = endOffset;
+        this->lastAllocatedPtr = newPtr;
         return newPtr;
     }
     else {
@@ -662,89 +626,34 @@ void* MemFrameAllocator::Realloc(void* ptr, size_t size, uint32 align)
         else
             ptr = gMem.defaultAlloc->Realloc(ptr, size, align);
 
-        if (ptr) {
-            AtomicLockScope lock(alloc.spinlock);
-            alloc.offset += size;
-            alloc.peakBytes = Max<size_t>(alloc.peakBytes, alloc.offset);
-            alloc.debugPointers.Push(_private::MemDebugPointer {ptr, align});
-        }
+        if (ptr)
+            this->debugPointers->Push(_private::MemDebugPointer {ptr, align});
         return ptr;
     }
 }
 
-void MemFrameAllocator::Free(void*, uint32)
+void MemLinearVMAllocator::Free(void*, uint32)
 {
     // No free in frame allocator!
 }
 
-void memFrameSetDebugMode(bool enable)
+void MemLinearVMAllocator::Reset()
 {
-    MemFrameAllocatorInternal& alloc = gMem.frameAlloc;
-    AtomicLockScope lock(alloc.spinlock);
-    ASSERT_MSG(alloc.offset == 0, "Frame allocator must be at reset state when changing mode");
-    if (alloc.debugMode != enable) {
-        alloc.Release();
-        alloc.debugMode = enable;
-        alloc.Initialize();
-    }
-}
-
-Allocator* memFrameAlloc()
-{
-    return &gMem.frameAlloc;
-}
-
-MemTransientAllocatorStats memFrameGetStats()
-{
-    return MemTransientAllocatorStats {
-        .curPeak = gMem.frameAlloc.curFramePeak,
-        .maxPeak = gMem.frameAlloc.peakBytes
-    };
-}
-
-void _private::memFrameReset()
-{
-    MemFrameAllocatorInternal& alloc = gMem.frameAlloc;
-
-    AtomicLockScope lock(alloc.spinlock);
-    if (!alloc.debugMode) {
+    if (!this->debugMode) {
         // Invalidate already allocated memory, so we can have better debugging if something is still lingering 
-        if (alloc.offset)
-            memset(alloc.buffer, 0xfe, alloc.offset);
+        if (this->offset)
+            memset(this->buffer, 0xfe, this->offset);
 
-        alloc.lastAllocatedPtr = nullptr;
-        alloc.offset = 0;
-
-        alloc.framePeaks[alloc.resetCount] = alloc.curFramePeak;
-        alloc.resetCount = (alloc.resetCount + 1) % kFramePeaksCount;
-        alloc.curFramePeak = 0;
-
-        // resize buffer to the maximum of the last 4 frames peak allocations
-        // So based on the last frames activity, we might grow or shrink the temp buffer
-        size_t maxPeakSize = 0;
-        for (uint32 k = 0; k < kFramePeaksCount; k++) {
-            if (alloc.framePeaks[k] > maxPeakSize) 
-                maxPeakSize = alloc.framePeaks[k];
-        }
-
-        maxPeakSize = Max<size_t>(kFramePageSize, maxPeakSize);
-        maxPeakSize = AlignValue(maxPeakSize, gMem.pageSize);
-        if (maxPeakSize > alloc.bufferSize) {
-            size_t growSize = maxPeakSize - alloc.bufferSize;
-            memVirtualCommit(alloc.buffer + alloc.bufferSize, growSize);
-        }
-        else if (maxPeakSize < alloc.bufferSize) {
-            size_t shrinkSize = alloc.bufferSize - maxPeakSize;
-            memVirtualDecommit(alloc.buffer + maxPeakSize, shrinkSize);
-        }
-        alloc.bufferSize = maxPeakSize;
+        this->lastAllocatedPtr = nullptr;
+        this->offset = 0;
+        this->commitSize = 0;
     }
     else {
-        alloc.offset = 0;
+        this->offset = 0;
 
-        for (_private::MemDebugPointer& dbgPtr : alloc.debugPointers) 
+        for (_private::MemDebugPointer& dbgPtr : *this->debugPointers) 
             gMem.defaultAlloc->Free(dbgPtr.ptr, dbgPtr.align);
-        alloc.debugPointers.Clear();
+        this->debugPointers->Clear();
     }
 }
 
@@ -842,7 +751,7 @@ void MemBudgetAllocator::Release()
         memVirtualRelease(_buffer, _maxSize);
     }
 
-    if (_debugPointers) {
+    if (_debugMode) {
         for (_private::MemDebugPointer p: *_debugPointers)
             gMem.defaultAlloc->Free(p.ptr, p.align);
         _debugPointers->Free();

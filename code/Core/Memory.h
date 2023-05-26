@@ -23,7 +23,7 @@ enum class AllocatorType
     Unknown,
     Heap,       // Normal malloc/free heap allocator
     Temp,       // Stack-based temp allocator. Grows by page. Only works within a single thread context and function scopes.
-    Frame,      // Linear-based frame allocator. Grows by page. Resets every frame. Only works within a single thread context.
+    LinearVM,   // Linear-based VM backed allocator. Fixed capacity. Grows page by page
     Budget,     // Linear-based budget allocator. Fixed capacity. Persists in memory in a higher lifetime
     Tlsf        // TLSF dynamic allocator. Fixed capacity. Persists in memory and usually used for subsystems with unknown memory allocation pattern.
 };
@@ -83,11 +83,12 @@ struct MemTransientAllocatorStats
 //------------------------------------------------------------------------
 // Temp Allocator: Stack-based temp allocator. Grows by page. Only works within a single thread context.
 using MemTempId = uint32;
-[[nodiscard]] MemTempId memTempPushId();
-void memTempPopId(MemTempId id);
-void memTempSetDebugMode(bool enable);
-void memTempSetCaptureStackTrace(bool capture);
-void memTempGetStats(Allocator* alloc, MemTransientAllocatorStats** outStats, uint32* outCount);
+API [[nodiscard]] MemTempId memTempPushId();
+API void memTempPopId(MemTempId id);
+API void memTempSetDebugMode(bool enable);
+API void memTempSetCaptureStackTrace(bool capture);
+API void memTempGetStats(Allocator* alloc, MemTransientAllocatorStats** outStats, uint32* outCount);
+API void memTempReset(float dt);
 
 [[nodiscard]] void* memAllocTemp(MemTempId id, size_t size, uint32 align = CONFIG_MACHINE_ALIGNMENT);
 [[nodiscard]] void* memReallocTemp(MemTempId id, void* ptr, size_t size, uint32 align = CONFIG_MACHINE_ALIGNMENT);
@@ -127,19 +128,35 @@ private:
 };
 
 //------------------------------------------------------------------------
-// Frame Allocator: Linear-based frame allocator. Grows by page. Resets every frame. 
-//                  Unlike temp allocator, allocations are thread-safe and available within all threads
-void memFrameSetDebugMode(bool enable);
-Allocator* memFrameAlloc();
-MemTransientAllocatorStats memFrameGetStats();
-
-namespace _private 
+// Linear virtual-mem allocator: Linear-based allocator backed by VMem. Grows by page size. reserve a large size upfront
+struct MemLinearVMAllocator final : Allocator
 {
-    void memFrameReset();
-}
+    void Initialize(size_t reserveSize, size_t pageSize, bool debugMode = false);
+    void Release();
+    void Reset();
+
+    [[nodiscard]] void* Malloc(size_t size, uint32 align = CONFIG_MACHINE_ALIGNMENT) override;
+    [[nodiscard]] void* Realloc(void* ptr, size_t size, uint32 align = CONFIG_MACHINE_ALIGNMENT) override;
+    void  Free(void* ptr, uint32 align = CONFIG_MACHINE_ALIGNMENT) override;
+    AllocatorType GetType() const override { return AllocatorType::Budget; }
+
+    size_t GetReservedSize() const { return this->reserveSize; }
+    size_t GetAllocatedSize() const { return this->offset; }
+    size_t GetCommitedSize() const { return this->commitSize; }
+
+    uint8* buffer = nullptr;
+    size_t commitSize = 0;
+    size_t offset = 0;
+    size_t pageSize = 0;
+    size_t reserveSize = 0;
+    void* lastAllocatedPtr = 0;
+    Array<_private::MemDebugPointer, 8>* debugPointers = nullptr;
+    bool debugMode = false;
+};
 
 //------------------------------------------------------------------------
 // Budget allocator: Linear-based budget allocator. Fixed capacity. Persists in memory in a higher lifetime
+//  NOTE: If you attempt to realloc a pointer with budget allocator, you will get an ASSERT failure, because Budget allocators are not meant for that
 struct MemBudgetAllocator final : Allocator
 {
     explicit MemBudgetAllocator(const char* name);
@@ -164,7 +181,7 @@ private:
     size_t _pageSize = 0;   
     char   _name[32];
     bool   _debugMode = false;
-    Array<_private::MemDebugPointer, 8>* _debugPointers;
+    Array<_private::MemDebugPointer, 8>* _debugPointers = nullptr;
 };
 
 //------------------------------------------------------------------------
@@ -203,11 +220,6 @@ struct MemTlsfAllocator_ThreadSafe final : MemTlsfAllocator
 protected:
     AtomicLock _lock;    
 };
-
-namespace _private
-{
-    void memTempReset(float dt);
-}
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 // inline implementation
