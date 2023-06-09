@@ -217,6 +217,7 @@
     <ClInclude Include="..\..\..\code\Graphics\Shader.h">
       <Filter>Graphics</Filter>
     </ClInclude>
+    <ClInclude Include="..\..\..\code\JunkyardSettings.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\..\..\code\External\imgui\imgui.cpp">
@@ -353,6 +354,7 @@
     <ClCompile Include="..\..\..\code\Engine.cpp" />
     <ClCompile Include="..\..\..\code\RemoteServices.cpp" />
     <ClCompile Include="..\..\..\code\VirtualFS.cpp" />
+    <ClCompile Include="..\..\..\code\JunkyardSettings.cpp" />
   </ItemGroup>
   <ItemGroup>
     <FxCompile Include="..\..\..\code\Shaders\ImGui.hlsl">

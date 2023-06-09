@@ -388,7 +388,8 @@ enum class SysWin32ProcessFlags
     None = 0,
     CaptureOutput = 0x1,
     StdErrOutput = 0x2,
-    BatchFile = 0x4
+    BatchFile = 0x4,
+    Detach = 0x8
 };
 ENABLE_BITMASK(SysWin32ProcessFlags);
 

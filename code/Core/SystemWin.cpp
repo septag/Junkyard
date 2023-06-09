@@ -669,16 +669,25 @@ bool SysWin32Process::Run(const char* cmdline, SysWin32ProcessFlags flags)
     }
 
     DWORD createProcessFlags = 0;
+    BOOL inheritHandles = TRUE;
+
     if ((flags & SysWin32ProcessFlags::BatchFile) == SysWin32ProcessFlags::BatchFile &&
         (flags & SysWin32ProcessFlags::CaptureOutput) != SysWin32ProcessFlags::CaptureOutput)
     {
         createProcessFlags |= CREATE_NEW_CONSOLE;
+        inheritHandles = FALSE;
     }
     else if ((flags & SysWin32ProcessFlags::CaptureOutput) == SysWin32ProcessFlags::CaptureOutput)
     {
         createProcessFlags |= CREATE_NO_WINDOW;
     }
-    bool r = CreateProcessA(nullptr, cmdLineCopy, nullptr, nullptr, TRUE, createProcessFlags, NULL, 
+
+    if ((flags & SysWin32ProcessFlags::Detach) == SysWin32ProcessFlags::Detach) {
+        createProcessFlags |= DETACHED_PROCESS;
+        inheritHandles = FALSE;
+    }
+
+    bool r = CreateProcessA(nullptr, cmdLineCopy, nullptr, nullptr, inheritHandles, createProcessFlags, NULL, 
                             this->cwd.IsEmpty() ? nullptr : this->cwd.CStr(), &startInfo, &procInfo);
     memFree(cmdLineCopy);
     if (!r)

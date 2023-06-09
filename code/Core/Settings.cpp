@@ -97,7 +97,7 @@ static bool settingsLoadFromINIInternal(const Blob& blob)
                 strTrim(keyTrimmed, sizeof(keyTrimmed), key);
                 strTrim(valueTrimmed, sizeof(valueTrimmed), value);
 
-                bool predefined = foundCatId != UINT32_MAX ? callbacks->ParseSetting(foundCatId, sectionName, value) : false;
+                bool predefined = foundCatId != UINT32_MAX ? callbacks->ParseSetting(foundCatId, keyTrimmed, valueTrimmed) : false;
 
                 // if doesn't exist in the predefined settings, add to the general settings
                 if (!predefined)

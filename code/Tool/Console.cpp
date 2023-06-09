@@ -225,6 +225,8 @@ bool _private::conInitialize()
             SysWin32ProcessFlags flags = SysWin32ProcessFlags::None;
             if (ext.IsEqualNoCase(".bat") || ext.IsEqualNoCase(".cmd"))
                 flags |= SysWin32ProcessFlags::BatchFile;
+            else
+                flags |= SysWin32ProcessFlags::Detach;
 
             char* cmdline;
             uint32 cmdlineSize;
@@ -257,6 +259,8 @@ bool _private::conInitialize()
                 SysWin32ProcessFlags flags = SysWin32ProcessFlags::None;
                 if (ext.IsEqualNoCase(".bat") || ext.IsEqualNoCase(".cmd"))
                     flags |= SysWin32ProcessFlags::BatchFile;
+                else
+                    flags |= SysWin32ProcessFlags::Detach;
 
                 char* cmdline;
                 uint32 cmdlineSize;

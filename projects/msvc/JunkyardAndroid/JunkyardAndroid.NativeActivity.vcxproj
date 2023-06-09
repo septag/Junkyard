@@ -64,6 +64,7 @@
     <ClInclude Include="..\..\..\code\Graphics\ImGuiWrapper.h" />
     <ClInclude Include="..\..\..\code\Graphics\Model.h" />
     <ClInclude Include="..\..\..\code\Graphics\Shader.h" />
+    <ClInclude Include="..\..\..\code\JunkyardSettings.h" />
     <ClInclude Include="..\..\..\code\RemoteServices.h" />
     <ClInclude Include="..\..\..\code\Tool\Console.h" />
     <ClInclude Include="..\..\..\code\Tool\ImageEncoder.h" />
@@ -153,6 +154,7 @@
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='ReleaseDev|ARM64'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">true</ExcludedFromBuild>
     </ClCompile>
+    <ClCompile Include="..\..\..\code\JunkyardSettings.cpp" />
     <ClCompile Include="..\..\..\code\RemoteServices.cpp" />
     <ClCompile Include="..\..\..\code\Tests\AssetTest.cpp">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">true</ExcludedFromBuild>
