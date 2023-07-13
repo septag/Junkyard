@@ -7,7 +7,11 @@
 #include <pthread.h>            // pthread_t and family
 #include <sys/types.h>
 #include <sys/socket.h>         // socket funcs
-#include <sys/prctl.h>          // prctl
+#if PLATFORM_ANDROID || PLATFORM_LINUX
+    #include <sys/prctl.h>          // prctl
+#else
+    #include <sched.h>
+#endif
 #include <sys/stat.h>           // stat
 #include <sys/mman.h>           // mmap/munmap/mprotect/..
 #include <limits.h> 
@@ -26,11 +30,11 @@
 #include "Log.h"
 
 // "Adaptive" mutex implementation using early spinlock
-struct MutexImpl 
+struct alignas(64) MutexImpl
 {
+    atomicUint32 spinlock;
     pthread_mutex_t handle;
     uint32 spinCount;
-    alignas(64) atomicUint32 spinlock;
 };
 
 struct SemaphoreImpl
@@ -178,38 +182,48 @@ bool Thread::IsStopped()
     return atomicLoad32Explicit(&thrd->stopped, AtomicMemoryOrder::Acquire) == 1;
 }
 
-void Thread::SetPriority(ThreadPriority prio)
+static void threadSetPriority(pthread_t threadHandle, ThreadPriority prio)
 {
-    ThreadImpl* thrd = reinterpret_cast<ThreadImpl*>(this->data);
+    sched_param param {};
 
-    int prioPosix = 0;
-    int policy = SCHED_NORMAL;
+    int policy = SCHED_OTHER;
+    int prioMax = sched_get_priority_max(SCHED_RR);
+    int prioMin = sched_get_priority_min(SCHED_RR);
+    int prioNormal = prioMin + (prioMax - prioMin) / 2;
 
+    #if PLATFORM_APPLE
+        int policyIdle = SCHED_RR;
+        int prioIdle = prioMin;
+        prioMin = prioMin + (prioNormal - prioMin)/2;
+    #else
+        int policyIdle = SCHED_IDLE;
+        int prioIdle = 0;
+    #endif
+    
     switch (prio) {
-    case ThreadPriority::Normal:    prioPosix = 0; policy = SCHED_NORMAL; break;
-    case ThreadPriority::Idle:      prioPosix = 0; policy = SCHED_IDLE; break;
-    case ThreadPriority::Realtime:  prioPosix = 0; policy = SCHED_RR; break;
-    case ThreadPriority::High:      prioPosix = sched_get_priority_max(SCHED_NORMAL); policy = SCHED_NORMAL; break;
-    case ThreadPriority::Low:       prioPosix = sched_get_priority_min(SCHED_NORMAL); policy = SCHED_NORMAL; break;
+    case ThreadPriority::Normal:    policy = SCHED_RR; param.sched_priority = prioNormal; break;
+    case ThreadPriority::Idle:      policy = policyIdle; param.sched_priority = prioIdle; break;
+    case ThreadPriority::Realtime:  policy = SCHED_RR; param.sched_priority = prioMax; break;
+    case ThreadPriority::High:      policy = SCHED_RR; param.sched_priority = prioNormal + (prioMax - prioNormal)/2; break;
+    case ThreadPriority::Low:       policy = SCHED_RR; param.sched_priority = prioMin; break;
     }
 
-    #if PLATFORM_ANDROID
-        if (prio == ThreadPriority::Realtime) {
-            prioPosix = sched_get_priority_max(SCHED_NORMAL);
-            policy = SCHED_NORMAL;
-        }
-    #endif
+    [[maybe_unused]] int r = pthread_setschedparam(threadHandle, policy, &param);
+    ASSERT_ALWAYS(r != -1, "pthread_setschedparam failed: %d", errno);
+}
 
-    sched_param sParam { .sched_priority = prioPosix };
-    pid_t tId = thrd->tId;
-
-    [[maybe_unused]] int r = sched_setscheduler(tId, policy, &sParam);
-    ASSERT_ALWAYS(r != -1, "sched_setscheduler failed: %d", errno);
+void Thread::SetPriority(ThreadPriority prio)
+{
+    threadSetPriority(reinterpret_cast<ThreadImpl*>(this->data)->handle, prio);
 }
 
 void threadSetCurrentThreadName(const char* name)
 {
-    prctl(PR_SET_NAME, name, 0, 0, 0);
+    #if PLATFORM_APPLE
+        pthread_setname_np(name);
+    #else
+        prctl(PR_SET_NAME, name, 0, 0, 0);
+    #endif
 
     #ifdef TRACY_ENABLE
         TracyCSetThreadName(name);
@@ -219,7 +233,13 @@ void threadSetCurrentThreadName(const char* name)
 void threadGetCurrentThreadName(char* nameOut, [[maybe_unused]] uint32 nameSize)
 {
     ASSERT(nameSize > 16);
-    prctl(PR_GET_NAME, nameOut, 0, 0, 0);
+    
+    #if PLATFORM_APPLE
+        pthread_getname_np(pthread_self(), nameOut, nameSize);
+    #else
+        prctl(PR_GET_NAME, nameOut, 0, 0, 0);
+    #endif
+    
 }
 
 void threadYield()
@@ -233,6 +253,8 @@ uint32 threadGetCurrentId()
         return static_cast<uint32>((pid_t)syscall(SYS_gettid));
     #elif PLATFORM_ANDROID
         return static_cast<uint32>(gettid());
+    #elif PLATFORM_APPLE
+        return pthread_mach_thread_np(pthread_self());
     #else
         #error "Not implemented"
     #endif
@@ -247,28 +269,7 @@ void threadSleep(uint32 msecs)
 
 void threadSetCurrentThreadPriority(ThreadPriority prio)
 {
-    int prioPosix = 0;
-    int policy = SCHED_NORMAL;
-
-    switch (prio) {
-    case ThreadPriority::Normal:    prioPosix = 0; policy = SCHED_NORMAL; break;
-    case ThreadPriority::Idle:      prioPosix = 0; policy = SCHED_IDLE; break;
-    case ThreadPriority::Realtime:  prioPosix = 0; policy = SCHED_RR; break;
-    case ThreadPriority::High:      prioPosix = sched_get_priority_max(SCHED_NORMAL); policy = SCHED_NORMAL; break;
-    case ThreadPriority::Low:       prioPosix = sched_get_priority_min(SCHED_NORMAL); policy = SCHED_NORMAL; break;
-    }
-
-    #if PLATFORM_ANDROID
-        if (prio == ThreadPriority::Realtime) {
-            prioPosix = sched_get_priority_max(SCHED_NORMAL);
-            policy = SCHED_NORMAL;
-        }
-    #endif
-
-    sched_param sParam { .sched_priority = prioPosix };
-
-    [[maybe_unused]] int r = sched_setscheduler(0, policy, &sParam);
-    ASSERT_ALWAYS(r != -1, "sched_setscheduler failed: %d", errno);
+    threadSetPriority(pthread_self(), prio);
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -337,6 +338,7 @@ bool Mutex::TryEnter()
     return pthread_mutex_trylock(&_m->handle) == 0;
 }
 
+#if !PLATFORM_APPLE
 //------------------------------------------------------------------------
 // Semaphore
 void Semaphore::Initialize()
@@ -399,6 +401,7 @@ bool Semaphore::Wait(uint32 msecs)
     r = pthread_mutex_unlock(&_sem->mutex);
     return ok;
 }
+#endif // PLATFORM_APPLE
 
 //--------------------------------------------------------------------------------------------------
 // Signal
@@ -529,6 +532,7 @@ void Signal::Set(int value)
     pthread_mutex_unlock(&_sig->mutex);
 }
 
+#if !PLATFORM_APPLE
 //--------------------------------------------------------------------------------------------------
 // Timer
 struct TimerState
@@ -552,6 +556,7 @@ uint64 timerGetTicks()
     clock_gettime(CLOCK_MONOTONIC, &ts);
     return ((uint64)ts.tv_sec*1000000000 + (uint64)ts.tv_nsec) - gTimer.start;
 }
+#endif
 
 DLLHandle sysLoadDLL(const char* filepath, char** pErrorMsg)
 {
@@ -751,7 +756,7 @@ bool File::Open(const char* filepath, FileOpenFlags flags)
         return false;
 
     #if PLATFORM_APPLE
-        if (flags & FileOpenFlags::Nocache) {
+        if ((flags & FileOpenFlags::NoCache) == FileOpenFlags::NoCache) {
             if (fcntl(fileId, F_NOCACHE) != 0) {
                 return false;
             }
@@ -1017,7 +1022,7 @@ uint32 SocketTCP::Write(const void* src, uint32 size)
     uint32 totalBytesSent = 0;
 
     while (size > 0) {
-        int bytesSent = send(this->s, reinterpret_cast<const char*>(src) + totalBytesSent, size, 0);
+        int bytesSent = (int)send(this->s, reinterpret_cast<const char*>(src) + totalBytesSent, size, 0);
         if (bytesSent == 0) {
             break;
         }
@@ -1044,7 +1049,7 @@ uint32 SocketTCP::Read(void* dst, uint32 dstSize)
     ASSERT(IsValid());
     ASSERT(this->live);
 
-    int bytesRecv = recv(this->s, reinterpret_cast<char*>(dst), dstSize, 0);
+    int bytesRecv = (int)recv(this->s, reinterpret_cast<char*>(dst), dstSize, 0);
     if (bytesRecv == -1) {
         this->errCode = _private::socketTranslatePlatformErrorCode();
         if (this->errCode == SocketErrorCode::SocketShutdown ||

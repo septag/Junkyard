@@ -204,6 +204,8 @@ API char* pathGetMyPath(char* dst, size_t dstSize);
 API char* pathAbsolute(const char* path, char* dst, size_t dstSize);
 API char* pathGetCurrentDir(char* dst, size_t dstSize);
 API void  pathSetCurrentDir(const char* path);
+API char* pathGetHomeDir(char* dst, size_t dstSize);
+API char* pathGetCacheDir(char* dst, size_t dstSize, const char* appName);
 API char* pathToUnix(const char* path, char* dst, size_t dstSize);
 API char* pathToWin(const char* path, char* dst, size_t dstSize);
 API char* pathFileExtension(const char* path, char* dst, size_t dstSize);
@@ -380,47 +382,71 @@ API void* sysSymbolAddress(DLLHandle dll, const char* symbolName);
 API size_t sysGetPageSize();
 API void sysGetSysInfo(SysInfo* info);
 API bool sysIsDebuggerPresent();
+API void sysGenerateCmdLineFromArgcArgv(int argc, const char* argv[], char** outString, uint32* outStringLen, 
+                                        Allocator* alloc = memDefaultAlloc(), const char* prefixCmd = nullptr);
 
-// Platform specific 
-#if PLATFORM_WINDOWS
-enum class SysWin32ProcessFlags
+
+#if PLATFORM_DESKTOP
+enum class SysProcessFlags : uint32
 {
     None = 0,
     CaptureOutput = 0x1,
-    StdErrOutput = 0x2,
-    BatchFile = 0x4,
-    Detach = 0x8
+    InheritHandles = 0x2,
+    DontCreateConsole = 0x4,
+    ForceCreateConsole = 0x8
 };
-ENABLE_BITMASK(SysWin32ProcessFlags);
+ENABLE_BITMASK(SysProcessFlags);
 
-struct SysWin32Process
+struct SysProcess
 {
-    SysWin32Process();
-    ~SysWin32Process();
+    SysProcess();
+    ~SysProcess();
 
-    bool Run(const char* cmdline, SysWin32ProcessFlags flags);
-    bool Wait(uint32 timeoutMs = UINT32_MAX) const;
-    bool IsRunning() const { return !Wait(0); }
+    bool Run(const char* cmdline, SysProcessFlags flags, const char* cwd = nullptr);
+    void Wait() const;
+    bool IsRunning() const;
 
-    uint32 GetReturnCode() const;
-    bool GetStdOutText(char** outString, uint32* outStringLen, Allocator* alloc = memDefaultAlloc()); 
-    bool GetStdErrText(char** outString, uint32* outStringLen, Allocator* alloc = memDefaultAlloc());
+    int GetExitCode() const;
+    uint32 ReadStdOut(void* data, uint32 size) const;
+    uint32 ReadStdErr(void* data, uint32 size) const;
+
+private:
+    void* process;
+    void* stdoutPipeRead;
+    void* stderrPipeRead;
     
-    static void WaitOnAll(const SysWin32Process* processes, uint32 numProcesses, uint32 timeoutMs = UINT32_MAX);
-    static void GenerateCmdLineFromArgcArgv(int argc, const char* argv[], char** outString, uint32* outStringLen, 
-                                            Allocator* alloc = memDefaultAlloc());
-
-    void* process;              // HANDLE
-    void* stdoutPipeRead;       // HANDLE
-    void* stderrPipeRead;       // HANDLE
-    Path cwd;
-    uint32 outputPipeSize;
+#if PLATFORM_POSIX
+    int exitCode;
+    int termSignalCode;
+#endif
 };
+
+#endif // PLATFORM_DESKTOP
+
+// Platform specific 
+#if PLATFORM_WINDOWS
 
 API bool sysWin32IsProcessRunning(const char* execName);
 API bool sysWin32GetRegisterLocalMachineString(const char* subkey, const char* value, char* dst, size_t dstSize);
 API void sysWin32PrintToDebugger(const char* text);
+
+enum class SysWin32Folder
+{
+    Documents = 0,  // %USERPROFILE%\My Documents
+    Fonts,          // %windir%\Fonts
+    Downloads,      // %USERPROFILE%\Downloads
+    AppData,        // %USERPROFILE%\AppData\Roaming
+    LocalAppData,   // %USERPROFILE%\AppData\Local
+    ProgramFiles,   // %SystemDrive%\Program Files
+    System,         // %windir%\system32
+    Startup,        // %APPDATA%\Microsoft\Windows\Start Menu\Programs\StartUp
+    Desktop,        // %USERPROFILE%\Desktop
+    _Count
+};
+API char* pathWin32GetFolder(SysWin32Folder folder, char* dst, size_t dstSize);
+
 #elif PLATFORM_ANDROID  
+
 typedef struct ANativeActivity ANativeActivity; // <android/native_activity.h>
 
 enum class SysAndroidLogType 
@@ -441,6 +467,11 @@ API JNIEnv* sysAndroidAcquireJniEnv(ANativeActivity* activity);
 API void sysAndroidReleaseJniEnv(ANativeActivity* activity);    
 API JNIEnv* sysAndroidGetJniEnv();
 API Path sysAndroidGetCacheDirectory(ANativeActivity* activity);
+
+#elif PLATFORM_OSX
+
+void sysApplePrintToLog(const char* text);
+
 #endif
 
 //----------------------------------------------------------------------------------------------------------------------

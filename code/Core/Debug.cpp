@@ -29,29 +29,31 @@ void debugBreakMessage(const char* fmt, ...)
     va_end(args);
 
     strConcat(strCopy(msg, sizeof(msg), "[ASSERT_FAIL] "), sizeof(msg), msgFmt);
-
-    puts(msg);
     
+    puts(msg);
+
     #if PLATFORM_WINDOWS
-        if (sysIsDebuggerPresent()) {
-            strConcat(msg, sizeof(msg), "\n");
-            sysWin32PrintToDebugger(msg);
-        }
+        strConcat(msg, sizeof(msg), "\n");
+        sysWin32PrintToDebugger(msg);
     #elif PLATFORM_ANDROID
         sysAndroidPrintToLog(SysAndroidLogType::Debug, logGetAppNameAndroid(), msg);
+    #elif PLATFORM_APPLE
+        sysApplePrintToLog(msg);
+    #else
+        debugPrint(msg);
     #endif
 }
 
 void debugPrint(const char* text)
 {
     #if PLATFORM_WINDOWS
-        if (sysIsDebuggerPresent()) {
-            sysWin32PrintToDebugger(text);
-        }
+        sysWin32PrintToDebugger(text);
     #elif PLATFORM_ANDROID
         sysAndroidPrintToLog(SysAndroidLogType::Debug, logGetAppNameAndroid(), text);
+    #elif PLATFORM_APPLE
+        sysApplePrintToLog(text);
     #else
-        UNUSED(text);
+        puts(text);
     #endif
 }
 
@@ -105,7 +107,7 @@ void debugFiberScopeProtector_RegisterCallback(DebugFiberScopeProtectorCallback 
 INLINE bool debugFiberScopeProtector_IsInFiber()
 {
     bool inFiber = false;
-    for (const DebugFiberScopeProtectorCallbackPair& p : gFiberProtector.callbacks) 
+    for (const DebugFiberScopeProtectorCallbackPair p : gFiberProtector.callbacks)
         inFiber |= p.first(p.second);
     return inFiber;
 }
@@ -164,4 +166,5 @@ void debugFiberScopeProtector_RegisterCallback(DebugFiberScopeProtectorCallback,
 uint16 debugFiberScopeProtector_Push(const char*) { return 0; }
 void debugFiberScopeProtector_Pop(uint16) {}
 void debugFiberScopeProtector_Check() {}
-#endif
+#endif  // CONFIG_ENABLE_ASSERT
+

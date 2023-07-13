@@ -3,6 +3,7 @@
 #include "../Core/Base.h"
 #include "../Core/MathTypes.h"
 
+// Note: External dependency to imgui.h
 #include "../External/imgui/imgui.h"
 
 struct MemTlsfAllocator;

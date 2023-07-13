@@ -12,6 +12,8 @@
 
 #include "../UnityBuild.inl"
 
+#include "../Tool/Console.h"
+
 struct AppImpl : AppCallbacks
 {
     bool Initialize() override
@@ -31,7 +33,7 @@ struct AppImpl : AppCallbacks
 
         engineRegisterShortcut("ESC", [](void*) { appQuit(); });
 
-        logInfo("Ready. Waiting for incoming connections ...");
+        logInfo("Ready.");
 
         return true;
     };
@@ -59,6 +61,9 @@ int main(int argc, char* argv[])
     settingsInitializeJunkyard(SettingsJunkyard {
         .graphics = {
             .headless = true
+        },
+        .tooling = {
+            .enableServer = true
         }
     });
 

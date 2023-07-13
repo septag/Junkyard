@@ -16,6 +16,7 @@
 #include <tlhelp32.h>   // CreateToolhelp32Snapshot
 #include <winsock2.h>
 #include <ws2tcpip.h>
+#include <ShlObj.h>     // SH family of functions
 
 namespace _limits 
 {
@@ -604,202 +605,126 @@ void sysGetSysInfo(SysInfo* info)
     extData.Free();
 }
 
-SysWin32Process::SysWin32Process() : 
+#if PLATFORM_DESKTOP
+SysProcess::SysProcess() :
     process(INVALID_HANDLE_VALUE),
     stdoutPipeRead(INVALID_HANDLE_VALUE),
-    stderrPipeRead(INVALID_HANDLE_VALUE),
-    outputPipeSize(0)
+    stderrPipeRead(INVALID_HANDLE_VALUE)
 {
 }
 
-SysWin32Process::~SysWin32Process()
+SysProcess::~SysProcess()
 {
-    if (stdoutPipeRead != INVALID_HANDLE_VALUE) 
-        CloseHandle(stdoutPipeRead);
-    if (stderrPipeRead != INVALID_HANDLE_VALUE)
-        CloseHandle(stderrPipeRead);
-    if (process != INVALID_HANDLE_VALUE)
-        CloseHandle(process);
+    if (this->stdoutPipeRead != INVALID_HANDLE_VALUE) 
+        CloseHandle(this->stdoutPipeRead);
+    if (this->stderrPipeRead != INVALID_HANDLE_VALUE)
+        CloseHandle(this->stderrPipeRead);
+    if (this->process != INVALID_HANDLE_VALUE)
+        CloseHandle(this->process);
 }
 
-bool SysWin32Process::Run(const char* cmdline, SysWin32ProcessFlags flags)
+bool SysProcess::Run(const char* cmdline, SysProcessFlags flags, const char* cwd)
 {
-    ASSERT(process == INVALID_HANDLE_VALUE);
+    ASSERT(this->process == INVALID_HANDLE_VALUE);
 
     HANDLE stdOutPipeWrite = INVALID_HANDLE_VALUE;
     HANDLE stdErrPipeWrite = INVALID_HANDLE_VALUE;
+    BOOL r;
+    BOOL inheritHandles = (flags & SysProcessFlags::InheritHandles) == SysProcessFlags::InheritHandles ? TRUE : FALSE;
 
-    if ((flags & SysWin32ProcessFlags::CaptureOutput) == SysWin32ProcessFlags::CaptureOutput) {
+    if ((flags & SysProcessFlags::CaptureOutput) == SysProcessFlags::CaptureOutput) {
         SECURITY_ATTRIBUTES saAttr {}; 
         saAttr.nLength = sizeof(SECURITY_ATTRIBUTES); 
-        saAttr.bInheritHandle = TRUE; 
+        saAttr.bInheritHandle = inheritHandles; 
 
-        if (!CreatePipe(&this->stdoutPipeRead, &stdOutPipeWrite, &saAttr, static_cast<DWORD>(this->outputPipeSize)))
-            return false;
-        if (!SetHandleInformation(this->stdoutPipeRead, HANDLE_FLAG_INHERIT, 0))
-            return false;
+        r = CreatePipe(&this->stdoutPipeRead, &stdOutPipeWrite, &saAttr, 0);
+        ASSERT_MSG(r, "CreatePipe failed");
 
-        if ((flags & SysWin32ProcessFlags::StdErrOutput) == SysWin32ProcessFlags::StdErrOutput) {
-            if (!CreatePipe(&this->stderrPipeRead, &stdErrPipeWrite, &saAttr, static_cast<DWORD>(this->outputPipeSize)))
-                return false;
-            if (!SetHandleInformation(this->stderrPipeRead, HANDLE_FLAG_INHERIT, 0))
-                return false;
+        r = CreatePipe(&this->stderrPipeRead, &stdErrPipeWrite, &saAttr, 0);
+        ASSERT_MSG(r, "CreatePipe failed");
+
+        if (inheritHandles) {
+            r = SetHandleInformation(this->stdoutPipeRead, HANDLE_FLAG_INHERIT, 0);
+            ASSERT_MSG(r, "SetHandleInformation for pipe failed");
+            r = SetHandleInformation(this->stderrPipeRead, HANDLE_FLAG_INHERIT, 0);
+            ASSERT_MSG(r, "SetHandleInformation for pipe failed");
         }
     }
 
     PROCESS_INFORMATION procInfo {};
     STARTUPINFOA startInfo {};
     startInfo.cb = sizeof(startInfo);
-    if ((flags & SysWin32ProcessFlags::CaptureOutput) == SysWin32ProcessFlags::CaptureOutput) {
+    if ((flags & SysProcessFlags::CaptureOutput) == SysProcessFlags::CaptureOutput) {
         startInfo.dwFlags = STARTF_USESTDHANDLES;
         startInfo.hStdOutput = stdOutPipeWrite;
-        startInfo.hStdError = (flags & SysWin32ProcessFlags::StdErrOutput) == SysWin32ProcessFlags::StdErrOutput ? stdErrPipeWrite : stdOutPipeWrite;
-        startInfo.hStdInput = INVALID_HANDLE_VALUE;
+        startInfo.hStdError = stdErrPipeWrite;
+        startInfo.hStdInput = INVALID_HANDLE_VALUE; // TODO
     }
 
-    char* cmdLineCopy;
-    if ((flags & SysWin32ProcessFlags::BatchFile) == SysWin32ProcessFlags::BatchFile) {
-        uint32 cmdlineSize = strLen(cmdline) + 16;
-        cmdLineCopy = memAllocTyped<char>(cmdlineSize);
-        strCopy(cmdLineCopy, cmdlineSize, "cmd.exe /c ");
-        strConcat(cmdLineCopy, cmdlineSize, cmdline);
-    }
-    else {
-        cmdLineCopy = memAllocCopy<char>(cmdline, strLen(cmdline)+1);
-    }
+    MemTempAllocator tmpAlloc;
+    char* cmdLineCopy = memAllocCopy<char>(cmdline, strLen(cmdline)+1, &tmpAlloc);
+    DWORD createProcessFlags = 0; // TODO
 
-    DWORD createProcessFlags = 0;
-    BOOL inheritHandles = TRUE;
-
-    if ((flags & SysWin32ProcessFlags::BatchFile) == SysWin32ProcessFlags::BatchFile &&
-        (flags & SysWin32ProcessFlags::CaptureOutput) != SysWin32ProcessFlags::CaptureOutput)
-    {
-        createProcessFlags |= CREATE_NEW_CONSOLE;
-        inheritHandles = FALSE;
-    }
-    else if ((flags & SysWin32ProcessFlags::CaptureOutput) == SysWin32ProcessFlags::CaptureOutput)
-    {
+    if ((flags & SysProcessFlags::DontCreateConsole) == SysProcessFlags::DontCreateConsole) 
         createProcessFlags |= CREATE_NO_WINDOW;
-    }
+    if ((flags & SysProcessFlags::ForceCreateConsole) == SysProcessFlags::ForceCreateConsole)
+        createProcessFlags |= CREATE_NEW_CONSOLE;
 
-    if ((flags & SysWin32ProcessFlags::Detach) == SysWin32ProcessFlags::Detach) {
-        createProcessFlags |= DETACHED_PROCESS;
-        inheritHandles = FALSE;
-    }
-
-    bool r = CreateProcessA(nullptr, cmdLineCopy, nullptr, nullptr, inheritHandles, createProcessFlags, NULL, 
-                            this->cwd.IsEmpty() ? nullptr : this->cwd.CStr(), &startInfo, &procInfo);
-    memFree(cmdLineCopy);
-    if (!r)
+    r = CreateProcessA(nullptr, cmdLineCopy, nullptr, nullptr, inheritHandles, createProcessFlags, NULL, cwd, &startInfo, &procInfo);
+    if (!r) {
+        logError("Run process failed: %s", cmdline);
         return false;
+    }
 
     CloseHandle(procInfo.hThread);
-
-    if ((flags & SysWin32ProcessFlags::CaptureOutput) == SysWin32ProcessFlags::CaptureOutput) {
-        CloseHandle(stdOutPipeWrite);
-        if ((flags & SysWin32ProcessFlags::StdErrOutput) == SysWin32ProcessFlags::StdErrOutput)
-            CloseHandle(stdErrPipeWrite);
-    }
-
     this->process = procInfo.hProcess;
+
+    if ((flags & SysProcessFlags::CaptureOutput) == SysProcessFlags::CaptureOutput) {
+        CloseHandle(stdOutPipeWrite);
+        CloseHandle(stdErrPipeWrite);
+    }
 
     return true;
 }
 
-bool SysWin32Process::Wait(uint32 timeoutMs) const
+void SysProcess::Wait() const
 {
-    ASSERT(process != INVALID_HANDLE_VALUE);
-    return WaitForSingleObject(process, timeoutMs) == WAIT_OBJECT_0;
+    ASSERT(this->process != INVALID_HANDLE_VALUE);
+    WaitForSingleObject(this->process, INFINITE);
 }
 
-uint32 SysWin32Process::GetReturnCode() const
+bool SysProcess::IsRunning() const
 {
-    ASSERT(process != INVALID_HANDLE_VALUE);
+    ASSERT(this->process != INVALID_HANDLE_VALUE);
+    return WaitForSingleObject(this->process, 0) != WAIT_OBJECT_0;
+}
+
+int SysProcess::GetExitCode() const
+{
+    ASSERT(this->process != INVALID_HANDLE_VALUE);
     DWORD exitCode = UINT32_MAX;
-    GetExitCodeProcess(process, &exitCode);
-    return static_cast<uint32>(exitCode);
+    GetExitCodeProcess(this->process, &exitCode);
+    return static_cast<int>(exitCode);
 }
 
-static bool SysWin32ProcessReadStdInternal(HANDLE pipe, char** outString, uint32* outStringLen, Allocator* alloc)
+uint32 SysProcess::ReadStdOut(void* data, uint32 size) const
 {
-    ASSERT(outString);
-    ASSERT(outStringLen);
+    ASSERT(this->stdoutPipeRead != INVALID_HANDLE_VALUE);
 
-    if (pipe != INVALID_HANDLE_VALUE) 
-    {
-        Blob blob(alloc);
-        blob.SetGrowPolicy(Blob::GrowPolicy::Linear);
-
-        char buffer[4096];
-        DWORD bytesRead;
-        for (;;) 
-        {
-            BOOL r = ReadFile(pipe, buffer, sizeof(buffer), &bytesRead, nullptr);
-            if (!r || bytesRead == 0)
-                break;
-            
-            blob.Write(buffer, bytesRead);
-        }
-        blob.Write<char>(0);
-
-        size_t len;
-        blob.Detach((void**)outString, &len);
-        ASSERT(len < UINT32_MAX);
-        *outStringLen = static_cast<uint32>(len);
-
-        return true;
-    }
-    else {
-        *outString = nullptr;
-        *outStringLen = 0;
-        return false;
-    }
+    DWORD bytesRead;
+    BOOL r = ReadFile((HANDLE)this->stdoutPipeRead, data, size, &bytesRead, nullptr);
+    return (r && bytesRead) ? bytesRead : 0;
 }
 
-bool SysWin32Process::GetStdOutText(char** outString, uint32* outStringLen, Allocator* alloc)
+uint32 SysProcess::ReadStdErr(void* data, uint32 size) const
 {
-    return SysWin32ProcessReadStdInternal((HANDLE)this->stdoutPipeRead, outString, outStringLen, alloc);
+    ASSERT(this->stderrPipeRead != INVALID_HANDLE_VALUE);
+
+    DWORD bytesRead;
+    BOOL r = ReadFile((HANDLE)this->stderrPipeRead, data, size, &bytesRead, nullptr);
+    return (r && bytesRead) ? bytesRead : 0;
 }
-
-bool SysWin32Process::GetStdErrText(char** outString, uint32* outStringLen, Allocator* alloc)
-{
-    return stderrPipeRead != INVALID_HANDLE_VALUE ? 
-        SysWin32ProcessReadStdInternal((HANDLE)this->stderrPipeRead, outString, outStringLen, alloc) : 
-        SysWin32ProcessReadStdInternal((HANDLE)this->stdoutPipeRead, outString, outStringLen, alloc);
-}
-    
-void SysWin32Process::WaitOnAll(const SysWin32Process* processes, uint32 numProcesses, uint32 timeoutMs)
-{
-    ASSERT(processes);
-    ASSERT(numProcesses <= MAXIMUM_WAIT_OBJECTS);
-
-    HANDLE nativeProc[MAXIMUM_WAIT_OBJECTS];
-    for (uint32 i = 0; i < numProcesses; i++) 
-        nativeProc[i] = processes[i].process;
-
-    WaitForMultipleObjects(static_cast<DWORD>(numProcesses), nativeProc, TRUE, timeoutMs);
-}
-
-void SysWin32Process::GenerateCmdLineFromArgcArgv(int argc, const char* argv[], char** outString, uint32* outStringLen, Allocator* alloc)
-{
-    ASSERT(outString);
-    ASSERT(outStringLen);
-
-    Blob blob(alloc);
-    blob.SetGrowPolicy(Blob::GrowPolicy::Linear, 256);
-
-    // TODO: perform escaping on the strings
-    for (int i = 0; i < argc; i++) {
-        blob.Write(argv[i], strLen(argv[i]));
-        if (i != argc - 1)
-            blob.Write<char>(32);
-    }
-    blob.Write<char>(0);
-
-    size_t len;
-    blob.Detach((void**)outString, &len);
-    *outStringLen = static_cast<uint32>(len);
-}
+#endif  // PLATFORM_DESKTOP
 
 bool sysWin32IsProcessRunning(const char* execName)
 {
@@ -880,8 +805,39 @@ PathInfo pathStat(const char* path)
 
 bool pathCreateDir(const char* path)
 {
-    return bool(CreateDirectoryA(path, nullptr));
+    return bool(CreateDirectoryA(path, nullptr)); 
 }
+
+char* pathGetHomeDir(char* dst, size_t dstSize)
+{
+    PWSTR homeDir = nullptr;
+    if (SUCCEEDED(SHGetKnownFolderPath(FOLDERID_Profile, 0, nullptr, &homeDir))) {
+        strWideToUtf8(homeDir, dst, (uint32)dstSize);
+        CoTaskMemFree(homeDir);
+        return dst;
+    }
+    else {
+        ASSERT_MSG(0, "Getting home directory failed");
+        return nullptr;
+    }
+}
+
+char* pathGetCacheDir(char* dst, size_t dstSize, const char* appName)
+{
+    PWSTR homeDir = nullptr;
+    if (SUCCEEDED(SHGetKnownFolderPath(FOLDERID_LocalAppData, 0, nullptr, &homeDir))) {
+        char homeDirUtf8[CONFIG_MAX_PATH];
+        strWideToUtf8(homeDir, homeDirUtf8, sizeof(homeDirUtf8));
+        CoTaskMemFree(homeDir);
+        pathJoin(dst, dstSize, homeDirUtf8, appName);
+        return dst;
+    }
+    else {
+        ASSERT_MSG(0, "Getting LOCALAPPDATA directory failed");
+        return nullptr;
+    }
+}
+
 
 bool sysIsDebuggerPresent()
 {
@@ -891,6 +847,33 @@ bool sysIsDebuggerPresent()
 void sysWin32PrintToDebugger(const char* text)
 {
     OutputDebugStringA(text);
+}
+
+char* pathWin32GetFolder(SysWin32Folder folder, char* dst, size_t dstSize)
+{
+    static const KNOWNFOLDERID folderIds[] = {
+        FOLDERID_Documents,
+        FOLDERID_Fonts,
+        FOLDERID_Downloads,
+        FOLDERID_RoamingAppData,
+        FOLDERID_LocalAppData,
+        FOLDERID_ProgramFiles,
+        FOLDERID_System,
+        FOLDERID_CommonStartup,
+        FOLDERID_Desktop
+    };
+    static_assert(CountOf(folderIds) == uint32(SysWin32Folder::_Count));
+
+    PWSTR folderPath = nullptr;
+    if (SUCCEEDED(SHGetKnownFolderPath(folderIds[uint32(folder)], 0, nullptr, &folderPath))) {
+        strWideToUtf8(folderPath, dst, (uint32)dstSize);
+        CoTaskMemFree(folderPath);
+        return dst;
+    }
+    else {
+        ASSERT_MSG(0, "SHGetKnownFolderPath failed");
+        return nullptr;
+    }
 }
 
 //------------------------------------------------------------------------

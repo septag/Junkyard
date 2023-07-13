@@ -60,8 +60,8 @@ API void debugFiberScopeProtector_Check();
     #define ASSERT(_expr) do { if (!(_expr)) { debugBreakMessage(#_expr); DEBUG_BREAK(); }} while(0)
     #define ASSERT_MSG(_expr, ...) do { if (!(_expr)) { debugBreakMessage(__VA_ARGS__); DEBUG_BREAK(); }} while(0)
 #else
-    #define ASSERT(_expr) do {} while(0)
-    #define ASSERT_MSG(_expr, ...) do {} while(0)
+    #define ASSERT(_expr)
+    #define ASSERT_MSG(_expr, ...)
 #endif
 
 #define ASSERT_ALWAYS(_expr, ...) do { if (!(_expr)) { debugBreakMessage(__VA_ARGS__); DEBUG_BREAK(); }} while(0)

@@ -2,6 +2,7 @@
 #include "String.h"
 
 #include "System.h"
+#include "Buffers.h"
 
 #ifdef BUILD_UNITY
     #if PLATFORM_WINDOWS
@@ -177,6 +178,34 @@ uint64 timerLapTime(uint64* lastTime)
     return dt;
 }
 
+void sysGenerateCmdLineFromArgcArgv(int argc, const char* argv[], char** outString, uint32* outStringLen, 
+                                    Allocator* alloc, const char* prefixCmd)
+{
+    ASSERT(outString);
+    ASSERT(outStringLen);
+
+    Blob blob(alloc);
+    blob.SetGrowPolicy(Blob::GrowPolicy::Linear, 256);
+
+    // If we have a prefix command, append to the beginning
+    if (prefixCmd) {
+        blob.Write(prefixCmd, strLen(prefixCmd));
+        blob.Write<char>(32);
+    }
+
+    // TODO: perform escaping on the strings
+    for (int i = 0; i < argc; i++) {
+        blob.Write(argv[i], strLen(argv[i]));
+        if (i != argc - 1)
+            blob.Write<char>(32);
+    }
+    blob.Write<char>(0);
+
+    size_t len;
+    blob.Detach((void**)outString, &len);
+    *outStringLen = static_cast<uint32>(len);
+}
+
 namespace _private 
 {
     bool socketParseUrl(const char* url, char* address, size_t addressSize, char* port, size_t portSize, const char** pResource)
@@ -221,3 +250,4 @@ namespace _private
         return true;    
     }
 }   // namespace _private
+

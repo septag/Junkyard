@@ -1,12 +1,11 @@
 #include "Console.h"
 
-#include "../Core/External/mgustavsson/ini.h"
-
 #include "../Core/Memory.h"
 #include "../Core/String.h"
 #include "../Core/Buffers.h"
 #include "../Core/System.h"
 #include "../Core/Log.h"
+#include "../Core/IniParser.h"
 
 #include "../RemoteServices.h"
 #include "../VirtualFS.h"
@@ -177,6 +176,35 @@ static bool conHandlerServerFn([[maybe_unused]] uint32 cmd, const Blob& incoming
     return r;
 }
 
+static bool conRunExternalCommand(int argc, const char* argv[])
+{
+    #if PLATFORM_DESKTOP
+        ASSERT(argc > 1);
+    
+        const char* prefixCmd = nullptr;
+        Path ext = Path(argv[1]).GetFileExtension();
+        SysProcessFlags flags = SysProcessFlags::None;
+        if (ext.IsEqualNoCase(".bat") || ext.IsEqualNoCase(".cmd")) {
+            prefixCmd = "cmd /k";
+            flags |= SysProcessFlags::ForceCreateConsole;
+        }
+    
+        char* cmdline;
+        uint32 cmdlineSize;
+        MemTempAllocator tmpAlloc;
+        sysGenerateCmdLineFromArgcArgv(argc - 1, &argv[1], &cmdline, &cmdlineSize, memDefaultAlloc(), prefixCmd);
+        SysProcess process;
+        bool r = process.Run(cmdline, flags);
+        memFree(cmdline);
+    
+        return r;
+    #else
+        UNUSED(argc);
+        UNUSED(argv);
+        return false;
+    #endif
+}
+
 bool _private::conInitialize()
 {
     gConsole.commands.SetAllocator(memDefaultAlloc());
@@ -185,19 +213,17 @@ bool _private::conInitialize()
     // Custom variables that are used to be replaced with the value if they come in between {} sign
     {
         MemTempAllocator tmpAlloc;
-        Blob varsData = vfsReadFile("vars.ini", VfsFlags::TextFile|VfsFlags::AbsolutePath, &tmpAlloc);
-        if (varsData.IsValid()) {
-            ini_t* varsIni = ini_load((const char*)varsData.Data(), &tmpAlloc);
-            if (varsIni) {
-                int numVars = ini_property_count(varsIni, INI_GLOBAL_SECTION);
-                for (int i = 0; i < numVars; i++) {
-                    gConsole.vars.Push(ConCustomVar {
-                        .name = ini_property_name(varsIni, INI_GLOBAL_SECTION, i),
-                        .value = ini_property_value(varsIni, INI_GLOBAL_SECTION, i)
-                    });                
-                }
-                ini_destroy(varsIni);
+        IniContext varsIni = iniLoad("Vars.ini");
+        if (varsIni.IsValid()) {
+            IniSection root = varsIni.GetRootSection();
+            for (uint32 i = 0; i < root.GetPropertyCount(); i++) {
+                IniProperty prop = root.GetProperty(i);
+                gConsole.vars.Push(ConCustomVar {
+                    .name = prop.GetName(),
+                    .value = prop.GetValue()
+                });                
             }
+            varsIni.Destroy();
 
             for (uint32 i = 0; i < gConsole.vars.Count(); i++) {
                 gConsole.vars[i].name.Trim();
@@ -218,27 +244,7 @@ bool _private::conInitialize()
     auto ExecFn = [](int argc, const char* argv[], char* outResponse, uint32 responseSize, void*)->bool {
         UNUSED(outResponse);
         UNUSED(responseSize);
-        #if PLATFORM_WINDOWS
-            ASSERT(argc > 1);
-
-            Path ext = Path(argv[1]).GetFileExtension();
-            SysWin32ProcessFlags flags = SysWin32ProcessFlags::None;
-            if (ext.IsEqualNoCase(".bat") || ext.IsEqualNoCase(".cmd"))
-                flags |= SysWin32ProcessFlags::BatchFile;
-            else
-                flags |= SysWin32ProcessFlags::Detach;
-
-            char* cmdline;
-            uint32 cmdlineSize;
-            SysWin32Process::GenerateCmdLineFromArgcArgv(argc - 1, &argv[1], &cmdline, &cmdlineSize);
-            SysWin32Process process;
-            bool r = process.Run(cmdline, flags);
-            memFree(cmdline);
-
-            return r;
-        #else
-            return false;
-        #endif
+        return conRunExternalCommand(argc, argv);
     };
 
     conRegisterCommand(ConCommandDesc {
@@ -252,28 +258,13 @@ bool _private::conInitialize()
         UNUSED(outResponse);
         UNUSED(responseSize);
         #if PLATFORM_WINDOWS
-            ASSERT(argc > 1);
-            Path processName = Path(argv[1]).GetFileNameAndExt();
-            if (!sysWin32IsProcessRunning(processName.CStr())) {
-                Path ext = Path(argv[1]).GetFileExtension();
-                SysWin32ProcessFlags flags = SysWin32ProcessFlags::None;
-                if (ext.IsEqualNoCase(".bat") || ext.IsEqualNoCase(".cmd"))
-                    flags |= SysWin32ProcessFlags::BatchFile;
-                else
-                    flags |= SysWin32ProcessFlags::Detach;
-
-                char* cmdline;
-                uint32 cmdlineSize;
-                SysWin32Process::GenerateCmdLineFromArgcArgv(argc - 1, &argv[1], &cmdline, &cmdlineSize);
-                SysWin32Process process;
-                bool r = process.Run(cmdline, flags);
-                memFree(cmdline);
-                return r;
-            }
-            else {
-                return true;
-            }
+        if (!sysWin32IsProcessRunning(processName.CStr()))
+            return conRunExternalCommand(argc, argv);
+        else
+            return true;
         #else
+            UNUSED(argc);
+            UNUSED(argv);
             return false;
         #endif
     };

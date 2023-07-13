@@ -1,11 +1,16 @@
 #include "Base.h"
 
-#if PLATFORM_ANDROID
+#if COMPILER_CLANG
 
 #include <unwind.h> // _Unwind_Backtrace
 #include <dlfcn.h>  // dladdr
 #include <cxxabi.h> // __cxa_demangle
+
+#if PLATFORM_ANDROID
 #include <malloc.h>
+#elif PLATFORM_APPLE
+#include <stdlib.h>    
+#endif
 
 #include "String.h"
 #include "Hash.h"
@@ -70,18 +75,14 @@ void debugResolveStacktrace(uint16 numStacktrace, void* const* stackframes, Debu
         const void* addr = stackframes[i];
         Dl_info info;
         if (dladdr(addr, &info)) {
+            strCopy(entries[i].filename, sizeof(entries[i].filename), info.dli_fname);
             strCopy(entries[i].name, sizeof(entries[i].name), info.dli_sname);
-        }
-        else {
+
             int status = 0;
             char* demangled = abi::__cxa_demangle(entries[i].name, 0, 0, &status);
-            if (status == 0) {
+            if (status == 0)
                 strCopy(entries[i].name, sizeof(entries[i].name), demangled);
-                ::free(demangled);
-            } 
-            else {
-                strCopy(entries[i].name, sizeof(entries[i].name), "[NA]");
-            }
+            ::free(demangled);
         }
     }
 }
@@ -94,4 +95,5 @@ void debugStacktraceSaveStopPoint(void* funcPtr)
     gDebugStopFuncs.Add(funcPtr);
 }
 
-#endif // PLATFORM_ANDROID
+#endif // COMPILER_CLANG
+

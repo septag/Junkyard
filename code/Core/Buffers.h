@@ -172,6 +172,7 @@ namespace _private
     static inline constexpr uint32 kHandleGenShift  = 32 - kHandleGenBits;
 } // _private
 
+#ifndef __OBJC__
 template <typename _T>
 struct Handle
 {
@@ -269,6 +270,7 @@ private:
     _private::HandlePoolTable*  _handles = nullptr;
     Array<_DataType>            _items;
 };
+#endif // __OBJC__
 
 //------------------------------------------------------------------------
 template <typename _T, uint32 _MaxFields = 8>
@@ -852,6 +854,7 @@ template <typename _Func> inline uint32 StaticArray<_T, _MaxCount>::FindIf(_Func
 
 //------------------------------------------------------------------------
 // @impl HandlePool
+#ifndef __OBJC__
 template<typename _HandleType, typename _DataType, uint32 _Reserve>
 inline HandlePool<_HandleType, _DataType, _Reserve>::HandlePool(void* data, size_t size) :
     _items((uint8*)data + GetMemoryRequirement(), size - GetMemoryRequirement())
@@ -1032,6 +1035,7 @@ inline bool HandlePool<_HandleType, _DataType, _Reserve>::Grow(void* data, size_
     _items.Reserve(_handles->capacity << 1, (uint8*)data + handleTableSize, size - handleTableSize);
     return _private::handleGrowPoolTableWithBuffer(&_handles, data, handleTableSize);
 }
+#endif // !__OBJC__
 
 //------------------------------------------------------------------------
 // @impl BuffersAllocPOD

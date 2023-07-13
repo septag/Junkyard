@@ -3,7 +3,6 @@
 #include <stdarg.h>
 
 #include "../External/imgui/imgui.h"
-#include "../Core/External/mgustavsson/ini.h"
 
 #include "../Core/Memory.h"
 #include "../Core/String.h"
@@ -13,6 +12,7 @@
 #include "../Core/TracyHelper.h"
 #include "../Core/Buffers.h"
 #include "../Core/Math.h"
+#include "../Core/IniParser.h"
 
 #include "Graphics.h"
 #include "Shader.h"
@@ -79,7 +79,7 @@ struct ImGuiState
     float*       alphaControl;      // alpha value that will be modified by mouse-wheel + ALT
 
     HashTable<const char*> settingsCacheTable;
-    ini_t* settingsIni;
+    IniContext settingsIni;
 };
 
 ImGuiState gImGui;
@@ -107,58 +107,42 @@ static void imguiInitializeSettings()
     // Load extra control settings
     {
         MemTempAllocator tmpAlloc;
-
         char iniFilename[64];
         strPrintFmt(iniFilename, sizeof(iniFilename), "%s_imgui_controls.ini", appGetName());
-
         Blob data = vfsReadFile(iniFilename, VfsFlags::TextFile|VfsFlags::AbsolutePath, &tmpAlloc);
         if (data.IsValid())
-            gImGui.settingsIni = ini_load((const char*)data.Data(), &gImGui.runtimeHeap);
+            gImGui.settingsIni = iniLoadFromString((const char*)data.Data());
     }
 
     // populate the settings cache
-    if (gImGui.settingsIni) {
-        ini_t* ini = gImGui.settingsIni;
-        int numSections = ini_section_count(ini);
-        for (int s = 0; s < numSections; s++) {
-            int numProps = ini_property_count(ini, s);
+    if (gImGui.settingsIni.IsValid()) {
+        const IniContext& ini = gImGui.settingsIni;
+        for (uint32 s = 0; s < ini.GetSectionCount(); s++) {
+            IniSection section = ini.GetSection(s);
 
-            String64 keyParent(ini_section_name(ini, s));
-            for (int p = 0; p < numProps; p++) {
+            String64 keyParent(section.GetName());
+            for (uint32 p = 0; p < section.GetPropertyCount(); p++) {
+                IniProperty prop = section.GetProperty(p);
                 String64 key(keyParent);
                 key.Append(".");
-                key.Append(ini_property_name(ini, s, p));
+                key.Append(prop.GetName());
 
-                gImGui.settingsCacheTable.Add(hashFnv32Str(key.CStr()), ini_property_value(ini, s, p));
+                gImGui.settingsCacheTable.Add(hashFnv32Str(key.CStr()), prop.GetValue());
             }
         }
     }
     else {
-        gImGui.settingsIni = ini_create(&gImGui.runtimeHeap);
+        gImGui.settingsIni = iniCreateContext();
     }
 }
 
 static void imguiReleaseSettings()
 {
-    if (gImGui.settingsIni) {
+    if (gImGui.settingsIni.IsValid()) {
         char iniFilename[64];
         strPrintFmt(iniFilename, sizeof(iniFilename), "%s_imgui_controls.ini", appGetName());
-    
-        int size = ini_save(gImGui.settingsIni, nullptr, 0);
-        if (size > 0) {
-            char* data = memAllocTyped<char>(size);
-            ini_save(gImGui.settingsIni, data, size);
-    
-            File f;
-            if (f.Open(iniFilename, FileOpenFlags::Write)) {
-                f.Write<char>(data, static_cast<size_t>(size));
-                f.Close();
-            }
-            memFree(data);
-        }
-    
-        ini_destroy(gImGui.settingsIni);
-        gImGui.settingsIni = nullptr;
+        iniSave(gImGui.settingsIni, iniFilename);
+        gImGui.settingsIni.Destroy();
     }
 
     gImGui.settingsCacheTable.Free();
@@ -862,27 +846,24 @@ static void imguiSettingSetInternal(const char* key, const char* value)
     const char* dot = strFindChar(key, '.');
     ASSERT_MSG(dot, "ImGui settings should come with Control.Name pattern");
     
-    char section[64];
-    char property[64];
+    char sectionName[64];
+    char propertyName[64];
 
-    strCopyCount(section, sizeof(section), key, PtrToInt<uint32>((void*)(dot - key)));
-    strCopy(property, sizeof(property), dot + 1);
+    strCopyCount(sectionName, sizeof(sectionName), key, PtrToInt<uint32>((void*)(dot - key)));
+    strCopy(propertyName, sizeof(propertyName), dot + 1);
 
-    int sectionId = ini_find_section(gImGui.settingsIni, section, 0);
-    if (sectionId == INI_NOT_FOUND)
-        sectionId = ini_section_add(gImGui.settingsIni, section, 0);
+    IniSection section = gImGui.settingsIni.FindSection(sectionName);
+    if (!section.IsValid())
+        section = gImGui.settingsIni.NewSection(sectionName);
 
-    int propertyId = ini_find_property(gImGui.settingsIni, sectionId, property, 0);
-    if (propertyId == INI_NOT_FOUND) {
-        ini_property_add(gImGui.settingsIni, sectionId, property, 0, value, 0); 
-        propertyId = ini_find_property(gImGui.settingsIni, sectionId, property, 0);
-    }
-    else {
-        ini_property_value_set(gImGui.settingsIni, sectionId, propertyId, value, 0);
-    }
+    IniProperty property = section.FindProperty(propertyName);
+    if (!property.IsValid())
+        property = section.NewProperty(propertyName, value);
+    else
+        property.SetValue(value);
     
     uint32 hash = hashFnv32Str(key);
-    gImGui.settingsCacheTable.AddIfNotFound(hash, ini_property_value(gImGui.settingsIni, sectionId, propertyId));
+    gImGui.settingsCacheTable.AddIfNotFound(hash, property.GetValue());
 }
 
 void imguiSetSetting(const char* key, bool b)

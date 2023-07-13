@@ -1,5 +1,7 @@
 #pragma once
 
+#if defined(_WIN32) || defined(_WIN64)
+
 // #define NOGDICAPMASKS     // CC_*, LC_*, PC_*, CP_*, TC_*, RC_
 // #define NOVIRTUALKEYCODES // VK_*
 // #define NOWINMESSAGES     // WM_*, EM_*, LB_*, CB_*
@@ -43,7 +45,7 @@
 #define WIN32_MEAN_AND_LEAN
 #define VC_EXTRALEAN
 
-#include "../Core/Base.h"
+#include "Base.h"
 
 #include <winsock2.h>
 #include <windows.h>
@@ -91,3 +93,5 @@
 #undef CFATAL_N_TIMES
 #undef CTRACE_N_TIMES
 #undef CVERBOSE_N_TIMES
+
+#endif // _WIN32 / _WIN64

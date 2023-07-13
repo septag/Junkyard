@@ -30,9 +30,9 @@ enum class AllocatorType
 
 struct NO_VTABLE Allocator
 {
-    virtual void* Malloc(size_t size, uint32 align) = 0;
-    virtual void* Realloc(void* ptr, size_t size, uint32 align) = 0;
-    virtual void  Free(void* ptr, uint32 align) = 0;
+    virtual void* Malloc(size_t size, uint32 align = CONFIG_MACHINE_ALIGNMENT) = 0;
+    virtual void* Realloc(void* ptr, size_t size, uint32 align = CONFIG_MACHINE_ALIGNMENT) = 0;
+    virtual void  Free(void* ptr, uint32 align = CONFIG_MACHINE_ALIGNMENT) = 0;
     virtual AllocatorType GetType() const = 0;
 };
 

@@ -1,6 +1,6 @@
 @echo off
 
-; TODO
+rem TODO
 set package_name=com.JunkyardAndroid
 
 if not exist %ADB% (

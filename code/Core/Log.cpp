@@ -8,7 +8,7 @@
 #include "System.h"
 #include "Buffers.h"
 
-#if PLATFORM_MOBILE
+#if PLATFORM_MOBILE || PLATFORM_OSX
     #define TERM_COLOR_RESET     ""
     #define TERM_COLOR_RED       ""
     #define TERM_COLOR_YELLOW    ""

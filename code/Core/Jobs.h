@@ -96,3 +96,26 @@ API void jobsGetBudgetStats(JobsBudgetStats* stats);
 API void jobsResetBudgetStats();
 API uint32 jobsGetWorkerThreadsCount();
 
+// Templated lambda functions (no need for userData)
+// Callback: [](uint32 groupIndex)
+// The Caveat here is that we need to keep the passing _Func alive as long as the task exists
+// So I'm not sure if I'm going to keep this
+template <typename _Func>
+inline JobsHandle jobsDispatch(JobsType type, _Func* fn, uint32 groupSize = 1, JobsPriority prio = JobsPriority::Normal, uint32 stackSize = 0)
+{
+    auto wrapperFn = [](uint32 groupIndex, void* userData) {
+        (*(_Func*)userData)(groupIndex);
+    };
+
+    return jobsDispatch(type, wrapperFn, fn, groupSize, prio, stackSize);
+}
+
+template <typename _Func>
+inline void jobsDispatchAuto(JobsType type, _Func* fn, uint32 groupSize = 1, JobsPriority prio = JobsPriority::Normal, uint32 stackSize = 0)
+{
+    auto wrapperFn = [](uint32 groupIndex, void* userData) {
+        (*(_Func*)userData)(groupIndex);
+    };
+
+    jobsDispatchAuto(type, wrapperFn, fn, groupSize, prio, stackSize);
+}

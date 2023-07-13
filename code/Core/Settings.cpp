@@ -4,17 +4,7 @@
 #include "Buffers.h"
 #include "System.h"
 
-#define INI_IMPLEMENTATION
-#define INI_MALLOC(ctx, size)       memAlloc(size, (Allocator*)ctx)
-#define INI_FREE(ctx, ptr)          memFree(ptr, (Allocator*)ctx)
-#define INI_MEMCPY(dst, src, cnt)   memcpy(dst, src, cnt)
-#define INI_STRLEN(s)               strLen(s)
-#define INI_STRNICMP(s1, s2, cnt)   (strIsEqualNoCaseCount(s1, s2, cnt) ? 0 : 1)
-
-PRAGMA_DIAGNOSTIC_PUSH()
-PRAGMA_DIAGNOSTIC_IGNORED_CLANG_GCC("-Wsign-compare")
 #include "External/mgustavsson/ini.h"
-PRAGMA_DIAGNOSTIC_POP()
 
 #define SOKOL_ARGS_IMPL
 #define SOKOL_ASSERT(c)     ASSERT(c)
@@ -36,7 +26,7 @@ PRAGMA_DIAGNOSTIC_POP()
 struct SettingsKeyValue
 {
     String32 key;
-    String32 value;
+    String<CONFIG_MAX_PATH> value;
 };
 
 struct SettingsContext

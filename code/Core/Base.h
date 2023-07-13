@@ -590,6 +590,9 @@ template<> inline constexpr int AlignValue(int value, int align) { int mask = al
 template<> inline constexpr uint16 AlignValue(uint16 value, uint16 align) { uint16 mask = align - 1; return (value + mask) & ((~0) & (~mask)); }
 template<> inline constexpr uint32 AlignValue(uint32 value, uint32 align) { uint32 mask = align - 1; return (value + mask) & ((~0) & (~mask)); }
 template<> inline constexpr uint64 AlignValue(uint64 value, uint64 align) { uint64 mask = align - 1; return (value + mask) & ((~0) & (~mask)); }
+#if PLATFORM_APPLE
+template<> inline constexpr size_t AlignValue(size_t value, size_t align) { size_t mask = align - 1; return (value + mask) & ((~0) & (~mask)); }
+#endif
 
 template<typename _T> inline constexpr _T DivCeil(_T value, _T divider);
 template<> inline constexpr int DivCeil(int value, int divider) { return (value + divider - 1)/divider; }
@@ -635,10 +638,12 @@ struct RelativePtr
     operator bool() const { return !IsNull(); }
     _T& operator*() const { return *Get(); }
 
-    inline void Set(const _T* ptr) 
+    inline void Set(const _T* ptr)
     { 
-        ASSERT(ptr != nullptr); 
-        ASSERT(uintptr_t(ptr) > uintptr_t(this)); 
+        ASSERT(ptr != nullptr);
+        #if !PLATFORM_APPLE // Enabling this code on apple-clang gives me 'undeclared identifier ASSERT', why ? I do not know
+            ASSERT(uintptr_t(ptr) > uintptr_t(this));
+        #endif
         offset = uint32((uint8*)ptr - (uint8*)this);
     }
 
