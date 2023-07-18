@@ -230,6 +230,7 @@ echo No | copy /-Y $(SolutionDir)..\..\code\External\meshoptimizer\lib\win64\mes
     <ClCompile Include="..\..\code\ApplicationWin.cpp" />
     <ClCompile Include="..\..\code\AssetManager.cpp" />
     <ClCompile Include="..\..\code\Camera.cpp" />
+    <ClCompile Include="..\..\code\Core\Allocators.cpp" />
     <ClCompile Include="..\..\code\Core\Base.cpp" />
     <ClCompile Include="..\..\code\Core\Buffers.cpp" />
     <ClCompile Include="..\..\code\Core\Debug.cpp" />
@@ -240,11 +241,10 @@ echo No | copy /-Y $(SolutionDir)..\..\code\External\meshoptimizer\lib\win64\mes
     <ClCompile Include="..\..\code\Core\Jobs.cpp" />
     <ClCompile Include="..\..\code\Core\JsonParser.cpp" />
     <ClCompile Include="..\..\code\Core\Log.cpp" />
-    <ClCompile Include="..\..\code\Core\Math.cpp" />
-    <ClCompile Include="..\..\code\Core\Memory.cpp" />
+    <ClCompile Include="..\..\code\Core\MathAll.cpp" />
     <ClCompile Include="..\..\code\Core\Settings.cpp" />
-    <ClCompile Include="..\..\code\Core\String.cpp" />
-    <ClCompile Include="..\..\code\Core\StringWin.cpp" />
+    <ClCompile Include="..\..\code\Core\StringUtil.cpp" />
+    <ClCompile Include="..\..\code\Core\StringUtilWin.cpp" />
     <ClCompile Include="..\..\code\Core\System.cpp" />
     <ClCompile Include="..\..\code\Core\SystemWin.cpp" />
     <ClCompile Include="..\..\code\Core\TracyHelper.cpp" />
@@ -307,6 +307,7 @@ echo No | copy /-Y $(SolutionDir)..\..\code\External\meshoptimizer\lib\win64\mes
     <ClInclude Include="..\..\code\AssetManager.h" />
     <ClInclude Include="..\..\code\Camera.h" />
     <ClInclude Include="..\..\code\CommonTypes.h" />
+    <ClInclude Include="..\..\code\Core\Allocators.h" />
     <ClInclude Include="..\..\code\Core\Atomic.h" />
     <ClInclude Include="..\..\code\Core\Base.h" />
     <ClInclude Include="..\..\code\Core\BlitSort.h" />
@@ -327,13 +328,12 @@ echo No | copy /-Y $(SolutionDir)..\..\code\External\meshoptimizer\lib\win64\mes
     <ClInclude Include="..\..\code\Core\Jobs.h" />
     <ClInclude Include="..\..\code\Core\JsonParser.h" />
     <ClInclude Include="..\..\code\Core\Log.h" />
-    <ClInclude Include="..\..\code\Core\Math.h" />
+    <ClInclude Include="..\..\code\Core\MathAll.h" />
     <ClInclude Include="..\..\code\Core\MathScalar.h" />
     <ClInclude Include="..\..\code\Core\MathTypes.h" />
     <ClInclude Include="..\..\code\Core\MathVector.h" />
-    <ClInclude Include="..\..\code\Core\Memory.h" />
     <ClInclude Include="..\..\code\Core\Settings.h" />
-    <ClInclude Include="..\..\code\Core\String.h" />
+    <ClInclude Include="..\..\code\Core\StringUtil.h" />
     <ClInclude Include="..\..\code\Core\System.h" />
     <ClInclude Include="..\..\code\Core\TracyHelper.h" />
     <ClInclude Include="..\..\code\Engine.h" />

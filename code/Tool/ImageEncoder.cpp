@@ -3,7 +3,7 @@
 #if CONFIG_TOOLMODE
 #include "../External/ispc_texcomp/include/ispc_texcomp.h"
 
-#include "../Core/String.h"
+#include "../Core/StringUtil.h"
 
 struct ImageEncoderInfo
 {

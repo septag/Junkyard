@@ -138,19 +138,7 @@
     <ClCompile Include="..\..\code\Core\Log.cpp">
       <Filter>Core</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\code\Core\Math.cpp">
-      <Filter>Core</Filter>
-    </ClCompile>
-    <ClCompile Include="..\..\code\Core\Memory.cpp">
-      <Filter>Core</Filter>
-    </ClCompile>
     <ClCompile Include="..\..\code\Core\Settings.cpp">
-      <Filter>Core</Filter>
-    </ClCompile>
-    <ClCompile Include="..\..\code\Core\String.cpp">
-      <Filter>Core</Filter>
-    </ClCompile>
-    <ClCompile Include="..\..\code\Core\StringWin.cpp">
       <Filter>Core</Filter>
     </ClCompile>
     <ClCompile Include="..\..\code\Core\System.cpp">
@@ -202,6 +190,18 @@
       <Filter>Core</Filter>
     </ClCompile>
     <ClCompile Include="..\..\code\Core\IniParser.cpp">
+      <Filter>Core</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\code\Core\StringUtil.cpp">
+      <Filter>Core</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\code\Core\StringUtilWin.cpp">
+      <Filter>Core</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\code\Core\MathAll.cpp">
+      <Filter>Core</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\code\Core\Allocators.cpp">
       <Filter>Core</Filter>
     </ClCompile>
   </ItemGroup>
@@ -290,13 +290,7 @@
     <ClInclude Include="..\..\code\Core\Log.h">
       <Filter>Core</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\code\Core\Memory.h">
-      <Filter>Core</Filter>
-    </ClInclude>
     <ClInclude Include="..\..\code\Core\Settings.h">
-      <Filter>Core</Filter>
-    </ClInclude>
-    <ClInclude Include="..\..\code\Core\String.h">
       <Filter>Core</Filter>
     </ClInclude>
     <ClInclude Include="..\..\code\Core\System.h">
@@ -328,9 +322,6 @@
     </ClInclude>
     <ClInclude Include="..\..\code\Graphics\GfxTools.h">
       <Filter>Graphics</Filter>
-    </ClInclude>
-    <ClInclude Include="..\..\code\Core\Math.h">
-      <Filter>Core</Filter>
     </ClInclude>
     <ClInclude Include="..\..\code\Core\MathScalar.h">
       <Filter>Core</Filter>
@@ -383,6 +374,15 @@
     <ClInclude Include="..\..\code\VirtualFS.h" />
     <ClInclude Include="..\..\code\JunkyardSettings.h" />
     <ClInclude Include="..\..\code\Core\IniParser.h">
+      <Filter>Core</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\code\Core\StringUtil.h">
+      <Filter>Core</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\code\Core\MathAll.h">
+      <Filter>Core</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\code\Core\Allocators.h">
       <Filter>Core</Filter>
     </ClInclude>
   </ItemGroup>

@@ -11,7 +11,6 @@
 #include <stdarg.h> // va_list/va_start
 #include <stdio.h>  // puts
 
-#include "String.h"
 #include "System.h"         // sysAndroidPrintXXX/sysWinDebugger..
 #include "Buffers.h"
 #include "Log.h"

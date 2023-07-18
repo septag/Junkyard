@@ -1,6 +1,6 @@
 #include "Base.h"
-#include "String.h"
 
+#include "StringUtil.h"
 #include "System.h"
 #include "Buffers.h"
 

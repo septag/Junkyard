@@ -4,8 +4,8 @@
 
 #include "Core/External/mgustavsson/ini.h"
 
-#include "Core/Memory.h"
-#include "Core/String.h"
+#include "Core/Allocators.h"
+#include "Core/StringUtil.h"
 #include "Core/System.h"
 #include "Core/Settings.h"
 #include "Core/IncludeWin.h"

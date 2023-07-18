@@ -13,7 +13,7 @@
 #include <android/configuration.h>
 
 #include "Core/System.h"
-#include "Core/String.h"
+#include "Core/StringUtil.h"
 #include "Core/Settings.h"
 #include "Core/Buffers.h"
 #include "Core/Log.h"
