@@ -12,7 +12,7 @@
 #include <stdlib.h>    
 #endif
 
-#include "String.h"
+#include "StringUtil.h"
 #include "Hash.h"
 #include "Buffers.h"
 

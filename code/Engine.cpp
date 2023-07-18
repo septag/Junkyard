@@ -1,6 +1,6 @@
 #include "Engine.h"
 
-#include "Core/String.h"
+#include "Core/StringUtil.h"
 #include "Core/System.h"
 #include "Core/Settings.h"
 #include "Core/Jobs.h"

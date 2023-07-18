@@ -1,7 +1,7 @@
 #pragma once
 
 #include "../Core/Base.h"
-#include "../Core/String.h" 
+#include "../Core/StringUtil.h" 
 #include "../Core/MathTypes.h"
 
 #include "../CommonTypes.h"

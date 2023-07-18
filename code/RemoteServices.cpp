@@ -3,7 +3,7 @@
 #include "Core/System.h"
 #include "Core/Settings.h"
 #include "Core/Buffers.h"
-#include "Core/String.h"
+#include "Core/StringUtil.h"
 #include "Core/Log.h"
 
 #include "JunkyardSettings.h"

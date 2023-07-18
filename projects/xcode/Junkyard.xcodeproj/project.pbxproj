@@ -1,0 +1,972 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 55;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		ABF104012A642B4900D853CC /* Test.cpp in Sources */ = {isa = PBXBuildFile; fileRef = ABF103E82A642AB400D853CC /* Test.cpp */; };
+		ABF1042F2A642CB600D853CC /* BlitSort.h in Headers */ = {isa = PBXBuildFile; fileRef = ABF103BD2A6427DD00D853CC /* BlitSort.h */; };
+		ABF104302A642CB600D853CC /* DebugClang.cpp in Sources */ = {isa = PBXBuildFile; fileRef = ABF103BC2A6427DD00D853CC /* DebugClang.cpp */; };
+		ABF104312A642CB600D853CC /* Buffers.cpp in Sources */ = {isa = PBXBuildFile; fileRef = ABF103D42A6427DD00D853CC /* Buffers.cpp */; };
+		ABF104322A642CB600D853CC /* SystemPosix.cpp in Sources */ = {isa = PBXBuildFile; fileRef = ABF103C42A6427DD00D853CC /* SystemPosix.cpp */; };
+		ABF104332A642CB600D853CC /* MathAll.cpp in Sources */ = {isa = PBXBuildFile; fileRef = ABF103B12A6427DD00D853CC /* MathAll.cpp */; };
+		ABF104342A642CB600D853CC /* StringUtil.cpp in Sources */ = {isa = PBXBuildFile; fileRef = ABF103B72A6427DD00D853CC /* StringUtil.cpp */; };
+		ABF104352A642CB600D853CC /* JsonParser.cpp in Sources */ = {isa = PBXBuildFile; fileRef = ABF103B82A6427DD00D853CC /* JsonParser.cpp */; };
+		ABF104362A642CB600D853CC /* IncludeWin.h in Headers */ = {isa = PBXBuildFile; fileRef = ABF103D92A6427DD00D853CC /* IncludeWin.h */; };
+		ABF104372A642CB600D853CC /* Base.cpp in Sources */ = {isa = PBXBuildFile; fileRef = ABF103CF2A6427DD00D853CC /* Base.cpp */; };
+		ABF104382A642CB600D853CC /* Base.h in Headers */ = {isa = PBXBuildFile; fileRef = ABF103D52A6427DD00D853CC /* Base.h */; };
+		ABF104392A642CB600D853CC /* JsonParser.h in Headers */ = {isa = PBXBuildFile; fileRef = ABF103D32A6427DD00D853CC /* JsonParser.h */; };
+		ABF1043A2A642CB600D853CC /* Log.h in Headers */ = {isa = PBXBuildFile; fileRef = ABF103BA2A6427DD00D853CC /* Log.h */; };
+		ABF1043B2A642CB600D853CC /* System.h in Headers */ = {isa = PBXBuildFile; fileRef = ABF103B62A6427DD00D853CC /* System.h */; };
+		ABF1043C2A642CB600D853CC /* Buffers.h in Headers */ = {isa = PBXBuildFile; fileRef = ABF103C22A6427DD00D853CC /* Buffers.h */; };
+		ABF1043D2A642CB600D853CC /* Log.cpp in Sources */ = {isa = PBXBuildFile; fileRef = ABF103D62A6427DD00D853CC /* Log.cpp */; };
+		ABF1043E2A642CB600D853CC /* MathTypes.h in Headers */ = {isa = PBXBuildFile; fileRef = ABF103CD2A6427DD00D853CC /* MathTypes.h */; };
+		ABF1043F2A642CB600D853CC /* Allocators.h in Headers */ = {isa = PBXBuildFile; fileRef = ABF103C92A6427DD00D853CC /* Allocators.h */; };
+		ABF104402A642CB600D853CC /* SystemMac.mm in Sources */ = {isa = PBXBuildFile; fileRef = ABF103C72A6427DD00D853CC /* SystemMac.mm */; };
+		ABF104412A642CB600D853CC /* MathScalar.h in Headers */ = {isa = PBXBuildFile; fileRef = ABF103D72A6427DD00D853CC /* MathScalar.h */; };
+		ABF104422A642CB600D853CC /* StringUtil.h in Headers */ = {isa = PBXBuildFile; fileRef = ABF103BE2A6427DD00D853CC /* StringUtil.h */; };
+		ABF104432A642CB600D853CC /* Settings.h in Headers */ = {isa = PBXBuildFile; fileRef = ABF103B22A6427DD00D853CC /* Settings.h */; };
+		ABF104442A642CB600D853CC /* IniParser.h in Headers */ = {isa = PBXBuildFile; fileRef = ABF103DA2A6427DD00D853CC /* IniParser.h */; };
+		ABF104452A642CB600D853CC /* MathAll.h in Headers */ = {isa = PBXBuildFile; fileRef = ABF103B42A6427DD00D853CC /* MathAll.h */; };
+		ABF104462A642CB600D853CC /* TracyHelper.h in Headers */ = {isa = PBXBuildFile; fileRef = ABF103D22A6427DD00D853CC /* TracyHelper.h */; };
+		ABF104472A642CB600D853CC /* IniParser.cpp in Sources */ = {isa = PBXBuildFile; fileRef = ABF103CA2A6427DD00D853CC /* IniParser.cpp */; };
+		ABF104482A642CB600D853CC /* Jobs.cpp in Sources */ = {isa = PBXBuildFile; fileRef = ABF103CC2A6427DD00D853CC /* Jobs.cpp */; };
+		ABF104492A642CB600D853CC /* Allocators.cpp in Sources */ = {isa = PBXBuildFile; fileRef = ABF103D82A6427DD00D853CC /* Allocators.cpp */; };
+		ABF1044A2A642CB600D853CC /* SystemWin.cpp in Sources */ = {isa = PBXBuildFile; fileRef = ABF103D12A6427DD00D853CC /* SystemWin.cpp */; };
+		ABF1044B2A642CB600D853CC /* SystemAndroid.cpp in Sources */ = {isa = PBXBuildFile; fileRef = ABF103C62A6427DD00D853CC /* SystemAndroid.cpp */; };
+		ABF1044C2A642CB600D853CC /* Hash.cpp in Sources */ = {isa = PBXBuildFile; fileRef = ABF103CB2A6427DD00D853CC /* Hash.cpp */; };
+		ABF1044D2A642CB600D853CC /* Jobs.h in Headers */ = {isa = PBXBuildFile; fileRef = ABF103C32A6427DD00D853CC /* Jobs.h */; };
+		ABF1044E2A642CB600D853CC /* Config.h in Headers */ = {isa = PBXBuildFile; fileRef = ABF103D02A6427DD00D853CC /* Config.h */; };
+		ABF1044F2A642CB600D853CC /* MathVector.h in Headers */ = {isa = PBXBuildFile; fileRef = ABF103C12A6427DD00D853CC /* MathVector.h */; };
+		ABF104502A642CB600D853CC /* Settings.cpp in Sources */ = {isa = PBXBuildFile; fileRef = ABF103B52A6427DD00D853CC /* Settings.cpp */; };
+		ABF104512A642CB600D853CC /* Debug.h in Headers */ = {isa = PBXBuildFile; fileRef = ABF103CE2A6427DD00D853CC /* Debug.h */; };
+		ABF104522A642CB600D853CC /* Hash.h in Headers */ = {isa = PBXBuildFile; fileRef = ABF103B32A6427DD00D853CC /* Hash.h */; };
+		ABF104532A642CB600D853CC /* Atomic.h in Headers */ = {isa = PBXBuildFile; fileRef = ABF103C82A6427DD00D853CC /* Atomic.h */; };
+		ABF104542A642CB600D853CC /* TracyHelper.cpp in Sources */ = {isa = PBXBuildFile; fileRef = ABF103BB2A6427DD00D853CC /* TracyHelper.cpp */; };
+		ABF104552A642CB600D853CC /* StringUtilWin.cpp in Sources */ = {isa = PBXBuildFile; fileRef = ABF103B92A6427DD00D853CC /* StringUtilWin.cpp */; };
+		ABF104562A642CB600D853CC /* DebugWin.cpp in Sources */ = {isa = PBXBuildFile; fileRef = ABF103BF2A6427DD00D853CC /* DebugWin.cpp */; };
+		ABF104572A642CB600D853CC /* System.cpp in Sources */ = {isa = PBXBuildFile; fileRef = ABF103C02A6427DD00D853CC /* System.cpp */; };
+		ABF104582A642CB600D853CC /* Debug.cpp in Sources */ = {isa = PBXBuildFile; fileRef = ABF103C52A6427DD00D853CC /* Debug.cpp */; };
+		ABF1046A2A6437CB00D853CC /* Graphics.cpp in Sources */ = {isa = PBXBuildFile; fileRef = ABF1045B2A6437CB00D853CC /* Graphics.cpp */; };
+		ABF1046C2A6437CB00D853CC /* Model.h in Headers */ = {isa = PBXBuildFile; fileRef = ABF1045D2A6437CB00D853CC /* Model.h */; };
+		ABF1046D2A6437CB00D853CC /* DebugDraw.cpp in Sources */ = {isa = PBXBuildFile; fileRef = ABF1045E2A6437CB00D853CC /* DebugDraw.cpp */; };
+		ABF1046E2A6437CB00D853CC /* ImGuiWrapper.cpp in Sources */ = {isa = PBXBuildFile; fileRef = ABF1045F2A6437CB00D853CC /* ImGuiWrapper.cpp */; };
+		ABF1046F2A6437CB00D853CC /* Model.cpp in Sources */ = {isa = PBXBuildFile; fileRef = ABF104602A6437CB00D853CC /* Model.cpp */; };
+		ABF104702A6437CB00D853CC /* ImGuiWrapper.h in Headers */ = {isa = PBXBuildFile; fileRef = ABF104612A6437CB00D853CC /* ImGuiWrapper.h */; };
+		ABF104722A6437CB00D853CC /* Graphics.h in Headers */ = {isa = PBXBuildFile; fileRef = ABF104632A6437CB00D853CC /* Graphics.h */; };
+		ABF104732A6437CB00D853CC /* Shader.h in Headers */ = {isa = PBXBuildFile; fileRef = ABF104642A6437CB00D853CC /* Shader.h */; };
+		ABF104752A6437CB00D853CC /* Shader.cpp in Sources */ = {isa = PBXBuildFile; fileRef = ABF104662A6437CB00D853CC /* Shader.cpp */; };
+		ABF104762A6437CB00D853CC /* DebugDraw.h in Headers */ = {isa = PBXBuildFile; fileRef = ABF104672A6437CB00D853CC /* DebugDraw.h */; };
+		ABF104782A6437CB00D853CC /* GfxTools.h in Headers */ = {isa = PBXBuildFile; fileRef = ABF104692A6437CB00D853CC /* GfxTools.h */; };
+		ABF1048D2A64380600D853CC /* Application.h in Headers */ = {isa = PBXBuildFile; fileRef = ABF1047A2A64380600D853CC /* Application.h */; };
+		ABF1048E2A64380600D853CC /* ApplicationWin.cpp in Sources */ = {isa = PBXBuildFile; fileRef = ABF1047B2A64380600D853CC /* ApplicationWin.cpp */; };
+		ABF1048F2A64380600D853CC /* VirtualFS.h in Headers */ = {isa = PBXBuildFile; fileRef = ABF1047C2A64380600D853CC /* VirtualFS.h */; };
+		ABF104902A64380600D853CC /* RemoteServices.cpp in Sources */ = {isa = PBXBuildFile; fileRef = ABF1047D2A64380600D853CC /* RemoteServices.cpp */; };
+		ABF104912A64380600D853CC /* UnityBuild.inl in Resources */ = {isa = PBXBuildFile; fileRef = ABF1047E2A64380600D853CC /* UnityBuild.inl */; };
+		ABF104922A64380600D853CC /* ApplicationAndroid.cpp in Sources */ = {isa = PBXBuildFile; fileRef = ABF1047F2A64380600D853CC /* ApplicationAndroid.cpp */; };
+		ABF104932A64380600D853CC /* AssetManager.h in Headers */ = {isa = PBXBuildFile; fileRef = ABF104802A64380600D853CC /* AssetManager.h */; };
+		ABF104942A64380600D853CC /* JunkyardSettings.cpp in Sources */ = {isa = PBXBuildFile; fileRef = ABF104812A64380600D853CC /* JunkyardSettings.cpp */; };
+		ABF104952A64380600D853CC /* RemoteServices.h in Headers */ = {isa = PBXBuildFile; fileRef = ABF104822A64380600D853CC /* RemoteServices.h */; };
+		ABF104962A64380600D853CC /* Engine.cpp in Sources */ = {isa = PBXBuildFile; fileRef = ABF104832A64380600D853CC /* Engine.cpp */; };
+		ABF104972A64380600D853CC /* VirtualFS.cpp in Sources */ = {isa = PBXBuildFile; fileRef = ABF104842A64380600D853CC /* VirtualFS.cpp */; };
+		ABF104982A64380600D853CC /* JunkyardSettings.h in Headers */ = {isa = PBXBuildFile; fileRef = ABF104852A64380600D853CC /* JunkyardSettings.h */; };
+		ABF104992A64380600D853CC /* ApplicationMac.mm in Sources */ = {isa = PBXBuildFile; fileRef = ABF104862A64380600D853CC /* ApplicationMac.mm */; };
+		ABF1049A2A64380600D853CC /* Application.cpp in Sources */ = {isa = PBXBuildFile; fileRef = ABF104872A64380600D853CC /* Application.cpp */; };
+		ABF1049B2A64380600D853CC /* Camera.h in Headers */ = {isa = PBXBuildFile; fileRef = ABF104882A64380600D853CC /* Camera.h */; };
+		ABF1049C2A64380600D853CC /* CommonTypes.h in Headers */ = {isa = PBXBuildFile; fileRef = ABF104892A64380600D853CC /* CommonTypes.h */; };
+		ABF1049D2A64380600D853CC /* Camera.cpp in Sources */ = {isa = PBXBuildFile; fileRef = ABF1048A2A64380600D853CC /* Camera.cpp */; };
+		ABF1049E2A64380600D853CC /* AssetManager.cpp in Sources */ = {isa = PBXBuildFile; fileRef = ABF1048B2A64380600D853CC /* AssetManager.cpp */; };
+		ABF1049F2A64380600D853CC /* Engine.h in Headers */ = {isa = PBXBuildFile; fileRef = ABF1048C2A64380600D853CC /* Engine.h */; };
+		ABF104B82A6449B900D853CC /* ShaderCompiler.cpp in Sources */ = {isa = PBXBuildFile; fileRef = ABF104AD2A6449B900D853CC /* ShaderCompiler.cpp */; };
+		ABF104B92A6449B900D853CC /* ShaderCompiler.h in Headers */ = {isa = PBXBuildFile; fileRef = ABF104AE2A6449B900D853CC /* ShaderCompiler.h */; };
+		ABF104BA2A6449B900D853CC /* Console.h in Headers */ = {isa = PBXBuildFile; fileRef = ABF104AF2A6449B900D853CC /* Console.h */; };
+		ABF104BB2A6449B900D853CC /* ImageEncoder.cpp in Sources */ = {isa = PBXBuildFile; fileRef = ABF104B02A6449B900D853CC /* ImageEncoder.cpp */; };
+		ABF104BC2A6449B900D853CC /* MeshOptimizer.h in Headers */ = {isa = PBXBuildFile; fileRef = ABF104B12A6449B900D853CC /* MeshOptimizer.h */; };
+		ABF104BD2A6449B900D853CC /* ImGuiTools.cpp in Sources */ = {isa = PBXBuildFile; fileRef = ABF104B22A6449B900D853CC /* ImGuiTools.cpp */; };
+		ABF104BE2A6449B900D853CC /* ImGuiTools.h in Headers */ = {isa = PBXBuildFile; fileRef = ABF104B32A6449B900D853CC /* ImGuiTools.h */; };
+		ABF104BF2A6449B900D853CC /* MeshOptimizer.cpp in Sources */ = {isa = PBXBuildFile; fileRef = ABF104B42A6449B900D853CC /* MeshOptimizer.cpp */; };
+		ABF104C12A6449B900D853CC /* ImageEncoder.h in Headers */ = {isa = PBXBuildFile; fileRef = ABF104B62A6449B900D853CC /* ImageEncoder.h */; };
+		ABF104C22A6449B900D853CC /* Console.cpp in Sources */ = {isa = PBXBuildFile; fileRef = ABF104B72A6449B900D853CC /* Console.cpp */; };
+		ABF104DB2A644AEC00D853CC /* imgui_draw.cpp in Sources */ = {isa = PBXBuildFile; fileRef = ABF104D42A644AEC00D853CC /* imgui_draw.cpp */; };
+		ABF104DC2A644AEC00D853CC /* imgui_tables.cpp in Sources */ = {isa = PBXBuildFile; fileRef = ABF104D52A644AEC00D853CC /* imgui_tables.cpp */; };
+		ABF104DD2A644AEC00D853CC /* imgui_demo.cpp in Sources */ = {isa = PBXBuildFile; fileRef = ABF104D62A644AEC00D853CC /* imgui_demo.cpp */; };
+		ABF104DE2A644AEC00D853CC /* imgui.h in Headers */ = {isa = PBXBuildFile; fileRef = ABF104D72A644AEC00D853CC /* imgui.h */; };
+		ABF104DF2A644AEC00D853CC /* imconfig.h in Headers */ = {isa = PBXBuildFile; fileRef = ABF104D82A644AEC00D853CC /* imconfig.h */; };
+		ABF104E02A644AEC00D853CC /* imgui_widgets.cpp in Sources */ = {isa = PBXBuildFile; fileRef = ABF104D92A644AEC00D853CC /* imgui_widgets.cpp */; };
+		ABF104E12A644AEC00D853CC /* imgui.cpp in Sources */ = {isa = PBXBuildFile; fileRef = ABF104DA2A644AEC00D853CC /* imgui.cpp */; };
+		ABF104E42A644AFA00D853CC /* ImGuizmo.h in Headers */ = {isa = PBXBuildFile; fileRef = ABF104E22A644AFA00D853CC /* ImGuizmo.h */; };
+		ABF104E52A644AFA00D853CC /* ImGuizmo.cpp in Sources */ = {isa = PBXBuildFile; fileRef = ABF104E32A644AFA00D853CC /* ImGuizmo.cpp */; };
+		ABF104EF2A644DE400D853CC /* Engine.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = ABF103E02A6428C400D853CC /* Engine.framework */; };
+		ABF104F22A644E1A00D853CC /* AppKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = ABF104A72A6447B000D853CC /* AppKit.framework */; platformFilters = (macos, ); };
+		ABF104F32A644E4300D853CC /* MetalKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = ABF104A52A6447A800D853CC /* MetalKit.framework */; };
+		ABF104F42A644E4900D853CC /* Metal.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = ABF104E62A644D9000D853CC /* Metal.framework */; };
+		ABF104F52A644E5A00D853CC /* MoltenVK.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = ABF104A92A64493500D853CC /* MoltenVK.xcframework */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		ABF104022A642B6200D853CC /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 14B7EA912731921500CC6204 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = ABF103DF2A6428C400D853CC;
+			remoteInfo = Engine;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		ABF103AE2A64265B00D853CC /* Junkyard.entitlements */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.entitlements; path = Junkyard.entitlements; sourceTree = "<group>"; };
+		ABF103B12A6427DD00D853CC /* MathAll.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = MathAll.cpp; path = ../../code/Core/MathAll.cpp; sourceTree = "<group>"; };
+		ABF103B22A6427DD00D853CC /* Settings.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = Settings.h; path = ../../code/Core/Settings.h; sourceTree = "<group>"; };
+		ABF103B32A6427DD00D853CC /* Hash.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = Hash.h; path = ../../code/Core/Hash.h; sourceTree = "<group>"; };
+		ABF103B42A6427DD00D853CC /* MathAll.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = MathAll.h; path = ../../code/Core/MathAll.h; sourceTree = "<group>"; };
+		ABF103B52A6427DD00D853CC /* Settings.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = Settings.cpp; path = ../../code/Core/Settings.cpp; sourceTree = "<group>"; };
+		ABF103B62A6427DD00D853CC /* System.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = System.h; path = ../../code/Core/System.h; sourceTree = "<group>"; };
+		ABF103B72A6427DD00D853CC /* StringUtil.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = StringUtil.cpp; path = ../../code/Core/StringUtil.cpp; sourceTree = "<group>"; };
+		ABF103B82A6427DD00D853CC /* JsonParser.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = JsonParser.cpp; path = ../../code/Core/JsonParser.cpp; sourceTree = "<group>"; };
+		ABF103B92A6427DD00D853CC /* StringUtilWin.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = StringUtilWin.cpp; path = ../../code/Core/StringUtilWin.cpp; sourceTree = "<group>"; };
+		ABF103BA2A6427DD00D853CC /* Log.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = Log.h; path = ../../code/Core/Log.h; sourceTree = "<group>"; };
+		ABF103BB2A6427DD00D853CC /* TracyHelper.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = TracyHelper.cpp; path = ../../code/Core/TracyHelper.cpp; sourceTree = "<group>"; };
+		ABF103BC2A6427DD00D853CC /* DebugClang.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = DebugClang.cpp; path = ../../code/Core/DebugClang.cpp; sourceTree = "<group>"; };
+		ABF103BD2A6427DD00D853CC /* BlitSort.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = BlitSort.h; path = ../../code/Core/BlitSort.h; sourceTree = "<group>"; };
+		ABF103BE2A6427DD00D853CC /* StringUtil.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = StringUtil.h; path = ../../code/Core/StringUtil.h; sourceTree = "<group>"; };
+		ABF103BF2A6427DD00D853CC /* DebugWin.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = DebugWin.cpp; path = ../../code/Core/DebugWin.cpp; sourceTree = "<group>"; };
+		ABF103C02A6427DD00D853CC /* System.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = System.cpp; path = ../../code/Core/System.cpp; sourceTree = "<group>"; };
+		ABF103C12A6427DD00D853CC /* MathVector.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = MathVector.h; path = ../../code/Core/MathVector.h; sourceTree = "<group>"; };
+		ABF103C22A6427DD00D853CC /* Buffers.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = Buffers.h; path = ../../code/Core/Buffers.h; sourceTree = "<group>"; };
+		ABF103C32A6427DD00D853CC /* Jobs.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = Jobs.h; path = ../../code/Core/Jobs.h; sourceTree = "<group>"; };
+		ABF103C42A6427DD00D853CC /* SystemPosix.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = SystemPosix.cpp; path = ../../code/Core/SystemPosix.cpp; sourceTree = "<group>"; };
+		ABF103C52A6427DD00D853CC /* Debug.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = Debug.cpp; path = ../../code/Core/Debug.cpp; sourceTree = "<group>"; };
+		ABF103C62A6427DD00D853CC /* SystemAndroid.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = SystemAndroid.cpp; path = ../../code/Core/SystemAndroid.cpp; sourceTree = "<group>"; };
+		ABF103C72A6427DD00D853CC /* SystemMac.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; name = SystemMac.mm; path = ../../code/Core/SystemMac.mm; sourceTree = "<group>"; };
+		ABF103C82A6427DD00D853CC /* Atomic.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = Atomic.h; path = ../../code/Core/Atomic.h; sourceTree = "<group>"; };
+		ABF103C92A6427DD00D853CC /* Allocators.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = Allocators.h; path = ../../code/Core/Allocators.h; sourceTree = "<group>"; };
+		ABF103CA2A6427DD00D853CC /* IniParser.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = IniParser.cpp; path = ../../code/Core/IniParser.cpp; sourceTree = "<group>"; };
+		ABF103CB2A6427DD00D853CC /* Hash.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = Hash.cpp; path = ../../code/Core/Hash.cpp; sourceTree = "<group>"; };
+		ABF103CC2A6427DD00D853CC /* Jobs.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = Jobs.cpp; path = ../../code/Core/Jobs.cpp; sourceTree = "<group>"; };
+		ABF103CD2A6427DD00D853CC /* MathTypes.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = MathTypes.h; path = ../../code/Core/MathTypes.h; sourceTree = "<group>"; };
+		ABF103CE2A6427DD00D853CC /* Debug.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = Debug.h; path = ../../code/Core/Debug.h; sourceTree = "<group>"; };
+		ABF103CF2A6427DD00D853CC /* Base.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = Base.cpp; path = ../../code/Core/Base.cpp; sourceTree = "<group>"; };
+		ABF103D02A6427DD00D853CC /* Config.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = Config.h; path = ../../code/Core/Config.h; sourceTree = "<group>"; };
+		ABF103D12A6427DD00D853CC /* SystemWin.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = SystemWin.cpp; path = ../../code/Core/SystemWin.cpp; sourceTree = "<group>"; };
+		ABF103D22A6427DD00D853CC /* TracyHelper.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = TracyHelper.h; path = ../../code/Core/TracyHelper.h; sourceTree = "<group>"; };
+		ABF103D32A6427DD00D853CC /* JsonParser.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = JsonParser.h; path = ../../code/Core/JsonParser.h; sourceTree = "<group>"; };
+		ABF103D42A6427DD00D853CC /* Buffers.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = Buffers.cpp; path = ../../code/Core/Buffers.cpp; sourceTree = "<group>"; };
+		ABF103D52A6427DD00D853CC /* Base.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = Base.h; path = ../../code/Core/Base.h; sourceTree = "<group>"; };
+		ABF103D62A6427DD00D853CC /* Log.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = Log.cpp; path = ../../code/Core/Log.cpp; sourceTree = "<group>"; };
+		ABF103D72A6427DD00D853CC /* MathScalar.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = MathScalar.h; path = ../../code/Core/MathScalar.h; sourceTree = "<group>"; };
+		ABF103D82A6427DD00D853CC /* Allocators.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = Allocators.cpp; path = ../../code/Core/Allocators.cpp; sourceTree = "<group>"; };
+		ABF103D92A6427DD00D853CC /* IncludeWin.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = IncludeWin.h; path = ../../code/Core/IncludeWin.h; sourceTree = "<group>"; };
+		ABF103DA2A6427DD00D853CC /* IniParser.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = IniParser.h; path = ../../code/Core/IniParser.h; sourceTree = "<group>"; };
+		ABF103E02A6428C400D853CC /* Engine.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Engine.framework; sourceTree = BUILT_PRODUCTS_DIR; };
+		ABF103E82A642AB400D853CC /* Test.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = Test.cpp; path = ../../code/Tests/Test.cpp; sourceTree = "<group>"; };
+		ABF103EE2A642B2300D853CC /* Test1.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Test1.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		ABF104042A642BDE00D853CC /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; name = Info.plist; path = Test1/Info.plist; sourceTree = "<group>"; };
+		ABF1045B2A6437CB00D853CC /* Graphics.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = Graphics.cpp; path = ../../code/Graphics/Graphics.cpp; sourceTree = "<group>"; };
+		ABF1045C2A6437CB00D853CC /* TracyVk.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = TracyVk.cpp; path = ../../code/Graphics/TracyVk.cpp; sourceTree = "<group>"; };
+		ABF1045D2A6437CB00D853CC /* Model.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = Model.h; path = ../../code/Graphics/Model.h; sourceTree = "<group>"; };
+		ABF1045E2A6437CB00D853CC /* DebugDraw.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = DebugDraw.cpp; path = ../../code/Graphics/DebugDraw.cpp; sourceTree = "<group>"; };
+		ABF1045F2A6437CB00D853CC /* ImGuiWrapper.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = ImGuiWrapper.cpp; path = ../../code/Graphics/ImGuiWrapper.cpp; sourceTree = "<group>"; };
+		ABF104602A6437CB00D853CC /* Model.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = Model.cpp; path = ../../code/Graphics/Model.cpp; sourceTree = "<group>"; };
+		ABF104612A6437CB00D853CC /* ImGuiWrapper.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = ImGuiWrapper.h; path = ../../code/Graphics/ImGuiWrapper.h; sourceTree = "<group>"; };
+		ABF104622A6437CB00D853CC /* GfxTools.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = GfxTools.cpp; path = ../../code/Graphics/GfxTools.cpp; sourceTree = "<group>"; };
+		ABF104632A6437CB00D853CC /* Graphics.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = Graphics.h; path = ../../code/Graphics/Graphics.h; sourceTree = "<group>"; };
+		ABF104642A6437CB00D853CC /* Shader.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = Shader.h; path = ../../code/Graphics/Shader.h; sourceTree = "<group>"; };
+		ABF104652A6437CB00D853CC /* ImageVk.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = ImageVk.cpp; path = ../../code/Graphics/ImageVk.cpp; sourceTree = "<group>"; };
+		ABF104662A6437CB00D853CC /* Shader.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = Shader.cpp; path = ../../code/Graphics/Shader.cpp; sourceTree = "<group>"; };
+		ABF104672A6437CB00D853CC /* DebugDraw.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = DebugDraw.h; path = ../../code/Graphics/DebugDraw.h; sourceTree = "<group>"; };
+		ABF104682A6437CB00D853CC /* GraphicsVk.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = GraphicsVk.cpp; path = ../../code/Graphics/GraphicsVk.cpp; sourceTree = "<group>"; };
+		ABF104692A6437CB00D853CC /* GfxTools.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = GfxTools.h; path = ../../code/Graphics/GfxTools.h; sourceTree = "<group>"; };
+		ABF1047A2A64380600D853CC /* Application.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = Application.h; path = ../../code/Application.h; sourceTree = "<group>"; };
+		ABF1047B2A64380600D853CC /* ApplicationWin.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = ApplicationWin.cpp; path = ../../code/ApplicationWin.cpp; sourceTree = "<group>"; };
+		ABF1047C2A64380600D853CC /* VirtualFS.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = VirtualFS.h; path = ../../code/VirtualFS.h; sourceTree = "<group>"; };
+		ABF1047D2A64380600D853CC /* RemoteServices.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = RemoteServices.cpp; path = ../../code/RemoteServices.cpp; sourceTree = "<group>"; };
+		ABF1047E2A64380600D853CC /* UnityBuild.inl */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text; name = UnityBuild.inl; path = ../../code/UnityBuild.inl; sourceTree = "<group>"; };
+		ABF1047F2A64380600D853CC /* ApplicationAndroid.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = ApplicationAndroid.cpp; path = ../../code/ApplicationAndroid.cpp; sourceTree = "<group>"; };
+		ABF104802A64380600D853CC /* AssetManager.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = AssetManager.h; path = ../../code/AssetManager.h; sourceTree = "<group>"; };
+		ABF104812A64380600D853CC /* JunkyardSettings.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = JunkyardSettings.cpp; path = ../../code/JunkyardSettings.cpp; sourceTree = "<group>"; };
+		ABF104822A64380600D853CC /* RemoteServices.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = RemoteServices.h; path = ../../code/RemoteServices.h; sourceTree = "<group>"; };
+		ABF104832A64380600D853CC /* Engine.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = Engine.cpp; path = ../../code/Engine.cpp; sourceTree = "<group>"; };
+		ABF104842A64380600D853CC /* VirtualFS.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = VirtualFS.cpp; path = ../../code/VirtualFS.cpp; sourceTree = "<group>"; };
+		ABF104852A64380600D853CC /* JunkyardSettings.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = JunkyardSettings.h; path = ../../code/JunkyardSettings.h; sourceTree = "<group>"; };
+		ABF104862A64380600D853CC /* ApplicationMac.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; name = ApplicationMac.mm; path = ../../code/ApplicationMac.mm; sourceTree = "<group>"; };
+		ABF104872A64380600D853CC /* Application.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = Application.cpp; path = ../../code/Application.cpp; sourceTree = "<group>"; };
+		ABF104882A64380600D853CC /* Camera.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = Camera.h; path = ../../code/Camera.h; sourceTree = "<group>"; };
+		ABF104892A64380600D853CC /* CommonTypes.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = CommonTypes.h; path = ../../code/CommonTypes.h; sourceTree = "<group>"; };
+		ABF1048A2A64380600D853CC /* Camera.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = Camera.cpp; path = ../../code/Camera.cpp; sourceTree = "<group>"; };
+		ABF1048B2A64380600D853CC /* AssetManager.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = AssetManager.cpp; path = ../../code/AssetManager.cpp; sourceTree = "<group>"; };
+		ABF1048C2A64380600D853CC /* Engine.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = Engine.h; path = ../../code/Engine.h; sourceTree = "<group>"; };
+		ABF104A12A64478200D853CC /* CoreFoundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreFoundation.framework; path = System/Library/Frameworks/CoreFoundation.framework; sourceTree = SDKROOT; };
+		ABF104A32A64478B00D853CC /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = System/Library/Frameworks/Foundation.framework; sourceTree = SDKROOT; };
+		ABF104A52A6447A800D853CC /* MetalKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = MetalKit.framework; path = System/Library/Frameworks/MetalKit.framework; sourceTree = SDKROOT; };
+		ABF104A72A6447B000D853CC /* AppKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AppKit.framework; path = System/Library/Frameworks/AppKit.framework; sourceTree = SDKROOT; };
+		ABF104A92A64493500D853CC /* MoltenVK.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = MoltenVK.xcframework; path = ../../code/External/MoltenVK/MoltenVK.xcframework; sourceTree = "<group>"; };
+		ABF104AD2A6449B900D853CC /* ShaderCompiler.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = ShaderCompiler.cpp; path = ../../code/Tool/ShaderCompiler.cpp; sourceTree = "<group>"; };
+		ABF104AE2A6449B900D853CC /* ShaderCompiler.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = ShaderCompiler.h; path = ../../code/Tool/ShaderCompiler.h; sourceTree = "<group>"; };
+		ABF104AF2A6449B900D853CC /* Console.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = Console.h; path = ../../code/Tool/Console.h; sourceTree = "<group>"; };
+		ABF104B02A6449B900D853CC /* ImageEncoder.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = ImageEncoder.cpp; path = ../../code/Tool/ImageEncoder.cpp; sourceTree = "<group>"; };
+		ABF104B12A6449B900D853CC /* MeshOptimizer.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = MeshOptimizer.h; path = ../../code/Tool/MeshOptimizer.h; sourceTree = "<group>"; };
+		ABF104B22A6449B900D853CC /* ImGuiTools.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = ImGuiTools.cpp; path = ../../code/Tool/ImGuiTools.cpp; sourceTree = "<group>"; };
+		ABF104B32A6449B900D853CC /* ImGuiTools.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = ImGuiTools.h; path = ../../code/Tool/ImGuiTools.h; sourceTree = "<group>"; };
+		ABF104B42A6449B900D853CC /* MeshOptimizer.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = MeshOptimizer.cpp; path = ../../code/Tool/MeshOptimizer.cpp; sourceTree = "<group>"; };
+		ABF104B62A6449B900D853CC /* ImageEncoder.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = ImageEncoder.h; path = ../../code/Tool/ImageEncoder.h; sourceTree = "<group>"; };
+		ABF104B72A6449B900D853CC /* Console.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = Console.cpp; path = ../../code/Tool/Console.cpp; sourceTree = "<group>"; };
+		ABF104D42A644AEC00D853CC /* imgui_draw.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = imgui_draw.cpp; path = ../../../code/External/imgui/imgui_draw.cpp; sourceTree = "<group>"; };
+		ABF104D52A644AEC00D853CC /* imgui_tables.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = imgui_tables.cpp; path = ../../../code/External/imgui/imgui_tables.cpp; sourceTree = "<group>"; };
+		ABF104D62A644AEC00D853CC /* imgui_demo.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = imgui_demo.cpp; path = ../../../code/External/imgui/imgui_demo.cpp; sourceTree = "<group>"; };
+		ABF104D72A644AEC00D853CC /* imgui.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = imgui.h; path = ../../../code/External/imgui/imgui.h; sourceTree = "<group>"; };
+		ABF104D82A644AEC00D853CC /* imconfig.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = imconfig.h; path = ../../../code/External/imgui/imconfig.h; sourceTree = "<group>"; };
+		ABF104D92A644AEC00D853CC /* imgui_widgets.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = imgui_widgets.cpp; path = ../../../code/External/imgui/imgui_widgets.cpp; sourceTree = "<group>"; };
+		ABF104DA2A644AEC00D853CC /* imgui.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = imgui.cpp; path = ../../../code/External/imgui/imgui.cpp; sourceTree = "<group>"; };
+		ABF104E22A644AFA00D853CC /* ImGuizmo.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = ImGuizmo.h; path = ../../code/External/ImGuizmo/ImGuizmo.h; sourceTree = "<group>"; };
+		ABF104E32A644AFA00D853CC /* ImGuizmo.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = ImGuizmo.cpp; path = ../../code/External/ImGuizmo/ImGuizmo.cpp; sourceTree = "<group>"; };
+		ABF104E62A644D9000D853CC /* Metal.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Metal.framework; path = System/Library/Frameworks/Metal.framework; sourceTree = SDKROOT; };
+		ABF104E82A644DB400D853CC /* Metal.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Metal.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS16.4.sdk/System/Library/Frameworks/Metal.framework; sourceTree = DEVELOPER_DIR; };
+		ABF104E92A644DB400D853CC /* MetalKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = MetalKit.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS16.4.sdk/System/Library/Frameworks/MetalKit.framework; sourceTree = DEVELOPER_DIR; };
+		ABF104EC2A644DBB00D853CC /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS16.4.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
+		ABF104F02A644DFB00D853CC /* CoreFoundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreFoundation.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS16.4.sdk/System/Library/Frameworks/CoreFoundation.framework; sourceTree = DEVELOPER_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		ABF103DD2A6428C400D853CC /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		ABF103EB2A642B2300D853CC /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				ABF104F52A644E5A00D853CC /* MoltenVK.xcframework in Frameworks */,
+				ABF104F42A644E4900D853CC /* Metal.framework in Frameworks */,
+				ABF104F32A644E4300D853CC /* MetalKit.framework in Frameworks */,
+				ABF104F22A644E1A00D853CC /* AppKit.framework in Frameworks */,
+				ABF104EF2A644DE400D853CC /* Engine.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		14B7EA902731921500CC6204 = {
+			isa = PBXGroup;
+			children = (
+				ABF104C32A644A5800D853CC /* External */,
+				ABF104AC2A6449A200D853CC /* Tool */,
+				ABF104872A64380600D853CC /* Application.cpp */,
+				ABF1047A2A64380600D853CC /* Application.h */,
+				ABF1047F2A64380600D853CC /* ApplicationAndroid.cpp */,
+				ABF104862A64380600D853CC /* ApplicationMac.mm */,
+				ABF1047B2A64380600D853CC /* ApplicationWin.cpp */,
+				ABF1048B2A64380600D853CC /* AssetManager.cpp */,
+				ABF104802A64380600D853CC /* AssetManager.h */,
+				ABF1048A2A64380600D853CC /* Camera.cpp */,
+				ABF104882A64380600D853CC /* Camera.h */,
+				ABF104892A64380600D853CC /* CommonTypes.h */,
+				ABF104832A64380600D853CC /* Engine.cpp */,
+				ABF1048C2A64380600D853CC /* Engine.h */,
+				ABF104812A64380600D853CC /* JunkyardSettings.cpp */,
+				ABF104852A64380600D853CC /* JunkyardSettings.h */,
+				ABF1047D2A64380600D853CC /* RemoteServices.cpp */,
+				ABF104822A64380600D853CC /* RemoteServices.h */,
+				ABF1047E2A64380600D853CC /* UnityBuild.inl */,
+				ABF104842A64380600D853CC /* VirtualFS.cpp */,
+				ABF1047C2A64380600D853CC /* VirtualFS.h */,
+				ABF1045A2A64378800D853CC /* Shaders */,
+				ABF104592A64377D00D853CC /* Graphics */,
+				ABF104042A642BDE00D853CC /* Info.plist */,
+				ABF103E72A642A9E00D853CC /* Tests */,
+				ABF103B02A64270F00D853CC /* Core */,
+				ABF103AE2A64265B00D853CC /* Junkyard.entitlements */,
+				14B7EA9A2731921500CC6204 /* Products */,
+				14D768522733CA5600A21A65 /* Frameworks */,
+			);
+			sourceTree = "<group>";
+			usesTabs = 0;
+		};
+		14B7EA9A2731921500CC6204 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				ABF103E02A6428C400D853CC /* Engine.framework */,
+				ABF103EE2A642B2300D853CC /* Test1.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		14D768522733CA5600A21A65 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				ABF104F02A644DFB00D853CC /* CoreFoundation.framework */,
+				ABF104EC2A644DBB00D853CC /* Foundation.framework */,
+				ABF104E62A644D9000D853CC /* Metal.framework */,
+				ABF104E82A644DB400D853CC /* Metal.framework */,
+				ABF104E92A644DB400D853CC /* MetalKit.framework */,
+				ABF104A92A64493500D853CC /* MoltenVK.xcframework */,
+				ABF104A72A6447B000D853CC /* AppKit.framework */,
+				ABF104A52A6447A800D853CC /* MetalKit.framework */,
+				ABF104A32A64478B00D853CC /* Foundation.framework */,
+				ABF104A12A64478200D853CC /* CoreFoundation.framework */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
+		ABF103B02A64270F00D853CC /* Core */ = {
+			isa = PBXGroup;
+			children = (
+				ABF103C82A6427DD00D853CC /* Atomic.h */,
+				ABF103CF2A6427DD00D853CC /* Base.cpp */,
+				ABF103D52A6427DD00D853CC /* Base.h */,
+				ABF103BD2A6427DD00D853CC /* BlitSort.h */,
+				ABF103D42A6427DD00D853CC /* Buffers.cpp */,
+				ABF103C22A6427DD00D853CC /* Buffers.h */,
+				ABF103D02A6427DD00D853CC /* Config.h */,
+				ABF103C52A6427DD00D853CC /* Debug.cpp */,
+				ABF103CE2A6427DD00D853CC /* Debug.h */,
+				ABF103BC2A6427DD00D853CC /* DebugClang.cpp */,
+				ABF103BF2A6427DD00D853CC /* DebugWin.cpp */,
+				ABF103CB2A6427DD00D853CC /* Hash.cpp */,
+				ABF103B32A6427DD00D853CC /* Hash.h */,
+				ABF103D92A6427DD00D853CC /* IncludeWin.h */,
+				ABF103CA2A6427DD00D853CC /* IniParser.cpp */,
+				ABF103DA2A6427DD00D853CC /* IniParser.h */,
+				ABF103CC2A6427DD00D853CC /* Jobs.cpp */,
+				ABF103C32A6427DD00D853CC /* Jobs.h */,
+				ABF103B82A6427DD00D853CC /* JsonParser.cpp */,
+				ABF103D32A6427DD00D853CC /* JsonParser.h */,
+				ABF103D62A6427DD00D853CC /* Log.cpp */,
+				ABF103BA2A6427DD00D853CC /* Log.h */,
+				ABF103B12A6427DD00D853CC /* MathAll.cpp */,
+				ABF103B42A6427DD00D853CC /* MathAll.h */,
+				ABF103D72A6427DD00D853CC /* MathScalar.h */,
+				ABF103CD2A6427DD00D853CC /* MathTypes.h */,
+				ABF103C12A6427DD00D853CC /* MathVector.h */,
+				ABF103D82A6427DD00D853CC /* Allocators.cpp */,
+				ABF103C92A6427DD00D853CC /* Allocators.h */,
+				ABF103B52A6427DD00D853CC /* Settings.cpp */,
+				ABF103B22A6427DD00D853CC /* Settings.h */,
+				ABF103B72A6427DD00D853CC /* StringUtil.cpp */,
+				ABF103BE2A6427DD00D853CC /* StringUtil.h */,
+				ABF103B92A6427DD00D853CC /* StringUtilWin.cpp */,
+				ABF103C02A6427DD00D853CC /* System.cpp */,
+				ABF103B62A6427DD00D853CC /* System.h */,
+				ABF103C62A6427DD00D853CC /* SystemAndroid.cpp */,
+				ABF103C72A6427DD00D853CC /* SystemMac.mm */,
+				ABF103C42A6427DD00D853CC /* SystemPosix.cpp */,
+				ABF103D12A6427DD00D853CC /* SystemWin.cpp */,
+				ABF103BB2A6427DD00D853CC /* TracyHelper.cpp */,
+				ABF103D22A6427DD00D853CC /* TracyHelper.h */,
+			);
+			name = Core;
+			sourceTree = "<group>";
+		};
+		ABF103E72A642A9E00D853CC /* Tests */ = {
+			isa = PBXGroup;
+			children = (
+				ABF103E82A642AB400D853CC /* Test.cpp */,
+			);
+			name = Tests;
+			sourceTree = "<group>";
+		};
+		ABF104592A64377D00D853CC /* Graphics */ = {
+			isa = PBXGroup;
+			children = (
+				ABF1045E2A6437CB00D853CC /* DebugDraw.cpp */,
+				ABF104672A6437CB00D853CC /* DebugDraw.h */,
+				ABF104622A6437CB00D853CC /* GfxTools.cpp */,
+				ABF104692A6437CB00D853CC /* GfxTools.h */,
+				ABF1045B2A6437CB00D853CC /* Graphics.cpp */,
+				ABF104632A6437CB00D853CC /* Graphics.h */,
+				ABF104682A6437CB00D853CC /* GraphicsVk.cpp */,
+				ABF104652A6437CB00D853CC /* ImageVk.cpp */,
+				ABF1045F2A6437CB00D853CC /* ImGuiWrapper.cpp */,
+				ABF104612A6437CB00D853CC /* ImGuiWrapper.h */,
+				ABF104602A6437CB00D853CC /* Model.cpp */,
+				ABF1045D2A6437CB00D853CC /* Model.h */,
+				ABF104662A6437CB00D853CC /* Shader.cpp */,
+				ABF104642A6437CB00D853CC /* Shader.h */,
+				ABF1045C2A6437CB00D853CC /* TracyVk.cpp */,
+			);
+			name = Graphics;
+			sourceTree = "<group>";
+		};
+		ABF1045A2A64378800D853CC /* Shaders */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			name = Shaders;
+			sourceTree = "<group>";
+		};
+		ABF104AC2A6449A200D853CC /* Tool */ = {
+			isa = PBXGroup;
+			children = (
+				ABF104B72A6449B900D853CC /* Console.cpp */,
+				ABF104AF2A6449B900D853CC /* Console.h */,
+				ABF104B02A6449B900D853CC /* ImageEncoder.cpp */,
+				ABF104B62A6449B900D853CC /* ImageEncoder.h */,
+				ABF104B22A6449B900D853CC /* ImGuiTools.cpp */,
+				ABF104B32A6449B900D853CC /* ImGuiTools.h */,
+				ABF104B42A6449B900D853CC /* MeshOptimizer.cpp */,
+				ABF104B12A6449B900D853CC /* MeshOptimizer.h */,
+				ABF104AD2A6449B900D853CC /* ShaderCompiler.cpp */,
+				ABF104AE2A6449B900D853CC /* ShaderCompiler.h */,
+			);
+			name = Tool;
+			sourceTree = "<group>";
+		};
+		ABF104C32A644A5800D853CC /* External */ = {
+			isa = PBXGroup;
+			children = (
+				ABF104D32A644AC400D853CC /* ImGui */,
+				ABF104D22A644AA900D853CC /* ImGuizmo */,
+			);
+			name = External;
+			sourceTree = "<group>";
+		};
+		ABF104D22A644AA900D853CC /* ImGuizmo */ = {
+			isa = PBXGroup;
+			children = (
+				ABF104E32A644AFA00D853CC /* ImGuizmo.cpp */,
+				ABF104E22A644AFA00D853CC /* ImGuizmo.h */,
+			);
+			name = ImGuizmo;
+			sourceTree = "<group>";
+		};
+		ABF104D32A644AC400D853CC /* ImGui */ = {
+			isa = PBXGroup;
+			children = (
+				ABF104D82A644AEC00D853CC /* imconfig.h */,
+				ABF104D62A644AEC00D853CC /* imgui_demo.cpp */,
+				ABF104D42A644AEC00D853CC /* imgui_draw.cpp */,
+				ABF104D52A644AEC00D853CC /* imgui_tables.cpp */,
+				ABF104D92A644AEC00D853CC /* imgui_widgets.cpp */,
+				ABF104DA2A644AEC00D853CC /* imgui.cpp */,
+				ABF104D72A644AEC00D853CC /* imgui.h */,
+			);
+			path = ImGui;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXHeadersBuildPhase section */
+		ABF103DB2A6428C400D853CC /* Headers */ = {
+			isa = PBXHeadersBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				ABF104522A642CB600D853CC /* Hash.h in Headers */,
+				ABF104982A64380600D853CC /* JunkyardSettings.h in Headers */,
+				ABF104932A64380600D853CC /* AssetManager.h in Headers */,
+				ABF1043F2A642CB600D853CC /* Allocators.h in Headers */,
+				ABF104E42A644AFA00D853CC /* ImGuizmo.h in Headers */,
+				ABF104B92A6449B900D853CC /* ShaderCompiler.h in Headers */,
+				ABF104432A642CB600D853CC /* Settings.h in Headers */,
+				ABF104782A6437CB00D853CC /* GfxTools.h in Headers */,
+				ABF1043E2A642CB600D853CC /* MathTypes.h in Headers */,
+				ABF1048F2A64380600D853CC /* VirtualFS.h in Headers */,
+				ABF1046C2A6437CB00D853CC /* Model.h in Headers */,
+				ABF104382A642CB600D853CC /* Base.h in Headers */,
+				ABF104512A642CB600D853CC /* Debug.h in Headers */,
+				ABF104BA2A6449B900D853CC /* Console.h in Headers */,
+				ABF1043C2A642CB600D853CC /* Buffers.h in Headers */,
+				ABF104442A642CB600D853CC /* IniParser.h in Headers */,
+				ABF104952A64380600D853CC /* RemoteServices.h in Headers */,
+				ABF104732A6437CB00D853CC /* Shader.h in Headers */,
+				ABF104BE2A6449B900D853CC /* ImGuiTools.h in Headers */,
+				ABF104BC2A6449B900D853CC /* MeshOptimizer.h in Headers */,
+				ABF104722A6437CB00D853CC /* Graphics.h in Headers */,
+				ABF104452A642CB600D853CC /* MathAll.h in Headers */,
+				ABF1049C2A64380600D853CC /* CommonTypes.h in Headers */,
+				ABF1044F2A642CB600D853CC /* MathVector.h in Headers */,
+				ABF104532A642CB600D853CC /* Atomic.h in Headers */,
+				ABF1048D2A64380600D853CC /* Application.h in Headers */,
+				ABF104412A642CB600D853CC /* MathScalar.h in Headers */,
+				ABF1043A2A642CB600D853CC /* Log.h in Headers */,
+				ABF104702A6437CB00D853CC /* ImGuiWrapper.h in Headers */,
+				ABF1049F2A64380600D853CC /* Engine.h in Headers */,
+				ABF104392A642CB600D853CC /* JsonParser.h in Headers */,
+				ABF1044D2A642CB600D853CC /* Jobs.h in Headers */,
+				ABF104C12A6449B900D853CC /* ImageEncoder.h in Headers */,
+				ABF104DE2A644AEC00D853CC /* imgui.h in Headers */,
+				ABF104362A642CB600D853CC /* IncludeWin.h in Headers */,
+				ABF104DF2A644AEC00D853CC /* imconfig.h in Headers */,
+				ABF1044E2A642CB600D853CC /* Config.h in Headers */,
+				ABF104462A642CB600D853CC /* TracyHelper.h in Headers */,
+				ABF1042F2A642CB600D853CC /* BlitSort.h in Headers */,
+				ABF1043B2A642CB600D853CC /* System.h in Headers */,
+				ABF1049B2A64380600D853CC /* Camera.h in Headers */,
+				ABF104762A6437CB00D853CC /* DebugDraw.h in Headers */,
+				ABF104422A642CB600D853CC /* StringUtil.h in Headers */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXHeadersBuildPhase section */
+
+/* Begin PBXNativeTarget section */
+		ABF103DF2A6428C400D853CC /* Engine */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = ABF103E42A6428C400D853CC /* Build configuration list for PBXNativeTarget "Engine" */;
+			buildPhases = (
+				ABF103DB2A6428C400D853CC /* Headers */,
+				ABF103DC2A6428C400D853CC /* Sources */,
+				ABF103DD2A6428C400D853CC /* Frameworks */,
+				ABF103DE2A6428C400D853CC /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = Engine;
+			productName = lib;
+			productReference = ABF103E02A6428C400D853CC /* Engine.framework */;
+			productType = "com.apple.product-type.framework";
+		};
+		ABF103ED2A642B2300D853CC /* Test1 */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = ABF103FE2A642B2400D853CC /* Build configuration list for PBXNativeTarget "Test1" */;
+			buildPhases = (
+				ABF103EA2A642B2300D853CC /* Sources */,
+				ABF103EB2A642B2300D853CC /* Frameworks */,
+				ABF103EC2A642B2300D853CC /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				ABF104032A642B6200D853CC /* PBXTargetDependency */,
+			);
+			name = Test1;
+			productName = Test1;
+			productReference = ABF103EE2A642B2300D853CC /* Test1.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		14B7EA912731921500CC6204 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastUpgradeCheck = 1430;
+				TargetAttributes = {
+					ABF103DF2A6428C400D853CC = {
+						CreatedOnToolsVersion = 14.3.1;
+					};
+					ABF103ED2A642B2300D853CC = {
+						CreatedOnToolsVersion = 14.3.1;
+					};
+				};
+			};
+			buildConfigurationList = 14B7EA942731921500CC6204 /* Build configuration list for PBXProject "Junkyard" */;
+			compatibilityVersion = "Xcode 13.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = 14B7EA902731921500CC6204;
+			productRefGroup = 14B7EA9A2731921500CC6204 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				ABF103DF2A6428C400D853CC /* Engine */,
+				ABF103ED2A642B2300D853CC /* Test1 */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		ABF103DE2A6428C400D853CC /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				ABF104912A64380600D853CC /* UnityBuild.inl in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		ABF103EC2A642B2300D853CC /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		ABF103DC2A6428C400D853CC /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				ABF104BB2A6449B900D853CC /* ImageEncoder.cpp in Sources */,
+				ABF104572A642CB600D853CC /* System.cpp in Sources */,
+				ABF104922A64380600D853CC /* ApplicationAndroid.cpp in Sources */,
+				ABF1046F2A6437CB00D853CC /* Model.cpp in Sources */,
+				ABF104962A64380600D853CC /* Engine.cpp in Sources */,
+				ABF104DC2A644AEC00D853CC /* imgui_tables.cpp in Sources */,
+				ABF104492A642CB600D853CC /* Allocators.cpp in Sources */,
+				ABF104E12A644AEC00D853CC /* imgui.cpp in Sources */,
+				ABF1048E2A64380600D853CC /* ApplicationWin.cpp in Sources */,
+				ABF104582A642CB600D853CC /* Debug.cpp in Sources */,
+				ABF1046D2A6437CB00D853CC /* DebugDraw.cpp in Sources */,
+				ABF104C22A6449B900D853CC /* Console.cpp in Sources */,
+				ABF104552A642CB600D853CC /* StringUtilWin.cpp in Sources */,
+				ABF1044A2A642CB600D853CC /* SystemWin.cpp in Sources */,
+				ABF104302A642CB600D853CC /* DebugClang.cpp in Sources */,
+				ABF1049D2A64380600D853CC /* Camera.cpp in Sources */,
+				ABF1046E2A6437CB00D853CC /* ImGuiWrapper.cpp in Sources */,
+				ABF104DB2A644AEC00D853CC /* imgui_draw.cpp in Sources */,
+				ABF104312A642CB600D853CC /* Buffers.cpp in Sources */,
+				ABF104B82A6449B900D853CC /* ShaderCompiler.cpp in Sources */,
+				ABF1043D2A642CB600D853CC /* Log.cpp in Sources */,
+				ABF104482A642CB600D853CC /* Jobs.cpp in Sources */,
+				ABF104BF2A6449B900D853CC /* MeshOptimizer.cpp in Sources */,
+				ABF104472A642CB600D853CC /* IniParser.cpp in Sources */,
+				ABF104972A64380600D853CC /* VirtualFS.cpp in Sources */,
+				ABF104352A642CB600D853CC /* JsonParser.cpp in Sources */,
+				ABF104752A6437CB00D853CC /* Shader.cpp in Sources */,
+				ABF104342A642CB600D853CC /* StringUtil.cpp in Sources */,
+				ABF104942A64380600D853CC /* JunkyardSettings.cpp in Sources */,
+				ABF104902A64380600D853CC /* RemoteServices.cpp in Sources */,
+				ABF104542A642CB600D853CC /* TracyHelper.cpp in Sources */,
+				ABF104992A64380600D853CC /* ApplicationMac.mm in Sources */,
+				ABF1049A2A64380600D853CC /* Application.cpp in Sources */,
+				ABF1044C2A642CB600D853CC /* Hash.cpp in Sources */,
+				ABF1046A2A6437CB00D853CC /* Graphics.cpp in Sources */,
+				ABF104BD2A6449B900D853CC /* ImGuiTools.cpp in Sources */,
+				ABF104322A642CB600D853CC /* SystemPosix.cpp in Sources */,
+				ABF104402A642CB600D853CC /* SystemMac.mm in Sources */,
+				ABF104332A642CB600D853CC /* MathAll.cpp in Sources */,
+				ABF104DD2A644AEC00D853CC /* imgui_demo.cpp in Sources */,
+				ABF104E52A644AFA00D853CC /* ImGuizmo.cpp in Sources */,
+				ABF1044B2A642CB600D853CC /* SystemAndroid.cpp in Sources */,
+				ABF1049E2A64380600D853CC /* AssetManager.cpp in Sources */,
+				ABF104502A642CB600D853CC /* Settings.cpp in Sources */,
+				ABF104562A642CB600D853CC /* DebugWin.cpp in Sources */,
+				ABF104E02A644AEC00D853CC /* imgui_widgets.cpp in Sources */,
+				ABF104372A642CB600D853CC /* Base.cpp in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		ABF103EA2A642B2300D853CC /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				ABF104012A642B4900D853CC /* Test.cpp in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		ABF104032A642B6200D853CC /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = ABF103DF2A6428C400D853CC /* Engine */;
+			targetProxy = ABF104022A642B6200D853CC /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		14B7EA9E2731921500CC6204 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++17";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEAD_CODE_STRIPPING = YES;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_ENABLE_CPP_EXCEPTIONS = NO;
+				GCC_ENABLE_CPP_RTTI = NO;
+				GCC_ENABLE_OBJC_EXCEPTIONS = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 12.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = macosx;
+				SYSTEM_HEADER_SEARCH_PATHS = "$(PROJECT_DIR)/../../code/External/MoltenVK/include";
+			};
+			name = Debug;
+		};
+		14B7EA9F2731921500CC6204 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++17";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEAD_CODE_STRIPPING = YES;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_ENABLE_CPP_EXCEPTIONS = NO;
+				GCC_ENABLE_CPP_RTTI = NO;
+				GCC_ENABLE_OBJC_EXCEPTIONS = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 12.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				SDKROOT = macosx;
+				SYSTEM_HEADER_SEARCH_PATHS = "$(PROJECT_DIR)/../../code/External/MoltenVK/include";
+			};
+			name = Release;
+		};
+		ABF103E52A6428C400D853CC /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEFINES_MODULE = YES;
+				DYLIB_COMPATIBILITY_VERSION = 1;
+				DYLIB_CURRENT_VERSION = 1;
+				DYLIB_INSTALL_NAME_BASE = "@rpath";
+				ENABLE_MODULE_VERIFIER = YES;
+				EXCLUDED_ARCHS = "";
+				GCC_ENABLE_CPP_EXCEPTIONS = NO;
+				GCC_ENABLE_CPP_RTTI = NO;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				INSTALL_PATH = "$(LOCAL_LIBRARY_DIR)/Frameworks";
+				IPHONEOS_DEPLOYMENT_TARGET = 16.4;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = (
+					"@executable_path/../Frameworks",
+					"@loader_path/Frameworks",
+				);
+				MACH_O_TYPE = staticlib;
+				MACOSX_DEPLOYMENT_TARGET = 13.3;
+				MARKETING_VERSION = 1.0;
+				MODULE_VERIFIER_SUPPORTED_LANGUAGES = "objective-c objective-c++";
+				MODULE_VERIFIER_SUPPORTED_LANGUAGE_STANDARDS = "gnu11 gnu++20";
+				PRODUCT_BUNDLE_IDENTIFIER = com.junkyard.Engine;
+				PRODUCT_NAME = "$(TARGET_NAME:c99extidentifier)";
+				SDKROOT = auto;
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx";
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				VERSIONING_SYSTEM = "apple-generic";
+				VERSION_INFO_PREFIX = "";
+			};
+			name = Debug;
+		};
+		ABF103E62A6428C400D853CC /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEFINES_MODULE = YES;
+				DYLIB_COMPATIBILITY_VERSION = 1;
+				DYLIB_CURRENT_VERSION = 1;
+				DYLIB_INSTALL_NAME_BASE = "@rpath";
+				ENABLE_MODULE_VERIFIER = YES;
+				EXCLUDED_ARCHS = "";
+				GCC_ENABLE_CPP_EXCEPTIONS = NO;
+				GCC_ENABLE_CPP_RTTI = NO;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				INSTALL_PATH = "$(LOCAL_LIBRARY_DIR)/Frameworks";
+				IPHONEOS_DEPLOYMENT_TARGET = 16.4;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = (
+					"@executable_path/../Frameworks",
+					"@loader_path/Frameworks",
+				);
+				MACH_O_TYPE = staticlib;
+				MACOSX_DEPLOYMENT_TARGET = 13.3;
+				MARKETING_VERSION = 1.0;
+				MODULE_VERIFIER_SUPPORTED_LANGUAGES = "objective-c objective-c++";
+				MODULE_VERIFIER_SUPPORTED_LANGUAGE_STANDARDS = "gnu11 gnu++20";
+				PRODUCT_BUNDLE_IDENTIFIER = com.junkyard.Engine;
+				PRODUCT_NAME = "$(TARGET_NAME:c99extidentifier)";
+				SDKROOT = auto;
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx";
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				VERSIONING_SYSTEM = "apple-generic";
+				VERSION_INFO_PREFIX = "";
+			};
+			name = Release;
+		};
+		ABF103FF2A642B2400D853CC /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CODE_SIGN_ENTITLEMENTS = Junkyard.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Test1/Info.plist;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				INFOPLIST_KEY_NSMainStoryboardFile = Main;
+				INFOPLIST_KEY_NSPrincipalClass = NSApplication;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 13.3;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.junkyard.Test1;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+			};
+			name = Debug;
+		};
+		ABF104002A642B2400D853CC /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CODE_SIGN_ENTITLEMENTS = Junkyard.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Test1/Info.plist;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				INFOPLIST_KEY_NSMainStoryboardFile = Main;
+				INFOPLIST_KEY_NSPrincipalClass = NSApplication;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 13.3;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.junkyard.Test1;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		14B7EA942731921500CC6204 /* Build configuration list for PBXProject "Junkyard" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				14B7EA9E2731921500CC6204 /* Debug */,
+				14B7EA9F2731921500CC6204 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		ABF103E42A6428C400D853CC /* Build configuration list for PBXNativeTarget "Engine" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				ABF103E52A6428C400D853CC /* Debug */,
+				ABF103E62A6428C400D853CC /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		ABF103FE2A642B2400D853CC /* Build configuration list for PBXNativeTarget "Test1" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				ABF103FF2A642B2400D853CC /* Debug */,
+				ABF104002A642B2400D853CC /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 14B7EA912731921500CC6204 /* Project object */;
+}

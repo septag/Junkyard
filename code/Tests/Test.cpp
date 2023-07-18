@@ -4,7 +4,7 @@
 #include "../Core/Log.h"
 #include "../Core/TracyHelper.h"
 #include "../Core/Jobs.h"
-#include "../Core/Math.h"
+#include "../Core/MathAll.h"
 
 #include "../AssetManager.h"
 #include "../VirtualFS.h"

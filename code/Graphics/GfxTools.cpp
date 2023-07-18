@@ -62,8 +62,8 @@ void GfxDynamicUniformBuffer::Flush(const GfxDyanmicUniformBufferRange* ranges, 
     }
 
     MemTempAllocator tmpAlloc;
-    size_t* offsets = tmpAlloc.MallocTyped<size_t>(numRanges);
-    size_t* sizes = tmpAlloc.MallocTyped<size_t>(numRanges);
+    VkDeviceSize* offsets = tmpAlloc.MallocTyped<VkDeviceSize>(numRanges);
+    VkDeviceSize* sizes = tmpAlloc.MallocTyped<VkDeviceSize>(numRanges);
 
     for (uint32 i = 0; i < numRanges; i++) {
         offsets[i] = ranges[i].index * this->stride;

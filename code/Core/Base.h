@@ -357,7 +357,7 @@
 #define PLATFORM_MOBILE (0 || PLATFORM_ANDROID || PLATFORM_IOS)
 
 // Force ToolMode=0 on mobile platforms
-#if CONFIG_TOOLMODE && PLATFORM_MOBILE
+#if CONFIG_TOOLMODE && !PLATFORM_WINDOWS
     #undef CONFIG_TOOLMODE
     #define CONFIG_TOOLMODE 0
 #endif
@@ -641,9 +641,7 @@ struct RelativePtr
     inline void Set(const _T* ptr)
     { 
         ASSERT(ptr != nullptr);
-        #if !PLATFORM_APPLE // Enabling this code on apple-clang gives me 'undeclared identifier ASSERT', why ? I do not know
-            ASSERT(uintptr_t(ptr) > uintptr_t(this));
-        #endif
+        ASSERT(uintptr_t(ptr) > uintptr_t(this));
         offset = uint32((uint8*)ptr - (uint8*)this);
     }
 

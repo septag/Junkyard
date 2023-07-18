@@ -24,9 +24,9 @@
 
 #include "External/tracy/TracyC.h"
 
-#include "String.h"
+#include "StringUtil.h"
 #include "Atomic.h"
-#include "Memory.h"
+#include "Allocators.h"
 #include "Log.h"
 
 // "Adaptive" mutex implementation using early spinlock

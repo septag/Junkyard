@@ -2,7 +2,7 @@
 
 #if PLATFORM_WINDOWS
 
-#include "String.h"  // strCopy/..
+#include "StringUtil.h"  // strCopy/..
 #include "IncludeWin.h"
 
 #pragma pack(push, 8)

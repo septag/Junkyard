@@ -14,7 +14,7 @@
 // - File: Local disk file wrapper
 // - SocketTCP: server/client TCP socket
 //
-#include "String.h"
+#include "StringUtil.h"
 
 // fwd
 struct NO_VTABLE Allocator;

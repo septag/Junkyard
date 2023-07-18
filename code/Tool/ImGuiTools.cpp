@@ -1,7 +1,7 @@
 #include "ImGuiTools.h"
 
 #include "../Core/Settings.h"
-#include "../Core/String.h"
+#include "../Core/StringUtil.h"
 #include "../Core/Buffers.h"
 #include "../Core/Log.h"
 #include "../Core/Atomic.h"

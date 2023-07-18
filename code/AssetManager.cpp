@@ -3,7 +3,7 @@
 #include "Core/Log.h"
 #include "Core/Hash.h"
 #include "Core/System.h"
-#include "Core/String.h"
+#include "Core/StringUtil.h"
 #include "Core/JsonParser.h"
 #include "Core/Settings.h"
 #include "Core/Jobs.h"

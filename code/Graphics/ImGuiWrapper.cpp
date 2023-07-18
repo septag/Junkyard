@@ -4,14 +4,14 @@
 
 #include "../External/imgui/imgui.h"
 
-#include "../Core/Memory.h"
-#include "../Core/String.h"
+#include "../Core/Allocators.h"
+#include "../Core/StringUtil.h"
 #include "../Core/Hash.h"
 #include "../Core/Settings.h"
 #include "../Core/Log.h"
 #include "../Core/TracyHelper.h"
 #include "../Core/Buffers.h"
-#include "../Core/Math.h"
+#include "../Core/MathAll.h"
 #include "../Core/IniParser.h"
 
 #include "Graphics.h"

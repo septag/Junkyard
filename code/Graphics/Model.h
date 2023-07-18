@@ -25,7 +25,7 @@
 // GpuBuffers struct is filled only for models without STREAM buffer flag
 //
 
-#include "../Core/String.h"
+#include "../Core/StringUtil.h"
 #include "../Core/MathTypes.h"
 #include "../Graphics/Graphics.h"
 #include "../CommonTypes.h"

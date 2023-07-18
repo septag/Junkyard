@@ -9,7 +9,7 @@
 #include "JsonParser.h"
 
 #include "Buffers.h"
-#include "String.h"
+#include "StringUtil.h"
 
 uint32 jsonGetTokenCount(const char* json5, uint32 json5Len)
 {

@@ -1,6 +1,6 @@
 #include "Settings.h"
-#include "Memory.h"
-#include "String.h"
+#include "Allocators.h"
+#include "StringUtil.h"
 #include "Buffers.h"
 #include "System.h"
 

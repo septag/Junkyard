@@ -1,7 +1,6 @@
 #include "System.h"
 
 #if PLATFORM_APPLE
-#include "String.h"
 #include "Memory.h"
 #include "Buffers.h"
 #include "Log.h"

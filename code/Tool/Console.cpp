@@ -1,7 +1,7 @@
 #include "Console.h"
 
-#include "../Core/Memory.h"
-#include "../Core/String.h"
+#include "../Core/Allocators.h"
+#include "../Core/StringUtil.h"
 #include "../Core/Buffers.h"
 #include "../Core/System.h"
 #include "../Core/Log.h"

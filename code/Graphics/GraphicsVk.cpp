@@ -9,7 +9,9 @@
 #include "Shader.h"
 
 #define VK_NO_PROTOTYPES
-#include "../External/vulkan/include/vulkan.h"
+#if !PLATFORM_APPLE
+    #include "../External/vulkan/include/vulkan.h"
+#endif
 
 // Vulkan platform headers
 #if PLATFORM_WINDOWS
@@ -17,6 +19,8 @@
     #include "../External/vulkan/include/vulkan_win32.h"
 #elif PLATFORM_ANDROID
     #include "../External/vulkan/include/vulkan_android.h"
+#elif PLATFORM_APPLE
+    #include <mvk_vulkan.h>
 #else
     #error "Not implemented"
 #endif
@@ -25,14 +29,14 @@
 #define VOLK_IMPLEMENTATION
 #if PLATFORM_WINDOWS
     #define VK_USE_PLATFORM_WIN32_KHR
-#elif PLATFORM_APPLE
-    #define VK_USE_PLATFORM_MACOS_MVK
+//#elif PLATFORM_APPLE
+//    #define VK_USE_PLATFORM_MACOS_MVK
 #endif
 //#define VOLK_VULKAN_H_PATH "../External/vulkan/include/vulkan.h"
 #include "../External/volk/volk.h"
 
-#include "../Core/Memory.h"
-#include "../Core/String.h"
+#include "../Core/Allocators.h"
+#include "../Core/StringUtil.h"
 #include "../Core/System.h"
 #include "../Core/Hash.h"
 #include "../Core/Buffers.h"
@@ -41,7 +45,7 @@
 #include "../Core/Log.h"
 #include "../Core/BlitSort.h"
 #include "../Core/TracyHelper.h"
-#include "../Core/Math.h"
+#include "../Core/MathAll.h"
 
 #include "../Engine.h"
 #include "../VirtualFS.h"
@@ -438,6 +442,11 @@ static constexpr const char* kAdrenoDebugLayer = "VK_LAYER_ADRENO_debug";
     static const char* kGfxVkExtensions[] = {
         "VK_KHR_surface",
         "VK_KHR_android_surface"
+    };
+#elif PLATFORM_APPLE
+    static const char* kGfxVkExtensions[] = {
+        "VK_KHR_surface",
+        "VK_EXT_metal_surface"
     };
 #endif
 
@@ -1222,6 +1231,13 @@ static VkSurfaceKHR gfxCreateWindowSurface(void* windowHandle)
         };
     
         vkCreateAndroidSurfaceKHR(gVk.instance, &surfaceCreateInfo, &gVk.allocVk, &surface);
+    #elif PLATFORM_APPLE
+        VkMetalSurfaceCreateInfoEXT surfaceCreateInfo {
+            .sType = VK_STRUCTURE_TYPE_METAL_SURFACE_CREATE_INFO_EXT,
+            .pLayer = windowHandle
+        };
+    
+        vkCreateMetalSurfaceEXT(gVk.instance, &surfaceCreateInfo, &gVk.allocVk, &surface);
     #else
         #error "Not implemented"
     #endif

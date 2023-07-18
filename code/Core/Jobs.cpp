@@ -10,7 +10,7 @@
 #include "System.h"
 #include "Buffers.h"
 #include "Atomic.h"
-#include "String.h"
+#include "StringUtil.h"
 #include "TracyHelper.h"
 #include "Hash.h"
 

@@ -1,8 +1,8 @@
 #include "System.h"
 
 #if PLATFORM_WINDOWS
-#include "String.h"
-#include "Memory.h"
+#include "StringUtil.h"
+#include "Allocators.h"
 #include "Atomic.h"
 #include "Buffers.h"
 #include "IncludeWin.h"
