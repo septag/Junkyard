@@ -186,6 +186,7 @@ static int serverThreadFn(void*)
     gRemoteServices.serverSock = SocketTCP::CreateListener();
     
     if (gRemoteServices.serverSock.Listen(settingsGet().tooling.serverPort, 1)) {
+        logInfo("(init) RemoteServices: Listening for incomming connection on port: %d", settingsGet().tooling.serverPort);
         char peerUrl[128];
         while (!gRemoteServices.serverQuit) {
             gRemoteServices.serverPeerSock = gRemoteServices.serverSock.Accept(peerUrl, sizeof(peerUrl));

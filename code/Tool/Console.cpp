@@ -258,10 +258,12 @@ bool _private::conInitialize()
         UNUSED(outResponse);
         UNUSED(responseSize);
         #if PLATFORM_WINDOWS
-        if (!sysWin32IsProcessRunning(processName.CStr()))
-            return conRunExternalCommand(argc, argv);
-        else
-            return true;
+            ASSERT(argc > 0);
+            Path processName = Path(argv[0]).GetFileName();
+            if (!sysWin32IsProcessRunning(processName.CStr()))
+                return conRunExternalCommand(argc, argv);
+            else
+                return true;
         #else
             UNUSED(argc);
             UNUSED(argv);

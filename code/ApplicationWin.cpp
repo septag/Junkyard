@@ -929,15 +929,18 @@ bool appInitialize(const AppDesc& desc)
                 }
             }
 
-            // check for window resized, this cannot happen in WM_SIZE as it explodes memory usage
-            if (appWinUpdateDimensions()) {
-                appWinDispatchEvent(AppEventType::Resized);
-                gApp.windowModified = true;
-            }
-
             // When minimized, bring down update frequency
-            if (IsIconic(gApp.hwnd))
+            if (gApp.iconified) {
                 Sleep(16);
+                continue;
+            }
+            else {
+                // check for window resized, this cannot happen in WM_SIZE as it explodes memory usage
+                if (appWinUpdateDimensions()) {
+                    appWinDispatchEvent(AppEventType::Resized);
+                    gApp.windowModified = true;
+                }
+            }
             
             uint64 tmNow = timerGetTicks();
             float dt = !gApp.firstFrame ? static_cast<fl32>(timerToSec(timerDiff(tmNow, tmPrev))) : 0;
