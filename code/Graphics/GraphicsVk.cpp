@@ -2636,11 +2636,13 @@ void gfxEndFrame()
             .pImageIndices = &imageIdx
         };
         VkResult presentResult = vkQueuePresentKHR(gVk.presentQueue, &presentInfo);
-        if (presentResult == VK_ERROR_OUT_OF_DATE_KHR || presentResult == VK_SUBOPTIMAL_KHR) {
+        
+        // TODO: On mac we are getting VK_SUBOPTIMAL_KHR. Investigate why
+        if (presentResult == VK_ERROR_OUT_OF_DATE_KHR/* || presentResult == VK_SUBOPTIMAL_KHR*/) {
             logDebug("Resized/Invalidated swapchain: Recreate");
             gfxResizeSwapchain(appGetFramebufferWidth(), appGetFramebufferHeight());
         }
-        else if (presentResult != VK_SUCCESS) {
+        else if (presentResult != VK_SUCCESS && presentResult != VK_SUBOPTIMAL_KHR) {
             ASSERT_ALWAYS(false, "Gfx: Present swapchain failed");
             return;
         }

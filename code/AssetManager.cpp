@@ -802,8 +802,9 @@ AssetHandle assetLoad(const AssetLoadParams& params, const void* extraParams)
         ++asset.refCount;
     }
     else {
-        MutexScope mtx(gAssetMgr.assetsMtx);
         handle = assetCreateNew(typeMgrIdx, assetHash, params, extraParams);
+        
+        MutexScope mtx(gAssetMgr.assetsMtx);
         Asset& asset = gAssetMgr.assets.Data(handle);
         asset.state = AssetState::Loading;
         asset.obj = typeMgr.asyncObj;

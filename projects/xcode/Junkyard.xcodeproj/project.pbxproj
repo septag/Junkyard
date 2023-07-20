@@ -103,7 +103,6 @@
 		ABF104F22A644E1A00D853CC /* AppKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = ABF104A72A6447B000D853CC /* AppKit.framework */; platformFilters = (macos, ); };
 		ABF104F32A644E4300D853CC /* MetalKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = ABF104A52A6447A800D853CC /* MetalKit.framework */; };
 		ABF104F42A644E4900D853CC /* Metal.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = ABF104E62A644D9000D853CC /* Metal.framework */; };
-		ABF104F52A644E5A00D853CC /* MoltenVK.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = ABF104A92A64493500D853CC /* MoltenVK.xcframework */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -241,7 +240,6 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				ABF104F52A644E5A00D853CC /* MoltenVK.xcframework in Frameworks */,
 				ABF104F42A644E4900D853CC /* Metal.framework in Frameworks */,
 				ABF104F32A644E4300D853CC /* MetalKit.framework in Frameworks */,
 				ABF104F22A644E1A00D853CC /* AppKit.framework in Frameworks */,
