@@ -2,7 +2,7 @@
 
 Yet another multiplatform C++ framework to make games and maybe some other related high-performance applications.
 
-The goal is to focus on simplicity, fast iteration and android/QuestVR development. Features will be developed based on the game/projects I do with it, so this is not going to be do-it-all engine/framework at all.
+The goal is to focus on simplicity, fast iteration and development. Features will be developed based on the game/projects I do with it, so this is not going to be do-it-all engine/framework at all, but probably with a strong foundation to build your own renderers and other stuff on top of it.
 
 It's very much WIP, so not much to show off right now.
 
@@ -11,30 +11,32 @@ It's very much WIP, so not much to show off right now.
 ## Overview and Features
 
 - Minimal C'ish C++20: Some people call it Sane-C++ or similarly [Orthodox-C++](https://gist.github.com/bkaradzic/2e39896bc7d8c34e042b). I use a small subset of newer C++ standards, in which I will explain later in the wiki. Some of them are pointed in [CppFeatures.txt](doc/CppFeatures.txt)
-- No project-gen middleware is used. It has visual-studio solutions and another option for single file unity builds.
+- No project-gen middleware is used. It has visual-studio solutions and another option for single file unity builds. On the Mac, I also provide and maintain xcode project.
 - Very strict memory allocation/resource allocation in most systems.
-- Has it's own Core library: Array, Math, FileIO, HashTable, HandlePool, Buffers, Log, etc.
-- Simple [Fiber-based job system](https://www.gdcvault.com/play/1022186/Parallelizing-the-Naughty-Dog-Engine)
+- Design-wise, very much in contrast to *stl*, it has it's own portable C++ Core library: Array, Math, FileIO, HashTable, HandlePool, Buffers, Log, etc: [Core](code/Core). You can also use this core library in your own code, just by grabbing a copy of the folder and copy it over to your program, and include any file you like in your build.
+- Simple [Fiber-based job system](https://www.gdcvault.com/play/1022186/Parallelizing-the-Naughty-Dog-Engine), with custom Signal synchronization primitives.
 - Vulkan graphics backend with HLSL shaders
 - Multiplatform. Supported platforms:
-    - Windows (x64)
+    - Windows (Tested on Windows 10 x64)
     - Android (Android29+, ARM64)
+    - MacOS through MoltenVk (Tested on Ventura 13.4)
 - Fast iteration
     - Quick build/compile times
     - Aim for simple tooling with minimal abstraction or complexity
-    - No asset upload/deployment on mobile/remote hardware
+- ImGui integration
+- Simple Camera (Orbital + Fps)
+- [Tracy profiler](https://github.com/wolfpld/tracy) integration
+- Virtual filesystem
+- Async asset manager
+    - All asset baking is done on PC and streamed over to deploying platforms. This setup is familiar with game developers, since most of them use windows as there primary platform. It also removes a lot of dependencies and maintenance from deployed platforms. On the other hand, there is always a need to running windows PC on the side, which makes it inconvenient for desktop platforms like MacOS.
+    - Local asset caching
     - Hot-reloading assets
         - [x] Shaders
         - [x] Images
         - [ ] Models
-- ImGui integration
-- Simple Camera (Orbital + Fps)
-- [Tracy profiler](https://github.com/wolfpld/tracy) integration
-- Virtual filesystem 
-- Async asset manager with remote baking on the server
 
 ## Dependencies
-External dependencies are a pretty big deal imo, so I'm going to pay special attention to them. They are part of your code even if you don't write them yourself and they all play a big role in compile-times, maintainance, deployment and technical debt of your code. So I try to keep the dependencies small and to minimum. Also try to minimize the amount of unused code, meaning that if I plan to do A, I won't add a library that only 5% of it's code does A and the rest does something I don't use. Most of them are simple stb-style single-header C libs, but some just can't be as small and quick-to-compile as I want them to be. Anyway, here they are:
+External dependencies are a pretty big deal imo, so I'm going to pay special attention to them. They are part of your code even if you don't write them yourself and they all play a big role in compile-times, maintenance, deployment and technical debt of your code. So I try to keep the dependencies small and to minimum. Also try to minimize the amount of unused code, meaning that if I plan to do a certain job, I won't add a library that only 5% of it's code does the actual job and the rest does something I don't use. Most of them are simple stb-style single-header C libs, but some just can't be as small and quick-to-compile as I want them to be (eg Physics/Audio/Baking/ShaderCompilers/etc). Anyway, here they are:
 
 - [Git](https://git-scm.com/downloads) and [Git LFS](https://git-lfs.com/): Source control (make sure you have git-lfs installed by running `git lfs install`)
 - [VulkanSDK](https://vulkan.lunarg.com/): Used for the graphics backend. 
@@ -71,7 +73,7 @@ Currently, everything is built on windows platform. I focus mainly on windows, b
 Also, as I mentioned before, I do not intend to use any project generators like *CMake* or *premake* or things like that, at least for now. They complicate things and add extra maintenance cost.
 
 ### Setup.bat
-Unfortunately, There is a setup process involved. Before start building, you should fetch some of the bigger dependencies mentioned above. And there is also the option to download and install required or optional SDKs and standalone tools.
+Unfortunately, There is a setup process involved on windows. Which is the main development and baking platform, so it needs more dependencies. Before start building, you should fetch some of the bigger dependencies mentioned above. And there is also the option to download and install required or optional SDKs and standalone tools.
 
 So first, you need to run `Setup.bat`.
 
@@ -100,6 +102,24 @@ There are two ways to build binaries on windows:
 Nothing much to add here, except that you need to set the *working dir* to the root folder of the project when running the binaries, because they need to find the `data` folder. This is set by default for visual-studio *Test* projects.
 <sub>**Note**: Binaries on windows are built with `/DEBUG:FULL /Zi` so that they are compatible with [RemedyBG debugger](https://remedybg.itch.io/remedybg).</sub>
 
+### MacOS
+#### Build
+Just open the xcode project in `projects/xcode` directory and build the *Test* apps.
+
+#### Run and Debug
+Currently, all platforms except Windows are only loaded remotely from host PC. So, to run on other platforms, you should always first start up `JunkyardTool` on PC/windows. It's either included in windows solution or you can use the quick batch scripts that builds and runs it: `scripts/build-run-tool.cmd`.
+
+On the Mac, edit your scheme command-line arguments and set the IP address of your windows PC, like the example below:
+
+```
+-EngineConnectToServer=1
+-EngineRemoteServicesUrl=[HOST_PC_IP]:6006
+```
+
+Then you should be able to run the app from your mac and stream all the baked assets over from PC server.
+
+Also, note that by default the env var `DYLD_FALLBACK_LIBRARY_PATH` should be set to `${PROJECT_DIR}/../../code/External/MoltenVK/lib` in the scheme settings. So it can load up the MoltenVk shared lib.
+
 ### Android
 #### Build
 For android, you need visual-studio 2022 with the following *Mobile Development with C++* components installed:
@@ -112,14 +132,15 @@ You can probably build and debug with android-studio by having Android SDK (API 
 Then just open `projects/msvc/JunkyardAndroid/JunkyardAndroid.sln` and build any configuration.
 
 ### Deployment
-Currently, android assets are only loaded remotely from host PC. There is no deployment of assets on the device and APKs are kept light and does not contain anything other than executable binaries.
+Currently,all platforms except Windows are only loaded remotely from host PC. There is no deployment of assets on the device and APKs are kept light and does not contain anything other than executable binaries.
 
-So to run on android, you should always first start up `JunkyardTool`. It's either included in windows solution or you can use the quick batch scripts that builds and runs it: `scripts/build-run-tool.cmd`.
+So to run on other platforms, you should always first start up `JunkyardTool`. It's either included in windows solution or you can use the quick batch scripts that builds and runs it: `scripts/build-run-tool.cmd`.
 
-Because assets are loaded through the network. You should either use reverse tethering with increased speed (must have `Gnirehtet` installed) by running the `scripts/android-rtether.bat` script, or provide your host PC ip address for `Settings.ini` file: 
+You can use reverse tethering with increased speed (must have `Gnirehtet` installed) by running the `scripts/android-rtether.bat` script, or provide your host PC ip address for `Settings.ini` file: 
 
 ```
-[Engine]  
+[Engine]
+connectToServer: true
 remoteServicesUrl: [HOST_PC_IP]:6006
 ```
 
