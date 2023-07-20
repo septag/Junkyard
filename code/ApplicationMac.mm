@@ -253,16 +253,6 @@ bool appInitialize(const AppDesc& desc)
         return false;
     }
 
-    /*
-    [NSEvent addLocalMonitorForEventsMatchingMask:NSEventMaskKeyDown | NSEventMaskKeyUp handler:^NSEvent* (NSEvent* event) {
-        unsigned short keyCode = [event keyCode];
-        bool isKeyPressed = event.type == NSEventTypeKeyDown;
-        if (isKeyPressed)
-            logInfo("%u", keyCode);
-        return event;
-    }];
-    */
-    
     gApp.app = [NSApplication sharedApplication];
     
     NSApp.activationPolicy = NSApplicationActivationPolicyRegular;
@@ -270,18 +260,6 @@ bool appInitialize(const AppDesc& desc)
     NSApp.delegate = gApp.appDelegate;
     [NSApp activateIgnoringOtherApps:YES];
     [NSApp run];
-    
-    if (gApp.desc.callbacks) {
-        gApp.desc.callbacks->Cleanup();
-    }
-        
-    if (gApp.clipboardEnabled) {
-        ASSERT(gApp.clipboard);
-        memFree(gApp.clipboard);
-    }
-    
-    gApp.eventCallbacks.Free();
-    memset((void*)&gApp, 0x0, sizeof(AppMacState));
     
     return true;
 }
@@ -318,7 +296,7 @@ static bool appMacFrameUpdate(fl32 dt)
     return true;
 }
 
-static void appMacFrame(void)
+static void appMacFrame()
 {
     static uint64 tmPrev = 0;
     const NSPoint mousePos = [gApp.window mouseLocationOutsideOfEventStream];
@@ -411,6 +389,21 @@ static void appMacFrame(void)
     - (BOOL)applicationShouldTerminateAfterLastWindowClosed:(NSApplication*)sender
     {
         return YES;
+    }
+
+    -(void)applicationWillTerminate:(NSNotification *)notification
+    {
+        if (gApp.desc.callbacks) {
+            gApp.desc.callbacks->Cleanup();
+        }
+        
+        if (gApp.clipboardEnabled) {
+            ASSERT(gApp.clipboard);
+            memFree(gApp.clipboard);
+        }
+        
+        gApp.eventCallbacks.Free();
+        memset(&gApp, 0x0, sizeof(AppMacState));
     }
 @end // appMacDelegate
 
@@ -759,9 +752,8 @@ static AppKeycode appTranslateKey(int scanCode)
 
     - (void)cursorUpdate:(NSEvent*)event
     {
-        if (gApp.desc.userCursor) {
+        if (gApp.desc.userCursor)
             appMacDispatchAppEvent(AppEventType::UpdateCursor);
-        }
     }
 @end // appMacMetalView
 
