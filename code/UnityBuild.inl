@@ -1,17 +1,18 @@
 #ifdef BUILD_UNITY
     // Core library
     #include "Core/Base.cpp"
-    #include "Core/Memory.cpp"
+    #include "Core/Allocators.cpp"
     #include "Core/Buffers.cpp"
     #include "Core/System.cpp"
-    #include "Core/String.cpp"
+    #include "Core/StringUtil.cpp"
     #include "Core/Log.cpp"
     #include "Core/Hash.cpp"
     #include "Core/Debug.cpp"
     #include "Core/Jobs.cpp"
     #include "Core/JsonParser.cpp"
     #include "Core/Settings.cpp"
-    #include "Core/Math.cpp"
+    #include "Core/MathAll.cpp"
+    #include "Core/IniParser.cpp"
     
     // General
     #include "JunkyardSettings.cpp"

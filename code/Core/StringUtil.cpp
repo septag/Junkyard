@@ -14,10 +14,11 @@ PRAGMA_DIAGNOSTIC_IGNORED_CLANG_GCC("-Wconditional-uninitialized")
 PRAGMA_DIAGNOSTIC_IGNORED_MSVC(4505)
 #include "External/stb/stb_sprintf.h"
 PRAGMA_DIAGNOSTIC_POP();
+#undef STB_SPRINTF_IMPLEMENTATION
 
 #ifdef BUILD_UNITY
     #if PLATFORM_WINDOWS
-        #include "StringWin.cpp"
+        #include "StringUtilWin.cpp"
     #endif
 #endif
 
