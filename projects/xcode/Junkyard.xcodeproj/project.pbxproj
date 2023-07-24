@@ -7,6 +7,13 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		14FDA9462A6D3A2500589F52 /* imgui_demo.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 14FDA93F2A6D3A2500589F52 /* imgui_demo.cpp */; };
+		14FDA9472A6D3A2500589F52 /* imgui_draw.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 14FDA9402A6D3A2500589F52 /* imgui_draw.cpp */; };
+		14FDA9482A6D3A2500589F52 /* imgui_tables.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 14FDA9412A6D3A2500589F52 /* imgui_tables.cpp */; };
+		14FDA9492A6D3A2500589F52 /* imgui.h in Headers */ = {isa = PBXBuildFile; fileRef = 14FDA9422A6D3A2500589F52 /* imgui.h */; };
+		14FDA94A2A6D3A2500589F52 /* imconfig.h in Headers */ = {isa = PBXBuildFile; fileRef = 14FDA9432A6D3A2500589F52 /* imconfig.h */; };
+		14FDA94B2A6D3A2500589F52 /* imgui.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 14FDA9442A6D3A2500589F52 /* imgui.cpp */; };
+		14FDA94C2A6D3A2500589F52 /* imgui_widgets.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 14FDA9452A6D3A2500589F52 /* imgui_widgets.cpp */; };
 		ABF104012A642B4900D853CC /* Test.cpp in Sources */ = {isa = PBXBuildFile; fileRef = ABF103E82A642AB400D853CC /* Test.cpp */; };
 		ABF1042F2A642CB600D853CC /* BlitSort.h in Headers */ = {isa = PBXBuildFile; fileRef = ABF103BD2A6427DD00D853CC /* BlitSort.h */; };
 		ABF104302A642CB600D853CC /* DebugClang.cpp in Sources */ = {isa = PBXBuildFile; fileRef = ABF103BC2A6427DD00D853CC /* DebugClang.cpp */; };
@@ -90,13 +97,6 @@
 		ABF104BF2A6449B900D853CC /* MeshOptimizer.cpp in Sources */ = {isa = PBXBuildFile; fileRef = ABF104B42A6449B900D853CC /* MeshOptimizer.cpp */; };
 		ABF104C12A6449B900D853CC /* ImageEncoder.h in Headers */ = {isa = PBXBuildFile; fileRef = ABF104B62A6449B900D853CC /* ImageEncoder.h */; };
 		ABF104C22A6449B900D853CC /* Console.cpp in Sources */ = {isa = PBXBuildFile; fileRef = ABF104B72A6449B900D853CC /* Console.cpp */; };
-		ABF104DB2A644AEC00D853CC /* imgui_draw.cpp in Sources */ = {isa = PBXBuildFile; fileRef = ABF104D42A644AEC00D853CC /* imgui_draw.cpp */; };
-		ABF104DC2A644AEC00D853CC /* imgui_tables.cpp in Sources */ = {isa = PBXBuildFile; fileRef = ABF104D52A644AEC00D853CC /* imgui_tables.cpp */; };
-		ABF104DD2A644AEC00D853CC /* imgui_demo.cpp in Sources */ = {isa = PBXBuildFile; fileRef = ABF104D62A644AEC00D853CC /* imgui_demo.cpp */; };
-		ABF104DE2A644AEC00D853CC /* imgui.h in Headers */ = {isa = PBXBuildFile; fileRef = ABF104D72A644AEC00D853CC /* imgui.h */; };
-		ABF104DF2A644AEC00D853CC /* imconfig.h in Headers */ = {isa = PBXBuildFile; fileRef = ABF104D82A644AEC00D853CC /* imconfig.h */; };
-		ABF104E02A644AEC00D853CC /* imgui_widgets.cpp in Sources */ = {isa = PBXBuildFile; fileRef = ABF104D92A644AEC00D853CC /* imgui_widgets.cpp */; };
-		ABF104E12A644AEC00D853CC /* imgui.cpp in Sources */ = {isa = PBXBuildFile; fileRef = ABF104DA2A644AEC00D853CC /* imgui.cpp */; };
 		ABF104E42A644AFA00D853CC /* ImGuizmo.h in Headers */ = {isa = PBXBuildFile; fileRef = ABF104E22A644AFA00D853CC /* ImGuizmo.h */; };
 		ABF104E52A644AFA00D853CC /* ImGuizmo.cpp in Sources */ = {isa = PBXBuildFile; fileRef = ABF104E32A644AFA00D853CC /* ImGuizmo.cpp */; };
 		ABF104EF2A644DE400D853CC /* Engine.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = ABF103E02A6428C400D853CC /* Engine.framework */; };
@@ -116,6 +116,13 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		14FDA93F2A6D3A2500589F52 /* imgui_demo.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = imgui_demo.cpp; path = ../../code/External/imgui/imgui_demo.cpp; sourceTree = "<group>"; };
+		14FDA9402A6D3A2500589F52 /* imgui_draw.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = imgui_draw.cpp; path = ../../code/External/imgui/imgui_draw.cpp; sourceTree = "<group>"; };
+		14FDA9412A6D3A2500589F52 /* imgui_tables.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = imgui_tables.cpp; path = ../../code/External/imgui/imgui_tables.cpp; sourceTree = "<group>"; };
+		14FDA9422A6D3A2500589F52 /* imgui.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = imgui.h; path = ../../code/External/imgui/imgui.h; sourceTree = "<group>"; };
+		14FDA9432A6D3A2500589F52 /* imconfig.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = imconfig.h; path = ../../code/External/imgui/imconfig.h; sourceTree = "<group>"; };
+		14FDA9442A6D3A2500589F52 /* imgui.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = imgui.cpp; path = ../../code/External/imgui/imgui.cpp; sourceTree = "<group>"; };
+		14FDA9452A6D3A2500589F52 /* imgui_widgets.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = imgui_widgets.cpp; path = ../../code/External/imgui/imgui_widgets.cpp; sourceTree = "<group>"; };
 		ABF103AE2A64265B00D853CC /* Junkyard.entitlements */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.entitlements; path = Junkyard.entitlements; sourceTree = "<group>"; };
 		ABF103B12A6427DD00D853CC /* MathAll.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = MathAll.cpp; path = ../../code/Core/MathAll.cpp; sourceTree = "<group>"; };
 		ABF103B22A6427DD00D853CC /* Settings.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = Settings.h; path = ../../code/Core/Settings.h; sourceTree = "<group>"; };
@@ -212,13 +219,6 @@
 		ABF104B42A6449B900D853CC /* MeshOptimizer.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = MeshOptimizer.cpp; path = ../../code/Tool/MeshOptimizer.cpp; sourceTree = "<group>"; };
 		ABF104B62A6449B900D853CC /* ImageEncoder.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = ImageEncoder.h; path = ../../code/Tool/ImageEncoder.h; sourceTree = "<group>"; };
 		ABF104B72A6449B900D853CC /* Console.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = Console.cpp; path = ../../code/Tool/Console.cpp; sourceTree = "<group>"; };
-		ABF104D42A644AEC00D853CC /* imgui_draw.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = imgui_draw.cpp; path = ../../../code/External/imgui/imgui_draw.cpp; sourceTree = "<group>"; };
-		ABF104D52A644AEC00D853CC /* imgui_tables.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = imgui_tables.cpp; path = ../../../code/External/imgui/imgui_tables.cpp; sourceTree = "<group>"; };
-		ABF104D62A644AEC00D853CC /* imgui_demo.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = imgui_demo.cpp; path = ../../../code/External/imgui/imgui_demo.cpp; sourceTree = "<group>"; };
-		ABF104D72A644AEC00D853CC /* imgui.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = imgui.h; path = ../../../code/External/imgui/imgui.h; sourceTree = "<group>"; };
-		ABF104D82A644AEC00D853CC /* imconfig.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = imconfig.h; path = ../../../code/External/imgui/imconfig.h; sourceTree = "<group>"; };
-		ABF104D92A644AEC00D853CC /* imgui_widgets.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = imgui_widgets.cpp; path = ../../../code/External/imgui/imgui_widgets.cpp; sourceTree = "<group>"; };
-		ABF104DA2A644AEC00D853CC /* imgui.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = imgui.cpp; path = ../../../code/External/imgui/imgui.cpp; sourceTree = "<group>"; };
 		ABF104E22A644AFA00D853CC /* ImGuizmo.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = ImGuizmo.h; path = ../../code/External/ImGuizmo/ImGuizmo.h; sourceTree = "<group>"; };
 		ABF104E32A644AFA00D853CC /* ImGuizmo.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = ImGuizmo.cpp; path = ../../code/External/ImGuizmo/ImGuizmo.cpp; sourceTree = "<group>"; };
 		ABF104E62A644D9000D853CC /* Metal.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Metal.framework; path = System/Library/Frameworks/Metal.framework; sourceTree = SDKROOT; };
@@ -310,6 +310,20 @@
 				ABF104A12A64478200D853CC /* CoreFoundation.framework */,
 			);
 			name = Frameworks;
+			sourceTree = "<group>";
+		};
+		14FDA93E2A6D39E700589F52 /* ImGui */ = {
+			isa = PBXGroup;
+			children = (
+				14FDA9432A6D3A2500589F52 /* imconfig.h */,
+				14FDA93F2A6D3A2500589F52 /* imgui_demo.cpp */,
+				14FDA9402A6D3A2500589F52 /* imgui_draw.cpp */,
+				14FDA9412A6D3A2500589F52 /* imgui_tables.cpp */,
+				14FDA9452A6D3A2500589F52 /* imgui_widgets.cpp */,
+				14FDA9442A6D3A2500589F52 /* imgui.cpp */,
+				14FDA9422A6D3A2500589F52 /* imgui.h */,
+			);
+			name = ImGui;
 			sourceTree = "<group>";
 		};
 		ABF103B02A64270F00D853CC /* Core */ = {
@@ -418,7 +432,7 @@
 		ABF104C32A644A5800D853CC /* External */ = {
 			isa = PBXGroup;
 			children = (
-				ABF104D32A644AC400D853CC /* ImGui */,
+				14FDA93E2A6D39E700589F52 /* ImGui */,
 				ABF104D22A644AA900D853CC /* ImGuizmo */,
 			);
 			name = External;
@@ -431,20 +445,6 @@
 				ABF104E22A644AFA00D853CC /* ImGuizmo.h */,
 			);
 			name = ImGuizmo;
-			sourceTree = "<group>";
-		};
-		ABF104D32A644AC400D853CC /* ImGui */ = {
-			isa = PBXGroup;
-			children = (
-				ABF104D82A644AEC00D853CC /* imconfig.h */,
-				ABF104D62A644AEC00D853CC /* imgui_demo.cpp */,
-				ABF104D42A644AEC00D853CC /* imgui_draw.cpp */,
-				ABF104D52A644AEC00D853CC /* imgui_tables.cpp */,
-				ABF104D92A644AEC00D853CC /* imgui_widgets.cpp */,
-				ABF104DA2A644AEC00D853CC /* imgui.cpp */,
-				ABF104D72A644AEC00D853CC /* imgui.h */,
-			);
-			path = ImGui;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -478,6 +478,7 @@
 				ABF104452A642CB600D853CC /* MathAll.h in Headers */,
 				ABF1049C2A64380600D853CC /* CommonTypes.h in Headers */,
 				ABF1044F2A642CB600D853CC /* MathVector.h in Headers */,
+				14FDA9492A6D3A2500589F52 /* imgui.h in Headers */,
 				ABF104532A642CB600D853CC /* Atomic.h in Headers */,
 				ABF1048D2A64380600D853CC /* Application.h in Headers */,
 				ABF104412A642CB600D853CC /* MathScalar.h in Headers */,
@@ -486,10 +487,9 @@
 				ABF1049F2A64380600D853CC /* Engine.h in Headers */,
 				ABF104392A642CB600D853CC /* JsonParser.h in Headers */,
 				ABF1044D2A642CB600D853CC /* Jobs.h in Headers */,
+				14FDA94A2A6D3A2500589F52 /* imconfig.h in Headers */,
 				ABF104C12A6449B900D853CC /* ImageEncoder.h in Headers */,
-				ABF104DE2A644AEC00D853CC /* imgui.h in Headers */,
 				ABF104362A642CB600D853CC /* IncludeWin.h in Headers */,
-				ABF104DF2A644AEC00D853CC /* imconfig.h in Headers */,
 				ABF1044E2A642CB600D853CC /* Config.h in Headers */,
 				ABF104462A642CB600D853CC /* TracyHelper.h in Headers */,
 				ABF1042F2A642CB600D853CC /* BlitSort.h in Headers */,
@@ -598,14 +598,15 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				14FDA94C2A6D3A2500589F52 /* imgui_widgets.cpp in Sources */,
 				ABF104BB2A6449B900D853CC /* ImageEncoder.cpp in Sources */,
 				ABF104572A642CB600D853CC /* System.cpp in Sources */,
 				ABF104922A64380600D853CC /* ApplicationAndroid.cpp in Sources */,
 				ABF1046F2A6437CB00D853CC /* Model.cpp in Sources */,
+				14FDA9482A6D3A2500589F52 /* imgui_tables.cpp in Sources */,
 				ABF104962A64380600D853CC /* Engine.cpp in Sources */,
-				ABF104DC2A644AEC00D853CC /* imgui_tables.cpp in Sources */,
 				ABF104492A642CB600D853CC /* Allocators.cpp in Sources */,
-				ABF104E12A644AEC00D853CC /* imgui.cpp in Sources */,
+				14FDA94B2A6D3A2500589F52 /* imgui.cpp in Sources */,
 				ABF1048E2A64380600D853CC /* ApplicationWin.cpp in Sources */,
 				ABF104582A642CB600D853CC /* Debug.cpp in Sources */,
 				ABF1046D2A6437CB00D853CC /* DebugDraw.cpp in Sources */,
@@ -615,13 +616,13 @@
 				ABF104302A642CB600D853CC /* DebugClang.cpp in Sources */,
 				ABF1049D2A64380600D853CC /* Camera.cpp in Sources */,
 				ABF1046E2A6437CB00D853CC /* ImGuiWrapper.cpp in Sources */,
-				ABF104DB2A644AEC00D853CC /* imgui_draw.cpp in Sources */,
 				ABF104312A642CB600D853CC /* Buffers.cpp in Sources */,
 				ABF104B82A6449B900D853CC /* ShaderCompiler.cpp in Sources */,
 				ABF1043D2A642CB600D853CC /* Log.cpp in Sources */,
 				ABF104482A642CB600D853CC /* Jobs.cpp in Sources */,
 				ABF104BF2A6449B900D853CC /* MeshOptimizer.cpp in Sources */,
 				ABF104472A642CB600D853CC /* IniParser.cpp in Sources */,
+				14FDA9462A6D3A2500589F52 /* imgui_demo.cpp in Sources */,
 				ABF104972A64380600D853CC /* VirtualFS.cpp in Sources */,
 				ABF104352A642CB600D853CC /* JsonParser.cpp in Sources */,
 				ABF104752A6437CB00D853CC /* Shader.cpp in Sources */,
@@ -637,13 +638,12 @@
 				ABF104322A642CB600D853CC /* SystemPosix.cpp in Sources */,
 				ABF104402A642CB600D853CC /* SystemMac.mm in Sources */,
 				ABF104332A642CB600D853CC /* MathAll.cpp in Sources */,
-				ABF104DD2A644AEC00D853CC /* imgui_demo.cpp in Sources */,
 				ABF104E52A644AFA00D853CC /* ImGuizmo.cpp in Sources */,
 				ABF1044B2A642CB600D853CC /* SystemAndroid.cpp in Sources */,
+				14FDA9472A6D3A2500589F52 /* imgui_draw.cpp in Sources */,
 				ABF1049E2A64380600D853CC /* AssetManager.cpp in Sources */,
 				ABF104502A642CB600D853CC /* Settings.cpp in Sources */,
 				ABF104562A642CB600D853CC /* DebugWin.cpp in Sources */,
-				ABF104E02A644AEC00D853CC /* imgui_widgets.cpp in Sources */,
 				ABF104372A642CB600D853CC /* Base.cpp in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -792,6 +792,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_WARN_DOCUMENTATION_COMMENTS = NO;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEFINES_MODULE = YES;
@@ -802,6 +803,7 @@
 				EXCLUDED_ARCHS = "";
 				GCC_ENABLE_CPP_EXCEPTIONS = NO;
 				GCC_ENABLE_CPP_RTTI = NO;
+				GCC_WARN_ABOUT_DEPRECATED_FUNCTIONS = NO;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				INSTALL_PATH = "$(LOCAL_LIBRARY_DIR)/Frameworks";
@@ -815,7 +817,7 @@
 					"@loader_path/Frameworks",
 				);
 				MACH_O_TYPE = staticlib;
-				MACOSX_DEPLOYMENT_TARGET = 13.3;
+				MACOSX_DEPLOYMENT_TARGET = "$(RECOMMENDED_MACOSX_DEPLOYMENT_TARGET)";
 				MARKETING_VERSION = 1.0;
 				MODULE_VERIFIER_SUPPORTED_LANGUAGES = "objective-c objective-c++";
 				MODULE_VERIFIER_SUPPORTED_LANGUAGE_STANDARDS = "gnu11 gnu++20";
@@ -838,6 +840,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_WARN_DOCUMENTATION_COMMENTS = NO;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEFINES_MODULE = YES;
@@ -848,6 +851,7 @@
 				EXCLUDED_ARCHS = "";
 				GCC_ENABLE_CPP_EXCEPTIONS = NO;
 				GCC_ENABLE_CPP_RTTI = NO;
+				GCC_WARN_ABOUT_DEPRECATED_FUNCTIONS = NO;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				INSTALL_PATH = "$(LOCAL_LIBRARY_DIR)/Frameworks";
@@ -861,7 +865,7 @@
 					"@loader_path/Frameworks",
 				);
 				MACH_O_TYPE = staticlib;
-				MACOSX_DEPLOYMENT_TARGET = 13.3;
+				MACOSX_DEPLOYMENT_TARGET = "$(RECOMMENDED_MACOSX_DEPLOYMENT_TARGET)";
 				MARKETING_VERSION = 1.0;
 				MODULE_VERIFIER_SUPPORTED_LANGUAGES = "objective-c objective-c++";
 				MODULE_VERIFIER_SUPPORTED_LANGUAGE_STANDARDS = "gnu11 gnu++20";
@@ -899,7 +903,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MACOSX_DEPLOYMENT_TARGET = 13.3;
+				MACOSX_DEPLOYMENT_TARGET = "$(RECOMMENDED_MACOSX_DEPLOYMENT_TARGET)";
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.junkyard.Test1;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -926,7 +930,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MACOSX_DEPLOYMENT_TARGET = 13.3;
+				MACOSX_DEPLOYMENT_TARGET = "$(RECOMMENDED_MACOSX_DEPLOYMENT_TARGET)";
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.junkyard.Test1;
 				PRODUCT_NAME = "$(TARGET_NAME)";

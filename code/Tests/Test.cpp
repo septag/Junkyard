@@ -221,11 +221,11 @@ struct AppImpl : AppCallbacks
             imguiBudgetHub(dt);
             imguiQuickInfoHud(dt);
 
-            if constexpr (0) {
+            #if 0
                 Mat4 view = fpsCam.GetViewMat();
                 ImGuizmo::ViewManipulate(view.f, 0.1f, ImVec2(5.0f, height - 128.0f - 5.0f), ImVec2(128, 128), 0xff000000);
                 fpsCam.SetViewMat(view);
-            }
+            #endif
 
             imguiRender();
         }

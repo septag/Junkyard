@@ -1,4 +1,4 @@
-#include "AssetManager.h"
+6#include "AssetManager.h"
 
 #include "Core/Log.h"
 #include "Core/Hash.h"

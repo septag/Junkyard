@@ -322,8 +322,12 @@ static void appMacFrame()
         
         gApp.displayWidth = screenRect.size.width;
         gApp.displayHeight = screenRect.size.height;
-        NSTimeInterval interval = [screen maximumRefreshInterval];
-        gApp.displayRefreshRate = uint16(1.0f / interval);
+        if (@available(macOS 12.0, *)) {
+            NSTimeInterval interval = [screen maximumRefreshInterval];
+            gApp.displayRefreshRate = uint16(1.0f / interval);
+        } else {
+            gApp.displayRefreshRate = 60;
+        }
 
         if (gApp.desc.fullscreen) {
             gApp.windowWidth = screenRect.size.width;
