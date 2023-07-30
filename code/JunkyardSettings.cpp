@@ -101,6 +101,10 @@ bool SettingsJunkyardParser::ParseSetting(uint32 categoryId, const char* key, co
             engine->enableMemPro = strToBool(value);
             return true;            
         }
+        else if (strIsEqualNoCase(key, "useCacheOnly")) {
+            engine->useCacheOnly = strToBool(value);
+            return true;
+        }
     }
     else if (category == SettingsCategory::Graphics) {
         SettingsGraphics* graphics = &gSettingsJunkyard.settings.graphics;

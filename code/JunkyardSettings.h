@@ -3,6 +3,12 @@
 #include "Core/Base.h"
 #include "Core/StringUtil.h"
 
+#if !CONFIG_FINAL_BUILD
+    #define DEFAULT_LOG_LEVEL LogLevel::Debug;       // Log filter. LogLevel below this value will not be shown
+#else
+    #define DEFAULT_LOG_LEVEL LogLevel::Info;        // Log filter. LogLevel below this value will not be shown
+#endif
+
 struct SettingsGraphics
 {
     bool enable = true;             // Enable graphics subsystem. (cmdline="enableGraphics")
@@ -48,16 +54,13 @@ struct SettingsEngine
 
     bool connectToServer = false;               // Connects to server
     String<256> remoteServicesUrl = "127.0.0.1:6006";   // Url to server. Divide port number with colon
-#if !CONFIG_FINAL_BUILD
-    LogLevel logLevel = LogLevel::Debug;        // Log filter. LogLevel below this value will not be shown
-#else
-    LogLevel logLevel = LogLevel::Info;        // Log filter. LogLevel below this value will not be shown
-#endif
+    LogLevel logLevel = DEFAULT_LOG_LEVEL;
     uint32 jobsThreadCount = 0;                 // Number of threads to spawn for each job type (Long/Short)
     bool debugAllocations = false;              // Use heap allocator instead for major allocators, like temp/budget/etc.
     bool breakOnErrors = false;                 // Break when logError happens
     bool treatWarningsAsErrors = false;         // Break when logWarning happens
     bool enableMemPro = false;                  // Enables MemPro instrumentation (https://www.puredevsoftware.com/mempro/index.htm)
+    bool useCacheOnly = false;                  // This option only uses cache to load assets and bypasses Remote or Local disk assets
 };
 
 struct SettingsDebug

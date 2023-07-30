@@ -1,4 +1,4 @@
-6#include "AssetManager.h"
+#include "AssetManager.h"
 
 #include "Core/Log.h"
 #include "Core/Hash.h"
@@ -439,7 +439,7 @@ uint32 assetMakeCacheHash(const AssetCacheDesc& desc)
                  .Hash();
 }
 
-static AssetResult assetLoadObjLocal(AssetHandle handle, const AssetTypeManager& typeMgr, const AssetLoadParams& loadParams, uint32 hash, 
+static AssetResult assetLoadObjLocal(AssetHandle handle, const AssetTypeManager& typeMgr, const AssetLoadParams& loadParams, uint32 hash,
                                      bool* outLoadedFromCache)
 {
     uint32 cacheHash;
@@ -448,8 +448,12 @@ static AssetResult assetLoadObjLocal(AssetHandle handle, const AssetTypeManager&
         cacheHash = gAssetMgr.hashLookup.FindAndFetch(hash, 0);
     }
 
-    AssetResult result = typeMgr.callbacks->Load(handle, loadParams, cacheHash, &gAssetMgr.runtimeHeap);
-    if (result.cacheHash == cacheHash) {
+    bool cacheOnly = settingsGet().engine.useCacheOnly;
+    AssetResult result {};
+    if (!cacheOnly)
+        result = typeMgr.callbacks->Load(handle, loadParams, cacheHash, &gAssetMgr.runtimeHeap);
+    bool loadFromCache = (cacheOnly && cacheHash != 0) || (result.cacheHash == cacheHash);
+    if (loadFromCache) {
         ASSERT(result.obj == nullptr);
         result = assetLoadFromCache(typeMgr, loadParams, cacheHash, outLoadedFromCache);
 
@@ -673,7 +677,7 @@ static void assetLoadTask(uint32 groupIndex, void* userData)
     AssetResult result;
     bool loadedFromCache = false;
 
-    if (method == AssetLoadMethod::Local) 
+    if (method == AssetLoadMethod::Local)
         result = assetLoadObjLocal(handle, typeMgr, loadParams, hash, &loadedFromCache);
     else if (method == AssetLoadMethod::Remote)
         result = assetLoadObjRemote(handle, typeMgr, loadParams, hash, &loadedFromCache);
