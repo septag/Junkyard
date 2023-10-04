@@ -1430,7 +1430,7 @@ static GfxSwapchain gfxCreateSwapchain(VkSurfaceKHR surface, uint16 width, uint1
 bool _private::gfxInitialize()
 {
     if (volkInitialize() != VK_SUCCESS) {
-        logError("Volk failed to initialize");
+        logError("Volk failed to initialize. Possibly VulkanSDK is not installed (or MoltenVK dll is missing on Mac)");
         return false;
     }
 
