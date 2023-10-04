@@ -386,7 +386,7 @@ struct AppImpl : AppCallbacks
 
                 gfxUpdateDescriptorSet(dset, CountOf(descBindings), descBindings);
 
-                material->userData = IntToPtr<uint32>(dset.id);
+                material->userData = IntToPtr(uint32(dset));
                 descriptorSets.Push(dset);
             }
         }

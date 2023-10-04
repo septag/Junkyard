@@ -33,12 +33,12 @@ FORCE_INLINE bool atomicLockTryEnter(AtomicLock* lock);
 struct AtomicLockScope
 {
     AtomicLockScope() = delete;
-    AtomicLockScope(const AtomicLockScope& _lock) = delete;
-    inline explicit AtomicLockScope(AtomicLock& _lock) : lock(_lock) { atomicLockEnter(&lock); }
-    inline ~AtomicLockScope() { atomicLockExit(&lock); }
+    AtomicLockScope(const AtomicLockScope&) = delete;
+    inline explicit AtomicLockScope(AtomicLock& lock) : mLock(lock) { atomicLockEnter(&mLock); }
+    inline ~AtomicLockScope() { atomicLockExit(&mLock); }
         
 private:
-    AtomicLock& lock;
+    AtomicLock& mLock;
 };
 #endif
 

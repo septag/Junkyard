@@ -515,7 +515,7 @@ bool _private::imguiInitialize()
             .size = static_cast<uint32>(fontWidth)*static_cast<uint32>(fontHeight)*4,
             .content = fontPixels 
         });
-        conf.Fonts->SetTexID( reinterpret_cast<ImTextureID>((uintptr_t)gImGui.fontImage.id));
+        conf.Fonts->SetTexID( reinterpret_cast<ImTextureID>((uintptr_t)uint32(gImGui.fontImage)));
     }
 
     for (uint32 i = 0; i < _IMGUI_DESCRIPTORSET_COUNT; i++)

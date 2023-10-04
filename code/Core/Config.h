@@ -61,3 +61,4 @@
     #endif
 #endif
 
+#define CONFIG_DEV_MODE CONFIG_ENABLE_ASSERT

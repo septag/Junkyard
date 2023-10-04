@@ -61,13 +61,12 @@ struct alignas(64) Thread
     bool Start(const ThreadDesc& desc);
     int  Stop();
 
-    bool IsStopped();
-    bool IsRunning() const;
+    bool IsRunning();
 
     void SetPriority(ThreadPriority prio);
 
 private:
-    uint8 data[256];
+    uint8 mData[256];
 };
 
 //--------------------------------------------------------------------------------------------------
@@ -82,18 +81,18 @@ struct alignas(64) Mutex
     bool TryEnter();
 
 private:
-    uint8 data[128];
+    uint8 mData[128];
 };
 
 struct MutexScope
 {
     MutexScope( ) = delete;
     MutexScope(const MutexScope& mtx) = delete;
-    explicit MutexScope(Mutex& mtx) : _mtx(mtx) { _mtx.Enter(); }
-    ~MutexScope( ) { _mtx.Exit(); }
+    explicit MutexScope(Mutex& mtx) : mMtx(mtx) { mMtx.Enter(); }
+    ~MutexScope( ) { mMtx.Exit(); }
 
 private:
-    Mutex& _mtx;
+    Mutex& mMtx;
 };
 
 //--------------------------------------------------------------------------------------------------
@@ -107,7 +106,7 @@ struct alignas(16) Semaphore
     bool Wait(uint32 msecs = UINT32_MAX);
 
 private:
-    uint8 data[128];
+    uint8 mData[128];
 };
 
 //--------------------------------------------------------------------------------------------------
@@ -126,7 +125,7 @@ struct alignas(16) Signal
     void Set(int value = 1);
 
 private:
-    uint8 data[128];
+    uint8 mData[128];
 };
 
 //------------------------------------------------------------------------
@@ -140,7 +139,6 @@ API void    threadSleep(uint32 msecs);
 
 //--------------------------------------------------------------------------------------------------
 // Timer
-API void timerInitialize();
 API uint64 timerGetTicks();
 API uint64 timerLapTime(uint64* lastTime);
 INLINE uint64 timerDiff(uint64 newTick, uint64 oldTick);
@@ -160,8 +158,13 @@ struct TimerStopWatch
     double ElapsedUS() const;
 
 private:
-    uint64 _start;
+    uint64 mStart;
 };
+
+namespace _private 
+{
+    void timerInitialize(); // Called by TimerInitializer
+}
 
 //------------------------------------------------------------------------
 // Memory
@@ -183,6 +186,7 @@ void* memVirtualCommit(void* ptr, size_t size);
 void memVirtualDecommit(void* ptr, size_t size);
 void memVirtualRelease(void* ptr, size_t size);
 MemVirtualStats memVirtualGetStats();
+bool memVirtualEnableLargePages(size_t* largePageSize);
 
 //--------------------------------------------------------------------------------------------------
 // Path 
@@ -219,6 +223,7 @@ INLINE bool pathExists(const char* path);
 INLINE bool pathIsFile(const char* path);
 INLINE bool pathIsDir(const char* path);
 API bool pathCreateDir(const char* path);
+API bool pathMove(const char* src, const char* dest);
 
 struct Path : String<kMaxPath>
 {
@@ -230,6 +235,7 @@ struct Path : String<kMaxPath>
 
     Path& ConvertToUnix();
     Path& ConvertToWin();
+    Path& ConvertToAbsolute();
 
     Path GetAbsolute();
     Path GetFileExtension();
@@ -288,7 +294,7 @@ struct File
     bool IsOpen() const;
 
 private:
-    uint8 _data[64];
+    uint8 mData[64];
 };
 
 //----------------------------------------------------------------------------------------------------------------------
@@ -324,8 +330,8 @@ struct SocketTCP
 
     void Close();
     bool IsValid() const;
-    bool IsConnected() const { return this->live; }
-    SocketErrorCode GetErrorCode() const { return this->errCode; }
+    bool IsConnected() const { return this->mLive; }
+    SocketErrorCode GetErrorCode() const { return this->mErrCode; }
 
     // Returns number of bytes written/read
     // Returns 0 if connection is closed gracefully
@@ -340,9 +346,9 @@ struct SocketTCP
     static SocketTCP Connect(const char* url);
 
 private:
-    SocketHandle s;
-    SocketErrorCode errCode;
-    uint16 live;
+    SocketHandle mSock;
+    SocketErrorCode mErrCode;
+    uint16 mLive;
 };
 
 //--------------------------------------------------------------------------------------------------
@@ -376,6 +382,13 @@ struct SysInfo
     uint32       cpuCapsNeon : 1;
 };
 
+struct SysUUID
+{
+    uint8 data[16];
+
+    bool operator==(const SysUUID& uuid) const;
+};
+
 API [[nodiscard]] DLLHandle sysLoadDLL(const char* filepath, char** pErrorMsg = nullptr);
 API void sysUnloadDLL(DLLHandle dll);
 API void* sysSymbolAddress(DLLHandle dll, const char* symbolName);
@@ -385,6 +398,9 @@ API bool sysIsDebuggerPresent();
 API void sysGenerateCmdLineFromArgcArgv(int argc, const char* argv[], char** outString, uint32* outStringLen, 
                                         Allocator* alloc = memDefaultAlloc(), const char* prefixCmd = nullptr);
 
+API bool sysUUIDGenerate(SysUUID* uuid);
+API bool sysUUIDToString(const SysUUID& uuid, char* str, uint32 size);
+API bool sysUUIDFromString(SysUUID* uuid, const char* str);
 
 #if PLATFORM_DESKTOP
 enum class SysProcessFlags : uint32
@@ -405,19 +421,20 @@ struct SysProcess
     bool Run(const char* cmdline, SysProcessFlags flags, const char* cwd = nullptr);
     void Wait() const;
     bool IsRunning() const;
+    void Abort();
 
     int GetExitCode() const;
     uint32 ReadStdOut(void* data, uint32 size) const;
     uint32 ReadStdErr(void* data, uint32 size) const;
 
 private:
-    void* process;
-    void* stdoutPipeRead;
-    void* stderrPipeRead;
+    void* mProcess;
+    void* mStdOutPipeRead;
+    void* mStdErrPipeRead;
     
 #if PLATFORM_POSIX
-    int exitCode;
-    int termSignalCode;
+    int mExitCode;
+    int mTermSignalCode;
 #endif
 };
 
@@ -429,6 +446,7 @@ private:
 API bool sysWin32IsProcessRunning(const char* execName);
 API bool sysWin32GetRegisterLocalMachineString(const char* subkey, const char* value, char* dst, size_t dstSize);
 API void sysWin32PrintToDebugger(const char* text);
+API bool sysWin32SetPrivilege(const char* name, bool enable = true);
 
 enum class SysWin32Folder
 {
@@ -492,97 +510,104 @@ INLINE bool pathIsDir(const char* path)
 
 inline Path& Path::SetToCurrentDir()
 {
-    pathGetCurrentDir(_str, sizeof(_str));
-    _len = strLen(_str);
+    pathGetCurrentDir(mStr, sizeof(mStr));
+    mLen = strLen(mStr);
     return *this;
 }
 
 inline Path& Path::ConvertToUnix()
 {
-    pathToUnix(_str, _str, sizeof(_str));
+    pathToUnix(mStr, mStr, sizeof(mStr));
     return *this;
 }
 
 inline Path& Path::ConvertToWin()
 {
-    pathToWin(_str, _str, sizeof(_str));
+    pathToWin(mStr, mStr, sizeof(mStr));
     return *this;
+}
+
+inline Path& Path::ConvertToAbsolute()
+{
+    char abspath[kMaxPath];
+    pathAbsolute(mStr, abspath, sizeof(abspath));
+    return *this = abspath;
 }
 
 inline Path Path::GetAbsolute()
 {
     Path p;
-    pathAbsolute(_str, p._str, sizeof(p._str));
-    p._len = strLen(p._str);
+    pathAbsolute(mStr, p.mStr, sizeof(p.mStr));
+    p.mLen = strLen(p.mStr);
     return p;
 }
 
 inline Path Path::GetFileExtension()
 {
     Path p;
-    pathFileExtension(_str, p._str, sizeof(p._str));
-    p._len = strLen(p._str);
+    pathFileExtension(mStr, p.mStr, sizeof(p.mStr));
+    p.mLen = strLen(p.mStr);
     return p;
 }
 
 inline Path Path::GetFileNameAndExt()
 {
     Path p;
-    pathFileNameAndExt(_str, p._str, sizeof(p._str));
-    p._len = strLen(p._str);
+    pathFileNameAndExt(mStr, p.mStr, sizeof(p.mStr));
+    p.mLen = strLen(p.mStr);
     return p;
 }
 
 inline Path Path::GetFileName()
 {
     Path p;
-    pathFileName(_str, p._str, sizeof(p._str));
-    p._len = strLen(p._str);
+    pathFileName(mStr, p.mStr, sizeof(p.mStr));
+    p.mLen = strLen(p.mStr);
     return p;
 }
 
 inline Path Path::GetDirectory()
 {
     Path p;
-    pathDirectory(_str, p._str, sizeof(p._str));
-    p._len = strLen(p._str);
+    pathDirectory(mStr, p.mStr, sizeof(p.mStr));
+    p.mLen = strLen(p.mStr);
     return p;
 }
 
 inline Path Path::Join(const Path& pathA, const Path& pathB)
 {
     Path p;
-    pathJoin(p._str, sizeof(p._str), pathA._str, pathB._str);
-    p._len = strLen(p._str);
+    pathJoin(p.mStr, sizeof(p.mStr), pathA.mStr, pathB.mStr);
+    p.mLen = strLen(p.mStr);
     return p;
 }
 
 inline Path Path::JoinUnix(const Path& pathA, const Path& pathB)
 {
     Path p;
-    pathJoinUnixStyle(p._str, sizeof(p._str), pathA._str, pathB._str);
-    p._len = strLen(p._str);
+    pathJoinUnixStyle(p.mStr, sizeof(p.mStr), pathA.mStr, pathB.mStr);
+    p.mLen = strLen(p.mStr);
     return p;
 }
 
 inline PathInfo Path::Stat() const
 {
-    return pathStat(_str);
+    return pathStat(mStr);
 }
 
 inline bool Path::Exists() const
 {
-    return pathExists(_str);
+    return pathExists(mStr);
 }
 
 inline bool Path::IsFile() const
 {
-    return pathStat(_str).type == PathType::File;
+    return pathStat(mStr).type == PathType::File;
 }
 
 inline bool Path::IsDir() const
 {
-    return pathStat(_str).type == PathType::Directory;
+    return pathStat(mStr).type == PathType::Directory;
 }
 
 INLINE uint64 timerDiff(uint64 newTick, uint64 oldTick)
@@ -607,17 +632,17 @@ INLINE double timerToUS(uint64 tick)
 
 inline TimerStopWatch::TimerStopWatch()
 {
-    _start = timerGetTicks();
+    mStart = timerGetTicks();
 }
 
 inline void TimerStopWatch::Reset()
 {
-    _start = timerGetTicks();
+    mStart = timerGetTicks();
 }
 
 inline uint64 TimerStopWatch::Elapsed() const
 {
-    return timerDiff(timerGetTicks(), _start);
+    return timerDiff(timerGetTicks(), mStart);
 }
 
 inline double TimerStopWatch::ElapsedSec() const

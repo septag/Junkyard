@@ -624,7 +624,7 @@ struct alignas(CACHE_LINE_SIZE) AtomicLock
 template <typename _T>
 struct RelativePtr
 {
-    RelativePtr() : offset(0) {}
+    RelativePtr() : mOffset(0) {}
     RelativePtr(_T* ptr) { Set(ptr); }
     _T* operator->() { return Get(); }
     const _T* operator->() const { return Get(); }
@@ -632,8 +632,8 @@ struct RelativePtr
     RelativePtr<_T>& operator=(const _T* ptr) { Set(ptr); return *this; }
     _T& operator[](uint32 index) { return Get()[index]; }
     const _T& operator[](uint32 index) const { return Get()[index]; }
-    bool IsNull() const { return offset == 0; };
-    void SetNull() { offset = 0; }
+    bool IsNull() const { return mOffset == 0; };
+    void SetNull() { mOffset = 0; }
     bool operator!() const { return IsNull(); }
     operator bool() const { return !IsNull(); }
     _T& operator*() const { return *Get(); }
@@ -642,16 +642,16 @@ struct RelativePtr
     { 
         ASSERT(ptr != nullptr);
         ASSERT(uintptr_t(ptr) > uintptr_t(this));
-        offset = uint32((uint8*)ptr - (uint8*)this);
+        mOffset = uint32((uint8*)ptr - (uint8*)this);
     }
 
     inline _T* Get() const 
     { 
-        ASSERT(offset);
-        return (_T*)((uint8*)this + offset); 
+        ASSERT(mOffset);
+        return (_T*)((uint8*)this + mOffset); 
     }
 
 private:
-    uint32 offset;
+    uint32 mOffset;
 };
 

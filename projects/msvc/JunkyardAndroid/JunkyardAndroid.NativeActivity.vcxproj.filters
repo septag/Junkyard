@@ -286,9 +286,6 @@
     <ClCompile Include="..\..\..\code\Core\SystemAndroid.cpp">
       <Filter>Core</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\..\code\Core\SystemMac.cpp">
-      <Filter>Core</Filter>
-    </ClCompile>
     <ClCompile Include="..\..\..\code\Core\SystemPosix.cpp">
       <Filter>Core</Filter>
     </ClCompile>
@@ -380,9 +377,9 @@
     <None Include="..\..\..\code\Graphics\ValidateEnumsVk.inl">
       <Filter>Graphics</Filter>
     </None>
-    <None Include="..\..\..\code\ApplicationMac.m" />
     <None Include="..\..\..\code\Core\SystemMac.mm">
       <Filter>Core</Filter>
     </None>
+    <None Include="..\..\..\code\ApplicationMac.mm" />
   </ItemGroup>
 </Project>

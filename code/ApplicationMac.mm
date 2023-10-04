@@ -225,7 +225,6 @@ bool appInitialize(const AppDesc& desc)
     else
         strCopy(gApp.windowTitle, sizeof(gApp.windowTitle), "Junkyard");
     
-    timerInitialize();
     appMacInitKeyTable();
     
     // Initialize settings if not initialied before

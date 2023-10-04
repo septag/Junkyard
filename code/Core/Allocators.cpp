@@ -379,7 +379,7 @@ void* memAllocTempZero(MemTempId id, size_t size, uint32 align)
     return ptr;
 }
 
-void memTempReset(float dt)
+void memTempReset(float dt, bool resetValidation)
 {
     MutexScope mtx(gMem.tempMtx);
     for (uint32 i = 0; i < gMem.tempCtxs.Count(); i++) {
@@ -421,7 +421,7 @@ void memTempReset(float dt)
 
                 ctx->used = false;
             }   // MemTempContext can reset (allocStack is empty)
-            else {
+            else if (resetValidation) {
                 ctx->noresetTime += dt;
                 if (ctx->noresetTime >= kTempValidateResetTime) {
                     logWarning("Temp stack failed to pop during the frame after %.0f seconds", kTempValidateResetTime);
@@ -519,40 +519,40 @@ inline void MemHeapAllocator::Free(void* ptr, uint32 align)
 
 //------------------------------------------------------------------------
 // Frame allocator
-void MemLinearVMAllocator::Initialize(size_t reserveSize_, size_t pageSize_, bool debugMode_)
+void MemLinearVMAllocator::Initialize(size_t reserveSize, size_t pageSize, bool debugMode)
 {
-    this->debugMode = debugMode_;
+    this->mDebugMode = debugMode;
 
     // We use RAII reserve/release here because FrameAllocator remains during the lifetime of the program
-    if (!debugMode_) {
-        ASSERT(reserveSize_);
-        ASSERT(pageSize_);
+    if (!debugMode) {
+        ASSERT(reserveSize);
+        ASSERT(pageSize);
 
-        this->buffer = (uint8*)memVirtualReserve(reserveSize_);
-        if (!this->buffer) 
+        this->myBuffer = (uint8*)memVirtualReserve(reserveSize);
+        if (!this->myBuffer) 
             MEMORY_FAIL();
 
-        this->pageSize = pageSize_;
-        this->reserveSize = reserveSize_;
+        this->mPageSize = pageSize;
+        this->mReserveSize = reserveSize;
     }
     else {
-        this->debugPointers = NEW(gMem.defaultAlloc, Array<_private::MemDebugPointer>);
+        this->mDebugPointers = NEW(gMem.defaultAlloc, Array<_private::MemDebugPointer>);
     }
 }
 
 void MemLinearVMAllocator::Release()
 {
-    if (this->buffer) {
-        if (this->commitSize)
-            memVirtualDecommit(this->buffer, this->commitSize);
-        memVirtualRelease(this->buffer, this->reserveSize);
+    if (this->myBuffer) {
+        if (this->mCommitSize)
+            memVirtualDecommit(this->myBuffer, this->mCommitSize);
+        memVirtualRelease(this->myBuffer, this->mReserveSize);
     }
     
-    if (this->debugMode) {
-        for (_private::MemDebugPointer p : *this->debugPointers)
+    if (this->mDebugMode) {
+        for (_private::MemDebugPointer p : *this->mDebugPointers)
             gMem.defaultAlloc->Free(p.ptr, p.align);
-        this->debugPointers->Free();
-        memFree(this->debugPointers, gMem.defaultAlloc);
+        this->mDebugPointers->Free();
+        memFree(this->mDebugPointers, gMem.defaultAlloc);
     }
 }
 
@@ -565,21 +565,21 @@ void* MemLinearVMAllocator::Realloc(void* ptr, size_t size, uint32 align)
 {
     ASSERT(size);
 
-    if (!this->debugMode) {
+    if (!this->mDebugMode) {
         align = Max(align, CONFIG_MACHINE_ALIGNMENT);
         size = AlignValue<size_t>(size, align);
 
         // For a common case that we call realloc several times (dynamic Arrays), we can reuse the last allocated pointer
         void* newPtr = nullptr;
         size_t lastSize = 0;
-        if (ptr && this->lastAllocatedPtr == ptr) {
+        if (ptr && this->mLastAllocatedPtr == ptr) {
             lastSize = *((size_t*)ptr - 1);
             ASSERT(size > lastSize);
             newPtr = ptr;
         }
 
         // align to requested alignment
-        size_t offset_ = this->offset;
+        size_t offset_ = this->mOffset;
         if (newPtr == nullptr) {
             offset_ += sizeof(size_t);
             if (offset_ % align != 0) 
@@ -591,24 +591,24 @@ void* MemLinearVMAllocator::Realloc(void* ptr, size_t size, uint32 align)
     
         size_t endOffset = offset_ + (size - lastSize);
 
-        if (endOffset > this->reserveSize) {
+        if (endOffset > this->mReserveSize) {
             MEMORY_FAIL();
             return nullptr;
         }
 
         // Grow the buffer if necessary (double size policy)
-        if (endOffset > this->commitSize) {
+        if (endOffset > this->mCommitSize) {
             size_t newSize = endOffset;
 
             // Align grow size to page size for virtual memory commit
-            size_t growSize = AlignValue(newSize - this->commitSize, this->pageSize);
-            memVirtualCommit(this->buffer + this->commitSize, growSize);
-            this->commitSize += growSize;
+            size_t growSize = AlignValue(newSize - this->mCommitSize, this->mPageSize);
+            memVirtualCommit(this->myBuffer + this->mCommitSize, growSize);
+            this->mCommitSize += growSize;
         }
 
         // Create the pointer if we are not re-using the previous one
         if (!newPtr) {
-            newPtr = this->buffer + offset_;
+            newPtr = this->myBuffer + offset_;
 
             // we are not re-using the previous allocation, memcpy the previous block in case of realloc
             if (ptr)
@@ -616,8 +616,8 @@ void* MemLinearVMAllocator::Realloc(void* ptr, size_t size, uint32 align)
         }
 
         *((size_t*)newPtr - 1) = size;
-        this->offset = endOffset;
-        this->lastAllocatedPtr = newPtr;
+        this->mOffset = endOffset;
+        this->mLastAllocatedPtr = newPtr;
         return newPtr;
     }
     else {
@@ -627,7 +627,7 @@ void* MemLinearVMAllocator::Realloc(void* ptr, size_t size, uint32 align)
             ptr = gMem.defaultAlloc->Realloc(ptr, size, align);
 
         if (ptr)
-            this->debugPointers->Push(_private::MemDebugPointer {ptr, align});
+            this->mDebugPointers->Push(_private::MemDebugPointer {ptr, align});
         return ptr;
     }
 }
@@ -639,55 +639,55 @@ void MemLinearVMAllocator::Free(void*, uint32)
 
 void MemLinearVMAllocator::Reset()
 {
-    if (!this->debugMode) {
+    if (!this->mDebugMode) {
         // Invalidate already allocated memory, so we can have better debugging if something is still lingering 
-        if (this->offset)
-            memset(this->buffer, 0xfe, this->offset);
+        if (this->mOffset)
+            memset(this->myBuffer, 0xfe, this->mOffset);
 
-        this->lastAllocatedPtr = nullptr;
-        this->offset = 0;
-        this->commitSize = 0;
+        this->mLastAllocatedPtr = nullptr;
+        this->mOffset = 0;
+        this->mCommitSize = 0;
     }
     else {
-        this->offset = 0;
+        this->mOffset = 0;
 
-        for (_private::MemDebugPointer& dbgPtr : *this->debugPointers) 
+        for (_private::MemDebugPointer& dbgPtr : *this->mDebugPointers) 
             gMem.defaultAlloc->Free(dbgPtr.ptr, dbgPtr.align);
-        this->debugPointers->Clear();
+        this->mDebugPointers->Clear();
     }
 }
 
 //------------------------------------------------------------------------
 // Temp Allocator Scoped
 MemTempAllocator::MemTempAllocator() : 
-    _id(memTempPushId()), 
-    _fiberProtectorId(debugFiberScopeProtector_Push("TempAllocator")),
-    _ownsId(true) 
+    mId(memTempPushId()), 
+    mFiberProtectorId(debugFiberScopeProtector_Push("TempAllocator")),
+    mOwnsId(true) 
 { 
 }
 
 MemTempAllocator::MemTempAllocator(MemTempId id) : 
-    _id(id), 
-    _fiberProtectorId(debugFiberScopeProtector_Push("TempAllocator")),
-    _ownsId(false)
+    mId(id), 
+    mFiberProtectorId(debugFiberScopeProtector_Push("TempAllocator")),
+    mOwnsId(false)
 {
 }
 
 MemTempAllocator::~MemTempAllocator() 
 { 
-    debugFiberScopeProtector_Pop(_fiberProtectorId); 
-    if (_ownsId) 
-        memTempPopId(_id); 
+    debugFiberScopeProtector_Pop(mFiberProtectorId); 
+    if (mOwnsId) 
+        memTempPopId(mId); 
 }
 
 void* MemTempAllocator::Malloc(size_t size, uint32 align) 
 {
-    return memAllocTemp(_id, size, align);
+    return memAllocTemp(mId, size, align);
 }
 
 void* MemTempAllocator::Realloc(void* ptr, size_t size, uint32 align) 
 {
-    return memReallocTemp(_id, ptr, size, align);
+    return memReallocTemp(mId, ptr, size, align);
 }
 
 void MemTempAllocator::Free(void*, uint32) 
@@ -697,7 +697,7 @@ void MemTempAllocator::Free(void*, uint32)
 
 size_t MemTempAllocator::GetOffset() const
 {
-    uint32 index = _id >> 16;
+    uint32 index = mId >> 16;
     ASSERT_MSG(index == MemGetTempContext().allocStack.Count() - 1, "Invalid temp id, likely doesn't belong to current temp stack scope");
 
     const MemTempStack& memStack = MemGetTempContext().allocStack[index];
@@ -713,88 +713,88 @@ size_t MemTempAllocator::GetPointerOffset(void* ptr) const
 // BudgetAllocator
 MemBudgetAllocator::MemBudgetAllocator(const char* name)
 {
-    strCopy(_name, sizeof(_name), name);
+    strCopy(mName, sizeof(mName), name);
 }
 
 void MemBudgetAllocator::Initialize(size_t sizeBudget, size_t pageSize, bool commitAll, bool debugMode)
 {
-    _debugMode = debugMode;
+    mDebugMode = debugMode;
 
     if (!debugMode) {
         ASSERT(sizeBudget >= 4*kKB);
         if (pageSize == 0)
             pageSize = 256*kKB;
         ASSERT(pageSize % sysGetPageSize() == 0);
-        _pageSize = !commitAll ? pageSize : 0llu;
+        mPageSize = !commitAll ? pageSize : 0llu;
 
-        _buffer = reinterpret_cast<uint8*>(memVirtualReserve(sizeBudget, MemVirtualFlags::None));
+        mBuffer = reinterpret_cast<uint8*>(memVirtualReserve(sizeBudget, MemVirtualFlags::None));
 
         if (commitAll) {
-            memVirtualCommit(_buffer, sizeBudget);
-            _commitSize = sizeBudget;
+            memVirtualCommit(mBuffer, sizeBudget);
+            mCommitSize = sizeBudget;
         }
         else {
-            memVirtualCommit(_buffer, pageSize);
-            _commitSize = pageSize;
+            memVirtualCommit(mBuffer, pageSize);
+            mCommitSize = pageSize;
         }
-        _maxSize = sizeBudget;
+        mMaxSize = sizeBudget;
     }
     else {
-        _debugPointers = NEW(gMem.defaultAlloc, Array<_private::MemDebugPointer>);
+        mDebugPointers = NEW(gMem.defaultAlloc, Array<_private::MemDebugPointer>);
     }    
 }
 
 void MemBudgetAllocator::Release()
 {
-    if (_buffer) {
-        memVirtualDecommit(_buffer, _commitSize);
-        memVirtualRelease(_buffer, _maxSize);
+    if (mBuffer) {
+        memVirtualDecommit(mBuffer, mCommitSize);
+        memVirtualRelease(mBuffer, mMaxSize);
     }
 
-    if (_debugMode) {
-        for (_private::MemDebugPointer p: *_debugPointers)
+    if (mDebugMode) {
+        for (_private::MemDebugPointer p: *mDebugPointers)
             gMem.defaultAlloc->Free(p.ptr, p.align);
-        _debugPointers->Free();
-        memFree(_debugPointers, gMem.defaultAlloc);
+        mDebugPointers->Free();
+        memFree(mDebugPointers, gMem.defaultAlloc);
     }
 }
 
 void* MemBudgetAllocator::Malloc(size_t size, uint32 align)
 {
-    if (!_debugMode) {
+    if (!mDebugMode) {
         align = Max(align, CONFIG_MACHINE_ALIGNMENT);
         size = AlignValue<size_t>(size, align);
     
         // align to requested alignment
-        size_t offset = _offset;
+        size_t offset = mOffset;
         if (offset % align != 0) 
             offset = AlignValue<size_t>(offset, align);
         size_t endOffset = offset + size;
     
-        if (endOffset > _maxSize) {
+        if (endOffset > mMaxSize) {
             MEMORY_FAIL();
             return nullptr;
         }
     
         // Grow the buffer if necessary (double size policy)
-        if (endOffset > _commitSize) {
+        if (endOffset > mCommitSize) {
             size_t newSize = endOffset;
             // Align grow size to page size for virtual memory commit
-            size_t growSize = AlignValue(newSize - _commitSize, _pageSize);
-            memVirtualCommit(_buffer + _commitSize, growSize);
-            _commitSize += growSize;
+            size_t growSize = AlignValue(newSize - mCommitSize, mPageSize);
+            memVirtualCommit(mBuffer + mCommitSize, growSize);
+            mCommitSize += growSize;
         }
     
-        void* ptr = _buffer + _offset;
-        _offset = endOffset;
+        void* ptr = mBuffer + mOffset;
+        mOffset = endOffset;
         return ptr;
     }
     else {
         void* ptr = gMem.defaultAlloc->Malloc(size, align);
         if (ptr) {
-            _debugPointers->Push(_private::MemDebugPointer {ptr, align});
-            _commitSize += size;
-            _offset += size;
+            mDebugPointers->Push(_private::MemDebugPointer {ptr, align});
+            mCommitSize += size;
+            mOffset += size;
         }
         return ptr;
     }
@@ -820,19 +820,19 @@ void MemBudgetAllocator::Free(void*, uint32)
 // MemTlsfAllocator_ThreadSafe
 void* MemTlsfAllocator_ThreadSafe::Malloc(size_t size, uint32 align)
 {
-    AtomicLockScope lock(_lock);
+    AtomicLockScope lock(mLock);
     return MemTlsfAllocator::Malloc(size, align);
 }
 
 void* MemTlsfAllocator_ThreadSafe::Realloc(void* ptr, size_t size, uint32 align)
 {
-    AtomicLockScope lock(_lock);
+    AtomicLockScope lock(mLock);
     return MemTlsfAllocator::Realloc(ptr, size, align);
 }
 
 void  MemTlsfAllocator_ThreadSafe::Free(void* ptr, uint32 align)
 {
-    AtomicLockScope lock(_lock);
+    AtomicLockScope lock(mLock);
     MemTlsfAllocator::Free(ptr, align);
 }
 
@@ -845,42 +845,42 @@ size_t MemTlsfAllocator::GetMemoryRequirement(size_t poolSize)
 
 void MemTlsfAllocator::Initialize([[maybe_unused]] size_t poolSize, void* buffer, size_t size, bool debugMode)
 {
-    _debugMode = debugMode;
+    mDebugMode = debugMode;
 
     if (!debugMode) {
         ASSERT(GetMemoryRequirement(poolSize) <= size);
 
-        _tlsf = tlsf_create_with_pool(buffer, size);
-        if (_tlsf == nullptr) {
+        mTlsf = tlsf_create_with_pool(buffer, size);
+        if (mTlsf == nullptr) {
             MEMORY_FAIL();
         }
-        _tlsfSize = size;
+        mTlsfSize = size;
     }
 }
 
 void MemTlsfAllocator::Release()
 {
-    if (_tlsf)
-        tlsf_destroy(_tlsf);
+    if (mTlsf)
+        tlsf_destroy(mTlsf);
 }
 
 void* MemTlsfAllocator::Malloc(size_t size, uint32 align)
 {
-    if (!_debugMode) {
-        ASSERT(_tlsf);
+    if (!mDebugMode) {
+        ASSERT(mTlsf);
 
         void* ptr = nullptr;
         align = Max(align, CONFIG_MACHINE_ALIGNMENT);
         if (align <= CONFIG_MACHINE_ALIGNMENT) {
-            ptr = tlsf_malloc(_tlsf, size);
+            ptr = tlsf_malloc(mTlsf, size);
         }
         else {
-            ptr = tlsf_memalign(_tlsf, align, size);
+            ptr = tlsf_memalign(mTlsf, align, size);
         }
 
         if (ptr) {
             size_t blockSize = tlsf_block_size(ptr);
-            _allocatedSize += blockSize;
+            mAllocatedSize += blockSize;
 
             TracyCAlloc(ptr, size);
 
@@ -902,16 +902,16 @@ void* MemTlsfAllocator::Malloc(size_t size, uint32 align)
 
 void* MemTlsfAllocator::Realloc(void* ptr, size_t size, uint32 align)
 {
-    if (!_debugMode) {
-        ASSERT(_tlsf);
+    if (!mDebugMode) {
+        ASSERT(mTlsf);
         [[maybe_unused]] void* freePtr = ptr;
 
         if (ptr) 
-            _allocatedSize -= tlsf_block_size(ptr);
+            mAllocatedSize -= tlsf_block_size(ptr);
 
-        ptr = tlsf_realloc(_tlsf, ptr, size);
+        ptr = tlsf_realloc(mTlsf, ptr, size);
         if (ptr) {
-            _allocatedSize += tlsf_block_size(ptr);
+            mAllocatedSize += tlsf_block_size(ptr);
             TracyCRealloc(freePtr, ptr, size);
 
             if constexpr (MEMPRO_ENABLED) {
@@ -932,12 +932,12 @@ void* MemTlsfAllocator::Realloc(void* ptr, size_t size, uint32 align)
 
 void MemTlsfAllocator::Free(void* ptr, uint32 align)
 {
-    if (!_debugMode) {
-        ASSERT(_tlsf);
+    if (!mDebugMode) {
+        ASSERT(mTlsf);
         if (ptr) {
             size_t blockSize = tlsf_block_size(ptr);
-            _allocatedSize -= blockSize;
-            tlsf_free(_tlsf, ptr);
+            mAllocatedSize -= blockSize;
+            tlsf_free(mTlsf, ptr);
             TracyCFree(ptr);
 
             if constexpr (MEMPRO_ENABLED) {
@@ -953,9 +953,9 @@ void MemTlsfAllocator::Free(void* ptr, uint32 align)
 
 bool MemTlsfAllocator::Validate()
 {
-    if (!_debugMode) {
-        ASSERT(_tlsf);
-        return tlsf_check(_tlsf) == 0;
+    if (!mDebugMode) {
+        ASSERT(mTlsf);
+        return tlsf_check(mTlsf) == 0;
     }
     else {
         return true;
@@ -987,13 +987,13 @@ float MemTlsfAllocator::CalculateFragmentation()
         }
     };
 
-    if (!_debugMode) {
+    if (!mDebugMode) {
         MemTempAllocator tmpAlloc;
         GetAllocsData data;
         data.allocs.SetAllocator(&tmpAlloc);
-        data.baseOffset = PtrToInt<uint64>(_tlsf);
+        data.baseOffset = PtrToInt<uint64>(mTlsf);
 
-        tlsf_walk_pool(tlsf_get_pool(_tlsf), GetAllocs, &data);
+        tlsf_walk_pool(tlsf_get_pool(mTlsf), GetAllocs, &data);
 
         if (data.allocs.Count()) {
             BlitSort<AllocData>(data.allocs.Ptr(), data.allocs.Count(), 

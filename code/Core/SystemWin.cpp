@@ -49,14 +49,20 @@ struct ThreadImpl
     size_t stackSize;
     char name[32];
     DWORD tId;
-    atomicUint32 stopped;
-    bool running;
+    atomicUint32 running;
+    bool init;
+};
+
+struct UUIDImpl
+{
+    GUID guid;
 };
 
 static_assert(sizeof(MutexImpl) <= sizeof(Mutex), "Mutex size mismatch");
 static_assert(sizeof(SemaphoreImpl) <= sizeof(Semaphore), "Sempahore size mismatch");
 static_assert(sizeof(SignalImpl) <= sizeof(Signal), "Signal size mismatch");
 static_assert(sizeof(ThreadImpl) <= sizeof(Thread), "Thread size mismatch");
+static_assert(sizeof(UUIDImpl) <= sizeof(SysUUID), "UUID size mismatch");
 
 //------------------------------------------------------------------------
 // Thread
@@ -66,34 +72,36 @@ static DWORD WINAPI threadStubFn(LPVOID arg)
     thrd->tId = GetCurrentThreadId();
     threadSetCurrentThreadName(thrd->name);
 
-    thrd->sem.Post();
     ASSERT(thrd->threadFn);
-    return static_cast<DWORD>(thrd->threadFn(thrd->userData));
+    atomicStore32Explicit(&thrd->running, 1, AtomicMemoryOrder::Release);
+    thrd->sem.Post();
+    DWORD r = static_cast<DWORD>(thrd->threadFn(thrd->userData));
+    atomicStore32Explicit(&thrd->running, 0, AtomicMemoryOrder::Release);
+    return r;
 }
 
 Thread::Thread()
 {
-    ThreadImpl* thrd = reinterpret_cast<ThreadImpl*>(this->data);
+    ThreadImpl* thrd = reinterpret_cast<ThreadImpl*>(this->mData);
     thrd->threadFn = nullptr;
-    thrd->handle = INVALID_HANDLE_VALUE;
+    thrd->handle = nullptr;
     thrd->userData = nullptr;
     thrd->stackSize = 0;
     thrd->name[0] = 0;
     thrd->tId = 0;
-    thrd->stopped = false;
-    thrd->running = false;
+    thrd->running = 0;
+    thrd->init = false;
 }
 
 bool Thread::Start(const ThreadDesc& desc)
 {
-    ThreadImpl* thrd = reinterpret_cast<ThreadImpl*>(this->data);
-    ASSERT(thrd->handle == INVALID_HANDLE_VALUE && !thrd->running);
+    ThreadImpl* thrd = reinterpret_cast<ThreadImpl*>(this->mData);
+    ASSERT(thrd->handle == nullptr && !thrd->init);
 
     thrd->sem.Initialize();
     thrd->threadFn = desc.entryFn;
     thrd->userData = desc.userData;
     thrd->stackSize = Max<size_t>(desc.stackSize, 64*kKB);
-    thrd->stopped = 0;
     strCopy(thrd->name, sizeof(thrd->name), desc.name ? desc.name : "");
 
     thrd->handle = CreateThread(nullptr, thrd->stackSize, (LPTHREAD_START_ROUTINE)threadStubFn, thrd, 0, nullptr);
@@ -103,46 +111,39 @@ bool Thread::Start(const ThreadDesc& desc)
     }
     ASSERT_ALWAYS(thrd->handle != nullptr, "CreateThread failed");
 
-    thrd->sem.Wait();   // Ensure that thread callback is running
-    thrd->running = true;
+    thrd->sem.Wait();   // Ensure that thread callback is init
+    thrd->init = true;
     return true;
 }
 
 int Thread::Stop()
 {
-    ThreadImpl* thrd = reinterpret_cast<ThreadImpl*>(this->data);
+    ThreadImpl* thrd = reinterpret_cast<ThreadImpl*>(this->mData);
     DWORD exitCode = 0;
-    if (thrd->handle != INVALID_HANDLE_VALUE) {
-        ASSERT_MSG(thrd->running, "Thread is not running!");
+    if (thrd->handle != nullptr) {
+        ASSERT_MSG(thrd->init, "Thread is not init!");
 
-        atomicStore32Explicit(&thrd->stopped, 1, AtomicMemoryOrder::Release);
         WaitForSingleObject(thrd->handle, INFINITE);
         GetExitCodeThread(thrd->handle, &exitCode);
         CloseHandle(thrd->handle);
         thrd->sem.Release();
 
-        thrd->handle = INVALID_HANDLE_VALUE;
+        thrd->handle = nullptr;
     }
 
-    thrd->running = false;
+    thrd->init = false;
     return static_cast<int>(exitCode);
 }
 
-bool Thread::IsRunning() const
+bool Thread::IsRunning()
 {
-    const ThreadImpl* thrd = reinterpret_cast<const ThreadImpl*>(this->data);
-    return thrd->running;
-}
-
-bool Thread::IsStopped()
-{
-    ThreadImpl* thrd = reinterpret_cast<ThreadImpl*>(this->data);
-    return atomicLoad32Explicit(&thrd->stopped, AtomicMemoryOrder::Acquire) == 1;
+    ThreadImpl* thrd = reinterpret_cast<ThreadImpl*>(this->mData);
+    return atomicLoad32Explicit(&thrd->running, AtomicMemoryOrder::Acquire) == 1;
 }
 
 void Thread::SetPriority(ThreadPriority prio)
 {
-    ThreadImpl* thrd = reinterpret_cast<ThreadImpl*>(this->data);
+    ThreadImpl* thrd = reinterpret_cast<ThreadImpl*>(this->mData);
 
     int prioWin = 0;
     switch (prio) {
@@ -161,46 +162,46 @@ void Thread::SetPriority(ThreadPriority prio)
 // Mutex
 void Mutex::Initialize(uint32 spinCount)
 {
-    MutexImpl* _m = reinterpret_cast<MutexImpl*>(this->data);
+    MutexImpl* _m = reinterpret_cast<MutexImpl*>(this->mData);
     [[maybe_unused]] BOOL r = InitializeCriticalSectionAndSpinCount(&_m->handle, spinCount);
     ASSERT_ALWAYS(r, "InitializeCriticalSection failed");
 }
 
 void Mutex::Release()
 {
-    MutexImpl* _m = reinterpret_cast<MutexImpl*>(this->data);
+    MutexImpl* _m = reinterpret_cast<MutexImpl*>(this->mData);
     DeleteCriticalSection(&_m->handle);
 }
 
 void Mutex::Enter()
 {
-    MutexImpl* _m = reinterpret_cast<MutexImpl*>(this->data);
+    MutexImpl* _m = reinterpret_cast<MutexImpl*>(this->mData);
     EnterCriticalSection(&_m->handle);
 }
 
 void Mutex::Exit()
 {
-    MutexImpl* _m = reinterpret_cast<MutexImpl*>(this->data);
+    MutexImpl* _m = reinterpret_cast<MutexImpl*>(this->mData);
     LeaveCriticalSection(&_m->handle);
 }
 
 bool Mutex::TryEnter()
 {
-    MutexImpl* _m = reinterpret_cast<MutexImpl*>(this->data);
+    MutexImpl* _m = reinterpret_cast<MutexImpl*>(this->mData);
     return TryEnterCriticalSection(&_m->handle) == TRUE;
 }
 
 // Semaphore
 void Semaphore::Initialize()
 {
-    SemaphoreImpl* _sem = reinterpret_cast<SemaphoreImpl*>(this->data);
+    SemaphoreImpl* _sem = reinterpret_cast<SemaphoreImpl*>(this->mData);
     _sem->handle = CreateSemaphoreA(nullptr, 0, LONG_MAX, nullptr);
     ASSERT_ALWAYS(_sem->handle != INVALID_HANDLE_VALUE, "Failed to create semaphore");
 }
 
 void Semaphore::Release()
 {
-    SemaphoreImpl* _sem = reinterpret_cast<SemaphoreImpl*>(this->data);
+    SemaphoreImpl* _sem = reinterpret_cast<SemaphoreImpl*>(this->mData);
     if (_sem->handle != INVALID_HANDLE_VALUE) {
         CloseHandle(_sem->handle);
         _sem->handle = INVALID_HANDLE_VALUE;
@@ -209,14 +210,14 @@ void Semaphore::Release()
 
 void Semaphore::Post(uint32 count)
 {
-    SemaphoreImpl* _sem = reinterpret_cast<SemaphoreImpl*>(this->data);
+    SemaphoreImpl* _sem = reinterpret_cast<SemaphoreImpl*>(this->mData);
     ASSERT(_sem->handle != INVALID_HANDLE_VALUE);
     ReleaseSemaphore(_sem->handle, count, nullptr);
 }
 
 bool Semaphore::Wait(uint32 msecs)
 {
-    SemaphoreImpl* _sem = reinterpret_cast<SemaphoreImpl*>(this->data);
+    SemaphoreImpl* _sem = reinterpret_cast<SemaphoreImpl*>(this->mData);
     ASSERT(_sem->handle != INVALID_HANDLE_VALUE);
     return WaitForSingleObject(_sem->handle, (DWORD)msecs) == WAIT_OBJECT_0;
 }
@@ -226,7 +227,7 @@ bool Semaphore::Wait(uint32 msecs)
 // https://github.com/mattiasgustavsson/libs/blob/master/thread.h
 void Signal::Initialize()
 {
-    SignalImpl* _sig = reinterpret_cast<SignalImpl*>(this->data);
+    SignalImpl* _sig = reinterpret_cast<SignalImpl*>(this->mData);
     [[maybe_unused]] BOOL r = InitializeCriticalSectionAndSpinCount(&_sig->mutex, 32);
     ASSERT_ALWAYS(r, "InitializeCriticalSectionAndSpinCount failed");
     InitializeConditionVariable(&_sig->cond);
@@ -235,25 +236,25 @@ void Signal::Initialize()
 
 void Signal::Release()
 {
-    SignalImpl* _sig = reinterpret_cast<SignalImpl*>(this->data);
+    SignalImpl* _sig = reinterpret_cast<SignalImpl*>(this->mData);
     DeleteCriticalSection(&_sig->mutex);
 }
 
 void Signal::Raise()
 {
-    SignalImpl* _sig = reinterpret_cast<SignalImpl*>(this->data);
+    SignalImpl* _sig = reinterpret_cast<SignalImpl*>(this->mData);
     WakeConditionVariable(&_sig->cond);
 }
 
 void Signal::RaiseAll()
 {
-    SignalImpl* _sig = reinterpret_cast<SignalImpl*>(this->data);
+    SignalImpl* _sig = reinterpret_cast<SignalImpl*>(this->mData);
     WakeAllConditionVariable(&_sig->cond);
 }
 
 bool Signal::Wait(uint32 msecs)
 {
-    SignalImpl* _sig = reinterpret_cast<SignalImpl*>(this->data);
+    SignalImpl* _sig = reinterpret_cast<SignalImpl*>(this->mData);
 
     bool timedOut = false;
     EnterCriticalSection(&_sig->mutex);
@@ -272,7 +273,7 @@ bool Signal::Wait(uint32 msecs)
 
 void Signal::Decrement()
 {
-    SignalImpl* _sig = reinterpret_cast<SignalImpl*>(this->data);
+    SignalImpl* _sig = reinterpret_cast<SignalImpl*>(this->mData);
     EnterCriticalSection(&_sig->mutex);
     --_sig->value;
     LeaveCriticalSection(&_sig->mutex);
@@ -280,7 +281,7 @@ void Signal::Decrement()
 
 void Signal::Increment()
 {
-    SignalImpl* _sig = reinterpret_cast<SignalImpl*>(this->data);
+    SignalImpl* _sig = reinterpret_cast<SignalImpl*>(this->mData);
     EnterCriticalSection(&_sig->mutex);
     ++_sig->value;
     LeaveCriticalSection(&_sig->mutex);
@@ -288,7 +289,7 @@ void Signal::Increment()
 
 bool Signal::WaitOnCondition(bool(*condFn)(int value, int reference), int reference, uint32 msecs)
 {
-    SignalImpl* _sig = reinterpret_cast<SignalImpl*>(this->data);
+    SignalImpl* _sig = reinterpret_cast<SignalImpl*>(this->mData);
 
     bool timedOut = false;
     EnterCriticalSection(&_sig->mutex);
@@ -307,7 +308,7 @@ bool Signal::WaitOnCondition(bool(*condFn)(int value, int reference), int refere
 
 void Signal::Set(int value)
 {
-    SignalImpl* _sig = reinterpret_cast<SignalImpl*>(this->data);
+    SignalImpl* _sig = reinterpret_cast<SignalImpl*>(this->mData);
 
     EnterCriticalSection(&_sig->mutex);
     _sig->value = value;
@@ -385,7 +386,7 @@ static int64 timerInt64MulDiv(int64 value, int64 numer, int64 denom)
     return q * numer + r * numer / denom;
 }
 
-void timerInitialize() 
+void _private::timerInitialize() 
 {
     gTimer.init = true;
     
@@ -607,25 +608,25 @@ void sysGetSysInfo(SysInfo* info)
 
 #if PLATFORM_DESKTOP
 SysProcess::SysProcess() :
-    process(INVALID_HANDLE_VALUE),
-    stdoutPipeRead(INVALID_HANDLE_VALUE),
-    stderrPipeRead(INVALID_HANDLE_VALUE)
+    mProcess(INVALID_HANDLE_VALUE),
+    mStdOutPipeRead(INVALID_HANDLE_VALUE),
+    mStdErrPipeRead(INVALID_HANDLE_VALUE)
 {
 }
 
 SysProcess::~SysProcess()
 {
-    if (this->stdoutPipeRead != INVALID_HANDLE_VALUE) 
-        CloseHandle(this->stdoutPipeRead);
-    if (this->stderrPipeRead != INVALID_HANDLE_VALUE)
-        CloseHandle(this->stderrPipeRead);
-    if (this->process != INVALID_HANDLE_VALUE)
-        CloseHandle(this->process);
+    if (this->mStdOutPipeRead != INVALID_HANDLE_VALUE) 
+        CloseHandle(this->mStdOutPipeRead);
+    if (this->mStdErrPipeRead != INVALID_HANDLE_VALUE)
+        CloseHandle(this->mStdErrPipeRead);
+    if (this->mProcess != INVALID_HANDLE_VALUE)
+        CloseHandle(this->mProcess);
 }
 
 bool SysProcess::Run(const char* cmdline, SysProcessFlags flags, const char* cwd)
 {
-    ASSERT(this->process == INVALID_HANDLE_VALUE);
+    ASSERT(this->mProcess == INVALID_HANDLE_VALUE);
 
     HANDLE stdOutPipeWrite = INVALID_HANDLE_VALUE;
     HANDLE stdErrPipeWrite = INVALID_HANDLE_VALUE;
@@ -637,16 +638,16 @@ bool SysProcess::Run(const char* cmdline, SysProcessFlags flags, const char* cwd
         saAttr.nLength = sizeof(SECURITY_ATTRIBUTES); 
         saAttr.bInheritHandle = inheritHandles; 
 
-        r = CreatePipe(&this->stdoutPipeRead, &stdOutPipeWrite, &saAttr, 0);
+        r = CreatePipe(&this->mStdOutPipeRead, &stdOutPipeWrite, &saAttr, 0);
         ASSERT_MSG(r, "CreatePipe failed");
 
-        r = CreatePipe(&this->stderrPipeRead, &stdErrPipeWrite, &saAttr, 0);
+        r = CreatePipe(&this->mStdErrPipeRead, &stdErrPipeWrite, &saAttr, 0);
         ASSERT_MSG(r, "CreatePipe failed");
 
         if (inheritHandles) {
-            r = SetHandleInformation(this->stdoutPipeRead, HANDLE_FLAG_INHERIT, 0);
+            r = SetHandleInformation(this->mStdOutPipeRead, HANDLE_FLAG_INHERIT, 0);
             ASSERT_MSG(r, "SetHandleInformation for pipe failed");
-            r = SetHandleInformation(this->stderrPipeRead, HANDLE_FLAG_INHERIT, 0);
+            r = SetHandleInformation(this->mStdErrPipeRead, HANDLE_FLAG_INHERIT, 0);
             ASSERT_MSG(r, "SetHandleInformation for pipe failed");
         }
     }
@@ -677,7 +678,7 @@ bool SysProcess::Run(const char* cmdline, SysProcessFlags flags, const char* cwd
     }
 
     CloseHandle(procInfo.hThread);
-    this->process = procInfo.hProcess;
+    this->mProcess = procInfo.hProcess;
 
     if ((flags & SysProcessFlags::CaptureOutput) == SysProcessFlags::CaptureOutput) {
         CloseHandle(stdOutPipeWrite);
@@ -689,39 +690,45 @@ bool SysProcess::Run(const char* cmdline, SysProcessFlags flags, const char* cwd
 
 void SysProcess::Wait() const
 {
-    ASSERT(this->process != INVALID_HANDLE_VALUE);
-    WaitForSingleObject(this->process, INFINITE);
+    ASSERT(this->mProcess != INVALID_HANDLE_VALUE);
+    WaitForSingleObject(this->mProcess, INFINITE);
 }
 
 bool SysProcess::IsRunning() const
 {
-    ASSERT(this->process != INVALID_HANDLE_VALUE);
-    return WaitForSingleObject(this->process, 0) != WAIT_OBJECT_0;
+    ASSERT(this->mProcess != INVALID_HANDLE_VALUE);
+    return WaitForSingleObject(this->mProcess, 0) != WAIT_OBJECT_0;
+}
+
+void SysProcess::Abort()
+{
+    ASSERT(this->mProcess != INVALID_HANDLE_VALUE);
+    TerminateProcess(this->mProcess, 1);
 }
 
 int SysProcess::GetExitCode() const
 {
-    ASSERT(this->process != INVALID_HANDLE_VALUE);
+    ASSERT(this->mProcess != INVALID_HANDLE_VALUE);
     DWORD exitCode = UINT32_MAX;
-    GetExitCodeProcess(this->process, &exitCode);
+    GetExitCodeProcess(this->mProcess, &exitCode);
     return static_cast<int>(exitCode);
 }
 
 uint32 SysProcess::ReadStdOut(void* data, uint32 size) const
 {
-    ASSERT(this->stdoutPipeRead != INVALID_HANDLE_VALUE);
+    ASSERT(this->mStdOutPipeRead != INVALID_HANDLE_VALUE);
 
     DWORD bytesRead;
-    BOOL r = ReadFile((HANDLE)this->stdoutPipeRead, data, size, &bytesRead, nullptr);
+    BOOL r = ReadFile((HANDLE)this->mStdOutPipeRead, data, size, &bytesRead, nullptr);
     return (r && bytesRead) ? bytesRead : 0;
 }
 
 uint32 SysProcess::ReadStdErr(void* data, uint32 size) const
 {
-    ASSERT(this->stderrPipeRead != INVALID_HANDLE_VALUE);
+    ASSERT(this->mStdErrPipeRead != INVALID_HANDLE_VALUE);
 
     DWORD bytesRead;
-    BOOL r = ReadFile((HANDLE)this->stderrPipeRead, data, size, &bytesRead, nullptr);
+    BOOL r = ReadFile((HANDLE)this->mStdErrPipeRead, data, size, &bytesRead, nullptr);
     return (r && bytesRead) ? bytesRead : 0;
 }
 #endif  // PLATFORM_DESKTOP
@@ -808,6 +815,11 @@ bool pathCreateDir(const char* path)
     return bool(CreateDirectoryA(path, nullptr)); 
 }
 
+bool pathMove(const char* src, const char* dest)
+{
+    return bool(MoveFileA(src, dest));
+}
+
 char* pathGetHomeDir(char* dst, size_t dstSize)
 {
     PWSTR homeDir = nullptr;
@@ -849,6 +861,100 @@ void sysWin32PrintToDebugger(const char* text)
     OutputDebugStringA(text);
 }
 
+// https://learn.microsoft.com/en-us/windows/win32/memory/creating-a-file-mapping-using-large-pages
+bool sysWin32SetPrivilege(const char* name, bool enable)
+{
+    HANDLE tokenHandle;
+    TOKEN_PRIVILEGES tp;
+
+    if (!OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, &tokenHandle)) 
+        return false;
+
+    if (!LookupPrivilegeValueA(nullptr, name, &tp.Privileges[0].Luid)) 
+        return false;
+    tp.PrivilegeCount = 1;
+
+    if (enable) 
+        tp.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
+    else
+        tp.Privileges[0].Attributes = 0;
+
+    BOOL status = AdjustTokenPrivileges(tokenHandle, FALSE, &tp, 0, nullptr, 0);
+    // It is possible for AdjustTokenPrivileges to return TRUE and still not succeed.
+    // So always check for the last error value.
+    DWORD error = GetLastError();
+    if (!status || error != ERROR_SUCCESS) {
+        logError("AdjustTokenPrivileges failed. Code: %u", error);
+    }
+    
+    CloseHandle(tokenHandle);
+    return true;
+}
+
+bool SysUUID::operator==(const SysUUID& uuid) const
+{
+    return memcmp(this->data, uuid.data, sizeof(UUIDImpl)) == 0;
+}
+
+bool sysUUIDGenerate(SysUUID* _uuid)
+{
+    UUIDImpl* uuid = reinterpret_cast<UUIDImpl*>(_uuid);
+    if (CoCreateGuid(&uuid->guid) != S_OK)
+        return false;
+
+    return true;
+}
+
+bool sysUUIDToString(const SysUUID& _uuid, char* str, uint32 size)
+{
+    const UUIDImpl& uuid = reinterpret_cast<const UUIDImpl&>(_uuid);
+    wchar_t guidStr[39];
+
+    StringFromGUID2(uuid.guid, guidStr, CountOf(guidStr));
+    if (WideCharToMultiByte(CP_UTF8, 0, guidStr, -1, str, size, nullptr, nullptr) == 0)
+        return false;
+
+    // strip brackets
+    uint32 len = strLen(str);
+    if (str[0] == '{') {
+        memmove(str, str + 1, len + 1);
+        --len;
+    }
+    if (str[len - 1] == '}')
+        str[len - 1] = 0;
+    return true;
+}
+
+bool sysUUIDFromString(SysUUID* _uuid, const char* str)
+{
+    ASSERT(str);
+
+    if (str[0] == 0)
+        return false;
+
+    char strTmp[64] {};
+
+    uint32 len = strLen(str);
+    if (str[0] != '{') {
+        strTmp[0] = '{';
+        strConcat(strTmp, sizeof(strTmp), str);
+        if (str[len - 1] != '}') 
+            strConcat(strTmp, sizeof(strTmp), "}");
+    }
+    else {
+        ASSERT(str[len - 1] == '}');
+        strCopy(strTmp, sizeof(strTmp), str);
+    }        
+
+    UUIDImpl* uuid = reinterpret_cast<UUIDImpl*>(_uuid);
+    wchar_t guidStr[64];
+    if (MultiByteToWideChar(CP_UTF8, 0, strTmp, -1, guidStr, sizeof(guidStr)) == 0) 
+        return false;
+    if (CLSIDFromString(guidStr, &uuid->guid) != S_OK) 
+        return false;
+    return true;
+}
+
 char* pathWin32GetFolder(SysWin32Folder folder, char* dst, size_t dstSize)
 {
     static const KNOWNFOLDERID folderIds[] = {
@@ -876,7 +982,7 @@ char* pathWin32GetFolder(SysWin32Folder folder, char* dst, size_t dstSize)
     }
 }
 
-//------------------------------------------------------------------------
+//----------------------------------------------------------------------------------------------------------------------
 // Virtual mem
 static MemVirtualStats gVMStats;
 
@@ -927,6 +1033,18 @@ MemVirtualStats memVirtualGetStats()
     return gVMStats;
 }
 
+// https://learn.microsoft.com/en-us/windows/win32/memory/large-page-support
+// Example: https://learn.microsoft.com/en-us/windows/win32/memory/creating-a-file-mapping-using-large-pages
+bool memVirtualEnableLargePages(size_t* largePageSize)
+{
+    ASSERT(largePageSize);
+    if (!sysWin32SetPrivilege("SeLockMemoryPrivilege"))
+        return false;
+
+    *largePageSize = GetLargePageMinimum();
+    return true;
+}
+
 //----------------------------------------------------------------------------
 // File
 struct FileWin
@@ -941,7 +1059,7 @@ static_assert(sizeof(FileWin) <= sizeof(File));
 //------------------------------------------------------------------------
 File::File()
 {
-    FileWin* f = (FileWin*)this->_data;
+    FileWin* f = (FileWin*)this->mData;
 
     f->handle = INVALID_HANDLE_VALUE;
     f->flags = FileOpenFlags::None;
@@ -954,7 +1072,7 @@ bool File::Open(const char* filepath, FileOpenFlags flags)
     ASSERT((flags & (FileOpenFlags::Read|FileOpenFlags::Write)) != (FileOpenFlags::Read|FileOpenFlags::Write));
     ASSERT((flags & (FileOpenFlags::Read|FileOpenFlags::Write)) != FileOpenFlags::None);
 
-    FileWin* f = (FileWin*)this->_data;
+    FileWin* f = (FileWin*)this->mData;
 
     uint32 accessFlags = GENERIC_READ;
     uint32 attrs = FILE_ATTRIBUTE_NORMAL;
@@ -996,7 +1114,7 @@ bool File::Open(const char* filepath, FileOpenFlags flags)
 
 void File::Close()
 {
-    FileWin* f = (FileWin*)this->_data;
+    FileWin* f = (FileWin*)this->mData;
 
     if (f->handle != INVALID_HANDLE_VALUE) {
         CloseHandle(f->handle);
@@ -1006,7 +1124,7 @@ void File::Close()
 
 size_t File::Read(void* dst, size_t size)
 {
-    FileWin* f = (FileWin*)this->_data;
+    FileWin* f = (FileWin*)this->mData;
     ASSERT(f->handle != INVALID_HANDLE_VALUE);
 
     if ((f->flags & FileOpenFlags::NoCache) == FileOpenFlags::NoCache) {
@@ -1026,7 +1144,7 @@ size_t File::Read(void* dst, size_t size)
 
 size_t File::Write(const void* src, size_t size)
 {
-    FileWin* f = (FileWin*)this->_data;
+    FileWin* f = (FileWin*)this->mData;
     ASSERT(f->handle != INVALID_HANDLE_VALUE);
 
     DWORD bytesWritten;
@@ -1039,7 +1157,7 @@ size_t File::Write(const void* src, size_t size)
 
 size_t File::Seek(size_t offset, FileSeekMode mode)
 {
-    FileWin* f = (FileWin*)this->_data;
+    FileWin* f = (FileWin*)this->mData;
     ASSERT(f->handle != INVALID_HANDLE_VALUE);
 
     DWORD moveMethod = 0;
@@ -1068,19 +1186,19 @@ size_t File::Seek(size_t offset, FileSeekMode mode)
 
 size_t File::GetSize() const
 {
-    FileWin* f = (FileWin*)this->_data;
+    FileWin* f = (FileWin*)this->mData;
     return size_t(f->size);    
 }
 
 uint64 File::GetLastModified() const
 {
-    FileWin* f = (FileWin*)this->_data;
+    FileWin* f = (FileWin*)this->mData;
     return f->lastModifiedTime;
 }
 
 bool File::IsOpen() const
 {
-    FileWin* f = (FileWin*)this->_data;
+    FileWin* f = (FileWin*)this->mData;
     return f->handle != INVALID_HANDLE_VALUE;
 }
 
@@ -1133,22 +1251,22 @@ namespace _private
 
 #define SOCKET_INVALID INVALID_SOCKET
 SocketTCP::SocketTCP() :
-    s(SOCKET_INVALID),
-    errCode(SocketErrorCode::None),
-    live(0)
+    mSock(SOCKET_INVALID),
+    mErrCode(SocketErrorCode::None),
+    mLive(0)
 {
 }
 
 void SocketTCP::Close()
 {
-    if (this->s != SOCKET_INVALID) {
-        if (this->live)
-            shutdown(this->s, SD_BOTH);
-        closesocket(this->s);
+    if (this->mSock != SOCKET_INVALID) {
+        if (this->mLive)
+            shutdown(this->mSock, SD_BOTH);
+        closesocket(this->mSock);
 
-        this->s = SOCKET_INVALID;
-        this->errCode = SocketErrorCode::None;
-        this->live = false;
+        this->mSock = SOCKET_INVALID;
+        this->mErrCode = SocketErrorCode::None;
+        this->mLive = false;
     }
 }
 
@@ -1158,9 +1276,9 @@ SocketTCP SocketTCP::CreateListener()
 
     SocketTCP sock;
 
-    sock.s = socket(AF_INET, SOCK_STREAM, 0);
-    if (sock.s == SOCKET_INVALID) {
-        sock.errCode = _private::socketTranslatePlatformErrorCode();
+    sock.mSock = socket(AF_INET, SOCK_STREAM, 0);
+    if (sock.mSock == SOCKET_INVALID) {
+        sock.mErrCode = _private::socketTranslatePlatformErrorCode();
         logError("SocketTCP: Opening the socket failed");
         return sock;
     }
@@ -1176,20 +1294,20 @@ bool SocketTCP::Listen(uint16 port, uint32 maxConnections)
     addr.sin_addr.s_addr = INADDR_ANY;
     addr.sin_port = htons(port);
 
-    if (bind(this->s, (struct sockaddr*)&addr, sizeof(addr)) < 0) {
-        this->errCode = _private::socketTranslatePlatformErrorCode();
+    if (bind(this->mSock, (struct sockaddr*)&addr, sizeof(addr)) < 0) {
+        this->mErrCode = _private::socketTranslatePlatformErrorCode();
         logError("SocketTCP: failed binding the socket to port: %d", port);
         return false;
     }
 
     logVerbose("SocketTCP: Listening on port '%d' for incoming connections ...", port);
     int _maxConnections = maxConnections > INT32_MAX ? INT32_MAX : static_cast<int>(maxConnections);
-    bool success = listen(this->s, _maxConnections) >= 0;
+    bool success = listen(this->mSock, _maxConnections) >= 0;
     
     if (!success) 
-        this->errCode = _private::socketTranslatePlatformErrorCode();
+        this->mErrCode = _private::socketTranslatePlatformErrorCode();
     else
-        this->live = true;
+        this->mLive = true;
 
     return success;
 }
@@ -1202,9 +1320,9 @@ SocketTCP SocketTCP::Accept(char* clientUrl, uint32 clientUrlSize)
 
     struct sockaddr_in addr;
     socklen_t addrlen = sizeof(addr);
-    newSock.s = accept(this->s, (struct sockaddr*)&addr, &addrlen);
-    if (this->live && newSock.s == SOCKET_INVALID) {
-        newSock.errCode = _private::socketTranslatePlatformErrorCode();
+    newSock.mSock = accept(this->mSock, (struct sockaddr*)&addr, &addrlen);
+    if (this->mLive && newSock.mSock == SOCKET_INVALID) {
+        newSock.mErrCode = _private::socketTranslatePlatformErrorCode();
         logError("SocketTCP: failed to accept the new socket");
         return newSock;
     }
@@ -1217,7 +1335,7 @@ SocketTCP SocketTCP::Accept(char* clientUrl, uint32 clientUrlSize)
         strPrintFmt(clientUrl, clientUrlSize, "%s:%d", ip, port);
     }
 
-    newSock.live = true;
+    newSock.mLive = true;
     return newSock;
 }
 
@@ -1247,16 +1365,16 @@ SocketTCP SocketTCP::Connect(const char* url)
         return sock;
     }
 
-    sock.s = socket(addri->ai_family, addri->ai_socktype, addri->ai_protocol);
-    if (sock.s == SOCKET_INVALID) {
+    sock.mSock = socket(addri->ai_family, addri->ai_socktype, addri->ai_protocol);
+    if (sock.mSock == SOCKET_INVALID) {
         freeaddrinfo(addri);
         logError("SocketTCP: failed to create socket");
         return sock;
     }
 
-    if (connect(sock.s, addri->ai_addr, (int)addri->ai_addrlen) == -1) {
+    if (connect(sock.mSock, addri->ai_addr, (int)addri->ai_addrlen) == -1) {
         freeaddrinfo(addri);
-        sock.errCode = _private::socketTranslatePlatformErrorCode();
+        sock.mErrCode = _private::socketTranslatePlatformErrorCode();
         logError("SocketTCP: failed to connect to url: %s", url);
         sock.Close();
         return sock;
@@ -1264,28 +1382,28 @@ SocketTCP SocketTCP::Connect(const char* url)
 
     freeaddrinfo(addri);
 
-    sock.live = true;
+    sock.mLive = true;
     return sock;
 }
 
 uint32 SocketTCP::Write(const void* src, uint32 size)
 {
     ASSERT(IsValid());
-    ASSERT(this->live);
+    ASSERT(this->mLive);
     uint32 totalBytesSent = 0;
 
     while (size > 0) {
-        int bytesSent = send(this->s, reinterpret_cast<const char*>(src) + totalBytesSent, size, 0);
+        int bytesSent = send(this->mSock, reinterpret_cast<const char*>(src) + totalBytesSent, size, 0);
         if (bytesSent == 0) {
             break;
         }
         else if (bytesSent == -1) {
-            this->errCode = _private::socketTranslatePlatformErrorCode();
-            if (this->errCode == SocketErrorCode::SocketShutdown ||
-                this->errCode == SocketErrorCode::NotConnected)
+            this->mErrCode = _private::socketTranslatePlatformErrorCode();
+            if (this->mErrCode == SocketErrorCode::SocketShutdown ||
+                this->mErrCode == SocketErrorCode::NotConnected)
             {
                 logDebug("SocketTCP: socket connection closed forcefully by the peer");
-                this->live = false;
+                this->mLive = false;
             }
             return UINT32_MAX;
         }
@@ -1300,16 +1418,16 @@ uint32 SocketTCP::Write(const void* src, uint32 size)
 uint32 SocketTCP::Read(void* dst, uint32 dstSize)
 {
     ASSERT(IsValid());
-    ASSERT(this->live);
+    ASSERT(this->mLive);
 
-    int bytesRecv = recv(this->s, reinterpret_cast<char*>(dst), dstSize, 0);
+    int bytesRecv = recv(this->mSock, reinterpret_cast<char*>(dst), dstSize, 0);
     if (bytesRecv == -1) {
-        this->errCode = _private::socketTranslatePlatformErrorCode();
-        if (this->errCode == SocketErrorCode::SocketShutdown ||
-            this->errCode == SocketErrorCode::NotConnected)
+        this->mErrCode = _private::socketTranslatePlatformErrorCode();
+        if (this->mErrCode == SocketErrorCode::SocketShutdown ||
+            this->mErrCode == SocketErrorCode::NotConnected)
         {
             logDebug("SocketTCP: socket connection closed forcefully by the peer");
-            this->live = false;
+            this->mLive = false;
         }
         return UINT32_MAX;
     }
@@ -1319,7 +1437,7 @@ uint32 SocketTCP::Read(void* dst, uint32 dstSize)
 
 bool SocketTCP::IsValid() const
 {
-    return this->s != SOCKET_INVALID;
+    return this->mSock != SOCKET_INVALID;
 }
 
 #endif // PLATFORM_WINDOWS

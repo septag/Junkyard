@@ -392,7 +392,7 @@ static void gfxImageHandlerClientFn([[maybe_unused]] uint32 cmd, const Blob& inc
     UNUSED(userData);
 
     AssetHandle handle;
-    incomingData.Read<uint32>(&handle.id);
+    incomingData.Read<uint32>(&handle.mId);
     ASSERT(handle.IsValid());
 
     GfxImageLoadRequest request {};
@@ -623,7 +623,7 @@ void GfxImageLoader::LoadRemote(AssetHandle handle, const AssetLoadParams& param
     Blob outgoingBlob(&tmpAlloc);
     outgoingBlob.SetGrowPolicy(Blob::GrowPolicy::Multiply);
 
-    outgoingBlob.Write<uint32>(handle.id);
+    outgoingBlob.Write<uint32>(uint32(handle));
     outgoingBlob.Write<uint32>(cacheHash);
     outgoingBlob.WriteStringBinary(params.path, strLen(params.path));
     outgoingBlob.Write<uint32>(static_cast<uint32>(params.platform));

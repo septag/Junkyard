@@ -52,18 +52,11 @@ typedef struct _IMAGEHLP_MODULE64_V2
 } IMAGEHLP_MODULE64_V2, *PIMAGEHLP_MODULE64_V2;
 #pragma pack(pop)
 
-using SymInitializeFn = BOOL(__stdcall*)(IN HANDLE process, IN LPCSTR UserSearchPath, IN BOOL fInvadeProcess);
-using SymCleanupFn = BOOL(__stdcall*)(IN HANDLE process);
-using SymGetSymFromAddr64Fn = BOOL(__stdcall*)(IN HANDLE process,
-                                               IN DWORD64 dwAddr,
-                                               OUT PDWORD64 pdwDisplacement,
-                                               OUT PIMAGEHLP_SYMBOL64 Symbol);
-using UnDecorateSymbolNameFn = DWORD(__stdcall WINAPI*)(PCSTR DecoratedName, PSTR UnDecoratedName, 
-                                                        DWORD UndecoratedLength, DWORD Flags);
-using SymGetLineFromAddr64Fn = BOOL(__stdcall*)(IN HANDLE process,
-                                                IN DWORD64 dwAddr,
-                                                OUT PDWORD pdwDisplacement,
-                                                OUT PIMAGEHLP_LINE64 line);  
+using SymInitializeFn = BOOL(*)(IN HANDLE process, IN LPCSTR UserSearchPath, IN BOOL fInvadeProcess);
+using SymCleanupFn = BOOL(*)(IN HANDLE process);
+using SymGetSymFromAddr64Fn = BOOL(*)(IN HANDLE process, IN DWORD64 dwAddr, OUT PDWORD64 pdwDisplacement, OUT PIMAGEHLP_SYMBOL64 Symbol);
+using UnDecorateSymbolNameFn = DWORD(WINAPI*)(PCSTR DecoratedName, PSTR UnDecoratedName, DWORD UndecoratedLength, DWORD Flags);
+using SymGetLineFromAddr64Fn = BOOL(*)(IN HANDLE process, IN DWORD64 dwAddr, OUT PDWORD pdwDisplacement, OUT PIMAGEHLP_LINE64 line);  
 
 // DbgHelp Api functions
 static SymInitializeFn _SymInitialize;

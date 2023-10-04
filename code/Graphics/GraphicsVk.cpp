@@ -2524,8 +2524,7 @@ static void gfxSubmitDeferredCommands()
             }
             
             gVk.deferredCmds.Clear();
-            gVk.deferredCmdBuffer.ResetOffset();
-            gVk.deferredCmdBuffer.SetSize(0);
+            gVk.deferredCmdBuffer.Reset();
             gfxEndCommandBuffer();
         }
     }

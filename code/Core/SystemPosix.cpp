@@ -16,11 +16,18 @@
 #include <sys/mman.h>           // mmap/munmap/mprotect/..
 #include <limits.h> 
 #include <stdlib.h>             // realpath
+#include <stdio.h>              // rename
 #include <errno.h>
 #include <fcntl.h>
 #include <netdb.h>              // getaddrinfo, freeaddrinfo
 #include <netinet/in.h>         // sockaddr_in
 #include <arpa/inet.h>          // inet_ntop
+
+#if !PLATFORM_ANDROID
+    #include <uuid/uuid.h>
+#else
+    #include <linux/uuid.h>
+#endif
 
 #include "External/tracy/TracyC.h"
 
@@ -61,14 +68,27 @@ struct ThreadImpl
     void* userData;
     size_t stackSize;
     pid_t tId;
-    atomicUint32 stopped;
-    bool running;
+    atomicUint32 running;
+    bool init;
 };
+
+#if !PLATFORM_ANDROID
+struct UUIDImpl
+{
+    uuid_t uuid;
+};
+#else
+struct UUIDImpl
+{
+    guid_t uuid;
+};
+#endif
 
 static_assert(sizeof(MutexImpl) <= sizeof(Mutex), "Mutex size mismatch");
 static_assert(sizeof(SemaphoreImpl) <= sizeof(Semaphore), "Sempahore size mismatch");
 static_assert(sizeof(SignalImpl) <= sizeof(Signal), "Signal size mismatch");
 static_assert(sizeof(ThreadImpl) <= sizeof(Thread), "Thread size mismatch");
+static_assert(sizeof(UUIDImpl) <= sizeof(SysUUID), "UUID size mismatch");
 
 static inline void timespecAdd(struct timespec* _ts, int32_t _msecs)
 {
@@ -101,29 +121,32 @@ static void* threadStubFn(void* arg)
     thrd->tId = threadGetCurrentId();
     threadSetCurrentThreadName(thrd->name);
 
+    ASSERT(thrd->entryFn);
+    atomicStore32Explicit(&thrd->running, 1, AtomicMemoryOrder::Release);
     thrd->sem.Post();
 
     cast c;
     c.i = thrd->entryFn(thrd->userData);
+
+    atomicStore32Explicit(&thrd->running, 0, AtomicMemoryOrder::Release);
     return c.ptr;
 }
 
 Thread::Thread()
 {
-    memset(this->data, 0x0, sizeof(Thread));
+    memset(mData, 0x0, sizeof(Thread));
 }
 
 bool Thread::Start(const ThreadDesc& desc)
 {
-    ThreadImpl* thrd = reinterpret_cast<ThreadImpl*>(this->data);
-    ASSERT(thrd->handle == 0 && !thrd->running);
+    ThreadImpl* thrd = reinterpret_cast<ThreadImpl*>(mData);
+    ASSERT(thrd->handle == 0 && !thrd->init);
 
     thrd->sem.Initialize();
     thrd->entryFn = desc.entryFn;
     thrd->userData = desc.userData;
     thrd->stackSize = Max<uint64>(static_cast<uint64>(desc.stackSize), 64*kKB);
     strCopy(thrd->name, sizeof(thrd->name), desc.name ? desc.name : "");
-    thrd->stopped = 0;
 
     pthread_attr_t attr;
     [[maybe_unused]] int r = pthread_attr_init(&attr);
@@ -145,7 +168,7 @@ bool Thread::Start(const ThreadDesc& desc)
 
     // Ensure that thread callback is running
     thrd->sem.Wait();
-    thrd->running = true;
+    thrd->init = true;
     return true;
 }
 
@@ -156,30 +179,23 @@ int Thread::Stop()
         int32_t i;
     } cast = {};
 
-    ThreadImpl* thrd = reinterpret_cast<ThreadImpl*>(this->data);
+    ThreadImpl* thrd = reinterpret_cast<ThreadImpl*>(mData);
 
     if (thrd->handle) {
-        ASSERT_MSG(thrd->running, "Thread is not running!");
+        ASSERT_MSG(thrd->init, "Thread is not init!");
        
-        atomicStore32Explicit(&thrd->stopped, 1, AtomicMemoryOrder::Release);
         pthread_join(thrd->handle, &cast.ptr);
     }
 
     thrd->sem.Release();
-    memset(this->data, 0x0, sizeof(Thread));
+    memset(mData, 0x0, sizeof(Thread));
     return cast.i;
 }
 
-bool Thread::IsRunning() const
+bool Thread::IsRunning()
 {
-    const ThreadImpl* thrd = reinterpret_cast<const ThreadImpl*>(this->data);
-    return thrd->running;
-}
-
-bool Thread::IsStopped()
-{
-    ThreadImpl* thrd = reinterpret_cast<ThreadImpl*>(this->data);
-    return atomicLoad32Explicit(&thrd->stopped, AtomicMemoryOrder::Acquire) == 1;
+    ThreadImpl* thrd = reinterpret_cast<ThreadImpl*>(mData);
+    return atomicLoad32Explicit(&thrd->running, AtomicMemoryOrder::Acquire) == 1;
 }
 
 static void threadSetPriority(pthread_t threadHandle, ThreadPriority prio)
@@ -214,7 +230,7 @@ static void threadSetPriority(pthread_t threadHandle, ThreadPriority prio)
 
 void Thread::SetPriority(ThreadPriority prio)
 {
-    threadSetPriority(reinterpret_cast<ThreadImpl*>(this->data)->handle, prio);
+    threadSetPriority(reinterpret_cast<ThreadImpl*>(mData)->handle, prio);
 }
 
 void threadSetCurrentThreadName(const char* name)
@@ -276,7 +292,7 @@ void threadSetCurrentThreadPriority(ThreadPriority prio)
 // Mutex
 void Mutex::Initialize(uint32 spinCount)
 {
-    MutexImpl* _m = reinterpret_cast<MutexImpl*>(this->data);
+    MutexImpl* _m = reinterpret_cast<MutexImpl*>(mData);
     
     _m->spinCount = spinCount;
     _m->spinlock = 0;
@@ -297,14 +313,14 @@ void Mutex::Initialize(uint32 spinCount)
 
 void Mutex::Release()
 {
-    MutexImpl* _m = reinterpret_cast<MutexImpl*>(this->data);
+    MutexImpl* _m = reinterpret_cast<MutexImpl*>(mData);
 
     pthread_mutex_destroy(&_m->handle);
 }
 
 void Mutex::Enter()
 {
-    MutexImpl* _m = reinterpret_cast<MutexImpl*>(this->data);
+    MutexImpl* _m = reinterpret_cast<MutexImpl*>(mData);
 
     #ifndef PTHREAD_MUTEX_ADAPTIVE_NP
         for (uint32 i = 0, c = _m->spinCount; i < c; i++) {
@@ -319,7 +335,7 @@ void Mutex::Enter()
 
 void Mutex::Exit()
 {
-    MutexImpl* _m = reinterpret_cast<MutexImpl*>(this->data);
+    MutexImpl* _m = reinterpret_cast<MutexImpl*>(mData);
 
     pthread_mutex_unlock(&_m->handle);
     #ifndef PTHREAD_MUTEX_ADAPTIVE_NP
@@ -329,7 +345,7 @@ void Mutex::Exit()
 
 bool Mutex::TryEnter()
 {
-    MutexImpl* _m = reinterpret_cast<MutexImpl*>(this->data);
+    MutexImpl* _m = reinterpret_cast<MutexImpl*>(mData);
 
     #ifndef PTHREAD_MUTEX_ADAPTIVE_NP
         if (atomicExchange32Explicit(&_m->spinlock, 1, AtomicMemoryOrder::Acquire) == 0)
@@ -343,62 +359,62 @@ bool Mutex::TryEnter()
 // Semaphore
 void Semaphore::Initialize()
 {
-    SemaphoreImpl* _sem = reinterpret_cast<SemaphoreImpl*>(this->data);
+    SemaphoreImpl* sem = reinterpret_cast<SemaphoreImpl*>(mData);
 
-    _sem->count = 0;
-    [[maybe_unused]] int r = pthread_mutex_init(&_sem->mutex, NULL);
+    sem->count = 0;
+    [[maybe_unused]] int r = pthread_mutex_init(&sem->mutex, NULL);
     ASSERT_ALWAYS(r == 0, "pthread_mutex_init failed");
 
-    r = pthread_cond_init(&_sem->cond, NULL);
+    r = pthread_cond_init(&sem->cond, NULL);
     ASSERT_ALWAYS(r == 0, "pthread_cond_init failed");
 }
 
 void Semaphore::Release()
 {
-    SemaphoreImpl* _sem = reinterpret_cast<SemaphoreImpl*>(this->data);
+    SemaphoreImpl* sem = reinterpret_cast<SemaphoreImpl*>(mData);
 
-    pthread_cond_destroy(&_sem->cond);
-    pthread_mutex_destroy(&_sem->mutex);
+    pthread_cond_destroy(&sem->cond);
+    pthread_mutex_destroy(&sem->mutex);
 }
 
 void Semaphore::Post(uint32 count)
 {
-    SemaphoreImpl* _sem = reinterpret_cast<SemaphoreImpl*>(this->data);
+    SemaphoreImpl* sem = reinterpret_cast<SemaphoreImpl*>(mData);
 
-    [[maybe_unused]] int r = pthread_mutex_lock(&_sem->mutex);
+    [[maybe_unused]] int r = pthread_mutex_lock(&sem->mutex);
     ASSERT(r == 0);
     for (int ii = 0; ii < count; ii++) {
-        r = pthread_cond_signal(&_sem->cond);
+        r = pthread_cond_signal(&sem->cond);
         ASSERT(r == 0);
     }
 
-    _sem->count += count;
-    [[maybe_unused]] int r2 = pthread_mutex_unlock(&_sem->mutex);
+    sem->count += count;
+    [[maybe_unused]] int r2 = pthread_mutex_unlock(&sem->mutex);
     ASSERT(r2 == 0);
 }
 
 bool Semaphore::Wait(uint32 msecs)
 {
-    SemaphoreImpl* _sem = reinterpret_cast<SemaphoreImpl*>(this->data);
+    SemaphoreImpl* sem = reinterpret_cast<SemaphoreImpl*>(mData);
 
-    [[maybe_unused]] int r = pthread_mutex_lock(&_sem->mutex);
+    [[maybe_unused]] int r = pthread_mutex_lock(&sem->mutex);
     ASSERT(r == 0);
 
     if (msecs == -1) {
-        while (r == 0 && _sem->count <= 0) r = pthread_cond_wait(&_sem->cond, &_sem->mutex);
+        while (r == 0 && sem->count <= 0) r = pthread_cond_wait(&sem->cond, &sem->mutex);
     } else {
         struct timespec ts;
         clock_gettime(CLOCK_REALTIME, &ts);
         timespecAdd(&ts, msecs);
-        while (r == 0 && _sem->count <= 0)
-            r = pthread_cond_timedwait(&_sem->cond, &_sem->mutex, &ts);
+        while (r == 0 && sem->count <= 0)
+            r = pthread_cond_timedwait(&sem->cond, &sem->mutex, &ts);
     }
 
     bool ok = r == 0;
     if (ok)
-        --_sem->count;
+        --sem->count;
 
-    r = pthread_mutex_unlock(&_sem->mutex);
+    r = pthread_mutex_unlock(&sem->mutex);
     return ok;
 }
 #endif // PLATFORM_APPLE
@@ -408,54 +424,54 @@ bool Semaphore::Wait(uint32 msecs)
 // https://github.com/mattiasgustavsson/libs/blob/master/thread.h
 void Signal::Initialize()
 {
-    SignalImpl* _sig = reinterpret_cast<SignalImpl*>(this->data);
+    SignalImpl* sig = reinterpret_cast<SignalImpl*>(mData);
 
-    _sig->value = 0;
-    [[maybe_unused]] int r = pthread_mutex_init(&_sig->mutex, NULL);
+    sig->value = 0;
+    [[maybe_unused]] int r = pthread_mutex_init(&sig->mutex, NULL);
     ASSERT_MSG(r == 0, "pthread_mutex_init failed");
 
-    [[maybe_unused]] int r2 = pthread_cond_init(&_sig->cond, NULL);
+    [[maybe_unused]] int r2 = pthread_cond_init(&sig->cond, NULL);
     ASSERT_MSG(r2 == 0, "pthread_cond_init failed");
 }
 
 void Signal::Release()
 {
-    SignalImpl* _sig = reinterpret_cast<SignalImpl*>(this->data);
+    SignalImpl* sig = reinterpret_cast<SignalImpl*>(mData);
 
-    pthread_cond_destroy(&_sig->cond);
-    pthread_mutex_destroy(&_sig->mutex);
+    pthread_cond_destroy(&sig->cond);
+    pthread_mutex_destroy(&sig->mutex);
 }
 
 void Signal::Raise()
 {
-    SignalImpl* _sig = reinterpret_cast<SignalImpl*>(this->data);
+    SignalImpl* sig = reinterpret_cast<SignalImpl*>(mData);
 
-    pthread_cond_signal(&_sig->cond);
+    pthread_cond_signal(&sig->cond);
 }
 
 void Signal::RaiseAll()
 {
-    SignalImpl* _sig = reinterpret_cast<SignalImpl*>(this->data);
+    SignalImpl* sig = reinterpret_cast<SignalImpl*>(mData);
 
-    pthread_cond_broadcast(&_sig->cond);
+    pthread_cond_broadcast(&sig->cond);
 }
 
 bool Signal::Wait(uint32 msecs)
 {
-    SignalImpl* _sig = reinterpret_cast<SignalImpl*>(this->data);
+    SignalImpl* sig = reinterpret_cast<SignalImpl*>(mData);
 
-    [[maybe_unused]] int r = pthread_mutex_lock(&_sig->mutex);
+    [[maybe_unused]] int r = pthread_mutex_lock(&sig->mutex);
     ASSERT(r == 0);
     
     bool timedOut = false;
-    while (_sig->value == 0) {
+    while (sig->value == 0) {
         if (msecs == -1) {
-            r = pthread_cond_wait(&_sig->cond, &_sig->mutex);
+            r = pthread_cond_wait(&sig->cond, &sig->mutex);
         } else {
             struct timespec ts;
             clock_gettime(CLOCK_REALTIME, &ts);
             timespecAdd(&ts, msecs);
-            r = pthread_cond_timedwait(&_sig->cond, &_sig->mutex, &ts);
+            r = pthread_cond_timedwait(&sig->cond, &sig->mutex, &ts);
         }
 
         ASSERT(r == 0 || r == ETIMEDOUT);
@@ -466,28 +482,28 @@ bool Signal::Wait(uint32 msecs)
     }
 
     if (!timedOut)
-        _sig->value = 0;
+        sig->value = 0;
 
-    pthread_mutex_unlock(&_sig->mutex);
+    pthread_mutex_unlock(&sig->mutex);
     return !timedOut;
 }
 
 bool Signal::WaitOnCondition(bool(*condFn)(int value, int reference), int reference, uint32 msecs)
 {
-    SignalImpl* _sig = reinterpret_cast<SignalImpl*>(this->data);
+    SignalImpl* sig = reinterpret_cast<SignalImpl*>(mData);
 
-    [[maybe_unused]] int r = pthread_mutex_lock(&_sig->mutex);
+    [[maybe_unused]] int r = pthread_mutex_lock(&sig->mutex);
     ASSERT(r == 0);
     
     bool timedOut = false;
-    while (condFn(_sig->value, reference)) {
+    while (condFn(sig->value, reference)) {
     if (msecs == -1) {
-        r = pthread_cond_wait(&_sig->cond, &_sig->mutex);
+        r = pthread_cond_wait(&sig->cond, &sig->mutex);
     } else {
         struct timespec ts;
         clock_gettime(CLOCK_REALTIME, &ts);
         timespecAdd(&ts, msecs);
-        r = pthread_cond_timedwait(&_sig->cond, &_sig->mutex, &ts);
+        r = pthread_cond_timedwait(&sig->cond, &sig->mutex, &ts);
         }
 
         ASSERT(r == 0 || r == ETIMEDOUT);
@@ -497,39 +513,39 @@ bool Signal::WaitOnCondition(bool(*condFn)(int value, int reference), int refere
         }
     }
     if (!timedOut)
-        _sig->value = reference;
-    pthread_mutex_unlock(&_sig->mutex);
+        sig->value = reference;
+    pthread_mutex_unlock(&sig->mutex);
     return !timedOut;
 }
 
 void Signal::Decrement()
 {
-    SignalImpl* _sig = reinterpret_cast<SignalImpl*>(this->data);
+    SignalImpl* sig = reinterpret_cast<SignalImpl*>(mData);
 
-    [[maybe_unused]] int r = pthread_mutex_lock(&_sig->mutex);
+    [[maybe_unused]] int r = pthread_mutex_lock(&sig->mutex);
     ASSERT(r == 0);
-    --_sig->value;
-    pthread_mutex_unlock(&_sig->mutex);
+    --sig->value;
+    pthread_mutex_unlock(&sig->mutex);
 }
 
 void Signal::Increment()
 {
-    SignalImpl* _sig = reinterpret_cast<SignalImpl*>(this->data);
+    SignalImpl* sig = reinterpret_cast<SignalImpl*>(mData);
 
-    [[maybe_unused]] int r = pthread_mutex_lock(&_sig->mutex);
+    [[maybe_unused]] int r = pthread_mutex_lock(&sig->mutex);
     ASSERT(r == 0);
-    ++_sig->value;
-    pthread_mutex_unlock(&_sig->mutex);
+    ++sig->value;
+    pthread_mutex_unlock(&sig->mutex);
 }
 
 void Signal::Set(int value)
 {
-    SignalImpl* _sig = reinterpret_cast<SignalImpl*>(this->data);
+    SignalImpl* sig = reinterpret_cast<SignalImpl*>(mData);
 
-    [[maybe_unused]] int r = pthread_mutex_lock(&_sig->mutex);
+    [[maybe_unused]] int r = pthread_mutex_lock(&sig->mutex);
     ASSERT(r == 0);
-    _sig->value = value;
-    pthread_mutex_unlock(&_sig->mutex);
+    sig->value = value;
+    pthread_mutex_unlock(&sig->mutex);
 }
 
 #if !PLATFORM_APPLE
@@ -542,7 +558,7 @@ struct TimerState
 };
 static TimerState gTimer;
 
-void timerInitialize() 
+void _private::timerInitialize() 
 {
     gTimer.init = true;
     struct timespec ts;
@@ -630,6 +646,11 @@ bool pathCreateDir(const char* path)
     return mkdir(path, S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH) == 0;
 }
 
+bool pathMove(const char* src, const char* dest)
+{
+    return rename(src, dest) == 0;
+}
+
 //------------------------------------------------------------------------
 // Virtual memory
 struct MemVirtualStatsAtomic 
@@ -698,6 +719,58 @@ MemVirtualStats memVirtualGetStats()
     };
 }
 
+bool sysUUIDGenerate(SysUUID* uuid)
+{
+#if !PLATFORM_ANDROID
+    UUIDImpl* u = reinterpret_cast<UUIDImpl*>(uuid);
+    uuid_generate_random(u->uuid);
+    return true;
+#else
+    UNUSED(uuid);
+    ASSERT_MSG(0, "Not implemented");
+    return false;
+#endif
+}
+
+bool sysUUIDToString(const SysUUID& uuid, char* str, uint32 size)
+{
+#if !PLATFORM_ANDROID
+    ASSERT(size >= 36);
+    UNUSED(size);
+    
+    const UUIDImpl& u = reinterpret_cast<const UUIDImpl&>(uuid);
+    uuid_unparse(u.uuid, str);
+    return true;
+#else
+    UNUSED(uuid);
+    UNUSED(str);
+    UNUSED(size);
+    ASSERT_MSG(0, "Not implemented");
+    return false;
+#endif
+}
+
+bool sysUUIDFromString(SysUUID* uuid, const char* str)
+{
+#if !PLATFORM_ANDROID
+    UUIDImpl* u = reinterpret_cast<UUIDImpl*>(uuid);
+
+    if (uuid_parse(str, u->uuid) < 0)
+        return false;
+    return true;
+#else
+    UNUSED(uuid);
+    UNUSED(str);
+    ASSERT_MSG(0, "Not implemented");
+    return false;
+#endif
+}
+
+bool SysUUID::operator==(const SysUUID& uuid) const
+{
+    return memcmp(&uuid, this, sizeof(UUIDImpl)) == 0;
+}
+
 //----------------------------------------------------------------------------------------------------------------------
 // File
 #undef _LARGEFILE64_SOURCE
@@ -716,7 +789,7 @@ static_assert(sizeof(FilePosix) <= sizeof(File));
 
 File::File()
 {
-    FilePosix* f = (FilePosix*)this->_data;
+    FilePosix* f = (FilePosix*)mData;
     f->id = -1;
     f->flags = FileOpenFlags::None;
     f->size = 0;
@@ -728,7 +801,7 @@ bool File::Open(const char* filepath, FileOpenFlags flags)
     ASSERT((flags & (FileOpenFlags::Read|FileOpenFlags::Write)) != (FileOpenFlags::Read|FileOpenFlags::Write));
     ASSERT((flags & (FileOpenFlags::Read|FileOpenFlags::Write)) != FileOpenFlags::None);
 
-    FilePosix* f = (FilePosix*)this->_data;
+    FilePosix* f = (FilePosix*)mData;
 
     int openFlags = __O_LARGEFILE;
     mode_t mode = 0;
@@ -779,7 +852,7 @@ bool File::Open(const char* filepath, FileOpenFlags flags)
 
 void File::Close()
 {
-    FilePosix* f = (FilePosix*)this->_data;
+    FilePosix* f = (FilePosix*)mData;
 
     if (f->id != -1) {
         close(f->id);
@@ -789,7 +862,7 @@ void File::Close()
 
 size_t File::Read(void* dst, size_t size)
 {
-    FilePosix* f = (FilePosix*)this->_data;
+    FilePosix* f = (FilePosix*)mData;
     ASSERT(f->id != -1);
     
     if ((f->flags & FileOpenFlags::NoCache) == FileOpenFlags::NoCache) {
@@ -804,7 +877,7 @@ size_t File::Read(void* dst, size_t size)
 
 size_t File::Write(const void* src, size_t size)
 {
-    FilePosix* f = (FilePosix*)this->_data;
+    FilePosix* f = (FilePosix*)mData;
     ASSERT(f->id != -1);
 
     int64_t bytesWritten = write(f->id, src, size);
@@ -819,7 +892,7 @@ size_t File::Write(const void* src, size_t size)
 
 size_t File::Seek(size_t offset, FileSeekMode mode)
 {
-    FilePosix* f = (FilePosix*)this->_data;
+    FilePosix* f = (FilePosix*)mData;
     ASSERT(f->id != -1);
 
     int _whence = 0;
@@ -834,19 +907,19 @@ size_t File::Seek(size_t offset, FileSeekMode mode)
 
 size_t File::GetSize() const
 {
-    const FilePosix* f = (const FilePosix*)this->_data;
+    const FilePosix* f = (const FilePosix*)mData;
     return f->size;
 }
 
 uint64 File::GetLastModified() const
 {
-    const FilePosix* f = (const FilePosix*)this->_data;
+    const FilePosix* f = (const FilePosix*)mData;
     return f->lastModifiedTime;
 }
 
 bool File::IsOpen() const
 {
-    FilePosix* f = (FilePosix*)this->_data;
+    FilePosix* f = (FilePosix*)mData;
     return f->id != -1;
 }
 
@@ -884,22 +957,22 @@ namespace _private
 #define SOCKET_ERROR -1
 
 SocketTCP::SocketTCP() :
-    s(SOCKET_INVALID),
-    errCode(SocketErrorCode::None),
-    live(0)
+    mSock(SOCKET_INVALID),
+    mErrCode(SocketErrorCode::None),
+    mLive(0)
 {
 }
 
 void SocketTCP::Close()
 {
-    if (this->s != SOCKET_INVALID) {
-        if (this->live)
-            shutdown(this->s, SHUT_RDWR);
-        close(this->s);
+    if (mSock != SOCKET_INVALID) {
+        if (mLive)
+            shutdown(mSock, SHUT_RDWR);
+        close(mSock);
 
-        this->s = SOCKET_INVALID;
-        this->errCode = SocketErrorCode::None;
-        this->live = false;
+        mSock = SOCKET_INVALID;
+        mErrCode = SocketErrorCode::None;
+        mLive = false;
     }
 }
 
@@ -907,9 +980,9 @@ SocketTCP SocketTCP::CreateListener()
 {
     SocketTCP sock;
 
-    sock.s = socket(AF_INET, SOCK_STREAM, 0);
-    if (sock.s == SOCKET_INVALID) {
-        sock.errCode = _private::socketTranslatePlatformErrorCode();
+    sock.mSock = socket(AF_INET, SOCK_STREAM, 0);
+    if (sock.mSock == SOCKET_INVALID) {
+        sock.mErrCode = _private::socketTranslatePlatformErrorCode();
         logError("SocketTCP: Opening the socket failed");
         return sock;
     }
@@ -925,20 +998,20 @@ bool SocketTCP::Listen(uint16 port, uint32 maxConnections)
     addr.sin_addr.s_addr = INADDR_ANY;
     addr.sin_port = htons(port);
 
-    if (bind(this->s, (struct sockaddr*)&addr, sizeof(addr)) < 0) {
-        this->errCode = _private::socketTranslatePlatformErrorCode();
+    if (bind(mSock, (struct sockaddr*)&addr, sizeof(addr)) < 0) {
+        mErrCode = _private::socketTranslatePlatformErrorCode();
         logError("SocketTCP: failed binding the socket to port: %d", port);
         return false;
     }
 
     logVerbose("SocketTCP: Listening on port '%d' for incoming connections ...", port);
     int _maxConnections = maxConnections > INT32_MAX ? INT32_MAX : static_cast<int>(maxConnections);
-    bool success = listen(this->s, _maxConnections) >= 0;
+    bool success = listen(mSock, _maxConnections) >= 0;
     
     if (!success) 
-        this->errCode = _private::socketTranslatePlatformErrorCode();
+        mErrCode = _private::socketTranslatePlatformErrorCode();
     else
-        this->live = true;
+        mLive = true;
 
     return success;
 }
@@ -951,9 +1024,9 @@ SocketTCP SocketTCP::Accept(char* clientUrl, uint32 clientUrlSize)
 
     struct sockaddr_in addr;
     socklen_t addrlen = sizeof(addr);
-    newSock.s = accept(this->s, (struct sockaddr*)&addr, &addrlen);
-    if (this->live && newSock.s == SOCKET_INVALID) {
-        newSock.errCode = _private::socketTranslatePlatformErrorCode();
+    newSock.mSock = accept(mSock, (struct sockaddr*)&addr, &addrlen);
+    if (mLive && newSock.mSock == SOCKET_INVALID) {
+        newSock.mErrCode = _private::socketTranslatePlatformErrorCode();
         logError("SocketTCP: failed to accept the new socket");
         return newSock;
     }
@@ -966,7 +1039,7 @@ SocketTCP SocketTCP::Accept(char* clientUrl, uint32 clientUrlSize)
         strPrintFmt(clientUrl, clientUrlSize, "%s:%d", ip, port);
     }
 
-    newSock.live = true;
+    newSock.mLive = true;
     return newSock;
 }
 
@@ -994,16 +1067,16 @@ SocketTCP SocketTCP::Connect(const char* url)
         return sock;
     }
 
-    sock.s = socket(addri->ai_family, addri->ai_socktype, addri->ai_protocol);
-    if (sock.s == SOCKET_INVALID) {
+    sock.mSock = socket(addri->ai_family, addri->ai_socktype, addri->ai_protocol);
+    if (sock.mSock == SOCKET_INVALID) {
         freeaddrinfo(addri);
         logError("SocketTCP: failed to create socket");
         return sock;
     }
 
-    if (connect(sock.s, addri->ai_addr, (int)addri->ai_addrlen) == -1) {
+    if (connect(sock.mSock, addri->ai_addr, (int)addri->ai_addrlen) == -1) {
         freeaddrinfo(addri);
-        sock.errCode = _private::socketTranslatePlatformErrorCode();
+        sock.mErrCode = _private::socketTranslatePlatformErrorCode();
         logError("SocketTCP: failed to connect to url: %s", url);
         sock.Close();
         return sock;
@@ -1011,28 +1084,28 @@ SocketTCP SocketTCP::Connect(const char* url)
 
     freeaddrinfo(addri);
 
-    sock.live = true;
+    sock.mLive = true;
     return sock;
 }
 
 uint32 SocketTCP::Write(const void* src, uint32 size)
 {
     ASSERT(IsValid());
-    ASSERT(this->live);
+    ASSERT(mLive);
     uint32 totalBytesSent = 0;
 
     while (size > 0) {
-        int bytesSent = (int)send(this->s, reinterpret_cast<const char*>(src) + totalBytesSent, size, 0);
+        int bytesSent = (int)send(mSock, reinterpret_cast<const char*>(src) + totalBytesSent, size, 0);
         if (bytesSent == 0) {
             break;
         }
         else if (bytesSent == -1) {
-            this->errCode = _private::socketTranslatePlatformErrorCode();
-            if (this->errCode == SocketErrorCode::SocketShutdown ||
-                this->errCode == SocketErrorCode::NotConnected)
+            mErrCode = _private::socketTranslatePlatformErrorCode();
+            if (mErrCode == SocketErrorCode::SocketShutdown ||
+                mErrCode == SocketErrorCode::NotConnected)
             {
                 logDebug("SocketTCP: socket connection closed forcefully by the peer");
-                this->live = false;
+                mLive = false;
             }
             return UINT32_MAX;
         }
@@ -1047,16 +1120,16 @@ uint32 SocketTCP::Write(const void* src, uint32 size)
 uint32 SocketTCP::Read(void* dst, uint32 dstSize)
 {
     ASSERT(IsValid());
-    ASSERT(this->live);
+    ASSERT(mLive);
 
-    int bytesRecv = (int)recv(this->s, reinterpret_cast<char*>(dst), dstSize, 0);
+    int bytesRecv = (int)recv(mSock, reinterpret_cast<char*>(dst), dstSize, 0);
     if (bytesRecv == -1) {
-        this->errCode = _private::socketTranslatePlatformErrorCode();
-        if (this->errCode == SocketErrorCode::SocketShutdown ||
-            this->errCode == SocketErrorCode::NotConnected)
+        mErrCode = _private::socketTranslatePlatformErrorCode();
+        if (mErrCode == SocketErrorCode::SocketShutdown ||
+            mErrCode == SocketErrorCode::NotConnected)
         {
             logDebug("SocketTCP: socket connection closed forcefully by the peer");
-            this->live = false;
+            mLive = false;
         }
         return UINT32_MAX;
     }
@@ -1066,7 +1139,7 @@ uint32 SocketTCP::Read(void* dst, uint32 dstSize)
 
 bool SocketTCP::IsValid() const
 {
-    return this->s != SOCKET_INVALID;
+    return mSock != SOCKET_INVALID;
 }
 
 #endif // PLATFORM_POSIX

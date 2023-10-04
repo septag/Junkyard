@@ -17,6 +17,16 @@
     #endif
 #endif
 
+// We are doing static initilization for timers
+// We don't do much of that because of many pitfalls of this approach. 
+// But here can be a safe exception for conveniency. Because timer initialization does not involve allocations or any sensitive init code
+struct TimerInitializer
+{
+    TimerInitializer() { _private::timerInitialize(); }
+};
+
+static TimerInitializer gTimerInit;
+
 char* pathToUnix(const char *path, char *dst, size_t dstSize)
 {
     size_t len = strLen(path);

@@ -57,13 +57,13 @@ struct HashMurmur32Incremental
     HashMurmur32Incremental& AddAny(const void* data, uint32 size);
     HashMurmur32Incremental& AddCStringArray(const char** strs, uint32 numStrings);
 
-    uint32 hash;
-    uint32 tail;
-    uint32 count;
-    uint32 size;
+    uint32 mHash;
+    uint32 mTail;
+    uint32 mCount;
+    uint32 mSize;
 };
 
-//------------------------------------------------------------------------
+//----------------------------------------------------------------------------------------------------------------------
 // HashTable
 namespace _private
 {
@@ -97,8 +97,8 @@ namespace _private
 template <typename _T>
 struct HashTable
 {
-    HashTable() : _ht(nullptr), _alloc(memDefaultAlloc()) {}
-    explicit HashTable(Allocator* alloc) :  _ht(nullptr), _alloc(alloc) {}
+    HashTable() : mHashTable(nullptr), mAlloc(memDefaultAlloc()) {}
+    explicit HashTable(Allocator* alloc) :  mHashTable(nullptr), mAlloc(alloc) {}
     explicit HashTable(uint32 capacity, void* buff, size_t size);
 
     void SetAllocator(Allocator* alloc);
@@ -132,8 +132,8 @@ struct HashTable
     bool IsFull() const;
 
 private:
-    _private::HashTableData* _ht;
-    Allocator*               _alloc;
+    _private::HashTableData* mHashTable;
+    Allocator*               mAlloc;
 };
 
 using HashTableUint = HashTable<uint32>;
@@ -223,105 +223,105 @@ uint32 hashUint64To32(uint64 key)
 template <typename _T>
 inline HashTable<_T>::HashTable(uint32 capacity, void* buff, size_t size)
 {
-    _ht = _private::hashtableCreateWithBuffer(capacity, sizeof(_T), buff, size);
-    _alloc = nullptr;
-    ASSERT(_ht);
+    mHashTable = _private::hashtableCreateWithBuffer(capacity, sizeof(_T), buff, size);
+    mAlloc = nullptr;
+    ASSERT(mHashTable);
 }    
 
 template <typename _T>
 inline void HashTable<_T>::SetAllocator(Allocator* alloc)
 {
-    ASSERT_MSG(!_ht, "hash-table already initialized with another allocator");
-    _alloc = alloc;
+    ASSERT_MSG(!mHashTable, "hash-table already initialized with another allocator");
+    mAlloc = alloc;
 }
 
 template <typename _T>
 inline bool HashTable<_T>::Reserve(uint32 capacity)
 {
-    ASSERT_MSG(!_ht, "hash-table already initialized");
-    ASSERT(_alloc);
-    _ht = _private::hashtableCreate(capacity, sizeof(_T), _alloc);
-    return _ht ? true : false;
+    ASSERT_MSG(!mHashTable, "hash-table already initialized");
+    ASSERT(mAlloc);
+    mHashTable = _private::hashtableCreate(capacity, sizeof(_T), mAlloc);
+    return mHashTable ? true : false;
 }
 
 template <typename _T>
 inline bool HashTable<_T>::Reserve(uint32 capacity, void* buff, size_t size)
 {
-    ASSERT_MSG(!_ht, "hash-table already initialized");
-    _ht = _private::hashtableCreateWithBuffer(capacity, sizeof(_T), buff, size);
-    _alloc = nullptr;
-    return _ht ? true : false;
+    ASSERT_MSG(!mHashTable, "hash-table already initialized");
+    mHashTable = _private::hashtableCreateWithBuffer(capacity, sizeof(_T), buff, size);
+    mAlloc = nullptr;
+    return mHashTable ? true : false;
 }    
 
 template <typename _T>
 inline void HashTable<_T>::Free()
 {
-    if (_ht && _alloc)
-        _private::hashtableDestroy(_ht, _alloc);
-    _ht = nullptr;
+    if (mHashTable && mAlloc)
+        _private::hashtableDestroy(mHashTable, mAlloc);
+    mHashTable = nullptr;
 }
 
 template <typename _T>
 inline const _T* HashTable<_T>::Values() const
 {
-    return reinterpret_cast<const _T*> (_ht->values);
+    return reinterpret_cast<const _T*> (mHashTable->values);
 }
 
 template <typename _T>
 inline const uint32* HashTable<_T>::Keys() const
 {
-    return _ht->keys;
+    return mHashTable->keys;
 }
 
 template <typename _T>
 inline uint32 HashTable<_T>::Count() const
 {
-    return _ht->count;
+    return mHashTable->count;
 }
 
 template <typename _T>
 inline uint32 HashTable<_T>::Capacity() const
 {
-    return _ht->capacity;
+    return mHashTable->capacity;
 }
 
 template <typename _T>
 inline const _T& HashTable<_T>::Get(uint32 index) const
 {
-    return reinterpret_cast<_T*>(_ht->values)[index];
+    return reinterpret_cast<_T*>(mHashTable->values)[index];
 }
 
 template <typename _T>
 inline void HashTable<_T>::Set(uint32 index, const _T& value)
 {
-    reinterpret_cast<_T*>(_ht->values)[index] = value;
+    reinterpret_cast<_T*>(mHashTable->values)[index] = value;
 }
 
 template <typename _T>
 inline _T& HashTable<_T>::GetMutable(uint32 index)
 {
-    return reinterpret_cast<_T*>(_ht->values)[index];
+    return reinterpret_cast<_T*>(mHashTable->values)[index];
 }
 
 template <typename _T>
 inline void HashTable<_T>::Remove(uint32 index)
 {
-    ASSERT_MSG(index < _ht->capacity, "index out of range");
+    ASSERT_MSG(index < mHashTable->capacity, "index out of range");
 
-    _ht->keys[index] = 0;
-    --_ht->count;
+    mHashTable->keys[index] = 0;
+    --mHashTable->count;
 }
 
 template <typename _T>
 inline void HashTable<_T>::Clear()
 {
-    _private::hashtableClear(_ht);
+    _private::hashtableClear(mHashTable);
 }
 
 template <typename _T>
 inline uint32 HashTable<_T>::Find(uint32 key) const
 {
-    return _private::hashtableFind(_ht, key);
+    return _private::hashtableFind(mHashTable, key);
 }
 
 template <typename _T>
@@ -338,51 +338,51 @@ inline uint32 HashTable<_T>::AddIfNotFound(uint32 key, const _T& value)
 template <typename _T>
 inline uint32 HashTable<_T>::Add(uint32 key, const _T& value)
 {
-    ASSERT(_ht);
-    if (_ht->count == _ht->capacity) {
+    ASSERT(mHashTable);
+    if (mHashTable->count == mHashTable->capacity) {
         [[maybe_unused]] bool r = false;
-        ASSERT_MSG(_alloc, "Only hashtables with allocators can be self-grown automatically");
-        if (_alloc) 
-            r = _private::hashtableGrow(&_ht, _alloc);
+        ASSERT_MSG(mAlloc, "Only hashtables with allocators can be self-grown automatically");
+        if (mAlloc) 
+            r = _private::hashtableGrow(&mHashTable, mAlloc);
         ASSERT_ALWAYS(r, "could not grow hash-table");
     }
-    uint32 h = _private::hashtableAddKey(_ht, key);
+    uint32 h = _private::hashtableAddKey(mHashTable, key);
 
     // do memcpy with template types, so it leaves some hints for the compiler to optimize
-    memcpy((_T*)_ht->values + h, &value, sizeof(_T));
+    memcpy((_T*)mHashTable->values + h, &value, sizeof(_T));
     return h;
 }
 
 template <typename _T>
 inline _T* HashTable<_T>::Add(uint32 key)
 {
-    ASSERT(_ht);
-    if (_ht->count == _ht->capacity) {
+    ASSERT(mHashTable);
+    if (mHashTable->count == mHashTable->capacity) {
         bool r = false;
-        ASSERT_MSG(_alloc, "HashTable full. Only hashtables with allocators can be self-grown automatically");
-        if (_alloc) 
-            r = _private::hashtableGrow(&_ht, _alloc);
+        ASSERT_MSG(mAlloc, "HashTable full. Only hashtables with allocators can be self-grown automatically");
+        if (mAlloc) 
+            r = _private::hashtableGrow(&mHashTable, mAlloc);
         UNUSED(r);
         ASSERT_ALWAYS(r, "could not grow hash-table");
     }
-    uint32 h = _private::hashtableAddKey(_ht, key);
+    uint32 h = _private::hashtableAddKey(mHashTable, key);
 
-    return &((_T*)_ht->values)[h];
+    return &((_T*)mHashTable->values)[h];
 }
 
 template <typename _T>
 inline const _T& HashTable<_T>::FindAndFetch(uint32 key, const _T& not_found_value /*= {0}*/) const
 {
-    ASSERT(_ht);
-    uint32 index = _private::hashtableFind(_ht, key);
+    ASSERT(mHashTable);
+    uint32 index = _private::hashtableFind(mHashTable, key);
     return index != UINT32_MAX ? Get(index) : not_found_value;
 }
 
 template <typename _T>
 inline void HashTable<_T>::FindAndRemove(uint32 key)
 {
-    ASSERT(_ht);
-    uint32 index = _private::hashtableFind(_ht, key);
+    ASSERT(mHashTable);
+    uint32 index = _private::hashtableFind(mHashTable, key);
     if (index != UINT32_MAX)
         Remove(index);
 }
@@ -390,8 +390,8 @@ inline void HashTable<_T>::FindAndRemove(uint32 key)
 template <typename _T>
 inline bool HashTable<_T>::IsFull() const
 {
-    ASSERT(_ht);
-    return _ht->count == _ht->capacity;
+    ASSERT(mHashTable);
+    return mHashTable->count == mHashTable->capacity;
 }
 
 template <typename _T>
@@ -403,20 +403,20 @@ inline size_t HashTable<_T>::GetMemoryRequirement(uint32 capacity)
 template <typename _T>
 inline bool HashTable<_T>::Grow(uint32 newCapacity)
 {
-    ASSERT(_alloc);
-    ASSERT(_ht);
-    ASSERT(newCapacity > _ht->capacity);
+    ASSERT(mAlloc);
+    ASSERT(mHashTable);
+    ASSERT(newCapacity > mHashTable->capacity);
 
-    return _private::hashtableGrow(&_ht, _alloc);
+    return _private::hashtableGrow(&mHashTable, mAlloc);
 }
 
 template <typename _T>
 inline bool HashTable<_T>::Grow(uint32 newCapacity, void* buff, size_t size)
 {
-    ASSERT(!_alloc);
-    ASSERT(_ht);
-    ASSERT(newCapacity > _ht->capacity);
+    ASSERT(!mAlloc);
+    ASSERT(mHashTable);
+    ASSERT(newCapacity > mHashTable->capacity);
 
-    return _private::hashtableGrowWithBuffer(&_ht, buff, size);
+    return _private::hashtableGrowWithBuffer(&mHashTable, buff, size);
 }
 

@@ -707,7 +707,6 @@ bool appInitialize(const AppDesc& desc)
     strCopy(gApp.name, sizeof(gApp.name), "Junkyard");
 
     appAndroidInitKeyTable();
-    timerInitialize();
 
     // Initialize settings if not initialied before
     // Since this is not a recommended way, we also throw an assert

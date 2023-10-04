@@ -400,9 +400,9 @@
     <None Include="..\..\code\Graphics\ValidateEnumsVk.inl">
       <Filter>Graphics</Filter>
     </None>
-    <None Include="..\..\code\ApplicationMac.m" />
     <None Include="..\..\code\Core\SystemMac.mm">
       <Filter>Core</Filter>
     </None>
+    <None Include="..\..\code\ApplicationMac.mm" />
   </ItemGroup>
 </Project>

@@ -869,8 +869,6 @@ bool appInitialize(const AppDesc& desc)
         return FALSE;
     }, TRUE);
 
-    timerInitialize();
-
     // Initialize settings if not initialied before
     // Since this is not a recommended way, we also throw an assert
     if (!settingsIsInitializedJunkyard()) {

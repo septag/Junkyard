@@ -24,10 +24,16 @@
     #define TERM_COLOR_WHITE     "\033[97m"
 #endif
 
+#if CONFIG_DEV_MODE
+#define DEFAULT_LOG_LEVEL LogLevel::Debug
+#else
+#define DEFAULT_LOG_LEVEL LogLevel::Info
+#endif
+
 struct LogContext
 {
     StaticArray<Pair<LogCallback, void*>, 8> callbacks;
-    LogLevel logLevel = LogLevel::Info;
+    LogLevel logLevel = DEFAULT_LOG_LEVEL;
     bool breakOnErrors;
     bool treatWarningsAsErrors;
 #if PLATFORM_ANDROID

@@ -105,11 +105,6 @@
     <ClCompile Include="..\..\..\code\Core\StringUtilWin.cpp" />
     <ClCompile Include="..\..\..\code\Core\System.cpp" />
     <ClCompile Include="..\..\..\code\Core\SystemAndroid.cpp" />
-    <ClCompile Include="..\..\..\code\Core\SystemMac.cpp">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='ReleaseDev|ARM64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">true</ExcludedFromBuild>
-    </ClCompile>
     <ClCompile Include="..\..\..\code\Core\SystemPosix.cpp" />
     <ClCompile Include="..\..\..\code\Core\SystemWin.cpp">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">true</ExcludedFromBuild>
@@ -195,7 +190,7 @@
     </FxCompile>
   </ItemGroup>
   <ItemGroup>
-    <None Include="..\..\..\code\ApplicationMac.m">
+    <None Include="..\..\..\code\ApplicationMac.mm">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='ReleaseDev|ARM64'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">true</ExcludedFromBuild>

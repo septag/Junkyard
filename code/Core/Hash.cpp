@@ -257,16 +257,16 @@ static void hashMurmur32MixTail(HashMurmur32Incremental* ctx, const uint8** pDat
     uint32 size = *pSize;
     const uint8* data = *pData;
     
-    while (size && ((size<4) || ctx->count)) {
-        ctx->tail |= (*data++) << (ctx->count * 8);
+    while (size && ((size<4) || ctx->mCount)) {
+        ctx->mTail |= (*data++) << (ctx->mCount * 8);
         
-        ctx->count++;
+        ctx->mCount++;
         size--;
         
-        if (ctx->count == 4)	{
-            MMIX(ctx->hash, ctx->tail);
-            ctx->tail = 0;
-            ctx->count = 0;
+        if (ctx->mCount == 4)	{
+            MMIX(ctx->mHash, ctx->mTail);
+            ctx->mTail = 0;
+            ctx->mCount = 0;
         }
     }
     
@@ -275,10 +275,10 @@ static void hashMurmur32MixTail(HashMurmur32Incremental* ctx, const uint8** pDat
 }
 
 HashMurmur32Incremental::HashMurmur32Incremental(uint32 seed) : 
-    hash(seed),
-    tail(0),
-    count(0),
-    size(0)
+    mHash(seed),
+    mTail(0),
+    mCount(0),
+    mSize(0)
 {
 }
 
@@ -288,14 +288,14 @@ HashMurmur32Incremental& HashMurmur32Incremental::AddAny(const void* _data, uint
         return *this;
 
     const uint8* key = (const uint8*)_data;
-    size += _size;
+    mSize += _size;
     
     hashMurmur32MixTail(this, &key, &_size);
     
     while (_size >= 4)	{
         uint32 k = *((const uint32*)key);
         
-        MMIX(hash, k);
+        MMIX(mHash, k);
         
         key += 4;
         _size -= 4;
@@ -318,14 +318,14 @@ HashMurmur32Incremental& HashMurmur32Incremental::AddCStringArray(const char** _
 
 uint32 HashMurmur32Incremental::Hash()
 {
-    MMIX(hash, tail);
-    MMIX(hash, size);
+    MMIX(mHash, mTail);
+    MMIX(mHash, mSize);
     
-    hash ^= hash >> 13;
-    hash *= HASH_M;
-    hash ^= hash >> 15;
+    mHash ^= mHash >> 13;
+    mHash *= HASH_M;
+    mHash ^= mHash >> 15;
     
-    return hash;
+    return mHash;
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////

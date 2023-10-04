@@ -22,9 +22,8 @@
 //                There are numCores-1 threads of this type in the thread pool by default
 //                They also run on the lower priority threads as opposed to ShortTask types. So by nature ShortTasks have higher priority for cpu execution
 //
-#include "Base.h"
+#include "Allocators.h"
 
-struct MemBudgetAllocator;
 struct JobsInstance;
 using JobsHandle = JobsInstance*;
 using JobsCallback = void(*)(uint32 groupIndex, void* userData);
@@ -79,7 +78,7 @@ private:
     uint8 data[128];
 };
 
-API void jobsInitialize(MemBudgetAllocator* initHeap, uint32 numThreads = 0, bool debugAllocations = false);
+API void jobsInitialize(Allocator* alloc = memDefaultAlloc(), uint32 numThreads = 0, bool debugAllocations = false);
 API void jobsRelease();
 
 // Dispatches the job and returns the handle. Handle _must_ be waited on later, with a call to `jobsWaitForCompletion`
@@ -87,6 +86,7 @@ API [[nodiscard]] JobsHandle jobsDispatch(JobsType type, JobsCallback callback, 
                                           uint32 groupSize = 1, JobsPriority prio = JobsPriority::Normal, uint32 stackSize = 0);
 // Might yield the current running job as well. Also deletes the JobHandle after it's finished
 API void jobsWaitForCompletion(JobsHandle handle);
+API bool jobsIsRunning(JobsHandle handle);
 
 // In this version, we don't care about waiting on the handle. Handle will be automatically delete itself after job is finished
 API void jobsDispatchAuto(JobsType type, JobsCallback callback, void* userData = nullptr, 

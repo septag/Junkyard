@@ -766,7 +766,7 @@ static void assetFileChanged(const char* filepath)
         if (assetPath[0] == '/')
             ++assetPath;
         if (strIsEqualNoCase(filepath, assetPath)) {
-            uint64 userValue = (static_cast<uint64>(handle.id)<<32) |
+            uint64 userValue = (static_cast<uint64>(uint32(handle))<<32) |
                 ((remoteIsConnected() ? (uint64)AssetLoadMethod::Remote : (uint64)AssetLoadMethod::Local) & 0xffffffff);
             jobsDispatchAuto(JobsType::LongTask, assetLoadTask, IntToPtr<uint64>(userValue));
         }
@@ -819,7 +819,7 @@ AssetHandle assetLoad(const AssetLoadParams& params, const void* extraParams)
         }
 
         static_assert(sizeof(void*) == sizeof(uint64), "No support for 32bits in this part");
-        uint64 userValue = (static_cast<uint64>(handle.id)<<32) |
+        uint64 userValue = (static_cast<uint64>(uint32(handle))<<32) |
                            ((remoteIsConnected() ? (uint64)AssetLoadMethod::Remote : (uint64)AssetLoadMethod::Local) & 0xffffffff);
         jobsDispatchAuto(JobsType::LongTask, assetLoadTask, IntToPtr<uint64>(userValue));
     }

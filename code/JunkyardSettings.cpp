@@ -34,6 +34,7 @@ struct SettingsJunkyardParser final : SettingsCustomCallbacks
     uint32 GetCategoryCount() const override;
     const char* GetCategory(uint32 id) const override;
     bool ParseSetting(uint32 categoryId, const char* key, const char* value) override;
+    void SaveCategory(uint32, Array<SettingsKeyValue>&) override {}
 };
 
 struct SettingsJunkyardContext

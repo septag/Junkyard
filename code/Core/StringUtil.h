@@ -22,9 +22,10 @@ API bool    strIsEqual(const char* s1, const char* s2);
 API bool    strIsEqualNoCase(const char* s1, const char* s2);
 API bool    strIsEqualCount(const char* s1, const char* s2, uint32 count);
 API bool    strIsEqualNoCaseCount(const char* s1, const char* s2, uint32 count);
+API bool    strEndsWith(const char* str, const char* endsWith);
 API bool    strTrim(char* dst, uint32 dstSize, const char* src);
 API bool    strTrim(char* dst, uint32 dstSize, const char* src, char ch);
-API void    strReplaceChar(char* dst, uint32 dstSize, char ch, char replaceWith);
+API char*   strReplaceChar(char* dst, uint32 dstSize, char ch, char replaceWith);
 API bool    strToBool(const char* str);
 API int     strToInt(const char* str);
 API uint32  strToUint(const char* str);
@@ -39,6 +40,7 @@ API char    strIsNumber(char ch);
 
 API const char* strSkipWhitespace(const char* str);
 API char* strToUpper(char* dst, uint32 dstSize, const char* src);
+API char* strToLower(char* dst, uint32 dstSize, const char* src);
 
 NO_ASAN API const char* strFindChar(const char* str, char ch);
 NO_ASAN API const char* strFindCharRev(const char* str, char ch);
@@ -64,6 +66,7 @@ struct String
     uint32 Length() const;
     char* Ptr();
     const char* CStr() const;
+    uint32 CalcLength();
     char operator[](uint32 index) const;
     char& operator[](uint32 index);
 
@@ -92,8 +95,8 @@ struct String
     String<_Size> SubStr(uint32 start, uint32 end = UINT32_MAX);
 
 protected:
-    char _str[_Size];
-    uint32 _len;
+    char mStr[_Size];
+    uint32 mLen;
 };
 
 using String32 = String<32>;
@@ -104,30 +107,30 @@ using String64 = String<64>;
 template <uint32 _Size> 
 String<_Size>::String()
 {
-    _str[0] = '\0';
-    _len = 0;
+    mStr[0] = '\0';
+    mLen = 0;
 }
 
 template <uint32 _Size> 
 inline String<_Size>::String(const char* cstr)
 {
-    char* end = strCopy(_str, _Size, cstr);
-    _len = PtrToInt<uint32>(reinterpret_cast<void*>(end - _str));
+    char* end = strCopy(mStr, _Size, cstr);
+    mLen = PtrToInt<uint32>(reinterpret_cast<void*>(end - mStr));
 }
 
 template <uint32 _Size> 
 inline String<_Size>::String(char ch)
 {
-    _str[0] = ch;
-    _str[1] = '\0';
-    _len = 1;
+    mStr[0] = ch;
+    mStr[1] = '\0';
+    mLen = 1;
 }
 
 template <uint32 _Size> 
 inline String<_Size>::String(const String<_Size>& str)
 {
     memcpy(this, &str, sizeof(str));
-    _len = str._len;
+    mLen = str.mLen;
 }
 
 template <uint32 _Size> 
@@ -140,65 +143,65 @@ inline String<_Size>& String<_Size>::operator=(const String<_Size>& str)
 template <uint32 _Size> 
 inline String<_Size>& String<_Size>::operator=(const char* cstr)
 {
-    char* end = strCopy(_str, _Size, cstr);
-    _len = PtrToInt<uint32>(reinterpret_cast<void*>(end - _str));
+    char* end = strCopy(mStr, _Size, cstr);
+    mLen = PtrToInt<uint32>(reinterpret_cast<void*>(end - mStr));
     return *this;
 }
 
 template <uint32 _Size> 
 inline bool String<_Size>::operator==(const char* str) const
 {
-    return strIsEqual(_str, str);
+    return strIsEqual(mStr, str);
 }
 
 template <uint32 _Size> 
 inline bool String<_Size>::operator==(const String<_Size>& str) const
 {
-    return _len == str._len && memcmp(_str, str._str, _len) == 0;
+    return mLen == str.mLen && memcmp(mStr, str.mStr, mLen) == 0;
 }
 
 template <uint32 _Size> 
 inline bool String<_Size>::operator!=(const String<_Size>& str) const
 {
-    return _len != str._len || memcmp(_str, str._str, _len) != 0;
+    return mLen != str.mLen || memcmp(mStr, str.mStr, mLen) != 0;
 }
 
 template <uint32 _Size> 
 inline bool String<_Size>::IsEmpty() const
 {
-    return _len == 0;
+    return mLen == 0;
 }
 
 template <uint32 _Size> 
 inline uint32 String<_Size>::Length() const
 {
-    return _len;
+    return mLen;
 }
 
 template <uint32 _Size> 
 inline char* String<_Size>::Ptr()
 {
-    return _str;
+    return mStr;
 }
 
 template <uint32 _Size> 
 inline const char* String<_Size>::CStr() const
 {
-    return _str;
+    return mStr;
 }
 
 template <uint32 _Size> 
 inline char String<_Size>::operator[](uint32 index) const
 {
-    ASSERT(index < _len);
-    return _str[index];
+    ASSERT(index < mLen);
+    return mStr[index];
 }
 
 template <uint32 _Size> 
 inline char& String<_Size>::operator[](uint32 index)
 {
-    ASSERT(index < _len);
-    return _str[index];
+    ASSERT(index < mLen);
+    return mStr[index];
 }
 
 template <uint32 _Size> 
@@ -206,7 +209,7 @@ inline String<_Size>& String<_Size>::FormatSelf(const char* fmt, ...)
 {
     va_list args;
     va_start(args, fmt);
-    strPrintFmtArgs(_str, _Size, fmt, args);
+    strPrintFmtArgs(mStr, _Size, fmt, args);
     va_end(args);
     return *this;
 }
@@ -217,7 +220,7 @@ inline String<_Size> String<_Size>::Format(const char* fmt, ...)
     String<_Size> str;
     va_list args;
     va_start(args, fmt);
-    strPrintFmtArgs(str._str, _Size, fmt, args);
+    strPrintFmtArgs(str.mStr, _Size, fmt, args);
     va_end(args);
     return str;
 }
@@ -225,35 +228,35 @@ inline String<_Size> String<_Size>::Format(const char* fmt, ...)
 template <uint32 _Size> 
 inline String<_Size>& String<_Size>::FormatArgsSelf(const char* fmt, va_list args)
 {
-    strPrintFmtArgs(_str, _Size, fmt, args);
+    strPrintFmtArgs(mStr, _Size, fmt, args);
     return *this;
 }
 
 template <uint32 _Size> 
 inline bool String<_Size>::IsEqual(const char* cstr) const
 {
-    return strIsEqual(_str, cstr);
+    return strIsEqual(mStr, cstr);
 }
 
 template <uint32 _Size>
 inline bool String<_Size>::IsEqualNoCase(const char* cstr) const
 {
-    return strIsEqualNoCase(_str, cstr);
+    return strIsEqualNoCase(mStr, cstr);
 }
 
 template <uint32 _Size> 
 inline bool String<_Size>::IsEqual(const char* cstr, uint32 count) const
 {
-    return strIsEqualCount(_str, cstr, count);
+    return strIsEqualCount(mStr, cstr, count);
 }
 
 template <uint32 _Size> 
 inline uint32 String<_Size>::FindChar(char ch, uint32 startIndex) const
 {
-    ASSERT(startIndex <= _len);
-    const char* r = strFindChar(_str + startIndex, ch);
+    ASSERT(startIndex <= mLen);
+    const char* r = strFindChar(mStr + startIndex, ch);
     if (r)
-        return PtrToInt<uint32>((void*)(r - _str));
+        return PtrToInt<uint32>((void*)(r - mStr));
     else
         return UINT32_MAX;
 }
@@ -261,9 +264,9 @@ inline uint32 String<_Size>::FindChar(char ch, uint32 startIndex) const
 template <uint32 _Size> 
 inline uint32 String<_Size>::FindCharRev(char ch) const
 {
-    const char* r = strFindCharRev(_str, ch);
+    const char* r = strFindCharRev(mStr, ch);
     if (r)
-        return PtrToInt<uint32>(r - _str);
+        return PtrToInt<uint32>(r - mStr);
     else
         return UINT32_MAX;
 }
@@ -271,9 +274,9 @@ inline uint32 String<_Size>::FindCharRev(char ch) const
 template <uint32 _Size> 
 inline uint32 String<_Size>::FindString(const char* cstr) const
 {
-    const char* r = strFindStr(_str, cstr);
+    const char* r = strFindStr(mStr, cstr);
     if (r)
-        return PtrToInt<uint32>(r - _str);
+        return PtrToInt<uint32>(r - mStr);
     else
         return UINT32_MAX;
 }
@@ -281,66 +284,73 @@ inline uint32 String<_Size>::FindString(const char* cstr) const
 template <uint32 _Size> 
 inline bool String<_Size>::EndsWith(char ch) const
 {
-    return _len > 0 && _str[_len-1] == ch;
+    return mLen > 0 && mStr[mLen-1] == ch;
 }
 
 template <uint32 _Size> 
 inline bool String<_Size>::EndsWith(const char* cstr) const
 {
     uint32 cstrLen = strLen(cstr);
-    return _len >= cstrLen && strFindStr(&_str[_len - cstrLen], cstr) != nullptr;
+    return mLen >= cstrLen && strFindStr(&mStr[mLen - cstrLen], cstr) != nullptr;
 }
 
 template <uint32 _Size> 
 inline String<_Size>& String<_Size>::Append(const char* cstr)
 {
-    strCopy(_str + _len, _Size - _len, cstr);
-    _len += strLen(cstr);
+    strCopy(mStr + mLen, _Size - mLen, cstr);
+    mLen += strLen(cstr);
     return *this;
 }
 
 template <uint32 _Size> 
 inline String<_Size>& String<_Size>::Append(const char* cstr, uint32 count)
 {
-    ASSERT(_len + count < _Size);
-    strCopyCount(_str + _len, _Size - _len, cstr, count);
-    _len += count;
+    ASSERT(mLen + count < _Size);
+    strCopyCount(mStr + mLen, _Size - mLen, cstr, count);
+    mLen += count;
     return *this;
 }
 
 template <uint32 _Size>
 inline String<_Size>& String<_Size>::Append(const String<_Size>& str)
 {
-    ASSERT(_len + str._len < _Size);
-    strCopyCount(_str + _len, _Size - _len, str._str, str._len);
-    _len += str._len;
+    ASSERT(mLen + str.mLen < _Size);
+    strCopyCount(mStr + mLen, _Size - mLen, str.mStr, str.mLen);
+    mLen += str.mLen;
     return *this;
 }
 
 template <uint32 _Size> 
 inline String<_Size>& String<_Size>::Trim()
 {
-    strTrim(_str, _Size, _str);
-    _len = strLen(_str);
+    strTrim(mStr, _Size, mStr);
+    mLen = strLen(mStr);
     return *this;
 }
 
 template <uint32 _Size> 
 inline String<_Size>& String<_Size>::Trim(char ch)
 {
-    strTrim(_str, _Size, _str, ch);
-    _len = strLen(_str);
+    strTrim(mStr, _Size, mStr, ch);
+    mLen = strLen(mStr);
     return *this;
 }
 
 template <uint32 _Size>
 inline String<_Size> String<_Size>::SubStr(uint32 start, uint32 end)
 {
-    end = end == UINT32_MAX ? _len : end;
+    end = end == UINT32_MAX ? mLen : end;
 
     String<_Size> r;
-    strCopyCount(r._str, _Size, _str + start, end - start);
-    r._len = end - start;
+    strCopyCount(r.mStr, _Size, mStr + start, end - start);
+    r.mLen = end - start;
 
     return r;
+}
+
+template <uint32 _Size>
+inline uint32 String<_Size>::CalcLength()
+{
+    mLen = strLen(mStr);
+    return mLen;
 }

@@ -299,6 +299,15 @@ bool strIsEqualNoCaseCount(const char* a, const char* b, uint32 count)
     return true;
 }
 
+bool strEndsWith(const char* str, const char* endsWith)
+{
+    uint32 len = strLen(str);
+    uint32 endsWithLen = strLen(endsWith);
+    if (endsWithLen > len)
+        return false;
+    return strIsEqual(str + len - endsWithLen, endsWith);   
+}
+
 bool strIsWhitespace(char ch)
 {
     return static_cast<uint32>(ch - 1) < 32 && ((0x80001F00 >> static_cast<uint32>(ch - 1)) & 1) == 1;
@@ -307,6 +316,18 @@ bool strIsWhitespace(char ch)
 char strToLower(char ch)
 {
     return ch + (strIsInRange(ch, 'A', 'Z') ? 0x20 : 0);
+}
+
+char* strToLower(char* dst, uint32 dstSize, const char* src)
+{
+    uint32 offset = 0;
+    uint32 dstMax = dstSize - 1;
+    while (*src && offset < dstMax) {
+        dst[offset++] = strToLower(*src);
+        ++src;
+    }
+    dst[offset] = '\0';
+    return dst;
 }
 
 char strToUpper(char ch)
@@ -353,7 +374,7 @@ bool strTrim(char* dst, uint32 dstSize, const char* src)
     }
 
     // trim from the end
-    {
+    if (len) {
         for (uint32 i = len; --i > 0; ) {
             if (!strIsWhitespace(src[i]))   {
                 endOffset = i + 1;  
@@ -550,7 +571,7 @@ double strToDouble(const char* str)
     return strtod(str, nullptr);
 }
 
-void strReplaceChar(char* dst, uint32 dstSize, char ch, char replaceWith)
+char* strReplaceChar(char* dst, uint32 dstSize, char ch, char replaceWith)
 {
     char* s = dst;
     uint32 count = 0; 
@@ -559,6 +580,7 @@ void strReplaceChar(char* dst, uint32 dstSize, char ch, char replaceWith)
             *s = replaceWith;
         ++s;
     }
+    return dst;
 }
 
 const char* strSkipWhitespace(const char* str)

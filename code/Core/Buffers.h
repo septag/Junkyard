@@ -64,7 +64,7 @@ template <typename _T, uint32 _Reserve = 8>
 struct Array
 {
     Array() : Array(memDefaultAlloc()) {}
-    explicit Array(Allocator* alloc) : _alloc(alloc) {}
+    explicit Array(Allocator* alloc) : mAlloc(alloc) {}
     explicit Array(const void* buffer, size_t size);
 
     void SetAllocator(Allocator* alloc);
@@ -76,7 +76,9 @@ struct Array
     [[nodiscard]] _T* Push();
     _T* Push(const _T& item);
     void RemoveAndSwap(uint32 index);
+    void RemoveAndShift(uint32 index);
     uint32 Count() const;
+    uint32 Capacity() const;
     void Clear();
     _T& Last();
     _T PopLast();
@@ -107,17 +109,17 @@ struct Array
         _T* _ptr;
     };
 
-    Iterator begin()    { return Iterator(&_buffer[0]); }
-    Iterator end()      { return Iterator(&_buffer[_count]); }
+    Iterator begin()    { return Iterator(&mBuffer[0]); }
+    Iterator end()      { return Iterator(&mBuffer[mCount]); }
 
-    Iterator begin() const    { return Iterator(&_buffer[0]); }
-    Iterator end() const     { return Iterator(&_buffer[_count]); }
+    Iterator begin() const    { return Iterator(&mBuffer[0]); }
+    Iterator end() const     { return Iterator(&mBuffer[mCount]); }
 
 private:
-    Allocator* 	    _alloc = nullptr;
-    uint32 			_capacity = 0;
-    uint32 			_count = 0;
-    _T*				_buffer = nullptr;
+    Allocator* mAlloc = nullptr;
+    uint32 mCapacity = 0;
+    uint32 mCount = 0;
+    _T* mBuffer = nullptr;
 };
 
 //------------------------------------------------------------------------
@@ -151,12 +153,12 @@ struct StaticArray
         _T* _ptr;
     };
     
-    Iterator begin()    { return Iterator(&_buffer[0]); }
-    Iterator end()      { return Iterator(&_buffer[_count]); }
+    Iterator begin()    { return Iterator(&mBuffer[0]); }
+    Iterator end()      { return Iterator(&mBuffer[mCount]); }
 
 private:
-    uint32	_count = 0;
-    _T		_buffer[_MaxCount];
+    uint32 mCount = 0;
+    _T mBuffer[_MaxCount];
 };
 
 //------------------------------------------------------------------------
@@ -178,18 +180,18 @@ struct Handle
 {
     Handle() = default;
     Handle(const Handle<_T>&) = default;
-    explicit Handle(uint32 _id) : id(_id) {}
+    explicit Handle(uint32 _id) : mId(_id) {}
     Handle<_T>& operator=(const Handle<_T>&) = default;
 
-    void Set(uint32 gen, uint32 index) { id = ((gen & _private::kHandleGenMask)<<_private::kHandleGenShift) | (index&_private::kHandleIndexMask); }
-    explicit operator uint32() const { return id; }
-    uint32 GetSparseIndex() { return id & _private::kHandleIndexMask; }
-    uint32 GetGen() { return (id >> _private::kHandleGenShift) & _private::kHandleGenMask; }
-    bool IsValid() const { return id != 0; }
-    bool operator==(const Handle<_T>& v) const { return id == v.id; }
-    bool operator!=(const Handle<_T>& v) const { return id != v.id; }
+    void Set(uint32 gen, uint32 index) { mId = ((gen & _private::kHandleGenMask)<<_private::kHandleGenShift) | (index&_private::kHandleIndexMask); }
+    explicit operator uint32() const { return mId; }
+    uint32 GetSparseIndex() { return mId & _private::kHandleIndexMask; }
+    uint32 GetGen() { return (mId >> _private::kHandleGenShift) & _private::kHandleGenMask; }
+    bool IsValid() const { return mId != 0; }
+    bool operator==(const Handle<_T>& v) const { return mId == v.mId; }
+    bool operator!=(const Handle<_T>& v) const { return mId != v.mId; }
 
-    uint32 id = 0;
+    uint32 mId = 0;
 };
 
 #define DEFINE_HANDLE(_Name) struct _Name##T; using _Name = Handle<_Name##T>
@@ -224,7 +226,7 @@ template <typename _HandleType, typename _DataType, uint32 _Reserve = 32>
 struct HandlePool
 {
     HandlePool() : HandlePool(memDefaultAlloc()) {}
-    explicit HandlePool(Allocator* alloc) : _alloc(alloc), _items(alloc) {}
+    explicit HandlePool(Allocator* alloc) : mAlloc(alloc), mItems(alloc) {}
     explicit HandlePool(void* data, size_t size); 
 
     [[nodiscard]] _HandleType Add(const _DataType& item, _DataType* prevItem = nullptr);
@@ -254,21 +256,21 @@ struct HandlePool
     {
         using HandlePool_t = HandlePool<_HandleType, _DataType, _Reserve>;
 
-        Iterator(HandlePool_t* pool, uint32 index) : _pool(pool), _index(index) {}
-        _DataType& operator*() { return _pool->Data(_index); }
-        void operator++() { ++_index; }
-        bool operator!=(Iterator it) { return _index != it._index; }
+        Iterator(HandlePool_t* pool, uint32 index) : _pool(pool), mIndex(index) {}
+        _DataType& operator*() { return _pool->Data(mIndex); }
+        void operator++() { ++mIndex; }
+        bool operator!=(Iterator it) { return mIndex != it.mIndex; }
         HandlePool_t* _pool;
-        uint32 _index;
+        uint32 mIndex;
     };
     
     Iterator begin()    { return Iterator(this, 0); }
-    Iterator end()      { return Iterator(this, _handles ? _handles->count : 0); }
+    Iterator end()      { return Iterator(this, mHandles ? mHandles->count : 0); }
 
 private:
-    Allocator*                  _alloc = nullptr;
-    _private::HandlePoolTable*  _handles = nullptr;
-    Array<_DataType>            _items;
+    Allocator*                  mAlloc = nullptr;
+    _private::HandlePoolTable*  mHandles = nullptr;
+    Array<_DataType>            mItems;
 };
 #endif // __OBJC__
 
@@ -304,17 +306,17 @@ private:
         bool   relativePtr;
     };
 
-    Field  _fields[_MaxFields];
-    size_t _size;
-    uint32 _numFields;
-    uint32 _structAlign;
+    Field  mFields[_MaxFields];
+    size_t mSize;
+    uint32 mNumFields;
+    uint32 mStructAlign;
 };
 
 //------------------------------------------------------------------------
 struct RingBuffer
 {
     RingBuffer() : RingBuffer(memDefaultAlloc()) {}
-    explicit RingBuffer(Allocator* alloc) : _alloc(alloc) {}
+    explicit RingBuffer(Allocator* alloc) : mAlloc(alloc) {}
     explicit RingBuffer(void* buffer, size_t size);
     
     void SetAllocator(Allocator* alloc);
@@ -335,12 +337,12 @@ struct RingBuffer
     size_t Capacity() const;
 
 private:
-    Allocator*  _alloc = nullptr;
-    uint8*      _buffer = nullptr;
-    size_t      _capacity = 0;
-    size_t      _size = 0;
-    size_t      _start = 0;
-    size_t      _end = 0;
+    Allocator* mAlloc = nullptr;
+    uint8* mBuffer = nullptr;
+    size_t mCapacity = 0;
+    size_t mSize = 0;
+    size_t mStart = 0;
+    size_t mEnd = 0;
 };
 
 //------------------------------------------------------------------------
@@ -354,7 +356,7 @@ struct Blob
     };
 
     inline Blob() : Blob(memDefaultAlloc()) {}
-    inline explicit Blob(Allocator* alloc) : _alloc(alloc) {}
+    inline explicit Blob(Allocator* alloc) : mAlloc(alloc) {}
     inline explicit Blob(void* buffer, size_t size);
     inline Blob& operator=(const Blob&) = default;
     inline Blob(const Blob&) = default;
@@ -369,7 +371,9 @@ struct Blob
     inline void Reserve(size_t capacity);
     inline void Reserve(void* buffer, size_t size);
     inline void Free();
-    inline void ResetOffset();
+    inline void ResetRead();
+    inline void ResetWrite();
+    inline void Reset();
     inline void SetOffset(size_t offset);
     inline void CopyTo(Blob* otherBlob) const;
 
@@ -387,14 +391,14 @@ struct Blob
     inline bool IsValid() const;
 
 private:
-    Allocator* _alloc = nullptr;
-    void*      _buffer = nullptr;
-    size_t     _size = 0;
-    size_t     _offset = 0;
-    size_t     _capacity = 0;
-    uint32     _align = CONFIG_MACHINE_ALIGNMENT;
-    GrowPolicy _growPolicy = GrowPolicy::None;
-    uint32     _growAmount = 4096u;
+    Allocator* mAlloc = nullptr;
+    void*      mBuffer = nullptr;
+    size_t     mSize = 0;
+    size_t     mOffset = 0;
+    size_t     mCapacity = 0;
+    uint32     mAlign = CONFIG_MACHINE_ALIGNMENT;
+    GrowPolicy mGrowPolicy = GrowPolicy::None;
+    uint32     mGrowCount = 4096u;
 };
 
 //------------------------------------------------------------------------
@@ -402,7 +406,7 @@ template <typename _T, uint32 _Align = CONFIG_MACHINE_ALIGNMENT>
 struct PoolBuffer
 {
     PoolBuffer() : PoolBuffer(memDefaultAlloc()) {}
-    explicit PoolBuffer(Allocator* alloc) : _alloc(alloc) {}
+    explicit PoolBuffer(Allocator* alloc) : mAlloc(alloc) {}
     explicit PoolBuffer(void* buffer, size_t size);
     
     void SetAllocator(Allocator* alloc);
@@ -430,49 +434,49 @@ public:
     // To Iterate over all items in the pool
     struct Iterator 
     {
-        Iterator(Page* page, uint32 index, uint32 pageSize) : _page(page), _index(index), _pageSize(pageSize) {}
-        _T& operator*() { return _page->data[_index]; }
+        Iterator(Page* page, uint32 index, uint32 pageSize) : mPage(page), mIndex(index), mPageSize(pageSize) {}
+        _T& operator*() { return mPage->data[mIndex]; }
         void operator++() 
         { 
-            ASSERT(_page); 
-            if (_index < _pageSize) 
-                _index++; 
+            ASSERT(mPage); 
+            if (mIndex < mPageSize) 
+                mIndex++; 
             else { 
-                _page = _page->next; 
-                _index = 0; 
+                mPage = mPage->next; 
+                mIndex = 0; 
             } 
         }
-        bool operator!=(Iterator it) { return _page != it._page || _index != it._index; }
+        bool operator!=(Iterator it) { return mPage != it.mPage || mIndex != it.mIndex; }
 
-        Page* _page;
-        uint32 _index;
-        uint32 _pageSize;
+        Page* mPage;
+        uint32 mIndex;
+        uint32 mPageSize;
     };
 
-    Iterator begin()    { return Iterator(_pages, 0, _pageSize); }
+    Iterator begin()    { return Iterator(mPages, 0, mPageSize); }
     Iterator end()      
     { 
-        Page* page = _pages;
+        Page* page = mPages;
         while (page && page->index == 0 && page->next)
             page = page->next;
 
-        return Iterator(page, 0, _pageSize); 
+        return Iterator(page, 0, mPageSize); 
     }
 
-    Iterator begin() const    { return Iterator(_pages, 0, _pageSize); }
+    Iterator begin() const    { return Iterator(mPages, 0, mPageSize); }
     Iterator end() const     
     { 
-        Page* page = _pages;
+        Page* page = mPages;
         while (page && page->index == 0 && page->next)
             page = page->next;
 
-        return Iterator(page, 0, _pageSize); 
+        return Iterator(page, 0, mPageSize); 
     }
 
 private:
-    Allocator*  _alloc = nullptr;
-    uint32      _pageSize = 32;      // maximum number of items that a page can hold
-    Page*       _pages = nullptr;
+    Allocator*  mAlloc = nullptr;
+    uint32      mPageSize = 32;      // maximum number of items that a page can hold
+    Page*       mPages = nullptr;
 };
 
 //------------------------------------------------------------------------
@@ -482,32 +486,32 @@ inline Array<_T,_Reserve>::Array(const void* buffer, size_t size)
 {
     ASSERT_MSG(size > _Reserve*sizeof(_T), "Buffer should have at least %u bytes long", _Reserve*sizeof(_T));
 
-    _capacity = size / sizeof(_T);
-    _buffer = buffer;
+    mCapacity = size / sizeof(_T);
+    mBuffer = buffer;
 }
 
 template <typename _T, uint32 _Reserve>
 inline void Array<_T, _Reserve>::SetAllocator(Allocator* alloc)
 {
-    ASSERT_MSG(_buffer == nullptr, "buffer should be freed/uninitialized before setting allocator");
-    _alloc = alloc;
+    ASSERT_MSG(mBuffer == nullptr, "buffer should be freed/uninitialized before setting allocator");
+    mAlloc = alloc;
 }    
 
 template <typename _T, uint32 _Reserve>
 inline _T* Array<_T,_Reserve>::Push()
 {
-    if (_count >= _capacity) {
-        if (_alloc) {
-            Reserve(_capacity ? (_capacity << 1) : _Reserve);
+    if (mCount >= mCapacity) {
+        if (mAlloc) {
+            Reserve(mCapacity ? (mCapacity << 1) : _Reserve);
         } 
         else {
-            ASSERT(_buffer);
-            ASSERT_MSG(_count < _capacity, "Array overflow, capacity=%u", _capacity);
+            ASSERT(mBuffer);
+            ASSERT_MSG(mCount < mCapacity, "Array overflow, capacity=%u", mCapacity);
             return nullptr;
         }
     }
     
-    return &_buffer[_count++];
+    return &mBuffer[mCount++];
 }
 
 template <typename _T, uint32 _Reserve>
@@ -522,28 +526,47 @@ inline _T* Array<_T,_Reserve>::Push(const _T& item)
 template <typename _T, uint32 _Reserve>
 inline void Array<_T,_Reserve>::RemoveAndSwap(uint32 index)
 {
-    ASSERT(_buffer);
+    ASSERT(mBuffer);
     #ifdef CONFIG_CHECK_OUTOFBOUNDS
-        ASSERT_MSG(index < _count, "Index out of bounds (count: %u, index: %u)", _count, index);
+        ASSERT_MSG(index < mCount, "Index out of bounds (count: %u, index: %u)", mCount, index);
     #endif
-    --_count;
-    if (index < _count)
-        Swap<_T>(_buffer[index], _buffer[_count]);
+    --mCount;
+    if (index < mCount)
+        Swap<_T>(mBuffer[index], mBuffer[mCount]);
 }
+
+template <typename _T, uint32 _Reserve>
+inline void Array<_T,_Reserve>::RemoveAndShift(uint32 index)
+{
+    ASSERT(mBuffer);
+#ifdef CONFIG_CHECK_OUTOFBOUNDS
+    ASSERT_MSG(index < mCount, "Index out of bounds (count: %u, index: %u)", mCount, index);
+#endif
+    --mCount;
+    for (uint32 i = index; i < mCount; i++)
+        mBuffer[i] = mBuffer[i+1];
+}
+
 
 template <typename _T, uint32 _Reserve>
 inline uint32 Array<_T,_Reserve>::Count() const
 {
-    return _count;
+    return mCount;
+}
+
+template <typename _T, uint32 _Reserve>
+inline uint32 Array<_T,_Reserve>::Capacity() const
+{
+    return mCapacity;
 }
 
 template <typename _T, uint32 _Reserve>
 inline void Array<_T,_Reserve>::Reserve(uint32 capacity)
 {
-    ASSERT(_alloc);
-    _capacity = Max(capacity, _capacity);
-    _buffer = memReallocTyped<_T>(_buffer, _capacity, _alloc);
-    ASSERT(_buffer);
+    ASSERT(mAlloc);
+    mCapacity = Max(capacity, mCapacity);
+    mBuffer = memReallocTyped<_T>(mBuffer, mCapacity, mAlloc);
+    ASSERT(mBuffer);
 }
 
 template <typename _T, uint32 _Reserve>
@@ -552,61 +575,61 @@ inline void Array<_T,_Reserve>::Reserve(uint32 capacity, void* buffer, [[maybe_u
     capacity = Max(capacity, _Reserve);
 
     ASSERT(buffer);
-    ASSERT_MSG(_buffer == nullptr, "Array should not be initialized before reserve by pointer");
+    ASSERT_MSG(mBuffer == nullptr, "Array should not be initialized before reserve by pointer");
     ASSERT_MSG(size >= capacity*sizeof(_T), "Buffer should have at least %u bytes long (size=%u)", capacity*sizeof(_T), size);
     
-    _alloc = nullptr;
-    _capacity = capacity;
-    _buffer = (_T*)buffer;
+    mAlloc = nullptr;
+    mCapacity = capacity;
+    mBuffer = (_T*)buffer;
 }    
 
 template <typename _T, uint32 _Reserve>
 inline void Array<_T,_Reserve>::Clear()
 {
-    _count = 0;
+    mCount = 0;
 }
 
 template <typename _T, uint32 _Reserve>
 inline _T& Array<_T,_Reserve>::Last()
 {
-    ASSERT(_count > 0);
-    return _buffer[_count - 1];
+    ASSERT(mCount > 0);
+    return mBuffer[mCount - 1];
 }
 
 template <typename _T, uint32 _Reserve>
 inline _T Array<_T,_Reserve>::PopLast()
 {
-    ASSERT(_count > 0);
-    return _buffer[--_count];
+    ASSERT(mCount > 0);
+    return mBuffer[--mCount];
 }
 
 template <typename _T, uint32 _Reserve>
 inline _T Array<_T,_Reserve>::PopFirst()
 {
-    ASSERT(_count > 0);
-    _T first = _buffer[0];
+    ASSERT(mCount > 0);
+    _T first = mBuffer[0];
     // shuffle all items to the left
-    for (uint32 i = 1, c = _count; i < c; i++) {
-        _buffer[i-1] = _buffer[i];
+    for (uint32 i = 1, c = mCount; i < c; i++) {
+        mBuffer[i-1] = mBuffer[i];
     }
-    --_count;
+    --mCount;
     return first;
 }
 
 template <typename _T, uint32 _Reserve>
 inline _T Array<_T,_Reserve>::Pop(uint32 index)
 {
-    ASSERT(_count > 0);
+    ASSERT(mCount > 0);
     #ifdef CONFIG_CHECK_OUTOFBOUNDS
-        ASSERT_MSG(index <= _count, "Index out of bounds (count: %u, index: %u)", _count, index);
+        ASSERT_MSG(index < mCount, "Index out of bounds (count: %u, index: %u)", mCount, index);
     #endif
 
-    _T item = _buffer[index];
+    _T item = mBuffer[index];
     // shuffle all items to the left
-    for (uint32 i = index+1, c = _count; i < c; i++) {
-        _buffer[i-1] = _buffer[i];
+    for (uint32 i = index+1, c = mCount; i < c; i++) {
+        mBuffer[i-1] = mBuffer[i];
     }
-    --_count;
+    --mCount;
     return item;
 }
 
@@ -614,23 +637,23 @@ template <typename _T, uint32 _Reserve>
 inline void Array<_T,_Reserve>::Extend(const Array<_T>& arr)
 {
     if (arr.Count()) {
-        uint32 newCount = _count + arr._count;
-        uint32 newCapacity = Max(newCount, Min(_capacity, arr._capacity));
-        if (newCapacity > _capacity)
+        uint32 newCount = mCount + arr.mCount;
+        uint32 newCapacity = Max(newCount, Min(mCapacity, arr.mCapacity));
+        if (newCapacity > mCapacity)
             Reserve(newCapacity);
-        memcpy(&_buffer[_count], arr._buffer, sizeof(_T)*arr._count);
-        _count = newCount;
+        memcpy(&mBuffer[mCount], arr.mBuffer, sizeof(_T)*arr.mCount);
+        mCount = newCount;
     }
 }
 
 template <typename _T, uint32 _Reserve>
 inline void Array<_T,_Reserve>::ShiftLeft(uint32 count)
 {
-    ASSERT(count <= _count);
+    ASSERT(count <= mCount);
     
-    _count -= count;
-    if (_count)
-        memmove(_buffer, _buffer + sizeof(_T)*count, sizeof(_T)*_count);
+    mCount -= count;
+    if (mCount)
+        memmove(mBuffer, mBuffer + sizeof(_T)*count, sizeof(_T)*mCount);
 }
 
 template <typename _T, uint32 _Reserve>
@@ -638,12 +661,12 @@ inline void Array<_T, _Reserve>::CopyTo(Array<_T, _Reserve>* otherArray)
 {
     ASSERT(otherArray);
 
-    if (this->_capacity)
-        otherArray->Reserve(this->_capacity);
+    if (this->mCapacity)
+        otherArray->Reserve(this->mCapacity);
 
-    if (this->_count) {
-        otherArray->_count = this->_count;
-        memcpy(otherArray->_buffer, this->_buffer, sizeof(_T)*this->_count);
+    if (this->mCount) {
+        otherArray->mCount = this->mCount;
+        memcpy(otherArray->mBuffer, this->mBuffer, sizeof(_T)*this->mCount);
     }
 }
 
@@ -651,30 +674,30 @@ template <typename _T, uint32 _Reserve>
 inline const _T& Array<_T,_Reserve>::operator[](uint32 index) const
 {
     #ifdef CONFIG_CHECK_OUTOFBOUNDS
-        ASSERT_MSG(index <= _count, "Index out of bounds (count: %u, index: %u)", _count, index);
+        ASSERT_MSG(index < mCount, "Index out of bounds (count: %u, index: %u)", mCount, index);
     #endif
-    return _buffer[index];
+    return mBuffer[index];
 }
 
 template <typename _T, uint32 _Reserve>
 inline _T& Array<_T,_Reserve>::operator[](uint32 index)
 {
     #ifdef CONFIG_CHECK_OUTOFBOUNDS
-        ASSERT_MSG(index <= _count, "Index out of bounds (count: %u, index: %u)", _count, index);
+        ASSERT_MSG(index < mCount, "Index out of bounds (count: %u, index: %u)", mCount, index);
     #endif
-    return _buffer[index];
+    return mBuffer[index];
 }
 
 template <typename _T, uint32 _Reserve>
 inline const _T* Array<_T,_Reserve>::Ptr() const
 {
-    return _buffer;
+    return mBuffer;
 }
 
 template <typename _T, uint32 _Reserve>
 inline _T* Array<_T,_Reserve>::Ptr()
 {
-    return _buffer;
+    return mBuffer;
 }
 
 template <typename _T, uint32 _Reserve>
@@ -683,45 +706,45 @@ inline void Array<_T,_Reserve>::Detach(_T** outBuffer, uint32* outCount)
     ASSERT(outBuffer);
     ASSERT(outCount);
 
-    *outBuffer = _buffer;
-    *outCount = _count;
+    *outBuffer = mBuffer;
+    *outCount = mCount;
 
-    _buffer = nullptr;
-    _count = 0;
-    _capacity = 0;
+    mBuffer = nullptr;
+    mCount = 0;
+    mCapacity = 0;
 }
 
 template<typename _T, uint32 _Reserve>
 inline bool Array<_T,_Reserve>::IsFull() const
 {
-    return _count >= _capacity;
+    return mCount >= mCapacity;
 }    
 
 template <typename _T, uint32 _Reserve>
 inline void Array<_T, _Reserve>::Free()
 {
-    _count = 0;
+    mCount = 0;
 
-    if (_alloc) {
-        memFree(_buffer, _alloc);
-        _capacity = 0;
-        _buffer = nullptr;
+    if (mAlloc) {
+        memFree(mBuffer, mAlloc);
+        mCapacity = 0;
+        mBuffer = nullptr;
     }
 }
 
 template <typename _T, uint32 _Reserve>
 inline void Array<_T, _Reserve>::Shrink()
 {
-    ASSERT(_alloc);
-    _capacity = Max(_count, _Reserve);
-    Reserve(_capacity);
+    ASSERT(mAlloc);
+    mCapacity = Max(mCount, _Reserve);
+    Reserve(mCapacity);
 }
 
 template <typename _T, uint32 _Reserve> 
 inline uint32 Array<_T, _Reserve>::Find(const _T& value)
 {
-    for (uint32 i = 0; i < _count; i++) {
-        if (_buffer[i] == value)
+    for (uint32 i = 0; i < mCount; i++) {
+        if (mBuffer[i] == value)
             return i;
     }
 
@@ -731,8 +754,8 @@ inline uint32 Array<_T, _Reserve>::Find(const _T& value)
 template<typename _T, uint32 _Reserve>
 template<typename _Func> inline uint32 Array<_T, _Reserve>::FindIf(_Func findFunc)
 {
-    for (uint32 i = 0, c = _count; i < c; i++) {
-        if (findFunc(_buffer[i]))
+    for (uint32 i = 0, c = mCount; i < c; i++) {
+        if (findFunc(mBuffer[i]))
             return i;
     }
 
@@ -751,90 +774,90 @@ inline size_t Array<_T, _Reserve>::GetMemoryRequirement(uint32 capacity)
 template<typename _T, uint32 _MaxCount>
 inline _T* StaticArray<_T, _MaxCount>::Add()
 {
-    ASSERT_MSG(_count < _MaxCount, "Trying to add more than _MaxCount=%u", _MaxCount);
-    return &_buffer[_count++];
+    ASSERT_MSG(mCount < _MaxCount, "Trying to add more than _MaxCount=%u", _MaxCount);
+    return &mBuffer[mCount++];
 }
 
 template<typename _T, uint32 _MaxCount>
 inline _T* StaticArray<_T, _MaxCount>::Add(const _T& item)
 {
-    ASSERT_MSG(_count < _MaxCount, "Trying to add more than _MaxCount=%u", _MaxCount);
-    uint32 index = _count++;
-    _buffer[index] = item;
-    return &_buffer[index];
+    ASSERT_MSG(mCount < _MaxCount, "Trying to add more than _MaxCount=%u", _MaxCount);
+    uint32 index = mCount++;
+    mBuffer[index] = item;
+    return &mBuffer[index];
 }
 
 template<typename _T, uint32 _MaxCount>
 inline void StaticArray<_T, _MaxCount>::RemoveAndSwap(uint32 index)
 {
-    ASSERT(_buffer);
+    ASSERT(mBuffer);
     #ifdef CONFIG_CHECK_OUTOFBOUNDS
-        ASSERT_MSG(index <= _count, "Index out of bounds (count: %u, index: %u)", _count, index);
+        ASSERT_MSG(index <= mCount, "Index out of bounds (count: %u, index: %u)", mCount, index);
     #endif
-    Swap<_T>(_buffer[index], _buffer[--_count]);
+    Swap<_T>(mBuffer[index], mBuffer[--mCount]);
 }
 
 template<typename _T, uint32 _MaxCount>
 inline uint32 StaticArray<_T, _MaxCount>::Count() const
 {
-    return _count;
+    return mCount;
 }
 
 template<typename _T, uint32 _MaxCount>
 inline void StaticArray<_T, _MaxCount>::Clear()
 {
-    _count = 0;
+    mCount = 0;
 }
 
 template<typename _T, uint32 _MaxCount>
 inline _T& StaticArray<_T, _MaxCount>::Last()
 {
-    ASSERT(_count > 0);
-    return _buffer[_count - 1];
+    ASSERT(mCount > 0);
+    return mBuffer[mCount - 1];
 }
 
 template<typename _T, uint32 _MaxCount>
 inline _T& StaticArray<_T, _MaxCount>::RemoveLast()
 {
-    ASSERT(_count > 0);
-    return _buffer[--_count];
+    ASSERT(mCount > 0);
+    return mBuffer[--mCount];
 }
 
 template<typename _T, uint32 _MaxCount>
 inline const _T& StaticArray<_T, _MaxCount>::operator[](uint32 index) const
 {
     #ifdef CONFIG_CHECK_OUTOFBOUNDS
-        ASSERT_MSG(index <= _count, "Index out of bounds (count: %u, index: %u)", _count, index);
+        ASSERT_MSG(index <= mCount, "Index out of bounds (count: %u, index: %u)", mCount, index);
     #endif
-    return _buffer[index];
+    return mBuffer[index];
 }
 
 template<typename _T, uint32 _MaxCount>
 inline _T& StaticArray<_T, _MaxCount>::operator[](uint32 index)
 {
     #ifdef CONFIG_CHECK_OUTOFBOUNDS
-        ASSERT_MSG(index <= _count, "Index out of bounds (count: %u, index: %u)", _count, index);
+        ASSERT_MSG(index <= mCount, "Index out of bounds (count: %u, index: %u)", mCount, index);
     #endif
-    return _buffer[index];
+    return mBuffer[index];
 }
 
 template<typename _T, uint32 _MaxCount>
 inline const _T* StaticArray<_T, _MaxCount>::Ptr() const
 {
-    return reinterpret_cast<const _T*>(_buffer);
+    return reinterpret_cast<const _T*>(mBuffer);
 }
 
 template<typename _T, uint32 _MaxCount>
 inline _T* StaticArray<_T, _MaxCount>::Ptr()
 {
-    return reinterpret_cast<_T*>(_buffer);
+    return reinterpret_cast<_T*>(mBuffer);
 }
 
 template <typename _T, uint32 _MaxCount> 
 inline uint32 StaticArray<_T, _MaxCount>::Find(const _T& value)
 {
-    for (uint32 i = 0; i < _count; i++) {
-        if (_buffer[i] == value)
+    for (uint32 i = 0; i < mCount; i++) {
+        if (mBuffer[i] == value)
             return i;
     }
     return UINT32_MAX;
@@ -843,8 +866,8 @@ inline uint32 StaticArray<_T, _MaxCount>::Find(const _T& value)
 template <typename _T, uint32 _MaxCount>
 template <typename _Func> inline uint32 StaticArray<_T, _MaxCount>::FindIf(_Func findFunc)
 {
-    for (uint32 i = 0, c = _count; i < c; i++) {
-        if (findFunc(_buffer[i])) {
+    for (uint32 i = 0, c = mCount; i < c; i++) {
+        if (findFunc(mBuffer[i])) {
             return i;
         }
     }
@@ -857,62 +880,62 @@ template <typename _Func> inline uint32 StaticArray<_T, _MaxCount>::FindIf(_Func
 #ifndef __OBJC__
 template<typename _HandleType, typename _DataType, uint32 _Reserve>
 inline HandlePool<_HandleType, _DataType, _Reserve>::HandlePool(void* data, size_t size) :
-    _items((uint8*)data + GetMemoryRequirement(), size - GetMemoryRequirement())
+    mItems((uint8*)data + GetMemoryRequirement(), size - GetMemoryRequirement())
 {
-    _handles = _private::handleCreatePoolTableWithBuffer(_Reserve, data, GetMemoryRequirement());
+    mHandles = _private::handleCreatePoolTableWithBuffer(_Reserve, data, GetMemoryRequirement());
 }
 
 template<typename _HandleType, typename _DataType, uint32 _Reserve>
 void HandlePool<_HandleType, _DataType, _Reserve>::Reserve(uint32 capacity, void* buffer, size_t size)
 {
     capacity = Max(capacity, _Reserve);
-    ASSERT_MSG(_handles == nullptr, "pool should be freed/uninitialized before reserve by pointer");
-    _alloc = nullptr;
+    ASSERT_MSG(mHandles == nullptr, "pool should be freed/uninitialized before reserve by pointer");
+    mAlloc = nullptr;
 
     size_t tableSize = _private::handleGetMemoryRequirement(capacity);
     ASSERT(tableSize <= size);
-    _handles = _private::handleCreatePoolTableWithBuffer(capacity, buffer, tableSize);
+    mHandles = _private::handleCreatePoolTableWithBuffer(capacity, buffer, tableSize);
 
     void* arrayBuffer = reinterpret_cast<uint8*>(buffer) + tableSize;
     ASSERT(reinterpret_cast<uintptr_t>(arrayBuffer)%CONFIG_MACHINE_ALIGNMENT == 0);
-    _items.Reserve(capacity, arrayBuffer, size - tableSize);
+    mItems.Reserve(capacity, arrayBuffer, size - tableSize);
 }
 
 template<typename _HandleType, typename _DataType, uint32 _Reserve>
 void HandlePool<_HandleType, _DataType, _Reserve>::SetAllocator(Allocator* alloc)
 {
-    ASSERT_MSG(_handles == nullptr, "pool should be freed/uninitialized before setting allocator");
-    _alloc = alloc;
-    _items.SetAllocator(_alloc);
+    ASSERT_MSG(mHandles == nullptr, "pool should be freed/uninitialized before setting allocator");
+    mAlloc = alloc;
+    mItems.SetAllocator(mAlloc);
 }
 
 template<typename _HandleType, typename _DataType, uint32 _Reserve>
 inline _HandleType HandlePool<_HandleType, _DataType, _Reserve>::Add(const _DataType& item, _DataType* prevItem)
 {
-    if (_handles == nullptr) {
-        ASSERT(_alloc);
-        _handles = _private::handleCreatePoolTable(_Reserve, _alloc);
+    if (mHandles == nullptr) {
+        ASSERT(mAlloc);
+        mHandles = _private::handleCreatePoolTable(_Reserve, mAlloc);
     } 
-    else if (_handles->count == _handles->capacity) {
-        if (_alloc) {
+    else if (mHandles->count == mHandles->capacity) {
+        if (mAlloc) {
            Grow();
         }
         else {
-            ASSERT_MSG(0, "HandlePool overflow, capacity=%u", _handles->capacity);
+            ASSERT_MSG(0, "HandlePool overflow, capacity=%u", mHandles->capacity);
         }
     }
 
-    _HandleType handle(_private::handleNew(_handles));
+    _HandleType handle(_private::handleNew(mHandles));
     uint32 index = handle.GetSparseIndex();
-    if (index >= _items.Count()) {
-        _items.Push(item);
+    if (index >= mItems.Count()) {
+        mItems.Push(item);
         if (prevItem)
             *prevItem = _DataType {};
     }
     else {
         if (prevItem) 
-            *prevItem = _items[index];
-        _items[index] = item;
+            *prevItem = mItems[index];
+        mItems[index] = item;
     }
 
     return handle;
@@ -921,71 +944,71 @@ inline _HandleType HandlePool<_HandleType, _DataType, _Reserve>::Add(const _Data
 template<typename _HandleType, typename _DataType, uint32 _Reserve>
 inline void HandlePool<_HandleType, _DataType, _Reserve>::Remove(_HandleType handle)
 {
-    ASSERT(_handles);
-    _private::handleDel(_handles, static_cast<uint32>(handle));
+    ASSERT(mHandles);
+    _private::handleDel(mHandles, static_cast<uint32>(handle));
 }
 
 template<typename _HandleType, typename _DataType, uint32 _Reserve>
 inline uint32 HandlePool<_HandleType, _DataType, _Reserve>::Count() const
 {
-    return _handles ? _handles->count : 0;
+    return mHandles ? mHandles->count : 0;
 }
 
 template<typename _HandleType, typename _DataType, uint32 _Reserve>
 inline void HandlePool<_HandleType, _DataType, _Reserve>::Clear()
 {
-    if (_handles)
-        _private::handleResetPoolTable(_handles);
+    if (mHandles)
+        _private::handleResetPoolTable(mHandles);
 }
 
 template<typename _HandleType, typename _DataType, uint32 _Reserve>
 inline bool HandlePool<_HandleType, _DataType, _Reserve>::IsValid(_HandleType handle)
 {
-    ASSERT(_handles);
-    return _private::handleIsValid(_handles, static_cast<uint32>(handle));
+    ASSERT(mHandles);
+    return _private::handleIsValid(mHandles, static_cast<uint32>(handle));
 }
 
 template<typename _HandleType, typename _DataType, uint32 _Reserve>
 inline _HandleType HandlePool<_HandleType, _DataType, _Reserve>::HandleAt(uint32 index)
 {
-    ASSERT(_handles);
-    return _HandleType(_private::handleAt(_handles, index));
+    ASSERT(mHandles);
+    return _HandleType(_private::handleAt(mHandles, index));
 }
 
 template<typename _HandleType, typename _DataType, uint32 _Reserve>
 inline _DataType& HandlePool<_HandleType, _DataType, _Reserve>::Data(uint32 index)
 {
     _HandleType handle = HandleAt(index);
-    return _items[handle.GetSparseIndex()];
+    return mItems[handle.GetSparseIndex()];
 }
 
 template<typename _HandleType, typename _DataType, uint32 _Reserve>
 inline _DataType& HandlePool<_HandleType, _DataType, _Reserve>::Data(_HandleType handle)
 {
-    ASSERT(_handles);
+    ASSERT(mHandles);
     ASSERT_MSG(IsValid(handle), "Invalid handle (%u): Generation=%u, SparseIndex=%u", 
-               handle.id, handle.GetGen(), handle.GetSparseIndex());
-    return _items[handle.GetSparseIndex()];
+               uint32(handle), handle.GetGen(), handle.GetSparseIndex());
+    return mItems[handle.GetSparseIndex()];
 }
 
 template<typename _HandleType, typename _DataType, uint32 _Reserve>
 inline void HandlePool<_HandleType, _DataType, _Reserve>::Free()
 {
-    if (_alloc) {
-        if (_handles) 
-            _private::handleDestroyPoolTable(_handles, _alloc);
-        _items.Free();
-        _handles = nullptr;
+    if (mAlloc) {
+        if (mHandles) 
+            _private::handleDestroyPoolTable(mHandles, mAlloc);
+        mItems.Free();
+        mHandles = nullptr;
     }
 }
 
 template<typename _HandleType, typename _DataType, uint32 _Reserve>
 template<typename _Func> inline _HandleType HandlePool<_HandleType, _DataType, _Reserve>::FindIf(_Func findFunc)
 {
-    if (_handles) {
-        for (uint32 i = 0, c = _handles->count; i < c; i++) {
-            _HandleType h = _HandleType(_private::handleAt(_handles, i));
-            if (findFunc(_items[h.GetSparseIndex()])) {
+    if (mHandles) {
+        for (uint32 i = 0, c = mHandles->count; i < c; i++) {
+            _HandleType h = _HandleType(_private::handleAt(mHandles, i));
+            if (findFunc(mItems[h.GetSparseIndex()])) {
                 return h;
             }
         }
@@ -997,13 +1020,13 @@ template<typename _Func> inline _HandleType HandlePool<_HandleType, _DataType, _
 template<typename _HandleType, typename _DataType, uint32 _Reserve>
 inline bool HandlePool<_HandleType, _DataType, _Reserve>::IsFull() const
 {
-    return !_handles && _handles->count == _handles->capacity;
+    return !mHandles && mHandles->count == mHandles->capacity;
 }
 
 template<typename _HandleType, typename _DataType, uint32 _Reserve>
 inline uint32 HandlePool<_HandleType, _DataType, _Reserve>::Capacity() const
 {
-    return _handles ? _handles->capacity : _Reserve;
+    return mHandles ? mHandles->capacity : _Reserve;
 }
 
 template<typename _HandleType, typename _DataType, uint32 _Reserve>
@@ -1015,25 +1038,25 @@ inline size_t HandlePool<_HandleType, _DataType, _Reserve>::GetMemoryRequirement
 template<typename _HandleType, typename _DataType, uint32 _Reserve>
 inline bool HandlePool<_HandleType, _DataType, _Reserve>::Grow()
 {
-    ASSERT(_alloc);
-    ASSERT(_handles);
+    ASSERT(mAlloc);
+    ASSERT(mHandles);
        
-    _items.Reserve(_handles->capacity << 1);
-    return _private::handleGrowPoolTable(&_handles, _alloc);
+    mItems.Reserve(mHandles->capacity << 1);
+    return _private::handleGrowPoolTable(&mHandles, mAlloc);
 }
 
 template<typename _HandleType, typename _DataType, uint32 _Reserve>
 inline bool HandlePool<_HandleType, _DataType, _Reserve>::Grow(void* data, size_t size)
 {
-    ASSERT(!_alloc);
-    ASSERT(_handles);
+    ASSERT(!mAlloc);
+    ASSERT(mHandles);
 
-    uint32 newCapacity = _handles->capacity << 1;
+    uint32 newCapacity = mHandles->capacity << 1;
     size_t handleTableSize = GetMemoryRequirement(newCapacity);
     ASSERT(handleTableSize < size);
 
-    _items.Reserve(_handles->capacity << 1, (uint8*)data + handleTableSize, size - handleTableSize);
-    return _private::handleGrowPoolTableWithBuffer(&_handles, data, handleTableSize);
+    mItems.Reserve(mHandles->capacity << 1, (uint8*)data + handleTableSize, size - handleTableSize);
+    return _private::handleGrowPoolTableWithBuffer(&mHandles, data, handleTableSize);
 }
 #endif // !__OBJC__
 
@@ -1043,39 +1066,39 @@ template <typename _T, uint32 _MaxFields>
 inline BuffersAllocPOD<_T, _MaxFields>::BuffersAllocPOD(uint32 align)
 {
     align = Max(CONFIG_MACHINE_ALIGNMENT, align);
-    _size = AlignValue<size_t>(sizeof(_T), align);
-    _structAlign = align;
+    mSize = AlignValue<size_t>(sizeof(_T), align);
+    mStructAlign = align;
 
-    _fields[0].pPtr = nullptr;
-    _fields[0].offset = 0;
-    _fields[0].offsetInStruct = UINT32_MAX;
-    _numFields = 1;
+    mFields[0].pPtr = nullptr;
+    mFields[0].offset = 0;
+    mFields[0].offsetInStruct = UINT32_MAX;
+    mNumFields = 1;
 }
 
 template <typename _T, uint32 _MaxFields>
 template <typename _FieldType> inline BuffersAllocPOD<_T, _MaxFields>& 
     BuffersAllocPOD<_T, _MaxFields>::AddMemberField(uint32 offsetInStruct, size_t arrayCount, bool relativePtr, uint32 align)
 {
-    uint32 index = _numFields;
+    uint32 index = mNumFields;
     ASSERT_MSG(index < _MaxFields, "Cannot add more fields, increase the _MaxFields");
     
     align = Max(CONFIG_MACHINE_ALIGNMENT, align);
     size_t size = sizeof(_FieldType) * arrayCount;
     size = AlignValue<size_t>(size, align);
 
-    size_t offset = _size;
+    size_t offset = mSize;
     if (offset % align != 0) {
         offset = AlignValue<size_t>(offset, align);
     }
 
-    Field& buff = _fields[index];
+    Field& buff = mFields[index];
     buff.pPtr = nullptr;
     buff.offset = offset;
     buff.offsetInStruct = offsetInStruct;
     buff.relativePtr = relativePtr;
 
-    _size += size;
-    ++_numFields;
+    mSize += size;
+    ++mNumFields;
 
     return *this;
 }
@@ -1085,26 +1108,26 @@ template <typename _PodAllocType> inline BuffersAllocPOD<_T, _MaxFields>&
 BuffersAllocPOD<_T, _MaxFields>::AddMemberChildPODField(const _PodAllocType& podAlloc, uint32 offsetInStruct, 
                                                         size_t arrayCount, bool relativePtr, uint32 align)
 {
-    uint32 index = _numFields;
+    uint32 index = mNumFields;
     ASSERT_MSG(index < _MaxFields, "Cannot add more fields, increase the _MaxFields");
     
     align = Max(CONFIG_MACHINE_ALIGNMENT, align);
     size_t size = podAlloc.GetMemoryRequirement() * arrayCount;
     size = AlignValue<size_t>(size, align);
 
-    size_t offset = _size;
+    size_t offset = mSize;
     if (offset % align != 0) {
         offset = AlignValue<size_t>(offset, align);
     }
 
-    Field& buff = _fields[index];
+    Field& buff = mFields[index];
     buff.pPtr = nullptr;
     buff.offset = offset;
     buff.offsetInStruct = offsetInStruct;
     buff.relativePtr = relativePtr;
 
-    _size += size;
-    ++_numFields;
+    mSize += size;
+    ++mNumFields;
 
     return *this;
 }
@@ -1116,26 +1139,26 @@ template <typename _FieldType> inline BuffersAllocPOD<_T, _MaxFields>&
 {
     ASSERT(pPtr);
 
-    uint32 index = _numFields;
+    uint32 index = mNumFields;
     ASSERT_MSG(index < _MaxFields, "Cannot add more fields, increase the _MaxFields");
     
     align = Max(CONFIG_MACHINE_ALIGNMENT, align);
     size_t size = sizeof(_FieldType) * arrayCount;
     size = AlignValue<size_t>(size, align);
     
-    size_t offset = _size;
+    size_t offset = mSize;
     if (offset % align != 0) {
         offset = AlignValue<size_t>(offset, align);
     }
     
-    Field& buff = _fields[index];
+    Field& buff = mFields[index];
     buff.pPtr = (void**)pPtr;
     buff.offset = offset;
     buff.offsetInStruct = UINT32_MAX;
     buff.relativePtr = false;
     
-    _size += size;
-    ++_numFields;
+    mSize += size;
+    ++mNumFields;
 
     return *this;
 }
@@ -1143,20 +1166,20 @@ template <typename _FieldType> inline BuffersAllocPOD<_T, _MaxFields>&
 template <typename _T, uint32 _MaxFields>
 inline _T* BuffersAllocPOD<_T, _MaxFields>::Calloc(Allocator* alloc)
 {
-    void* mem = memAllocAligned(_size, _structAlign, alloc);
-    return Calloc(mem, _size);
+    void* mem = memAllocAligned(mSize, mStructAlign, alloc);
+    return Calloc(mem, mSize);
 }
 
 template <typename _T, uint32 _MaxFields>
 inline size_t  BuffersAllocPOD<_T, _MaxFields>::GetMemoryRequirement() const
 {
-    return AlignValue<size_t>(_size, _structAlign);
+    return AlignValue<size_t>(mSize, mStructAlign);
 }
 
 template <typename _T, uint32 _MaxFields>
 inline size_t BuffersAllocPOD<_T, _MaxFields>::GetSize() const
 {
-    return _size;
+    return mSize;
 }
 
 template <typename _T, uint32 _MaxFields>
@@ -1165,21 +1188,21 @@ inline _T*  BuffersAllocPOD<_T, _MaxFields>::Calloc(void* buff, [[maybe_unused]]
     ASSERT(buff);
     ASSERT(size == 0 || size >= GetMemoryRequirement());
 
-    memset(buff, 0x0, _size);
+    memset(buff, 0x0, mSize);
     
     uint8* tmp = (uint8*)buff;
     
     // Assign buffer pointers
-    for (int i = 1, c = _numFields; i < c; i++) {
-        if (_fields[i].offsetInStruct != UINT32_MAX) {
-            ASSERT(_fields[i].pPtr == NULL);
-            if (!_fields[i].relativePtr) 
-                *((void**)(tmp + _fields[i].offsetInStruct)) = tmp + _fields[i].offset;
+    for (int i = 1, c = mNumFields; i < c; i++) {
+        if (mFields[i].offsetInStruct != UINT32_MAX) {
+            ASSERT(mFields[i].pPtr == NULL);
+            if (!mFields[i].relativePtr) 
+                *((void**)(tmp + mFields[i].offsetInStruct)) = tmp + mFields[i].offset;
             else
-                *((uint32*)(tmp + _fields[i].offsetInStruct)) = (uint32)_fields[i].offset - _fields[i].offsetInStruct;
+                *((uint32*)(tmp + mFields[i].offsetInStruct)) = (uint32)mFields[i].offset - mFields[i].offsetInStruct;
         } else {
-            ASSERT(_fields[i].offsetInStruct == -1);
-            *_fields[i].pPtr = tmp + _fields[i].offset;
+            ASSERT(mFields[i].offsetInStruct == -1);
+            *mFields[i].pPtr = tmp + mFields[i].offset;
         }
     }
 
@@ -1193,40 +1216,40 @@ inline RingBuffer::RingBuffer(void* buffer, size_t size)
     ASSERT(buffer);
     ASSERT(size);
 
-    _capacity = size;
-    _buffer = reinterpret_cast<uint8*>(buffer);
+    mCapacity = size;
+    mBuffer = reinterpret_cast<uint8*>(buffer);
 }
 
 inline void RingBuffer::SetAllocator(Allocator* alloc)
 {
-    ASSERT_MSG(_buffer == nullptr, "buffer should be freed/uninitialized before setting allocator");
-    _alloc = alloc;
+    ASSERT_MSG(mBuffer == nullptr, "buffer should be freed/uninitialized before setting allocator");
+    mAlloc = alloc;
 }
 
 inline void RingBuffer::Reserve(size_t capacity)
 {
-    ASSERT(_alloc);
-    _capacity = Max(capacity, _capacity);
-    _buffer = reinterpret_cast<uint8*>(memRealloc(_buffer, _capacity, _alloc));
-    ASSERT(_buffer);
+    ASSERT(mAlloc);
+    mCapacity = Max(capacity, mCapacity);
+    mBuffer = reinterpret_cast<uint8*>(memRealloc(mBuffer, mCapacity, mAlloc));
+    ASSERT(mBuffer);
 }
 
 inline void RingBuffer::Reserve(void* buffer, size_t size)
 {
-    ASSERT_MSG(_buffer == nullptr, "RingBuffer must not get used before setting buffer pointer");
+    ASSERT_MSG(mBuffer == nullptr, "RingBuffer must not get used before setting buffer pointer");
     ASSERT(buffer);
     
-    _capacity = size;
-    _buffer = reinterpret_cast<uint8*>(buffer);
-    _alloc = nullptr;
+    mCapacity = size;
+    mBuffer = reinterpret_cast<uint8*>(buffer);
+    mAlloc = nullptr;
 }
 
 inline void RingBuffer::Free()
 {
-    if (_alloc) {
-        memFree(_buffer, _alloc);
-        _capacity = _size = _start = _end = 0;
-        _buffer = nullptr;
+    if (mAlloc) {
+        memFree(mBuffer, mAlloc);
+        mCapacity = mSize = mStart = mEnd = 0;
+        mBuffer = nullptr;
     }
 }
 
@@ -1237,49 +1260,49 @@ inline size_t RingBuffer::GetMemoryRequirement(size_t capacity)
 
 inline size_t RingBuffer::ExpectWrite() const
 {
-    return _capacity - _size;
+    return mCapacity - mSize;
 }
 
 inline void RingBuffer::Write(const void* src, size_t size)
 {
     ASSERT(size <= ExpectWrite());
     
-    uint8* buff = _buffer;
+    uint8* buff = mBuffer;
     const uint8* udata = reinterpret_cast<const uint8*>(src);
-    size_t remain = _capacity - _end;
+    size_t remain = mCapacity - mEnd;
     if (remain >= size) {
-        memcpy(&buff[_end], udata, size);
+        memcpy(&buff[mEnd], udata, size);
     } else {
-        memcpy(&buff[_end], udata, remain);
+        memcpy(&buff[mEnd], udata, remain);
         memcpy(buff, &udata[remain], size - remain);
     }
     
-    _end = (_end + size) % _capacity;
-    _size += size;
+    mEnd = (mEnd + size) % mCapacity;
+    mSize += size;
 }
 
 inline size_t RingBuffer::Read(void* dst, size_t size)
 {
     ASSERT(size > 0);
     
-    size = Min(size, _size);
+    size = Min(size, mSize);
     if (size == 0)
         return 0;
     
     if (dst) {
-        uint8* buff = _buffer;
+        uint8* buff = mBuffer;
         uint8* udata = reinterpret_cast<uint8*>(dst);
-        size_t remain = _capacity - _start;
+        size_t remain = mCapacity - mStart;
         if (remain >= size) {
-            memcpy(udata, &buff[_start], size);
+            memcpy(udata, &buff[mStart], size);
         } else {
-            memcpy(udata, &buff[_start], remain);
+            memcpy(udata, &buff[mStart], remain);
             memcpy(&udata[remain], buff, size - remain);
         }
     }
     
-    _start = (_start + size) % _capacity;
-    _size -= size;
+    mStart = (mStart + size) % mCapacity;
+    mSize -= size;
     return size;
 }
 
@@ -1287,15 +1310,15 @@ inline size_t RingBuffer::Peek(void* dst, size_t size, size_t* pOffset)
 {
     ASSERT(size > 0);
     
-    size = Min(size, _size);
+    size = Min(size, mSize);
     if (size == 0)
         return 0;
     
     ASSERT(dst);
-    uint8* buff = _buffer;
+    uint8* buff = mBuffer;
     uint8* udata = reinterpret_cast<uint8*>(dst);
-    size_t _offset = pOffset ? *pOffset : _start;
-    size_t remain = _capacity - _offset;
+    size_t _offset = pOffset ? *pOffset : mStart;
+    size_t remain = mCapacity - _offset;
     if (remain >= size) {
         memcpy(udata, &buff[_offset], size);
     } else {
@@ -1304,7 +1327,7 @@ inline size_t RingBuffer::Peek(void* dst, size_t size, size_t* pOffset)
     }
     
     if (pOffset)
-        *pOffset = (*pOffset + size) % _capacity;
+        *pOffset = (*pOffset + size) % mCapacity;
 
     return size;
 }
@@ -1321,7 +1344,7 @@ template <typename _T> inline size_t RingBuffer::Read(_T* dst)
 
 inline size_t RingBuffer::Capacity() const
 {
-    return _capacity;
+    return mCapacity;
 }
 
 //------------------------------------------------------------------------
@@ -1329,20 +1352,20 @@ inline size_t RingBuffer::Capacity() const
 inline Blob::Blob(void* buffer, size_t size)
 {
     ASSERT(buffer && size);
-    _buffer = buffer;
-    _capacity = size;
+    mBuffer = buffer;
+    mCapacity = size;
 }
 
 inline void Blob::Attach(void* data, size_t size, Allocator* alloc)
 {
     ASSERT(data);
-    ASSERT_MSG(!_buffer, "buffer should be freed before attach");
-    _alloc = alloc;
-    _growPolicy = GrowPolicy::None;
-    _buffer = data;
-    _offset = 0;
-    _size = size;
-    _capacity = size;
+    ASSERT_MSG(!mBuffer, "buffer should be freed before attach");
+    mAlloc = alloc;
+    mGrowPolicy = GrowPolicy::None;
+    mBuffer = data;
+    mOffset = 0;
+    mSize = size;
+    mCapacity = size;
 }
 
 inline void Blob::Detach(void** outData, size_t* outSize)
@@ -1350,66 +1373,77 @@ inline void Blob::Detach(void** outData, size_t* outSize)
     ASSERT(outData);
     ASSERT(outSize);
 
-    *outData = _buffer;
-    *outSize = _size;
+    *outData = mBuffer;
+    *outSize = mSize;
 
-    _buffer = nullptr;
-    _size = 0;
-    _offset = 0;
-    _capacity = 0;
+    mBuffer = nullptr;
+    mSize = 0;
+    mOffset = 0;
+    mCapacity = 0;
 }
 
 inline void Blob::SetAllocator(Allocator* alloc)
 {
-    ASSERT_MSG(!_buffer, "SetAllocator must be called before using/initializing the Blob");
-    _alloc = alloc;
+    ASSERT_MSG(!mBuffer, "SetAllocator must be called before using/initializing the Blob");
+    mAlloc = alloc;
 }
 
 inline void Blob::SetSize(size_t size)
 {
-    ASSERT_MSG(size <= _capacity, "Size cannot be larger than capacity");
-    _size = size;
+    ASSERT_MSG(size <= mCapacity, "Size cannot be larger than capacity");
+    mSize = size;
 }
 
 inline void Blob::Reserve(size_t capacity)
 {
-    ASSERT_MSG(_alloc, "Allocator must be set for dynamic Reserve");
-    ASSERT(capacity > _size);
+    ASSERT_MSG(mAlloc, "Allocator must be set for dynamic Reserve");
+    ASSERT(capacity > mSize);
 
-    _buffer = memReallocAligned(_buffer, capacity, _align, _alloc);
-    _capacity = capacity;
+    mBuffer = memReallocAligned(mBuffer, capacity, mAlign, mAlloc);
+    mCapacity = capacity;
 }
 
 inline void Blob::Reserve(void* buffer, size_t size)
 {
-    ASSERT(size > _size);
-    ASSERT(PtrToInt<uint64>(buffer) % _align == 0);
-    ASSERT(_buffer == nullptr);
+    ASSERT(size > mSize);
+    ASSERT(PtrToInt<uint64>(buffer) % mAlign == 0);
+    ASSERT(mBuffer == nullptr);
 
-    _buffer = buffer;
-    _capacity = size;
-    _alloc = nullptr;
+    mBuffer = buffer;
+    mCapacity = size;
+    mAlloc = nullptr;
 }
 
 inline void Blob::Free()
 {
-    if (_alloc)
-        memFreeAligned(_buffer, _align, _alloc);
-    _buffer = nullptr;
-    _size = 0;
-    _capacity = 0;
-    _alloc = nullptr;
+    if (mAlloc)
+        memFreeAligned(mBuffer, mAlign, mAlloc);
+    mBuffer = nullptr;
+    mSize = 0;
+    mCapacity = 0;
+    mAlloc = nullptr;
 }
 
-inline void Blob::ResetOffset() 
+inline void Blob::ResetRead() 
 {
-    _offset = 0;
+    mOffset = 0;
+}
+
+inline void Blob::ResetWrite()
+{
+    mSize = 0;
+}
+
+inline void Blob::Reset()
+{
+    mOffset = 0;
+    mSize = 0;
 }
 
 inline void Blob::SetOffset(size_t offset) 
 {
-    ASSERT(_offset < _size);
-    _offset = offset;
+    ASSERT(mOffset < mSize);
+    mOffset = offset;
 }
 
 inline size_t Blob::Write(const void* src, size_t size)
@@ -1417,30 +1451,30 @@ inline size_t Blob::Write(const void* src, size_t size)
     ASSERT(src);
     ASSERT(size);
 
-    size_t writeBytes = Min(_capacity - _size, size);
-    if (writeBytes < size && _growPolicy != GrowPolicy::None) {
-        ASSERT_MSG(_alloc, "Growable blobs should have allocator");
-        ASSERT(_growAmount);
+    size_t writeBytes = Min(mCapacity - mSize, size);
+    if (writeBytes < size && mGrowPolicy != GrowPolicy::None) {
+        ASSERT_MSG(mAlloc, "Growable blobs should have allocator");
+        ASSERT(mGrowCount);
 
-        if (_growPolicy == GrowPolicy::Linear) {
-            _capacity += _growAmount;
-            _buffer = memReallocAligned(_buffer, _capacity, _align, _alloc);
+        if (mGrowPolicy == GrowPolicy::Linear) {
+            mCapacity += mGrowCount;
+            mBuffer = memReallocAligned(mBuffer, mCapacity, mAlign, mAlloc);
         }
-        else if (_growPolicy == GrowPolicy::Multiply) {
-            if (!_capacity)
-                _capacity = _growAmount;
+        else if (mGrowPolicy == GrowPolicy::Multiply) {
+            if (!mCapacity)
+                mCapacity = mGrowCount;
             else
-                _capacity <<= 1;
-            _buffer = memReallocAligned(_buffer, _capacity, _align, _alloc);
+                mCapacity <<= 1;
+            mBuffer = memReallocAligned(mBuffer, mCapacity, mAlign, mAlloc);
         }
 
         return Write(src, size);
     }
 
     if (writeBytes) {
-        uint8* buff = reinterpret_cast<uint8*>(_buffer);
-        memcpy(buff + _size, src, writeBytes);
-        _size += writeBytes;
+        uint8* buff = reinterpret_cast<uint8*>(mBuffer);
+        memcpy(buff + mSize, src, writeBytes);
+        mSize += writeBytes;
     }
 
     #if CONFIG_VALIDATE_IO_READ_WRITES
@@ -1454,11 +1488,11 @@ inline size_t Blob::Read(void* dst, size_t size) const
     ASSERT(dst);
     ASSERT(size);
 
-    size_t readBytes = Min(_size - _offset, size);
+    size_t readBytes = Min(mSize - mOffset, size);
     if (readBytes) {
-        uint8* buff = reinterpret_cast<uint8*>(_buffer);
-        memcpy(dst, buff + _offset, readBytes);
-        const_cast<Blob*>(this)->_offset += readBytes;
+        uint8* buff = reinterpret_cast<uint8*>(mBuffer);
+        memcpy(dst, buff + mOffset, readBytes);
+        const_cast<Blob*>(this)->mOffset += readBytes;
     }
 
     #if CONFIG_VALIDATE_IO_READ_WRITES
@@ -1505,48 +1539,48 @@ inline size_t Blob::ReadStringBinary(char* outStr, [[maybe_unused]] uint32 outSt
 
 inline size_t Blob::Size() const
 {
-    return _size;
+    return mSize;
 }
 
 inline size_t Blob::ReadOffset() const
 {
-    return _offset;
+    return mOffset;
 }
 
 inline size_t Blob::Capacity() const
 {
-    return _capacity;
+    return mCapacity;
 }
 
 inline const void* Blob::Data() const
 {
-    return _buffer;
+    return mBuffer;
 }
 
 inline bool Blob::IsValid() const
 {
-    return _buffer && _size;
+    return mBuffer && mSize;
 }
 
 inline void Blob::CopyTo(Blob* otherBlob) const
 {
-    ASSERT(_size);
-    otherBlob->Reserve(_size);
-    otherBlob->SetSize(_size);
-    memcpy(otherBlob->_buffer, _buffer, _size); 
+    ASSERT(mSize);
+    otherBlob->Reserve(mSize);
+    otherBlob->SetSize(mSize);
+    memcpy(otherBlob->mBuffer, mBuffer, mSize); 
 }
 
 inline void Blob::SetAlignment(uint8 align)
 {
     if (align < CONFIG_MACHINE_ALIGNMENT)
         align = CONFIG_MACHINE_ALIGNMENT;
-    _align = align;
+    mAlign = align;
 }
 
 inline void Blob::SetGrowPolicy(GrowPolicy policy, uint32 amount)
 {
-    _growPolicy = policy;
-    _growAmount = amount == 0 ? 4096u : AlignValue(amount, CACHE_LINE_SIZE);
+    mGrowPolicy = policy;
+    mGrowCount = amount == 0 ? 4096u : AlignValue(amount, CACHE_LINE_SIZE);
 }
 
 //------------------------------------------------------------------------
@@ -1557,26 +1591,26 @@ inline PoolBuffer<_T, _Align>::PoolBuffer(void* buffer, size_t size)
     ASSERT(buffer);
     ASSERT(size > sizeof(Page));
 
-    _pageSize = (size - sizeof(Page))/sizeof(_T);
-    ASSERT_MSG(_pageSize, "Buffer size is too small");
-    _pages = CreatePage(buffer, size);
+    mPageSize = (size - sizeof(Page))/sizeof(_T);
+    ASSERT_MSG(mPageSize, "Buffer size is too small");
+    mPages = CreatePage(buffer, size);
 }
 
 template <typename _T, uint32 _Align>
 inline void PoolBuffer<_T, _Align>::SetAllocator(Allocator* alloc)
 {
-    ASSERT_MSG(!_pages, "SetAllocator must be called before using/initializing the Blob");
-    _alloc = alloc;
+    ASSERT_MSG(!mPages, "SetAllocator must be called before using/initializing the Blob");
+    mAlloc = alloc;
 }
 
 template <typename _T, uint32 _Align>
 inline void PoolBuffer<_T, _Align>::Reserve(uint32 pageSize)
 {
-    ASSERT(_alloc);
+    ASSERT(mAlloc);
     ASSERT(pageSize);
 
-    _pageSize = pageSize;
-    _pages = CreatePage(nullptr, 0);
+    mPageSize = pageSize;
+    mPages = CreatePage(nullptr, 0);
 }
 
 template <typename _T, uint32 _Align>
@@ -1584,28 +1618,28 @@ inline void PoolBuffer<_T, _Align>::Reserve(void* buffer, size_t size, uint32 pa
 {
     ASSERT(buffer);
     ASSERT(size > sizeof(Page));
-    ASSERT(_pages == nullptr);
+    ASSERT(mPages == nullptr);
     ASSERT(pageSize);
     
-    _pageSize = pageSize;
-    _alloc = nullptr;
-    _pages = CreatePage(buffer, size);
+    mPageSize = pageSize;
+    mAlloc = nullptr;
+    mPages = CreatePage(buffer, size);
 }
 
 template <typename _T, uint32 _Align>
 inline void PoolBuffer<_T, _Align>::Free()
 {
-    if (_alloc) {
-        Page* page = _pages;
+    if (mAlloc) {
+        Page* page = mPages;
         while (page) {
             Page* next = page->next;
-            memFree(page, _alloc);
+            memFree(page, mAlloc);
             page = next;
         }
     }
 
-    _pageSize = 0;
-    _pages = nullptr;
+    mPageSize = 0;
+    mPages = nullptr;
 }
 
 template <typename _T, uint32 _Align>
@@ -1620,26 +1654,26 @@ inline size_t PoolBuffer<_T, _Align>::GetMemoryRequirement(uint32 pageSize)
 template <typename _T, uint32 _Align>
 inline _T* PoolBuffer<_T, _Align>::New()
 {
-    Page* page = _pages;
+    Page* page = mPages;
     while (page && page->index == 0 && page->next)
         page = page->next;
     
     // Grow if necassory 
     if (!page || page->index == 0) {
-        if (!_alloc) {
+        if (!mAlloc) {
             ASSERT_MSG(0, "Cannot allocate anymore new objects. Pool is full");
             return nullptr;
         }
 
         page = CreatePage(nullptr, 0);
-        if (_pages) {
-            Page* lastPage = _pages;
+        if (mPages) {
+            Page* lastPage = mPages;
             while (lastPage->next)
                 lastPage = lastPage->next;
             lastPage->next = page;
         }
         else {
-            _pages = page;
+            mPages = page;
         }
     }
 
@@ -1651,8 +1685,8 @@ template <typename _T, uint32 _Align>
 inline void PoolBuffer<_T, _Align>::Delete(_T* item)
 {
     uint64 uptr = PtrToInt<uint64>(item);
-    Page* page = _pages;
-    uint32 pageSize = _pageSize;
+    Page* page = mPages;
+    uint32 pageSize = mPageSize;
 
     while (page) {
         if (uptr >= PtrToInt<uint64>(page->data) && uptr < PtrToInt<uint64>(page->data + pageSize)) {
@@ -1671,7 +1705,7 @@ inline void PoolBuffer<_T, _Align>::Delete(_T* item)
 template <typename _T, uint32 _Align>
 inline bool PoolBuffer<_T, _Align>::IsFull() const
 {
-    Page* page = _pages;
+    Page* page = mPages;
     while (page && page->index == 0 && page->next)
         page = page->next;
     
@@ -1681,15 +1715,15 @@ inline bool PoolBuffer<_T, _Align>::IsFull() const
 template <typename _T, uint32 _Align>
 inline typename PoolBuffer<_T, _Align>::Page* PoolBuffer<_T, _Align>::CreatePage(void* buffer, size_t size)
 {
-    ASSERT(_pageSize);
+    ASSERT(mPageSize);
 
     BuffersAllocPOD<Page> pageBuffer;
-    pageBuffer.template AddMemberField<_T*>(offsetof(Page, ptrs), _pageSize);
-    pageBuffer.template AddMemberField<_T>(offsetof(Page, data), _pageSize, false, _Align); // Only align data buffer
+    pageBuffer.template AddMemberField<_T*>(offsetof(Page, ptrs), mPageSize);
+    pageBuffer.template AddMemberField<_T>(offsetof(Page, data), mPageSize, false, _Align); // Only align data buffer
 
-    Page* page = (buffer && size) ? pageBuffer.Calloc(buffer, size) : page = pageBuffer.Calloc(_alloc);
-    page->index = _pageSize;
-    for (uint32 i = 0, c = _pageSize; i < c; i++)
+    Page* page = (buffer && size) ? pageBuffer.Calloc(buffer, size) : page = pageBuffer.Calloc(mAlloc);
+    page->index = mPageSize;
+    for (uint32 i = 0, c = mPageSize; i < c; i++)
         page->ptrs[c - i - 1] = page->data + i;
     return page;
 }

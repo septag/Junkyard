@@ -1,7 +1,5 @@
 #include "Settings.h"
 #include "Allocators.h"
-#include "StringUtil.h"
-#include "Buffers.h"
 #include "System.h"
 
 #include "External/mgustavsson/ini.h"
@@ -23,15 +21,11 @@ PRAGMA_DIAGNOSTIC_POP()
 #include <android/asset_manager.h>
 #endif
 
-struct SettingsKeyValue
-{
-    String32 key;
-    String<CONFIG_MAX_PATH> value;
-};
+#define SETTINGS_NONE_PREDEFINED "_UNKNOWN_"
 
 struct SettingsContext
 {
-    Array<SettingsKeyValue> keyValuePairs;
+    Array<SettingsKeyValue> keyValuePairs;  // Container to save none-predefined settings
     StaticArray<SettingsCustomCallbacks*, 8> customCallbacks;
 };
 
@@ -98,6 +92,14 @@ static bool settingsLoadFromINIInternal(const Blob& blob)
                 debugPrint(msg);
             }
         } // for each custom settings parser
+    }
+
+    // Try to load none-predefined settings
+    int sectionId = ini_find_section(ini, SETTINGS_NONE_PREDEFINED, strLen(SETTINGS_NONE_PREDEFINED));
+    if (sectionId != -1) {
+        for (int i = 0; i < ini_property_count(ini, sectionId); i++) {
+            settingsSetValue(ini_property_name(ini, sectionId, i), ini_property_value(ini, sectionId, i));
+        }
     }
 
     ini_destroy(ini);
@@ -178,6 +180,57 @@ bool settingsInitializeFromINI(const char* iniFilepath)
     return r;
 }
 
+void settingsSaveToINI(const char* iniFilepath)
+{
+    char msg[256];
+    strPrintFmt(msg, sizeof(msg), "Saving settings to file: %s", iniFilepath);
+    debugPrint(msg);
+    
+    MemTempAllocator tmpAlloc;
+    ini_t* ini = ini_create(&tmpAlloc);
+    
+    for (SettingsCustomCallbacks* callbacks : gSettings.customCallbacks) {
+        for (uint32 cId = 0; cId < callbacks->GetCategoryCount(); cId++) {
+            Array<SettingsKeyValue> items(&tmpAlloc);
+            const char* catName = callbacks->GetCategory(cId);
+            int sectionId = ini_section_add(ini, catName, strLen(catName));
+            
+            callbacks->SaveCategory(cId, items);
+            
+            for (SettingsKeyValue& item : items) {
+                if (item.value.Length())
+                    ini_property_add(ini, sectionId, item.key.CStr(), item.key.Length(), item.value.CStr(), item.value.Length());
+            }
+
+            items.Free();
+        }
+    }
+
+    // Put None-predefined settings into INI as well
+    if (gSettings.keyValuePairs.Count()) {
+        int sectionId = ini_section_add(ini, SETTINGS_NONE_PREDEFINED, strLen(SETTINGS_NONE_PREDEFINED));
+        
+        for (SettingsKeyValue& item : gSettings.keyValuePairs) {
+            if (item.value.Length())
+                ini_property_add(ini, sectionId, item.key.CStr(), item.key.Length(), item.value.CStr(), item.value.Length());
+        }
+    }
+
+    int size = ini_save(ini, nullptr, 0);
+    if (size > 0) {
+        char* data = tmpAlloc.MallocTyped<char>(size);
+        ini_save(ini, data, size);
+
+        File f;
+        if (f.Open(iniFilepath, FileOpenFlags::Write)) {
+            f.Write(data, size);
+            f.Close();
+        }
+    }
+
+    ini_destroy(ini);
+}
+
 bool settingsInitializeFromCommandLine(int argc, char* argv[])
 {
     sargs_state* args = sargs_create(sargs_desc {
@@ -231,6 +284,9 @@ bool settingsInitializeFromCommandLine(int argc, char* argv[])
 
 void settingsSetValue(const char* key, const char* value)
 {
+    if (value[0] == 0)
+        return;
+
     uint32 index = gSettings.keyValuePairs.FindIf([key](const SettingsKeyValue& keyval) {
         return keyval.key.IsEqual(key);
     });

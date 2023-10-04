@@ -62,89 +62,89 @@ struct JsonNode
     template <typename _T> uint32 GetChildArrayValues(const char* _childNode, _T* _values, uint32 _maxValues);
 
 private:
-    JsonContext* ctx = nullptr;
-    int tokenId = -1;
-    int itemIndex = 0;
+    JsonContext* mCtx = nullptr;
+    int mTokenId = -1;
+    int mItemIndex = 0;
 };
 
 //------------------------------------------------------------------------
-inline JsonNode::JsonNode(JsonContext& _ctx) : ctx(&_ctx), tokenId(0), itemIndex(0) {}
-inline JsonNode::JsonNode(JsonContext& _ctx, int _tokenId, int _itemIndex) : ctx(&_ctx), tokenId(_tokenId), itemIndex(_itemIndex) {}
+inline JsonNode::JsonNode(JsonContext& _ctx) : mCtx(&_ctx), mTokenId(0), mItemIndex(0) {}
+inline JsonNode::JsonNode(JsonContext& _ctx, int _tokenId, int _itemIndex) : mCtx(&_ctx), mTokenId(_tokenId), mItemIndex(_itemIndex) {}
 
 inline bool JsonNode::HasChild(const char* _childNode) const
 {
-    return cj5_seek(reinterpret_cast<cj5_result*>(ctx), tokenId, _childNode) != -1;
+    return cj5_seek(reinterpret_cast<cj5_result*>(mCtx), mTokenId, _childNode) != -1;
 }
 
 inline JsonNode JsonNode::GetChild(const char* _childNode) const
 {
-    int id = cj5_seek(reinterpret_cast<cj5_result*>(ctx), tokenId, _childNode);
-    return JsonNode(*ctx, id);
+    int id = cj5_seek(reinterpret_cast<cj5_result*>(mCtx), mTokenId, _childNode);
+    return JsonNode(*mCtx, id);
 }
 
 inline bool JsonNode::IsValid() const
 {
-    return ctx && tokenId > -1;
+    return mCtx && mTokenId > -1;
 }
 
 template <> inline uint32 JsonNode::GetArrayValues(uint32* _values, uint32 _maxValues) const
 {
-    return (uint32)cj5_seekget_array_uint(reinterpret_cast<cj5_result*>(ctx), tokenId, nullptr, _values, _maxValues);
+    return (uint32)cj5_seekget_array_uint(reinterpret_cast<cj5_result*>(mCtx), mTokenId, nullptr, _values, _maxValues);
 }
 
 template <> inline uint32 JsonNode::GetArrayValues(float* _values, uint32 _maxValues) const
 {
-    return (uint32)cj5_seekget_array_float(reinterpret_cast<cj5_result*>(ctx), tokenId, nullptr, _values, _maxValues);
+    return (uint32)cj5_seekget_array_float(reinterpret_cast<cj5_result*>(mCtx), mTokenId, nullptr, _values, _maxValues);
 }
 
 template <> inline uint32 JsonNode::GetArrayValues(double* _values, uint32 _maxValues) const
 {
-    return (uint32)cj5_seekget_array_double(reinterpret_cast<cj5_result*>(ctx), tokenId, nullptr, _values, _maxValues);
+    return (uint32)cj5_seekget_array_double(reinterpret_cast<cj5_result*>(mCtx), mTokenId, nullptr, _values, _maxValues);
 }
 
 template <> inline uint32 JsonNode::GetArrayValues(uint64* _values, uint32 _maxValues) const
 {
-    return (uint32)cj5_seekget_array_uint64(reinterpret_cast<cj5_result*>(ctx), tokenId, nullptr, _values, _maxValues);
+    return (uint32)cj5_seekget_array_uint64(reinterpret_cast<cj5_result*>(mCtx), mTokenId, nullptr, _values, _maxValues);
 }
 
 template <> inline uint32 JsonNode::GetArrayValues(int* _values, uint32 _maxValues) const
 {
-    return (uint32)cj5_seekget_array_int(reinterpret_cast<cj5_result*>(ctx), tokenId, nullptr, _values, _maxValues);
+    return (uint32)cj5_seekget_array_int(reinterpret_cast<cj5_result*>(mCtx), mTokenId, nullptr, _values, _maxValues);
 }
 
 template <> inline uint32 JsonNode::GetArrayValues(bool* _values, uint32 _maxValues) const
 {
-    return (uint32)cj5_seekget_array_bool(reinterpret_cast<cj5_result*>(ctx), tokenId, nullptr, _values, _maxValues);
+    return (uint32)cj5_seekget_array_bool(reinterpret_cast<cj5_result*>(mCtx), mTokenId, nullptr, _values, _maxValues);
 }
 
 template <> inline bool JsonNode::GetValue() const
 {
-    return cj5_get_bool(reinterpret_cast<cj5_result*>(ctx), tokenId);
+    return cj5_get_bool(reinterpret_cast<cj5_result*>(mCtx), mTokenId);
 }
 
 template <> inline int JsonNode::GetValue() const
 {
-    return cj5_get_int(reinterpret_cast<cj5_result*>(ctx), tokenId);
+    return cj5_get_int(reinterpret_cast<cj5_result*>(mCtx), mTokenId);
 }
 
 template <> inline float JsonNode::GetValue() const
 {
-    return cj5_get_float(reinterpret_cast<cj5_result*>(ctx), tokenId);
+    return cj5_get_float(reinterpret_cast<cj5_result*>(mCtx), mTokenId);
 }
 
 template <> inline double JsonNode::GetValue() const
 {
-    return cj5_get_double(reinterpret_cast<cj5_result*>(ctx), tokenId);
+    return cj5_get_double(reinterpret_cast<cj5_result*>(mCtx), mTokenId);
 }
 
 template <> inline uint32 JsonNode::GetValue() const
 {
-    return cj5_get_uint(reinterpret_cast<cj5_result*>(ctx), tokenId);
+    return cj5_get_uint(reinterpret_cast<cj5_result*>(mCtx), mTokenId);
 }
 
 template <> inline uint64 JsonNode::GetValue() const
 {
-    return cj5_get_uint64(reinterpret_cast<cj5_result*>(ctx), tokenId);
+    return cj5_get_uint64(reinterpret_cast<cj5_result*>(mCtx), mTokenId);
 }
 
 template <> inline Float4 JsonNode::GetValue() const
@@ -181,32 +181,32 @@ template <> inline Int2 JsonNode::GetValue() const
 
 template <> inline uint32 JsonNode::GetChildValue(const char* _childNode, uint32 _defaultValue)
 {
-    return cj5_seekget_uint(reinterpret_cast<cj5_result*>(ctx), tokenId, _childNode, _defaultValue);
+    return cj5_seekget_uint(reinterpret_cast<cj5_result*>(mCtx), mTokenId, _childNode, _defaultValue);
 }
 
 template <> inline uint64 JsonNode::GetChildValue(const char* _childNode, uint64 _defaultValue)
 {
-    return cj5_seekget_uint64(reinterpret_cast<cj5_result*>(ctx), tokenId, _childNode, _defaultValue);
+    return cj5_seekget_uint64(reinterpret_cast<cj5_result*>(mCtx), mTokenId, _childNode, _defaultValue);
 }
 
 template <> inline int JsonNode::GetChildValue(const char* _childNode, int _defaultValue)
 {
-    return cj5_seekget_int(reinterpret_cast<cj5_result*>(ctx), tokenId, _childNode, _defaultValue);
+    return cj5_seekget_int(reinterpret_cast<cj5_result*>(mCtx), mTokenId, _childNode, _defaultValue);
 }
 
 template <> inline float JsonNode::GetChildValue(const char* _childNode, float _defaultValue)
 {
-    return cj5_seekget_float(reinterpret_cast<cj5_result*>(ctx), tokenId, _childNode, _defaultValue);
+    return cj5_seekget_float(reinterpret_cast<cj5_result*>(mCtx), mTokenId, _childNode, _defaultValue);
 }
 
 template <> inline double JsonNode::GetChildValue(const char* _childNode, double _defaultValue)
 {
-    return cj5_seekget_double(reinterpret_cast<cj5_result*>(ctx), tokenId, _childNode, _defaultValue);
+    return cj5_seekget_double(reinterpret_cast<cj5_result*>(mCtx), mTokenId, _childNode, _defaultValue);
 }
 
 template <> inline bool JsonNode::GetChildValue(const char* _childNode, bool _defaultValue)
 {
-    return cj5_seekget_bool(reinterpret_cast<cj5_result*>(ctx), tokenId, _childNode, _defaultValue);
+    return cj5_seekget_bool(reinterpret_cast<cj5_result*>(mCtx), mTokenId, _childNode, _defaultValue);
 }
 
 template <> inline Float4 JsonNode::GetChildValue(const char* _childNode, Float4 _defaultValue)
@@ -235,32 +235,32 @@ template <> inline Int2 JsonNode::GetChildValue(const char* _childNode, Int2 _de
 
 template <> inline uint32 JsonNode::GetChildArrayValues(const char* _childNode, uint32* _values, uint32 _maxValues)
 {
-    return (uint32)cj5_seekget_array_uint(reinterpret_cast<cj5_result*>(ctx), tokenId, _childNode, _values, _maxValues);
+    return (uint32)cj5_seekget_array_uint(reinterpret_cast<cj5_result*>(mCtx), mTokenId, _childNode, _values, _maxValues);
 }
 
 template <> inline uint32 JsonNode::GetChildArrayValues(const char* _childNode, int* _values, uint32 _maxValues)
 {
-    return (uint32)cj5_seekget_array_int(reinterpret_cast<cj5_result*>(ctx), tokenId, _childNode, _values, _maxValues);
+    return (uint32)cj5_seekget_array_int(reinterpret_cast<cj5_result*>(mCtx), mTokenId, _childNode, _values, _maxValues);
 }
 
 template <> inline uint32 JsonNode::GetChildArrayValues(const char* _childNode, uint64* _values, uint32 _maxValues)
 {
-    return (uint32)cj5_seekget_array_uint64(reinterpret_cast<cj5_result*>(ctx), tokenId, _childNode, _values, _maxValues);
+    return (uint32)cj5_seekget_array_uint64(reinterpret_cast<cj5_result*>(mCtx), mTokenId, _childNode, _values, _maxValues);
 }
 
 template <> inline uint32 JsonNode::GetChildArrayValues(const char* _childNode, bool* _values, uint32 _maxValues)
 {
-    return (uint32)cj5_seekget_array_bool(reinterpret_cast<cj5_result*>(ctx), tokenId, _childNode, _values, _maxValues);
+    return (uint32)cj5_seekget_array_bool(reinterpret_cast<cj5_result*>(mCtx), mTokenId, _childNode, _values, _maxValues);
 }
 
 template <> inline uint32 JsonNode::GetChildArrayValues(const char* _childNode, double* _values, uint32 _maxValues)
 {
-    return (uint32)cj5_seekget_array_double(reinterpret_cast<cj5_result*>(ctx), tokenId, _childNode, _values, _maxValues);
+    return (uint32)cj5_seekget_array_double(reinterpret_cast<cj5_result*>(mCtx), mTokenId, _childNode, _values, _maxValues);
 }
 
 template <> inline uint32 JsonNode::GetChildArrayValues(const char* _childNode, float* _values, uint32 _maxValues)
 {
-    return (uint32)cj5_seekget_array_float(reinterpret_cast<cj5_result*>(ctx), tokenId, _childNode, _values, _maxValues);
+    return (uint32)cj5_seekget_array_float(reinterpret_cast<cj5_result*>(mCtx), mTokenId, _childNode, _values, _maxValues);
 }
 
 

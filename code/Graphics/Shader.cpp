@@ -150,7 +150,7 @@ static void shaderCompileShaderHandlerClientFn([[maybe_unused]] uint32 cmd, cons
     UNUSED(userData);
     
     AssetHandle handle {};
-    incomingData.Read<uint32>(&handle.id);
+    incomingData.Read<uint32>(&handle.mId);
     ASSERT(handle.IsValid());
 
     Allocator* alloc = nullptr;
@@ -182,7 +182,7 @@ static void shaderCompileShaderHandlerClientFn([[maybe_unused]] uint32 cmd, cons
         if (shaderBufferSize) {
             shaderData = memAlloc(shaderBufferSize, alloc);
             incomingData.Read(shaderData, shaderBufferSize);
-            ((Shader*)shaderData)->hash = handle.id;
+            ((Shader*)shaderData)->hash = uint32(handle);
         }
 
         if (loadCallback) {
@@ -310,7 +310,7 @@ AssetResult ShaderLoader::Load(AssetHandle handle, const AssetLoadParams& params
             char errorDiag[1024];
             Pair<Shader*, uint32> shader = shaderCompile(blob, params.path, compileDesc, errorDiag, sizeof(errorDiag), params.alloc);
             if (shader.first)
-                shader.first->hash = handle.id;
+                shader.first->hash = uint32(handle);
             else 
                 logError("Compiling shader '%s' failed: %s", params.path, errorDiag);
             return AssetResult { .obj = shader.first, .objBufferSize = shader.second, .cacheHash = newCacheHash };
@@ -351,7 +351,7 @@ void ShaderLoader::LoadRemote(AssetHandle handle, const AssetLoadParams& params,
     Blob outgoingBlob(&tmpAlloc);
     outgoingBlob.SetGrowPolicy(Blob::GrowPolicy::Multiply);
 
-    outgoingBlob.Write<uint32>(handle.id);
+    outgoingBlob.Write<uint32>(uint32(handle));
     outgoingBlob.Write<uint32>(cacheHash);
     outgoingBlob.WriteStringBinary(params.path, strLen(params.path));
     outgoingBlob.Write<uint32>(static_cast<uint32>(params.platform));

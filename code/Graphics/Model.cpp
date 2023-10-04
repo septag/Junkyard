@@ -1095,7 +1095,7 @@ static void modelHandlerClientFn([[maybe_unused]] uint32 cmd, const Blob& incomi
     UNUSED(userData);
 
     AssetHandle handle;
-    incomingData.Read<uint32>(&handle.id);
+    incomingData.Read<uint32>(&handle.mId);
     ASSERT(handle.IsValid());
 
     ModelLoadRequest request {};
@@ -1183,7 +1183,7 @@ void ModelLoader::LoadRemote(AssetHandle handle, const AssetLoadParams& params, 
     Blob outgoingBlob(&tmpAlloc);
     outgoingBlob.SetGrowPolicy(Blob::GrowPolicy::Multiply);
 
-    outgoingBlob.Write<uint32>(handle.id);
+    outgoingBlob.Write<uint32>(uint32(handle));
     outgoingBlob.Write<uint32>(cacheHash);
     outgoingBlob.WriteStringBinary(params.path, strLen(params.path));
     outgoingBlob.Write<uint32>(uint32(params.platform));

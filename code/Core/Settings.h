@@ -24,7 +24,14 @@
 //
 //           Note that all arguments are case-insensitive
 //
-#include "Base.h"
+#include "StringUtil.h"
+#include "Buffers.h"
+
+struct SettingsKeyValue
+{
+    String32 key;
+    String<CONFIG_MAX_PATH> value;
+};
 
 struct NO_VTABLE SettingsCustomCallbacks
 {
@@ -33,6 +40,10 @@ struct NO_VTABLE SettingsCustomCallbacks
     virtual uint32 GetCategoryCount() const = 0;
     virtual const char* GetCategory(uint32 id) const = 0;
     virtual bool ParseSetting(uint32 categoryId, const char* key, const char* value) = 0;
+
+    // Fill 'items' for each corrosponding categoryId
+    // Can ignore implementing this if you don't want to save
+    virtual void SaveCategory(uint32 categoryId, Array<SettingsKeyValue>& items) = 0;   
 };
 
 API void settingsAddCustomCallbacks(SettingsCustomCallbacks* callbacks);
@@ -45,6 +56,7 @@ typedef struct AAssetManager AAssetManager;
 API bool settingsInitializeFromAndroidAsset(AAssetManager* assetMgr, const char* iniFilepath);
 #endif
 
+API void settingsSaveToINI(const char* iniFilepath);
 API void settingsRelease();
 
 // Custom key/values

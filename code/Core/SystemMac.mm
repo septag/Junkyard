@@ -44,34 +44,34 @@ static_assert(sizeof(SemaphoreImpl) <= sizeof(Semaphore), "Sempahore size mismat
 // Semaphore
 void Semaphore::Initialize()
 {
-    SemaphoreImpl* _sem = (SemaphoreImpl*)this->data;
-    _sem->handle = dispatch_semaphore_create(0);
-    ASSERT_MSG(_sem->handle != NULL, "dispatch_semaphore_create failed");
+    SemaphoreImpl* sem = (SemaphoreImpl*)mData;
+    sem->handle = dispatch_semaphore_create(0);
+    ASSERT_MSG(sem->handle != NULL, "dispatch_semaphore_create failed");
 }
 
 void Semaphore::Release()
 {
-    SemaphoreImpl* _sem = (SemaphoreImpl*)this->data;
-    if (_sem->handle) {
-        // dispatch_release(_sem->handle);
-        _sem->handle = NULL;
+    SemaphoreImpl* sem = (SemaphoreImpl*)mData;
+    if (sem->handle) {
+        // dispatch_release(sem->handle);
+        sem->handle = NULL;
     }
 }
 
 void Semaphore::Post(uint32 count)
 {
-    SemaphoreImpl* _sem = (SemaphoreImpl*)this->data;
+    SemaphoreImpl* sem = (SemaphoreImpl*)mData;
     for (int i = 0; i < count; i++) {
-        dispatch_semaphore_signal(_sem->handle);
+        dispatch_semaphore_signal(sem->handle);
     } 
 }
 
 bool Semaphore::Wait(uint32 msecs)
 {
-    SemaphoreImpl* _sem = (SemaphoreImpl*)this->data;
+    SemaphoreImpl* sem = (SemaphoreImpl*)mData;
     dispatch_time_t dt = msecs < 0 ? DISPATCH_TIME_FOREVER
                                    : dispatch_time(DISPATCH_TIME_NOW, (int64_t)msecs * 1000000ll);
-    return !dispatch_semaphore_wait(_sem->handle, dt);
+    return !dispatch_semaphore_wait(sem->handle, dt);
 }
 
 // Tip by johaness spohr
@@ -83,7 +83,7 @@ static inline int64_t timerInt64MulDiv(int64_t value, int64_t numer, int64_t den
     return q * numer + r * numer / denom;
 }
 
-void timerInitialize() 
+void _private::timerInitialize() 
 {
     gTimer.init = true;
     mach_timebase_info(&gTimer.timebase);
@@ -126,24 +126,24 @@ void sysGetSysInfo(SysInfo* info)
 }
 
 SysProcess::SysProcess() :
-    exitCode(-1),
-    termSignalCode(0)
+    mExitCode(-1),
+    mTermSignalCode(0)
 {
-    this->process = IntToPtr<int>(-1);
-    this->stdoutPipeRead = IntToPtr<int>(-1);
-    this->stderrPipeRead = IntToPtr<int>(-1);
+    mProcess = IntToPtr<int>(-1);
+    mStdOutPipeRead = IntToPtr<int>(-1);
+    mStdErrPipeRead = IntToPtr<int>(-1);
 }
 
 SysProcess::~SysProcess()
 {
-    int _stdoutPipeRead = PtrToInt<int32>(this->stdoutPipeRead);
-    int _stderrPipeRead = PtrToInt<int32>(this->stderrPipeRead);
-    pid_t pid = PtrToInt<int32>(this->process);
+    int stdoutPipeRead = PtrToInt<int32>(mStdOutPipeRead);
+    int stderrPipeRead = PtrToInt<int32>(mStdErrPipeRead);
+    pid_t pid = PtrToInt<int32>(mProcess);
     
-    if (_stdoutPipeRead != -1)
-        close(_stdoutPipeRead);
-    if (_stderrPipeRead != -1)
-        close(_stderrPipeRead);
+    if (stdoutPipeRead != -1)
+        close(stdoutPipeRead);
+    if (stderrPipeRead != -1)
+        close(stderrPipeRead);
     
     if (pid != -1) {
         int status;
@@ -185,11 +185,8 @@ bool SysProcess::Run(const char* cmdline, SysProcessFlags flags, const char* cwd
         ASSERT_MSG(r == 0, "posix_spawn_file_actions_addup2 failed");
     }
     
-    if (cwd) {
-        if (@available(macOS 10.15, *)) {
-            posix_spawn_file_actions_addchdir_np(&fileActions, cwd);
-        }
-    }
+    if (cwd)
+        posix_spawn_file_actions_addchdir_np(&fileActions, cwd);
     
     // split command-line arguments
     MemTempAllocator tmpAlloc;
@@ -232,32 +229,32 @@ bool SysProcess::Run(const char* cmdline, SysProcessFlags flags, const char* cwd
     if ((flags & SysProcessFlags::CaptureOutput) == SysProcessFlags::CaptureOutput) {
         close(stdoutPipes[1]);
         close(stderrPipes[1]);
-        this->stdoutPipeRead = IntToPtr<int>(stdoutPipes[0]);
-        this->stderrPipeRead = IntToPtr<int>(stderrPipes[0]);
+        mStdOutPipeRead = IntToPtr<int>(stdoutPipes[0]);
+        mStdErrPipeRead = IntToPtr<int>(stderrPipes[0]);
     }
     
     posix_spawn_file_actions_destroy(&fileActions);
-    this->process = IntToPtr<int32>(pid);
+    mProcess = IntToPtr<int32>(pid);
     return true;
 }
 
 void SysProcess::Wait() const
 {
-    pid_t pid = PtrToInt<int32>(this->process);
+    pid_t pid = PtrToInt<int32>(mProcess);
     ASSERT(pid != -1);
     int status;
     [[maybe_unused]] int r = waitpid(pid, &status, 0);
     ASSERT(r == pid);
     if (WIFEXITED(status))
-        const_cast<SysProcess*>(this)->exitCode = WEXITSTATUS(status);
+        const_cast<SysProcess*>(this)->mExitCode = WEXITSTATUS(status);
     else if (WIFSIGNALED(status))
-        const_cast<SysProcess*>(this)->termSignalCode = WTERMSIG(status);
-    const_cast<SysProcess*>(this)->process = IntToPtr<int32>(-1);
+        const_cast<SysProcess*>(this)->mTermSignalCode = WTERMSIG(status);
+    const_cast<SysProcess*>(this)->mProcess = IntToPtr<int32>(-1);
 }
 
 bool SysProcess::IsRunning() const
 {
-    pid_t pid = PtrToInt<int32>(this->process);
+    pid_t pid = PtrToInt<int32>(mProcess);
     ASSERT(pid != -1);
     int status;
     return waitpid(pid, &status, WNOHANG) == 0;
@@ -265,12 +262,12 @@ bool SysProcess::IsRunning() const
 
 int SysProcess::GetExitCode() const
 {
-    return this->exitCode;
+    return mExitCode;
 }
 
 uint32 SysProcess::ReadStdOut(void* data, uint32 size) const
 {
-    int pipeId = PtrToInt<int>(this->stdoutPipeRead);
+    int pipeId = PtrToInt<int>(mStdOutPipeRead);
     ASSERT(pipeId != -1);
     ssize_t r = read(pipeId, data, size);
     return r > 0 ? (uint32)r : 0;
@@ -278,10 +275,17 @@ uint32 SysProcess::ReadStdOut(void* data, uint32 size) const
 
 uint32 SysProcess::ReadStdErr(void* data, uint32 size) const
 {
-    int pipeId = PtrToInt<int>(this->stderrPipeRead);
+    int pipeId = PtrToInt<int>(mStdErrPipeRead);
     ASSERT(pipeId != -1);
     ssize_t r = read(pipeId, data, size);
     return r > 0 ? (uint32)r : 0;
+}
+
+void SysProcess::Abort()
+{
+    pid_t pid = PtrToInt<int32>(mProcess);
+    if (pid)
+        kill(pid, 1);
 }
 
 bool sysIsDebuggerPresent()
