@@ -185,8 +185,14 @@ bool SysProcess::Run(const char* cmdline, SysProcessFlags flags, const char* cwd
         ASSERT_MSG(r == 0, "posix_spawn_file_actions_addup2 failed");
     }
     
-    if (cwd)
-        posix_spawn_file_actions_addchdir_np(&fileActions, cwd);
+    if (cwd) {
+        if (@available(macOS 10.15, *)) {
+            posix_spawn_file_actions_addchdir_np(&fileActions, cwd);
+        }
+        else {
+            ASSERT_MSG(0, "Not implemented for versions less than macOS 10.15");
+        }
+    }
     
     // split command-line arguments
     MemTempAllocator tmpAlloc;
