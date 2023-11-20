@@ -41,6 +41,7 @@
 #define NOPROFILER        // Profiler interface.
 #define NODEFERWINDOWPOS  // DeferWindowPos routines
 #define NOMCX             // Modem Configuration Extensions
+#define NOIME
 
 #define WIN32_MEAN_AND_LEAN
 #define VC_EXTRALEAN
