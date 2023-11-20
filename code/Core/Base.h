@@ -655,3 +655,62 @@ private:
     uint32 mOffset;
 };
 
+
+//------------------------------------------------------------------------
+// Span: holds pointer/count pairs. useful for passing around slices of data 
+template <typename _T>
+struct Span
+{
+    Span() = delete;
+    Span(_T* data, uint32 count) : mData(data), mCount(count) { ASSERT(data); ASSERT(count); }
+    Span(_T* data, _T* end) : mData(data), mCount(PtrToInt<uint32>(end - data)) { ASSERT(data); ASSERT(end); }
+
+    _T& operator[](uint32 index)    
+    { 
+        #ifdef CONFIG_CHECK_OUTOFBOUNDS
+            ASSERT_MSG(index < mCount, "Index out of bounds (count: %u, index: %u)", mCount, index);
+        #endif
+        return mData[index];
+    }
+
+    const _T& operator[](uint32 index)
+    { 
+        #ifdef CONFIG_CHECK_OUTOFBOUNDS
+            ASSERT_MSG(index < mCount, "Index out of bounds (count: %u, index: %u)", mCount, index);
+        #endif
+        return mData[index];
+    }
+
+    uint32 Count() const    { return mCount; }
+    const _T* Ptr() const   { return mData; }
+    _T* Ptr()   { return mData; }
+
+    Span<_T> Slice(uint32 index, uint32 count)
+    {
+        #ifdef CONFIG_CHECK_OUTOFBOUNDS
+            ASSERT_MSG(index < mCount, "Index out of bounds (mCount: %u, index: %u)", mCount, index);
+            ASSERT_MSG((index + count) <= mCount, "Count out of bounds (mCount: %u, index: %u, count: %u)", mCount, index, count);
+        #endif
+        return Span(mData + index, count);
+    }
+
+    // C++ stl crap compatibility. it's mainly `for(auto t : array)` syntax sugar
+    struct Iterator 
+    {
+        Iterator(_T* ptr) : _ptr(ptr) {}
+        _T& operator*() { return *_ptr; }
+        void operator++() { ++_ptr; }
+        bool operator!=(Iterator it) { return _ptr != it._ptr; }
+        _T* _ptr;
+    };
+
+    Iterator begin()    { return Iterator(&mData[0]); }
+    Iterator end()      { return Iterator(&mData[mCount]); }
+
+    Iterator begin() const    { return Iterator(&mData[0]); }
+    Iterator end() const     { return Iterator(&mData[mCount]); }
+
+private:
+    _T* mData;
+    uint32 mCount;
+};
