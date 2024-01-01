@@ -10,6 +10,9 @@
       <AdditionalDependencies>slang.lib;ispc_texcomp.lib;meshoptimizer.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalLibraryDirectories>$(SolutionDir)..\..\code\External\slang\bin\windows-x64\release;$(SolutionDir)..\..\code\External\ispc_texcomp\lib\win64;$(SolutionDir)..\..\code\External\meshoptimizer\lib\win64;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
     </Link>
+    <ClCompile>
+      <PreprocessorDefinitions>CONFIG_TOOLMODE=1;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
   </ItemDefinitionGroup>
   <ItemGroup />
 </Project>

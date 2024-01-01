@@ -357,7 +357,7 @@ char strIsNumber(char ch)
     return strIsInRange(ch, '0', '9');
 }
 
-bool strTrim(char* dst, uint32 dstSize, const char* src)
+char* strTrim(char* dst, uint32 dstSize, const char* src)
 {
     uint32 len = Min(strLen(src), dstSize - 1);
     uint32 startOffset = 0;
@@ -391,7 +391,7 @@ bool strTrim(char* dst, uint32 dstSize, const char* src)
     return dst;
 }
 
-bool strTrim(char* dst, uint32 dstSize, const char* src, char ch)
+char* strTrim(char* dst, uint32 dstSize, const char* src, char ch)
 {
     uint32 len = Min(strLen(src), dstSize - 1);
     uint32 startOffset = 0;
@@ -422,6 +422,22 @@ bool strTrim(char* dst, uint32 dstSize, const char* src, char ch)
         dst[i - startOffset] = src[i];
 
     dst[endOffset - startOffset] = '\0';
+    return dst;
+}
+
+char* strRemoveWhitespace(char* dst, uint32 dstSize, const char* src)
+{
+    uint32 c = 0;
+    while (*src) {
+        if (!strIsWhitespace(*src)) {
+            if (c < (dstSize - 1))
+                dst[c++] = *src;
+            else
+                break;
+        }
+        src++;
+    }
+    dst[c] = '\0';
     return dst;
 }
 

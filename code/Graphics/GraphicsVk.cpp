@@ -89,6 +89,7 @@ private:
 #define VMA_MAX(v1, v2)    Max(v1, v2)
 #define VMA_MIN(v1, v2)    Min(v1, v2)
 #define VMA_ASSERT(expr) ASSERT(expr)
+#define VMA_STATS_STRING_ENABLED 0
 #include "../External/vma/include/vk_mem_alloc.h"
 PRAGMA_DIAGNOSTIC_POP()
 //------------------------------------------------------------------------

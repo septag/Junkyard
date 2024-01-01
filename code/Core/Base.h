@@ -673,7 +673,7 @@ struct Span
         return mData[index];
     }
 
-    const _T& operator[](uint32 index)
+    const _T& operator[](uint32 index) const
     { 
         #ifdef CONFIG_CHECK_OUTOFBOUNDS
             ASSERT_MSG(index < mCount, "Index out of bounds (count: %u, index: %u)", mCount, index);

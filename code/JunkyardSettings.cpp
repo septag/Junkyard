@@ -82,8 +82,12 @@ bool SettingsJunkyardParser::ParseSetting(uint32 categoryId, const char* key, co
             engine->logLevel = settingsParseEngineLogLevel(value);
             return true;
         }
-        else if (strIsEqualNoCase(key, "jobsThreadCount")) {
-            engine->jobsThreadCount = strToBool(value);
+        else if (strIsEqualNoCase(key, "jobsNumShortTaskThreads")) {
+            engine->jobsNumShortTaskThreads = strToBool(value);
+            return true;
+        }
+        else if (strIsEqualNoCase(key, "jobsNumLongTaskThreads")) {
+            engine->jobsNumLongTaskThreads = strToBool(value);
             return true;
         }
         else if (strIsEqualNoCase(key, "debugAllocations")) {

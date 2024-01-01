@@ -406,23 +406,6 @@ static void appWinInitDpi()
         FreeLibrary(shcore);
 }
 
-static bool appWinUtf8ToWide(const char* src, wchar_t* dst, size_t dstNumBytes) 
-{
-    ASSERT(src && dst && (dstNumBytes > 1));
-    memset(dst, 0, dstNumBytes);
-    const int dstChars = (int)(dstNumBytes / sizeof(wchar_t));
-    const int dstNeeded = (int)MultiByteToWideChar(CP_UTF8, 0, src, -1, 0, 0);
-    if ((dstNeeded > 0) && (dstNeeded < dstChars)) {
-        MultiByteToWideChar(CP_UTF8, 0, src, -1, dst, dstChars);
-        return true;
-    }
-    else {
-        // input string doesn't fit into destination buffer
-        ASSERT(false);
-        return false;
-    }
-}
-
 bool appSetClipboardString(const char* str)
 {
     if (!gApp.clipboardEnabled) {
@@ -436,16 +419,15 @@ bool appSetClipboardString(const char* str)
     wchar_t* wcharBuff = 0;
     const size_t wcharBuffSize = gApp.desc.clipboardSizeBytes * sizeof(wchar_t);
     HANDLE object = GlobalAlloc(GMEM_MOVEABLE, wcharBuffSize);
-    if (!object) {
+    if (!object)
         goto error;
-    }
+
     wcharBuff = (wchar_t*)GlobalLock(object);
-    if (!wcharBuff) {
+    if (!wcharBuff)
         goto error;
-    }
-    if (!appWinUtf8ToWide(str, wcharBuff, wcharBuffSize)) {
+    if (!strUt8ToWide(str, wcharBuff, wcharBuffSize))
         goto error;
-    }
+
     GlobalUnlock(wcharBuff);
     wcharBuff = 0;
     if (!OpenClipboard(gApp.hwnd)) {
@@ -459,16 +441,14 @@ bool appSetClipboardString(const char* str)
     return true;
     
     error:
-        if (wcharBuff) {
+        if (wcharBuff)
             GlobalUnlock(object);
-        }
-        if (object) {
+        if (object) 
             GlobalFree(object);
-        }
         return false;
 }
 
-static inline bool appWinEventsEnabled(void)
+static inline bool appWinEventsEnabled()
 {
     // only send events when an event callback is set, and the init function was called
     return gApp.desc.callbacks && gApp.initCalled;
@@ -770,7 +750,7 @@ static bool appWinCreateWindow()
     const int winHeight = rect.bottom - rect.top;
     
     static wchar_t winTitleWide[128];
-    appWinUtf8ToWide(gApp.windowTitle, winTitleWide, sizeof(winTitleWide));
+    strUt8ToWide(gApp.windowTitle, winTitleWide, sizeof(winTitleWide));
 
     gApp.inCreateWindow = true;
     gApp.hwnd = CreateWindowExW(
@@ -897,7 +877,7 @@ bool appInitialize(const AppDesc& desc)
     appWinLoadInitRects();  // may modify window/framebuffer dimensions 
     appWinInitKeyTable();
 
-    bool headless = settingsGet().graphics.headless;
+    bool headless = settingsGet().graphics.headless || !settingsGet().graphics.enable;
     if (!headless) {
         appWinInitDpi();
         if (!appWinCreateWindow()) {
@@ -1018,7 +998,7 @@ bool appIsMouseShown(void)
     return (cursorInfo.flags & CURSOR_SHOWING) != 0;
 }
 
-const char* appGetClipboardString(void)
+const char* appGetClipboardString()
 {
     ASSERT(gApp.clipboardEnabled && gApp.clipboard);
     ASSERT(gApp.hwnd);
@@ -1040,7 +1020,7 @@ const char* appGetClipboardString(void)
         return gApp.clipboard;
     }
     
-    appWinUtf8ToWide(gApp.clipboard, wcharBuff, gApp.desc.clipboardSizeBytes);
+    strWideToUtf8(wcharBuff, gApp.clipboard, gApp.desc.clipboardSizeBytes);
     GlobalUnlock(object);
     CloseClipboard();
     

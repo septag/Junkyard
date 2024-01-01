@@ -14,7 +14,7 @@
 
 #include "../Tool/Console.h"
 
-struct AppImpl : AppCallbacks
+struct AppImpl final : AppCallbacks
 {
     bool Initialize() override
     {

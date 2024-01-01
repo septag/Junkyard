@@ -472,7 +472,6 @@ static AssetResult assetLoadObjRemote(AssetHandle handle, const AssetTypeManager
                                       bool* outLoadedFromCache)
 {
     JobsSignal waitSignal;      // Used to serialize the async code
-    waitSignal.Initialize();
 
     uint32 cacheHash;
     {
@@ -533,7 +532,6 @@ static AssetResult assetLoadObjRemote(AssetHandle handle, const AssetTypeManager
         params->signal->Raise();
     });
     waitSignal.Wait();
-    waitSignal.Release();
 
     return asyncLoadData.result;
 }

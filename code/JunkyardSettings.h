@@ -55,7 +55,8 @@ struct SettingsEngine
     bool connectToServer = false;               // Connects to server
     String<256> remoteServicesUrl = "127.0.0.1:6006";   // Url to server. Divide port number with colon
     LogLevel logLevel = DEFAULT_LOG_LEVEL;
-    uint32 jobsThreadCount = 0;                 // Number of threads to spawn for each job type (Long/Short)
+    uint32 jobsNumShortTaskThreads = 0;         // Number of threads to spawn for short task jobs
+    uint32 jobsNumLongTaskThreads = 0;          // Number of threads to spawn for long task jobs
     bool debugAllocations = false;              // Use heap allocator instead for major allocators, like temp/budget/etc.
     bool breakOnErrors = false;                 // Break when logError happens
     bool treatWarningsAsErrors = false;         // Break when logWarning happens

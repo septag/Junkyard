@@ -1,19 +1,20 @@
 from PIL import Image, ImageDraw, ImageFont
 import os
 
-image_w = 1024
-image_h = 1024
-stroke_color = (255, 255, 255, 255)
-bg_color = (0, 0, 0, 255)
-max_size = 256*1024*1024
+IMAGE_W = 512
+IMAGE_H = 512
+STROKE_COLOR = (255, 255, 255, 255)
+BG_COLOR = (0, 0, 0, 255)
+MAX_DATA_SIZE = 4*1024*1024*1024
+IMAGE_FORMAT = "tga"
 
-image = Image.new('RGBA', (image_w, image_h))
+image = Image.new('RGBA', (IMAGE_W, IMAGE_H))
 canvas = ImageDraw.Draw(image)
 font = ImageFont.truetype("Impact.ttf", 512)
 
 index:int = 1
 total_size:int = 0
-image_size = image_w*image_h*4
+image_size = IMAGE_W*IMAGE_H*4
 
 meta_template = """
 {
@@ -41,11 +42,11 @@ while True:
     text_width = text_right - text_left
     text_height = text_bottom - text_top
 
-    canvas.rectangle([(0, 0), (image_w, image_h)], outline=stroke_color, fill=bg_color, width=50)
-    canvas.text(((image_w - text_width)/2, (image_h - text_height*1.5)/2), text, font=font, fill=stroke_color)
+    canvas.rectangle([(0, 0), (IMAGE_W, IMAGE_H)], outline=STROKE_COLOR, fill=BG_COLOR, width=50)
+    canvas.text(((IMAGE_W - text_width)/2, (IMAGE_H - text_height*1.5)/2), text, font=font, fill=STROKE_COLOR)
 
-    filename = text + ".png"
-    image.save(filename, bitmap_format='png')
+    filename = text + "." + IMAGE_FORMAT
+    image.save(filename, bitmap_format=IMAGE_FORMAT)
     print(filename)
 
     with open(text + '.asset', 'w') as meta_file:
@@ -54,7 +55,7 @@ while True:
 
     index = index + 1
     total_size = total_size + image_size
-    if total_size >= max_size:
+    if total_size >= MAX_DATA_SIZE:
         break
 
 os.chdir('..')

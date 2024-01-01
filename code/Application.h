@@ -266,7 +266,7 @@ struct AppDisplayInfo
 
 API bool appInitialize(const AppDesc& desc);
 API void appShowMouse(bool visible);
-API void appQuit(void);
+API void appQuit();
 API bool appSetClipboardString(const char* str);
 API const char* appGetClipboardString();
 API const char* appGetName();

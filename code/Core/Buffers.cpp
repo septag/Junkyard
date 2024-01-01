@@ -41,6 +41,20 @@ bool _private::handleGrowPoolTable(HandlePoolTable** pTbl, Allocator* alloc)
     return true;
 }
 
+_private::HandlePoolTable* _private::handleClone(HandlePoolTable* tbl, Allocator* alloc)
+{
+    ASSERT(tbl->capacity);
+    HandlePoolTable* newTable = handleCreatePoolTable(tbl->capacity, alloc);
+    if (!newTable)
+        return nullptr;
+
+    newTable->count = tbl->count;
+    memcpy(newTable->dense, tbl->dense, sizeof(uint32) * tbl->capacity);
+    memcpy(newTable->sparse, tbl->sparse, sizeof(uint32) * tbl->capacity);
+
+    return newTable;
+}
+
 uint32 _private::handleNew(HandlePoolTable* tbl)
 {
     if (tbl->count < tbl->capacity) {

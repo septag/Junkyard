@@ -5,6 +5,7 @@
 #include "../Core/TracyHelper.h"
 #include "../Core/Jobs.h"
 #include "../Core/MathAll.h"
+#include "../Core/System.h"
 
 #include "../AssetManager.h"
 #include "../VirtualFS.h"
@@ -23,7 +24,7 @@
 
 #include "../Tool/Console.h"
 
-struct AppImpl : AppCallbacks
+struct AppImpl final : AppCallbacks
 {
     GfxPipeline pipeline;
     GfxBuffer uniformBuffer;
@@ -84,6 +85,24 @@ struct AppImpl : AppCallbacks
 
         logInfo("Use right mouse button to rotate camera. And [TAB] to switch between Orbital and FPS (WASD) camera");
 
+        auto ReadFileFn = [](AsyncFile* file, bool failed) {
+            if (!failed) {
+                const char* data = (const char*)file->data;
+                logDebug("Reading %s done. size = %u", file->filepath.CStr(), file->size);
+                return;
+            }
+            else {
+                logError("Reading %s failed", file->filepath.CStr());
+            }
+
+            asyncClose(file);
+        };
+
+        AsyncFile* f = asyncReadFile("C:/Projects/Junkyard/code/Graphics/CousineFont.h", AsyncFileRequest { .readFn = ReadFileFn });
+        if (!f) {
+            logError("Reading failed. File could not be opened");
+        }
+
         return true;
     };
     
@@ -121,7 +140,6 @@ struct AppImpl : AppCallbacks
         PROFILE_ZONE(true);
 
         JobsSignal signal;
-        signal.Initialize();
         // _private::jobsDebugThreadStats();
         jobsDispatchAuto(JobsType::ShortTask, EvenTask, &signal, 1);
         logDebug("Waiting on EvenTask");

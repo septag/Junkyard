@@ -82,7 +82,7 @@ static DWORD WINAPI threadStubFn(LPVOID arg)
 
 Thread::Thread()
 {
-    ThreadImpl* thrd = reinterpret_cast<ThreadImpl*>(this->mData);
+    ThreadImpl* thrd = reinterpret_cast<ThreadImpl*>(mData);
     thrd->threadFn = nullptr;
     thrd->handle = nullptr;
     thrd->userData = nullptr;
@@ -95,7 +95,7 @@ Thread::Thread()
 
 bool Thread::Start(const ThreadDesc& desc)
 {
-    ThreadImpl* thrd = reinterpret_cast<ThreadImpl*>(this->mData);
+    ThreadImpl* thrd = reinterpret_cast<ThreadImpl*>(mData);
     ASSERT(thrd->handle == nullptr && !thrd->init);
 
     thrd->sem.Initialize();
@@ -118,7 +118,7 @@ bool Thread::Start(const ThreadDesc& desc)
 
 int Thread::Stop()
 {
-    ThreadImpl* thrd = reinterpret_cast<ThreadImpl*>(this->mData);
+    ThreadImpl* thrd = reinterpret_cast<ThreadImpl*>(mData);
     DWORD exitCode = 0;
     if (thrd->handle != nullptr) {
         ASSERT_MSG(thrd->init, "Thread is not init!");
@@ -137,13 +137,13 @@ int Thread::Stop()
 
 bool Thread::IsRunning()
 {
-    ThreadImpl* thrd = reinterpret_cast<ThreadImpl*>(this->mData);
+    ThreadImpl* thrd = reinterpret_cast<ThreadImpl*>(mData);
     return atomicLoad32Explicit(&thrd->running, AtomicMemoryOrder::Acquire) == 1;
 }
 
 void Thread::SetPriority(ThreadPriority prio)
 {
-    ThreadImpl* thrd = reinterpret_cast<ThreadImpl*>(this->mData);
+    ThreadImpl* thrd = reinterpret_cast<ThreadImpl*>(mData);
 
     int prioWin = 0;
     switch (prio) {
@@ -162,46 +162,46 @@ void Thread::SetPriority(ThreadPriority prio)
 // Mutex
 void Mutex::Initialize(uint32 spinCount)
 {
-    MutexImpl* _m = reinterpret_cast<MutexImpl*>(this->mData);
+    MutexImpl* _m = reinterpret_cast<MutexImpl*>(mData);
     [[maybe_unused]] BOOL r = InitializeCriticalSectionAndSpinCount(&_m->handle, spinCount);
     ASSERT_ALWAYS(r, "InitializeCriticalSection failed");
 }
 
 void Mutex::Release()
 {
-    MutexImpl* _m = reinterpret_cast<MutexImpl*>(this->mData);
+    MutexImpl* _m = reinterpret_cast<MutexImpl*>(mData);
     DeleteCriticalSection(&_m->handle);
 }
 
 void Mutex::Enter()
 {
-    MutexImpl* _m = reinterpret_cast<MutexImpl*>(this->mData);
+    MutexImpl* _m = reinterpret_cast<MutexImpl*>(mData);
     EnterCriticalSection(&_m->handle);
 }
 
 void Mutex::Exit()
 {
-    MutexImpl* _m = reinterpret_cast<MutexImpl*>(this->mData);
+    MutexImpl* _m = reinterpret_cast<MutexImpl*>(mData);
     LeaveCriticalSection(&_m->handle);
 }
 
 bool Mutex::TryEnter()
 {
-    MutexImpl* _m = reinterpret_cast<MutexImpl*>(this->mData);
+    MutexImpl* _m = reinterpret_cast<MutexImpl*>(mData);
     return TryEnterCriticalSection(&_m->handle) == TRUE;
 }
 
 // Semaphore
 void Semaphore::Initialize()
 {
-    SemaphoreImpl* _sem = reinterpret_cast<SemaphoreImpl*>(this->mData);
+    SemaphoreImpl* _sem = reinterpret_cast<SemaphoreImpl*>(mData);
     _sem->handle = CreateSemaphoreA(nullptr, 0, LONG_MAX, nullptr);
     ASSERT_ALWAYS(_sem->handle != INVALID_HANDLE_VALUE, "Failed to create semaphore");
 }
 
 void Semaphore::Release()
 {
-    SemaphoreImpl* _sem = reinterpret_cast<SemaphoreImpl*>(this->mData);
+    SemaphoreImpl* _sem = reinterpret_cast<SemaphoreImpl*>(mData);
     if (_sem->handle != INVALID_HANDLE_VALUE) {
         CloseHandle(_sem->handle);
         _sem->handle = INVALID_HANDLE_VALUE;
@@ -210,14 +210,14 @@ void Semaphore::Release()
 
 void Semaphore::Post(uint32 count)
 {
-    SemaphoreImpl* _sem = reinterpret_cast<SemaphoreImpl*>(this->mData);
+    SemaphoreImpl* _sem = reinterpret_cast<SemaphoreImpl*>(mData);
     ASSERT(_sem->handle != INVALID_HANDLE_VALUE);
     ReleaseSemaphore(_sem->handle, count, nullptr);
 }
 
 bool Semaphore::Wait(uint32 msecs)
 {
-    SemaphoreImpl* _sem = reinterpret_cast<SemaphoreImpl*>(this->mData);
+    SemaphoreImpl* _sem = reinterpret_cast<SemaphoreImpl*>(mData);
     ASSERT(_sem->handle != INVALID_HANDLE_VALUE);
     return WaitForSingleObject(_sem->handle, (DWORD)msecs) == WAIT_OBJECT_0;
 }
@@ -227,7 +227,7 @@ bool Semaphore::Wait(uint32 msecs)
 // https://github.com/mattiasgustavsson/libs/blob/master/thread.h
 void Signal::Initialize()
 {
-    SignalImpl* _sig = reinterpret_cast<SignalImpl*>(this->mData);
+    SignalImpl* _sig = reinterpret_cast<SignalImpl*>(mData);
     [[maybe_unused]] BOOL r = InitializeCriticalSectionAndSpinCount(&_sig->mutex, 32);
     ASSERT_ALWAYS(r, "InitializeCriticalSectionAndSpinCount failed");
     InitializeConditionVariable(&_sig->cond);
@@ -236,25 +236,25 @@ void Signal::Initialize()
 
 void Signal::Release()
 {
-    SignalImpl* _sig = reinterpret_cast<SignalImpl*>(this->mData);
+    SignalImpl* _sig = reinterpret_cast<SignalImpl*>(mData);
     DeleteCriticalSection(&_sig->mutex);
 }
 
 void Signal::Raise()
 {
-    SignalImpl* _sig = reinterpret_cast<SignalImpl*>(this->mData);
+    SignalImpl* _sig = reinterpret_cast<SignalImpl*>(mData);
     WakeConditionVariable(&_sig->cond);
 }
 
 void Signal::RaiseAll()
 {
-    SignalImpl* _sig = reinterpret_cast<SignalImpl*>(this->mData);
+    SignalImpl* _sig = reinterpret_cast<SignalImpl*>(mData);
     WakeAllConditionVariable(&_sig->cond);
 }
 
 bool Signal::Wait(uint32 msecs)
 {
-    SignalImpl* _sig = reinterpret_cast<SignalImpl*>(this->mData);
+    SignalImpl* _sig = reinterpret_cast<SignalImpl*>(mData);
 
     bool timedOut = false;
     EnterCriticalSection(&_sig->mutex);
@@ -273,7 +273,7 @@ bool Signal::Wait(uint32 msecs)
 
 void Signal::Decrement()
 {
-    SignalImpl* _sig = reinterpret_cast<SignalImpl*>(this->mData);
+    SignalImpl* _sig = reinterpret_cast<SignalImpl*>(mData);
     EnterCriticalSection(&_sig->mutex);
     --_sig->value;
     LeaveCriticalSection(&_sig->mutex);
@@ -281,7 +281,7 @@ void Signal::Decrement()
 
 void Signal::Increment()
 {
-    SignalImpl* _sig = reinterpret_cast<SignalImpl*>(this->mData);
+    SignalImpl* _sig = reinterpret_cast<SignalImpl*>(mData);
     EnterCriticalSection(&_sig->mutex);
     ++_sig->value;
     LeaveCriticalSection(&_sig->mutex);
@@ -289,7 +289,7 @@ void Signal::Increment()
 
 bool Signal::WaitOnCondition(bool(*condFn)(int value, int reference), int reference, uint32 msecs)
 {
-    SignalImpl* _sig = reinterpret_cast<SignalImpl*>(this->mData);
+    SignalImpl* _sig = reinterpret_cast<SignalImpl*>(mData);
 
     bool timedOut = false;
     EnterCriticalSection(&_sig->mutex);
@@ -308,7 +308,7 @@ bool Signal::WaitOnCondition(bool(*condFn)(int value, int reference), int refere
 
 void Signal::Set(int value)
 {
-    SignalImpl* _sig = reinterpret_cast<SignalImpl*>(this->mData);
+    SignalImpl* _sig = reinterpret_cast<SignalImpl*>(mData);
 
     EnterCriticalSection(&_sig->mutex);
     _sig->value = value;
@@ -616,17 +616,17 @@ SysProcess::SysProcess() :
 
 SysProcess::~SysProcess()
 {
-    if (this->mStdOutPipeRead != INVALID_HANDLE_VALUE) 
-        CloseHandle(this->mStdOutPipeRead);
-    if (this->mStdErrPipeRead != INVALID_HANDLE_VALUE)
-        CloseHandle(this->mStdErrPipeRead);
-    if (this->mProcess != INVALID_HANDLE_VALUE)
-        CloseHandle(this->mProcess);
+    if (mStdOutPipeRead != INVALID_HANDLE_VALUE) 
+        CloseHandle(mStdOutPipeRead);
+    if (mStdErrPipeRead != INVALID_HANDLE_VALUE)
+        CloseHandle(mStdErrPipeRead);
+    if (mProcess != INVALID_HANDLE_VALUE)
+        CloseHandle(mProcess);
 }
 
 bool SysProcess::Run(const char* cmdline, SysProcessFlags flags, const char* cwd)
 {
-    ASSERT(this->mProcess == INVALID_HANDLE_VALUE);
+    ASSERT(mProcess == INVALID_HANDLE_VALUE);
 
     HANDLE stdOutPipeWrite = INVALID_HANDLE_VALUE;
     HANDLE stdErrPipeWrite = INVALID_HANDLE_VALUE;
@@ -638,16 +638,16 @@ bool SysProcess::Run(const char* cmdline, SysProcessFlags flags, const char* cwd
         saAttr.nLength = sizeof(SECURITY_ATTRIBUTES); 
         saAttr.bInheritHandle = inheritHandles; 
 
-        r = CreatePipe(&this->mStdOutPipeRead, &stdOutPipeWrite, &saAttr, 0);
+        r = CreatePipe(&mStdOutPipeRead, &stdOutPipeWrite, &saAttr, 0);
         ASSERT_MSG(r, "CreatePipe failed");
 
-        r = CreatePipe(&this->mStdErrPipeRead, &stdErrPipeWrite, &saAttr, 0);
+        r = CreatePipe(&mStdErrPipeRead, &stdErrPipeWrite, &saAttr, 0);
         ASSERT_MSG(r, "CreatePipe failed");
 
         if (inheritHandles) {
-            r = SetHandleInformation(this->mStdOutPipeRead, HANDLE_FLAG_INHERIT, 0);
+            r = SetHandleInformation(mStdOutPipeRead, HANDLE_FLAG_INHERIT, 0);
             ASSERT_MSG(r, "SetHandleInformation for pipe failed");
-            r = SetHandleInformation(this->mStdErrPipeRead, HANDLE_FLAG_INHERIT, 0);
+            r = SetHandleInformation(mStdErrPipeRead, HANDLE_FLAG_INHERIT, 0);
             ASSERT_MSG(r, "SetHandleInformation for pipe failed");
         }
     }
@@ -678,7 +678,7 @@ bool SysProcess::Run(const char* cmdline, SysProcessFlags flags, const char* cwd
     }
 
     CloseHandle(procInfo.hThread);
-    this->mProcess = procInfo.hProcess;
+    mProcess = procInfo.hProcess;
 
     if ((flags & SysProcessFlags::CaptureOutput) == SysProcessFlags::CaptureOutput) {
         CloseHandle(stdOutPipeWrite);
@@ -690,45 +690,78 @@ bool SysProcess::Run(const char* cmdline, SysProcessFlags flags, const char* cwd
 
 void SysProcess::Wait() const
 {
-    ASSERT(this->mProcess != INVALID_HANDLE_VALUE);
-    WaitForSingleObject(this->mProcess, INFINITE);
+    ASSERT(mProcess != INVALID_HANDLE_VALUE);
+    WaitForSingleObject(mProcess, INFINITE);
 }
 
 bool SysProcess::IsRunning() const
 {
-    ASSERT(this->mProcess != INVALID_HANDLE_VALUE);
-    return WaitForSingleObject(this->mProcess, 0) != WAIT_OBJECT_0;
+    ASSERT(mProcess != INVALID_HANDLE_VALUE);
+    return WaitForSingleObject(mProcess, 0) != WAIT_OBJECT_0;
 }
+
+static void sysTerminateChildProcesses(DWORD parentProcessId) 
+{
+    HANDLE hSnapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    if (hSnapshot != INVALID_HANDLE_VALUE) {
+        PROCESSENTRY32 pe { sizeof(PROCESSENTRY32) };
+
+        if (Process32First(hSnapshot, &pe)) {
+            do {
+                if (pe.th32ParentProcessID == parentProcessId) {
+                    HANDLE childProcess = OpenProcess(PROCESS_TERMINATE, TRUE, pe.th32ProcessID);
+                    if (childProcess) {
+                        logDebug("Terminating child process: %u (%s)", pe.th32ProcessID, pe.szExeFile);
+                        sysTerminateChildProcesses(pe.th32ProcessID);
+
+                        TerminateProcess(childProcess, 1);
+                        CloseHandle(childProcess);
+                    }
+                }
+            } while (Process32Next(hSnapshot, &pe));
+        }
+
+        CloseHandle(hSnapshot);
+    }
+};
 
 void SysProcess::Abort()
 {
-    ASSERT(this->mProcess != INVALID_HANDLE_VALUE);
-    TerminateProcess(this->mProcess, 1);
+    ASSERT(mProcess != INVALID_HANDLE_VALUE);
+
+    // Start by terminating all child processes recursively
+    DWORD processId = GetProcessId(mProcess);
+    sysTerminateChildProcesses(processId);
+
+    BOOL r = TerminateProcess(mProcess, 1);
+    if (!r) {
+        logError("Process failed to terminate: 0x%x (ErrorCode: %u)", mProcess, GetLastError());
+    }
 }
 
 int SysProcess::GetExitCode() const
 {
-    ASSERT(this->mProcess != INVALID_HANDLE_VALUE);
+    ASSERT(mProcess != INVALID_HANDLE_VALUE);
     DWORD exitCode = UINT32_MAX;
-    GetExitCodeProcess(this->mProcess, &exitCode);
+    GetExitCodeProcess(mProcess, &exitCode);
     return static_cast<int>(exitCode);
 }
 
 uint32 SysProcess::ReadStdOut(void* data, uint32 size) const
 {
-    ASSERT(this->mStdOutPipeRead != INVALID_HANDLE_VALUE);
+    ASSERT(mStdOutPipeRead != INVALID_HANDLE_VALUE);
 
     DWORD bytesRead;
-    BOOL r = ReadFile((HANDLE)this->mStdOutPipeRead, data, size, &bytesRead, nullptr);
-    return (r && bytesRead) ? bytesRead : 0;
+    BOOL r = ReadFile((HANDLE)mStdOutPipeRead, data, size, &bytesRead, nullptr);
+    return (r && bytesRead) ? bytesRead : 0; 
 }
 
 uint32 SysProcess::ReadStdErr(void* data, uint32 size) const
 {
-    ASSERT(this->mStdErrPipeRead != INVALID_HANDLE_VALUE);
+    ASSERT(mStdErrPipeRead != INVALID_HANDLE_VALUE);
 
     DWORD bytesRead;
-    BOOL r = ReadFile((HANDLE)this->mStdErrPipeRead, data, size, &bytesRead, nullptr);
+    BOOL r = ReadFile((HANDLE)mStdErrPipeRead, data, size, &bytesRead, nullptr);
     return (r && bytesRead) ? bytesRead : 0;
 }
 #endif  // PLATFORM_DESKTOP
@@ -893,7 +926,7 @@ bool sysWin32SetPrivilege(const char* name, bool enable)
 
 bool SysUUID::operator==(const SysUUID& uuid) const
 {
-    return memcmp(this->data, uuid.data, sizeof(UUIDImpl)) == 0;
+    return memcmp(data, uuid.data, sizeof(UUIDImpl)) == 0;
 }
 
 bool sysUUIDGenerate(SysUUID* _uuid)
@@ -1045,7 +1078,7 @@ bool memVirtualEnableLargePages(size_t* largePageSize)
     return true;
 }
 
-//----------------------------------------------------------------------------
+//----------------------------------------------------------------------------------------------------------------------
 // File
 struct FileWin
 {
@@ -1056,10 +1089,20 @@ struct FileWin
 };
 static_assert(sizeof(FileWin) <= sizeof(File));
 
-//------------------------------------------------------------------------
+static inline bool fileGetInfo(HANDLE hFile, uint64* outFileSize, uint64* outModifiedTime)
+{
+    BY_HANDLE_FILE_INFORMATION fileInfo {};
+    if (!GetFileInformationByHandle(hFile, &fileInfo)) 
+        return false;
+
+    *outFileSize = (uint64(fileInfo.nFileSizeHigh)<<32) | uint64(fileInfo.nFileSizeLow);
+    *outModifiedTime = uint64(fileInfo.ftLastAccessTime.dwHighDateTime)<<32 | uint64(fileInfo.ftLastAccessTime.dwLowDateTime);
+    return true;
+}
+
 File::File()
 {
-    FileWin* f = (FileWin*)this->mData;
+    FileWin* f = (FileWin*)mData;
 
     f->handle = INVALID_HANDLE_VALUE;
     f->flags = FileOpenFlags::None;
@@ -1072,21 +1115,21 @@ bool File::Open(const char* filepath, FileOpenFlags flags)
     ASSERT((flags & (FileOpenFlags::Read|FileOpenFlags::Write)) != (FileOpenFlags::Read|FileOpenFlags::Write));
     ASSERT((flags & (FileOpenFlags::Read|FileOpenFlags::Write)) != FileOpenFlags::None);
 
-    FileWin* f = (FileWin*)this->mData;
+    FileWin* f = (FileWin*)mData;
 
-    uint32 accessFlags = GENERIC_READ;
+    uint32 accessFlags = 0;
     uint32 attrs = FILE_ATTRIBUTE_NORMAL;
     uint32 createFlags = 0;
     uint32 shareFlags = 0;
 
     if ((flags & FileOpenFlags::Read) == FileOpenFlags::Read) {
+        accessFlags |= GENERIC_READ;
         createFlags = OPEN_EXISTING;
         shareFlags |= FILE_SHARE_READ;
     } else if ((flags & FileOpenFlags::Write) == FileOpenFlags::Write) {
-        shareFlags |= FILE_SHARE_WRITE;
         accessFlags |= GENERIC_WRITE;
-        createFlags |= (flags & FileOpenFlags::Append) == FileOpenFlags::Append ? 
-            OPEN_EXISTING : CREATE_ALWAYS;
+        createFlags |= (flags & FileOpenFlags::Append) == FileOpenFlags::Append ? OPEN_EXISTING : CREATE_ALWAYS;
+        shareFlags |= FILE_SHARE_WRITE;
     }
 
     if ((flags & FileOpenFlags::NoCache) == FileOpenFlags::NoCache)             attrs |= FILE_FLAG_NO_BUFFERING;
@@ -1101,20 +1144,13 @@ bool File::Open(const char* filepath, FileOpenFlags flags)
 
     f->handle = hfile;
     f->flags = flags;
-
-    BY_HANDLE_FILE_INFORMATION fileInfo {};
-    GetFileInformationByHandle(hfile, &fileInfo);
-    f->size = (flags & (FileOpenFlags::Read|FileOpenFlags::Append)) != FileOpenFlags::None ? 
-        (uint64(fileInfo.nFileSizeHigh)<<32 | uint64(fileInfo.nFileSizeLow)) : 0;
-    f->lastModifiedTime = uint64(fileInfo.ftLastAccessTime.dwHighDateTime)<<32 | uint64(fileInfo.ftLastAccessTime.dwLowDateTime);
-
-    return true;
-
+    
+    return fileGetInfo(hfile, &f->size, &f->lastModifiedTime);
 }
 
 void File::Close()
 {
-    FileWin* f = (FileWin*)this->mData;
+    FileWin* f = (FileWin*)mData;
 
     if (f->handle != INVALID_HANDLE_VALUE) {
         CloseHandle(f->handle);
@@ -1124,7 +1160,7 @@ void File::Close()
 
 size_t File::Read(void* dst, size_t size)
 {
-    FileWin* f = (FileWin*)this->mData;
+    FileWin* f = (FileWin*)mData;
     ASSERT(f->handle != INVALID_HANDLE_VALUE);
 
     if ((f->flags & FileOpenFlags::NoCache) == FileOpenFlags::NoCache) {
@@ -1144,7 +1180,7 @@ size_t File::Read(void* dst, size_t size)
 
 size_t File::Write(const void* src, size_t size)
 {
-    FileWin* f = (FileWin*)this->mData;
+    FileWin* f = (FileWin*)mData;
     ASSERT(f->handle != INVALID_HANDLE_VALUE);
 
     DWORD bytesWritten;
@@ -1157,7 +1193,7 @@ size_t File::Write(const void* src, size_t size)
 
 size_t File::Seek(size_t offset, FileSeekMode mode)
 {
-    FileWin* f = (FileWin*)this->mData;
+    FileWin* f = (FileWin*)mData;
     ASSERT(f->handle != INVALID_HANDLE_VALUE);
 
     DWORD moveMethod = 0;
@@ -1186,20 +1222,144 @@ size_t File::Seek(size_t offset, FileSeekMode mode)
 
 size_t File::GetSize() const
 {
-    FileWin* f = (FileWin*)this->mData;
+    FileWin* f = (FileWin*)mData;
     return size_t(f->size);    
 }
 
 uint64 File::GetLastModified() const
 {
-    FileWin* f = (FileWin*)this->mData;
+    FileWin* f = (FileWin*)mData;
     return f->lastModifiedTime;
 }
 
 bool File::IsOpen() const
 {
-    FileWin* f = (FileWin*)this->mData;
+    FileWin* f = (FileWin*)mData;
     return f->handle != INVALID_HANDLE_VALUE;
+}
+
+//----------------------------------------------------------------------------------------------------------------------
+// AsyncFile
+struct AsyncFileWin
+{
+    AsyncFile f;
+    HANDLE hFile;
+    OVERLAPPED overlapped;
+    Allocator* alloc;
+    AsyncFileCallback readFn;
+};
+
+// Win32 callback (Called from one of kernel's IO threads)
+static void asyncReadFileCallback(DWORD dwErrorCode, DWORD dwNumberOfBytesTransfered, LPOVERLAPPED lpOverlapped)
+{
+    size_t overlappedOffset = offsetof(AsyncFileWin, overlapped);
+    AsyncFileWin* file = (AsyncFileWin*)((uint8*)lpOverlapped - overlappedOffset);
+    ASSERT(file->readFn);
+
+    file->readFn(&file->f, dwErrorCode != 0 && dwNumberOfBytesTransfered == file->f.size);
+}
+
+AsyncFile* asyncReadFile(const char* filepath, const AsyncFileRequest& request)
+{
+    HANDLE hFile = CreateFileA(filepath, GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL|FILE_FLAG_OVERLAPPED, NULL);
+    if (hFile == INVALID_HANDLE_VALUE)
+        return nullptr;
+    
+    uint64 fileSize;
+    uint64 fileModificationTime;
+    if (!fileGetInfo(hFile, &fileSize, &fileModificationTime) || fileSize == 0) {
+        CloseHandle(hFile);
+        return nullptr;
+    }
+    ASSERT_MSG(fileSize < UINT32_MAX, "Large file sizes are not supported by win32 overlapped API");
+    ASSERT_MSG(!request.userDataAllocateSize || (request.userData && request.userDataAllocateSize), 
+            "`userDataAllocatedSize` should be accompanied with a valid `userData` pointer");
+
+    BuffersAllocPOD<AsyncFileWin> alloc;
+    uint8* data;
+    uint8* userData = nullptr;
+    if (request.userDataAllocateSize) 
+        alloc.AddExternalPointerField<uint8>(&userData, request.userDataAllocateSize);
+    alloc.AddExternalPointerField<uint8>(&data, fileSize);
+    AsyncFileWin* file = alloc.Calloc(request.alloc);
+    file->f.filepath = filepath;
+    file->f.data = data;
+    file->f.size = uint32(fileSize);
+    file->f.lastModifiedTime = fileModificationTime;
+    if (request.userData) {
+        if (request.userDataAllocateSize) {
+            memcpy(userData, request.userData, request.userDataAllocateSize);
+            file->f.userData = userData;
+        }
+        else {
+            file->f.userData = request.userData;
+        }
+    }
+
+    file->hFile = hFile;
+    file->alloc = request.alloc;
+
+    if (request.readFn) {
+        file->readFn = request.readFn;
+        if (!BindIoCompletionCallback(file->hFile, asyncReadFileCallback, 0)) {
+            CloseHandle(file->hFile);
+            memFree(file, file->alloc);
+            return nullptr;
+        }
+    }
+
+    if (!ReadFile(hFile, file->f.data, DWORD(file->f.size), nullptr, &file->overlapped)) {
+        if (GetLastError() != ERROR_IO_PENDING) {
+            CloseHandle(file->hFile);
+            memFree(file, file->alloc);
+            return nullptr;
+        }
+    }
+
+    return &file->f;
+}
+
+void asyncClose(AsyncFile* file)
+{
+    if (!file)
+        return;
+
+    AsyncFileWin* fw = (AsyncFileWin*)file;
+    if (fw->hFile != INVALID_HANDLE_VALUE) {
+        DWORD numBytesTransfered;
+        if (!GetOverlappedResult(fw->hFile, &fw->overlapped, &numBytesTransfered, FALSE) && GetLastError() == ERROR_IO_PENDING)
+            CancelIo(fw->hFile);
+
+        CloseHandle(fw->hFile);
+        fw->hFile = INVALID_HANDLE_VALUE;
+
+        memFree(fw, fw->alloc);
+    }    
+}
+
+bool asyncWait(AsyncFile* file)
+{
+    ASSERT(file);
+    AsyncFileWin* fw = (AsyncFileWin*)file;
+    ASSERT(fw->hFile != INVALID_HANDLE_VALUE);
+
+    DWORD numBytesTransfered;
+    BOOL r = GetOverlappedResult(fw->hFile, &fw->overlapped, &numBytesTransfered, TRUE);
+    return r && numBytesTransfered == fw->f.size;
+}
+
+bool asyncIsFinished(AsyncFile* file, bool* outError)
+{
+    ASSERT(file);
+    AsyncFileWin* fw = (AsyncFileWin*)file;
+    ASSERT(fw->hFile != INVALID_HANDLE_VALUE);
+
+    DWORD numBytesTransfered;
+    BOOL r = GetOverlappedResult(fw->hFile, &fw->overlapped, &numBytesTransfered, FALSE);
+
+    if (outError)
+        *outError = GetLastError() != ERROR_IO_PENDING;
+    return r;
 }
 
 //----------------------------------------------------------------------------------------------------------------------
@@ -1259,14 +1419,14 @@ SocketTCP::SocketTCP() :
 
 void SocketTCP::Close()
 {
-    if (this->mSock != SOCKET_INVALID) {
-        if (this->mLive)
-            shutdown(this->mSock, SD_BOTH);
-        closesocket(this->mSock);
+    if (mSock != SOCKET_INVALID) {
+        if (mLive)
+            shutdown(mSock, SD_BOTH);
+        closesocket(mSock);
 
-        this->mSock = SOCKET_INVALID;
-        this->mErrCode = SocketErrorCode::None;
-        this->mLive = false;
+        mSock = SOCKET_INVALID;
+        mErrCode = SocketErrorCode::None;
+        mLive = false;
     }
 }
 
@@ -1294,20 +1454,20 @@ bool SocketTCP::Listen(uint16 port, uint32 maxConnections)
     addr.sin_addr.s_addr = INADDR_ANY;
     addr.sin_port = htons(port);
 
-    if (bind(this->mSock, (struct sockaddr*)&addr, sizeof(addr)) < 0) {
-        this->mErrCode = _private::socketTranslatePlatformErrorCode();
+    if (bind(mSock, (struct sockaddr*)&addr, sizeof(addr)) < 0) {
+        mErrCode = _private::socketTranslatePlatformErrorCode();
         logError("SocketTCP: failed binding the socket to port: %d", port);
         return false;
     }
 
     logVerbose("SocketTCP: Listening on port '%d' for incoming connections ...", port);
     int _maxConnections = maxConnections > INT32_MAX ? INT32_MAX : static_cast<int>(maxConnections);
-    bool success = listen(this->mSock, _maxConnections) >= 0;
+    bool success = listen(mSock, _maxConnections) >= 0;
     
     if (!success) 
-        this->mErrCode = _private::socketTranslatePlatformErrorCode();
+        mErrCode = _private::socketTranslatePlatformErrorCode();
     else
-        this->mLive = true;
+        mLive = true;
 
     return success;
 }
@@ -1320,8 +1480,8 @@ SocketTCP SocketTCP::Accept(char* clientUrl, uint32 clientUrlSize)
 
     struct sockaddr_in addr;
     socklen_t addrlen = sizeof(addr);
-    newSock.mSock = accept(this->mSock, (struct sockaddr*)&addr, &addrlen);
-    if (this->mLive && newSock.mSock == SOCKET_INVALID) {
+    newSock.mSock = accept(mSock, (struct sockaddr*)&addr, &addrlen);
+    if (mLive && newSock.mSock == SOCKET_INVALID) {
         newSock.mErrCode = _private::socketTranslatePlatformErrorCode();
         logError("SocketTCP: failed to accept the new socket");
         return newSock;
@@ -1389,21 +1549,21 @@ SocketTCP SocketTCP::Connect(const char* url)
 uint32 SocketTCP::Write(const void* src, uint32 size)
 {
     ASSERT(IsValid());
-    ASSERT(this->mLive);
+    ASSERT(mLive);
     uint32 totalBytesSent = 0;
 
     while (size > 0) {
-        int bytesSent = send(this->mSock, reinterpret_cast<const char*>(src) + totalBytesSent, size, 0);
+        int bytesSent = send(mSock, reinterpret_cast<const char*>(src) + totalBytesSent, size, 0);
         if (bytesSent == 0) {
             break;
         }
         else if (bytesSent == -1) {
-            this->mErrCode = _private::socketTranslatePlatformErrorCode();
-            if (this->mErrCode == SocketErrorCode::SocketShutdown ||
-                this->mErrCode == SocketErrorCode::NotConnected)
+            mErrCode = _private::socketTranslatePlatformErrorCode();
+            if (mErrCode == SocketErrorCode::SocketShutdown ||
+                mErrCode == SocketErrorCode::NotConnected)
             {
                 logDebug("SocketTCP: socket connection closed forcefully by the peer");
-                this->mLive = false;
+                mLive = false;
             }
             return UINT32_MAX;
         }
@@ -1418,16 +1578,16 @@ uint32 SocketTCP::Write(const void* src, uint32 size)
 uint32 SocketTCP::Read(void* dst, uint32 dstSize)
 {
     ASSERT(IsValid());
-    ASSERT(this->mLive);
+    ASSERT(mLive);
 
-    int bytesRecv = recv(this->mSock, reinterpret_cast<char*>(dst), dstSize, 0);
+    int bytesRecv = recv(mSock, reinterpret_cast<char*>(dst), dstSize, 0);
     if (bytesRecv == -1) {
-        this->mErrCode = _private::socketTranslatePlatformErrorCode();
-        if (this->mErrCode == SocketErrorCode::SocketShutdown ||
-            this->mErrCode == SocketErrorCode::NotConnected)
+        mErrCode = _private::socketTranslatePlatformErrorCode();
+        if (mErrCode == SocketErrorCode::SocketShutdown ||
+            mErrCode == SocketErrorCode::NotConnected)
         {
             logDebug("SocketTCP: socket connection closed forcefully by the peer");
-            this->mLive = false;
+            mLive = false;
         }
         return UINT32_MAX;
     }
@@ -1437,7 +1597,7 @@ uint32 SocketTCP::Read(void* dst, uint32 dstSize)
 
 bool SocketTCP::IsValid() const
 {
-    return this->mSock != SOCKET_INVALID;
+    return mSock != SOCKET_INVALID;
 }
 
 #endif // PLATFORM_WINDOWS

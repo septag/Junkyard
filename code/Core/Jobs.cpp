@@ -17,15 +17,15 @@
 namespace _limits
 {
     static constexpr uint32 kJobsMaxFibers = 128;
-    static constexpr uint32 kJobsMaxInstances = 128;
-    static constexpr uint32 kJobsMaxPending = 512;
+    static constexpr uint32 kJobsMaxInstances = 512;
+    static constexpr uint32 kJobsMaxPending = 4096;
 
 #if defined(TRACY_ENABLE) && CONFIG_ENABLE_ASSERT
     static constexpr uint32 kJobsMaxTracyCStringSize = 4*kMB;
 #endif
 }
 
-#define JOBS_USE_ANDERSON_LOCK
+#define JOBS_USE_ANDERSON_LOCK  // Experimental
 #ifdef JOBS_USE_ANDERSON_LOCK
     using JobsLock = AtomicALock;
     using JobsLockScope = AtomicALockScope;
@@ -78,13 +78,8 @@ static_assert(sizeof(JobsSignalInternal) <= sizeof(JobsSignal), "Mismatch sizes 
 struct JobsFiber
 {
     uint32 ownerTid;
-    uint32 index;
-    JobsPriority prio;
     mco_coro* co;
     mco_desc coDesc;
-    JobsInstance* instance;
-    JobsCallback callback;
-    void* userData;
     atomicUint32* childCounter;
     JobsFiberProperties* props;
     JobsSignalInternal* signal;
@@ -117,29 +112,29 @@ struct JobsWaitingList
     JobsFiberProperties* waitingListLast[static_cast<uint32>(JobsPriority::_Count)];
 };
 
-struct JobsFiberPropertiesPool
+template <typename _T, uint32 _MaxCount> 
+struct JobsAtomicPool
 {
-    void Initialize(Allocator* alloc);
-    JobsFiberProperties* New();
-    void Delete(JobsFiberProperties* props);
+    void Create(Allocator* alloc);
+    _T* New();
+    void Delete(_T* props);
 
-    JobsFiberProperties* props;
-    JobsFiberProperties** ptrs;
-    alignas(CACHE_LINE_SIZE) atomicUint32 index;
+    _T* mProps;
+    _T** mPtrs;
+    alignas(CACHE_LINE_SIZE) atomicUint32 mIndex;
 };
 
 struct JobsContext
 {
-    Allocator* alloc;
-    Thread* threads[static_cast<uint32>(JobsType::_Count)];
-    uint32 numThreads;
+    JobsInitParams initParams;
+    Thread* threads[uint32(JobsType::_Count)];
+    uint32 numThreads[uint32(JobsType::_Count)];
     MemTlsfAllocator_ThreadSafe fiberAlloc;
-    PoolBuffer<JobsInstance> instancePool;
-    JobsFiberPropertiesPool fiberPropsPool;
-    JobsWaitingList waitingLists[static_cast<uint32>(JobsType::_Count)];
+    JobsAtomicPool<JobsInstance, _limits::kJobsMaxInstances> instancePool;
+    JobsAtomicPool<JobsFiberProperties, _limits::kJobsMaxPending> fiberPropsPool;
+    JobsWaitingList waitingLists[uint32(JobsType::_Count)];
     JobsLock waitingListLock;
-    AtomicLock instanceLock;
-    Semaphore semaphores[static_cast<uint32>(JobsType::_Count)];
+    Semaphore semaphores[uint32(JobsType::_Count)];
     StaticArray<void*, 32> pointers;    // Storing memory pointers, For garbage collection at release
 
     // Stats
@@ -234,9 +229,9 @@ static void jobsJumpOut(mco_coro* co)
     _mco_switch(&context->ctx, &context->back_ctx);
 }
 
-INLINE void jobsAddToList(JobsWaitingList* list, JobsFiberProperties* props, JobsPriority prio)
+INLINE void jobsAddToList(JobsWaitingList* list, JobsFiberProperties* props)
 {
-    uint32 index = static_cast<uint32>(prio);
+    uint32 index = static_cast<uint32>(props->prio);
     JobsFiberProperties** pfirst = &list->waitingList[index];
     JobsFiberProperties** plast = &list->waitingListLast[index];
 
@@ -250,9 +245,9 @@ INLINE void jobsAddToList(JobsWaitingList* list, JobsFiberProperties* props, Job
         *pfirst = props;
 }
 
-INLINE void jobsRemoveFromList(JobsWaitingList* list, JobsFiberProperties* props, JobsPriority prio)
+INLINE void jobsRemoveFromList(JobsWaitingList* list, JobsFiberProperties* props)
 {
-    uint32 index = static_cast<uint32>(prio);
+    uint32 index = static_cast<uint32>(props->prio);
     JobsFiberProperties** pfirst = &list->waitingList[index];
     JobsFiberProperties** plast = &list->waitingListLast[index];
 
@@ -272,8 +267,9 @@ NO_INLINE static void jobsEntryFn(mco_coro* co)
     ASSERT(co);
     JobsFiber* fiber = reinterpret_cast<JobsFiber*>(co->storage);
     if (fiber) {
-        ASSERT(fiber->callback);
-        fiber->callback(fiber->index, fiber->userData);
+        JobsFiberProperties* props = fiber->props;
+        ASSERT(props->callback);
+        props->callback(props->index, props->userData);
     }
 }
 
@@ -293,13 +289,8 @@ NO_INLINE static JobsFiber* jobsCreateFiber(JobsFiberProperties* props)
 
     JobsFiber fiber {
         .ownerTid = 0,
-        .index = props->index,
-        .prio = props->prio,
         .co = co,
         .coDesc = desc,
-        .instance = props->instance,
-        .callback = props->callback,
-        .userData = props->userData,
         .props = props
     };
 
@@ -359,13 +350,12 @@ static void jobsSetFiberToCurrentThread(JobsFiber* fiber)
     else if (type == JobsType::LongTask)
         atomicFetchSub32Explicit(&gJobs.numBusyLongThreads, 1, AtomicMemoryOrder::Relaxed);
     
-    JobsInstance* inst = fiber->instance;
+    JobsInstance* inst = fiber->props->instance;
     if (fiber->co->state == MCO_DEAD) {
         if (atomicFetchSub32(&inst->counter, 1) == 1) {     // Job is finished with all the fibers
             // Delete the job instance automatically if only indicated by the API
             if (inst->isAutoDelete) {
-                AtomicLockScope instanceLock(gJobs.instanceLock);
-                gJobs.instancePool.Delete(fiber->instance);
+                gJobs.instancePool.Delete(inst);
                 atomicFetchSub32Explicit(&gJobs.numInstances, 1, AtomicMemoryOrder::Relaxed);
             }
         }
@@ -381,7 +371,7 @@ static void jobsSetFiberToCurrentThread(JobsFiber* fiber)
 
         {
             JobsLockScope lk(gJobs.waitingListLock);
-            jobsAddToList(&gJobs.waitingLists[typeIndex], fiber->props, fiber->prio);
+            jobsAddToList(&gJobs.waitingLists[typeIndex], fiber->props);
         }
 
         gJobs.semaphores[typeIndex].Post();
@@ -433,7 +423,7 @@ static int jobsThreadFn(void* userData)
 
                         fiber = props->fiber;
                         fiber->childCounter = nullptr;
-                        jobsRemoveFromList(list, props, static_cast<JobsPriority>(prioIdx));
+                        jobsRemoveFromList(list, props);
                         prioIdx = static_cast<uint32>(JobsPriority::_Count);    // break out of outer loop
                         break;
                     }
@@ -473,12 +463,7 @@ static JobsInstance* jobsDispatchInternal(bool isAutoDelete, JobsType type, Jobs
     uint32 numFibers = groupSize;
     ASSERT(numFibers);
 
-    JobsInstance* instance;
-    {
-        AtomicLockScope lock(gJobs.instanceLock);
-        ASSERT_MSG(!gJobs.instancePool.IsFull(), "Too many active job instances, increase `kJobsMaxInstances` or spawn less active jobs.");
-        instance = gJobs.instancePool.New();
-    }
+    JobsInstance* instance = gJobs.instancePool.New();
 
     memset(instance, 0x0, sizeof(*instance));
     atomicFetchAdd32Explicit(&gJobs.numInstances, 1, AtomicMemoryOrder::Relaxed);
@@ -512,7 +497,7 @@ static JobsInstance* jobsDispatchInternal(bool isAutoDelete, JobsType type, Jobs
                 .stackSize = stackSize
             };
     
-            jobsAddToList(&gJobs.waitingLists[uint32(type)], props, prio);
+            jobsAddToList(&gJobs.waitingLists[uint32(type)], props);
         }
     }
 
@@ -547,11 +532,7 @@ void jobsWaitForCompletion(JobsHandle instance)
         }
     }
 
-    {
-        AtomicLockScope lock(gJobs.instanceLock);
-        gJobs.instancePool.Delete(instance);
-    }
-
+    gJobs.instancePool.Delete(instance);
     atomicFetchSub32Explicit(&gJobs.numInstances, 1, AtomicMemoryOrder::Relaxed);
 }
 
@@ -571,20 +552,21 @@ void jobsDispatchAuto(JobsType type, JobsCallback callback, void* userData, uint
     jobsDispatchInternal(true, type, callback, userData, groupSize, prio, stackSize);
 }
 
-void jobsInitialize(Allocator* alloc, uint32 numThreads, bool debugAllocations)
+void jobsInitialize(const JobsInitParams& initParams)
 {
-    ASSERT(alloc);
+    ASSERT(initParams.alloc);
 
-    gJobs.alloc = alloc;
-    if (alloc->GetType() == AllocatorType::Budget)
-        gJobs.initHeapStart = ((MemBudgetAllocator*)alloc)->GetOffset();
+    gJobs.initParams = initParams;
+    if (initParams.alloc->GetType() == AllocatorType::Budget)
+        gJobs.initHeapStart = ((MemBudgetAllocator*)initParams.alloc)->GetOffset();
 
-    if (numThreads == 0) {
-        SysInfo info {};
-        sysGetSysInfo(&info);
-        numThreads = info.coreCount - 1;
-    }
-    numThreads = Max<uint32>(1, numThreads);        // We should have at least 1 worker thread, come on!
+    SysInfo info {};
+    sysGetSysInfo(&info);
+    uint32 numCores = info.coreCount;
+    ASSERT(numCores);
+
+    gJobs.numThreads[uint32(JobsType::ShortTask)] = initParams.numShortTaskThreads == 0 ? Max<uint32>(1, numCores - 1) : initParams.numShortTaskThreads;
+    gJobs.numThreads[uint32(JobsType::LongTask)] =  initParams.numLongTaskThreads == 0 ? Max<uint32>(1, numCores - 1) : initParams.numLongTaskThreads;
 
     // TODO: On android platforms, we have different core types, performance and efficiency
     //       We can't exactly figure that out yet, but current we are following the qualcomm pattern
@@ -596,48 +578,39 @@ void jobsInitialize(Allocator* alloc, uint32 numThreads, bool debugAllocations)
         debugStacktraceSaveStopPoint((void*)jobsEntryFn);   // workaround for stacktrace crash bug. see `debugStacktraceSaveStopPoint`
 
     #ifdef JOBS_USE_ANDERSON_LOCK
-        atomicALockInitialize(&gJobs.waitingListLock, numThreads+1, memAllocTyped<AtomicALockThread>(numThreads+1, alloc));
-        if (alloc->GetType() != AllocatorType::Budget)
+        uint32 numTotalThreads = gJobs.numThreads[0] + gJobs.numThreads[1] + 1;
+        atomicALockInitialize(&gJobs.waitingListLock, numTotalThreads, memAllocTyped<AtomicALockThread>(numTotalThreads, initParams.alloc));
+        if (initParams.alloc->GetType() != AllocatorType::Budget)
             gJobs.pointers.Add(gJobs.waitingListLock.slots);
     #endif
 
     gJobs.semaphores[uint32(JobsType::ShortTask)].Initialize();
     gJobs.semaphores[uint32(JobsType::LongTask)].Initialize();
     
+    // Fibers stack memory pool. 
+    // Reserve 1MB for each fiber stack. Be careful with maxFibers value, because the memory pool can get huge if high number is used
     {
-        size_t allocSize = 2*numThreads*kMB;
+        uint32 maxFibers = initParams.maxFibers ? initParams.maxFibers : _limits::kJobsMaxFibers;
+        size_t allocSize = 2*maxFibers*kMB;
         size_t poolSize = MemTlsfAllocator::GetMemoryRequirement(allocSize);
-        void* buffer = memAlloc(poolSize, alloc);
-        if (alloc->GetType() != AllocatorType::Budget)
+        void* buffer = memAlloc(poolSize, initParams.alloc);
+        if (initParams.alloc->GetType() != AllocatorType::Budget)
             gJobs.pointers.Add(buffer);
 
-        gJobs.fiberAlloc.Initialize(allocSize, buffer, poolSize, debugAllocations);
+        gJobs.fiberAlloc.Initialize(allocSize, buffer, poolSize, initParams.debugAllocations);
         gJobs.fiberHeapTotal = allocSize;
     }
 
-    {
-        // TODO: turn instancePool to fiberPropsPool if that one works
-        size_t poolSize = PoolBuffer<JobsInstance>::GetMemoryRequirement(_limits::kJobsMaxInstances);
-        void* buffer = memAlloc(poolSize, alloc);
-        if (alloc->GetType() != AllocatorType::Budget)
-            gJobs.pointers.Add(buffer);
-
-        gJobs.instancePool.Reserve(buffer, poolSize, _limits::kJobsMaxInstances);
-    }
-
-    {
-        gJobs.fiberPropsPool.Initialize(alloc);
-    }
-
-    gJobs.numThreads = numThreads;
+    gJobs.instancePool.Create(initParams.alloc);
+    gJobs.fiberPropsPool.Create(initParams.alloc);
 
     // Initialize and start the threads
     // LongTasks
-    gJobs.threads[uint32(JobsType::LongTask)] = NEW_ARRAY(alloc, Thread, numThreads);
-    if (alloc->GetType() != AllocatorType::Budget)
+    gJobs.threads[uint32(JobsType::LongTask)] = NEW_ARRAY(initParams.alloc, Thread, gJobs.numThreads[uint32(JobsType::LongTask)]);
+    if (initParams.alloc->GetType() != AllocatorType::Budget)
         gJobs.pointers.Add(gJobs.threads[uint32(JobsType::LongTask)]);
 
-    for (uint32 i = 0; i < numThreads; i++) {
+    for (uint32 i = 0; i < gJobs.numThreads[uint32(JobsType::LongTask)]; i++) {
         char name[32];
         strPrintFmt(name, sizeof(name), "LongTask_%u", i+1);
         gJobs.threads[uint32(JobsType::LongTask)][i].Start(ThreadDesc {
@@ -648,15 +621,15 @@ void jobsInitialize(Allocator* alloc, uint32 numThreads, bool debugAllocations)
             .flags = ThreadCreateFlags::None
         });
         ASSERT(gJobs.threads[uint32(JobsType::LongTask)][i].IsRunning());
-        gJobs.threads[uint32(JobsType::LongTask)][i].SetPriority(ThreadPriority::Low);
+        gJobs.threads[uint32(JobsType::LongTask)][i].SetPriority(ThreadPriority::Normal);
     }
     
     // ShortTasks
-    gJobs.threads[uint32(JobsType::ShortTask)] = NEW_ARRAY(alloc, Thread, numThreads);
-    if (alloc->GetType() != AllocatorType::Budget)
+    gJobs.threads[uint32(JobsType::ShortTask)] = NEW_ARRAY(initParams.alloc, Thread, gJobs.numThreads[uint32(JobsType::ShortTask)]);
+    if (initParams.alloc->GetType() != AllocatorType::Budget)
         gJobs.pointers.Add(gJobs.threads[uint32(JobsType::ShortTask)]);
 
-    for (uint32 i = 0; i < numThreads; i++) {
+    for (uint32 i = 0; i < gJobs.numThreads[uint32(JobsType::ShortTask)]; i++) {
         char name[32];
         strPrintFmt(name, sizeof(name), "ShortTask_%u", i+1);
         gJobs.threads[uint32(JobsType::ShortTask)][i].Start(ThreadDesc {
@@ -667,31 +640,33 @@ void jobsInitialize(Allocator* alloc, uint32 numThreads, bool debugAllocations)
             .flags = ThreadCreateFlags::None
         });
         ASSERT(gJobs.threads[uint32(JobsType::ShortTask)][i].IsRunning());
-        gJobs.threads[uint32(JobsType::ShortTask)][i].SetPriority(ThreadPriority::Normal);
+        gJobs.threads[uint32(JobsType::ShortTask)][i].SetPriority(ThreadPriority::High);
     }
 
     debugFiberScopeProtector_RegisterCallback([](void*)->bool { return JobsGetThreadData() && JobsGetThreadData()->curFiber != nullptr; });
 
-    if (alloc->GetType() == AllocatorType::Budget)
-        gJobs.initHeapSize = ((MemBudgetAllocator*)alloc)->GetOffset() - gJobs.initHeapStart;
+    if (initParams.alloc->GetType() == AllocatorType::Budget)
+        gJobs.initHeapSize = ((MemBudgetAllocator*)initParams.alloc)->GetOffset() - gJobs.initHeapStart;
 
-    logInfo("(init) Job dispatcher: %u threads", numThreads);
+    logInfo("(init) Job dispatcher: %u short task threads, %u long task threads", 
+            gJobs.numThreads[uint32(JobsType::ShortTask)],
+            gJobs.numThreads[uint32(JobsType::LongTask)]);
 }
 
 void jobsRelease()
 {
     gJobs.quit = true;
 
-    gJobs.semaphores[uint32(JobsType::ShortTask)].Post(gJobs.numThreads);
-    gJobs.semaphores[uint32(JobsType::LongTask)].Post(gJobs.numThreads);
+    gJobs.semaphores[uint32(JobsType::ShortTask)].Post(gJobs.numThreads[uint32(JobsType::ShortTask)]);
+    gJobs.semaphores[uint32(JobsType::LongTask)].Post(gJobs.numThreads[uint32(JobsType::LongTask)]);
 
     if (gJobs.threads[uint32(JobsType::ShortTask)]) {
-        for (uint32 i = 0; i < gJobs.numThreads; i++)
+        for (uint32 i = 0; i < gJobs.numThreads[uint32(JobsType::ShortTask)]; i++)
             gJobs.threads[uint32(JobsType::ShortTask)][i].Stop();
     }
 
     if (gJobs.threads[uint32(JobsType::LongTask)]) {
-        for (uint32 i = 0; i < gJobs.numThreads; i++)
+        for (uint32 i = 0; i < gJobs.numThreads[uint32(JobsType::LongTask)]; i++)
             gJobs.threads[uint32(JobsType::LongTask)][i].Stop();
     }
 
@@ -702,18 +677,19 @@ void jobsRelease()
     gJobs.semaphores[uint32(JobsType::LongTask)].Release();
 
     for (void* ptr : gJobs.pointers)
-        memFree(ptr, gJobs.alloc);
+        memFree(ptr, gJobs.initParams.alloc);
 }
 
 void jobsGetBudgetStats(JobsBudgetStats* stats)
 {
     JobsContext::MaxValues m = gJobs.maxValues[1];
 
-    stats->maxThreads = gJobs.numThreads;
+    stats->maxShortTaskThreads = gJobs.numThreads[uint32(JobsType::ShortTask)];
+    stats->maxLongTaskThreads = gJobs.numThreads[uint32(JobsType::LongTask)];
     stats->numBusyShortThreads = m.numBusyShortThreadsMax;
     stats->numBusyLongThreads = m.numBusyLongThreadsMax;
 
-    stats->maxFibers = _limits::kJobsMaxFibers;
+    stats->maxFibers = gJobs.initParams.maxFibers ? gJobs.initParams.maxFibers : _limits::kJobsMaxFibers;
     stats->numFibers = m.numFibersMax;
 
     stats->maxJobs = _limits::kJobsMaxInstances;
@@ -733,20 +709,17 @@ void jobsResetBudgetStats()
     memset(m, 0x0, sizeof(*m));    
 }
 
-uint32 jobsGetWorkerThreadsCount()
+uint32 jobsGetWorkerThreadsCount(JobsType type)
 {
-    return gJobs.numThreads;
+    ASSERT(type != JobsType::_Count);
+    return gJobs.numThreads[uint32(type)];
 }
 
-void JobsSignal::Initialize()
+JobsSignal::JobsSignal()
 {
     JobsSignalInternal* self = reinterpret_cast<JobsSignalInternal*>(data);
     self->signaled = 0;
     self->value = 0;
-}
-
-void JobsSignal::Release()
-{
 }
 
 void JobsSignal::Raise()
@@ -767,7 +740,7 @@ void JobsSignal::WaitOnCondition(bool(*condFn)(int value, int reference), int re
     uint32 spinCount = !PLATFORM_MOBILE;
     while (condFn(atomicLoad32Explicit(&self->value, AtomicMemoryOrder::Acquire), reference)) {
         if (JobsGetThreadData()) {
-            ASSERT_MSG(JobsGetThreadData()->curFiber, "Worker threads should always have a fiber assigned when 'Wait' is called");
+            ASSERT_MSG(JobsGetThreadData()->curFiber, "'Wait' should only be called during running job tasks");
 
             JobsFiber* curFiber = JobsGetThreadData()->curFiber;
             curFiber->ownerTid = JobsGetThreadData()->threadId;    // save ownerTid as a hint so we can pick this up again on the same thread context
@@ -804,31 +777,34 @@ void JobsSignal::Increment()
     atomicFetchSub32Explicit(&self->value, 1, AtomicMemoryOrder::Release);
 }
 
-inline void JobsFiberPropertiesPool::Initialize(Allocator* alloc)
+template <typename _T, uint32 _MaxCount> 
+inline void JobsAtomicPool<_T, _MaxCount>::Create(Allocator* alloc)
 {
-    this->props = memAllocTyped<JobsFiberProperties>(_limits::kJobsMaxPending, alloc);
-    this->ptrs = memAllocTyped<JobsFiberProperties*>(_limits::kJobsMaxPending, alloc);
-    this->index = _limits::kJobsMaxPending;
-    for (uint32 i = 0; i < _limits::kJobsMaxPending; i++)
-        this->ptrs[_limits::kJobsMaxPending - i - 1] = &this->props[i];
+    mProps = memAllocAlignedZeroTyped<_T>(_MaxCount, alignof(_T), alloc);
+    mPtrs = memAllocTyped<_T*>(_MaxCount, alloc);
+    mIndex = _MaxCount;
+    for (uint32 i = 0; i < _MaxCount; i++)
+        mPtrs[_MaxCount - i - 1] = &mProps[i];
     if (alloc->GetType() != AllocatorType::Budget) {
-        gJobs.pointers.Add(this->props);
-        gJobs.pointers.Add(this->ptrs);
+        gJobs.pointers.Add(mProps);
+        gJobs.pointers.Add(mPtrs);
     }
 }
 
-inline JobsFiberProperties* JobsFiberPropertiesPool::New()
+template <typename _T, uint32 _MaxCount> 
+inline _T* JobsAtomicPool<_T, _MaxCount>::New()
 {
-    uint32 idx = atomicFetchSub32(&this->index, 1);
-    ASSERT_MSG(idx != 0, "JobsFiberPropertiesPool is full");
-    return this->ptrs[idx - 1];
+    uint32 idx = atomicFetchSub32(&mIndex, 1);
+    ASSERT_MSG(idx != 0, "Pool is full. Increase _MaxCount (%u). See _limits namespace", _MaxCount);
+    return mPtrs[idx - 1];
 }
 
-inline void JobsFiberPropertiesPool::Delete(JobsFiberProperties* p)
+template <typename _T, uint32 _MaxCount>
+inline void JobsAtomicPool<_T, _MaxCount>::Delete(_T* p)
 {
-    uint32 idx = atomicFetchAdd32(&this->index, 1);
-    ASSERT_MSG(idx != _limits::kJobsMaxPending, "JobsFiberPropertiesPool delete fault");
-    this->ptrs[idx] = p;
+    uint32 idx = atomicFetchAdd32(&mIndex, 1);
+    ASSERT_MSG(idx != _MaxCount, "Pool delete fault");
+    mPtrs[idx] = p;
 }
 
 #ifdef TRACY_ENABLE

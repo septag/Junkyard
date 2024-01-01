@@ -47,10 +47,10 @@ static LogContext gLog;
 static const char* kLogEntryTypes[static_cast<uint32>(LogLevel::_Count)] = { 
     "", 
     "[ERROR] ", 
-    "[WARNING] ", 
+    "[WARN] ", 
     "", 
-    "[VERBOSE] ", 
-    "[DEBUG] "
+    "", 
+    "[D] "
 };
 
 void logSetSettings(LogLevel logLevel, bool breakOnErrors, bool treatWarningsAsErrors)

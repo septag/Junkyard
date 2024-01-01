@@ -28,7 +28,7 @@ static constexpr float  kRefreshStatsInterval = 0.2f;
 
 //------------------------------------------------------------------------
 // Memory Budgets
-static constexpr size_t kHeapInitBudget = 512*kMB;
+static constexpr size_t kHeapInitBudget = 2*kGB;
 
 struct EngineShortcutKeys
 {
@@ -158,7 +158,9 @@ bool engineInitialize()
     }
 
     _private::conInitialize();
-    jobsInitialize(&gEng.initHeap, gEng.sysInfo.coreCount - 1, settingsGet().engine.debugAllocations);
+    jobsInitialize(JobsInitParams { 
+                   .alloc = &gEng.initHeap, 
+                   .debugAllocations = settingsGet().engine.debugAllocations });
 
     if (settingsGet().engine.connectToServer) {
         if (!_private::remoteConnect(settingsGet().engine.remoteServicesUrl.CStr(), engineRemoteDisconnected)) {

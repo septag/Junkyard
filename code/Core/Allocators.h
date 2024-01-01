@@ -56,12 +56,14 @@ FORCE_INLINE void* memRealloc(void* ptr, size_t size, Allocator* alloc = memDefa
 FORCE_INLINE void  memFree(void* ptr, Allocator* alloc = memDefaultAlloc());
 
 FORCE_INLINE void* memAllocAligned(size_t size, uint32 align, Allocator* alloc = memDefaultAlloc());
-FORCE_INLINE void* memAllocZeroAligned(size_t size, uint32 align, Allocator* alloc = memDefaultAlloc());
+FORCE_INLINE void* memAllocAlignedZero(size_t size, uint32 align, Allocator* alloc = memDefaultAlloc());
 FORCE_INLINE void* memReallocAligned(void* ptr, size_t size, uint32 align, Allocator* alloc = memDefaultAlloc());
 FORCE_INLINE void  memFreeAligned(void* ptr, uint32 align, Allocator* alloc = memDefaultAlloc());
 
 template<typename _T> _T* memAllocTyped(uint32 count = 1, Allocator* alloc = memDefaultAlloc());
 template<typename _T> _T* memAllocZeroTyped(uint32 count = 1, Allocator* alloc = memDefaultAlloc());
+template<typename _T> _T* memAllocAlignedTyped(uint32 count = 1, uint32 align = CONFIG_MACHINE_ALIGNMENT, Allocator* alloc = memDefaultAlloc());
+template<typename _T> _T* memAllocAlignedZeroTyped(uint32 count = 1, uint32 align = CONFIG_MACHINE_ALIGNMENT, Allocator* alloc = memDefaultAlloc());
 template<typename _T> _T* memReallocTyped(void* ptr, uint32 count = 1, Allocator* alloc = memDefaultAlloc());
 template<typename _T> _T* memAllocCopy(const _T* src, uint32 count = 1, Allocator* alloc = memDefaultAlloc());
 template<typename _T> _T* memAllocCopyRawBytes(const _T* src, size_t sizeBytes, Allocator* alloc = memDefaultAlloc());
@@ -132,7 +134,7 @@ private:
 
 //------------------------------------------------------------------------
 // Linear virtual-mem allocator: Linear-based allocator backed by VMem. Grows by page size. reserve a large size upfront
-struct MemLinearVMAllocator final : Allocator
+struct MemLinearVMAllocator : Allocator
 {
     void Initialize(size_t reserveSize, size_t pageSize, bool debugMode = false);
     void Release();
@@ -141,12 +143,13 @@ struct MemLinearVMAllocator final : Allocator
     [[nodiscard]] void* Malloc(size_t size, uint32 align = CONFIG_MACHINE_ALIGNMENT) override;
     [[nodiscard]] void* Realloc(void* ptr, size_t size, uint32 align = CONFIG_MACHINE_ALIGNMENT) override;
     void  Free(void* ptr, uint32 align = CONFIG_MACHINE_ALIGNMENT) override;
-    AllocatorType GetType() const override { return AllocatorType::Budget; }
+    AllocatorType GetType() const override { return AllocatorType::LinearVM; }
 
     size_t GetReservedSize() const { return mReserveSize; }
     size_t GetAllocatedSize() const { return mOffset; }
     size_t GetCommitedSize() const { return mCommitSize; }
 
+protected:
     uint8* myBuffer = nullptr;
     size_t mCommitSize = 0;
     size_t mOffset = 0;
@@ -155,6 +158,16 @@ struct MemLinearVMAllocator final : Allocator
     void* mLastAllocatedPtr = 0;
     Array<_private::MemDebugPointer, 8>* mDebugPointers = nullptr;
     bool mDebugMode = false;
+};
+
+struct MemLinearVMAllocator_ThreadSafe final : MemLinearVMAllocator
+{
+    [[nodiscard]] void* Malloc(size_t size, uint32 align = CONFIG_MACHINE_ALIGNMENT) override;
+    [[nodiscard]] void* Realloc(void* ptr, size_t size, uint32 align = CONFIG_MACHINE_ALIGNMENT) override;
+    void Free(void* ptr, uint32 align = CONFIG_MACHINE_ALIGNMENT) override;
+
+private:
+    AtomicLock mLock;
 };
 
 //------------------------------------------------------------------------
@@ -176,7 +189,7 @@ struct MemBudgetAllocator final : Allocator
     size_t GetTotalSize() const { return mMaxSize; }
     size_t GetOffset() const { return mOffset; }
 
-private:
+protected:
     uint8* mBuffer = nullptr;
     size_t mMaxSize = 0;
     size_t mCommitSize = 0;
@@ -273,7 +286,7 @@ FORCE_INLINE void memFree(void* ptr, Allocator* alloc)
     return ptr;
 }
 
-[[nodiscard]] FORCE_INLINE void* memAllocZeroAligned(size_t size, uint32 align, Allocator* alloc)
+[[nodiscard]] FORCE_INLINE void* memAllocAlignedZero(size_t size, uint32 align, Allocator* alloc)
 {
     ASSERT(alloc);
     void* ptr = alloc->Malloc(size, align);
@@ -315,10 +328,23 @@ template<typename _T>
 }
 
 template<typename _T>
+[[nodiscard]] inline _T* memAllocAlignedTyped(uint32 count, uint32 align, Allocator* alloc)
+{
+    return reinterpret_cast<_T*>(memAllocAligned(sizeof(_T)*count, align, alloc));
+}
+
+template<typename _T>
+[[nodiscard]] inline _T* memAllocAlignedZeroTyped(uint32 count, uint32 align, Allocator* alloc)
+{
+    return reinterpret_cast<_T*>(memAllocAlignedZero(sizeof(_T)*count, align, alloc));
+}
+
+template<typename _T>
 [[nodiscard]] inline _T* memReallocTyped(void* ptr, uint32 count, Allocator* alloc)
 {
     return reinterpret_cast<_T*>(memRealloc(ptr, sizeof(_T)*count, alloc));
 }
+
 
 template<typename _T> 
 [[nodiscard]] inline _T* memAllocCopy(const _T* src, uint32 count, Allocator* alloc)

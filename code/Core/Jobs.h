@@ -45,7 +45,8 @@ enum class JobsType : uint32
 
 struct JobsBudgetStats
 {
-    uint32 maxThreads;
+    uint32 maxShortTaskThreads;
+    uint32 maxLongTaskThreads;
     uint32 numBusyShortThreads;
     uint32 numBusyLongThreads;
 
@@ -64,8 +65,7 @@ struct JobsBudgetStats
 
 struct alignas(CACHE_LINE_SIZE) JobsSignal
 {
-    void Initialize();
-    void Release();
+    JobsSignal();
 
     void Raise();
     void Wait();
@@ -78,7 +78,18 @@ private:
     uint8 data[128];
 };
 
-API void jobsInitialize(Allocator* alloc = memDefaultAlloc(), uint32 numThreads = 0, bool debugAllocations = false);
+struct JobsInitParams
+{
+    Allocator* alloc = memDefaultAlloc();
+    uint32 numShortTaskThreads = 0; // Default: total number of cores - 1
+    uint32 numLongTaskThreads = 0;  // Default: total number of cores - 1
+    uint32 defaultShortTaskStackSize = kMB;
+    uint32 defaultLongTaskStackSize = kMB;
+    uint32 maxFibers = 0;       // Maximum fibers in execution. Default=_limits::kJobsMaxFibers
+    bool debugAllocations = false;
+};
+
+API void jobsInitialize(const JobsInitParams& initParams);
 API void jobsRelease();
 
 // Dispatches the job and returns the handle. Handle _must_ be waited on later, with a call to `jobsWaitForCompletion`
@@ -94,7 +105,7 @@ API void jobsDispatchAuto(JobsType type, JobsCallback callback, void* userData =
 
 API void jobsGetBudgetStats(JobsBudgetStats* stats);
 API void jobsResetBudgetStats();
-API uint32 jobsGetWorkerThreadsCount();
+API uint32 jobsGetWorkerThreadsCount(JobsType type);
 
 // Templated lambda functions (no need for userData)
 // Callback: [](uint32 groupIndex)

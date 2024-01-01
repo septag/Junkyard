@@ -93,7 +93,7 @@ struct Array
     _T* Ptr();
     void Detach(_T** outBuffer, uint32* outCount);
     void ShiftLeft(uint32 count);
-    void CopyTo(Array<_T, _Reserve>* otherArray);
+    void CopyTo(Array<_T, _Reserve>* otherArray) const;
 
     uint32 Find(const _T& value);
     // _Func = [capture](const _T& item)->bool
@@ -209,6 +209,7 @@ namespace _private
     API HandlePoolTable* handleCreatePoolTable(uint32 capacity, Allocator* alloc);
     API void handleDestroyPoolTable(HandlePoolTable* tbl, Allocator* alloc);
     API bool handleGrowPoolTable(HandlePoolTable** pTbl, Allocator* alloc);
+    API HandlePoolTable* handleClone(HandlePoolTable* tbl, Allocator* alloc);
 
     API uint32 handleNew(HandlePoolTable* tbl);
     API void   handleDel(HandlePoolTable* tbl, uint32 handle);
@@ -228,6 +229,8 @@ struct HandlePool
     HandlePool() : HandlePool(memDefaultAlloc()) {}
     explicit HandlePool(Allocator* alloc) : mAlloc(alloc), mItems(alloc) {}
     explicit HandlePool(void* data, size_t size); 
+
+    void CopyTo(HandlePool<_HandleType, _DataType, _Reserve>* otherPool) const;
 
     [[nodiscard]] _HandleType Add(const _DataType& item, _DataType* prevItem = nullptr);
     void Remove(_HandleType handle);
@@ -270,7 +273,7 @@ struct HandlePool
 private:
     Allocator*                  mAlloc = nullptr;
     _private::HandlePoolTable*  mHandles = nullptr;
-    Array<_DataType>            mItems;
+    Array<_DataType, _Reserve>  mItems;
 };
 #endif // __OBJC__
 
@@ -657,7 +660,7 @@ inline void Array<_T,_Reserve>::ShiftLeft(uint32 count)
 }
 
 template <typename _T, uint32 _Reserve>
-inline void Array<_T, _Reserve>::CopyTo(Array<_T, _Reserve>* otherArray)
+inline void Array<_T, _Reserve>::CopyTo(Array<_T, _Reserve>* otherArray) const
 {
     ASSERT(otherArray);
 
@@ -909,6 +912,14 @@ void HandlePool<_HandleType, _DataType, _Reserve>::SetAllocator(Allocator* alloc
     mItems.SetAllocator(mAlloc);
 }
 
+template <typename _HandleType, typename _DataType, uint32 _Reserve>
+void HandlePool<_HandleType, _DataType, _Reserve>::CopyTo(HandlePool<_HandleType, _DataType, _Reserve>* otherPool) const
+{
+    ASSERT_MSG(otherPool->mHandles == nullptr, "other pool should be uninitialized before cloning");
+    otherPool->mHandles = _private::handleClone(mHandles, otherPool->mAlloc);
+    mItems.CopyTo(&otherPool->mItems);
+}
+
 template<typename _HandleType, typename _DataType, uint32 _Reserve>
 inline _HandleType HandlePool<_HandleType, _DataType, _Reserve>::Add(const _DataType& item, _DataType* prevItem)
 {
@@ -1008,9 +1019,8 @@ template<typename _Func> inline _HandleType HandlePool<_HandleType, _DataType, _
     if (mHandles) {
         for (uint32 i = 0, c = mHandles->count; i < c; i++) {
             _HandleType h = _HandleType(_private::handleAt(mHandles, i));
-            if (findFunc(mItems[h.GetSparseIndex()])) {
+            if (findFunc(mItems[h.GetSparseIndex()]))
                 return h;
-            }
         }
     }
     
@@ -1452,8 +1462,9 @@ inline size_t Blob::Write(const void* src, size_t size)
     ASSERT(size);
 
     size_t writeBytes = Min(mCapacity - mSize, size);
-    if (writeBytes < size && mGrowPolicy != GrowPolicy::None) {
+    if (writeBytes < size) {
         ASSERT_MSG(mAlloc, "Growable blobs should have allocator");
+        ASSERT_MSG(mGrowPolicy != GrowPolicy::None, "Growable blobs should have a grow policy");
         ASSERT(mGrowCount);
 
         if (mGrowPolicy == GrowPolicy::Linear) {

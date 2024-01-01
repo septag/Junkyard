@@ -558,7 +558,7 @@ void MemLinearVMAllocator::Release()
 
 void* MemLinearVMAllocator::Malloc(size_t size, uint32 align)
 {
-    return Realloc(nullptr, size, align);
+    return MemLinearVMAllocator::Realloc(nullptr, size, align);
 }
 
 void* MemLinearVMAllocator::Realloc(void* ptr, size_t size, uint32 align)
@@ -655,6 +655,24 @@ void MemLinearVMAllocator::Reset()
             gMem.defaultAlloc->Free(dbgPtr.ptr, dbgPtr.align);
         this->mDebugPointers->Clear();
     }
+}
+
+void* MemLinearVMAllocator_ThreadSafe::Malloc(size_t size, uint32 align)
+{
+    AtomicLockScope lock(mLock);
+    return MemLinearVMAllocator::Malloc(size, align);
+}
+
+void* MemLinearVMAllocator_ThreadSafe::Realloc(void* ptr, size_t size, uint32 align)
+{
+    AtomicLockScope lock(mLock);
+    return MemLinearVMAllocator::Realloc(ptr, size, align);
+}
+
+void MemLinearVMAllocator_ThreadSafe::Free(void* ptr, uint32 align)
+{
+    AtomicLockScope lock(mLock);
+    MemLinearVMAllocator::Free(ptr, align);
 }
 
 //------------------------------------------------------------------------

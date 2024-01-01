@@ -107,13 +107,13 @@ void imguiBudgetHub(float dt, bool* pOpen)
             
             ImGui::TextColored(kTextColor, "Busy LongTask Threads:");
             ImGui::SameLine();
-            ImGui::ProgressBar(imguiDivideInt(stats.numBusyLongThreads, stats.maxThreads), ImVec2(-1.0f, 0), 
-                               String32::Format("%u/%u", stats.numBusyLongThreads, stats.maxThreads).CStr());
+            ImGui::ProgressBar(imguiDivideInt(stats.numBusyLongThreads, stats.maxLongTaskThreads), ImVec2(-1.0f, 0), 
+                               String32::Format("%u/%u", stats.numBusyLongThreads, stats.maxLongTaskThreads).CStr());
 
             ImGui::TextColored(kTextColor, "Busy ShortTask Threads:");
             ImGui::SameLine();
-            ImGui::ProgressBar(imguiDivideInt(stats.numBusyShortThreads, stats.maxThreads), ImVec2(-1.0f, 0), 
-                               String32::Format("%u/%u", stats.numBusyShortThreads, stats.maxThreads).CStr());
+            ImGui::ProgressBar(imguiDivideInt(stats.numBusyShortThreads, stats.maxShortTaskThreads), ImVec2(-1.0f, 0), 
+                               String32::Format("%u/%u", stats.numBusyShortThreads, stats.maxShortTaskThreads).CStr());
 
             ImGui::TextColored(kTextColor, "Fibers:");
             ImGui::SameLine();

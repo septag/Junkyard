@@ -71,9 +71,9 @@ private:
 
 //--------------------------------------------------------------------------------------------------
 // Mutex
-struct alignas(64) Mutex
+struct alignas(CACHE_LINE_SIZE) Mutex
 {
-    void Initialize(uint32 spinCount = 100);
+    void Initialize(uint32 spinCount = 32);
     void Release();
 
     void Enter();
@@ -264,7 +264,7 @@ enum class FileOpenFlags : uint32
     Writethrough = 0x10, // Write-through writes meta information to disk immediately
     SeqScan      = 0x20, // Optimize cache for sequential read (not to be used with NOCACHE)
     RandomAccess = 0x40, // Optimize cache for random access read (not to be used with NOCACHE)
-    Temp         = 0x80  // Indicate that the file is temperary
+    Temp         = 0x80, // Indicate that the file is temperary
 };
 ENABLE_BITMASK(FileOpenFlags);
 
@@ -297,6 +297,34 @@ private:
     uint8 mData[64];
 };
 
+struct AsyncFile
+{
+    Path filepath;
+    void* data;
+    uint64 lastModifiedTime;
+    void* userData;
+    uint32 size;
+};
+
+// Callback to receive IO Read/Write completion
+// After this callback is triggered with failed == false, then you can assume that 'data' member contains valid file data
+// Note: [Windows] This function is triggered by kernel's IO thead-pool: https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-bindiocompletioncallback
+//                 So the caller is one of kernel's thread and is not owned by application. Take common threading measures when working with userData shared across threads
+using AsyncFileCallback = void(*)(AsyncFile* file, bool failed);
+
+struct AsyncFileRequest
+{
+    Allocator* alloc = memDefaultAlloc();// Allocator to allocate a continous chunk of file data 
+    AsyncFileCallback readFn = nullptr;  // Callback to receive async results. see 'AsyncFileCallback'. If this value is null, then you should use Wait and IsFinished to poll for data
+    void* userData = nullptr;            // user-data. Can be allocated by async functions internally as well. See 'userDataAllocatedSize'
+    uint32 userDataAllocateSize = 0;     // allocate user-data for this request and copy over the provdided userData instead of using userData pointer directly
+};
+
+API AsyncFile* asyncReadFile(const char* filepath, const AsyncFileRequest& request = AsyncFileRequest());
+API void asyncClose(AsyncFile* file);
+API bool asyncWait(AsyncFile* file);
+API bool asyncIsFinished(AsyncFile* file, bool* outError = nullptr);
+
 //----------------------------------------------------------------------------------------------------------------------
 // SocketTCP
 enum class SocketErrorCode : uint16
@@ -322,7 +350,6 @@ using SocketHandle = uint64;
 #else 
 using SocketHandle = int;
 #endif
-
 
 struct SocketTCP
 {
@@ -445,7 +472,7 @@ private:
 
 API bool sysWin32IsProcessRunning(const char* execName);
 API bool sysWin32GetRegisterLocalMachineString(const char* subkey, const char* value, char* dst, size_t dstSize);
-API void sysWin32PrintToDebugger(const char* text);
+API void sysWin32PrintToDebugger(const char* text); 
 API bool sysWin32SetPrivilege(const char* name, bool enable = true);
 
 enum class SysWin32Folder

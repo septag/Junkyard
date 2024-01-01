@@ -65,6 +65,7 @@
     <Import Project="..\CommonRelease.props" />
     <Import Project="..\Tracy.props" />
     <Import Project="..\Tools.props" />
+    <Import Project="..\EnableDebugSymbols.props" />
   </ImportGroup>
   <PropertyGroup Label="UserMacros" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">

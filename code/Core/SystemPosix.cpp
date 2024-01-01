@@ -37,9 +37,9 @@
 #include "Log.h"
 
 // "Adaptive" mutex implementation using early spinlock
-struct alignas(64) MutexImpl
+struct alignas(CACHE_LINE_SIZE) MutexImpl
 {
-    atomicUint32 spinlock;
+    alignas(CACHE_LINE_SIZE) atomicUint32 spinlock;
     pthread_mutex_t handle;
     uint32 spinCount;
 };
@@ -298,17 +298,13 @@ void Mutex::Initialize(uint32 spinCount)
     _m->spinlock = 0;
     
     // Why do we need recursive mutex ?
-    pthread_mutexattr_t* _attr = nullptr;
-    #if defined(PTHREAD_MUTEX_ADAPTIVE_NP)
-        pthread_mutexattr_t attr;
-        [[maybe_unused]] int r = pthread_mutexattr_init(&attr);
-        ASSERT(r == 0);
-        pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_ADAPTIVE_NP);
-        _attr = &attr;
-    #endif
-
-    [[maybe_unused]] int r2 = pthread_mutex_init(&_m->handle, _attr);
-    ASSERT_ALWAYS(r2 == 0, "pthread_mutex_init failed");
+    pthread_mutexattr_t attr;
+    [[maybe_unused]] int r = pthread_mutexattr_init(&attr);
+    ASSERT(r == 0);
+    pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE);
+    
+    r = pthread_mutex_init(&_m->handle, &attr);
+    ASSERT_ALWAYS(r == 0, "pthread_mutex_init failed");
 }
 
 void Mutex::Release()
@@ -322,13 +318,11 @@ void Mutex::Enter()
 {
     MutexImpl* _m = reinterpret_cast<MutexImpl*>(mData);
 
-    #ifndef PTHREAD_MUTEX_ADAPTIVE_NP
-        for (uint32 i = 0, c = _m->spinCount; i < c; i++) {
-            if (atomicExchange32Explicit(&_m->spinlock, 1, AtomicMemoryOrder::Acquire) == 0)
-                return;
-            atomicPauseCpu();
-        }
-    #endif
+    for (uint32 i = 0, c = _m->spinCount; i < c; i++) {
+        if (atomicExchange32Explicit(&_m->spinlock, 1, AtomicMemoryOrder::Acquire) == 0)
+            return;
+        atomicPauseCpu();
+    }
     
     pthread_mutex_lock(&_m->handle);
 }
@@ -338,19 +332,15 @@ void Mutex::Exit()
     MutexImpl* _m = reinterpret_cast<MutexImpl*>(mData);
 
     pthread_mutex_unlock(&_m->handle);
-    #ifndef PTHREAD_MUTEX_ADAPTIVE_NP
-        atomicStore32Explicit(&_m->spinlock, 0, AtomicMemoryOrder::Release);
-    #endif
+    atomicStore32Explicit(&_m->spinlock, 0, AtomicMemoryOrder::Release);
 }
 
 bool Mutex::TryEnter()
 {
     MutexImpl* _m = reinterpret_cast<MutexImpl*>(mData);
 
-    #ifndef PTHREAD_MUTEX_ADAPTIVE_NP
-        if (atomicExchange32Explicit(&_m->spinlock, 1, AtomicMemoryOrder::Acquire) == 0)
-            return true;
-    #endif
+    if (atomicExchange32Explicit(&_m->spinlock, 1, AtomicMemoryOrder::Acquire) == 0)
+        return true;
     return pthread_mutex_trylock(&_m->handle) == 0;
 }
 

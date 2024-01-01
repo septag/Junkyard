@@ -133,7 +133,7 @@ echo No | copy /-Y $(SolutionDir)..\..\code\External\meshoptimizer\lib\win64\mes
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <LanguageStandard>stdcpp20</LanguageStandard>
       <LanguageStandard_C>stdc11</LanguageStandard_C>
-      <DisableSpecificWarnings>4324</DisableSpecificWarnings>
+      <DisableSpecificWarnings>4324;4390</DisableSpecificWarnings>
       <DebugInformationFormat>None</DebugInformationFormat>
       <AdditionalOptions>/d1trimfile:..\..\code\ %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>

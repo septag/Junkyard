@@ -23,8 +23,9 @@ API bool    strIsEqualNoCase(const char* s1, const char* s2);
 API bool    strIsEqualCount(const char* s1, const char* s2, uint32 count);
 API bool    strIsEqualNoCaseCount(const char* s1, const char* s2, uint32 count);
 API bool    strEndsWith(const char* str, const char* endsWith);
-API bool    strTrim(char* dst, uint32 dstSize, const char* src);
-API bool    strTrim(char* dst, uint32 dstSize, const char* src, char ch);
+API char*   strTrim(char* dst, uint32 dstSize, const char* src);
+API char*   strTrim(char* dst, uint32 dstSize, const char* src, char ch);
+API char*   strRemoveWhitespace(char* dst, uint32 dstSize, const char* src);
 API char*   strReplaceChar(char* dst, uint32 dstSize, char ch, char replaceWith);
 API bool    strToBool(const char* str);
 API int     strToInt(const char* str);
@@ -64,6 +65,7 @@ struct String
 
     bool IsEmpty() const;
     uint32 Length() const;
+    uint32 Capacity() const;
     char* Ptr();
     const char* CStr() const;
     uint32 CalcLength();
@@ -176,6 +178,12 @@ template <uint32 _Size>
 inline uint32 String<_Size>::Length() const
 {
     return mLen;
+}
+
+template <uint32 _Size> 
+inline uint32 String<_Size>::Capacity() const
+{
+    return _Size;
 }
 
 template <uint32 _Size> 
