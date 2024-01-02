@@ -83,11 +83,11 @@ bool SettingsJunkyardParser::ParseSetting(uint32 categoryId, const char* key, co
             return true;
         }
         else if (strIsEqualNoCase(key, "jobsNumShortTaskThreads")) {
-            engine->jobsNumShortTaskThreads = strToBool(value);
+            engine->jobsNumShortTaskThreads = strToUint(value);
             return true;
         }
         else if (strIsEqualNoCase(key, "jobsNumLongTaskThreads")) {
-            engine->jobsNumLongTaskThreads = strToBool(value);
+            engine->jobsNumLongTaskThreads = strToUint(value);
             return true;
         }
         else if (strIsEqualNoCase(key, "debugAllocations")) {

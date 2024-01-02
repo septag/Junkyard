@@ -160,6 +160,8 @@ bool engineInitialize()
     _private::conInitialize();
     jobsInitialize(JobsInitParams { 
                    .alloc = &gEng.initHeap, 
+                   .numShortTaskThreads = settingsGet().engine.jobsNumShortTaskThreads,
+                   .numLongTaskThreads = settingsGet().engine.jobsNumLongTaskThreads,
                    .debugAllocations = settingsGet().engine.debugAllocations });
 
     if (settingsGet().engine.connectToServer) {

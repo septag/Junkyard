@@ -53,7 +53,7 @@ void Semaphore::Release()
 {
     SemaphoreImpl* sem = (SemaphoreImpl*)mData;
     if (sem->handle) {
-        // dispatch_release(sem->handle);
+        dispatch_release(sem->handle);
         sem->handle = NULL;
     }
 }

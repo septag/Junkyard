@@ -21,7 +21,7 @@
 static RandomContext gRand = randomCreateContext(666);
 static const char* kRootDir = "";
 
-#define WITH_HASHING 1
+#define WITH_HASHING 0
 
 #if PLATFORM_WINDOWS
 #include "../Core/Includewin.h"
@@ -217,6 +217,8 @@ struct AppImpl final : AppCallbacks
         BenchmarkIO("Async - Request all files in the main thread and wait", BruteforceAsyncMethod);
         BenchmarkIO("Async - Read files with jobs. Wait for each file", BruteforceTaskAsyncMethod);
         BenchmarkIO("Async - Read files with jobs. Yield jobs until finished", SignalTaskAsyncMethod);
+        // BenchmarkIO("Async - NoCache", NoCacheMethod);
+        BenchmarkIO("Async - NoCache, CPIO", CPIO_Method);
 
         logInfo("Done. Press ESC to quit");
 
@@ -390,6 +392,178 @@ struct AppImpl final : AppCallbacks
 
         myalloc.Release();
     }
+
+#if PLATFORM_WINDOWS
+    struct CPIO_Request
+    {
+        OVERLAPPED overlapped;
+        HANDLE fileHandle;
+        uint64 size;
+        void* data;
+    };
+
+    struct CPIO_ThreadData
+    {
+        size_t totalSize;
+        uint32 numFilesRead;
+        uint32 numFiles;
+        HANDLE hCompletionPort;
+    };
+
+    static int CPIO_Thread(void* userData)
+    {
+        ULONG_PTR completionKey;
+        OVERLAPPED* pOverlapped;
+        CPIO_ThreadData* threadData = (CPIO_ThreadData*)userData;
+        DWORD bytesRead;
+
+        while (GetQueuedCompletionStatus(threadData->hCompletionPort, &bytesRead, &completionKey, &pOverlapped, INFINITE)) {
+            CPIO_Request* req = reinterpret_cast<CPIO_Request*>(completionKey);
+            threadData->totalSize += bytesRead;
+
+            CloseHandle(req->fileHandle);
+
+            ++threadData->numFilesRead;
+
+            if (threadData->numFilesRead == threadData->numFiles)
+                break;
+        }
+
+        return 0;
+    }
+
+    static void CPIO_Method(const Path* paths, int numFiles, size_t& totalSize, atomicUint64& hashTime)
+    {
+        MemLinearVMAllocator fileAlloc;
+        fileAlloc.Initialize(8*kGB, kGB);
+
+        MemTempAllocator tmpAlloc;
+        PoolBuffer<CPIO_Request> reqPool(&tmpAlloc);
+        reqPool.Reserve(numFiles);
+
+        uint32 pageSize = (uint32)sysGetPageSize();
+        HANDLE hCompletionPort = CreateIoCompletionPort(INVALID_HANDLE_VALUE, nullptr, 0, 0);
+        if (hCompletionPort == nullptr)
+            return;
+
+        CPIO_ThreadData threadData = {
+            .numFiles = (uint32)numFiles,
+            .hCompletionPort = hCompletionPort
+        };
+
+        Thread queueThread;
+        queueThread.Start(ThreadDesc { .entryFn = CPIO_Thread, .userData = &threadData });
+
+        for (int i = 0; i < numFiles; i++) {
+            CPIO_Request* req = reqPool.New();
+            req->fileHandle = CreateFileA(paths[i].CStr(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_FLAG_OVERLAPPED|FILE_FLAG_NO_BUFFERING, NULL);
+            if (req->fileHandle == INVALID_HANDLE_VALUE) {
+                logError("Cannot open file: %s", paths[i].CStr());
+                continue;
+            }
+
+            if (CreateIoCompletionPort(req->fileHandle, hCompletionPort, reinterpret_cast<ULONG_PTR>(req), 0) == nullptr) {
+                logError("Error associating file '%s' with completion port", paths[i].CStr());
+                continue;
+            }
+            
+            BY_HANDLE_FILE_INFORMATION fileInfo {};
+            if (!GetFileInformationByHandle(req->fileHandle, &fileInfo)) {
+                logError("Error getting file size: %s", paths[i].CStr());
+                continue;
+            }
+
+            req->size = (uint64(fileInfo.nFileSizeHigh)<<32) | uint64(fileInfo.nFileSizeLow);
+            ASSERT(req->size && req->size < UINT32_MAX);
+            req->data = fileAlloc.Malloc(req->size, pageSize);
+            if (!ReadFile(req->fileHandle, req->data, AlignValue((uint32)req->size, pageSize), nullptr, &req->overlapped)) {
+                if (GetLastError() != ERROR_IO_PENDING) {
+                    logError("Error reading file (%u): %s ", GetLastError(), paths[i].CStr());
+                    continue;
+                }
+            }
+        }
+
+        queueThread.Stop();
+        CloseHandle(hCompletionPort);
+        fileAlloc.Release();
+        
+        totalSize = threadData.totalSize;
+    }
+
+    struct NoCacheRequest
+    {
+        OVERLAPPED overlapped;
+        HANDLE fileHandle;
+        void* data;
+        Semaphore* semaphore;
+        atomicUint64* totalSize;
+        atomicUint32* numFiles;
+    };
+
+    static void NoCacheMethod(const Path* paths, int numFiles, size_t& totalSize, atomicUint64& hashTime)
+    {
+        MemLinearVMAllocator fileAlloc;
+        fileAlloc.Initialize(8*kGB, kGB);
+
+        MemTempAllocator tmpAlloc;
+        PoolBuffer<NoCacheRequest> reqPool(&tmpAlloc);
+        reqPool.Reserve(numFiles);
+
+        uint32 pageSize = (uint32)sysGetPageSize();
+        Semaphore sem;
+        sem.Initialize();
+
+        atomicUint64 atomicTotalSize = 0;
+        atomicUint32 atomicNumFiles = 0;
+
+        auto CompletionCallback = [](DWORD dwErrorCode, DWORD dwNumberOfBytesTransfered, LPOVERLAPPED lpOverlapped)
+        {
+            NoCacheRequest* req = (NoCacheRequest*)lpOverlapped;
+            atomicFetchAdd32(req->numFiles, 1);
+            atomicFetchAdd64(req->totalSize, dwNumberOfBytesTransfered);
+            req->semaphore->Post();
+        };
+
+        for (int i = 0; i < numFiles; i++) {
+            NoCacheRequest* req = reqPool.New();
+            req->fileHandle = CreateFileA(paths[i].CStr(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING,
+                                          FILE_ATTRIBUTE_NORMAL|FILE_FLAG_OVERLAPPED|FILE_FLAG_NO_BUFFERING, NULL);
+            if (req->fileHandle == INVALID_HANDLE_VALUE) {
+                logError("Cannot open file: %s", paths[i].CStr());
+                continue;
+            }
+            req->semaphore = &sem;
+            req->numFiles = &atomicNumFiles;
+            req->totalSize = &atomicTotalSize;
+
+            BY_HANDLE_FILE_INFORMATION fileInfo {};
+            if (!GetFileInformationByHandle(req->fileHandle, &fileInfo)) {
+                logError("Error getting file size: %s", paths[i].CStr());
+                continue;
+            }
+
+            uint64 fileSize = (uint64(fileInfo.nFileSizeHigh)<<32) | uint64(fileInfo.nFileSizeLow);
+            ASSERT(fileSize && fileSize < UINT32_MAX);
+            req->data = fileAlloc.Malloc(fileSize, pageSize);
+
+            BindIoCompletionCallback(req->fileHandle, CompletionCallback, 0);
+            if (!ReadFile(req->fileHandle, req->data, AlignValue((uint32)fileSize, pageSize), nullptr, &req->overlapped)) {
+                if (GetLastError() != ERROR_IO_PENDING) {
+                    logError("Error reading file (%u): %s ", GetLastError(), paths[i].CStr());
+                    continue;
+                }
+            }
+        }
+
+        while (atomicLoad32(&atomicNumFiles) < (uint32)numFiles) {
+            sem.Wait();
+        }
+        fileAlloc.Release();
+
+        totalSize = atomicTotalSize;
+    }
+#endif // PLATFORM_WINDOWS
     
     void Cleanup() override
     {
