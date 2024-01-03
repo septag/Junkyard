@@ -500,8 +500,9 @@ void _private::gfxReleaseImageManager()
     if (!settingsGet().graphics.headless) {
         gfxDestroyImage(gImageMgr.imageWhite);
 
+        MemSingleShotMalloc<GfxDescriptorUpdateCacheItem> mallocator;
         for (GfxDescriptorUpdateCacheItem* item : gImageMgr.updateCache)
-            memFree(item);
+            mallocator.Free(item, &gVk.runtimeHeap);
         gImageMgr.updateCache.Free();
         gImageMgr.updateCacheMtx.Release();
 
@@ -523,9 +524,9 @@ static void gfxUpdateImageDescriptorSetCache(GfxDescriptorSet dset, uint32 numBi
         item = gImageMgr.updateCache[index];
     }
     else {
-        BuffersAllocPOD<GfxDescriptorUpdateCacheItem> podAlloc;
-        podAlloc.AddMemberField<GfxDescriptorBindingDesc>(offsetof(GfxDescriptorUpdateCacheItem, bindings), numBindings);
-        item = podAlloc.Calloc(); // TODO: alloc
+        MemSingleShotMalloc<GfxDescriptorUpdateCacheItem> mallocator;
+        mallocator.AddMemberField<GfxDescriptorBindingDesc>(offsetof(GfxDescriptorUpdateCacheItem, bindings), numBindings);
+        item = mallocator.Calloc(&gVk.runtimeHeap);
         item->dset = dset;
         item->numBindings = numBindings;
         memcpy(item->bindings, bindings, sizeof(GfxDescriptorBindingDesc)*numBindings);

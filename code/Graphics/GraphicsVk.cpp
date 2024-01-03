@@ -3098,7 +3098,7 @@ void gfxDestroyImage(GfxImage image)
 static VkGraphicsPipelineCreateInfo* gfxDuplicateGraphicsPipelineCreateInfo(const VkGraphicsPipelineCreateInfo& pipelineInfo)
 {
     // Child POD members with arrays inside
-    BuffersAllocPOD<VkPipelineVertexInputStateCreateInfo> pallocVertexInputInfo;
+    MemSingleShotMalloc<VkPipelineVertexInputStateCreateInfo> pallocVertexInputInfo;
     pallocVertexInputInfo.AddMemberField<VkVertexInputBindingDescription>(
         offsetof(VkPipelineVertexInputStateCreateInfo, pVertexBindingDescriptions), 
         pipelineInfo.pVertexInputState->vertexBindingDescriptionCount);
@@ -3106,50 +3106,50 @@ static VkGraphicsPipelineCreateInfo* gfxDuplicateGraphicsPipelineCreateInfo(cons
         offsetof(VkPipelineVertexInputStateCreateInfo, pVertexAttributeDescriptions), 
         pipelineInfo.pVertexInputState->vertexAttributeDescriptionCount);
 
-    BuffersAllocPOD<VkPipelineColorBlendStateCreateInfo> pallocColorBlendState;
+    MemSingleShotMalloc<VkPipelineColorBlendStateCreateInfo> pallocColorBlendState;
     pallocColorBlendState.AddMemberField<VkPipelineColorBlendAttachmentState>(
         offsetof(VkPipelineColorBlendStateCreateInfo, pAttachments),
         pipelineInfo.pColorBlendState->attachmentCount);
 
-    BuffersAllocPOD<VkPipelineDynamicStateCreateInfo> pallocDynamicState;
+    MemSingleShotMalloc<VkPipelineDynamicStateCreateInfo> pallocDynamicState;
     pallocDynamicState.AddMemberField<VkDynamicState>(
         offsetof(VkPipelineDynamicStateCreateInfo, pDynamicStates),
         pipelineInfo.pDynamicState->dynamicStateCount);
 
     // Main fields
-    BuffersAllocPOD<VkGraphicsPipelineCreateInfo, 12> pallocPipelineInfo;
+    MemSingleShotMalloc<VkGraphicsPipelineCreateInfo, 12> mallocator;
 
-    pallocPipelineInfo.AddMemberField<VkPipelineShaderStageCreateInfo>(
+    mallocator.AddMemberField<VkPipelineShaderStageCreateInfo>(
         offsetof(VkGraphicsPipelineCreateInfo, pStages),
         pipelineInfo.stageCount);
         
-    pallocPipelineInfo.AddMemberChildPODField<BuffersAllocPOD<VkPipelineVertexInputStateCreateInfo>>(
+    mallocator.AddMemberChildPODField<MemSingleShotMalloc<VkPipelineVertexInputStateCreateInfo>>(
         pallocVertexInputInfo, offsetof(VkGraphicsPipelineCreateInfo, pVertexInputState), 1);
 
-    pallocPipelineInfo.AddMemberField<VkPipelineInputAssemblyStateCreateInfo>(
+    mallocator.AddMemberField<VkPipelineInputAssemblyStateCreateInfo>(
         offsetof(VkGraphicsPipelineCreateInfo, pInputAssemblyState), 1);
 
     // skip pTessellationState
 
-    pallocPipelineInfo.AddMemberField<VkPipelineViewportStateCreateInfo>(
+    mallocator.AddMemberField<VkPipelineViewportStateCreateInfo>(
         offsetof(VkGraphicsPipelineCreateInfo, pViewportState), 1);
         
-    pallocPipelineInfo.AddMemberField<VkPipelineRasterizationStateCreateInfo>(
+    mallocator.AddMemberField<VkPipelineRasterizationStateCreateInfo>(
         offsetof(VkGraphicsPipelineCreateInfo, pRasterizationState), 1);
 
-    pallocPipelineInfo.AddMemberField<VkPipelineMultisampleStateCreateInfo>(
+    mallocator.AddMemberField<VkPipelineMultisampleStateCreateInfo>(
         offsetof(VkGraphicsPipelineCreateInfo, pMultisampleState), 1);
 
-    pallocPipelineInfo.AddMemberField<VkPipelineDepthStencilStateCreateInfo>(
+    mallocator.AddMemberField<VkPipelineDepthStencilStateCreateInfo>(
         offsetof(VkGraphicsPipelineCreateInfo, pDepthStencilState), 1);
 
-    pallocPipelineInfo.AddMemberChildPODField<BuffersAllocPOD<VkPipelineColorBlendStateCreateInfo>>(
+    mallocator.AddMemberChildPODField<MemSingleShotMalloc<VkPipelineColorBlendStateCreateInfo>>(
         pallocColorBlendState, offsetof(VkGraphicsPipelineCreateInfo, pColorBlendState), 1);
 
-    pallocPipelineInfo.AddMemberChildPODField<BuffersAllocPOD<VkPipelineDynamicStateCreateInfo>>(
+    mallocator.AddMemberChildPODField<MemSingleShotMalloc<VkPipelineDynamicStateCreateInfo>>(
         pallocDynamicState, offsetof(VkGraphicsPipelineCreateInfo, pDynamicState), 1);
 
-    VkGraphicsPipelineCreateInfo* pipInfoNew = pallocPipelineInfo.Calloc(&gVk.alloc);
+    VkGraphicsPipelineCreateInfo* pipInfoNew = mallocator.Calloc(&gVk.alloc);
 
     // TODO: see if we can improve this part of the api
     pallocVertexInputInfo.Calloc((void*)pipInfoNew->pVertexInputState, 0);
@@ -3622,7 +3622,8 @@ void gfxDestroyPipeline(GfxPipeline pipeline)
         }
     }
 
-    memFree(pipData.gfxCreateInfo, &gVk.alloc);
+    MemSingleShotMalloc<VkGraphicsPipelineCreateInfo, 12> mallocator;
+    mallocator.Free(pipData.gfxCreateInfo, &gVk.alloc);
     if (pipData.pipelineLayout.IsValid()) 
         gfxDestroyPipelineLayout(pipData.pipelineLayout);
     if (pipData.pipeline)

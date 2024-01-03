@@ -38,6 +38,8 @@
 PRAGMA_DIAGNOSTIC_PUSH()
 PRAGMA_DIAGNOSTIC_IGNORED_MSVC(5054)
 PRAGMA_DIAGNOSTIC_IGNORED_MSVC(4245)
+PRAGMA_DIAGNOSTIC_IGNORED_MSVC(4127)
+#define tlsf_assert ASSERT
 #include "External/tlsf/tlsf.c"
 PRAGMA_DIAGNOSTIC_POP()
 
@@ -452,6 +454,7 @@ inline void* MemHeapAllocator::Malloc(size_t size, uint32 align)
     void* ptr;
     if (align <= CONFIG_MACHINE_ALIGNMENT) {
         ptr = malloc(size);
+        ASSERT((uintptr_t(ptr) % CONFIG_MACHINE_ALIGNMENT) == 0);   // Validate machine alignment with malloc
     }
     else {
         align = Max(align, CONFIG_MACHINE_ALIGNMENT);

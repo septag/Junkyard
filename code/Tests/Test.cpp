@@ -85,24 +85,6 @@ struct AppImpl final : AppCallbacks
 
         logInfo("Use right mouse button to rotate camera. And [TAB] to switch between Orbital and FPS (WASD) camera");
 
-        auto ReadFileFn = [](AsyncFile* file, bool failed) {
-            if (!failed) {
-                const char* data = (const char*)file->data;
-                logDebug("Reading %s done. size = %u", file->filepath.CStr(), file->size);
-                return;
-            }
-            else {
-                logError("Reading %s failed", file->filepath.CStr());
-            }
-
-            asyncClose(file);
-        };
-
-        AsyncFile* f = asyncReadFile("C:/Projects/Junkyard/code/Graphics/CousineFont.h", AsyncFileRequest { .readFn = ReadFileFn });
-        if (!f) {
-            logError("Reading failed. File could not be opened");
-        }
-
         return true;
     };
     

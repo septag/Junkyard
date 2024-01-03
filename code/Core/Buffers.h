@@ -15,31 +15,6 @@
 //
 // StaticArray: Very much like Array but of course static and on the stack
 //
-// BuffersAllocPOD: POD struct continous allocator. If you have POD structs that contain some buffers and arrays
-//              	You can create all of the buffers in one malloc call with the help of this allocator
-//					Relative pointers are also supported for member variables, as shown in the example below.
-//					Example:
-//						struct SomeObject
-//						{
-//						    uint32 a;
-//						    uint32 b;
-//						};
-//						
-//						struct SomeStruct
-//						{
-//						    int count;
-//						    RelativePtr<SomeObject> objects;
-//						};
-//						
-//						BuffersAllocPOD<SomeStruct> alloc;
-//						SomeStruct* s = alloc.AddMemberField<SomeObject>(offsetof(SomeStruct, objects), 100, true).Calloc();
-//						s->count = 100;
-//						
-//						for (int i = 0; i < s->count; i++) {
-//						    s->objects[i].a = (uint32)i;
-//						    s->objects[i].b = (uint32)(i*2);
-//						}
-//
 //  RingBuffer: Regular ring-buffer
 //      Writing to ring-buffer: use `ExpectWrite` method to determine how much memory is available in the ring-buffer before writing.
 //      Example:
@@ -198,7 +173,7 @@ struct Handle
 
 namespace _private
 {
-    struct HandlePoolTable
+    struct alignas(16) HandlePoolTable
     {
         uint32  count;
         uint32  capacity;
@@ -276,44 +251,6 @@ private:
     Array<_DataType, _Reserve>  mItems;
 };
 #endif // __OBJC__
-
-//------------------------------------------------------------------------
-template <typename _T, uint32 _MaxFields = 8>
-struct BuffersAllocPOD
-{
-    BuffersAllocPOD() : BuffersAllocPOD(CONFIG_MACHINE_ALIGNMENT) {}
-    explicit BuffersAllocPOD(uint32 align);
-
-    template <typename _FieldType> BuffersAllocPOD& AddMemberField(uint32 offsetInStruct, size_t arrayCount, 
-                                                                bool relativePtr = false,
-                                                                uint32 align = CONFIG_MACHINE_ALIGNMENT);
-    template <typename _PodAllocType> BuffersAllocPOD& AddMemberChildPODField(const _PodAllocType& podAlloc, 
-                                                                            uint32 offsetInStruct, size_t arrayCount, 
-                                                                            bool relativePtr = false,
-                                                                            uint32 align = CONFIG_MACHINE_ALIGNMENT);
-    template <typename _FieldType> BuffersAllocPOD& AddExternalPointerField(_FieldType** pPtr, size_t arrayCount, 
-                                                                            uint32 align = CONFIG_MACHINE_ALIGNMENT);
-
-    _T* Calloc(Allocator* alloc = memDefaultAlloc());
-    _T* Calloc(void* buff, size_t size);
-
-    size_t GetMemoryRequirement() const;
-    size_t GetSize() const;
-
-private:
-    struct Field
-    {
-        void** pPtr;
-        size_t offset;
-        uint32 offsetInStruct;
-        bool   relativePtr;
-    };
-
-    Field  mFields[_MaxFields];
-    size_t mSize;
-    uint32 mNumFields;
-    uint32 mStructAlign;
-};
 
 //------------------------------------------------------------------------
 struct RingBuffer
@@ -1071,155 +1008,6 @@ inline bool HandlePool<_HandleType, _DataType, _Reserve>::Grow(void* data, size_
 #endif // !__OBJC__
 
 //------------------------------------------------------------------------
-// @impl BuffersAllocPOD
-template <typename _T, uint32 _MaxFields>
-inline BuffersAllocPOD<_T, _MaxFields>::BuffersAllocPOD(uint32 align)
-{
-    align = Max(CONFIG_MACHINE_ALIGNMENT, align);
-    mSize = AlignValue<size_t>(sizeof(_T), align);
-    mStructAlign = align;
-
-    mFields[0].pPtr = nullptr;
-    mFields[0].offset = 0;
-    mFields[0].offsetInStruct = UINT32_MAX;
-    mNumFields = 1;
-}
-
-template <typename _T, uint32 _MaxFields>
-template <typename _FieldType> inline BuffersAllocPOD<_T, _MaxFields>& 
-    BuffersAllocPOD<_T, _MaxFields>::AddMemberField(uint32 offsetInStruct, size_t arrayCount, bool relativePtr, uint32 align)
-{
-    uint32 index = mNumFields;
-    ASSERT_MSG(index < _MaxFields, "Cannot add more fields, increase the _MaxFields");
-    
-    align = Max(CONFIG_MACHINE_ALIGNMENT, align);
-    size_t size = sizeof(_FieldType) * arrayCount;
-    size = AlignValue<size_t>(size, align);
-
-    size_t offset = mSize;
-    if (offset % align != 0) {
-        offset = AlignValue<size_t>(offset, align);
-    }
-
-    Field& buff = mFields[index];
-    buff.pPtr = nullptr;
-    buff.offset = offset;
-    buff.offsetInStruct = offsetInStruct;
-    buff.relativePtr = relativePtr;
-
-    mSize += size;
-    ++mNumFields;
-
-    return *this;
-}
-
-template <typename _T, uint32 _MaxFields>
-template <typename _PodAllocType> inline BuffersAllocPOD<_T, _MaxFields>& 
-BuffersAllocPOD<_T, _MaxFields>::AddMemberChildPODField(const _PodAllocType& podAlloc, uint32 offsetInStruct, 
-                                                        size_t arrayCount, bool relativePtr, uint32 align)
-{
-    uint32 index = mNumFields;
-    ASSERT_MSG(index < _MaxFields, "Cannot add more fields, increase the _MaxFields");
-    
-    align = Max(CONFIG_MACHINE_ALIGNMENT, align);
-    size_t size = podAlloc.GetMemoryRequirement() * arrayCount;
-    size = AlignValue<size_t>(size, align);
-
-    size_t offset = mSize;
-    if (offset % align != 0) {
-        offset = AlignValue<size_t>(offset, align);
-    }
-
-    Field& buff = mFields[index];
-    buff.pPtr = nullptr;
-    buff.offset = offset;
-    buff.offsetInStruct = offsetInStruct;
-    buff.relativePtr = relativePtr;
-
-    mSize += size;
-    ++mNumFields;
-
-    return *this;
-}
-
-
-template <typename _T, uint32 _MaxFields>
-template <typename _FieldType> inline BuffersAllocPOD<_T, _MaxFields>& 
-    BuffersAllocPOD<_T, _MaxFields>::AddExternalPointerField(_FieldType** pPtr, size_t arrayCount, uint32 align)
-{
-    ASSERT(pPtr);
-
-    uint32 index = mNumFields;
-    ASSERT_MSG(index < _MaxFields, "Cannot add more fields, increase the _MaxFields");
-    
-    align = Max(CONFIG_MACHINE_ALIGNMENT, align);
-    size_t size = sizeof(_FieldType) * arrayCount;
-    size = AlignValue<size_t>(size, align);
-    
-    size_t offset = mSize;
-    if (offset % align != 0) {
-        offset = AlignValue<size_t>(offset, align);
-    }
-    
-    Field& buff = mFields[index];
-    buff.pPtr = (void**)pPtr;
-    buff.offset = offset;
-    buff.offsetInStruct = UINT32_MAX;
-    buff.relativePtr = false;
-    
-    mSize += size;
-    ++mNumFields;
-
-    return *this;
-}
-
-template <typename _T, uint32 _MaxFields>
-inline _T* BuffersAllocPOD<_T, _MaxFields>::Calloc(Allocator* alloc)
-{
-    void* mem = memAllocAligned(mSize, mStructAlign, alloc);
-    return Calloc(mem, mSize);
-}
-
-template <typename _T, uint32 _MaxFields>
-inline size_t  BuffersAllocPOD<_T, _MaxFields>::GetMemoryRequirement() const
-{
-    return AlignValue<size_t>(mSize, mStructAlign);
-}
-
-template <typename _T, uint32 _MaxFields>
-inline size_t BuffersAllocPOD<_T, _MaxFields>::GetSize() const
-{
-    return mSize;
-}
-
-template <typename _T, uint32 _MaxFields>
-inline _T*  BuffersAllocPOD<_T, _MaxFields>::Calloc(void* buff, [[maybe_unused]] size_t size)
-{
-    ASSERT(buff);
-    ASSERT(size == 0 || size >= GetMemoryRequirement());
-
-    memset(buff, 0x0, mSize);
-    
-    uint8* tmp = (uint8*)buff;
-    
-    // Assign buffer pointers
-    for (int i = 1, c = mNumFields; i < c; i++) {
-        if (mFields[i].offsetInStruct != UINT32_MAX) {
-            ASSERT(mFields[i].pPtr == NULL);
-            if (!mFields[i].relativePtr) 
-                *((void**)(tmp + mFields[i].offsetInStruct)) = tmp + mFields[i].offset;
-            else
-                *((uint32*)(tmp + mFields[i].offsetInStruct)) = (uint32)mFields[i].offset - mFields[i].offsetInStruct;
-        } else {
-            ASSERT(mFields[i].offsetInStruct == -1);
-            *mFields[i].pPtr = tmp + mFields[i].offset;
-        }
-    }
-
-    return (_T*)buff;
-}
-
-//------------------------------------------------------------------------
 // @impl RingBuffer
 inline RingBuffer::RingBuffer(void* buffer, size_t size)
 {
@@ -1643,8 +1431,11 @@ inline void PoolBuffer<_T, _Align>::Free()
     if (mAlloc) {
         Page* page = mPages;
         while (page) {
-            Page* next = page->next;
-            memFree(page, mAlloc);
+            Page* next = page->next; 
+
+            MemSingleShotMalloc<Page> mallocator;
+            mallocator.Free(page);
+
             page = next;
         }
     }
@@ -1656,7 +1447,7 @@ inline void PoolBuffer<_T, _Align>::Free()
 template <typename _T, uint32 _Align>
 inline size_t PoolBuffer<_T, _Align>::GetMemoryRequirement(uint32 pageSize)
 {
-    BuffersAllocPOD<Page> pageBuffer;
+    MemSingleShotMalloc<Page> pageBuffer;
     pageBuffer.template AddMemberField<_T*>(offsetof(Page, ptrs), pageSize);
     pageBuffer.template AddMemberField<_T>(offsetof(Page, data), pageSize, false, _Align);
     return pageBuffer.GetMemoryRequirement();
@@ -1728,11 +1519,11 @@ inline typename PoolBuffer<_T, _Align>::Page* PoolBuffer<_T, _Align>::CreatePage
 {
     ASSERT(mPageSize);
 
-    BuffersAllocPOD<Page> pageBuffer;
-    pageBuffer.template AddMemberField<_T*>(offsetof(Page, ptrs), mPageSize);
-    pageBuffer.template AddMemberField<_T>(offsetof(Page, data), mPageSize, false, _Align); // Only align data buffer
+    MemSingleShotMalloc<Page> mallocator;
+    mallocator.template AddMemberField<_T*>(offsetof(Page, ptrs), mPageSize);
+    mallocator.template AddMemberField<_T>(offsetof(Page, data), mPageSize, false, _Align); // Only align data buffer
 
-    Page* page = (buffer && size) ? pageBuffer.Calloc(buffer, size) : page = pageBuffer.Calloc(mAlloc);
+    Page* page = (buffer && size) ? mallocator.Calloc(buffer, size) : page = mallocator.Calloc(mAlloc);
     page->index = mPageSize;
     for (uint32 i = 0, c = mPageSize; i < c; i++)
         page->ptrs[c - i - 1] = page->data + i;

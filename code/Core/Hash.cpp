@@ -368,10 +368,10 @@ _private::HashTableData* _private::hashtableCreate(uint32 capacity, uint32 value
     
     capacity = hashTableNearestPow2(capacity);   
     
-    BuffersAllocPOD<HashTableData> hashTableBuff;
-    hashTableBuff.AddMemberField<uint32>(offsetof(HashTableData, keys), capacity)
-                 .AddMemberField<uint8>(offsetof(HashTableData, values), valueStride*capacity);
-    HashTableData* tbl = hashTableBuff.Calloc(alloc);
+    MemSingleShotMalloc<HashTableData> mallocator;
+    mallocator.AddMemberField<uint32>(offsetof(HashTableData, keys), capacity)
+              .AddMemberField<uint8>(offsetof(HashTableData, values), valueStride*capacity);
+    HashTableData* tbl = mallocator.Calloc(alloc);
     
     tbl->bitshift = hashTableCalcBitShift(capacity);
     tbl->valueStride = valueStride;
@@ -386,17 +386,19 @@ size_t _private::hashtableGetMemoryRequirement(uint32 capacity, uint32 valueStri
     ASSERT(capacity > 0);
     
     capacity = hashTableNearestPow2(capacity);
-    BuffersAllocPOD<HashTableData> hashTableBuff;
-    return hashTableBuff.AddMemberField<uint32>(offsetof(HashTableData, keys), capacity)
-                        .AddMemberField<uint8>(offsetof(HashTableData, values), valueStride*capacity)
-                        .GetMemoryRequirement();        
+    MemSingleShotMalloc<HashTableData> mallocator;
+    return mallocator.AddMemberField<uint32>(offsetof(HashTableData, keys), capacity)
+                     .AddMemberField<uint8>(offsetof(HashTableData, values), valueStride*capacity)
+                     .GetMemoryRequirement();        
 }
 
 void _private::hashtableDestroy(HashTableData* tbl, Allocator* alloc)
 {
     ASSERT(tbl);
     tbl->count = tbl->capacity = 0;
-    memFree(tbl, alloc);
+
+    MemSingleShotMalloc<HashTableData> mallocator;
+    mallocator.Free(tbl, alloc);
 }
 
 bool _private::hashtableGrow(HashTableData** pTbl, Allocator* alloc)
@@ -483,7 +485,7 @@ _private::HashTableData* _private::hashtableCreateWithBuffer(uint32 capacity, ui
     
     capacity = hashTableNearestPow2(capacity);   
     
-    BuffersAllocPOD<HashTableData> hashTableBuff;
+    MemSingleShotMalloc<HashTableData> hashTableBuff;
     hashTableBuff.AddMemberField<uint32>(offsetof(HashTableData, keys), capacity)
                  .AddMemberField<uint8>(offsetof(HashTableData, values), valueStride*capacity);
     HashTableData* tbl = hashTableBuff.Calloc(buff, size);

@@ -1275,13 +1275,13 @@ AsyncFile* asyncReadFile(const char* filepath, const AsyncFileRequest& request)
     ASSERT_MSG(!request.userDataAllocateSize || (request.userData && request.userDataAllocateSize), 
             "`userDataAllocatedSize` should be accompanied with a valid `userData` pointer");
 
-    BuffersAllocPOD<AsyncFileWin> alloc;
+    MemSingleShotMalloc<AsyncFileWin> mallocator;
     uint8* data;
     uint8* userData = nullptr;
     if (request.userDataAllocateSize) 
-        alloc.AddExternalPointerField<uint8>(&userData, request.userDataAllocateSize);
-    alloc.AddExternalPointerField<uint8>(&data, fileSize);
-    AsyncFileWin* file = alloc.Calloc(request.alloc);
+        mallocator.AddExternalPointerField<uint8>(&userData, request.userDataAllocateSize);
+    mallocator.AddExternalPointerField<uint8>(&data, fileSize);
+    AsyncFileWin* file = mallocator.Calloc(request.alloc);
     file->f.filepath = filepath;
     file->f.data = data;
     file->f.size = uint32(fileSize);
@@ -1333,7 +1333,8 @@ void asyncClose(AsyncFile* file)
         CloseHandle(fw->hFile);
         fw->hFile = INVALID_HANDLE_VALUE;
 
-        memFree(fw, fw->alloc);
+        MemSingleShotMalloc<AsyncFileWin> mallocator;
+        mallocator.Free(fw, fw->alloc);
     }    
 }
 

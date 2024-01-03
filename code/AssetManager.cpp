@@ -349,7 +349,9 @@ void _private::assetDetectAndReleaseLeaks()
                 }
             }
 
-            memFree(a.params, &gAssetMgr.runtimeHeap);
+            MemSingleShotMalloc<AssetLoadParams> mallocator;
+            mallocator.Free(a.params, &gAssetMgr.runtimeHeap);
+
             memFree(a.depends, &gAssetMgr.runtimeHeap);
             memFree(a.metaData, &gAssetMgr.runtimeHeap);
         }
@@ -389,10 +391,10 @@ static AssetHandle assetCreateNew(uint32 typeMgrIdx, uint32 assetHash, const Ass
     const AssetTypeManager& typeMgr = gAssetMgr.typeManagers[typeMgrIdx];
     
     uint8* nextParams;
-    BuffersAllocPOD<AssetLoadParams> paramsAlloc;
-    paramsAlloc.AddMemberField<char>(offsetof(AssetLoadParams, path), kMaxPath)
-               .AddExternalPointerField<uint8>(&nextParams, typeMgr.extraParamTypeSize);
-    AssetLoadParams* newParams = paramsAlloc.Calloc(&gAssetMgr.runtimeHeap);
+    MemSingleShotMalloc<AssetLoadParams> mallocator;
+    mallocator.AddMemberField<char>(offsetof(AssetLoadParams, path), kMaxPath)
+              .AddExternalPointerField<uint8>(&nextParams, typeMgr.extraParamTypeSize);
+    AssetLoadParams* newParams = mallocator.Calloc(&gAssetMgr.runtimeHeap);
     
     strCopy(const_cast<char*>(newParams->path), kMaxPath, params.path);
     newParams->alloc = params.alloc;
