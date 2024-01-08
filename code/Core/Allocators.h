@@ -279,8 +279,10 @@ struct MemSingleShotMalloc
 
     _T* Calloc(Allocator* alloc = memDefaultAlloc());
     _T* Calloc(void* buff, size_t size);
-    void Free(_T* p, Allocator* alloc = memDefaultAlloc());
 
+    // Free can be called as a static function, since it just calls malloc with alignof
+    static void Free(_T* p, Allocator* alloc = memDefaultAlloc());
+    
     size_t GetMemoryRequirement() const;
     size_t GetSize() const;
 
@@ -593,6 +595,7 @@ inline size_t MemSingleShotMalloc<_T, _MaxFields>::GetMemoryRequirement() const
 template <typename _T, uint32 _MaxFields>
 inline void MemSingleShotMalloc<_T, _MaxFields>::Free(_T* p, Allocator* alloc)
 {
+    ASSERT(alloc);
     if (p)
         memFreeAligned(p, alignof(_T), alloc);
 }

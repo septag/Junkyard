@@ -397,8 +397,7 @@ void _private::hashtableDestroy(HashTableData* tbl, Allocator* alloc)
     ASSERT(tbl);
     tbl->count = tbl->capacity = 0;
 
-    MemSingleShotMalloc<HashTableData> mallocator;
-    mallocator.Free(tbl, alloc);
+    MemSingleShotMalloc<HashTableData>::Free(tbl, alloc);
 }
 
 bool _private::hashtableGrow(HashTableData** pTbl, Allocator* alloc)

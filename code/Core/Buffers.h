@@ -1432,10 +1432,8 @@ inline void PoolBuffer<_T, _Align>::Free()
         Page* page = mPages;
         while (page) {
             Page* next = page->next; 
-
-            MemSingleShotMalloc<Page> mallocator;
-            mallocator.Free(page);
-
+            if (mAlloc)
+                MemSingleShotMalloc<Page>::Free(page, mAlloc);
             page = next;
         }
     }

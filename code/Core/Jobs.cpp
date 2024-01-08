@@ -804,10 +804,7 @@ JobsAtomicPool<_T, _MaxCount>* JobsAtomicPool<_T, _MaxCount>::Create(Allocator* 
 template <typename _T, uint32 _MaxCount> 
 void JobsAtomicPool<_T, _MaxCount>::Destroy(JobsAtomicPool<_T, _MaxCount>* p, Allocator* alloc)
 {
-    if (p) {
-        MemSingleShotMalloc<JobsAtomicPool<_T, _MaxCount>> mallocator;
-        mallocator.Free(p, alloc);
-    }
+    MemSingleShotMalloc<JobsAtomicPool<_T, _MaxCount>>::Free(p, alloc);
 }
 
 template <typename _T, uint32 _MaxCount> 

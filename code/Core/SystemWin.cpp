@@ -1333,8 +1333,7 @@ void asyncClose(AsyncFile* file)
         CloseHandle(fw->hFile);
         fw->hFile = INVALID_HANDLE_VALUE;
 
-        MemSingleShotMalloc<AsyncFileWin> mallocator;
-        mallocator.Free(fw, fw->alloc);
+        MemSingleShotMalloc<AsyncFileWin>::Free(fw, fw->alloc);
     }    
 }
 

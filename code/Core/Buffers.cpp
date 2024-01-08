@@ -19,10 +19,7 @@ _private::HandlePoolTable* _private::handleCreatePoolTable(uint32 capacity, Allo
 
 void _private::handleDestroyPoolTable(HandlePoolTable* tbl, Allocator* alloc)
 {
-    if (tbl) {
-        MemSingleShotMalloc<HandlePoolTable> mallocator;
-        mallocator.Free(tbl, alloc);
-    }
+    MemSingleShotMalloc<HandlePoolTable>::Free(tbl, alloc);
 }
 
 bool _private::handleGrowPoolTable(HandlePoolTable** pTbl, Allocator* alloc)
