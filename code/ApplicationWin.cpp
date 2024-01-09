@@ -803,6 +803,8 @@ static bool appWinFrame(fl32 dt)
 
 bool appInitialize(const AppDesc& desc)
 {
+    TimerStopWatch stopwatch;
+
     gApp.desc = desc;
 
     gApp.firstFrame = true;
@@ -887,6 +889,8 @@ bool appInitialize(const AppDesc& desc)
         appWinUpdateDisplayInfo();
     }
     gApp.valid = true;
+
+    logVerbose("(init) App initialized (%.1f ms). Entering event loop ...", stopwatch.ElapsedMS());
 
     // Main loop
     uint64 tmPrev = 0;

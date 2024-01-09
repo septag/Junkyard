@@ -228,7 +228,8 @@ bool engineInitialize()
     appRegisterEventsCallback(engineOnEvent);
 
     gEng.initialized = true;
-
+    logInfo("(init) Engine initialized (%.1f ms)", timerToMS(timerGetTicks()));
+    
     auto GetVMemStats = [](int, const char**, char* outResponse, uint32 responseSize, void*)->bool {
         MemVirtualStats stats = memVirtualGetStats();
         strPrintFmt(outResponse, responseSize, "Reserverd: %_$$$llu, Commited: %_$$$llu", stats.reservedBytes, stats.commitedBytes);

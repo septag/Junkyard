@@ -1430,6 +1430,8 @@ static GfxSwapchain gfxCreateSwapchain(VkSurfaceKHR surface, uint16 width, uint1
 
 bool _private::gfxInitialize()
 {
+    TimerStopWatch stopwatch;
+
     if (volkInitialize() != VK_SUCCESS) {
         logError("Volk failed to initialize. Possibly VulkanSDK is not installed (or MoltenVK dll is missing on Mac)");
         return false;
@@ -1485,7 +1487,7 @@ bool _private::gfxInitialize()
             }
         }
     }
-    
+
     //------------------------------------------------------------------------
     // Instance
     VkApplicationInfo appInfo {};
@@ -2202,6 +2204,8 @@ bool _private::gfxInitialize()
     gVk.initHeapSize = initHeap->GetOffset() - gVk.initHeapStart;
     gfxGetPhysicalDeviceProperties();       // call once just to populate the struct
     gVk.initialized = true;
+
+    logVerbose("(init) Graphics initialized (%.1f ms)", stopwatch.ElapsedMS());
     return true;
 }
 
