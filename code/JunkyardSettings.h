@@ -3,10 +3,12 @@
 #include "Core/Base.h"
 #include "Core/StringUtil.h"
 
-#if !CONFIG_FINAL_BUILD
-    #define DEFAULT_LOG_LEVEL LogLevel::Debug;       // Log filter. LogLevel below this value will not be shown
-#else
-    #define DEFAULT_LOG_LEVEL LogLevel::Info;        // Log filter. LogLevel below this value will not be shown
+#ifndef DEFAULT_LOG_LEVEL
+    #if !CONFIG_FINAL_BUILD
+        #define DEFAULT_LOG_LEVEL LogLevel::Debug;       // Log filter. LogLevel below this value will not be shown
+    #else
+        #define DEFAULT_LOG_LEVEL LogLevel::Info;        // Log filter. LogLevel below this value will not be shown
+    #endif
 #endif
 
 struct SettingsGraphics

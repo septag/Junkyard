@@ -68,7 +68,7 @@ if "%CONFIG%"=="release" (
 set DEFINES=%DEFINES% -D_MBCS -D_CRT_SECURE_NO_WARNINGS -DBUILD_UNITY 
 set COMPILE_FLAGS=%COMPILE_FLAGS% /std:c++20 /GR- /EHs-
 set LINK_FLAGS=%LINK_FLAGS% /INCREMENTAL:NO
-set LIBS=%LIBS% "User32.lib" "ws2_32.lib" "Shell32.lib" "Ole32.lib"
+set LIBS=%LIBS% "User32.lib" "ws2_32.lib" "Shell32.lib" "Ole32.lib" "Advapi32.lib"
 
 pushd Bin\build_cmd
 set OUTPUT_DIR=%cd%

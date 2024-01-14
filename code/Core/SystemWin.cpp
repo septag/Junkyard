@@ -895,6 +895,7 @@ void sysWin32PrintToDebugger(const char* text)
 }
 
 // https://learn.microsoft.com/en-us/windows/win32/memory/creating-a-file-mapping-using-large-pages
+// TODO: dynalically load functions from DLL to prevent linking with Advapi32.lib
 bool sysWin32SetPrivilege(const char* name, bool enable)
 {
     HANDLE tokenHandle;

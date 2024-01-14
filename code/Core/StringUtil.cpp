@@ -23,6 +23,7 @@ PRAGMA_DIAGNOSTIC_POP();
 #endif
 
 #include "Allocators.h"
+#include "Buffers.h"
 
 uint32 strPrintFmt(char* str, uint32 size, const char* fmt, ...)
 {
@@ -608,4 +609,92 @@ const char* strSkipWhitespace(const char* str)
             break;
     }
     return str;
+}
+
+const char* strSkipChar(const char* str, char ch)
+{
+    while (*str) {
+        if (*str == ch)
+            ++str;
+        else
+            break;
+    }
+    return str;
+}
+
+Span<char*> strSplit(const char* str, char ch, Allocator* alloc)
+{
+    Array<char*> splits(alloc);
+
+    const char* s = str;
+    const char* start = str;
+    while (*s) {
+        if (*s == ch) {
+            if (start != s) {
+                uint32 len = PtrToInt<uint32>((void*)(s - start));
+                char* splitItem = memAllocCopy<char>(start, len + 1, alloc);
+                splitItem[len] = 0;
+                splits.Push(splitItem);
+            }
+
+            s = strSkipChar(s, ch);
+            if (*s) {
+                start = s + 1;
+                ++s;
+            }
+            else {
+                start = s;
+            }
+        }
+        else {
+            ++s;
+        }   
+    }
+
+    if (start != s) {
+        uint32 len = PtrToInt<uint32>((void*)(s - start));
+        char* splitItem = memAllocCopy<char>(start, len + 1, alloc);
+        splits.Push(splitItem);
+    }
+
+    return splits.Detach();
+}
+
+Span<char*> strSplitWhitespace(const char* str, Allocator* alloc)
+{
+    Array<char*> splits(alloc);
+
+    const char* s = str;
+    const char* start = str;
+    while (*s) {
+        if (strIsWhitespace(*s)) {
+            if (start != s) {
+                uint32 len = PtrToInt<uint32>((void*)(s - start));
+                char* splitItem = memAllocCopy<char>(start, len + 1, alloc);
+                splitItem[len] = 0;
+                splits.Push(splitItem);
+            }
+
+            s = strSkipWhitespace(s);
+
+            if (*s) {
+                start = s + 1;
+                ++s;
+            }
+            else {
+                start = s;
+            }
+        }
+        else {
+            ++s;
+        }
+    }
+
+    if (start != s) {
+        uint32 len = PtrToInt<uint32>((void*)(s - start));
+        char* splitItem = memAllocCopy<char>(start, len + 1, alloc);
+        splits.Push(splitItem);
+    }
+
+    return splits.Detach();
 }

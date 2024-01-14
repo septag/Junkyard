@@ -40,6 +40,7 @@ API char    strIsInRange(char ch, char from, char to);
 API char    strIsNumber(char ch);
 
 API const char* strSkipWhitespace(const char* str);
+API const char* strSkipChar(const char* str, char ch);
 API char* strToUpper(char* dst, uint32 dstSize, const char* src);
 API char* strToLower(char* dst, uint32 dstSize, const char* src);
 
@@ -47,6 +48,9 @@ NO_ASAN API const char* strFindChar(const char* str, char ch);
 NO_ASAN API const char* strFindCharRev(const char* str, char ch);
 NO_ASAN API const char* strFindStr(const char* RESTRICT str, const char* RESTRICT find);
 
+// Returns indexes to the input string with 
+API Span<char*> strSplit(const char* str, char ch, Allocator* alloc);
+API Span<char*> strSplitWhitespace(const char* str, Allocator* alloc);
 
 template <uint32 _Size>
 struct String 

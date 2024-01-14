@@ -24,10 +24,12 @@
     #define TERM_COLOR_WHITE     "\033[97m"
 #endif
 
-#if CONFIG_DEV_MODE
-#define DEFAULT_LOG_LEVEL LogLevel::Debug
-#else
-#define DEFAULT_LOG_LEVEL LogLevel::Info
+#ifndef DEFAULT_LOG_LEVEL
+    #if CONFIG_DEV_MODE
+        #define DEFAULT_LOG_LEVEL LogLevel::Debug
+    #else
+        #define DEFAULT_LOG_LEVEL LogLevel::Info
+    #endif
 #endif
 
 struct LogContext

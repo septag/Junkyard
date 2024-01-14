@@ -66,7 +66,10 @@ struct Array
     bool IsFull() const;
     const _T* Ptr() const;
     _T* Ptr();
+    
     void Detach(_T** outBuffer, uint32* outCount);
+    Span<_T> Detach();
+
     void ShiftLeft(uint32 count);
     void CopyTo(Array<_T, _Reserve>* otherArray) const;
 
@@ -652,6 +655,16 @@ inline void Array<_T,_Reserve>::Detach(_T** outBuffer, uint32* outCount)
     mBuffer = nullptr;
     mCount = 0;
     mCapacity = 0;
+}
+
+template <typename _T, uint32 _Reserve>
+inline Span<_T> Array<_T,_Reserve>::Detach()
+{
+    _T* ptr;
+    uint32 count;
+
+    Detach(&ptr, &count);
+    return Span<_T>(ptr, count);
 }
 
 template<typename _T, uint32 _Reserve>
