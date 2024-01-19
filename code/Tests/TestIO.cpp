@@ -594,6 +594,7 @@ int Main(int argc, char* argv[])
     settingsInitializeFromCommandLine(argc, argv);
    
     static AppImpl impl;
+
     appInitialize(AppDesc { 
         .callbacks = &impl, 
         .windowTitle = "Junkyard - TestIO",

@@ -1,8 +1,8 @@
 from PIL import Image, ImageDraw, ImageFont
 import os
 
-IMAGE_W = 512
-IMAGE_H = 512
+IMAGE_W = 1024
+IMAGE_H = 1024
 STROKE_COLOR = (255, 255, 255, 255)
 BG_COLOR = (0, 0, 0, 255)
 MAX_DATA_SIZE = 4*1024*1024*1024
