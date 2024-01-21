@@ -19,7 +19,7 @@ PRAGMA_DIAGNOSTIC_IGNORED_CLANG_GCC("-Wunused-variable")
 #include "External/tracy/TracyClient.cpp"
 PRAGMA_DIAGNOSTIC_POP()
 
-#include "String.h"
+#include "StringUtil.h"
 
 //------------------------------------------------------------------------
 void _private::___tracy_emit_gpu_calibrate_serial(const struct ___tracy_gpu_calibrate_data data)
