@@ -989,6 +989,17 @@ bool sysUUIDFromString(SysUUID* _uuid, const char* str)
     return true;
 }
 
+bool sysSetEnvVar(const char* key, const char* value)
+{
+    return SetEnvironmentVariableA(key, value) == TRUE;
+}
+
+bool sysGetEnvVar(const char* key, char* outValue, uint32 valueSize)
+{
+    DWORD dwValueSize = GetEnvironmentVariableA(key, outValue, valueSize);
+    return dwValueSize != 0 && dwValueSize < valueSize;
+}
+
 char* pathWin32GetFolder(SysWin32Folder folder, char* dst, size_t dstSize)
 {
     static const KNOWNFOLDERID folderIds[] = {

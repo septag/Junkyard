@@ -429,6 +429,9 @@ API bool sysUUIDGenerate(SysUUID* uuid);
 API bool sysUUIDToString(const SysUUID& uuid, char* str, uint32 size);
 API bool sysUUIDFromString(SysUUID* uuid, const char* str);
 
+API bool sysSetEnvVar(const char* key, const char* value);
+API bool sysGetEnvVar(const char* key, char* outValue, uint32 valueSize);
+
 #if PLATFORM_DESKTOP
 enum class SysProcessFlags : uint32
 {
