@@ -24,6 +24,8 @@
 
 #include "../Tool/Console.h"
 
+#include "../External/ImGuizmo/ImGuizmo.h"
+
 #define TEST_IO 0
 
 #if TEST_IO

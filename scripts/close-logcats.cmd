@@ -2,7 +2,7 @@
 
 pushd %~dp0
 echo Closing existing logcat windows ...
-python python/close-logcats.py --package %1
+python python/close_logcats.py --package %1
 popd
 
 if %errorlevel% neq 0 (

@@ -1,3 +1,10 @@
 Core
 Math
 Tool
+External/stb
+External/imgui
+External/vulkan
+External/volk
+External/vma
+External/cgltf
+External/ImGuizmo

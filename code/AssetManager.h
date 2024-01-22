@@ -116,7 +116,7 @@ struct AssetTypeDesc
     const char* name;
     AssetLoaderCallbacks* callbacks;
     const char* extraParamTypeName;
-    uint32 extraParamTypeSize;
+    uint32 extraParamTypeSize;          // Note: be careful that in order for asset caching to work properly. this size must exactly match the real underlying struct size with no extra padding
     void* failedObj;
     void* asyncObj;
 };

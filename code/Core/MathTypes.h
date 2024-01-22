@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../Core/Base.h"
+#include "Base.h"
 
 // Some math constants
 inline constexpr float kPI           = 3.1415926535897932384626433832795f;
