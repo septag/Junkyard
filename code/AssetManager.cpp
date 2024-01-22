@@ -795,7 +795,9 @@ AssetHandle assetLoad(const AssetLoadParams& params, const void* extraParams)
     }
 
     // check if asset is already loaded
-    HashMurmur32Incremental hasher(ASSET_HASH_SEED);    
+    // Calculate asset hash. This is different from "Cache" hash. Asset hash should always retain it's value for each unique asset
+    // Unique assets are also defined by their extra custom init params 
+    HashMurmur32Incremental hasher(ASSET_HASH_SEED);
     uint32 assetHash = hasher.Add<char>(params.path, strLen(params.path))
                              .Add<uint32>(&params.tags)
                              .AddAny(extraParams, typeMgr.extraParamTypeSize)

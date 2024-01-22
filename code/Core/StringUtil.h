@@ -110,14 +110,13 @@ using String64 = String<64>;
 
 //------------------------------------------------------------------------
 //
-template <uint32 _Size> 
-String<_Size>::String()
+template <uint32 _Size>
+inline String<_Size>::String() : mLen(0)
 {
-    mStr[0] = '\0';
-    mLen = 0;
+    memset(mStr, 0x0, sizeof(mStr));
 }
 
-template <uint32 _Size> 
+template <uint32 _Size>
 inline String<_Size>::String(const char* cstr)
 {
     char* end = strCopy(mStr, _Size, cstr);

@@ -42,7 +42,7 @@
 #endif
 
 #if !defined(CONFIG_MAX_PATH)
-    #define CONFIG_MAX_PATH 255
+    #define CONFIG_MAX_PATH 260
 #endif
 
 #if !defined(MEMPRO_ENABLED)

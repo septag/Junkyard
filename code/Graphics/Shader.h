@@ -32,6 +32,7 @@ struct ShaderCompileDesc
     ShaderIncludeDir  includeDirs[kShaderMaxIncludeDirs];
     bool dumpIntermediates;
     bool debug;
+    uint8 _padding[2];      // Structure should have no holes because we are hashing it for asset-manager
 };
 
 enum class ShaderStage : uint32

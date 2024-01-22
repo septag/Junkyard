@@ -152,6 +152,7 @@ namespace _private
     static inline constexpr uint32 kHandleGenShift  = 32 - kHandleGenBits;
 } // _private
 
+// TODO: Apple declares "Handle" type in MacTypes.h
 #ifndef __OBJC__
 template <typename _T>
 struct Handle

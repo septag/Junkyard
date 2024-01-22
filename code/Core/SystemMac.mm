@@ -16,7 +16,7 @@
 #include <pthread.h>
 #include <spawn.h>
 
-#import <Foundation/Foundation.h>
+#include <Foundation/Foundation.h>
 
 struct SemaphoreImpl
 {
@@ -53,7 +53,8 @@ void Semaphore::Release()
 {
     SemaphoreImpl* sem = (SemaphoreImpl*)mData;
     if (sem->handle) {
-        dispatch_release(sem->handle);
+        // ObjC ARC doesn't need dispatch_release (?)
+        // dispatch_release(sem->handle);
         sem->handle = NULL;
     }
 }

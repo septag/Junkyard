@@ -383,7 +383,7 @@ enum class GfxVertexInputRate : uint32
 
 struct GfxVertexInputAttributeDesc 
 {
-    String<16>  semantic;
+    String<12>  semantic;
     uint32      semanticIdx;
     uint32      binding;
     GfxFormat   format;
