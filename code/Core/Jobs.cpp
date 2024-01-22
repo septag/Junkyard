@@ -132,7 +132,8 @@ struct JobsContext
     JobsInitParams initParams;
     Thread* threads[uint32(JobsType::_Count)];
     uint32 numThreads[uint32(JobsType::_Count)];
-    MemTlsfAllocator_ThreadSafe fiberAlloc;
+    MemTlsfAllocator tlsfAlloc;
+    MemThreadSafeAllocator runtimeAlloc;
     JobsAtomicPool<JobsInstance, _limits::kJobsMaxInstances>* instancePool;
     JobsAtomicPool<JobsFiberProperties, _limits::kJobsMaxPending>* fiberPropsPool;
     JobsWaitingList waitingLists[uint32(JobsType::_Count)];
@@ -141,7 +142,7 @@ struct JobsContext
     StaticArray<void*, 32> pointers;    // Storing memory pointers, For garbage collection at release
 
     // Stats
-    size_t fiberHeapTotal;
+    size_t runtimeHeapTotal;
     size_t initHeapStart;
     size_t initHeapSize;
 
@@ -281,7 +282,7 @@ NO_INLINE static JobsFiber* jobsCreateFiber(JobsFiberProperties* props)
     mco_desc desc = mco_desc_init(jobsEntryFn, props->stackSize);
     desc.malloc_cb = jobsMcoMallocFn;
     desc.free_cb = jobsMcoFreeFn;
-    desc.allocator_data = &gJobs.fiberAlloc;
+    desc.allocator_data = &gJobs.runtimeAlloc;
 
     mco_coro* co;
     mco_result r = mco_create(&co, &desc);
@@ -305,7 +306,7 @@ NO_INLINE static JobsFiber* jobsCreateFiber(JobsFiberProperties* props)
 
     atomicFetchAdd32Explicit(&gJobs.numFibers, 1, AtomicMemoryOrder::Relaxed);
     gJobs.maxValues[0].numFibersMax = Max(gJobs.numFibers, gJobs.maxValues[0].numFibersMax);
-    gJobs.maxValues[0].maxFiberHeap = Max<uint32>(uint32(gJobs.fiberAlloc.GetAllocatedSize()), gJobs.maxValues[0].maxFiberHeap);
+    gJobs.maxValues[0].maxFiberHeap = Max<uint32>(uint32(gJobs.tlsfAlloc.GetAllocatedSize()), gJobs.maxValues[0].maxFiberHeap);
 
     return reinterpret_cast<JobsFiber*>(co->storage);
 }
@@ -560,8 +561,8 @@ void jobsInitialize(const JobsInitParams& initParams)
     ASSERT(initParams.alloc);
 
     gJobs.initParams = initParams;
-    if (initParams.alloc->GetType() == AllocatorType::Budget)
-        gJobs.initHeapStart = ((MemBudgetAllocator*)initParams.alloc)->GetOffset();
+    if (initParams.alloc->GetType() == AllocatorType::Bump)
+        gJobs.initHeapStart = ((MemBumpAllocatorBase*)initParams.alloc)->GetOffset();
     
     SysInfo info {};
     sysGetSysInfo(&info);
@@ -583,7 +584,7 @@ void jobsInitialize(const JobsInitParams& initParams)
     #ifdef JOBS_USE_ANDERSON_LOCK
         uint32 numTotalThreads = gJobs.numThreads[0] + gJobs.numThreads[1] + 1;
         atomicALockInitialize(&gJobs.waitingListLock, numTotalThreads, memAllocTyped<AtomicALockThread>(numTotalThreads, initParams.alloc));
-        if (initParams.alloc->GetType() != AllocatorType::Budget)
+        if (initParams.alloc->GetType() != AllocatorType::Bump)
             gJobs.pointers.Add(gJobs.waitingListLock.slots);
     #endif
 
@@ -597,11 +598,12 @@ void jobsInitialize(const JobsInitParams& initParams)
         size_t allocSize = 2*maxFibers*kMB;
         size_t poolSize = MemTlsfAllocator::GetMemoryRequirement(allocSize);
         void* buffer = memAlloc(poolSize, initParams.alloc);
-        if (initParams.alloc->GetType() != AllocatorType::Budget)
+        if (initParams.alloc->GetType() != AllocatorType::Bump)
             gJobs.pointers.Add(buffer);
 
-        gJobs.fiberAlloc.Initialize(allocSize, buffer, poolSize, initParams.debugAllocations);
-        gJobs.fiberHeapTotal = allocSize;
+        gJobs.tlsfAlloc.Initialize(allocSize, buffer, poolSize, initParams.debugAllocations);
+        gJobs.runtimeAlloc.SetAllocator(&gJobs.tlsfAlloc);
+        gJobs.runtimeHeapTotal = allocSize;
     }
 
     gJobs.instancePool = JobsAtomicPool<JobsInstance, _limits::kJobsMaxInstances>::Create(initParams.alloc);
@@ -610,7 +612,7 @@ void jobsInitialize(const JobsInitParams& initParams)
     // Initialize and start the threads
     // LongTasks
     gJobs.threads[uint32(JobsType::LongTask)] = NEW_ARRAY(initParams.alloc, Thread, gJobs.numThreads[uint32(JobsType::LongTask)]);
-    if (initParams.alloc->GetType() != AllocatorType::Budget)
+    if (initParams.alloc->GetType() != AllocatorType::Bump)
         gJobs.pointers.Add(gJobs.threads[uint32(JobsType::LongTask)]);
 
     for (uint32 i = 0; i < gJobs.numThreads[uint32(JobsType::LongTask)]; i++) {
@@ -629,7 +631,7 @@ void jobsInitialize(const JobsInitParams& initParams)
     
     // ShortTasks
     gJobs.threads[uint32(JobsType::ShortTask)] = NEW_ARRAY(initParams.alloc, Thread, gJobs.numThreads[uint32(JobsType::ShortTask)]);
-    if (initParams.alloc->GetType() != AllocatorType::Budget)
+    if (initParams.alloc->GetType() != AllocatorType::Bump)
         gJobs.pointers.Add(gJobs.threads[uint32(JobsType::ShortTask)]);
 
     for (uint32 i = 0; i < gJobs.numThreads[uint32(JobsType::ShortTask)]; i++) {
@@ -648,8 +650,8 @@ void jobsInitialize(const JobsInitParams& initParams)
 
     debugFiberScopeProtector_RegisterCallback([](void*)->bool { return JobsGetThreadData() && JobsGetThreadData()->curFiber != nullptr; });
 
-    if (initParams.alloc->GetType() == AllocatorType::Budget)
-        gJobs.initHeapSize = ((MemBudgetAllocator*)initParams.alloc)->GetOffset() - gJobs.initHeapStart;
+    if (initParams.alloc->GetType() == AllocatorType::Bump)
+        gJobs.initHeapSize = ((MemBumpAllocatorBase*)initParams.alloc)->GetOffset() - gJobs.initHeapStart;
 
     logInfo("(init) Job dispatcher: %u short task threads, %u long task threads", 
             gJobs.numThreads[uint32(JobsType::ShortTask)],
@@ -704,7 +706,7 @@ void jobsGetBudgetStats(JobsBudgetStats* stats)
     stats->numJobs = m.numInstancesMax;
 
     stats->fiberHeapSize = m.maxFiberHeap;
-    stats->fiberHeapMax = gJobs.fiberHeapTotal;
+    stats->fiberHeapMax = gJobs.runtimeHeapTotal;
 
     stats->initHeapStart = gJobs.initHeapStart;
     stats->initHeapSize = gJobs.initHeapSize;

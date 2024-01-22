@@ -72,7 +72,8 @@ struct Asset
 
 struct AssetManager
 {
-    MemTlsfAllocator_ThreadSafe runtimeHeap;
+    MemThreadSafeAllocator runtimeAlloc;
+    MemTlsfAllocator tlsfAlloc;
 
     Array<AssetTypeManager> typeManagers;
     HandlePool<AssetHandle, Asset> assets;  // Holds all the active asset handles (can be 'failed', 'loading' or 'alive')
@@ -135,7 +136,7 @@ static AssetResult assetLoadFromCache(const AssetTypeManager& typeMgr, const Ass
     
                 // Allocate and Copy dependencies from runtimeHeap. This is where internal asset manager expects them to be.
                 if (result.dependsBufferSize) {
-                    result.depends = (AssetDependency*)memAlloc(result.dependsBufferSize, &gAssetMgr.runtimeHeap);
+                    result.depends = (AssetDependency*)memAlloc(result.dependsBufferSize, &gAssetMgr.runtimeAlloc);
                     cache.Read(result.depends, result.dependsBufferSize);
                 }
     
@@ -276,7 +277,7 @@ bool _private::assetInitialize()
     gAssetMgr.assetsMtx.Initialize();
     gAssetMgr.hashLookupMtx.Initialize();
 
-    MemBudgetAllocator* initHeap = engineGetInitHeap();
+    MemBumpAllocatorBase* initHeap = engineGetInitHeap();
     gAssetMgr.initHeapStart = initHeap->GetOffset();
 
     {
@@ -311,8 +312,8 @@ bool _private::assetInitialize()
 
     {
         size_t bufferSize = MemTlsfAllocator::GetMemoryRequirement(_limits::kAssetRuntimeSize);
-        gAssetMgr.runtimeHeap.Initialize(_limits::kAssetRuntimeSize, memAlloc(bufferSize, initHeap), bufferSize,
-                                         settingsGet().engine.debugAllocations);
+        gAssetMgr.tlsfAlloc.Initialize(_limits::kAssetRuntimeSize, initHeap->Malloc(bufferSize), bufferSize, settingsGet().engine.debugAllocations);
+        gAssetMgr.runtimeAlloc.SetAllocator(&gAssetMgr.tlsfAlloc);
     }
 
     gAssetMgr.initHeapSize = initHeap->GetOffset() - gAssetMgr.initHeapStart;
@@ -350,10 +351,10 @@ void _private::assetDetectAndReleaseLeaks()
             }
 
             MemSingleShotMalloc<AssetLoadParams> mallocator;
-            mallocator.Free(a.params, &gAssetMgr.runtimeHeap);
+            mallocator.Free(a.params, &gAssetMgr.runtimeAlloc);
 
-            memFree(a.depends, &gAssetMgr.runtimeHeap);
-            memFree(a.metaData, &gAssetMgr.runtimeHeap);
+            memFree(a.depends, &gAssetMgr.runtimeAlloc);
+            memFree(a.metaData, &gAssetMgr.runtimeAlloc);
         }
 
         gAssetMgr.assets.Clear();
@@ -368,7 +369,8 @@ void _private::assetRelease()
 
         gAssetMgr.hashLookupMtx.Release();
         gAssetMgr.assetsMtx.Release();
-        gAssetMgr.runtimeHeap.Release();
+        gAssetMgr.tlsfAlloc.Release();
+        gAssetMgr.runtimeAlloc.SetAllocator(nullptr);
 
         gAssetMgr.initialized = false;
     }
@@ -394,7 +396,7 @@ static AssetHandle assetCreateNew(uint32 typeMgrIdx, uint32 assetHash, const Ass
     MemSingleShotMalloc<AssetLoadParams> mallocator;
     mallocator.AddMemberField<char>(offsetof(AssetLoadParams, path), kMaxPath)
               .AddExternalPointerField<uint8>(&nextParams, typeMgr.extraParamTypeSize);
-    AssetLoadParams* newParams = mallocator.Calloc(&gAssetMgr.runtimeHeap);
+    AssetLoadParams* newParams = mallocator.Calloc(&gAssetMgr.runtimeAlloc);
     
     strCopy(const_cast<char*>(newParams->path), kMaxPath, params.path);
     newParams->alloc = params.alloc;
@@ -453,7 +455,7 @@ static AssetResult assetLoadObjLocal(AssetHandle handle, const AssetTypeManager&
     bool cacheOnly = settingsGet().engine.useCacheOnly;
     AssetResult result {};
     if (!cacheOnly)
-        result = typeMgr.callbacks->Load(handle, loadParams, cacheHash, &gAssetMgr.runtimeHeap);
+        result = typeMgr.callbacks->Load(handle, loadParams, cacheHash, &gAssetMgr.runtimeAlloc);
     bool loadFromCache = (cacheOnly && cacheHash != 0) || (result.cacheHash == cacheHash);
     if (loadFromCache) {
         ASSERT(result.obj == nullptr);
@@ -525,7 +527,7 @@ static AssetResult assetLoadObjRemote(AssetHandle handle, const AssetTypeManager
         if (result.numDepends) {
             ASSERT(result.depends);
             ASSERT(result.dependsBufferSize);   // Only remote loads should implement this
-            params->result.depends = (AssetDependency*)memAlloc(result.dependsBufferSize, &gAssetMgr.runtimeHeap);
+            params->result.depends = (AssetDependency*)memAlloc(result.dependsBufferSize, &gAssetMgr.runtimeAlloc);
             memcpy(params->result.depends, result.depends, result.dependsBufferSize);
             params->result.numDepends = result.numDepends;
         }
@@ -634,7 +636,7 @@ bool assetLoadMetaData(AssetHandle handle, Allocator* alloc, AssetMetaKeyValue**
         return true;
     }
     else {
-        if (assetLoadMetaData(asset.params->path, assetGetCurrentPlatform(), &gAssetMgr.runtimeHeap, &asset.metaData, &asset.numMeta)) {
+        if (assetLoadMetaData(asset.params->path, assetGetCurrentPlatform(), &gAssetMgr.runtimeAlloc, &asset.metaData, &asset.numMeta)) {
             *outData = memAllocCopy<AssetMetaKeyValue>(asset.metaData, asset.numMeta, alloc);
             *outKeyCount = asset.numMeta;
             return true;
@@ -847,9 +849,9 @@ void assetUnload(AssetHandle handle)
             if (callbacks)
                 callbacks->Release(asset.obj, asset.params->alloc);
 
-            memFree(asset.params, &gAssetMgr.runtimeHeap);
-            memFree(asset.depends, &gAssetMgr.runtimeHeap);
-            memFree(asset.metaData, &gAssetMgr.runtimeHeap);
+            memFree(asset.params, &gAssetMgr.runtimeAlloc);
+            memFree(asset.depends, &gAssetMgr.runtimeAlloc);
+            memFree(asset.metaData, &gAssetMgr.runtimeAlloc);
             asset.params = nullptr;
             asset.metaData = nullptr;
             asset.depends = nullptr;
@@ -1013,10 +1015,10 @@ void assetGetBudgetStats(AssetBudgetStats* stats)
     stats->initHeapStart = gAssetMgr.initHeapStart;
     stats->initHeapSize = gAssetMgr.initHeapSize;
 
-    stats->runtimeHeapSize = gAssetMgr.runtimeHeap.GetAllocatedSize();
+    stats->runtimeHeapSize = gAssetMgr.tlsfAlloc.GetAllocatedSize();
     stats->runtimeHeapMax = _limits::kAssetRuntimeSize;
 
-    stats->runtimeHeap = &gAssetMgr.runtimeHeap;
+    stats->runtimeHeap = &gAssetMgr.tlsfAlloc;
 }
 
 void _private::assetUpdateCache(float dt)

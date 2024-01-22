@@ -502,7 +502,7 @@ void _private::gfxReleaseImageManager()
 
         MemSingleShotMalloc<GfxDescriptorUpdateCacheItem> mallocator;
         for (GfxDescriptorUpdateCacheItem* item : gImageMgr.updateCache)
-            mallocator.Free(item, &gVk.runtimeHeap);
+            mallocator.Free(item, &gVk.runtimeAlloc);
         gImageMgr.updateCache.Free();
         gImageMgr.updateCacheMtx.Release();
 
@@ -526,7 +526,7 @@ static void gfxUpdateImageDescriptorSetCache(GfxDescriptorSet dset, uint32 numBi
     else {
         MemSingleShotMalloc<GfxDescriptorUpdateCacheItem> mallocator;
         mallocator.AddMemberField<GfxDescriptorBindingDesc>(offsetof(GfxDescriptorUpdateCacheItem, bindings), numBindings);
-        item = mallocator.Calloc(&gVk.runtimeHeap);
+        item = mallocator.Calloc(&gVk.runtimeAlloc);
         item->dset = dset;
         item->numBindings = numBindings;
         memcpy(item->bindings, bindings, sizeof(GfxDescriptorBindingDesc)*numBindings);

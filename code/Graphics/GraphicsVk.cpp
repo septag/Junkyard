@@ -333,7 +333,8 @@ struct GfxVkState
 {
     bool initialized;
 
-    MemTlsfAllocator_ThreadSafe runtimeHeap;   // All allocations during runtime are allocated from this
+    MemTlsfAllocator tlsfAlloc;
+    MemThreadSafeAllocator runtimeAlloc;   // All allocations during runtime are allocated from this
     GfxHeapAllocator alloc;
     VkAllocationCallbacks allocVk;
 
@@ -1437,13 +1438,13 @@ bool _private::gfxInitialize()
         return false;
     }
 
-    MemBudgetAllocator* initHeap = engineGetInitHeap();
+    MemBumpAllocatorBase* initHeap = engineGetInitHeap();
     gVk.initHeapStart = initHeap->GetOffset();
     
     {
         size_t bufferSize = MemTlsfAllocator::GetMemoryRequirement(_limits::kGfxRuntimeSize);
-        gVk.runtimeHeap.Initialize(_limits::kGfxRuntimeSize, memAlloc(bufferSize, initHeap), bufferSize, 
-                                   settingsGet().engine.debugAllocations);
+        gVk.tlsfAlloc.Initialize(_limits::kGfxRuntimeSize, initHeap->Malloc(bufferSize), bufferSize, settingsGet().engine.debugAllocations);
+        gVk.runtimeAlloc.SetAllocator(&gVk.tlsfAlloc);
     }
 
     const SettingsGraphics& settings = settingsGet().graphics;
@@ -2344,7 +2345,8 @@ void _private::gfxRelease()
     vkDestroyInstance(gVk.instance, &gVk.allocVk);
 
     gVk.pools.Release();
-    gVk.runtimeHeap.Release();
+    gVk.tlsfAlloc.Release();
+    gVk.runtimeAlloc.SetAllocator(nullptr);
 }
 
 void GfxObjectPools::DetectAndReleaseLeaks()
@@ -4360,7 +4362,7 @@ const GfxPhysicalDeviceProperties& gfxGetPhysicalDeviceProperties()
 
 void* GfxHeapAllocator::Malloc(size_t size, uint32 align)
 {
-    void* ptr = gVk.runtimeHeap.Malloc(size, align);
+    void* ptr = gVk.runtimeAlloc.Malloc(size, align);
     TracyCAllocN(ptr, size, kGfxAllocName);
     return ptr;
 }
@@ -4369,7 +4371,7 @@ void* GfxHeapAllocator::Realloc(void* ptr, size_t size, uint32 align)
 {
     [[maybe_unused]] void* freePtr = ptr;
 
-    ptr = gVk.runtimeHeap.Realloc(ptr, size, align);
+    ptr = gVk.runtimeAlloc.Realloc(ptr, size, align);
 
     #ifdef TRACY_ENABLE
         if (freePtr) {
@@ -4383,7 +4385,7 @@ void* GfxHeapAllocator::Realloc(void* ptr, size_t size, uint32 align)
 
 void  GfxHeapAllocator::Free(void* ptr, uint32 align)
 {
-    gVk.runtimeHeap.Free(ptr, align);
+    gVk.runtimeAlloc.Free(ptr, align);
     TracyCFreeN(ptr, kGfxAllocName);
 }
     
@@ -4391,11 +4393,11 @@ void* GfxHeapAllocator::vkAlloc(void*, size_t size, size_t align, VkSystemAlloca
 {
     // Align to minimum of 32 bytes 
     // because we don't know the size of alignment on free, we need to always force alignment!
-    if (gVk.runtimeHeap.IsDebugMode()) {
+    if (gVk.tlsfAlloc.IsDebugMode()) {
         uint32 minAlign = CONFIG_MACHINE_ALIGNMENT << 1;
         align = Max(minAlign, uint32(align));
     }
-    void* ptr = gVk.runtimeHeap.Malloc(size, uint32(align));
+    void* ptr = gVk.runtimeAlloc.Malloc(size, uint32(align));
     TracyCAllocN(ptr, size, kVulkanAllocName);
     return ptr;
 }
@@ -4403,11 +4405,11 @@ void* GfxHeapAllocator::vkAlloc(void*, size_t size, size_t align, VkSystemAlloca
 void* GfxHeapAllocator::vkRealloc(void*, void* pOriginal, size_t size, size_t align, VkSystemAllocationScope)
 {
     [[maybe_unused]] void* freePtr = pOriginal;
-    if (gVk.runtimeHeap.IsDebugMode()) {
+    if (gVk.tlsfAlloc.IsDebugMode()) {
         uint32 minAlign = CONFIG_MACHINE_ALIGNMENT << 1;
         align = Max(minAlign, uint32(align));
     }
-    void* ptr = gVk.runtimeHeap.Realloc(pOriginal, size, uint32(align));
+    void* ptr = gVk.runtimeAlloc.Realloc(pOriginal, size, uint32(align));
 
     #ifdef TRACY_ENABLE
         if (freePtr) {
@@ -4422,10 +4424,10 @@ void* GfxHeapAllocator::vkRealloc(void*, void* pOriginal, size_t size, size_t al
 void GfxHeapAllocator::vkFree(void*, void* pPtr)
 {
     // TODO: we have to know the alignment here, this is not exactly the best approach
-    if (gVk.runtimeHeap.IsDebugMode())
-        gVk.runtimeHeap.Free(pPtr, CONFIG_MACHINE_ALIGNMENT << 1);
+    if (gVk.tlsfAlloc.IsDebugMode())
+        gVk.runtimeAlloc.Free(pPtr, CONFIG_MACHINE_ALIGNMENT << 1);
     else 
-        gVk.runtimeHeap.Free(pPtr);
+        gVk.runtimeAlloc.Free(pPtr);
     TracyCFreeN(pPtr, kVulkanAllocName);
 }
 
@@ -4458,10 +4460,10 @@ void gfxGetBudgetStats(GfxBudgetStats* stats)
     stats->initHeapStart = gVk.initHeapStart;
     stats->initHeapSize = gVk.initHeapSize;
 
-    stats->runtimeHeapSize = gVk.runtimeHeap.GetAllocatedSize();
+    stats->runtimeHeapSize = gVk.tlsfAlloc.GetAllocatedSize();
     stats->runtimeHeapMax = _limits::kGfxRuntimeSize;
     
-    stats->runtimeHeap = &gVk.runtimeHeap;
+    stats->runtimeHeap = &gVk.tlsfAlloc;
 
     memcpy(&stats->descriptors, &gVk.descriptorStats, sizeof(gVk.descriptorStats));
 }

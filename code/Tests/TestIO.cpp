@@ -239,7 +239,8 @@ struct AppImpl final : AppCallbacks
     {
         struct IOTask
         {
-            MemLinearVMAllocator_ThreadSafe alloc;
+            MemBumpAllocatorVM vmAlloc;
+            MemThreadSafeAllocator alloc;
             uint64 totalSize;
             const Path* paths;
             JobsSignal* signals;
@@ -249,7 +250,8 @@ struct AppImpl final : AppCallbacks
 
         MemTempAllocator tmpAlloc;
         task.signals = tmpAlloc.MallocZeroTyped<JobsSignal>(numFiles);
-        task.alloc.Initialize(kGB*8, kGB);
+        task.vmAlloc.Initialize(kGB*8, kGB);
+        task.alloc.SetAllocator(&task.vmAlloc);
 
         JobsHandle handle = jobsDispatch(JobsType::LongTask, [](uint32 groupIndex, void* userData) {
             IOTask* task = (IOTask*)userData;
@@ -276,20 +278,22 @@ struct AppImpl final : AppCallbacks
         }, &task, numFiles, JobsPriority::Normal, 64*kKB);
         jobsWaitForCompletion(handle);
         totalSize = task.totalSize;
-        task.alloc.Release();
+        task.vmAlloc.Release();
     }
 
     static void BruteforceTaskAsyncMethod(const Path* paths, int numFiles, size_t& totalSize, atomicUint64& hashTime)
     {
         struct IOTask
         {
-            MemLinearVMAllocator_ThreadSafe alloc;
+            MemBumpAllocatorVM vmAlloc;
+            MemThreadSafeAllocator alloc;
             uint64 totalSize;
             const Path* paths;
             atomicUint64* hashTime;
         };
         IOTask task { .paths = paths, .hashTime = &hashTime };
-        task.alloc.Initialize(kGB*8, kGB);
+        task.vmAlloc.Initialize(kGB*8, kGB);
+        task.alloc.SetAllocator(&task.vmAlloc);
 
         JobsHandle handle = jobsDispatch(JobsType::LongTask, [](uint32 groupIndex, void* userData) {
             IOTask* task = (IOTask*)userData;
@@ -307,7 +311,7 @@ struct AppImpl final : AppCallbacks
         }, &task, numFiles);
         jobsWaitForCompletion(handle);
         totalSize = task.totalSize;
-        task.alloc.Release();
+        task.vmAlloc.Release();
     }
 
     static void BruteforceBlockMethod(const Path* paths, int numFiles, size_t& totalSize, atomicUint64& hashTime)
@@ -357,7 +361,7 @@ struct AppImpl final : AppCallbacks
 
     static void BruteforceAsyncMethod(const Path* paths, int numFiles, size_t& totalSize, atomicUint64& hashTime)
     {
-        MemLinearVMAllocator myalloc;
+        MemBumpAllocatorVM myalloc;
         myalloc.Initialize(kGB*8, kGB);
 
         MemTempAllocator tmpAlloc;
@@ -434,7 +438,7 @@ struct AppImpl final : AppCallbacks
 
     static void CPIO_Method(const Path* paths, int numFiles, size_t& totalSize, atomicUint64& hashTime)
     {
-        MemLinearVMAllocator fileAlloc;
+        MemBumpAllocatorVM fileAlloc;
         fileAlloc.Initialize(8*kGB, kGB);
 
         MemTempAllocator tmpAlloc;
@@ -503,7 +507,7 @@ struct AppImpl final : AppCallbacks
 
     static void NoCacheMethod(const Path* paths, int numFiles, size_t& totalSize, atomicUint64& hashTime)
     {
-        MemLinearVMAllocator fileAlloc;
+        MemBumpAllocatorVM fileAlloc;
         fileAlloc.Initialize(8*kGB, kGB);
 
         MemTempAllocator tmpAlloc;

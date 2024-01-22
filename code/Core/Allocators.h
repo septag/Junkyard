@@ -26,8 +26,7 @@ enum class AllocatorType
     Unknown,
     Heap,       // Normal malloc/free heap allocator
     Temp,       // Stack-based temp allocator. Grows by page. Only works within a single thread context and function scopes.
-    LinearVM,   // Linear-based VM backed allocator. Fixed capacity. Grows page by page
-    Budget,     // Linear-based budget allocator. Fixed capacity. Persists in memory in a higher lifetime
+    Bump,       // Bump/Linear-based allocator. Fixed capacity. Grows page by page. Can be backed by any kind of memory (VM/gpu/stack/heap/etc.)
     Tlsf        // TLSF dynamic allocator. Fixed capacity. Persists in memory and usually used for subsystems with unknown memory allocation pattern.
 };
 
@@ -132,25 +131,32 @@ private:
     bool mOwnsId = false;
 };
 
-//------------------------------------------------------------------------
-// Linear virtual-mem allocator: Linear-based allocator backed by VMem. Grows by page size. reserve a large size upfront
-struct MemLinearVMAllocator : Allocator
+//----------------------------------------------------------------------------------------------------------------------
+// Generic bump allocator. Different memory backends should inherit from this.
+struct MemBumpAllocatorBase : Allocator
 {
     void Initialize(size_t reserveSize, size_t pageSize, bool debugMode = false);
     void Release();
     void Reset();
+    void CommitAll();
 
     [[nodiscard]] void* Malloc(size_t size, uint32 align = CONFIG_MACHINE_ALIGNMENT) override;
     [[nodiscard]] void* Realloc(void* ptr, size_t size, uint32 align = CONFIG_MACHINE_ALIGNMENT) override;
     void  Free(void* ptr, uint32 align = CONFIG_MACHINE_ALIGNMENT) override;
-    AllocatorType GetType() const override { return AllocatorType::LinearVM; }
+    AllocatorType GetType() const override { return AllocatorType::Bump; }
 
     size_t GetReservedSize() const { return mReserveSize; }
     size_t GetAllocatedSize() const { return mOffset; }
     size_t GetCommitedSize() const { return mCommitSize; }
+    size_t GetOffset() const { return mOffset; }
 
 protected:
-    uint8* myBuffer = nullptr;
+    virtual void* BackendReserve(size_t size) = 0;
+    virtual void* BackendCommit(void* ptr, size_t size) = 0;
+    virtual void  BackendDecommit(void* ptr, size_t size) = 0;
+    virtual void  BackendRelease(void* ptr, size_t size) = 0;
+
+    uint8* mBuffer = nullptr;
     size_t mCommitSize = 0;
     size_t mOffset = 0;
     size_t mPageSize = 0;
@@ -160,49 +166,34 @@ protected:
     bool mDebugMode = false;
 };
 
-struct MemLinearVMAllocator_ThreadSafe final : MemLinearVMAllocator
+struct MemBumpAllocatorVM final : MemBumpAllocatorBase
 {
+private:
+    void* BackendReserve(size_t size) override;
+    void* BackendCommit(void* ptr, size_t size) override;
+    void  BackendDecommit(void* ptr, size_t size) override;
+    void  BackendRelease(void* ptr, size_t size) override;
+};
+
+struct MemThreadSafeAllocator final : Allocator
+{
+    MemThreadSafeAllocator() {}
+    explicit MemThreadSafeAllocator(Allocator* alloc);
+    void SetAllocator(Allocator* alloc);
+
     [[nodiscard]] void* Malloc(size_t size, uint32 align = CONFIG_MACHINE_ALIGNMENT) override;
     [[nodiscard]] void* Realloc(void* ptr, size_t size, uint32 align = CONFIG_MACHINE_ALIGNMENT) override;
     void Free(void* ptr, uint32 align = CONFIG_MACHINE_ALIGNMENT) override;
+    AllocatorType GetType() const override;
 
 private:
     AtomicLock mLock;
-};
-
-//------------------------------------------------------------------------
-// Budget allocator: Linear-based budget allocator. Fixed capacity. Persists in memory in a higher lifetime
-//  NOTE: If you attempt to realloc a pointer with budget allocator, you will get an ASSERT failure, because Budget allocators are not meant for that
-struct MemBudgetAllocator final : Allocator
-{
-    explicit MemBudgetAllocator(const char* name);
-
-    void Initialize(size_t sizeBudget, size_t pageSize, bool commitAll, bool debugMode = false);
-    void Release();
-
-    [[nodiscard]] void* Malloc(size_t size, uint32 align = CONFIG_MACHINE_ALIGNMENT) override;
-    [[nodiscard]] void* Realloc(void* ptr, size_t size, uint32 align = CONFIG_MACHINE_ALIGNMENT) override;
-    void  Free(void* ptr, uint32 align = CONFIG_MACHINE_ALIGNMENT) override;
-    AllocatorType GetType() const override { return AllocatorType::Budget; }
-
-    size_t GetCommitedSize() const { return mCommitSize; }
-    size_t GetTotalSize() const { return mMaxSize; }
-    size_t GetOffset() const { return mOffset; }
-
-protected:
-    uint8* mBuffer = nullptr;
-    size_t mMaxSize = 0;
-    size_t mCommitSize = 0;
-    size_t mOffset = 0;
-    size_t mPageSize = 0;   
-    char   mName[32];
-    bool   mDebugMode = false;
-    Array<_private::MemDebugPointer, 8>* mDebugPointers = nullptr;
+    Allocator* mAlloc = nullptr;
 };
 
 //------------------------------------------------------------------------
 // TLSF dynamic allocator: Fixed capacity. Persists in memory and usually used for subsystems with unknown memory allocation pattern.
-struct MemTlsfAllocator : Allocator
+struct MemTlsfAllocator final : Allocator
 {
     static size_t GetMemoryRequirement(size_t poolSize);
 
@@ -225,16 +216,6 @@ protected:
     void*  mTlsf = nullptr;
     size_t mTlsfSize = 0;
     bool   mDebugMode = false;
-};
-
-struct MemTlsfAllocator_ThreadSafe final : MemTlsfAllocator
-{
-    [[nodiscard]] void* Malloc(size_t size, uint32 align = CONFIG_MACHINE_ALIGNMENT) override;
-    [[nodiscard]] void* Realloc(void* ptr, size_t size, uint32 align = CONFIG_MACHINE_ALIGNMENT) override;
-    void  Free(void* ptr, uint32 align = CONFIG_MACHINE_ALIGNMENT) override;
-
-protected:
-    AtomicLock mLock;    
 };
 
 //----------------------------------------------------------------------------------------------------------------------
@@ -632,3 +613,4 @@ inline _T*  MemSingleShotMalloc<_T, _MaxFields>::Calloc(void* buff, [[maybe_unus
 
     return (_T*)buff;
 }
+

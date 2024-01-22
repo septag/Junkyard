@@ -3,7 +3,7 @@
 #include "Core/Base.h"
 
 struct SysInfo;
-struct MemBudgetAllocator;
+struct MemBumpAllocatorBase;
 
 API bool engineInitialize();
 API void engineRelease();
@@ -15,7 +15,7 @@ API uint64 engineFrameIndex();
 API const SysInfo& engineGetSysInfo();
 API float engineGetCpuFrameTimeMS();
 
-API MemBudgetAllocator* engineGetInitHeap();
+API MemBumpAllocatorBase* engineGetInitHeap();
 
 // Shortcut string is a combination of keys joined by + sign
 //  Example: "K+SHIFT+CTRL"

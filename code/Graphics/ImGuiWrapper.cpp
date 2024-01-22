@@ -340,7 +340,7 @@ static void imguiOnEvent(const AppEvent& ev, [[maybe_unused]] void* userData)
 
 bool _private::imguiInitialize()
 {
-    MemBudgetAllocator* initHeap = engineGetInitHeap();
+    MemBumpAllocatorBase* initHeap = engineGetInitHeap();
     gImGui.initHeapStart = initHeap->GetOffset();
 
     {

@@ -38,7 +38,7 @@ struct EngineShortcutKeys
     void* userData;
 };
 
-struct EngineState
+struct EngineContext
 {
     SysInfo    sysInfo = {};
 
@@ -51,20 +51,15 @@ struct EngineState
     uint64 rawFrameStartTime;
     uint64 rawFrameTime;        
 
-    MemBudgetAllocator initHeap;
+    MemBumpAllocatorVM initHeap;
 
     bool initialized = false;
     float refreshStatsTime = 0;
 
     Array<EngineShortcutKeys> shortcuts;
-
-    EngineState() : 
-        initHeap("Init")
-    {
-    }
 };
 
-static EngineState gEng;
+static EngineContext gEng;
 
 static void engineRemoteDisconnected(const char* url, bool onPurpose, SocketErrorCode errCode)
 {
@@ -121,7 +116,7 @@ bool engineInitialize()
     // Initialize heaps
     // TODO: make all heaps commit all memory upfront in RELEASE builds
     gEng.shortcuts.SetAllocator(memDefaultAlloc());
-    gEng.initHeap.Initialize(kHeapInitBudget, kMB, false, settingsGet().engine.debugAllocations);
+    gEng.initHeap.Initialize(kHeapInitBudget, kMB, settingsGet().engine.debugAllocations);
 
     if (settingsGet().engine.debugAllocations) {
         memTempSetDebugMode(true);
@@ -357,7 +352,7 @@ const SysInfo& engineGetSysInfo()
     return gEng.sysInfo;
 }
 
-MemBudgetAllocator* engineGetInitHeap()
+MemBumpAllocatorBase* engineGetInitHeap()
 {
     return &gEng.initHeap;
 }
