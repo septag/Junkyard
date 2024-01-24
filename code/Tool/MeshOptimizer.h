@@ -3,10 +3,28 @@
 #include "../Core/Base.h"
 
 #if CONFIG_TOOLMODE
-struct Model;
-struct ModelLoadParams;
+struct MeshOptMesh
+{
+    void** vertexBuffers;
+    uint32* indexBuffer;
+    uint32* vertexStrides;
+    
+    uint32 posStride;
+    uint32 posBufferIndex;
+    uint32 posOffset;
 
-void meshoptOptimizeModel(Model* model, const ModelLoadParams& modelParams);
+    uint32 numVertexBuffers;
+    uint32 numVertices;
+    uint32 numIndices;
+};
+
+struct MeshOptModel
+{
+    MeshOptMesh** meshes;
+    uint32 numMeshes;
+};
+
+void meshoptOptimizeModel(MeshOptModel* model);
 
 namespace _private
 {

@@ -27,8 +27,9 @@
 
 #include "../Core/StringUtil.h"
 #include "../Core/MathTypes.h"
-#include "../Graphics/Graphics.h"
 #include "../CommonTypes.h"
+
+#include "Image.h"
 
 inline constexpr uint32 kModelMaxVertexAttributes = 16;
 inline constexpr uint32 kModelMaxVertexBuffersPerShader = 8;
@@ -177,15 +178,8 @@ struct ModelLoadParams
 API AssetHandleModel assetLoadModel(const char* path, const ModelLoadParams& params, AssetBarrier barrier = AssetBarrier());
 API Model* assetGetModel(AssetHandleModel modelHandle);  
 
-// Get artibatry pointer to the vertex data in the mesh with the specified vertex semantic
-// For example, if you want to get position coords: semantic="POSITION", semanticIdx=0
-// outVertexStride is the stride between each attribute in the buffer
-uint8* modelGetVertexAttributePointer(ModelMesh* mesh, const ModelGeometryLayout& vertexLayout, const char* semantic, 
-                                      uint32 semanticIdx, uint32* outVertexStride);
-
-
 namespace _private
 {
-    bool modelInitialize();
-    void modelRelease();
+    bool assetInitializeModelManager();
+    void assetReleaseModelManager();
 } // _private

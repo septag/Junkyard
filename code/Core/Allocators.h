@@ -503,7 +503,7 @@ template <typename _FieldType> inline MemSingleShotMalloc<_T, _MaxFields>&
 template <typename _T, uint32 _MaxFields>
 template <typename _PodAllocType> inline MemSingleShotMalloc<_T, _MaxFields>& 
 MemSingleShotMalloc<_T, _MaxFields>::AddMemberChildPODField(const _PodAllocType& podAlloc, uint32 offsetInStruct, 
-                                                        size_t arrayCount, bool relativePtr, uint32 align)
+                                                            size_t arrayCount, bool relativePtr, uint32 align)
 {
     uint32 index = mNumFields;
     ASSERT_MSG(index < _MaxFields, "Cannot add more fields, increase the _MaxFields");

@@ -1,14 +1,15 @@
 #include "DebugDraw.h"
 
-#include "Graphics.h"
-#include "Shader.h"
+#include "../Graphics/Graphics.h"
+
+#include "../Assets/Shader.h"
+#include "../Assets/AssetManager.h"
 
 #include "../Core/Allocators.h"
 #include "../Core/Log.h"
 #include "../Core/MathVector.h"
 
 #include "../Camera.h"
-#include "../AssetManager.h"
 
 static constexpr uint32 kDebugDrawMaxVerts = 32*1000;
 
@@ -151,7 +152,7 @@ bool _private::ddInitialize()
 
         {
             AssetBarrierScope b;
-            gDebugDraw.shaderAsset = assetLoadShader("/code/shaders/DebugDraw.hlsl", ShaderCompileDesc {}, b.Barrier());            
+            gDebugDraw.shaderAsset = assetLoadShader("/code/shaders/DebugDraw.hlsl", ShaderLoadParams {}, b.Barrier());            
         }
 
         if (!assetIsAlive(gDebugDraw.shaderAsset))

@@ -120,7 +120,7 @@ Blob imageEncoderCompress(ImageEncoderCompression compression, ImageEncoderQuali
     return blob;
 }
 
-ImageEncoderCompression GetCompressionEnum(const char* estr)
+ImageEncoderCompression imageEncoderCompressionGetEnum(const char* estr)
 {
     String32 str(estr);
 

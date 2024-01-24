@@ -6,23 +6,24 @@
 #include "../Core/Jobs.h"
 #include "../Core/MathAll.h"
 
-#include "../AssetManager.h"
 #include "../VirtualFS.h"
 #include "../Application.h"
 #include "../Engine.h"
 #include "../Camera.h"
 #include "../JunkyardSettings.h"
 
-#include "../Graphics/DebugDraw.h"
-#include "../Graphics/Model.h"
-#include "../Graphics/Shader.h"
-#include "../Graphics/GfxTools.h"
+#include "../Assets/AssetManager.h"
+#include "../Assets/Model.h"
+#include "../Assets/Shader.h"
 
-#include "../Tool/ImGuiTools.h"
+#include "../DebugTools/DebugDraw.h"
+#include "../DebugTools/FrameInfoHud.h"
+#include "../DebugTools/BudgetViewer.h"
+
+#include "../ImGui/ImGuiWrapper.h"
+#include "../ImGui/ImGuizmo.h"
 
 #include "../UnityBuild.inl"
-
-#include "../External/ImGuizmo/ImGuizmo.h"
 
 static constexpr uint32 kNumCubes = 10;
 
@@ -192,8 +193,8 @@ struct AppImpl : AppCallbacks
 
         if (imguiIsEnabled()) { // imgui test
             PROFILE_GPU_ZONE_NAME("ImGuiRender", true);
-            imguiBudgetHub(dt);
-            imguiQuickInfoHud(dt);
+            budgetViewerRender(dt);
+            frameInfoRender(dt);
 
             #if 0
             Mat4 view = fpsCam.GetViewMat();
@@ -265,7 +266,7 @@ struct AppImpl : AppCallbacks
             };
 
             modelAsset = assetLoadModel("/data/models/HighPolyBox/HighPolyBox.gltf", loadParams, b.Barrier());
-            modelShaderAsset = assetLoadShader("/code/shaders/Unlit.hlsl", ShaderCompileDesc {}, b.Barrier());
+            modelShaderAsset = assetLoadShader("/code/shaders/Unlit.hlsl", ShaderLoadParams {}, b.Barrier());
             for (uint32 i = 0; i < kNumCubes; i++) {
                 char imagePath[128];
                 strPrintFmt(imagePath, sizeof(imagePath), "/data/images/gen/%u.png", i+1);

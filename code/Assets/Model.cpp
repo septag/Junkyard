@@ -1,4 +1,5 @@
 #include "Model.h"
+#include "AssetManager.h"
 
 #define CGLTF_IMPLEMENTATION
 #define CGLTF_MALLOC(size) memAlloc(size);
@@ -10,7 +11,6 @@
 
 #include "../Core/Allocators.h"
 #include "../Core/Buffers.h"
-#include "../Core/StringUtil.h"
 #include "../Core/System.h"
 #include "../Core/Jobs.h"
 #include "../Core/Log.h"
@@ -18,7 +18,6 @@
 #include "../Core/Hash.h"
 #include "../Core/MathAll.h"
 
-#include "../AssetManager.h"
 #include "../VirtualFS.h"
 #include "../RemoteServices.h"
 
@@ -42,11 +41,11 @@ struct ModelLoadRequest
     AssetLoadParams params;
 };
 
-struct ModelLoader final : AssetLoaderCallbacks 
+struct ModelLoader final : AssetCallbacks 
 {
     AssetResult Load(AssetHandle handle, const AssetLoadParams& params, uint32 cacheHash, Allocator* dependsAlloc) override;
     void LoadRemote(AssetHandle handle, const AssetLoadParams& params, uint32 cacheHash, void* userData, AssetLoaderAsyncCallback loadCallback) override;
-    bool InitializeResources(void* obj, const AssetLoadParams& params) override;
+    bool InitializeSystemResources(void* obj, const AssetLoadParams& params) override;
     void Release(void* data, Allocator* alloc) override;
     bool ReloadSync(AssetHandle handle, void* prevData) override;
 };
@@ -346,8 +345,8 @@ static bool modelHasTangents(const cgltf_primitive* prim)
     return false;
 }
 
-uint8* modelGetVertexAttributePointer(ModelMesh* mesh, const ModelGeometryLayout& vertexLayout, const char* semantic, 
-                                      uint32 semanticIdx, uint32* outVertexStride)
+static uint8* modelGetVertexAttributePointer(ModelMesh* mesh, const ModelGeometryLayout& vertexLayout, const char* semantic, 
+                                             uint32 semanticIdx, uint32* outVertexStride)
 {
     const GfxVertexInputAttributeDesc* attr = &vertexLayout.vertexAttributes[0];
     
@@ -951,6 +950,54 @@ static Pair<AssetDependency*, uint32> modelGatherDependencies(const Model* model
     return result;
 }
 
+#if CONFIG_TOOLMODE
+static void modelOptimizeModel(Model* model, const ModelLoadParams& modelParams)
+{
+    MemTempAllocator tmpAlloc;
+    MeshOptModel bakeModel;
+    bakeModel.meshes = tmpAlloc.MallocTyped<MeshOptMesh*>(model->numMeshes);
+    bakeModel.numMeshes = model->numMeshes;
+
+    for (uint32 i = 0; i < model->numMeshes; i++) {
+        ModelMesh& srcMesh = model->meshes[i];
+        MemSingleShotMalloc<MeshOptMesh> mallocMesh;
+        mallocMesh.AddMemberField<void*>(offsetof(MeshOptMesh, vertexBuffers), srcMesh.numVertexBuffers);
+        mallocMesh.AddMemberField<uint32>(offsetof(MeshOptMesh, indexBuffer), srcMesh.numIndices);
+        mallocMesh.AddMemberField<uint32>(offsetof(MeshOptMesh, vertexStrides), srcMesh.numVertexBuffers);
+        MeshOptMesh* bakeMesh = mallocMesh.Calloc(&tmpAlloc);
+
+        for (uint32 k = 0; k < srcMesh.numVertexBuffers; k++) {
+            bakeMesh->vertexBuffers[k] = srcMesh.cpuBuffers.vertexBuffers[k].Get();
+            bakeMesh->vertexStrides[k] = modelParams.layout.vertexBufferStrides[k];
+        }
+
+        bakeMesh->indexBuffer = srcMesh.cpuBuffers.indexBuffer.Get();
+        bakeMesh->numVertexBuffers = srcMesh.numVertexBuffers;
+        bakeMesh->numVertices = srcMesh.numVertices;
+        bakeMesh->numIndices = srcMesh.numIndices;
+
+        const GfxVertexInputAttributeDesc* attr = &modelParams.layout.vertexAttributes[0];    
+        bool foundPos = false;
+        while (!attr->semantic.IsEmpty()) {
+            if (attr->semantic == "POSITION" && attr->semanticIdx == 0) {
+                bakeMesh->posStride = modelParams.layout.vertexBufferStrides[attr->binding];
+                bakeMesh->posBufferIndex = attr->binding;
+                bakeMesh->posOffset = attr->offset;
+                foundPos = true;
+                break;
+            }
+            ++attr;
+        }
+
+        ASSERT_ALWAYS(foundPos, "Model should at least have positions for MeshOptimizer");
+
+        bakeModel.meshes[i] = bakeMesh;
+    }
+
+    meshoptOptimizeModel(&bakeModel);
+}
+#endif // CONFIG_TOOLMODE
+
 AssetResult ModelLoader::Load(AssetHandle handle, const AssetLoadParams& params, uint32 cacheHash, Allocator* dependsAlloc)
 {
     ASSERT(params.next);
@@ -980,8 +1027,8 @@ AssetResult ModelLoader::Load(AssetHandle handle, const AssetLoadParams& params,
         }
     
         #if CONFIG_TOOLMODE
-            meshoptOptimizeModel(model, modelParams);
-        #endif
+        modelOptimizeModel(model, modelParams);
+        #endif // CONFIG_TOOLMODE
     
         if (model->numMaterialTextures) {
             uint32 dependsBufferSize;
@@ -1049,7 +1096,7 @@ static void modelLoadTask(uint32 groupIndex, void* userData)
     
         if (model) {
             #if CONFIG_TOOLMODE
-                meshoptOptimizeModel(model, loadModelParams);
+            modelOptimizeModel(model, loadModelParams);
             #endif
         
             outgoingBlob.Write<uint32>(cacheHash);
@@ -1193,7 +1240,7 @@ void ModelLoader::LoadRemote(AssetHandle handle, const AssetLoadParams& params, 
     outgoingBlob.Free();
 }
 
-bool ModelLoader::InitializeResources(void* obj, const AssetLoadParams& params)
+bool ModelLoader::InitializeSystemResources(void* obj, const AssetLoadParams& params)
 {
     Model* model = reinterpret_cast<Model*>(obj);
     const ModelLoadParams& modelParams = *reinterpret_cast<const ModelLoadParams*>(params.next.Get());
@@ -1235,7 +1282,7 @@ Model* assetGetModel(AssetHandleModel modelHandle)
     return reinterpret_cast<Model*>(_private::assetGetData(modelHandle));
 }
 
-bool _private::modelInitialize()
+bool _private::assetInitializeModelManager()
 {
     assetRegister(AssetTypeDesc {
         .fourcc = kModelAssetType,
@@ -1257,13 +1304,15 @@ bool _private::modelInitialize()
     });
 
     #if CONFIG_TOOLMODE
-        _private::meshoptInitialize();
+    _private::meshoptInitialize();
     #endif
+
+    logInfo("(init) Model asset manager");
 
     return true;
 }
 
-void _private::modelRelease()
+void _private::assetReleaseModelManager()
 {
     assetUnregister(kModelAssetType);
 }

@@ -9,18 +9,19 @@
 #include "Core/TracyHelper.h"
 
 #include "Graphics/Graphics.h"
-#include "Graphics/ImGuiWrapper.h"
-#include "Graphics/DebugDraw.h"
-#include "Graphics/Model.h"
-#include "Graphics/Shader.h"
 
-#include "AssetManager.h"
+#include "DebugTools/DebugDraw.h"
+#include "DebugTools/FrameInfoHud.h"
+
+#include "Assets/AssetManager.h"
+
+#include "ImGui/ImGuiWrapper.h"
+
 #include "RemoteServices.h"
 #include "Application.h"
 #include "JunkyardSettings.h"
 
 #include "Tool/Console.h"
-#include "Tool/ImGuiTools.h"
 
 static constexpr float  kReconnectInterval = 5.0f;
 static constexpr uint32 kReconnectRetries = 3;
@@ -171,24 +172,6 @@ bool engineInitialize()
         }
     }
 
-    // Asset manager
-    if (!_private::assetInitialize()) {
-        logError("Initializing AssetManager failed");
-        return false;
-    }
-
-    // [Tooling] ShaderCompiler
-    if (!_private::shaderInitialize()) {
-        logError("Initializing ShaderCompiler failed");
-        return false;
-    }
-
-    // [Tooling] ModelBaker/Loader
-    if (!_private::modelInitialize()) {
-        logError("Initializing ModelBaker failed");
-        return false;
-    }
-
     // Graphics
     const SettingsGraphics& gfxSettings = settingsGet().graphics;
     if (gfxSettings.enable) {
@@ -203,14 +186,23 @@ bool engineInitialize()
             logError("Initializing Graphics failed");
             return false;
         }
+    }
 
+    // Asset manager
+    if (!_private::assetInitialize()) {
+        logError("Initializing AssetManager failed");
+        return false;
+    }
+
+    if (gfxSettings.enable) {
         if (!gfxSettings.headless) {
             if (gfxSettings.enableImGui) {
                 if (!_private::imguiInitialize()) {
                     logError("Initializing ImGui failed");
                     return false;
                 }
-                logRegisterCallback(_private::imguiQuickInfoHud_Log, nullptr);
+                
+                frameInfoInitialize();
             }
 
             if (!_private::ddInitialize()) {
@@ -245,23 +237,19 @@ void engineRelease()
     logInfo("Releasing engine sub systems ...");
     gEng.initialized = false;
 
-    _private::modelRelease();
-    _private::shaderRelease();
-    _private::gfxReleaseImageManager();
     if (gfxSettings.enable && !gfxSettings.headless) {
         if (gfxSettings.enableImGui) {
-            logUnregisterCallback(_private::imguiQuickInfoHud_Log);
+            frameInfoRelease();
+
             _private::imguiRelease();
         }
         _private::ddRelease();
     } 
 
-
-    _private::assetDetectAndReleaseLeaks();
+    _private::assetRelease();
 
     if (gfxSettings.enable)
         _private::gfxRelease();
-    _private::assetRelease();
 
     if (settingsGet().engine.connectToServer)
         _private::remoteDisconnect();

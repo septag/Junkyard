@@ -7,24 +7,27 @@
 #include "../Core/MathAll.h"
 #include "../Core/System.h"
 
-#include "../AssetManager.h"
 #include "../VirtualFS.h"
 #include "../Application.h"
 #include "../Engine.h"
 #include "../Camera.h"
 #include "../JunkyardSettings.h"
 
-#include "../Graphics/DebugDraw.h"
-#include "../Graphics/Model.h"
-#include "../Graphics/Shader.h"
+#include "../Assets/AssetManager.h"
 
-#include "../Tool/ImGuiTools.h"
+#include "../DebugTools/DebugDraw.h"
+#include "../DebugTools/FrameInfoHud.h"
+#include "../DebugTools/BudgetViewer.h"
+
+#include "../ImGui/ImGuiWrapper.h"
+#include "../ImGui/ImGuizmo.h"
+
+#include "../Assets/Model.h"
+#include "../Assets/Shader.h"
 
 #include "../UnityBuild.inl"
 
 #include "../Tool/Console.h"
-
-#include "../External/ImGuizmo/ImGuizmo.h"
 
 #define TEST_IO 0
 
@@ -321,8 +324,8 @@ struct AppImpl final : AppCallbacks
 
         if (imguiIsEnabled()) { // imgui test
             PROFILE_GPU_ZONE_NAME("ImGuiRender", true);
-            imguiBudgetHub(dt);
-            imguiQuickInfoHud(dt);
+            budgetViewerRender(dt);
+            frameInfoRender(dt);
 
             #if 0
                 Mat4 view = fpsCam.GetViewMat();
@@ -423,7 +426,7 @@ struct AppImpl final : AppCallbacks
             };
 
             modelAsset = assetLoadModel("/data/models/Duck/Duck.gltf", loadParams, b.Barrier());
-            modelShaderAsset = assetLoadShader("/code/shaders/Model.hlsl", ShaderCompileDesc {}, b.Barrier());
+            modelShaderAsset = assetLoadShader("/code/shaders/Model.hlsl", ShaderLoadParams {}, b.Barrier());
         }
         if (!assetIsAlive(modelAsset) || !assetIsAlive(modelShaderAsset))
             return false;

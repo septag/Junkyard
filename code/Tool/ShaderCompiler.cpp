@@ -1,8 +1,9 @@
 #include "ShaderCompiler.h"
 
 #if CONFIG_TOOLMODE
-
 #include <stdio.h>
+
+#include "../Graphics/Graphics.h"
 
 #include "../External/slang/slang.h"
 
@@ -17,13 +18,13 @@ struct ShaderCompiler
 
 static ShaderCompiler gShaderCompiler;
 
-static ShaderStage shaderTranslateStage(SlangStage stage)
+static inline GfxShaderStage shaderTranslateStage(SlangStage stage)
 {
     switch (stage) {
-    case SLANG_STAGE_VERTEX:            return ShaderStage::Vertex;
-    case SLANG_STAGE_FRAGMENT:          return ShaderStage::Fragment;
-    case SLANG_STAGE_COMPUTE:           return ShaderStage::Compute;
-    default:                            ASSERT_MSG(false, "Stage not supported"); return ShaderStage::Unknown;
+    case SLANG_STAGE_VERTEX:            return GfxShaderStage::Vertex;
+    case SLANG_STAGE_FRAGMENT:          return GfxShaderStage::Fragment;
+    case SLANG_STAGE_COMPUTE:           return GfxShaderStage::Compute;
+    default:                            ASSERT_MSG(false, "Stage not supported"); return (GfxShaderStage)0;
     }
 }
 
@@ -85,7 +86,7 @@ static GfxFormat shaderTranslateVertexInputFormat([[maybe_unused]] uint32 rows, 
     return GfxFormat::Undefined;
 }
 
-Pair<Shader*, uint32> shaderCompile(const Blob& blob, const char* filepath, const ShaderCompileDesc& desc, 
+Pair<GfxShader*, uint32> shaderCompile(const Blob& blob, const char* filepath, const ShaderCompileDesc& desc, 
                                     char* errorDiag, uint32 errorDiagSize, Allocator* alloc)
 {
     ASSERT(gShaderCompiler.slang);
@@ -109,7 +110,7 @@ Pair<Shader*, uint32> shaderCompile(const Blob& blob, const char* filepath, cons
     }
 
     for (uint32 i = 0; i < desc.numIncludeDirs; i++)
-        spAddSearchPath(req, desc.includeDirs[i].includeDir.CStr());
+        spAddSearchPath(req, desc.includeDirs[i].CStr());
     
     for (uint32 i = 0; i < desc.numDefines; i++) 
         spAddPreprocessorDefine(req, desc.defines[i].define.CStr(), desc.defines[i].value.CStr());
@@ -150,12 +151,12 @@ Pair<Shader*, uint32> shaderCompile(const Blob& blob, const char* filepath, cons
     }
 
     MemTempAllocator tmpAlloc;
-    Shader* shader = tmpAlloc.MallocZeroTyped<Shader>();
+    GfxShader* shader = tmpAlloc.MallocZeroTyped<GfxShader>();
 
-    shader->stages = tmpAlloc.MallocZeroTyped<ShaderStageInfo>((uint32)refl->getEntryPointCount());
-    shader->params = tmpAlloc.MallocZeroTyped<ShaderParameterInfo>((uint32)refl->getParameterCount());
+    shader->stages = tmpAlloc.MallocZeroTyped<GfxShaderStageInfo>((uint32)refl->getEntryPointCount());
+    shader->params = tmpAlloc.MallocZeroTyped<GfxShaderParameterInfo>((uint32)refl->getParameterCount());
     if (numVertexAttributes)
-        shader->vertexAttributes = tmpAlloc.MallocZeroTyped<ShaderVertexAttributeInfo>(numVertexAttributes);
+        shader->vertexAttributes = tmpAlloc.MallocZeroTyped<GfxShaderVertexAttributeInfo>(numVertexAttributes);
 
     pathFileName(filepath, shader->name, sizeof(shader->name));
     shader->numStages = static_cast<uint32>(refl->getEntryPointCount());
@@ -163,7 +164,7 @@ Pair<Shader*, uint32> shaderCompile(const Blob& blob, const char* filepath, cons
 
     for (uint32 i = 0; i < shader->numStages; i++) {
         slang::EntryPointReflection* entryPoint = refl->getEntryPointByIndex(i);
-        ShaderStageInfo* stageInfo = &shader->stages[i];
+        GfxShaderStageInfo* stageInfo = &shader->stages[i];
 
         stageInfo->stage = shaderTranslateStage(entryPoint->getStage());
         strCopy(stageInfo->entryName, sizeof(stageInfo->entryName), entryPoint->getName()); 
@@ -179,13 +180,13 @@ Pair<Shader*, uint32> shaderCompile(const Blob& blob, const char* filepath, cons
         }
 
         // Vertex inputs
-        if (stageInfo->stage == ShaderStage::Vertex && vertexInputParamIdx != UINT32_MAX) {
+        if (stageInfo->stage == GfxShaderStage::Vertex && vertexInputParamIdx != UINT32_MAX) {
             ASSERT(shader->vertexAttributes[0].format == GfxFormat::Undefined);
 
             slang::VariableLayoutReflection* vertexInputParam = entryPoint->getParameterByIndex(vertexInputParamIdx);
             slang::TypeLayoutReflection* typeLayout = vertexInputParam->getTypeLayout();
             for (uint32 f = 0, fc = typeLayout->getFieldCount(); f < fc; f++) {
-                ShaderVertexAttributeInfo* vertexAtt = &shader->vertexAttributes[f];
+                GfxShaderVertexAttributeInfo* vertexAtt = &shader->vertexAttributes[f];
 
                 slang::VariableLayoutReflection* field = typeLayout->getFieldByIndex(f);
                 slang::TypeReflection::ScalarType scalarType = field->getType()->getScalarType();
@@ -204,7 +205,7 @@ Pair<Shader*, uint32> shaderCompile(const Blob& blob, const char* filepath, cons
     
     shader->numParams = (uint32)refl->getParameterCount();
     for (uint32 i = 0; i < refl->getParameterCount(); i++) {
-        ShaderParameterInfo* paramInfo = &shader->params[i];
+        GfxShaderParameterInfo* paramInfo = &shader->params[i];
 
         slang::VariableLayoutReflection* param = refl->getParameterByIndex(i);
         slang::TypeReflection* type = param->getType();
@@ -221,16 +222,16 @@ Pair<Shader*, uint32> shaderCompile(const Blob& blob, const char* filepath, cons
         paramInfo->bindingIdx = param->getBindingIndex();
 
         switch (type->getKind()) {
-        case slang::TypeReflection::Kind::ConstantBuffer:    paramInfo->type = ShaderParameterType::Uniformbuffer;  break;
-        case slang::TypeReflection::Kind::SamplerState:      paramInfo->type = ShaderParameterType::Samplerstate;  break;
-        case slang::TypeReflection::Kind::Resource:          paramInfo->type = ShaderParameterType::Resource; break;
-        case slang::TypeReflection::Kind::Array:             paramInfo->type = ShaderParameterType::Array; break;
+        case slang::TypeReflection::Kind::ConstantBuffer:    paramInfo->type = GfxShaderParameterType::Uniformbuffer;  break;
+        case slang::TypeReflection::Kind::SamplerState:      paramInfo->type = GfxShaderParameterType::Samplerstate;  break;
+        case slang::TypeReflection::Kind::Resource:          paramInfo->type = GfxShaderParameterType::Resource; break;
+        case slang::TypeReflection::Kind::Array:             paramInfo->type = GfxShaderParameterType::Array; break;
         default:                                             ASSERT_MSG(false, "Shader parameter type is not supported");   break;
         }
     }
 
     uint32 shaderBufferSize = uint32(tmpAlloc.GetOffset() - tmpAlloc.GetPointerOffset(shader));
-    return Pair<Shader*, uint32>(memAllocCopyRawBytes<Shader>(shader, shaderBufferSize, alloc), shaderBufferSize);
+    return Pair<GfxShader*, uint32>(memAllocCopyRawBytes<GfxShader>(shader, shaderBufferSize, alloc), shaderBufferSize);
 }
 
 bool _private::shaderInitializeCompiler()

@@ -1,9 +1,9 @@
 #pragma once
 
-#include "Core/Base.h"
-#include "Core/System.h"
+#include "../Core/Base.h"
+#include "../Core/System.h"
 
-#include "CommonTypes.h"
+#include "../CommonTypes.h"
 
 struct Blob;
 struct MemTlsfAllocator;
@@ -98,12 +98,12 @@ using AssetLoaderAsyncCallback = void(*)(AssetHandle handle, const AssetResult& 
 
 // This is a way to extend asset types. Override from this struct and implement the routines for your own asset type
 // See assetRegister/assetUnregister functions
-struct NO_VTABLE AssetLoaderCallbacks 
+struct NO_VTABLE AssetCallbacks 
 {
     virtual AssetResult Load(AssetHandle handle, const AssetLoadParams& params, uint32 cacheHash, Allocator* dependsAlloc) = 0;
     virtual void LoadRemote(AssetHandle handle, const AssetLoadParams& params, uint32 cacheHash, 
                             void* userData, AssetLoaderAsyncCallback loadCallback) = 0;
-    virtual bool InitializeResources(void* obj, const AssetLoadParams& params) = 0;
+    virtual bool InitializeSystemResources(void* obj, const AssetLoadParams& params) = 0;
     virtual void Release(void* obj, Allocator* alloc) = 0;
 
     // Return true if the asset can be reloaded, otherwise returning 'false' indicates that the asset could not get reloaded and old one stays in memory
@@ -114,7 +114,7 @@ struct AssetTypeDesc
 {
     uint32 fourcc;
     const char* name;
-    AssetLoaderCallbacks* callbacks;
+    AssetCallbacks* callbacks;
     const char* extraParamTypeName;
     uint32 extraParamTypeSize;          // Note: be careful that in order for asset caching to work properly. this size must exactly match the real underlying struct size with no extra padding
     void* failedObj;
@@ -186,7 +186,6 @@ namespace _private
     void* assetGetDataUnsafe(AssetHandle handle);
 
     void assetUpdateCache(float dt);
-    void assetDetectAndReleaseLeaks();
 }
 
 //------------------------------------------------------------------------

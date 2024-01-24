@@ -702,8 +702,6 @@ enum class GfxPrimitiveTopology: uint32
     PatchList = 10,
 };
 
-struct Shader;      // declared in Shader.h
-
 struct GfxBufferRange
 {
     uint32 offset;
@@ -717,10 +715,57 @@ struct GfxPushConstantDesc
     GfxBufferRange range;
 };
 
+struct GfxShaderStageInfo
+{
+    GfxShaderStage stage;
+    char entryName[32];
+    uint32 dataSize;
+    RelativePtr<uint8> data;
+};
+
+enum class GfxShaderParameterType : uint32
+{
+    Uniformbuffer,
+    Samplerstate,
+    Resource,
+    Array
+};
+
+struct GfxShaderParameterInfo
+{
+    char name[32];
+    GfxShaderParameterType type;
+    GfxShaderStage stage;
+    uint32 bindingIdx;
+    bool isPushConstant;
+};
+
+struct GfxShaderVertexAttributeInfo 
+{
+    char        name[32];
+    char        semantic[16];
+    uint32      semanticIdx;
+    uint32      location;
+    GfxFormat   format;
+};
+
+// Note: Binary representation is serialized
+struct GfxShader
+{
+    char   name[32];
+    uint32 hash;           // This is actually the AssetId of the shader
+    uint32 numStages;
+    uint32 numParams;
+    uint32 numVertexAttributes;
+    RelativePtr<GfxShaderStageInfo> stages;
+    RelativePtr<GfxShaderParameterInfo> params;
+    RelativePtr<GfxShaderVertexAttributeInfo> vertexAttributes;
+};
+
 struct GfxPipelineDesc
 {
-    Shader*                 shader;
-    GfxPrimitiveTopology    inputAssemblyTopology;
+    GfxShader* shader;
+    GfxPrimitiveTopology inputAssemblyTopology;
     
     uint32 numDescriptorSetLayouts;
     const GfxDescriptorSetLayout* descriptorSetLayouts;
@@ -728,13 +773,13 @@ struct GfxPipelineDesc
     uint32 numPushConstants;
     const GfxPushConstantDesc* pushConstants;
 
-    uint32                                  numVertexInputAttributes;
-    const GfxVertexInputAttributeDesc*      vertexInputAttributes;
-    uint32                                  numVertexBufferBindings;
-    const GfxVertexBufferBindingDesc*       vertexBufferBindings;
+    uint32 numVertexInputAttributes;
+    const GfxVertexInputAttributeDesc* vertexInputAttributes;
+    uint32 numVertexBufferBindings;
+    const GfxVertexBufferBindingDesc* vertexBufferBindings;
 
-    GfxRasterizerDesc   rasterizer;
-    GfxBlendDesc        blend;
+    GfxRasterizerDesc rasterizer;
+    GfxBlendDesc blend;
     GfxDepthStencilDesc depthStencil;
 };
 
@@ -935,6 +980,14 @@ struct GfxBudgetStats
     MemTlsfAllocator* runtimeHeap;
 };
 
+struct GfxImageInfo
+{
+    uint32         width;
+    uint32         height;
+    GfxBufferUsage memUsage;
+    size_t         sizeBytes;
+};
+
 //----------------------------------------------------------------------------------------------------------------------
 API bool gfxHasDeviceExtension(const char* extension);
 API bool gfxHasInstanceExtension(const char* extension);
@@ -950,6 +1003,7 @@ API void      gfxDestroyBuffer(GfxBuffer buffer);
 
 API GfxImage  gfxCreateImage(const GfxImageDesc& desc);
 API void      gfxDestroyImage(GfxImage image);
+API GfxImageInfo gfxGetImageInfo(GfxImage img);
 
 API GfxPipeline gfxCreatePipeline(const GfxPipelineDesc& desc);
 API void        gfxDestroyPipeline(GfxPipeline pipeline);
@@ -957,7 +1011,7 @@ API void        gfxDestroyPipeline(GfxPipeline pipeline);
 API GfxRenderPass gfxCreateRenderPass(const GfxRenderPassDesc& desc);
 API void gfxDestroyRenderPass(GfxRenderPass renderPass);
 
-API GfxDescriptorSetLayout gfxCreateDescriptorSetLayout(const Shader& shader, 
+API GfxDescriptorSetLayout gfxCreateDescriptorSetLayout(const GfxShader& shader, 
                                                         const GfxDescriptorSetLayoutBinding* bindings, uint32 numBindings);
 API void gfxDestroyDescriptorSetLayout(GfxDescriptorSetLayout layout);
 
@@ -999,6 +1053,9 @@ API float gfxGetRenderTimeNs();  // Note: This functions calls Vk functions. So 
 // Depending on the orientation of the device
 API Mat4 gfxGetClipspaceTransform();
 API bool gfxIsRenderingToSwapchain();
+
+using GfxUpdateImageDescriptorCallback = void(*)(GfxDescriptorSet dset, uint32 numBindings, const GfxDescriptorBindingDesc* bindings);
+API void gfxSetUpdateImageDescriptorCallback(GfxUpdateImageDescriptorCallback callback);
 
 // Tracy GPU Profiling 
 #ifdef TRACY_ENABLE
@@ -1048,32 +1105,30 @@ API bool gfxIsRenderingToSwapchain();
 #endif // TRACY_ENABLE
 
 //----------------------------------------------------------------------------------------------------------------------
-// Image 
-// Used in AssetManager 'Load' function as extra load parameter for texture types
-inline constexpr uint32 kImageAssetType = MakeFourCC('I', 'M', 'A', 'G');
-
-struct ImageLoadParams
+// DynamicUniformBuffer
+struct GfxDyanmicUniformBufferRange
 {
-    uint32 firstMip = 0;
-    GfxSamplerFilterMode samplerFilter = GfxSamplerFilterMode::Default;
-    GfxSamplerWrapMode samplerWrap = GfxSamplerWrapMode::Default;
+    uint32 index;
+    uint32 count;
 };
 
-struct GfxImageInfo
+struct GfxDynamicUniformBuffer
 {
-    uint32         width;
-    uint32         height;
-    GfxBufferUsage memUsage;
-    size_t         sizeBytes;
+    void* Data(uint32 index);
+    uint32 Offset(uint32 index);
+
+    bool IsValid() const;
+    void Flush(const GfxDyanmicUniformBufferRange* ranges, uint32 numRanges);
+    void Flush(uint32 index, uint32 _count);
+
+    GfxBuffer buffer;
+    uint8* bufferPtr;
+    uint32 stride;
+    uint32 count;
 };
 
-API AssetHandleImage assetLoadImage(const char* path, const ImageLoadParams& params, AssetBarrier barrier = AssetBarrier());
-API GfxImage assetGetImage(AssetHandleImage imageHandle);
-API GfxImageInfo gfxImageGetInfo(GfxImage img);
-API GfxImage gfxImageGetWhite();
-
-// Buffer operations
-
+GfxDynamicUniformBuffer gfxCreateDynamicUniformBuffer(uint32 count, uint32 stride);
+void gfxDestroyDynamicUniformBuffer(GfxDynamicUniformBuffer& buffer);
 
 //----------------------------------------------------------------------------------------------------------------------
 namespace _private 
@@ -1082,5 +1137,29 @@ namespace _private
     void gfxRelease();
 
     void gfxReleaseImageManager();
-    void gfxRecreatePipelinesWithNewShader(uint32 shaderHash, Shader* shader);
+    void gfxRecreatePipelinesWithNewShader(uint32 shaderHash, GfxShader* shader);
 } // _private
+
+
+//----------------------------------------------------------------------------------------------------------------------
+// @impl GfxDynamicUniforBuffer
+inline void* GfxDynamicUniformBuffer::Data(uint32 index)
+{
+#ifdef CONFIG_CHECK_OUTOFBOUNDS    
+    ASSERT_MSG(index < count, "Out of bounds access for dynamic buffer");
+#endif
+    
+    return bufferPtr + stride*index;
+}
+
+inline uint32 GfxDynamicUniformBuffer::Offset(uint32 index)
+{
+    return stride*index;
+}
+
+inline void GfxDynamicUniformBuffer::Flush(uint32 index, uint32 _count)
+{
+    GfxDyanmicUniformBufferRange range { index, _count };
+    Flush(&range, 1);
+}
+

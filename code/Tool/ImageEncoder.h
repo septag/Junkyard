@@ -19,6 +19,7 @@ enum class ImageEncoderCompression
     ASTC_8x8,
     _Count
 };
+API ImageEncoderCompression imageEncoderCompressionGetEnum(const char* estr);
 
 enum class ImageEncoderQuality
 {
@@ -46,5 +47,5 @@ struct ImageEncoderSurface
 API Blob imageEncoderCompress(ImageEncoderCompression compression, ImageEncoderQuality quality, 
                               ImageEncoderFlags flags, const ImageEncoderSurface& surface, 
                               Allocator* alloc = memDefaultAlloc());
-API ImageEncoderCompression GetCompressionEnum(const char* estr);
+
 #endif // CONFIG_TOOLMODE

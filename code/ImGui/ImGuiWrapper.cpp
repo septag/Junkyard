@@ -14,20 +14,19 @@
 #include "../Core/MathAll.h"
 #include "../Core/IniParser.h"
 
-#include "Graphics.h"
-#include "Shader.h"
-#include "CousineFont.h"
+#include "../Assets/Image.h"
+#include "../Assets/Shader.h"
+#include "../Assets/AssetManager.h"
 
 #include "../Application.h"
 #include "../Engine.h"
-#include "../AssetManager.h"
 #include "../VirtualFS.h"
 #include "../JunkyardSettings.h"
 
-#include "../Tool/ImGuiTools.h"
+#include "CousineFont.h"
 
 // Extra modules
-#include "../External/ImGuizmo/ImGuizmo.h"
+#include "ImGuizmo.h"
 
 namespace _limits 
 {
@@ -328,11 +327,6 @@ static void imguiOnEvent(const AppEvent& ev, [[maybe_unused]] void* userData)
         }
         break;
     
-    case AppEventType::DisplayUpdated:
-        // TODO: update dpi stuff
-        _private::imguiQuickInfoHud_SetTargetFps(appGetDisplayInfo().refreshRate);
-        break;
-
     default:
         break;
     }
@@ -463,7 +457,7 @@ bool _private::imguiInitialize()
     
     {
         AssetBarrierScope b;
-        gImGui.imguiShader = assetLoadShader("/code/Shaders/ImGui.hlsl", ShaderCompileDesc {}, b.Barrier());
+        gImGui.imguiShader = assetLoadShader("/code/Shaders/ImGui.hlsl", ShaderLoadParams {}, b.Barrier());
     }
 
     if (!assetIsAlive(gImGui.imguiShader)) {
@@ -563,12 +557,12 @@ bool _private::imguiInitialize()
         {
             .name = "Sampler0",
             .type = GfxDescriptorType::Sampler,
-            .image = gfxImageGetWhite()
+            .image = assetGetWhiteImage1x1()
         },
         {
             .name = "Texture0",
             .type = GfxDescriptorType::SampledImage,
-            .image = gfxImageGetWhite()
+            .image = assetGetWhiteImage1x1()
         }
         };
         gfxUpdateDescriptorSet(gImGui.descriptorSets[IMGUI_DESCRIPTORSET_NO_IMAGE], 

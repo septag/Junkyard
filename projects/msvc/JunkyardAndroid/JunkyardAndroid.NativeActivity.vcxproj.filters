@@ -46,9 +46,6 @@
     <Filter Include="External\vma">
       <UniqueIdentifier>{d5556913-6296-4cde-984a-8f9aa58c563c}</UniqueIdentifier>
     </Filter>
-    <Filter Include="External\ImGuizmo">
-      <UniqueIdentifier>{168e73ac-fff2-410f-989d-4fbe633629a9}</UniqueIdentifier>
-    </Filter>
     <Filter Include="External\stb">
       <UniqueIdentifier>{b8030fe3-1cd0-4300-abb2-9f833dbadeb3}</UniqueIdentifier>
     </Filter>
@@ -60,6 +57,15 @@
     </Filter>
     <Filter Include="Tool">
       <UniqueIdentifier>{ed4ccd45-f144-48d9-85d9-afd37c2e7f4c}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Assets">
+      <UniqueIdentifier>{434d774a-bf87-426e-8b95-f5158837a95f}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="DebugTools">
+      <UniqueIdentifier>{a1df08b8-8ec8-4f3d-af1e-bceb7e90b73a}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="ImGui">
+      <UniqueIdentifier>{271361ae-e6dd-4513-b626-7863773577c7}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
   <ItemGroup>
@@ -93,14 +99,8 @@
     <ClInclude Include="..\..\..\code\External\vma\include\vk_mem_alloc.h">
       <Filter>External\vma</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\..\code\Tool\ImGuiTools.h">
-      <Filter>Tool</Filter>
-    </ClInclude>
     <ClInclude Include="..\..\..\code\Tool\Console.h">
       <Filter>Tool</Filter>
-    </ClInclude>
-    <ClInclude Include="..\..\..\code\External\ImGuizmo\ImGuizmo.h">
-      <Filter>External\ImGuizmo</Filter>
     </ClInclude>
     <ClInclude Include="..\..\..\code\Tool\MeshOptimizer.h">
       <Filter>Tool</Filter>
@@ -136,7 +136,6 @@
       <Filter>Core\External\tracy</Filter>
     </ClInclude>
     <ClInclude Include="..\..\..\code\Application.h" />
-    <ClInclude Include="..\..\..\code\AssetManager.h" />
     <ClInclude Include="..\..\..\code\Camera.h" />
     <ClInclude Include="..\..\..\code\CommonTypes.h" />
     <ClInclude Include="..\..\..\code\Engine.h" />
@@ -190,22 +189,7 @@
     <ClInclude Include="..\..\..\code\Core\TracyHelper.h">
       <Filter>Core</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\..\code\Graphics\CousineFont.h">
-      <Filter>Graphics</Filter>
-    </ClInclude>
-    <ClInclude Include="..\..\..\code\Graphics\DebugDraw.h">
-      <Filter>Graphics</Filter>
-    </ClInclude>
     <ClInclude Include="..\..\..\code\Graphics\Graphics.h">
-      <Filter>Graphics</Filter>
-    </ClInclude>
-    <ClInclude Include="..\..\..\code\Graphics\ImGuiWrapper.h">
-      <Filter>Graphics</Filter>
-    </ClInclude>
-    <ClInclude Include="..\..\..\code\Graphics\Model.h">
-      <Filter>Graphics</Filter>
-    </ClInclude>
-    <ClInclude Include="..\..\..\code\Graphics\Shader.h">
       <Filter>Graphics</Filter>
     </ClInclude>
     <ClInclude Include="..\..\..\code\JunkyardSettings.h" />
@@ -220,6 +204,33 @@
     </ClInclude>
     <ClInclude Include="..\..\..\code\Core\StringUtil.h">
       <Filter>Core</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\code\Assets\AssetManager.h">
+      <Filter>Assets</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\code\Assets\Image.h">
+      <Filter>Assets</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\code\Assets\Model.h">
+      <Filter>Assets</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\code\Assets\Shader.h">
+      <Filter>Assets</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\code\DebugTools\BudgetViewer.h">
+      <Filter>DebugTools</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\code\DebugTools\DebugDraw.h">
+      <Filter>DebugTools</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\code\DebugTools\FrameInfoHud.h">
+      <Filter>DebugTools</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\code\ImGui\ImGuiWrapper.h">
+      <Filter>ImGui</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\code\ImGui\ImGuizmo.h">
+      <Filter>ImGui</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
@@ -244,14 +255,8 @@
     <ClCompile Include="..\..\..\code\Tool\ImageEncoder.cpp">
       <Filter>Tool</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\..\code\Tool\ImGuiTools.cpp">
-      <Filter>Tool</Filter>
-    </ClCompile>
     <ClCompile Include="..\..\..\code\Tool\Console.cpp">
       <Filter>Tool</Filter>
-    </ClCompile>
-    <ClCompile Include="..\..\..\code\External\ImGuizmo\ImGuizmo.cpp">
-      <Filter>External\ImGuizmo</Filter>
     </ClCompile>
     <ClCompile Include="..\..\..\code\Tool\MeshOptimizer.cpp">
       <Filter>Tool</Filter>
@@ -295,28 +300,7 @@
     <ClCompile Include="..\..\..\code\Core\TracyHelper.cpp">
       <Filter>Core</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\..\code\Graphics\DebugDraw.cpp">
-      <Filter>Graphics</Filter>
-    </ClCompile>
     <ClCompile Include="..\..\..\code\Graphics\Graphics.cpp">
-      <Filter>Graphics</Filter>
-    </ClCompile>
-    <ClCompile Include="..\..\..\code\Graphics\GraphicsVk.cpp">
-      <Filter>Graphics</Filter>
-    </ClCompile>
-    <ClCompile Include="..\..\..\code\Graphics\ImageVk.cpp">
-      <Filter>Graphics</Filter>
-    </ClCompile>
-    <ClCompile Include="..\..\..\code\Graphics\ImGuiWrapper.cpp">
-      <Filter>Graphics</Filter>
-    </ClCompile>
-    <ClCompile Include="..\..\..\code\Graphics\Model.cpp">
-      <Filter>Graphics</Filter>
-    </ClCompile>
-    <ClCompile Include="..\..\..\code\Graphics\Shader.cpp">
-      <Filter>Graphics</Filter>
-    </ClCompile>
-    <ClCompile Include="..\..\..\code\Graphics\TracyVk.cpp">
       <Filter>Graphics</Filter>
     </ClCompile>
     <ClCompile Include="..\..\..\code\Core\Buffers.cpp">
@@ -334,7 +318,6 @@
     <ClCompile Include="..\..\..\code\Application.cpp" />
     <ClCompile Include="..\..\..\code\ApplicationAndroid.cpp" />
     <ClCompile Include="..\..\..\code\ApplicationWin.cpp" />
-    <ClCompile Include="..\..\..\code\AssetManager.cpp" />
     <ClCompile Include="..\..\..\code\Camera.cpp" />
     <ClCompile Include="..\..\..\code\Engine.cpp" />
     <ClCompile Include="..\..\..\code\RemoteServices.cpp" />
@@ -358,6 +341,33 @@
     <ClCompile Include="..\..\..\code\Core\StringUtilWin.cpp">
       <Filter>Core</Filter>
     </ClCompile>
+    <ClCompile Include="..\..\..\code\Assets\AssetManager.cpp">
+      <Filter>Assets</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\..\code\Assets\Image.cpp">
+      <Filter>Assets</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\..\code\Assets\Model.cpp">
+      <Filter>Assets</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\..\code\Assets\Shader.cpp">
+      <Filter>Assets</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\..\code\DebugTools\BudgetViewer.cpp">
+      <Filter>DebugTools</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\..\code\DebugTools\DebugDraw.cpp">
+      <Filter>DebugTools</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\..\code\DebugTools\FrameInfoHud.cpp">
+      <Filter>DebugTools</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\..\code\ImGui\ImGuiWrapper.cpp">
+      <Filter>ImGui</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\..\code\ImGui\ImGuizmo.cpp">
+      <Filter>ImGui</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <FxCompile Include="..\..\..\code\Shaders\ImGui.hlsl">
@@ -374,12 +384,12 @@
     </FxCompile>
   </ItemGroup>
   <ItemGroup>
-    <None Include="..\..\..\code\Graphics\ValidateEnumsVk.inl">
-      <Filter>Graphics</Filter>
-    </None>
     <None Include="..\..\..\code\Core\SystemMac.mm">
       <Filter>Core</Filter>
     </None>
     <None Include="..\..\..\code\ApplicationMac.mm" />
+    <None Include="..\..\..\code\Graphics\ValidateEnumsVk.inl">
+      <Filter>Graphics</Filter>
+    </None>
   </ItemGroup>
 </Project>

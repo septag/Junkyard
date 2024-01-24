@@ -1,18 +1,22 @@
 #include "AssetManager.h"
 
-#include "Core/Log.h"
-#include "Core/Hash.h"
-#include "Core/System.h"
-#include "Core/StringUtil.h"
-#include "Core/JsonParser.h"
-#include "Core/Settings.h"
-#include "Core/Jobs.h"
+#include "../Core/Log.h"
+#include "../Core/Hash.h"
+#include "../Core/System.h"
+#include "../Core/StringUtil.h"
+#include "../Core/JsonParser.h"
+#include "../Core/Settings.h"
+#include "../Core/Jobs.h"
 
-#include "Engine.h"
-#include "VirtualFS.h"
-#include "RemoteServices.h"
-#include "Application.h"
-#include "JunkyardSettings.h"
+#include "../Engine.h"
+#include "../VirtualFS.h"
+#include "../RemoteServices.h"
+#include "../Application.h"
+#include "../JunkyardSettings.h"
+
+#include "Image.h"
+#include "Model.h"
+#include "Shader.h"
 
 #define ASSET_HASH_SEED 0x4354a
 
@@ -34,7 +38,7 @@ struct AssetTypeManager
 {
     String32 name;
     uint32 fourcc;
-    AssetLoaderCallbacks* callbacks;
+    AssetCallbacks* callbacks;
     uint32 extraParamTypeSize;
     String32 extraParamTypeName;
     void* failedObj;
@@ -331,14 +335,31 @@ bool _private::assetInitialize()
 
     assetLoadCacheHashDatabase();
 
+    // Initialize asset managers here
+    if (!assetInitializeImageManager()) {
+        logError("Failed to initialize ImageManager");
+        return false;
+    }
+
+    if (!assetInitializeModelManager()) {
+        logError("Failed to initialize ModelManager");
+        return false;
+    }
+
+    if (!assetInitializeShaderManager()) {
+        logError("Failed to initialize ShaderManager");
+        return false;
+    }
+
     return true;
 }
 
-void _private::assetDetectAndReleaseLeaks()
+void _private::assetRelease()
 {
     if (gAssetMgr.initialized) {
         assetCollectGarbage();
-    
+
+        // Detect asset leaks and release them
         for (Asset& a : gAssetMgr.assets) {
             if (a.state == AssetState::Alive) {
                 logWarning("Asset '%s' (RefCount=%u) is not unloaded", a.params->path, a.refCount);
@@ -357,15 +378,10 @@ void _private::assetDetectAndReleaseLeaks()
             memFree(a.metaData, &gAssetMgr.runtimeAlloc);
         }
 
-        gAssetMgr.assets.Clear();
-    }
-}
-
-void _private::assetRelease()
-{
-    if (gAssetMgr.initialized) {
-        assetCollectGarbage();
-        ASSERT(gAssetMgr.assets.Count() == 0);
+        // Release asset managers here
+        assetReleaseModelManager();
+        assetReleaseImageManager();
+        assetReleaseShaderManager();
 
         gAssetMgr.hashLookupMtx.Release();
         gAssetMgr.assetsMtx.Release();
@@ -707,7 +723,7 @@ static void assetLoadTask(uint32 groupIndex, void* userData)
         // Load external asset resources right after we saved the blob to cache.
         // LoadResources can cause the original data to be changed or set some external handles/pointers. 
         if (!loadParams.dontCreateResources) {
-            if (!typeMgr.callbacks->InitializeResources(result.obj, loadParams)) {
+            if (!typeMgr.callbacks->InitializeSystemResources(result.obj, loadParams)) {
                 logError("Failed creating resources for %s: %s", typeMgr.name.CStr(), filepath);
                 typeMgr.callbacks->Release(result.obj, loadParams.alloc);
                 result.obj = nullptr;
@@ -847,7 +863,7 @@ void assetUnload(AssetHandle handle)
         }
     
         if (--asset.refCount == 0) {
-            AssetLoaderCallbacks* callbacks = gAssetMgr.typeManagers[asset.typeMgrIdx].callbacks;
+            AssetCallbacks* callbacks = gAssetMgr.typeManagers[asset.typeMgrIdx].callbacks;
             if (callbacks)
                 callbacks->Release(asset.obj, asset.params->alloc);
 

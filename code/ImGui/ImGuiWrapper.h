@@ -6,6 +6,13 @@
 // Note: External dependency to imgui.h
 #include "../External/imgui/imgui.h"
 
+#define IMGUI_ALPHA_WINDOW(_id) \
+    static float CONCAT(_id, _alpha) = 1.0f;   \
+    ImGui::SetNextWindowBgAlpha(CONCAT(_id, _alpha));
+
+#define IMGUI_ALPHA_CONTROL(_id) \
+    _private::imguiControlAlphaWithScroll(ImGui::IsWindowHovered() ? &CONCAT(_id, _alpha) : nullptr)
+
 struct MemTlsfAllocator;
 
 struct ImGuiBudgetStats

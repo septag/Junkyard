@@ -16,7 +16,10 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\..\..\code\Application.h" />
-    <ClInclude Include="..\..\..\code\AssetManager.h" />
+    <ClInclude Include="..\..\..\code\Assets\AssetManager.h" />
+    <ClInclude Include="..\..\..\code\Assets\Image.h" />
+    <ClInclude Include="..\..\..\code\Assets\Model.h" />
+    <ClInclude Include="..\..\..\code\Assets\Shader.h" />
     <ClInclude Include="..\..\..\code\Camera.h" />
     <ClInclude Include="..\..\..\code\CommonTypes.h" />
     <ClInclude Include="..\..\..\code\Core\Allocators.h" />
@@ -47,9 +50,11 @@
     <ClInclude Include="..\..\..\code\Core\StringUtil.h" />
     <ClInclude Include="..\..\..\code\Core\System.h" />
     <ClInclude Include="..\..\..\code\Core\TracyHelper.h" />
+    <ClInclude Include="..\..\..\code\DebugTools\BudgetViewer.h" />
+    <ClInclude Include="..\..\..\code\DebugTools\DebugDraw.h" />
+    <ClInclude Include="..\..\..\code\DebugTools\FrameInfoHud.h" />
     <ClInclude Include="..\..\..\code\Engine.h" />
     <ClInclude Include="..\..\..\code\External\dds-ktx\dds-ktx.h" />
-    <ClInclude Include="..\..\..\code\External\ImGuizmo\ImGuizmo.h" />
     <ClInclude Include="..\..\..\code\External\imgui\imconfig.h" />
     <ClInclude Include="..\..\..\code\External\imgui\imgui.h" />
     <ClInclude Include="..\..\..\code\External\imgui\imgui_internal.h" />
@@ -59,17 +64,13 @@
     <ClInclude Include="..\..\..\code\External\stb\stb_image.h" />
     <ClInclude Include="..\..\..\code\External\stb\stb_image_resize.h" />
     <ClInclude Include="..\..\..\code\External\vma\include\vk_mem_alloc.h" />
-    <ClInclude Include="..\..\..\code\Graphics\CousineFont.h" />
-    <ClInclude Include="..\..\..\code\Graphics\DebugDraw.h" />
     <ClInclude Include="..\..\..\code\Graphics\Graphics.h" />
-    <ClInclude Include="..\..\..\code\Graphics\ImGuiWrapper.h" />
-    <ClInclude Include="..\..\..\code\Graphics\Model.h" />
-    <ClInclude Include="..\..\..\code\Graphics\Shader.h" />
+    <ClInclude Include="..\..\..\code\ImGui\ImGuiWrapper.h" />
+    <ClInclude Include="..\..\..\code\ImGui\ImGuizmo.h" />
     <ClInclude Include="..\..\..\code\JunkyardSettings.h" />
     <ClInclude Include="..\..\..\code\RemoteServices.h" />
     <ClInclude Include="..\..\..\code\Tool\Console.h" />
     <ClInclude Include="..\..\..\code\Tool\ImageEncoder.h" />
-    <ClInclude Include="..\..\..\code\Tool\ImGuiTools.h" />
     <ClInclude Include="..\..\..\code\Tool\MeshOptimizer.h" />
     <ClInclude Include="..\..\..\code\Tool\ShaderCompiler.h" />
     <ClInclude Include="..\..\..\code\VirtualFS.h" />
@@ -82,7 +83,10 @@
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='ReleaseDev|ARM64'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">true</ExcludedFromBuild>
     </ClCompile>
-    <ClCompile Include="..\..\..\code\AssetManager.cpp" />
+    <ClCompile Include="..\..\..\code\Assets\AssetManager.cpp" />
+    <ClCompile Include="..\..\..\code\Assets\Image.cpp" />
+    <ClCompile Include="..\..\..\code\Assets\Model.cpp" />
+    <ClCompile Include="..\..\..\code\Assets\Shader.cpp" />
     <ClCompile Include="..\..\..\code\Camera.cpp" />
     <ClCompile Include="..\..\..\code\Core\Allocators.cpp" />
     <ClCompile Include="..\..\..\code\Core\Base.cpp" />
@@ -112,12 +116,14 @@
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\..\..\code\Core\TracyHelper.cpp" />
+    <ClCompile Include="..\..\..\code\DebugTools\BudgetViewer.cpp" />
+    <ClCompile Include="..\..\..\code\DebugTools\DebugDraw.cpp" />
+    <ClCompile Include="..\..\..\code\DebugTools\FrameInfoHud.cpp" />
     <ClCompile Include="..\..\..\code\Engine.cpp">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">false</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">false</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='ReleaseDev|ARM64'">false</ExcludedFromBuild>
     </ClCompile>
-    <ClCompile Include="..\..\..\code\External\ImGuizmo\ImGuizmo.cpp" />
     <ClCompile Include="..\..\..\code\External\imgui\imgui.cpp" />
     <ClCompile Include="..\..\..\code\External\imgui\imgui_demo.cpp">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">true</ExcludedFromBuild>
@@ -127,26 +133,9 @@
     <ClCompile Include="..\..\..\code\External\imgui\imgui_draw.cpp" />
     <ClCompile Include="..\..\..\code\External\imgui\imgui_tables.cpp" />
     <ClCompile Include="..\..\..\code\External\imgui\imgui_widgets.cpp" />
-    <ClCompile Include="..\..\..\code\Graphics\DebugDraw.cpp" />
     <ClCompile Include="..\..\..\code\Graphics\Graphics.cpp" />
-    <ClCompile Include="..\..\..\code\Graphics\GraphicsVk.cpp">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='ReleaseDev|ARM64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">true</ExcludedFromBuild>
-    </ClCompile>
-    <ClCompile Include="..\..\..\code\Graphics\ImageVk.cpp">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='ReleaseDev|ARM64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">true</ExcludedFromBuild>
-    </ClCompile>
-    <ClCompile Include="..\..\..\code\Graphics\ImGuiWrapper.cpp" />
-    <ClCompile Include="..\..\..\code\Graphics\Model.cpp" />
-    <ClCompile Include="..\..\..\code\Graphics\Shader.cpp" />
-    <ClCompile Include="..\..\..\code\Graphics\TracyVk.cpp">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='ReleaseDev|ARM64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">true</ExcludedFromBuild>
-    </ClCompile>
+    <ClCompile Include="..\..\..\code\ImGui\ImGuiWrapper.cpp" />
+    <ClCompile Include="..\..\..\code\ImGui\ImGuizmo.cpp" />
     <ClCompile Include="..\..\..\code\JunkyardSettings.cpp" />
     <ClCompile Include="..\..\..\code\RemoteServices.cpp" />
     <ClCompile Include="..\..\..\code\Tests\AssetTest.cpp">
@@ -162,7 +151,6 @@
     <ClCompile Include="..\..\..\code\Tests\TestAndroid.cpp" />
     <ClCompile Include="..\..\..\code\Tool\Console.cpp" />
     <ClCompile Include="..\..\..\code\Tool\ImageEncoder.cpp" />
-    <ClCompile Include="..\..\..\code\Tool\ImGuiTools.cpp" />
     <ClCompile Include="..\..\..\code\Tool\MeshOptimizer.cpp" />
     <ClCompile Include="..\..\..\code\Tool\ShaderCompiler.cpp" />
     <ClCompile Include="..\..\..\code\VirtualFS.cpp" />

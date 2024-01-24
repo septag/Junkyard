@@ -1,4 +1,5 @@
 #include "Shader.h"
+#include "AssetManager.h"
 
 #include "../Core/Buffers.h"
 #include "../Core/System.h"
@@ -7,11 +8,12 @@
 #include "../Core/Jobs.h"
 
 #include "../RemoteServices.h"
-#include "../AssetManager.h"
 #include "../VirtualFS.h"
 #include "../JunkyardSettings.h"
 
 #include "../Tool/ShaderCompiler.h"
+
+#include "../Graphics/Graphics.h"
 
 static constexpr uint32 kShaderAssetType = MakeFourCC('S', 'H', 'A', 'D');
 static constexpr uint32 kRemoteCmdCompileShader = MakeFourCC('C', 'S', 'H', 'D');
@@ -24,11 +26,11 @@ struct ShaderLoadRequest
     void* loadCallbackUserData;
 };
 
-struct ShaderLoader final : AssetLoaderCallbacks
+struct ShaderLoader final : AssetCallbacks
 {
     AssetResult Load(AssetHandle handle, const AssetLoadParams& params, uint32 cacheHash, Allocator* dependsAlloc) override;
     void LoadRemote(AssetHandle handle, const AssetLoadParams& params, uint32 cacheHash, void* userData, AssetLoaderAsyncCallback loadCallback) override;
-    bool InitializeResources(void*, const AssetLoadParams&) override { return true; }
+    bool InitializeSystemResources(void*, const AssetLoadParams&) override { return true; }
     bool ReloadSync(AssetHandle handle, void* prevData) override;
     void Release(void* data, Allocator*) override;
 
@@ -85,9 +87,9 @@ static void shaderCompileLoadTask(uint32 groupIndex, void* userData)
         if (fileBlob.IsValid()) {
             // Compilation
             char compileErrorDesc[512];
-            Pair<Shader*, uint32> shaderCompileResult = shaderCompile(fileBlob, filepath, compileDesc, compileErrorDesc, 
+            Pair<GfxShader*, uint32> shaderCompileResult = shaderCompile(fileBlob, filepath, compileDesc, compileErrorDesc, 
                                                                       sizeof(compileErrorDesc), memDefaultAlloc());
-            Shader* shader = shaderCompileResult.first;
+            GfxShader* shader = shaderCompileResult.first;
             uint32 shaderDataSize = shaderCompileResult.second;
 
             if (shader) {
@@ -182,7 +184,7 @@ static void shaderCompileShaderHandlerClientFn([[maybe_unused]] uint32 cmd, cons
         if (shaderBufferSize) {
             shaderData = memAlloc(shaderBufferSize, alloc);
             incomingData.Read(shaderData, shaderBufferSize);
-            ((Shader*)shaderData)->hash = uint32(handle);
+            ((GfxShader*)shaderData)->hash = uint32(handle);
         }
 
         if (loadCallback) {
@@ -197,10 +199,10 @@ static void shaderCompileShaderHandlerClientFn([[maybe_unused]] uint32 cmd, cons
     }
 }
 
-bool _private::shaderInitialize()
+bool _private::assetInitializeShaderManager()
 {
     #if CONFIG_TOOLMODE
-        if (!_private::shaderInitializeCompiler())
+        if (!shaderInitializeCompiler())
             return false;
     #endif
 
@@ -223,20 +225,22 @@ bool _private::shaderInitialize()
     });
     gShaderLoader.requestsMtx.Initialize();
 
+    logInfo("(init) Shader asset manager");
+
     return true;
 }
 
-void _private::shaderRelease()
+void _private::assetReleaseShaderManager()
 {
     #if CONFIG_TOOLMODE
-        _private::shaderReleaseCompiler();
+        shaderReleaseCompiler();
     #endif
     assetUnregister(kShaderAssetType);
     gShaderLoader.requestsMtx.Release();
     gShaderLoader.requests.Free();
 }
 
-AssetHandleShader assetLoadShader(const char* path, const ShaderCompileDesc& desc, AssetBarrier barrier)
+AssetHandleShader assetLoadShader(const char* path, const ShaderLoadParams& desc, AssetBarrier barrier)
 {
     AssetLoadParams loadParams {
         .path = path,
@@ -248,28 +252,9 @@ AssetHandleShader assetLoadShader(const char* path, const ShaderCompileDesc& des
     return AssetHandleShader { assetLoad(loadParams, &desc) };
 }
 
-Shader* assetGetShader(AssetHandleShader shaderHandle)
+GfxShader* assetGetShader(AssetHandleShader shaderHandle)
 {
-    return reinterpret_cast<Shader*>(_private::assetGetData(shaderHandle));
-}
-
-const ShaderStageInfo* shaderGetStage(const Shader& info, ShaderStage stage)
-{
-    for (uint32 i = 0; i < info.numStages; i++) {
-        if (info.stages[i].stage == stage) {
-            return &info.stages[i];
-        }
-    }
-    return nullptr;
-}
-
-const ShaderParameterInfo* shaderGetParam(const Shader& info, const char* name)
-{
-    for (uint32 i = 0; i < info.numParams; i++) {
-        if (strIsEqual(info.params[i].name, name))
-            return &info.params[i];
-    }
-    return nullptr;
+    return reinterpret_cast<GfxShader*>(_private::assetGetData(shaderHandle));
 }
 
 // MT: Runs from a task thread (AssetManager)
@@ -308,7 +293,7 @@ AssetResult ShaderLoader::Load(AssetHandle handle, const AssetLoadParams& params
             }
 
             char errorDiag[1024];
-            Pair<Shader*, uint32> shader = shaderCompile(blob, params.path, compileDesc, errorDiag, sizeof(errorDiag), params.alloc);
+            Pair<GfxShader*, uint32> shader = shaderCompile(blob, params.path, compileDesc, errorDiag, sizeof(errorDiag), params.alloc);
             if (shader.first)
                 shader.first->hash = uint32(handle);
             else 
@@ -367,8 +352,8 @@ bool ShaderLoader::ReloadSync(AssetHandle handle, void* prevData)
     UNUSED(handle);
     UNUSED(prevData);
 
-    Shader* oldShader = reinterpret_cast<Shader*>(prevData);
-    Shader* newShader = reinterpret_cast<Shader*>(_private::assetGetData(handle));
+    GfxShader* oldShader = reinterpret_cast<GfxShader*>(prevData);
+    GfxShader* newShader = reinterpret_cast<GfxShader*>(_private::assetGetData(handle));
 
     if (newShader == nullptr)
         return false;
@@ -385,13 +370,13 @@ bool ShaderLoader::ReloadSync(AssetHandle handle, void* prevData)
         return false;
 
     if (memcmp(oldShader->vertexAttributes.Get(), newShader->vertexAttributes.Get(), 
-        newShader->numVertexAttributes*sizeof(ShaderVertexAttributeInfo)) != 0)
+        newShader->numVertexAttributes*sizeof(GfxShaderVertexAttributeInfo)) != 0)
     {
         return false;
     }
 
     if (memcmp(oldShader->params.Get(), newShader->params.Get(), 
-        newShader->numParams*sizeof(ShaderParameterInfo)) != 0)
+        newShader->numParams*sizeof(GfxShaderParameterInfo)) != 0)
     {
         return false;
     }
