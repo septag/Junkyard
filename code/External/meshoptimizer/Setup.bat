@@ -1,6 +1,6 @@
 @echo off
 
-set meshopt_dist=v0.18/meshopt_dist-win64.zip
+set meshopt_dist=v0.20/meshopt_dist-win64.zip
 
 if not exist meshopt_dist.zip (
     powershell Invoke-WebRequest -Uri https://github.com/septag/meshoptimizer/releases/download/%meshopt_dist% -OutFile meshopt_dist.zip

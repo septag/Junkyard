@@ -996,7 +996,7 @@ bool sysSetEnvVar(const char* name, const char* value)
 
 bool sysGetEnvVar(const char* name, char* outValue, uint32 valueSize)
 {
-    DWORD dwValueSize = GetEnvironmentVariableA(key, outValue, valueSize);
+    DWORD dwValueSize = GetEnvironmentVariableA(name, outValue, valueSize);
     return dwValueSize != 0 && dwValueSize < valueSize;
 }
 
