@@ -7,8 +7,9 @@
 #include "../Core/Log.h"
 #include "../Core/IniParser.h"
 
-#include "../RemoteServices.h"
-#include "../VirtualFS.h"
+#include "../Common/RemoteServices.h"
+#include "../Common/VirtualFS.h"
+
 #include "../Engine.h"
 
 constexpr uint32 kRemoteCmdExecuteConsoleCmd = MakeFourCC('C', 'O', 'N', 'X');

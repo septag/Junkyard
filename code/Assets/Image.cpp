@@ -1,4 +1,5 @@
 #include "Image.h"
+#include "AssetManager.h"
 
 #include "../Core/System.h"
 #include "../Core/Hash.h"
@@ -7,13 +8,12 @@
 #include "../Core/TracyHelper.h"
 #include "../Core/Log.h"
 
-#include "../RemoteServices.h"
-#include "../VirtualFS.h"
-#include "../JunkyardSettings.h"
+#include "../Common/RemoteServices.h"
+#include "../Common/VirtualFS.h"
+#include "../Common/JunkyardSettings.h"
 
 #include "../Tool/ImageEncoder.h"
 
-#include "AssetManager.h"
 
 //------------------------------------------------------------------------
 static thread_local Allocator* gStbIAlloc = nullptr;

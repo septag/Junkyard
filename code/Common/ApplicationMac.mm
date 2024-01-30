@@ -67,14 +67,14 @@ struct AppMacState
     bool mouseTracked;
     AppEvent ev;
     AppDesc desc;
-    AppKeycode keycodes[kMaxKeycodes];
+    InputKeycode keycodes[kMaxKeycodes];
     size_t clipboardSize;
     char* clipboard;
     Array<AppEventCallbackPair> eventCallbacks;
     fl32 windowScale;
     fl32 contentScale;
     fl32 mouseScale;
-    AppKeyModifiers keyMods;
+    InputKeyModifiers keyMods;
     bool keysPressed[kMaxKeycodes];
     bool firstFrame;
     bool initCalled;
@@ -90,117 +90,117 @@ struct AppMacState
 static AppMacState gApp;
 
 static void appMacInitKeyTable() {
-    gApp.keycodes[0x1D] = AppKeycode::NUM0;
-    gApp.keycodes[0x12] = AppKeycode::NUM1;
-    gApp.keycodes[0x13] = AppKeycode::NUM2;
-    gApp.keycodes[0x14] = AppKeycode::NUM3;
-    gApp.keycodes[0x15] = AppKeycode::NUM4;
-    gApp.keycodes[0x17] = AppKeycode::NUM5;
-    gApp.keycodes[0x16] = AppKeycode::NUM6;
-    gApp.keycodes[0x1A] = AppKeycode::NUM7;
-    gApp.keycodes[0x1C] = AppKeycode::NUM8;
-    gApp.keycodes[0x19] = AppKeycode::NUM9;
-    gApp.keycodes[0x00] = AppKeycode::A;
-    gApp.keycodes[0x0B] = AppKeycode::B;
-    gApp.keycodes[0x08] = AppKeycode::C;
-    gApp.keycodes[0x02] = AppKeycode::D;
-    gApp.keycodes[0x0E] = AppKeycode::E;
-    gApp.keycodes[0x03] = AppKeycode::F;
-    gApp.keycodes[0x05] = AppKeycode::G;
-    gApp.keycodes[0x04] = AppKeycode::H;
-    gApp.keycodes[0x22] = AppKeycode::I;
-    gApp.keycodes[0x26] = AppKeycode::J;
-    gApp.keycodes[0x28] = AppKeycode::K;
-    gApp.keycodes[0x25] = AppKeycode::L;
-    gApp.keycodes[0x2E] = AppKeycode::M;
-    gApp.keycodes[0x2D] = AppKeycode::N;
-    gApp.keycodes[0x1F] = AppKeycode::O;
-    gApp.keycodes[0x23] = AppKeycode::P;
-    gApp.keycodes[0x0C] = AppKeycode::Q;
-    gApp.keycodes[0x0F] = AppKeycode::R;
-    gApp.keycodes[0x01] = AppKeycode::S;
-    gApp.keycodes[0x11] = AppKeycode::T;
-    gApp.keycodes[0x20] = AppKeycode::U;
-    gApp.keycodes[0x09] = AppKeycode::V;
-    gApp.keycodes[0x0D] = AppKeycode::W;
-    gApp.keycodes[0x07] = AppKeycode::X;
-    gApp.keycodes[0x10] = AppKeycode::Y;
-    gApp.keycodes[0x06] = AppKeycode::Z;
-    gApp.keycodes[0x27] = AppKeycode::Apostrophe;
-    gApp.keycodes[0x2A] = AppKeycode::Backslash;
-    gApp.keycodes[0x2B] = AppKeycode::Comma;
-    gApp.keycodes[0x18] = AppKeycode::Equal;
-    gApp.keycodes[0x32] = AppKeycode::GraveAccent;
-    gApp.keycodes[0x21] = AppKeycode::LeftBracket;
-    gApp.keycodes[0x1B] = AppKeycode::Minus;
-    gApp.keycodes[0x2F] = AppKeycode::Period;
-    gApp.keycodes[0x1E] = AppKeycode::RightBracket;
-    gApp.keycodes[0x29] = AppKeycode::Semicolon;
-    gApp.keycodes[0x2C] = AppKeycode::Slash;
-    gApp.keycodes[0x0A] = AppKeycode::World1;
-    gApp.keycodes[0x33] = AppKeycode::Backspace;
-    gApp.keycodes[0x39] = AppKeycode::CapsLock;
-    gApp.keycodes[0x75] = AppKeycode::Delete;
-    gApp.keycodes[0x7D] = AppKeycode::Down;
-    gApp.keycodes[0x77] = AppKeycode::End;
-    gApp.keycodes[0x24] = AppKeycode::Enter;
-    gApp.keycodes[0x35] = AppKeycode::Escape;
-    gApp.keycodes[0x7A] = AppKeycode::F1;
-    gApp.keycodes[0x78] = AppKeycode::F2;
-    gApp.keycodes[0x63] = AppKeycode::F3;
-    gApp.keycodes[0x76] = AppKeycode::F4;
-    gApp.keycodes[0x60] = AppKeycode::F5;
-    gApp.keycodes[0x61] = AppKeycode::F6;
-    gApp.keycodes[0x62] = AppKeycode::F7;
-    gApp.keycodes[0x64] = AppKeycode::F8;
-    gApp.keycodes[0x65] = AppKeycode::F9;
-    gApp.keycodes[0x6D] = AppKeycode::F10;
-    gApp.keycodes[0x67] = AppKeycode::F11;
-    gApp.keycodes[0x6F] = AppKeycode::F12;
-    gApp.keycodes[0x69] = AppKeycode::F13;
-    gApp.keycodes[0x6B] = AppKeycode::F14;
-    gApp.keycodes[0x71] = AppKeycode::F15;
-    gApp.keycodes[0x6A] = AppKeycode::F16;
-    gApp.keycodes[0x40] = AppKeycode::F17;
-    gApp.keycodes[0x4F] = AppKeycode::F18;
-    gApp.keycodes[0x50] = AppKeycode::F19;
-    gApp.keycodes[0x5A] = AppKeycode::F20;
-    gApp.keycodes[0x73] = AppKeycode::Home;
-    gApp.keycodes[0x72] = AppKeycode::Insert;
-    gApp.keycodes[0x7B] = AppKeycode::Left;
-    gApp.keycodes[0x3A] = AppKeycode::LeftAlt;
-    gApp.keycodes[0x3B] = AppKeycode::LeftControl;
-    gApp.keycodes[0x38] = AppKeycode::LeftShift;
-    gApp.keycodes[0x37] = AppKeycode::LeftSuper;
-    gApp.keycodes[0x6E] = AppKeycode::Menu;
-    gApp.keycodes[0x47] = AppKeycode::NumLock;
-    gApp.keycodes[0x79] = AppKeycode::PageDown;
-    gApp.keycodes[0x74] = AppKeycode::PageUp;
-    gApp.keycodes[0x7C] = AppKeycode::Right;
-    gApp.keycodes[0x3D] = AppKeycode::RightAlt;
-    gApp.keycodes[0x3E] = AppKeycode::RightControl;
-    gApp.keycodes[0x3C] = AppKeycode::RightShift;
-    gApp.keycodes[0x36] = AppKeycode::RightSuper;
-    gApp.keycodes[0x31] = AppKeycode::Space;
-    gApp.keycodes[0x30] = AppKeycode::Tab;
-    gApp.keycodes[0x7E] = AppKeycode::Up;
-    gApp.keycodes[0x52] = AppKeycode::KP0;
-    gApp.keycodes[0x53] = AppKeycode::KP1;
-    gApp.keycodes[0x54] = AppKeycode::KP2;
-    gApp.keycodes[0x55] = AppKeycode::KP3;
-    gApp.keycodes[0x56] = AppKeycode::KP4;
-    gApp.keycodes[0x57] = AppKeycode::KP5;
-    gApp.keycodes[0x58] = AppKeycode::KP6;
-    gApp.keycodes[0x59] = AppKeycode::KP7;
-    gApp.keycodes[0x5B] = AppKeycode::KP8;
-    gApp.keycodes[0x5C] = AppKeycode::KP9;
-    gApp.keycodes[0x45] = AppKeycode::KPAdd;
-    gApp.keycodes[0x41] = AppKeycode::KPDecimal;
-    gApp.keycodes[0x4B] = AppKeycode::KPDivide;
-    gApp.keycodes[0x4C] = AppKeycode::KPEnter;
-    gApp.keycodes[0x51] = AppKeycode::KPEqual;
-    gApp.keycodes[0x43] = AppKeycode::KPMultiply;
-    gApp.keycodes[0x4E] = AppKeycode::KPSubtract;
+    gApp.keycodes[0x1D] = InputKeycode::NUM0;
+    gApp.keycodes[0x12] = InputKeycode::NUM1;
+    gApp.keycodes[0x13] = InputKeycode::NUM2;
+    gApp.keycodes[0x14] = InputKeycode::NUM3;
+    gApp.keycodes[0x15] = InputKeycode::NUM4;
+    gApp.keycodes[0x17] = InputKeycode::NUM5;
+    gApp.keycodes[0x16] = InputKeycode::NUM6;
+    gApp.keycodes[0x1A] = InputKeycode::NUM7;
+    gApp.keycodes[0x1C] = InputKeycode::NUM8;
+    gApp.keycodes[0x19] = InputKeycode::NUM9;
+    gApp.keycodes[0x00] = InputKeycode::A;
+    gApp.keycodes[0x0B] = InputKeycode::B;
+    gApp.keycodes[0x08] = InputKeycode::C;
+    gApp.keycodes[0x02] = InputKeycode::D;
+    gApp.keycodes[0x0E] = InputKeycode::E;
+    gApp.keycodes[0x03] = InputKeycode::F;
+    gApp.keycodes[0x05] = InputKeycode::G;
+    gApp.keycodes[0x04] = InputKeycode::H;
+    gApp.keycodes[0x22] = InputKeycode::I;
+    gApp.keycodes[0x26] = InputKeycode::J;
+    gApp.keycodes[0x28] = InputKeycode::K;
+    gApp.keycodes[0x25] = InputKeycode::L;
+    gApp.keycodes[0x2E] = InputKeycode::M;
+    gApp.keycodes[0x2D] = InputKeycode::N;
+    gApp.keycodes[0x1F] = InputKeycode::O;
+    gApp.keycodes[0x23] = InputKeycode::P;
+    gApp.keycodes[0x0C] = InputKeycode::Q;
+    gApp.keycodes[0x0F] = InputKeycode::R;
+    gApp.keycodes[0x01] = InputKeycode::S;
+    gApp.keycodes[0x11] = InputKeycode::T;
+    gApp.keycodes[0x20] = InputKeycode::U;
+    gApp.keycodes[0x09] = InputKeycode::V;
+    gApp.keycodes[0x0D] = InputKeycode::W;
+    gApp.keycodes[0x07] = InputKeycode::X;
+    gApp.keycodes[0x10] = InputKeycode::Y;
+    gApp.keycodes[0x06] = InputKeycode::Z;
+    gApp.keycodes[0x27] = InputKeycode::Apostrophe;
+    gApp.keycodes[0x2A] = InputKeycode::Backslash;
+    gApp.keycodes[0x2B] = InputKeycode::Comma;
+    gApp.keycodes[0x18] = InputKeycode::Equal;
+    gApp.keycodes[0x32] = InputKeycode::GraveAccent;
+    gApp.keycodes[0x21] = InputKeycode::LeftBracket;
+    gApp.keycodes[0x1B] = InputKeycode::Minus;
+    gApp.keycodes[0x2F] = InputKeycode::Period;
+    gApp.keycodes[0x1E] = InputKeycode::RightBracket;
+    gApp.keycodes[0x29] = InputKeycode::Semicolon;
+    gApp.keycodes[0x2C] = InputKeycode::Slash;
+    gApp.keycodes[0x0A] = InputKeycode::World1;
+    gApp.keycodes[0x33] = InputKeycode::Backspace;
+    gApp.keycodes[0x39] = InputKeycode::CapsLock;
+    gApp.keycodes[0x75] = InputKeycode::Delete;
+    gApp.keycodes[0x7D] = InputKeycode::Down;
+    gApp.keycodes[0x77] = InputKeycode::End;
+    gApp.keycodes[0x24] = InputKeycode::Enter;
+    gApp.keycodes[0x35] = InputKeycode::Escape;
+    gApp.keycodes[0x7A] = InputKeycode::F1;
+    gApp.keycodes[0x78] = InputKeycode::F2;
+    gApp.keycodes[0x63] = InputKeycode::F3;
+    gApp.keycodes[0x76] = InputKeycode::F4;
+    gApp.keycodes[0x60] = InputKeycode::F5;
+    gApp.keycodes[0x61] = InputKeycode::F6;
+    gApp.keycodes[0x62] = InputKeycode::F7;
+    gApp.keycodes[0x64] = InputKeycode::F8;
+    gApp.keycodes[0x65] = InputKeycode::F9;
+    gApp.keycodes[0x6D] = InputKeycode::F10;
+    gApp.keycodes[0x67] = InputKeycode::F11;
+    gApp.keycodes[0x6F] = InputKeycode::F12;
+    gApp.keycodes[0x69] = InputKeycode::F13;
+    gApp.keycodes[0x6B] = InputKeycode::F14;
+    gApp.keycodes[0x71] = InputKeycode::F15;
+    gApp.keycodes[0x6A] = InputKeycode::F16;
+    gApp.keycodes[0x40] = InputKeycode::F17;
+    gApp.keycodes[0x4F] = InputKeycode::F18;
+    gApp.keycodes[0x50] = InputKeycode::F19;
+    gApp.keycodes[0x5A] = InputKeycode::F20;
+    gApp.keycodes[0x73] = InputKeycode::Home;
+    gApp.keycodes[0x72] = InputKeycode::Insert;
+    gApp.keycodes[0x7B] = InputKeycode::Left;
+    gApp.keycodes[0x3A] = InputKeycode::LeftAlt;
+    gApp.keycodes[0x3B] = InputKeycode::LeftControl;
+    gApp.keycodes[0x38] = InputKeycode::LeftShift;
+    gApp.keycodes[0x37] = InputKeycode::LeftSuper;
+    gApp.keycodes[0x6E] = InputKeycode::Menu;
+    gApp.keycodes[0x47] = InputKeycode::NumLock;
+    gApp.keycodes[0x79] = InputKeycode::PageDown;
+    gApp.keycodes[0x74] = InputKeycode::PageUp;
+    gApp.keycodes[0x7C] = InputKeycode::Right;
+    gApp.keycodes[0x3D] = InputKeycode::RightAlt;
+    gApp.keycodes[0x3E] = InputKeycode::RightControl;
+    gApp.keycodes[0x3C] = InputKeycode::RightShift;
+    gApp.keycodes[0x36] = InputKeycode::RightSuper;
+    gApp.keycodes[0x31] = InputKeycode::Space;
+    gApp.keycodes[0x30] = InputKeycode::Tab;
+    gApp.keycodes[0x7E] = InputKeycode::Up;
+    gApp.keycodes[0x52] = InputKeycode::KP0;
+    gApp.keycodes[0x53] = InputKeycode::KP1;
+    gApp.keycodes[0x54] = InputKeycode::KP2;
+    gApp.keycodes[0x55] = InputKeycode::KP3;
+    gApp.keycodes[0x56] = InputKeycode::KP4;
+    gApp.keycodes[0x57] = InputKeycode::KP5;
+    gApp.keycodes[0x58] = InputKeycode::KP6;
+    gApp.keycodes[0x59] = InputKeycode::KP7;
+    gApp.keycodes[0x5B] = InputKeycode::KP8;
+    gApp.keycodes[0x5C] = InputKeycode::KP9;
+    gApp.keycodes[0x45] = InputKeycode::KPAdd;
+    gApp.keycodes[0x41] = InputKeycode::KPDecimal;
+    gApp.keycodes[0x4B] = InputKeycode::KPDivide;
+    gApp.keycodes[0x4C] = InputKeycode::KPEnter;
+    gApp.keycodes[0x51] = InputKeycode::KPEqual;
+    gApp.keycodes[0x43] = InputKeycode::KPMultiply;
+    gApp.keycodes[0x4E] = InputKeycode::KPSubtract;
 }
 
 bool appInitialize(const AppDesc& desc)
@@ -410,17 +410,17 @@ static void appMacFrame()
     }
 @end // appMacDelegate
 
-static AppKeyModifiers appMacKeyMods(NSEventModifierFlags f)
+static InputKeyModifiers appMacKeyMods(NSEventModifierFlags f)
 {
-    AppKeyModifiers m = AppKeyModifiers::None;
+    InputKeyModifiers m = InputKeyModifiers::None;
     if (f & NSEventModifierFlagShift)
-        m |= AppKeyModifiers::Shift;
+        m |= InputKeyModifiers::Shift;
     if (f & NSEventModifierFlagControl)
-        m |= AppKeyModifiers::Ctrl;
+        m |= InputKeyModifiers::Ctrl;
     if (f & NSEventModifierFlagOption)
-        m |= AppKeyModifiers::Alt;
+        m |= InputKeyModifiers::Alt;
     if (f & NSEventModifierFlagCommand)
-        m |= AppKeyModifiers::Super;
+        m |= InputKeyModifiers::Super;
     return m;
 }
 
@@ -434,7 +434,7 @@ static void appMacInitEvent(AppEventType type)
 {
     memset(&gApp.ev, 0, sizeof(gApp.ev));
     gApp.ev.type = type;
-    gApp.ev.mouseButton = AppMouseButton::Invalid;
+    gApp.ev.mouseButton = InputMouseButton::Invalid;
     gApp.ev.windowWidth = gApp.windowWidth;
     gApp.ev.windowHeight = gApp.windowHeight;
     gApp.ev.framebufferWidth = gApp.framebufferWidth;
@@ -461,7 +461,7 @@ static bool appMacCallEvent(const AppEvent& ev)
     }
 }
 
-static void appMacDispatchMouseEvent(AppEventType type, AppMouseButton btn, AppKeyModifiers mod)
+static void appMacDispatchMouseEvent(AppEventType type, InputMouseButton btn, InputKeyModifiers mod)
 {
     if (appMacEventsEnabled()) {
         appMacInitEvent(type);
@@ -473,7 +473,7 @@ static void appMacDispatchMouseEvent(AppEventType type, AppMouseButton btn, AppK
     }
 }
 
-static void appMacDispatchKeyEvent(AppEventType type, AppKeycode key, bool repeat, AppKeyModifiers mod)
+static void appMacDispatchKeyEvent(AppEventType type, InputKeycode key, bool repeat, InputKeyModifiers mod)
 {
     if (appMacEventsEnabled()) {
         appMacInitEvent(type);
@@ -492,12 +492,12 @@ static void appMacDispatchAppEvent(AppEventType type)
     }
 }
 
-static AppKeycode appTranslateKey(int scanCode)
+static InputKeycode appTranslateKey(int scanCode)
 {
     if ((scanCode >= 0) && (scanCode <kMaxKeycodes))
         return gApp.keycodes[scanCode];
     else
-        return AppKeycode::Invalid;
+        return InputKeycode::Invalid;
 }
 
 @implementation appWindowDelegate
@@ -588,63 +588,63 @@ static AppKeycode appTranslateKey(int scanCode)
 
     - (void)mouseEntered:(NSEvent*)event
     {
-        appMacDispatchMouseEvent(AppEventType::MouseEnter, AppMouseButton::Invalid, appMacKeyMods(event.modifierFlags));
+        appMacDispatchMouseEvent(AppEventType::MouseEnter, InputMouseButton::Invalid, appMacKeyMods(event.modifierFlags));
     }
 
     - (void)mouseExited:(NSEvent*)event
     {
-        appMacDispatchMouseEvent(AppEventType::MouseLeave, AppMouseButton::Invalid, appMacKeyMods(event.modifierFlags));
+        appMacDispatchMouseEvent(AppEventType::MouseLeave, InputMouseButton::Invalid, appMacKeyMods(event.modifierFlags));
     }
 
     - (void)mouseDown:(NSEvent*)event
     {
         gApp.mouseDown = true;
-        appMacDispatchMouseEvent(AppEventType::MouseDown, AppMouseButton::Left, appMacKeyMods(event.modifierFlags));
+        appMacDispatchMouseEvent(AppEventType::MouseDown, InputMouseButton::Left, appMacKeyMods(event.modifierFlags));
     }
 
     - (void)mouseUp:(NSEvent*)event
     {
         gApp.mouseDown = false;
-        appMacDispatchMouseEvent(AppEventType::MouseUp, AppMouseButton::Left, appMacKeyMods(event.modifierFlags));
+        appMacDispatchMouseEvent(AppEventType::MouseUp, InputMouseButton::Left, appMacKeyMods(event.modifierFlags));
     }
 
     - (void)rightMouseDown:(NSEvent*)event
     {
-        appMacDispatchMouseEvent(AppEventType::MouseDown, AppMouseButton::Right, appMacKeyMods(event.modifierFlags));
+        appMacDispatchMouseEvent(AppEventType::MouseDown, InputMouseButton::Right, appMacKeyMods(event.modifierFlags));
     }
 
     - (void)rightMouseUp:(NSEvent*)event
     {
-        appMacDispatchMouseEvent(AppEventType::MouseUp, AppMouseButton::Right, appMacKeyMods(event.modifierFlags));
+        appMacDispatchMouseEvent(AppEventType::MouseUp, InputMouseButton::Right, appMacKeyMods(event.modifierFlags));
     }
 
     - (void)otherMouseDown:(NSEvent*)event
     {
         if (2 == event.buttonNumber) {
-            appMacDispatchMouseEvent(AppEventType::MouseDown, AppMouseButton::Middle, appMacKeyMods(event.modifierFlags));
+            appMacDispatchMouseEvent(AppEventType::MouseDown, InputMouseButton::Middle, appMacKeyMods(event.modifierFlags));
         }
     }
 
     - (void)otherMouseUp:(NSEvent*)event
     {
         if (2 == event.buttonNumber) {
-            appMacDispatchMouseEvent(AppEventType::MouseUp, AppMouseButton::Middle, appMacKeyMods(event.modifierFlags));
+            appMacDispatchMouseEvent(AppEventType::MouseUp, InputMouseButton::Middle, appMacKeyMods(event.modifierFlags));
         }
     }
 
     - (void)mouseMoved:(NSEvent*)event
     {
-        appMacDispatchMouseEvent(AppEventType::MouseMove, AppMouseButton::Invalid , appMacKeyMods(event.modifierFlags));
+        appMacDispatchMouseEvent(AppEventType::MouseMove, InputMouseButton::Invalid , appMacKeyMods(event.modifierFlags));
     }
 
     - (void)mouseDragged:(NSEvent*)event
     {
-        appMacDispatchMouseEvent(AppEventType::MouseMove, AppMouseButton::Invalid , appMacKeyMods(event.modifierFlags));
+        appMacDispatchMouseEvent(AppEventType::MouseMove, InputMouseButton::Invalid , appMacKeyMods(event.modifierFlags));
     }
 
     - (void)rightMouseDragged:(NSEvent*)event
     {
-        appMacDispatchMouseEvent(AppEventType::MouseMove, AppMouseButton::Invalid, appMacKeyMods(event.modifierFlags));
+        appMacDispatchMouseEvent(AppEventType::MouseMove, InputMouseButton::Invalid, appMacKeyMods(event.modifierFlags));
     }
 
     - (void)scrollWheel:(NSEvent*)event
@@ -671,8 +671,8 @@ static AppKeycode appTranslateKey(int scanCode)
     - (void)keyDown:(NSEvent*)event
     {
         if (appMacEventsEnabled()) {
-            AppKeyModifiers mods = appMacKeyMods(event.modifierFlags);
-            AppKeycode keyCode = appTranslateKey(event.keyCode);
+            InputKeyModifiers mods = appMacKeyMods(event.modifierFlags);
+            InputKeycode keyCode = appTranslateKey(event.keyCode);
             gApp.keyMods |= mods;
             gApp.keysPressed[uint32(keyCode)] = true;
             
@@ -681,7 +681,7 @@ static AppKeycode appTranslateKey(int scanCode)
             // NOTE: macOS doesn't send keyUp events while the Cmd key is pressed,
             //       as a workaround, to prevent key presses from sticking we'll send
             //       a keyup event following right after the keydown if SUPER is also pressed
-            if ((mods & AppKeyModifiers::Super) == AppKeyModifiers::Super) {
+            if ((mods & InputKeyModifiers::Super) == InputKeyModifiers::Super) {
                 appMacDispatchKeyEvent(AppEventType::KeyUp, keyCode, event.isARepeat, mods);
             }
             
@@ -702,7 +702,7 @@ static AppKeycode appTranslateKey(int scanCode)
             }
             
             // if this is a Cmd+V (paste), also send a CLIPBOARD_PASTE event
-            if (gApp.clipboard && (mods == AppKeyModifiers::Super) && (keyCode == AppKeycode::V)) {
+            if (gApp.clipboard && (mods == InputKeyModifiers::Super) && (keyCode == InputKeycode::V)) {
                 appMacInitEvent(AppEventType::ClipboardPasted);
                 appMacCallEvent(gApp.ev);
             }
@@ -711,8 +711,8 @@ static AppKeycode appTranslateKey(int scanCode)
 
     - (void)keyUp:(NSEvent*)event
     {
-        AppKeyModifiers mods = appMacKeyMods(event.modifierFlags);
-        AppKeycode keyCode = appTranslateKey(event.keyCode);
+        InputKeyModifiers mods = appMacKeyMods(event.modifierFlags);
+        InputKeycode keyCode = appTranslateKey(event.keyCode);
         gApp.keysPressed[uint32(keyCode)] = false;
         gApp.keyMods &= ~mods;
 
@@ -727,25 +727,25 @@ static AppKeycode appTranslateKey(int scanCode)
         const uint32 old_f = gApp.flagsChanged;
         const uint32 new_f = (uint32)event.modifierFlags;
         gApp.flagsChanged = new_f;
-        AppKeycode key_code = AppKeycode::Invalid;
+        InputKeycode key_code = InputKeycode::Invalid;
         bool down = false;
         if ((new_f ^ old_f) & NSEventModifierFlagShift) {
-            key_code = AppKeycode::LeftShift;
+            key_code = InputKeycode::LeftShift;
             down = 0 != (new_f & NSEventModifierFlagShift);
         }
         if ((new_f ^ old_f) & NSEventModifierFlagControl) {
-            key_code = AppKeycode::LeftControl;
+            key_code = InputKeycode::LeftControl;
             down = 0 != (new_f & NSEventModifierFlagControl);
         }
         if ((new_f ^ old_f) & NSEventModifierFlagOption) {
-            key_code = AppKeycode::LeftAlt;
+            key_code = InputKeycode::LeftAlt;
             down = 0 != (new_f & NSEventModifierFlagOption);
         }
         if ((new_f ^ old_f) & NSEventModifierFlagCommand) {
-            key_code = AppKeycode::LeftSuper;
+            key_code = InputKeycode::LeftSuper;
             down = 0 != (new_f & NSEventModifierFlagCommand);
         }
-        if (key_code != AppKeycode::Invalid) {
+        if (key_code != InputKeycode::Invalid) {
             appMacDispatchKeyEvent(down ? AppEventType::KeyDown : AppEventType::KeyUp,
                 key_code,
                 false,
@@ -921,12 +921,12 @@ AppDisplayInfo appGetDisplayInfo()
     };
 }
 
-bool appIsKeyDown(AppKeycode keycode)
+bool appIsKeyDown(InputKeycode keycode)
 {
     return gApp.keysPressed[uint32(keycode)];
 }
 
-bool appIsAnyKeysDown(const AppKeycode* keycodes, uint32 numKeycodes)
+bool appIsAnyKeysDown(const InputKeycode* keycodes, uint32 numKeycodes)
 {
     bool down = false;
     for (uint32 i = 0; i < numKeycodes; i++)
@@ -934,7 +934,7 @@ bool appIsAnyKeysDown(const AppKeycode* keycodes, uint32 numKeycodes)
     return down;
 }
 
-AppKeyModifiers appGetKeyMods()
+InputKeyModifiers appGetKeyMods()
 {
     return gApp.keyMods;
 }

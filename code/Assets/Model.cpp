@@ -18,8 +18,8 @@
 #include "../Core/Hash.h"
 #include "../Core/MathAll.h"
 
-#include "../VirtualFS.h"
-#include "../RemoteServices.h"
+#include "../Common/VirtualFS.h"
+#include "../Common/RemoteServices.h"
 
 #include "../Tool/MeshOptimizer.h"
 

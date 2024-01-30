@@ -16,6 +16,13 @@
 #include "Core/IniParser.cpp"
 #include "Core/TracyHelper.cpp"
 
+// Common
+#include "Common/JunkyardSettings.cpp"
+#include "Common/Application.cpp"
+#include "Common/VirtualFS.cpp"
+#include "Common/RemoteServices.cpp"
+#include "Common/Camera.cpp"
+
 // Assets
 #include "Assets/AssetManager.cpp"
 #include "Assets/Image.cpp"
@@ -44,12 +51,6 @@
 #include "ImGui/ImGuiWrapper.cpp"
 #include "ImGui/ImGuizmo.cpp"
 
-// General
-#include "JunkyardSettings.cpp"
-#include "Application.cpp"
 #include "Engine.cpp"
-#include "VirtualFS.cpp"
-#include "RemoteServices.cpp"
-#include "Camera.cpp"
 
 #endif // BUILD_UNITY

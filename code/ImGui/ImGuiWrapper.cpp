@@ -2,6 +2,8 @@
 
 #include <stdarg.h>
 
+#include "CousineFont.h"
+
 #include "../External/imgui/imgui.h"
 
 #include "../Core/Allocators.h"
@@ -18,12 +20,11 @@
 #include "../Assets/Shader.h"
 #include "../Assets/AssetManager.h"
 
-#include "../Application.h"
-#include "../Engine.h"
-#include "../VirtualFS.h"
-#include "../JunkyardSettings.h"
+#include "../Common/Application.h"
+#include "../Common/VirtualFS.h"
+#include "../Common/JunkyardSettings.h"
 
-#include "CousineFont.h"
+#include "../Engine.h"
 
 // Extra modules
 #include "ImGuizmo.h"
@@ -53,11 +54,11 @@ struct ImGuiState
 
     ImGuiContext* ctx;
 
-    bool mouseButtonDown[(uint32)AppMouseButton::_Count];
-    bool mouseButtonUp[(uint32)AppMouseButton::_Count];
+    bool mouseButtonDown[(uint32)InputMouseButton::_Count];
+    bool mouseButtonUp[(uint32)InputMouseButton::_Count];
     float mouseWheelH;
     float mouseWheel;
-    bool keysDown[(uint32)AppKeycode::_Count];
+    bool keysDown[(uint32)InputKeycode::_Count];
     StaticArray<ImWchar, 128> charInput;
     ImGuiMouseCursor lastCursor;
     
@@ -283,32 +284,32 @@ static void imguiOnEvent(const AppEvent& ev, [[maybe_unused]] void* userData)
     case AppEventType::MouseScroll:
         gImGui.mouseWheelH = ev.scrollX;
         gImGui.mouseWheel += ev.scrollY;
-        if (gImGui.alphaControl && appGetKeyMods() == AppKeyModifiers::Ctrl)
+        if (gImGui.alphaControl && appGetKeyMods() == InputKeyModifiers::Ctrl)
             *gImGui.alphaControl = Clamp(*gImGui.alphaControl + mathSign(ev.scrollY)*0.2f, 0.1f, 1.0f);
             
         break;
         
     case AppEventType::KeyDown:
         gImGui.keysDown[(uint32)ev.keycode] = true;
-        if (ev.keycode == AppKeycode::RightShift || ev.keycode == AppKeycode::LeftShift)
+        if (ev.keycode == InputKeycode::RightShift || ev.keycode == InputKeycode::LeftShift)
             io.KeyShift = true;
-        if (ev.keycode == AppKeycode::RightControl || ev.keycode == AppKeycode::LeftControl)
+        if (ev.keycode == InputKeycode::RightControl || ev.keycode == InputKeycode::LeftControl)
             io.KeyCtrl = true;
-        if (ev.keycode == AppKeycode::RightAlt || ev.keycode == AppKeycode::LeftAlt)
+        if (ev.keycode == InputKeycode::RightAlt || ev.keycode == InputKeycode::LeftAlt)
             io.KeyAlt = true;
-        if (ev.keycode == AppKeycode::RightSuper || ev.keycode == AppKeycode::LeftSuper)
+        if (ev.keycode == InputKeycode::RightSuper || ev.keycode == InputKeycode::LeftSuper)
             io.KeySuper = true;
         break;
         
     case AppEventType::KeyUp:
         gImGui.keysDown[(uint32)ev.keycode] = false;
-        if (ev.keycode == AppKeycode::RightShift || ev.keycode == AppKeycode::LeftShift)
+        if (ev.keycode == InputKeycode::RightShift || ev.keycode == InputKeycode::LeftShift)
             io.KeyShift = false;
-        if (ev.keycode == AppKeycode::RightControl || ev.keycode == AppKeycode::LeftControl)
+        if (ev.keycode == InputKeycode::RightControl || ev.keycode == InputKeycode::LeftControl)
             io.KeyCtrl = false;
-        if (ev.keycode == AppKeycode::RightAlt || ev.keycode == AppKeycode::LeftAlt)
+        if (ev.keycode == InputKeycode::RightAlt || ev.keycode == InputKeycode::LeftAlt)
             io.KeyAlt = false;
-        if (ev.keycode == AppKeycode::RightSuper || ev.keycode == AppKeycode::LeftSuper)
+        if (ev.keycode == InputKeycode::RightSuper || ev.keycode == InputKeycode::LeftSuper)
             io.KeySuper = false;
         break;
         
@@ -363,28 +364,28 @@ bool _private::imguiInitialize()
     float frameBufferScale = appGetDisplayInfo().dpiScale;
     conf.DisplayFramebufferScale = ImVec2(frameBufferScale, frameBufferScale);
 
-    conf.KeyMap[ImGuiKey_Tab]           = static_cast<int>(AppKeycode::Tab);
-    conf.KeyMap[ImGuiKey_LeftArrow]     = static_cast<int>(AppKeycode::Left);
-    conf.KeyMap[ImGuiKey_RightArrow]    = static_cast<int>(AppKeycode::Right);
-    conf.KeyMap[ImGuiKey_UpArrow]       = static_cast<int>(AppKeycode::Up);
-    conf.KeyMap[ImGuiKey_DownArrow]     = static_cast<int>(AppKeycode::Down);
-    conf.KeyMap[ImGuiKey_PageUp]        = static_cast<int>(AppKeycode::PageUp);
-    conf.KeyMap[ImGuiKey_PageDown]      = static_cast<int>(AppKeycode::PageDown);
-    conf.KeyMap[ImGuiKey_Home]          = static_cast<int>(AppKeycode::Home);
-    conf.KeyMap[ImGuiKey_End]           = static_cast<int>(AppKeycode::End);
-    conf.KeyMap[ImGuiKey_Insert]        = static_cast<int>(AppKeycode::Insert);
-    conf.KeyMap[ImGuiKey_Delete]        = static_cast<int>(AppKeycode::Delete);
-    conf.KeyMap[ImGuiKey_Backspace]     = static_cast<int>(AppKeycode::Backspace);
-    conf.KeyMap[ImGuiKey_Space]         = static_cast<int>(AppKeycode::Space);
-    conf.KeyMap[ImGuiKey_Enter]         = static_cast<int>(AppKeycode::Enter);
-    conf.KeyMap[ImGuiKey_KeyPadEnter]   = static_cast<int>(AppKeycode::KPEnter);
-    conf.KeyMap[ImGuiKey_Escape]        = static_cast<int>(AppKeycode::Escape);
-    conf.KeyMap[ImGuiKey_A]             = static_cast<int>(AppKeycode::A);
-    conf.KeyMap[ImGuiKey_C]             = static_cast<int>(AppKeycode::C);
-    conf.KeyMap[ImGuiKey_V]             = static_cast<int>(AppKeycode::V);
-    conf.KeyMap[ImGuiKey_X]             = static_cast<int>(AppKeycode::X);
-    conf.KeyMap[ImGuiKey_Y]             = static_cast<int>(AppKeycode::Y);
-    conf.KeyMap[ImGuiKey_Z]             = static_cast<int>(AppKeycode::Z);
+    conf.KeyMap[ImGuiKey_Tab]           = static_cast<int>(InputKeycode::Tab);
+    conf.KeyMap[ImGuiKey_LeftArrow]     = static_cast<int>(InputKeycode::Left);
+    conf.KeyMap[ImGuiKey_RightArrow]    = static_cast<int>(InputKeycode::Right);
+    conf.KeyMap[ImGuiKey_UpArrow]       = static_cast<int>(InputKeycode::Up);
+    conf.KeyMap[ImGuiKey_DownArrow]     = static_cast<int>(InputKeycode::Down);
+    conf.KeyMap[ImGuiKey_PageUp]        = static_cast<int>(InputKeycode::PageUp);
+    conf.KeyMap[ImGuiKey_PageDown]      = static_cast<int>(InputKeycode::PageDown);
+    conf.KeyMap[ImGuiKey_Home]          = static_cast<int>(InputKeycode::Home);
+    conf.KeyMap[ImGuiKey_End]           = static_cast<int>(InputKeycode::End);
+    conf.KeyMap[ImGuiKey_Insert]        = static_cast<int>(InputKeycode::Insert);
+    conf.KeyMap[ImGuiKey_Delete]        = static_cast<int>(InputKeycode::Delete);
+    conf.KeyMap[ImGuiKey_Backspace]     = static_cast<int>(InputKeycode::Backspace);
+    conf.KeyMap[ImGuiKey_Space]         = static_cast<int>(InputKeycode::Space);
+    conf.KeyMap[ImGuiKey_Enter]         = static_cast<int>(InputKeycode::Enter);
+    conf.KeyMap[ImGuiKey_KeyPadEnter]   = static_cast<int>(InputKeycode::KPEnter);
+    conf.KeyMap[ImGuiKey_Escape]        = static_cast<int>(InputKeycode::Escape);
+    conf.KeyMap[ImGuiKey_A]             = static_cast<int>(InputKeycode::A);
+    conf.KeyMap[ImGuiKey_C]             = static_cast<int>(InputKeycode::C);
+    conf.KeyMap[ImGuiKey_V]             = static_cast<int>(InputKeycode::V);
+    conf.KeyMap[ImGuiKey_X]             = static_cast<int>(InputKeycode::X);
+    conf.KeyMap[ImGuiKey_Y]             = static_cast<int>(InputKeycode::Y);
+    conf.KeyMap[ImGuiKey_Z]             = static_cast<int>(InputKeycode::Z);
 
     gImGui.vertices = memAllocTyped<ImDrawVert>(_limits::kImGuiMaxVertices, initHeap);
     gImGui.indices = memAllocTyped<uint16>(_limits::kImGuiMaxIndices, initHeap);
@@ -588,7 +589,7 @@ void _private::imguiBeginFrame(float dt)
     if (io.DeltaTime == 0) 
         io.DeltaTime = 0.033f;
 
-    for (uint32 i = 0; i < (uint32)AppMouseButton::_Count; i++) {
+    for (uint32 i = 0; i < (uint32)InputMouseButton::_Count; i++) {
         if (gImGui.mouseButtonDown[i]) {
             gImGui.mouseButtonDown[i] = false;
             io.MouseDown[i] = true;

@@ -11,9 +11,10 @@
 
 #include "../UnityBuild.inl"
 
-#include "../Application.h"
-#include "../JunkyardSettings.h"
-#include "../VirtualFS.h"
+#include "../Common/Application.h"
+#include "../Common/JunkyardSettings.h"
+#include "../Common/VirtualFS.h"
+
 #include "../Engine.h"
 
 #include "../External/dirent/dirent.h"

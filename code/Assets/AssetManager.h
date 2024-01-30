@@ -3,7 +3,7 @@
 #include "../Core/Base.h"
 #include "../Core/System.h"
 
-#include "../CommonTypes.h"
+#include "../Common/CommonTypes.h"
 
 struct Blob;
 struct MemTlsfAllocator;

@@ -5,10 +5,11 @@
 #include "../Core/TracyHelper.h"
 #include "../Core/System.h"
 
-#include "../VirtualFS.h"
-#include "../Application.h"
+#include "../Common/VirtualFS.h"
+#include "../Common/Application.h"
+#include "../Common/JunkyardSettings.h"
+
 #include "../Engine.h"
-#include "../JunkyardSettings.h"
 
 #include "../UnityBuild.inl"
 

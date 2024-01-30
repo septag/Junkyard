@@ -1,15 +1,15 @@
 #pragma once
 
-#include "Core/MathTypes.h"
+#include "../Core/MathTypes.h"
 
 struct AppEvent;    // Application.h
 struct CameraFrustumPoints
 {
-    Float3 p[8];
+    Float3 mPoints[8];
 
-    Float3& operator[](uint32 index) { ASSERT(index<8); return p[index]; }
-    const Float3& operator[](uint32 index) const { ASSERT(index<8); return p[index]; }
-    uint32 Count() const { return CountOf(p); }
+    Float3& operator[](uint32 index) { ASSERT(index<8); return mPoints[index]; }
+    const Float3& operator[](uint32 index) const { ASSERT(index<8); return mPoints[index]; }
+    uint32 Count() const { return CountOf(mPoints); }
 };
 
 struct CameraFrustumPlanes 
@@ -26,10 +26,10 @@ struct CameraFrustumPlanes
     };
 
 
-    Plane p[_Count];
+    Plane mPlanes[_Count];
     
-    Plane& operator[](uint32 index) { ASSERT(index < _Count); return p[index]; }
-    const Plane& operator[](uint32 index) const { ASSERT(index < _Count); return p[index]; }
+    Plane& operator[](uint32 index) { ASSERT(index < _Count); return mPlanes[index]; }
+    const Plane& operator[](uint32 index) const { ASSERT(index < _Count); return mPlanes[index]; }
 };
 
 struct Camera
@@ -51,23 +51,23 @@ struct Camera
     CameraFrustumPoints GetFrustumPoints(float viewWidth, float viewHeight, float overrideNear = -1.0f, float overrideFar = -1.0f) const;
     CameraFrustumPlanes GetFrustumPlanes(const Mat4& viewProjMat) const;
 
-    Float3 Forward() const { return _forward; }
-    Float3 Right() const { return _right; };
-    Float3 Up() const { return _up; }
-    Float3 Position() const { return _pos; }
-    float Far() const { return _far; }
-    float Near() const { return _near; }
-    float Fov() const { return _fov; }
+    Float3 Forward() const { return mForward; }
+    Float3 Right() const { return mRight; };
+    Float3 Up() const { return mUp; }
+    Float3 Position() const { return mPos; }
+    float Far() const { return mFar; }
+    float Near() const { return mNear; }
+    float Fov() const { return mFov; }
 
 protected:
-    Float3 _forward = kFloat3UnitY;
-    Float3 _right = kFloat3UnitX;
-    Float3 _up = kFloat3UnitZ;
-    Float3 _pos = kFloat3Zero;
+    Float3 mForward = kFloat3UnitY;
+    Float3 mRight = kFloat3UnitX;
+    Float3 mUp = kFloat3UnitZ;
+    Float3 mPos = kFloat3Zero;
 
-    float _near = 0.1f;
-    float _far = 100.0f;
-    float _fov = kPIQuarter;
+    float mNear = 0.1f;
+    float mFar = 100.0f;
+    float mFov = kPIQuarter;
 };
 
 struct CameraFPS : Camera
@@ -80,8 +80,8 @@ struct CameraFPS : Camera
     void MoveForward(float forward);
     void Strafe(float strafe);  
 
-    float GetPitch() const { return _pitch; };
-    float GetYaw() const { return _yaw; };
+    float GetPitch() const { return mPitch; };
+    float GetYaw() const { return mYaw; };
 
     void HandleMovementKeyboard(float dt, float moveSpeed, float slowMoveSpeed) override;
     void HandleRotationMouse(const AppEvent& ev, float rotateSpeed, float zoomStep) override;
@@ -89,15 +89,15 @@ struct CameraFPS : Camera
 private:
     void UpdateRotation();
 
-    Quat _quat = kQuatIdent;
-    Float2 _lastMouse = kFloat2Zero;
-    float _pitch = 0;
-    float _yaw = 0;
-    float _speedTime = 0;
-    float _moveStrafe = 0;
-    float _moveFwd = 0;
-    bool _mouseDown = false;
-    bool _keyDown = false;
+    Quat mQuat = kQuatIdent;
+    Float2 mLastMouse = kFloat2Zero;
+    float mPitch = 0;
+    float mYaw = 0;
+    float mSpeedTime = 0;
+    float mMoveStrafe = 0;
+    float mMoveFwd = 0;
+    bool mMouseDown = false;
+    bool mKeyDown = false;
 };
 
 struct CameraOrbit : Camera
@@ -110,11 +110,11 @@ struct CameraOrbit : Camera
     void HandleRotationMouse(const AppEvent& ev, float rotateSpeed, float zoomStep) override;
 
 private:
-    Float3 _target = kFloat3Zero;
-    float _distance = 0;
-    float _elevation = 0;   // Angle for elevation, 0..PiHalf (Radians)
-    float _orbit = 0;       // Angle for rotating around orbit (Radians)
-    Float2 _lastMouse = kFloat2Zero;
-    bool _mouseDown = false;
+    Float3 mTarget = kFloat3Zero;
+    float mDistance = 0;
+    float mElevation = 0;   // Angle for elevation, 0..PiHalf (Radians)
+    float mOrbit = 0;       // Angle for rotating around orbit (Radians)
+    Float2 mLastMouse = kFloat2Zero;
+    bool mMouseDown = false;
 };
 

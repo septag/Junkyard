@@ -40,12 +40,13 @@
 #include "../Core/MathAll.h"
 #include "../Core/TracyHelper.h"
 
-#include "../Engine.h"
-#include "../VirtualFS.h"
-#include "../Application.h"
-#include "../JunkyardSettings.h"
+#include "../Common/VirtualFS.h"
+#include "../Common/Application.h"
+#include "../Common/JunkyardSettings.h"
 
 #include "ValidateEnumsVk.inl"
+
+#include "../Engine.h"
 
 //------------------------------------------------------------------------
 // VMA
@@ -91,8 +92,10 @@ static constexpr uint32 kMaxSwapchainImages = 3;
 static constexpr uint32 kMaxFramesInFlight = 2;
 static constexpr uint32 kMaxDescriptorSetLayoutPerPipeline = 3;
 
+#ifdef TRACY_ENABLE
 static constexpr const char* kGfxAllocName = "Graphics";
 static constexpr const char* kVulkanAllocName = "Vulkan";
+#endif
 
 namespace _limits
 {
@@ -409,8 +412,10 @@ namespace VkExtensionApi
     static PFN_vkCreateDebugReportCallbackEXT vkCreateDebugReportCallbackEXT;
     static PFN_vkDestroyDebugReportCallbackEXT vkDestroyDebugReportCallbackEXT;
 
+    #ifdef TRACY_ENABLE
     static PFN_vkGetPhysicalDeviceCalibrateableTimeDomainsEXT vkGetPhysicalDeviceCalibrateableTimeDomainsEXT;
     static PFN_vkGetCalibratedTimestampsEXT vkGetCalibratedTimestampsEXT;
+    #endif
 
     static PFN_vkGetPipelineExecutablePropertiesKHR vkGetPipelineExecutablePropertiesKHR;
     static PFN_vkGetPipelineExecutableStatisticsKHR vkGetPipelineExecutableStatisticsKHR;
@@ -577,7 +582,7 @@ static VkBool32 gfxDebugReportFn(VkDebugReportFlagsEXT flags, VkDebugReportObjec
     return VK_FALSE;
 }
 
-INLINE bool gfxFormatIsDepthStencil(GfxFormat fmt)
+[[maybe_unused]] INLINE bool gfxFormatIsDepthStencil(GfxFormat fmt)
 {
     return  fmt == GfxFormat::D32_SFLOAT ||
             fmt == GfxFormat::D16_UNORM_S8_UINT ||
@@ -586,7 +591,7 @@ INLINE bool gfxFormatIsDepthStencil(GfxFormat fmt)
             fmt == GfxFormat::S8_UINT;
 }
 
-INLINE bool gfxFormatHasDepth(GfxFormat fmt)
+[[maybe_unused]] INLINE bool gfxFormatHasDepth(GfxFormat fmt)
 {
     return  fmt == GfxFormat::D32_SFLOAT ||
             fmt == GfxFormat::D16_UNORM_S8_UINT ||
@@ -594,7 +599,7 @@ INLINE bool gfxFormatHasDepth(GfxFormat fmt)
             fmt == GfxFormat::D32_SFLOAT_S8_UINT;
 }
 
-INLINE bool gfxFormatHasStencil(GfxFormat fmt)
+[[maybe_unused]] INLINE bool gfxFormatHasStencil(GfxFormat fmt)
 {
     return  fmt == GfxFormat::D24_UNORM_S8_UINT ||
             fmt == GfxFormat::D16_UNORM_S8_UINT ||

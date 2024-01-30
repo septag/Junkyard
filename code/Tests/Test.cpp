@@ -7,11 +7,10 @@
 #include "../Core/MathAll.h"
 #include "../Core/System.h"
 
-#include "../VirtualFS.h"
-#include "../Application.h"
-#include "../Engine.h"
-#include "../Camera.h"
-#include "../JunkyardSettings.h"
+#include "../Common/VirtualFS.h"
+#include "../Common/Application.h"
+#include "../Common/Camera.h"
+#include "../Common/JunkyardSettings.h"
 
 #include "../Assets/AssetManager.h"
 
@@ -28,6 +27,8 @@
 #include "../UnityBuild.inl"
 
 #include "../Tool/Console.h"
+
+#include "../Engine.h"
 
 #define TEST_IO 0
 

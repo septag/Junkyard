@@ -8,6 +8,10 @@
 #include "Core/Log.h"
 #include "Core/TracyHelper.h"
 
+#include "Common/RemoteServices.h"
+#include "Common/Application.h"
+#include "Common/JunkyardSettings.h"
+
 #include "Graphics/Graphics.h"
 
 #include "DebugTools/DebugDraw.h"
@@ -16,10 +20,6 @@
 #include "Assets/AssetManager.h"
 
 #include "ImGui/ImGuiWrapper.h"
-
-#include "RemoteServices.h"
-#include "Application.h"
-#include "JunkyardSettings.h"
 
 #include "Tool/Console.h"
 
@@ -33,8 +33,8 @@ static constexpr size_t kHeapInitBudget = 2*kGB;
 
 struct EngineShortcutKeys
 {
-    AppKeycode keys[2];
-    AppKeyModifiers mods;
+    InputKeycode keys[2];
+    InputKeyModifiers mods;
     EngineShortcutCallback callback;
     void* userData;
 };
@@ -86,12 +86,12 @@ static void engineOnEvent(const AppEvent& ev, [[maybe_unused]] void* userData)
         // Trigger shortcuts
         for (uint32 i = 0; i < gEng.shortcuts.Count(); i++) {
             const EngineShortcutKeys& shortcut = gEng.shortcuts[i];
-            AppKeycode key1 = shortcut.keys[0];
-            AppKeycode key2 = shortcut.keys[1];
-            AppKeyModifiers mods = shortcut.mods;
+            InputKeycode key1 = shortcut.keys[0];
+            InputKeycode key2 = shortcut.keys[1];
+            InputKeyModifiers mods = shortcut.mods;
             if (appIsKeyDown(key1) && 
-                (key2 == AppKeycode::Invalid || appIsKeyDown(key2)) && 
-                (mods == AppKeyModifiers::None || (mods & ev.keyMods) == mods)) 
+                (key2 == InputKeycode::Invalid || appIsKeyDown(key2)) && 
+                (mods == InputKeyModifiers::None || (mods & ev.keyMods) == mods)) 
             {
                 shortcut.callback(gEng.shortcuts[i].userData);
                 break;
@@ -355,8 +355,8 @@ void engineRegisterShortcut(const char* shortcut, EngineShortcutCallback callbac
     ASSERT(callback);
     ASSERT(shortcut);
     
-    AppKeycode keys[2] = {};
-    AppKeyModifiers mods = AppKeyModifiers::None;
+    InputKeycode keys[2] = {};
+    InputKeyModifiers mods = InputKeyModifiers::None;
 
     // Parse shortcut keys string
     shortcut = strSkipWhitespace(shortcut);
@@ -376,27 +376,27 @@ void engineRegisterShortcut(const char* shortcut, EngineShortcutCallback callbac
             char numStr[3] = {keystr[1], keystr[2], 0};
             int fnum = strToInt(numStr) - 1;
             if (fnum >= 0 && fnum < 25) {
-                keys[numKeys++] = static_cast<AppKeycode>(uint32(AppKeycode::F1) + fnum);
+                keys[numKeys++] = static_cast<InputKeycode>(uint32(InputKeycode::F1) + fnum);
             }
         }
         else if (len > 1) {
-            if (strIsEqualNoCase(keystr, "ALT"))        mods |= AppKeyModifiers::Alt;
-            else if (strIsEqualNoCase(keystr, "CTRL"))  mods |= AppKeyModifiers::Ctrl;
-            else if (strIsEqualNoCase(keystr, "SHIFT")) mods |= AppKeyModifiers::Shift;
-            else if (strIsEqualNoCase(keystr, "SUPER")) mods |= AppKeyModifiers::Super;
-            else if (strIsEqualNoCase(keystr, "ESC"))       keys[numKeys++] = AppKeycode::Escape;
-            else if (strIsEqualNoCase(keystr, "INS"))       keys[numKeys++] = AppKeycode::Insert;
-            else if (strIsEqualNoCase(keystr, "PGUP"))      keys[numKeys++] = AppKeycode::PageUp;
-            else if (strIsEqualNoCase(keystr, "PGDOWN"))    keys[numKeys++] = AppKeycode::PageDown;
-            else if (strIsEqualNoCase(keystr, "HOME"))      keys[numKeys++] = AppKeycode::Home;
-            else if (strIsEqualNoCase(keystr, "END"))       keys[numKeys++] = AppKeycode::End;
-            else if (strIsEqualNoCase(keystr, "TAB"))       keys[numKeys++] = AppKeycode::Tab;
+            if (strIsEqualNoCase(keystr, "ALT"))        mods |= InputKeyModifiers::Alt;
+            else if (strIsEqualNoCase(keystr, "CTRL"))  mods |= InputKeyModifiers::Ctrl;
+            else if (strIsEqualNoCase(keystr, "SHIFT")) mods |= InputKeyModifiers::Shift;
+            else if (strIsEqualNoCase(keystr, "SUPER")) mods |= InputKeyModifiers::Super;
+            else if (strIsEqualNoCase(keystr, "ESC"))       keys[numKeys++] = InputKeycode::Escape;
+            else if (strIsEqualNoCase(keystr, "INS"))       keys[numKeys++] = InputKeycode::Insert;
+            else if (strIsEqualNoCase(keystr, "PGUP"))      keys[numKeys++] = InputKeycode::PageUp;
+            else if (strIsEqualNoCase(keystr, "PGDOWN"))    keys[numKeys++] = InputKeycode::PageDown;
+            else if (strIsEqualNoCase(keystr, "HOME"))      keys[numKeys++] = InputKeycode::Home;
+            else if (strIsEqualNoCase(keystr, "END"))       keys[numKeys++] = InputKeycode::End;
+            else if (strIsEqualNoCase(keystr, "TAB"))       keys[numKeys++] = InputKeycode::Tab;
             else    ASSERT_MSG(0, "Shortcut not recognized: %s", keystr);
         } 
         else if (len == 1 && numKeys < 2) {
             char key = strToUpper(keystr[0]);
-            if (keystr[0] > uint32(AppKeycode::Space))
-                keys[numKeys++] = static_cast<AppKeycode>(key);
+            if (keystr[0] > uint32(InputKeycode::Space))
+                keys[numKeys++] = static_cast<InputKeycode>(key);
         }
     };
 
@@ -417,10 +417,10 @@ void engineRegisterShortcut(const char* shortcut, EngineShortcutCallback callbac
     }
 
     // Register callback
-    ASSERT_MSG(keys[0] != AppKeycode::Invalid, "Invalid shortcut string");
+    ASSERT_MSG(keys[0] != InputKeycode::Invalid, "Invalid shortcut string");
 
     // Look for previously registered combination
-    if (keys[0] != AppKeycode::Invalid) {
+    if (keys[0] != InputKeycode::Invalid) {
         [[maybe_unused]] uint32 index = gEng.shortcuts.FindIf([keys, mods](const EngineShortcutKeys& shortcut)->bool {
             return shortcut.mods == mods && 
                    ((keys[0] == shortcut.keys[0] && keys[1] == shortcut.keys[1]) ||

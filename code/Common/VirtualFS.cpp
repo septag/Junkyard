@@ -1,13 +1,13 @@
 #include "VirtualFS.h"
-
-#include "Core/Log.h"
-#include "Core/System.h"
-#include "Core/StringUtil.h"
-#include "Core/Settings.h"
-#include "Core/TracyHelper.h"
-#include "Core/Buffers.h"
-
 #include "JunkyardSettings.h"
+#include "RemoteServices.h"
+
+#include "../Core/Log.h"
+#include "../Core/System.h"
+#include "../Core/StringUtil.h"
+#include "../Core/Settings.h"
+#include "../Core/TracyHelper.h"
+#include "../Core/Buffers.h"
 
 #if PLATFORM_ANDROID
     #include "Application.h"    // appGetNativeAssetManagerHandle
@@ -25,11 +25,10 @@
     #include <stdio.h>  // snprintf 
     PRAGMA_DIAGNOSTIC_PUSH()
     PRAGMA_DIAGNOSTIC_IGNORED_MSVC(4505)
-    #include "External/dmon/dmon.h"
+    #include "../External/dmon/dmon.h"
     PRAGMA_DIAGNOSTIC_POP()
 #endif
 
-#include "RemoteServices.h"
 
 static constexpr uint32 kRemoteCmdReadFile = MakeFourCC('F', 'R', 'D', '0');
 static constexpr uint32 kRemoteCmdWriteFile = MakeFourCC('F', 'W', 'T', '0');
@@ -93,7 +92,7 @@ struct VfsManager
     vfsRemoteDiskManager remoteMgr;
     Array<VfsFileChangeEvent> fileChanges;
     Mutex fileChangesMtx;
-    Array<vfsFileChangeCallback> fileChangeFns;
+    Array<VfsFileChangeCallback> fileChangeFns;
     Thread reqFileChangesThrd;
     bool quit;
     bool initialized;
@@ -329,7 +328,7 @@ static void vfsDmonFn(dmon_watch_id watchId, dmon_action action, const char* roo
                     Path aliasFilepath = Path::JoinUnix(mount.alias, Path(filepath));
                     if (mount.type == VfsMountType::Local) {
                         for (uint32 k = 0; k < gVfs.fileChangeFns.Count(); k++) {
-                            vfsFileChangeCallback callback = gVfs.fileChangeFns[k];
+                            VfsFileChangeCallback callback = gVfs.fileChangeFns[k];
                             callback(aliasFilepath.CStr());
                         }
                     }
@@ -828,7 +827,7 @@ static void vfsMonitorChangesClientFn([[maybe_unused]] uint32 cmd, const Blob& i
                 });
             if (idx != UINT32_MAX && gVfs.mounts[idx].type == VfsMountType::Remote && gVfs.mounts[idx].watchId) {
                 for (uint32 k = 0; k < gVfs.fileChangeFns.Count(); k++ ) {
-                    vfsFileChangeCallback callback = gVfs.fileChangeFns[k];
+                    VfsFileChangeCallback callback = gVfs.fileChangeFns[k];
                     callback(filepath);
                 }
             }
@@ -1006,7 +1005,7 @@ size_t vfsWriteFile(const char* path, const Blob& blob, VfsFlags flags)
     }
 }
 
-void vfsRegisterFileChangeCallback(vfsFileChangeCallback callback)
+void vfsRegisterFileChangeCallback(VfsFileChangeCallback callback)
 {
     ASSERT(callback);
 

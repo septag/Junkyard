@@ -9,7 +9,7 @@
 #include "../Core/Log.h"
 #include "../Core/MathVector.h"
 
-#include "../Camera.h"
+#include "../Common/Camera.h"
 
 static constexpr uint32 kDebugDrawMaxVerts = 32*1000;
 

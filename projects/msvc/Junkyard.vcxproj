@@ -217,22 +217,22 @@ echo No | copy /-Y $(SolutionDir)..\..\code\External\meshoptimizer\lib\win64\mes
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="..\..\code\Application.cpp">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='ReleaseDev|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
-    </ClCompile>
-    <ClCompile Include="..\..\code\ApplicationAndroid.cpp">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='ReleaseDev|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
-    </ClCompile>
-    <ClCompile Include="..\..\code\ApplicationWin.cpp" />
     <ClCompile Include="..\..\code\Assets\AssetManager.cpp" />
     <ClCompile Include="..\..\code\Assets\Image.cpp" />
     <ClCompile Include="..\..\code\Assets\Model.cpp" />
     <ClCompile Include="..\..\code\Assets\Shader.cpp" />
-    <ClCompile Include="..\..\code\Camera.cpp" />
+    <ClCompile Include="..\..\code\Common\Application.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
+    </ClCompile>
+    <ClCompile Include="..\..\code\Common\ApplicationAndroid.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
+    </ClCompile>
+    <ClCompile Include="..\..\code\Common\ApplicationWin.cpp" />
+    <ClCompile Include="..\..\code\Common\Camera.cpp" />
+    <ClCompile Include="..\..\code\Common\Clipboard.cpp" />
+    <ClCompile Include="..\..\code\Common\JunkyardSettings.cpp" />
+    <ClCompile Include="..\..\code\Common\RemoteServices.cpp" />
+    <ClCompile Include="..\..\code\Common\VirtualFS.cpp" />
     <ClCompile Include="..\..\code\Core\Allocators.cpp" />
     <ClCompile Include="..\..\code\Core\Base.cpp" />
     <ClCompile Include="..\..\code\Core\Buffers.cpp" />
@@ -280,22 +280,24 @@ echo No | copy /-Y $(SolutionDir)..\..\code\External\meshoptimizer\lib\win64\mes
     </ClCompile>
     <ClCompile Include="..\..\code\ImGui\ImGuiWrapper.cpp" />
     <ClCompile Include="..\..\code\ImGui\ImGuizmo.cpp" />
-    <ClCompile Include="..\..\code\JunkyardSettings.cpp" />
-    <ClCompile Include="..\..\code\RemoteServices.cpp" />
     <ClCompile Include="..\..\code\Tool\Console.cpp" />
     <ClCompile Include="..\..\code\Tool\ImageEncoder.cpp" />
     <ClCompile Include="..\..\code\Tool\MeshOptimizer.cpp" />
     <ClCompile Include="..\..\code\Tool\ShaderCompiler.cpp" />
-    <ClCompile Include="..\..\code\VirtualFS.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="..\..\code\Application.h" />
     <ClInclude Include="..\..\code\Assets\AssetManager.h" />
     <ClInclude Include="..\..\code\Assets\Image.h" />
     <ClInclude Include="..\..\code\Assets\Model.h" />
     <ClInclude Include="..\..\code\Assets\Shader.h" />
-    <ClInclude Include="..\..\code\Camera.h" />
-    <ClInclude Include="..\..\code\CommonTypes.h" />
+    <ClInclude Include="..\..\code\Common\Application.h" />
+    <ClInclude Include="..\..\code\Common\Camera.h" />
+    <ClInclude Include="..\..\code\Common\Clipboard.h" />
+    <ClInclude Include="..\..\code\Common\CommonTypes.h" />
+    <ClInclude Include="..\..\code\Common\InputTypes.h" />
+    <ClInclude Include="..\..\code\Common\JunkyardSettings.h" />
+    <ClInclude Include="..\..\code\Common\RemoteServices.h" />
+    <ClInclude Include="..\..\code\Common\VirtualFS.h" />
     <ClInclude Include="..\..\code\Core\Allocators.h" />
     <ClInclude Include="..\..\code\Core\Atomic.h" />
     <ClInclude Include="..\..\code\Core\Base.h" />
@@ -348,13 +350,10 @@ echo No | copy /-Y $(SolutionDir)..\..\code\External\meshoptimizer\lib\win64\mes
     <ClInclude Include="..\..\code\Graphics\Graphics.h" />
     <ClInclude Include="..\..\code\ImGui\ImGuiWrapper.h" />
     <ClInclude Include="..\..\code\ImGui\ImGuizmo.h" />
-    <ClInclude Include="..\..\code\JunkyardSettings.h" />
-    <ClInclude Include="..\..\code\RemoteServices.h" />
     <ClInclude Include="..\..\code\Tool\Console.h" />
     <ClInclude Include="..\..\code\Tool\ImageEncoder.h" />
     <ClInclude Include="..\..\code\Tool\MeshOptimizer.h" />
     <ClInclude Include="..\..\code\Tool\ShaderCompiler.h" />
-    <ClInclude Include="..\..\code\VirtualFS.h" />
   </ItemGroup>
   <ItemGroup>
     <FxCompile Include="..\..\code\Shaders\ImGui.hlsl">
@@ -369,15 +368,12 @@ echo No | copy /-Y $(SolutionDir)..\..\code\External\meshoptimizer\lib\win64\mes
     </FxCompile>
   </ItemGroup>
   <ItemGroup>
-    <None Include="..\..\code\ApplicationMac.mm">
+    <None Include="..\..\code\Common\ApplicationMac.mm">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='ReleaseDev|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
     </None>
     <None Include="..\..\code\Core\SystemMac.mm" />
     <None Include="..\..\code\Graphics\ValidateEnumsVk.inl" />
     <None Include="..\..\code\UnityBuild.inl" />
-    <None Include="..\..\code\Vulkan\ValidateEnumsVk.inl" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

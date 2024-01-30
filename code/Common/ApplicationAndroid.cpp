@@ -12,11 +12,11 @@
 #include <android/log.h>
 #include <android/configuration.h>
 
-#include "Core/System.h"
-#include "Core/StringUtil.h"
-#include "Core/Settings.h"
-#include "Core/Buffers.h"
-#include "Core/Log.h"
+#include "../Core/System.h"
+#include "../Core/StringUtil.h"
+#include "../Core/Settings.h"
+#include "../Core/Buffers.h"
+#include "../Core/Log.h"
 
 #include "VirtualFS.h"
 #include "RemoteServices.h"
@@ -105,8 +105,8 @@ struct AppAndroidState
     AInputQueue* pendingInputQueue;
     AConfiguration* config;
 
-    AppKeyModifiers keyMods;
-    AppKeycode keycodes[kAppMaxKeycodes];
+    InputKeyModifiers keyMods;
+    InputKeycode keycodes[kAppMaxKeycodes];
     bool keysDown[kAppMaxKeycodes];
 };
 
@@ -154,7 +154,7 @@ static void appAndroidInitEvent(AppEventType type)
 {
     memset(&gApp.ev, 0, sizeof(gApp.ev));
     gApp.ev.type = type;
-    gApp.ev.mouseButton = AppMouseButton::Invalid;
+    gApp.ev.mouseButton = InputMouseButton::Invalid;
     gApp.ev.windowWidth = gApp.windowWidth;
     gApp.ev.windowHeight = gApp.windowHeight;
     gApp.ev.framebufferWidth = gApp.framebufferWidth;
@@ -172,109 +172,109 @@ static void appAndroidDispatchEvent(AppEventType type)
 
 static void appAndroidInitKeyTable()
 {
-    gApp.keycodes[AKEYCODE_NUMPAD_0] = AppKeycode::NUM0;
-    gApp.keycodes[AKEYCODE_NUMPAD_1] = AppKeycode::NUM1;
-    gApp.keycodes[AKEYCODE_NUMPAD_2] = AppKeycode::NUM2;
-    gApp.keycodes[AKEYCODE_NUMPAD_3] = AppKeycode::NUM3;
-    gApp.keycodes[AKEYCODE_NUMPAD_4] = AppKeycode::NUM4;
-    gApp.keycodes[AKEYCODE_NUMPAD_5] = AppKeycode::NUM5;
-    gApp.keycodes[AKEYCODE_NUMPAD_6] = AppKeycode::NUM6;
-    gApp.keycodes[AKEYCODE_NUMPAD_7] = AppKeycode::NUM7;
-    gApp.keycodes[AKEYCODE_NUMPAD_8] = AppKeycode::NUM8;
-    gApp.keycodes[AKEYCODE_NUMPAD_9] = AppKeycode::NUM9;
-    gApp.keycodes[AKEYCODE_A] = AppKeycode::A;
-    gApp.keycodes[AKEYCODE_B] = AppKeycode::B;
-    gApp.keycodes[AKEYCODE_C] = AppKeycode::C;
-    gApp.keycodes[AKEYCODE_D] = AppKeycode::D;
-    gApp.keycodes[AKEYCODE_E] = AppKeycode::E;
-    gApp.keycodes[AKEYCODE_F] = AppKeycode::F;
-    gApp.keycodes[AKEYCODE_G] = AppKeycode::G;
-    gApp.keycodes[AKEYCODE_G] = AppKeycode::H;
-    gApp.keycodes[AKEYCODE_I] = AppKeycode::I;
-    gApp.keycodes[AKEYCODE_J] = AppKeycode::J;
-    gApp.keycodes[AKEYCODE_K] = AppKeycode::K;
-    gApp.keycodes[AKEYCODE_L] = AppKeycode::L;
-    gApp.keycodes[AKEYCODE_M] = AppKeycode::M;
-    gApp.keycodes[AKEYCODE_N] = AppKeycode::N;
-    gApp.keycodes[AKEYCODE_O] = AppKeycode::O;
-    gApp.keycodes[AKEYCODE_P] = AppKeycode::P;
-    gApp.keycodes[AKEYCODE_Q] = AppKeycode::Q;
-    gApp.keycodes[AKEYCODE_R] = AppKeycode::R;
-    gApp.keycodes[AKEYCODE_S] = AppKeycode::S;
-    gApp.keycodes[AKEYCODE_T] = AppKeycode::T;
-    gApp.keycodes[AKEYCODE_U] = AppKeycode::U;
-    gApp.keycodes[AKEYCODE_V] = AppKeycode::V;
-    gApp.keycodes[AKEYCODE_W] = AppKeycode::W;
-    gApp.keycodes[AKEYCODE_X] = AppKeycode::X;
-    gApp.keycodes[AKEYCODE_Y] = AppKeycode::Y;
-    gApp.keycodes[AKEYCODE_Z] = AppKeycode::Z;
-    gApp.keycodes[AKEYCODE_APOSTROPHE] = AppKeycode::Apostrophe;
-    gApp.keycodes[AKEYCODE_BACKSLASH] = AppKeycode::Backslash;
-    gApp.keycodes[AKEYCODE_COMMA] = AppKeycode::Comma;
-    gApp.keycodes[AKEYCODE_EQUALS] = AppKeycode::Equal;
-    gApp.keycodes[AKEYCODE_GRAVE] = AppKeycode::GraveAccent;
-    gApp.keycodes[AKEYCODE_LEFT_BRACKET] = AppKeycode::LeftBracket;
-    gApp.keycodes[AKEYCODE_MINUS] = AppKeycode::Minus;
-    gApp.keycodes[AKEYCODE_PERIOD] = AppKeycode::Period;
-    gApp.keycodes[AKEYCODE_RIGHT_BRACKET] = AppKeycode::RightBracket;
-    gApp.keycodes[AKEYCODE_SEMICOLON] = AppKeycode::Semicolon;
-    gApp.keycodes[AKEYCODE_SLASH] = AppKeycode::Slash;
-    gApp.keycodes[AKEYCODE_LANGUAGE_SWITCH] = AppKeycode::World2;
-    gApp.keycodes[AKEYCODE_DEL] = AppKeycode::Backspace;
-    gApp.keycodes[AKEYCODE_FORWARD_DEL] = AppKeycode::Delete;
-    gApp.keycodes[AKEYCODE_MOVE_END] = AppKeycode::End;
-    gApp.keycodes[AKEYCODE_ENTER] = AppKeycode::Enter;
-    gApp.keycodes[AKEYCODE_ESCAPE] = AppKeycode::Escape;
-    gApp.keycodes[AKEYCODE_MOVE_HOME] = AppKeycode::Home;
-    gApp.keycodes[AKEYCODE_INSERT] = AppKeycode::Insert;
-    gApp.keycodes[AKEYCODE_MENU] = AppKeycode::Menu;
-    gApp.keycodes[AKEYCODE_PAGE_DOWN] = AppKeycode::PageDown;
-    gApp.keycodes[AKEYCODE_PAGE_UP] = AppKeycode::PageUp;
-    gApp.keycodes[AKEYCODE_BREAK] = AppKeycode::Pause;
-    gApp.keycodes[AKEYCODE_SPACE] = AppKeycode::Space;
-    gApp.keycodes[AKEYCODE_TAB] = AppKeycode::Tab;
-    gApp.keycodes[AKEYCODE_CAPS_LOCK] = AppKeycode::CapsLock;
-    gApp.keycodes[AKEYCODE_NUM] = AppKeycode::NumLock;
-    gApp.keycodes[AKEYCODE_SCROLL_LOCK] = AppKeycode::ScrollLock;
-    gApp.keycodes[AKEYCODE_F1] = AppKeycode::F1;
-    gApp.keycodes[AKEYCODE_F2] = AppKeycode::F2;
-    gApp.keycodes[AKEYCODE_F3] = AppKeycode::F3;
-    gApp.keycodes[AKEYCODE_F4] = AppKeycode::F4;
-    gApp.keycodes[AKEYCODE_F5] = AppKeycode::F5;
-    gApp.keycodes[AKEYCODE_F6] = AppKeycode::F6;
-    gApp.keycodes[AKEYCODE_F7] = AppKeycode::F7;
-    gApp.keycodes[AKEYCODE_F8] = AppKeycode::F8;
-    gApp.keycodes[AKEYCODE_F9] = AppKeycode::F9;
-    gApp.keycodes[AKEYCODE_F10] = AppKeycode::F10;
-    gApp.keycodes[AKEYCODE_F11] = AppKeycode::F11;
-    gApp.keycodes[AKEYCODE_F12] = AppKeycode::F12;
-    gApp.keycodes[AKEYCODE_ALT_LEFT] = AppKeycode::LeftAlt;
-    gApp.keycodes[AKEYCODE_CTRL_LEFT] = AppKeycode::LeftControl;
-    gApp.keycodes[AKEYCODE_SHIFT_LEFT] = AppKeycode::LeftShift;
-    gApp.keycodes[AKEYCODE_SYSRQ] = AppKeycode::PrintScreen;
-    gApp.keycodes[AKEYCODE_ALT_RIGHT] = AppKeycode::RightAlt;
-    gApp.keycodes[AKEYCODE_CTRL_RIGHT] = AppKeycode::RightControl;
-    gApp.keycodes[AKEYCODE_SHIFT_RIGHT] = AppKeycode::RightShift;
-    gApp.keycodes[AKEYCODE_DPAD_DOWN] = AppKeycode::Down;
-    gApp.keycodes[AKEYCODE_DPAD_LEFT] = AppKeycode::Left;
-    gApp.keycodes[AKEYCODE_DPAD_RIGHT] = AppKeycode::Right;
-    gApp.keycodes[AKEYCODE_DPAD_UP] = AppKeycode::Up;
-    gApp.keycodes[AKEYCODE_NUMPAD_0] = AppKeycode::KP0;
-    gApp.keycodes[AKEYCODE_NUMPAD_1] = AppKeycode::KP1;
-    gApp.keycodes[AKEYCODE_NUMPAD_2] = AppKeycode::KP2;
-    gApp.keycodes[AKEYCODE_NUMPAD_3] = AppKeycode::KP3;
-    gApp.keycodes[AKEYCODE_NUMPAD_4] = AppKeycode::KP4;
-    gApp.keycodes[AKEYCODE_NUMPAD_5] = AppKeycode::KP5;
-    gApp.keycodes[AKEYCODE_NUMPAD_6] = AppKeycode::KP6;
-    gApp.keycodes[AKEYCODE_NUMPAD_7] = AppKeycode::KP7;
-    gApp.keycodes[AKEYCODE_NUMPAD_8] = AppKeycode::KP8;
-    gApp.keycodes[AKEYCODE_NUMPAD_9] = AppKeycode::KP9;
-    gApp.keycodes[AKEYCODE_NUMPAD_ADD] = AppKeycode::KPAdd;
-    gApp.keycodes[AKEYCODE_NUMPAD_DOT] = AppKeycode::KPDecimal;
-    gApp.keycodes[AKEYCODE_NUMPAD_DIVIDE] = AppKeycode::KPDivide;
-    gApp.keycodes[AKEYCODE_NUMPAD_ENTER] = AppKeycode::KPEnter;
-    gApp.keycodes[AKEYCODE_NUMPAD_MULTIPLY] = AppKeycode::KPMultiply;
-    gApp.keycodes[AKEYCODE_NUMPAD_SUBTRACT] = AppKeycode::KPSubtract;
+    gApp.keycodes[AKEYCODE_NUMPAD_0] = InputKeycode::NUM0;
+    gApp.keycodes[AKEYCODE_NUMPAD_1] = InputKeycode::NUM1;
+    gApp.keycodes[AKEYCODE_NUMPAD_2] = InputKeycode::NUM2;
+    gApp.keycodes[AKEYCODE_NUMPAD_3] = InputKeycode::NUM3;
+    gApp.keycodes[AKEYCODE_NUMPAD_4] = InputKeycode::NUM4;
+    gApp.keycodes[AKEYCODE_NUMPAD_5] = InputKeycode::NUM5;
+    gApp.keycodes[AKEYCODE_NUMPAD_6] = InputKeycode::NUM6;
+    gApp.keycodes[AKEYCODE_NUMPAD_7] = InputKeycode::NUM7;
+    gApp.keycodes[AKEYCODE_NUMPAD_8] = InputKeycode::NUM8;
+    gApp.keycodes[AKEYCODE_NUMPAD_9] = InputKeycode::NUM9;
+    gApp.keycodes[AKEYCODE_A] = InputKeycode::A;
+    gApp.keycodes[AKEYCODE_B] = InputKeycode::B;
+    gApp.keycodes[AKEYCODE_C] = InputKeycode::C;
+    gApp.keycodes[AKEYCODE_D] = InputKeycode::D;
+    gApp.keycodes[AKEYCODE_E] = InputKeycode::E;
+    gApp.keycodes[AKEYCODE_F] = InputKeycode::F;
+    gApp.keycodes[AKEYCODE_G] = InputKeycode::G;
+    gApp.keycodes[AKEYCODE_G] = InputKeycode::H;
+    gApp.keycodes[AKEYCODE_I] = InputKeycode::I;
+    gApp.keycodes[AKEYCODE_J] = InputKeycode::J;
+    gApp.keycodes[AKEYCODE_K] = InputKeycode::K;
+    gApp.keycodes[AKEYCODE_L] = InputKeycode::L;
+    gApp.keycodes[AKEYCODE_M] = InputKeycode::M;
+    gApp.keycodes[AKEYCODE_N] = InputKeycode::N;
+    gApp.keycodes[AKEYCODE_O] = InputKeycode::O;
+    gApp.keycodes[AKEYCODE_P] = InputKeycode::P;
+    gApp.keycodes[AKEYCODE_Q] = InputKeycode::Q;
+    gApp.keycodes[AKEYCODE_R] = InputKeycode::R;
+    gApp.keycodes[AKEYCODE_S] = InputKeycode::S;
+    gApp.keycodes[AKEYCODE_T] = InputKeycode::T;
+    gApp.keycodes[AKEYCODE_U] = InputKeycode::U;
+    gApp.keycodes[AKEYCODE_V] = InputKeycode::V;
+    gApp.keycodes[AKEYCODE_W] = InputKeycode::W;
+    gApp.keycodes[AKEYCODE_X] = InputKeycode::X;
+    gApp.keycodes[AKEYCODE_Y] = InputKeycode::Y;
+    gApp.keycodes[AKEYCODE_Z] = InputKeycode::Z;
+    gApp.keycodes[AKEYCODE_APOSTROPHE] = InputKeycode::Apostrophe;
+    gApp.keycodes[AKEYCODE_BACKSLASH] = InputKeycode::Backslash;
+    gApp.keycodes[AKEYCODE_COMMA] = InputKeycode::Comma;
+    gApp.keycodes[AKEYCODE_EQUALS] = InputKeycode::Equal;
+    gApp.keycodes[AKEYCODE_GRAVE] = InputKeycode::GraveAccent;
+    gApp.keycodes[AKEYCODE_LEFT_BRACKET] = InputKeycode::LeftBracket;
+    gApp.keycodes[AKEYCODE_MINUS] = InputKeycode::Minus;
+    gApp.keycodes[AKEYCODE_PERIOD] = InputKeycode::Period;
+    gApp.keycodes[AKEYCODE_RIGHT_BRACKET] = InputKeycode::RightBracket;
+    gApp.keycodes[AKEYCODE_SEMICOLON] = InputKeycode::Semicolon;
+    gApp.keycodes[AKEYCODE_SLASH] = InputKeycode::Slash;
+    gApp.keycodes[AKEYCODE_LANGUAGE_SWITCH] = InputKeycode::World2;
+    gApp.keycodes[AKEYCODE_DEL] = InputKeycode::Backspace;
+    gApp.keycodes[AKEYCODE_FORWARD_DEL] = InputKeycode::Delete;
+    gApp.keycodes[AKEYCODE_MOVE_END] = InputKeycode::End;
+    gApp.keycodes[AKEYCODE_ENTER] = InputKeycode::Enter;
+    gApp.keycodes[AKEYCODE_ESCAPE] = InputKeycode::Escape;
+    gApp.keycodes[AKEYCODE_MOVE_HOME] = InputKeycode::Home;
+    gApp.keycodes[AKEYCODE_INSERT] = InputKeycode::Insert;
+    gApp.keycodes[AKEYCODE_MENU] = InputKeycode::Menu;
+    gApp.keycodes[AKEYCODE_PAGE_DOWN] = InputKeycode::PageDown;
+    gApp.keycodes[AKEYCODE_PAGE_UP] = InputKeycode::PageUp;
+    gApp.keycodes[AKEYCODE_BREAK] = InputKeycode::Pause;
+    gApp.keycodes[AKEYCODE_SPACE] = InputKeycode::Space;
+    gApp.keycodes[AKEYCODE_TAB] = InputKeycode::Tab;
+    gApp.keycodes[AKEYCODE_CAPS_LOCK] = InputKeycode::CapsLock;
+    gApp.keycodes[AKEYCODE_NUM] = InputKeycode::NumLock;
+    gApp.keycodes[AKEYCODE_SCROLL_LOCK] = InputKeycode::ScrollLock;
+    gApp.keycodes[AKEYCODE_F1] = InputKeycode::F1;
+    gApp.keycodes[AKEYCODE_F2] = InputKeycode::F2;
+    gApp.keycodes[AKEYCODE_F3] = InputKeycode::F3;
+    gApp.keycodes[AKEYCODE_F4] = InputKeycode::F4;
+    gApp.keycodes[AKEYCODE_F5] = InputKeycode::F5;
+    gApp.keycodes[AKEYCODE_F6] = InputKeycode::F6;
+    gApp.keycodes[AKEYCODE_F7] = InputKeycode::F7;
+    gApp.keycodes[AKEYCODE_F8] = InputKeycode::F8;
+    gApp.keycodes[AKEYCODE_F9] = InputKeycode::F9;
+    gApp.keycodes[AKEYCODE_F10] = InputKeycode::F10;
+    gApp.keycodes[AKEYCODE_F11] = InputKeycode::F11;
+    gApp.keycodes[AKEYCODE_F12] = InputKeycode::F12;
+    gApp.keycodes[AKEYCODE_ALT_LEFT] = InputKeycode::LeftAlt;
+    gApp.keycodes[AKEYCODE_CTRL_LEFT] = InputKeycode::LeftControl;
+    gApp.keycodes[AKEYCODE_SHIFT_LEFT] = InputKeycode::LeftShift;
+    gApp.keycodes[AKEYCODE_SYSRQ] = InputKeycode::PrintScreen;
+    gApp.keycodes[AKEYCODE_ALT_RIGHT] = InputKeycode::RightAlt;
+    gApp.keycodes[AKEYCODE_CTRL_RIGHT] = InputKeycode::RightControl;
+    gApp.keycodes[AKEYCODE_SHIFT_RIGHT] = InputKeycode::RightShift;
+    gApp.keycodes[AKEYCODE_DPAD_DOWN] = InputKeycode::Down;
+    gApp.keycodes[AKEYCODE_DPAD_LEFT] = InputKeycode::Left;
+    gApp.keycodes[AKEYCODE_DPAD_RIGHT] = InputKeycode::Right;
+    gApp.keycodes[AKEYCODE_DPAD_UP] = InputKeycode::Up;
+    gApp.keycodes[AKEYCODE_NUMPAD_0] = InputKeycode::KP0;
+    gApp.keycodes[AKEYCODE_NUMPAD_1] = InputKeycode::KP1;
+    gApp.keycodes[AKEYCODE_NUMPAD_2] = InputKeycode::KP2;
+    gApp.keycodes[AKEYCODE_NUMPAD_3] = InputKeycode::KP3;
+    gApp.keycodes[AKEYCODE_NUMPAD_4] = InputKeycode::KP4;
+    gApp.keycodes[AKEYCODE_NUMPAD_5] = InputKeycode::KP5;
+    gApp.keycodes[AKEYCODE_NUMPAD_6] = InputKeycode::KP6;
+    gApp.keycodes[AKEYCODE_NUMPAD_7] = InputKeycode::KP7;
+    gApp.keycodes[AKEYCODE_NUMPAD_8] = InputKeycode::KP8;
+    gApp.keycodes[AKEYCODE_NUMPAD_9] = InputKeycode::KP9;
+    gApp.keycodes[AKEYCODE_NUMPAD_ADD] = InputKeycode::KPAdd;
+    gApp.keycodes[AKEYCODE_NUMPAD_DOT] = InputKeycode::KPDecimal;
+    gApp.keycodes[AKEYCODE_NUMPAD_DIVIDE] = InputKeycode::KPDivide;
+    gApp.keycodes[AKEYCODE_NUMPAD_ENTER] = InputKeycode::KPEnter;
+    gApp.keycodes[AKEYCODE_NUMPAD_MULTIPLY] = InputKeycode::KPMultiply;
+    gApp.keycodes[AKEYCODE_NUMPAD_SUBTRACT] = InputKeycode::KPSubtract;
 }
 
 static void appAndroidUpdateDimensions(ANativeWindow* window)
@@ -441,10 +441,10 @@ static int appAndroidInputEventsFn(int fd, int events, void* data)
             if (eventType != AppEventType::Invalid) {
                 int index = actionIdx >> AMOTION_EVENT_ACTION_POINTER_INDEX_SHIFT;
                 appAndroidInitEvent(eventType);
-                gApp.ev.numTouches = Min<uint32>(AMotionEvent_getPointerCount(event), kAppMaxTouchPoints);
+                gApp.ev.numTouches = Min<uint32>(AMotionEvent_getPointerCount(event), kInputMaxTouchPoints);
 
                 for (uint32 i = 0; i < gApp.ev.numTouches; i++) {
-                    AppTouchPoint* tp = &gApp.ev.touches[i];
+                    InputTouchPoint* tp = &gApp.ev.touches[i];
                     tp->id = AMotionEvent_getPointerId(event, i);
                     tp->posX = AMotionEvent_getX(event, i);
                     tp->posY = AMotionEvent_getY(event, i);
@@ -461,14 +461,14 @@ static int appAndroidInputEventsFn(int fd, int events, void* data)
 
             // Mouse events
             float scroll = 0;
-            AppMouseButton mouseButton = AppMouseButton::Invalid;
+            InputMouseButton mouseButton = InputMouseButton::Invalid;
             switch (action) {
             case AMOTION_EVENT_ACTION_DOWN:
             case AMOTION_EVENT_ACTION_MOVE:
                 if (button == AMOTION_EVENT_BUTTON_PRIMARY || ((source & AINPUT_SOURCE_TOUCHSCREEN) && button == 0))
-                    mouseButton = AppMouseButton::Left;
+                    mouseButton = InputMouseButton::Left;
                 else if (button == AMOTION_EVENT_BUTTON_SECONDARY)
-                    mouseButton = AppMouseButton::Right;
+                    mouseButton = InputMouseButton::Right;
                 eventType = action == AMOTION_EVENT_ACTION_DOWN ? AppEventType::MouseDown : AppEventType::MouseMove;
                 break;
 
@@ -476,9 +476,9 @@ static int appAndroidInputEventsFn(int fd, int events, void* data)
             case AMOTION_EVENT_ACTION_CANCEL:
             case AMOTION_EVENT_ACTION_OUTSIDE:
                 if (button == AMOTION_EVENT_BUTTON_PRIMARY || ((source & AINPUT_SOURCE_TOUCHSCREEN) && button == 0))
-                    mouseButton = AppMouseButton::Left;
+                    mouseButton = InputMouseButton::Left;
                 else if (button == AMOTION_EVENT_BUTTON_SECONDARY)
-                    mouseButton = AppMouseButton::Right;
+                    mouseButton = InputMouseButton::Right;
                 eventType = AppEventType::MouseUp;
                 break;
 
@@ -516,26 +516,26 @@ static int appAndroidInputEventsFn(int fd, int events, void* data)
             switch (action) {
             case AKEY_EVENT_ACTION_DOWN:
                 eventType = AppEventType::KeyDown;
-                if (gApp.keycodes[keycode] == AppKeycode::LeftShift || gApp.keycodes[keycode] == AppKeycode::RightShift)
-                    gApp.keyMods |= AppKeyModifiers::Shift;
-                else if (gApp.keycodes[keycode] == AppKeycode::LeftControl || gApp.keycodes[keycode] == AppKeycode::RightControl)
-                    gApp.keyMods |= AppKeyModifiers::Ctrl;
-                else if (gApp.keycodes[keycode] == AppKeycode::LeftAlt || gApp.keycodes[keycode] == AppKeycode::RightAlt)
-                    gApp.keyMods |= AppKeyModifiers::Alt;
-                else if (gApp.keycodes[keycode] == AppKeycode::LeftSuper || gApp.keycodes[keycode] == AppKeycode::RightSuper)
-                    gApp.keyMods |= AppKeyModifiers::Super;
+                if (gApp.keycodes[keycode] == InputKeycode::LeftShift || gApp.keycodes[keycode] == InputKeycode::RightShift)
+                    gApp.keyMods |= InputKeyModifiers::Shift;
+                else if (gApp.keycodes[keycode] == InputKeycode::LeftControl || gApp.keycodes[keycode] == InputKeycode::RightControl)
+                    gApp.keyMods |= InputKeyModifiers::Ctrl;
+                else if (gApp.keycodes[keycode] == InputKeycode::LeftAlt || gApp.keycodes[keycode] == InputKeycode::RightAlt)
+                    gApp.keyMods |= InputKeyModifiers::Alt;
+                else if (gApp.keycodes[keycode] == InputKeycode::LeftSuper || gApp.keycodes[keycode] == InputKeycode::RightSuper)
+                    gApp.keyMods |= InputKeyModifiers::Super;
                 gApp.keysDown[uint32(gApp.keycodes[keycode])] = true;
                 break;
             case AKEY_EVENT_ACTION_UP:
                 eventType = AppEventType::KeyUp;
-                if (gApp.keycodes[keycode] == AppKeycode::LeftShift || gApp.keycodes[keycode] == AppKeycode::RightShift)
-                    gApp.keyMods &= ~AppKeyModifiers::Shift;
-                else if (gApp.keycodes[keycode] == AppKeycode::LeftControl || gApp.keycodes[keycode] == AppKeycode::RightControl)
-                    gApp.keyMods &= ~AppKeyModifiers::Ctrl;
-                else if (gApp.keycodes[keycode] == AppKeycode::LeftAlt || gApp.keycodes[keycode] == AppKeycode::RightAlt)
-                    gApp.keyMods &= ~AppKeyModifiers::Alt;
-                else if (gApp.keycodes[keycode] == AppKeycode::LeftSuper || gApp.keycodes[keycode] == AppKeycode::RightSuper)
-                    gApp.keyMods &= ~AppKeyModifiers::Super;
+                if (gApp.keycodes[keycode] == InputKeycode::LeftShift || gApp.keycodes[keycode] == InputKeycode::RightShift)
+                    gApp.keyMods &= ~InputKeyModifiers::Shift;
+                else if (gApp.keycodes[keycode] == InputKeycode::LeftControl || gApp.keycodes[keycode] == InputKeycode::RightControl)
+                    gApp.keyMods &= ~InputKeyModifiers::Ctrl;
+                else if (gApp.keycodes[keycode] == InputKeycode::LeftAlt || gApp.keycodes[keycode] == InputKeycode::RightAlt)
+                    gApp.keyMods &= ~InputKeyModifiers::Alt;
+                else if (gApp.keycodes[keycode] == InputKeycode::LeftSuper || gApp.keycodes[keycode] == InputKeycode::RightSuper)
+                    gApp.keyMods &= ~InputKeyModifiers::Super;
                 gApp.keysDown[uint32(gApp.keycodes[keycode])] = false;
                 break;
             }
@@ -1085,12 +1085,12 @@ AppDisplayInfo appGetDisplayInfo()
     };
 }
 
-bool appIsKeyDown(AppKeycode keycode)
+bool appIsKeyDown(InputKeycode keycode)
 {
     return gApp.keysDown[uint32(keycode)];
 }
 
-bool appIsAnyKeysDown(const AppKeycode* keycodes, uint32 numKeycodes)
+bool appIsAnyKeysDown(const InputKeycode* keycodes, uint32 numKeycodes)
 {
     bool down = false;
     for (uint32 i = 0; i < numKeycodes; i++) {
@@ -1099,7 +1099,7 @@ bool appIsAnyKeysDown(const AppKeycode* keycodes, uint32 numKeycodes)
     return down;
 }
 
-AppKeyModifiers appGetKeyMods()
+InputKeyModifiers appGetKeyMods()
 {
     return gApp.keyMods;
 }

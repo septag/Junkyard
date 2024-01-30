@@ -1,15 +1,12 @@
 #include "BudgetViewer.h"
 
 #include "../Core/Jobs.h"
-#include "../Assets/AssetManager.h"
-
+#include "../Common/JunkyardSettings.h"
 #include "../Graphics/Graphics.h"
-
-#include "../Application.h"
-#include "../Engine.h"
-#include "../JunkyardSettings.h"
-
+#include "../Assets/AssetManager.h"
 #include "../ImGui/ImGuiWrapper.h"
+
+#include "../Engine.h"
 
 inline constexpr float kImGuiFragUpdateInterval = 1.0f;
 

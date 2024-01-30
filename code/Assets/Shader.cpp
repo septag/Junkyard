@@ -7,9 +7,9 @@
 #include "../Core/Log.h"
 #include "../Core/Jobs.h"
 
-#include "../RemoteServices.h"
-#include "../VirtualFS.h"
-#include "../JunkyardSettings.h"
+#include "../Common/RemoteServices.h"
+#include "../Common/VirtualFS.h"
+#include "../Common/JunkyardSettings.h"
 
 #include "../Tool/ShaderCompiler.h"
 

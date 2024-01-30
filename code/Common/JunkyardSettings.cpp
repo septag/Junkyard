@@ -1,7 +1,7 @@
 #include "JunkyardSettings.h"
 
-#include "Core/Settings.h"
-#include "Core/Log.h"
+#include "../Core/Settings.h"
+#include "../Core/Log.h"
 
 static_assert(uint32(LogLevel::Error) == uint32(SettingsEngine::LogLevel::Error));
 static_assert(uint32(LogLevel::Warning) == uint32(SettingsEngine::LogLevel::Warning));

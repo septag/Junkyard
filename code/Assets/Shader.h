@@ -4,7 +4,7 @@
 #include "../Core/Allocators.h"
 #include "../Core/System.h"
 
-#include "../CommonTypes.h"
+#include "../Common/CommonTypes.h"
 
 #include "../Tool/ShaderCompiler.h" // ShaderCompileDesc
 

@@ -82,6 +82,9 @@
     <Filter Include="DebugTools">
       <UniqueIdentifier>{ffe2c614-ea64-48bc-bbfd-4aca683360bf}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Common">
+      <UniqueIdentifier>{1c623d04-7d5b-485c-901a-6c4284e57f4f}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\..\code\External\imgui\imgui.cpp">
@@ -153,14 +156,7 @@
     <ClCompile Include="..\..\code\Graphics\Graphics.cpp">
       <Filter>Graphics</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\code\Application.cpp" />
-    <ClCompile Include="..\..\code\ApplicationAndroid.cpp" />
-    <ClCompile Include="..\..\code\ApplicationWin.cpp" />
-    <ClCompile Include="..\..\code\Camera.cpp" />
     <ClCompile Include="..\..\code\Engine.cpp" />
-    <ClCompile Include="..\..\code\RemoteServices.cpp" />
-    <ClCompile Include="..\..\code\VirtualFS.cpp" />
-    <ClCompile Include="..\..\code\JunkyardSettings.cpp" />
     <ClCompile Include="..\..\code\Core\DebugClang.cpp">
       <Filter>Core</Filter>
     </ClCompile>
@@ -205,6 +201,30 @@
     </ClCompile>
     <ClCompile Include="..\..\code\DebugTools\FrameInfoHud.cpp">
       <Filter>DebugTools</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\code\Common\Application.cpp">
+      <Filter>Common</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\code\Common\ApplicationAndroid.cpp">
+      <Filter>Common</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\code\Common\ApplicationWin.cpp">
+      <Filter>Common</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\code\Common\Camera.cpp">
+      <Filter>Common</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\code\Common\Clipboard.cpp">
+      <Filter>Common</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\code\Common\JunkyardSettings.cpp">
+      <Filter>Common</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\code\Common\RemoteServices.cpp">
+      <Filter>Common</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\code\Common\VirtualFS.cpp">
+      <Filter>Common</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -346,13 +366,7 @@
     <ClInclude Include="..\..\code\External\stb\stb_image_resize.h">
       <Filter>External\stb</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\code\Application.h" />
-    <ClInclude Include="..\..\code\Camera.h" />
-    <ClInclude Include="..\..\code\CommonTypes.h" />
     <ClInclude Include="..\..\code\Engine.h" />
-    <ClInclude Include="..\..\code\RemoteServices.h" />
-    <ClInclude Include="..\..\code\VirtualFS.h" />
-    <ClInclude Include="..\..\code\JunkyardSettings.h" />
     <ClInclude Include="..\..\code\Core\IniParser.h">
       <Filter>Core</Filter>
     </ClInclude>
@@ -392,6 +406,30 @@
     <ClInclude Include="..\..\code\DebugTools\FrameInfoHud.h">
       <Filter>DebugTools</Filter>
     </ClInclude>
+    <ClInclude Include="..\..\code\Common\Application.h">
+      <Filter>Common</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\code\Common\Camera.h">
+      <Filter>Common</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\code\Common\Clipboard.h">
+      <Filter>Common</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\code\Common\CommonTypes.h">
+      <Filter>Common</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\code\Common\JunkyardSettings.h">
+      <Filter>Common</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\code\Common\RemoteServices.h">
+      <Filter>Common</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\code\Common\VirtualFS.h">
+      <Filter>Common</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\code\Common\InputTypes.h">
+      <Filter>Common</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <FxCompile Include="..\..\code\Shaders\ImGui.hlsl">
@@ -403,13 +441,14 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="..\..\code\UnityBuild.inl" />
-    <None Include="..\..\code\Vulkan\ValidateEnumsVk.inl" />
     <None Include="..\..\code\Graphics\ValidateEnumsVk.inl">
       <Filter>Graphics</Filter>
     </None>
     <None Include="..\..\code\Core\SystemMac.mm">
       <Filter>Core</Filter>
     </None>
-    <None Include="..\..\code\ApplicationMac.mm" />
+    <None Include="..\..\code\Common\ApplicationMac.mm">
+      <Filter>Common</Filter>
+    </None>
   </ItemGroup>
 </Project>

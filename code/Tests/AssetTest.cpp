@@ -6,11 +6,10 @@
 #include "../Core/Jobs.h"
 #include "../Core/MathAll.h"
 
-#include "../VirtualFS.h"
-#include "../Application.h"
-#include "../Engine.h"
-#include "../Camera.h"
-#include "../JunkyardSettings.h"
+#include "../Common/VirtualFS.h"
+#include "../Common/Application.h"
+#include "../Common/Camera.h"
+#include "../Common/JunkyardSettings.h"
 
 #include "../Assets/AssetManager.h"
 #include "../Assets/Model.h"
@@ -24,6 +23,8 @@
 #include "../ImGui/ImGuizmo.h"
 
 #include "../UnityBuild.inl"
+
+#include "../Engine.h"
 
 static constexpr uint32 kNumCubes = 10;
 

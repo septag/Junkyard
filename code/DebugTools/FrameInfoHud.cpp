@@ -5,14 +5,11 @@
 #include "../Core/MathScalar.h"
 #include "../Core/Buffers.h"
 #include "../Core/Atomic.h"
-
+#include "../Common/Application.h"
+#include "../Common/JunkyardSettings.h"
 #include "../ImGui/ImGuiWrapper.h"
-
 #include "../Graphics/Graphics.h"
-
-#include "../Application.h"
 #include "../Engine.h"
-#include "../JunkyardSettings.h"
 
 struct FrameInfoContext
 {

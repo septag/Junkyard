@@ -67,6 +67,9 @@
     <Filter Include="ImGui">
       <UniqueIdentifier>{271361ae-e6dd-4513-b626-7863773577c7}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Common">
+      <UniqueIdentifier>{7ac0ca4e-13a0-4446-9871-c1e2a03e3325}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\..\..\code\External\imgui\imconfig.h">
@@ -135,12 +138,7 @@
     <ClInclude Include="..\..\..\code\Core\External\tracy\TracyC.h">
       <Filter>Core\External\tracy</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\..\code\Application.h" />
-    <ClInclude Include="..\..\..\code\Camera.h" />
-    <ClInclude Include="..\..\..\code\CommonTypes.h" />
     <ClInclude Include="..\..\..\code\Engine.h" />
-    <ClInclude Include="..\..\..\code\RemoteServices.h" />
-    <ClInclude Include="..\..\..\code\VirtualFS.h" />
     <ClInclude Include="..\..\..\code\Core\Atomic.h">
       <Filter>Core</Filter>
     </ClInclude>
@@ -192,7 +190,6 @@
     <ClInclude Include="..\..\..\code\Graphics\Graphics.h">
       <Filter>Graphics</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\..\code\JunkyardSettings.h" />
     <ClInclude Include="..\..\..\code\Core\IniParser.h">
       <Filter>Core</Filter>
     </ClInclude>
@@ -231,6 +228,30 @@
     </ClInclude>
     <ClInclude Include="..\..\..\code\ImGui\ImGuizmo.h">
       <Filter>ImGui</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\code\Common\Application.h">
+      <Filter>Common</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\code\Common\Camera.h">
+      <Filter>Common</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\code\Common\Clipboard.h">
+      <Filter>Common</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\code\Common\CommonTypes.h">
+      <Filter>Common</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\code\Common\InputTypes.h">
+      <Filter>Common</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\code\Common\JunkyardSettings.h">
+      <Filter>Common</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\code\Common\RemoteServices.h">
+      <Filter>Common</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\code\Common\VirtualFS.h">
+      <Filter>Common</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
@@ -315,14 +336,7 @@
     <ClCompile Include="..\..\..\code\Tests\TestAndroid.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\..\code\Application.cpp" />
-    <ClCompile Include="..\..\..\code\ApplicationAndroid.cpp" />
-    <ClCompile Include="..\..\..\code\ApplicationWin.cpp" />
-    <ClCompile Include="..\..\..\code\Camera.cpp" />
     <ClCompile Include="..\..\..\code\Engine.cpp" />
-    <ClCompile Include="..\..\..\code\RemoteServices.cpp" />
-    <ClCompile Include="..\..\..\code\VirtualFS.cpp" />
-    <ClCompile Include="..\..\..\code\JunkyardSettings.cpp" />
     <ClCompile Include="..\..\..\code\Core\DebugClang.cpp">
       <Filter>Core</Filter>
     </ClCompile>
@@ -368,6 +382,30 @@
     <ClCompile Include="..\..\..\code\ImGui\ImGuizmo.cpp">
       <Filter>ImGui</Filter>
     </ClCompile>
+    <ClCompile Include="..\..\..\code\Common\Application.cpp">
+      <Filter>Common</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\..\code\Common\ApplicationAndroid.cpp">
+      <Filter>Common</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\..\code\Common\ApplicationWin.cpp">
+      <Filter>Common</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\..\code\Common\Camera.cpp">
+      <Filter>Common</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\..\code\Common\Clipboard.cpp">
+      <Filter>Common</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\..\code\Common\JunkyardSettings.cpp">
+      <Filter>Common</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\..\code\Common\RemoteServices.cpp">
+      <Filter>Common</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\..\code\Common\VirtualFS.cpp">
+      <Filter>Common</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <FxCompile Include="..\..\..\code\Shaders\ImGui.hlsl">
@@ -387,9 +425,12 @@
     <None Include="..\..\..\code\Core\SystemMac.mm">
       <Filter>Core</Filter>
     </None>
-    <None Include="..\..\..\code\ApplicationMac.mm" />
     <None Include="..\..\..\code\Graphics\ValidateEnumsVk.inl">
       <Filter>Graphics</Filter>
     </None>
+    <None Include="..\..\..\code\Common\ApplicationMac.mm">
+      <Filter>Common</Filter>
+    </None>
+    <None Include="..\..\..\code\UnityBuild.inl" />
   </ItemGroup>
 </Project>

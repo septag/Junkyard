@@ -1,7 +1,7 @@
 #pragma once
 
-#include "Core/Base.h"
-#include "Core/StringUtil.h"
+#include "../Core/Base.h"
+#include "../Core/StringUtil.h"
 
 #ifndef DEFAULT_LOG_LEVEL
     #if !CONFIG_FINAL_BUILD

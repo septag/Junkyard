@@ -1,6 +1,6 @@
 #pragma once
 
-#include "Core/Buffers.h"
+#include "../Core/Buffers.h"
 
 // Memory
 struct Allocator;
@@ -22,4 +22,7 @@ DEFINE_HANDLE(AssetBarrier);
 struct AssetHandleImage : AssetHandle {};
 struct AssetHandleShader : AssetHandle {};
 struct AssetHandleModel : AssetHandle {};
+
+// Clipboard
+DEFINE_HANDLE(ClipboardVarHandle);
 

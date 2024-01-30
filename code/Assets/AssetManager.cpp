@@ -8,15 +8,19 @@
 #include "../Core/Settings.h"
 #include "../Core/Jobs.h"
 
-#include "../Engine.h"
-#include "../VirtualFS.h"
-#include "../RemoteServices.h"
-#include "../Application.h"
-#include "../JunkyardSettings.h"
+#include "../Common/VirtualFS.h"
+#include "../Common/RemoteServices.h"
+#include "../Common/JunkyardSettings.h"
+
+#if PLATFORM_ANDROID
+#include "../Common/Application.h"
+#endif
 
 #include "Image.h"
 #include "Model.h"
 #include "Shader.h"
+
+#include "../Engine.h"
 
 #define ASSET_HASH_SEED 0x4354a
 

@@ -4,7 +4,7 @@
 #include "../Core/StringUtil.h" 
 #include "../Core/MathTypes.h"
 
-#include "../CommonTypes.h"
+#include "../Common/CommonTypes.h"
 
 struct MemTlsfAllocator;
 

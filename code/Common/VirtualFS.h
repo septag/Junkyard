@@ -1,7 +1,7 @@
 #pragma once
 
-#include "Core/Base.h"
-#include "Core/Buffers.h"
+#include "../Core/Base.h"
+#include "../Core/Buffers.h"
 
 enum class VfsFlags : uint32
 {
@@ -25,7 +25,7 @@ enum class VfsMountType
 //       So, care must be taken when implementing these callbacks so they would be thread-safe
 using VfsReadAsyncCallback = void(*)(const char* path, const Blob& blob, void* user);
 using VfsWriteAsyncCallback = void(*)(const char* path, size_t bytesWritten, const Blob& originalBlob, void* user);
-using vfsFileChangeCallback = void(*)(const char* path);
+using VfsFileChangeCallback = void(*)(const char* path);
 
 API bool vfsMountLocal(const char* rootDir, const char* alias, bool watch);
 API bool vfsMountRemote(const char* alias, bool watch);
@@ -45,7 +45,7 @@ API VfsMountType vfsGetMountType(const char* path);
 API uint64 vfsGetLastModified(const char* path);
 API bool vfsStripMountPath(char* outPath, uint32 outPathSize, const char* path);
 
-API void vfsRegisterFileChangeCallback(vfsFileChangeCallback callback);
+API void vfsRegisterFileChangeCallback(VfsFileChangeCallback callback);
 
 namespace _private 
 {
