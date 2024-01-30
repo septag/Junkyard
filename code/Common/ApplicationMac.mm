@@ -5,11 +5,11 @@
 #import <Metal/Metal.h>
 #import <MetalKit/MetalKit.h>
 
-#include "Core/System.h"
-#include "Core/StringUtil.h"
-#include "Core/Allocators.h"
-#include "Core/Log.h"
-#include "Core/Buffers.h"
+#include "../Core/System.h"
+#include "../Core/StringUtil.h"
+#include "../Core/Allocators.h"
+#include "../Core/Log.h"
+#include "../Core/Buffers.h"
 
 #include "JunkyardSettings.h"
 #include "VirtualFS.h"

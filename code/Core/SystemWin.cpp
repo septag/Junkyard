@@ -989,12 +989,12 @@ bool sysUUIDFromString(SysUUID* _uuid, const char* str)
     return true;
 }
 
-bool sysSetEnvVar(const char* key, const char* value)
+bool sysSetEnvVar(const char* name, const char* value)
 {
-    return SetEnvironmentVariableA(key, value) == TRUE;
+    return SetEnvironmentVariableA(name, value) == TRUE;
 }
 
-bool sysGetEnvVar(const char* key, char* outValue, uint32 valueSize)
+bool sysGetEnvVar(const char* name, char* outValue, uint32 valueSize)
 {
     DWORD dwValueSize = GetEnvironmentVariableA(key, outValue, valueSize);
     return dwValueSize != 0 && dwValueSize < valueSize;

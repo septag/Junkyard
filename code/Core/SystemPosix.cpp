@@ -595,6 +595,20 @@ size_t sysGetPageSize()
     return static_cast<size_t>(sysconf(_SC_PAGESIZE));
 }
 
+bool sysSetEnvVar(const char* name, const char* value)
+{
+    return value != nullptr ? setenv(name, value, 1) == 0 : unsetenv(name) == 0;
+}
+
+bool sysGetEnvVar(const char* name, char* outValue, uint32 valueSize)
+{
+    char* value = getenv(name);
+    if (!value)
+        return false;
+    strCopy(outValue, valueSize, value);
+    return true;
+}
+
 char* pathAbsolute(const char* path, char* dst, size_t dstSize)
 {
     char absPath[kMaxPath];
