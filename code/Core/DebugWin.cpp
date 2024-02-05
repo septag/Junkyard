@@ -1,9 +1,12 @@
-#include "Base.h"
+#include "Debug.h"
 
 #if PLATFORM_WINDOWS
 
+#include "External/remedybg/remedybg_driver.h"
+
 #include "StringUtil.h"  // strCopy/..
 #include "IncludeWin.h"
+#include "System.h"
 
 #pragma pack(push, 8)
 #include <DbgHelp.h>
@@ -100,6 +103,15 @@ struct DebugStacktraceContext
             // DeleteCriticalSection(&mutex);
         }
     }
+};
+
+static constexpr uint32 kDebugRemedyBGBufferSize = 8*kKB;
+
+struct DebugRemedyBGContext
+{
+    HANDLE cmdPipe;
+    HANDLE eventPipe;
+
 };
 
 static DebugStacktraceContext gStacktrace;
