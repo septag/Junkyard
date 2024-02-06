@@ -325,8 +325,10 @@ struct Blob
     inline size_t Read(void* dst, size_t size) const;
     template <typename _T> size_t Write(const _T& src);
     template <typename _T> size_t Read(_T* dst) const;
-    inline size_t WriteStringBinary(const char* str, uint32 len);
+    inline size_t WriteStringBinary(const char* str, uint32 len = 0);
     inline size_t ReadStringBinary(char* outStr, uint32 outStrSize) const;
+    inline size_t WriteStringBinary16(const char* str, uint32 len = 0);
+    inline size_t ReadStringBinary16(char* outStr, uint32 outStrSize) const;
     
     inline size_t Size() const;
     inline size_t Capacity() const;
@@ -1329,6 +1331,9 @@ inline size_t Blob::Read(_T* dst) const
 
 inline size_t Blob::WriteStringBinary(const char* str, uint32 len)
 {
+    ASSERT(str);
+    if (len == 0)
+        len = strLen(str);
     size_t writtenBytes = Write<uint32>(len);
     if (len) 
         writtenBytes += Write(str, len);
@@ -1349,6 +1354,34 @@ inline size_t Blob::ReadStringBinary(char* outStr, [[maybe_unused]] uint32 outSt
     outStr[len] = '\0';
     return readStrBytes + readBytes;
 }
+
+inline size_t Blob::WriteStringBinary16(const char* str, uint32 len)
+{
+    ASSERT(str);
+    if (len == 0)
+        len = strLen(str);
+    ASSERT(len < UINT16_MAX);
+    size_t writtenBytes = Write<uint16>(uint16(len));
+    if (len) 
+        writtenBytes += Write(str, len);
+    return writtenBytes;
+}
+
+inline size_t Blob::ReadStringBinary16(char* outStr, [[maybe_unused]] uint32 outStrSize) const
+{
+    uint16 len = 0;
+    size_t readStrBytes = 0;
+    size_t readBytes = Read<uint16>(&len);
+    ASSERT(readBytes == sizeof(len));
+    ASSERT(len < outStrSize);
+    if (len) {
+        readStrBytes = Read(outStr, len);
+        ASSERT(readStrBytes == len);
+    }
+    outStr[len] = '\0';
+    return readStrBytes + readBytes;
+}
+
 
 inline size_t Blob::Size() const
 {
