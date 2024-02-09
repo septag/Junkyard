@@ -73,8 +73,9 @@ struct VfsRequest
 struct VfsLocalDiskManager
 {
     Thread thread;
-    Mutex requestsMtx;
     Array<VfsRequest> requests;
+    uint8 _padding[40];
+    Mutex requestsMtx;
     Semaphore semaphore;
 };
 
@@ -88,12 +89,15 @@ struct VfsManager
 {
     Allocator* alloc;
     Array<VfsMountPoint> mounts;
+    uint8 _padding1[32];
+
     VfsLocalDiskManager diskMgr;
     vfsRemoteDiskManager remoteMgr;
     Array<VfsFileChangeEvent> fileChanges;
-    Mutex fileChangesMtx;
     Array<VfsFileChangeCallback> fileChangeFns;
+    uint8 _padding2[16];
     Thread reqFileChangesThrd;
+    Mutex fileChangesMtx;
     bool quit;
     bool initialized;
 };

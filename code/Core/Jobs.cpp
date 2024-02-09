@@ -101,9 +101,10 @@ struct JobsThreadData
 struct alignas(CACHE_LINE_SIZE) JobsInstance
 {
     atomicUint32 counter;                       // Atomic counter of sub items within a job 
-    uint8 reserved[CACHE_LINE_SIZE - 4];        // padding for the atomic var to fit inside a cache line
+    uint8 _padding1[CACHE_LINE_SIZE - 4];        // padding for the atomic var to fit inside a cache line
     JobsType type;
     bool isAutoDelete;
+    uint8 _padding2[CACHE_LINE_SIZE - sizeof(JobsType) - sizeof(bool)];
 };
 
 struct JobsWaitingList
@@ -122,9 +123,10 @@ struct alignas(CACHE_LINE_SIZE) JobsAtomicPool
     void Delete(_T* props);
 
     atomicUint32 mIndex;
-    uint8 _reserved[CACHE_LINE_SIZE - sizeof(atomicUint32)];
+    uint8 _reserved1[CACHE_LINE_SIZE - sizeof(atomicUint32)];
     _T** mPtrs;
     _T* mProps;
+    uint8 _reserved2[CACHE_LINE_SIZE - sizeof(void*) * 2];
 };
 
 struct JobsContext
@@ -132,14 +134,18 @@ struct JobsContext
     JobsInitParams initParams;
     Thread* threads[uint32(JobsType::_Count)];
     uint32 numThreads[uint32(JobsType::_Count)];
+    uint8 _padding1[8];
+
     MemTlsfAllocator tlsfAlloc;
+    uint8 _padding2[alignof(MemThreadSafeAllocator) - sizeof(MemTlsfAllocator)];
     MemThreadSafeAllocator runtimeAlloc;
-    JobsAtomicPool<JobsInstance, _limits::kJobsMaxInstances>* instancePool;
-    JobsAtomicPool<JobsFiberProperties, _limits::kJobsMaxPending>* fiberPropsPool;
     JobsWaitingList waitingLists[uint32(JobsType::_Count)];
+    uint8 _padding3[sizeof(JobsWaitingList) * 2 - alignof(JobsLock)];
     JobsLock waitingListLock;
     Semaphore semaphores[uint32(JobsType::_Count)];
-    StaticArray<void*, 32> pointers;    // Storing memory pointers, For garbage collection at release
+    JobsAtomicPool<JobsInstance, _limits::kJobsMaxInstances>* instancePool;
+    JobsAtomicPool<JobsFiberProperties, _limits::kJobsMaxPending>* fiberPropsPool;
+    StaticArray<void*, 7> pointers;    // Storing memory pointers, For garbage collection at release
 
     // Stats
     size_t runtimeHeapTotal;
@@ -582,10 +588,10 @@ void jobsInitialize(const JobsInitParams& initParams)
         debugStacktraceSaveStopPoint((void*)jobsEntryFn);   // workaround for stacktrace crash bug. see `debugStacktraceSaveStopPoint`
 
     #ifdef JOBS_USE_ANDERSON_LOCK
-        uint32 numTotalThreads = gJobs.numThreads[0] + gJobs.numThreads[1] + 1;
-        atomicALockInitialize(&gJobs.waitingListLock, numTotalThreads, memAllocTyped<AtomicALockThread>(numTotalThreads, initParams.alloc));
-        if (initParams.alloc->GetType() != AllocatorType::Bump)
-            gJobs.pointers.Add(gJobs.waitingListLock.slots);
+    uint32 numTotalThreads = gJobs.numThreads[0] + gJobs.numThreads[1] + 1;
+    atomicALockInitialize(&gJobs.waitingListLock, numTotalThreads, memAllocAlignedTyped<AtomicALockThread>(numTotalThreads, alignof(AtomicALockThread), initParams.alloc));
+    if (initParams.alloc->GetType() != AllocatorType::Bump)
+        gJobs.pointers.Add(gJobs.waitingListLock.slots);
     #endif
 
     gJobs.semaphores[uint32(JobsType::ShortTask)].Initialize();

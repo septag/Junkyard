@@ -605,6 +605,7 @@ template<> inline constexpr uint64 DivCeil(uint64 value, uint64 divider) { retur
 struct alignas(CACHE_LINE_SIZE) AtomicLock
 {
     uint32 locked = 0;
+    uint8 padding[CACHE_LINE_SIZE - sizeof(uint32)];
 };
 
 #if defined(Main)

@@ -57,6 +57,7 @@ PRAGMA_DIAGNOSTIC_PUSH()
 PRAGMA_DIAGNOSTIC_IGNORED_MSVC(4100)    // unreferenced formal parameter
 PRAGMA_DIAGNOSTIC_IGNORED_MSVC(4189)    // local variable is initialized but not referenced
 PRAGMA_DIAGNOSTIC_IGNORED_MSVC(4127)    // conditional expression is constant
+PRAGMA_DIAGNOSTIC_IGNORED_MSVC(4324)    // structure was padded due to alignment specifier
 PRAGMA_DIAGNOSTIC_IGNORED_CLANG_GCC("-Wnullability-completeness")
 PRAGMA_DIAGNOSTIC_IGNORED_CLANG_GCC("-Wunused-variable")
 #define VMA_ASSERT(expr) ASSERT(expr)
@@ -323,21 +324,20 @@ struct GfxHeapAllocator final : Allocator
 
 struct GfxContext
 {
-    bool initialized;
-
     MemTlsfAllocator tlsfAlloc;
+    uint8 _padding1[alignof(MemThreadSafeAllocator) - sizeof(MemTlsfAllocator)];
     MemThreadSafeAllocator runtimeAlloc;   // All allocations during runtime are allocated from this
     GfxHeapAllocator alloc;
     VkAllocationCallbacks allocVk;
 
     VkInstance instance;
     GfxApiVersion apiVersion;
-    VkExtensionProperties* instanceExtensions;
     uint32 numInstanceExtensions;
-    VkExtensionProperties* deviceExtensions;
     uint32 numDeviceExtensions;
-    VkLayerProperties* layers;
     uint32 numLayers;
+    VkExtensionProperties* instanceExtensions;
+    VkExtensionProperties* deviceExtensions;
+    VkLayerProperties* layers;
     VkDebugUtilsMessengerEXT debugMessenger;
     VkDebugReportCallbackEXT debugReportCallback;
     VkPhysicalDevice physicalDevice;
@@ -345,6 +345,7 @@ struct GfxContext
     VkPhysicalDeviceVulkan11Properties deviceProps11;
     VkPhysicalDeviceVulkan12Properties deviceProps12;
     VkPhysicalDeviceFeatures deviceFeatures;
+    uint32 _padding2;
     VkPhysicalDeviceVulkan11Features deviceFeatures11;
     VkPhysicalDeviceVulkan12Features deviceFeatures12;
     VkDevice device;
@@ -359,40 +360,39 @@ struct GfxContext
 
     VkQueryPool queryPool[kMaxFramesInFlight];
     atomicUint32 queryFirstCall;
+    uint32 _padding3;
 
     VkSemaphore imageAvailSemaphores[kMaxFramesInFlight];
     VkSemaphore renderFinishedSemaphores[kMaxFramesInFlight];
     VkFence inflightFences[kMaxFramesInFlight];
     VkFence inflightImageFences[kMaxSwapchainImages];  // count: Swapchain.numImages
+    Array<GfxGarbage> garbage;
 
+    atomicUint32 currentFrameIdx;
+    uint32       prevFrameIdx;
     VmaAllocator vma;
     GfxObjectPools pools;
 
     Mutex shaderPipelinesTableMtx;
-    HashTable<Array<GfxPipeline>> shaderPipelinesTable;
-    
     Mutex garbageMtx;
-    Array<GfxGarbage> garbage;
     
     AtomicLock pendingCmdBuffersLock;
     StaticArray<VkCommandBuffer, 32> pendingCmdBuffers;
+    HashTable<Array<GfxPipeline>> shaderPipelinesTable;
+    Array<GfxDeferredCommand> deferredCmds;
+
+    size_t initHeapStart;
+    size_t initHeapSize;
 
     AtomicLock threadDataLock;
     StaticArray<GfxCommandBufferThreadData*, 32> initializedThreadData;
 
-    atomicUint32 currentFrameIdx;
-    uint32       prevFrameIdx;
-
     Blob deferredCmdBuffer;
-    Array<GfxDeferredCommand> deferredCmds;
     Mutex deferredCommandsMtx;
 
     GfxBudgetStats::DescriptorBudgetStats descriptorStats;
 
     GfxUpdateImageDescriptorCallback updateImageDescCallback;
-
-    size_t initHeapStart;
-    size_t initHeapSize;
 
     bool hasAstcDecodeMode;     // VK_EXT_astc_decode_mode extension is available. use it for ImageViews
     bool hasPipelineExecutableProperties;
@@ -400,6 +400,7 @@ struct GfxContext
     bool hasHostQueryReset;
     bool hasFloat16Support;
     bool hasDescriptorIndexing;
+    bool initialized;
 };
 
 namespace VkExtensionApi

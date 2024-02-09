@@ -187,8 +187,10 @@ struct MemThreadSafeAllocator final : Allocator
     AllocatorType GetType() const override;
 
 private:
+    [[maybe_unused]] uint8 _padding1[alignof(AtomicLock) - sizeof(Allocator)];
     AtomicLock mLock;
     Allocator* mAlloc = nullptr;
+    [[maybe_unused]] uint8 _padding2[alignof(AtomicLock) - sizeof(Allocator*)];
 };
 
 //------------------------------------------------------------------------

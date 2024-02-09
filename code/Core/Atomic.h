@@ -452,20 +452,23 @@ FORCE_INLINE bool atomicLockTryEnter(AtomicLock* lock)
 
 //----------------------------------------------------------------------------------------------------------------------
 // Anderson's lock: Implementation is a modified form of: https://github.com/concurrencykit/ck/blob/master/include/spinlock/anderson.h
-struct AtomicALockThread
+struct alignas(CACHE_LINE_SIZE) AtomicALockThread
 {
     uint32 locked;
+    uint8 _padding1[CACHE_LINE_SIZE - sizeof(uint32)];
     uint32 position;
+    uint8 _padding2[CACHE_LINE_SIZE - sizeof(uint32)];
 };
 
-struct AtomicALock
+struct alignas(CACHE_LINE_SIZE) AtomicALock
 {
     AtomicALockThread* slots;
     uint32 count;
     uint32 wrap;
     uint32 mask;
-    char padding[CACHE_LINE_SIZE - sizeof(uint32)*3 - sizeof(void*)];
+    char _padding1[CACHE_LINE_SIZE - sizeof(uint32)*3 - sizeof(void*)];
     uint32 next;
+    char _padding2[CACHE_LINE_SIZE - sizeof(uint32)];
 };
 
 FORCE_INLINE void atomicALockInitialize(AtomicALock* lock, uint32 numThreads, AtomicALockThread* threads)

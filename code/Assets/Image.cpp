@@ -76,12 +76,13 @@ struct AssetImageCallbacks final : AssetCallbacks
 struct AssetImageManager
 {
     Allocator* runtimeAlloc;
-    GfxImage imageWhite;
     AssetImageCallbacks imageLoader;
-    Mutex updateCacheMtx;
     Array<AssetDescriptorUpdateCacheItem*> updateCache;
-    Mutex requestsMtx;
     Array<AssetImageLoadRequest> requests;
+
+    Mutex updateCacheMtx;
+    Mutex requestsMtx;
+    GfxImage imageWhite;
 };
 
 struct AssetImage

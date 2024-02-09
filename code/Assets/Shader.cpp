@@ -34,8 +34,9 @@ struct ShaderLoader final : AssetCallbacks
     bool ReloadSync(AssetHandle handle, void* prevData) override;
     void Release(void* data, Allocator*) override;
 
-    Mutex requestsMtx;
     Array<ShaderLoadRequest> requests;
+    uint8 _padding[32];
+    Mutex requestsMtx;
 };
 
 static ShaderLoader gShaderLoader;

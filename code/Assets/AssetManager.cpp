@@ -90,8 +90,9 @@ struct AssetManager
                                             // This HashTable is used for looking up already loaded assets 
     
     Array<AssetGarbage> garbage;
-    Mutex assetsMtx;                        // Mutex used for 'assets' HandlePool (see above)
+    uint8 _padding[8];
 
+    Mutex assetsMtx;                        // Mutex used for 'assets' HandlePool (see above)
     Mutex hashLookupMtx;
     HashTable<uint32> hashLookup;           // Key: hash of the asset(path+params), value: cache hash
 

@@ -18,7 +18,8 @@
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp20</LanguageStandard>
       <LanguageStandard_C>stdc11</LanguageStandard_C>
-      <DisableSpecificWarnings>4324;4390</DisableSpecificWarnings>
+      <DisableSpecificWarnings>
+      </DisableSpecificWarnings>
       <TreatWarningAsError>false</TreatWarningAsError>
       <AdditionalOptions>/d1trimfile:..\..\code\ %(AdditionalOptions)</AdditionalOptions>
       <UseFullPaths>false</UseFullPaths>

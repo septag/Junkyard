@@ -52,8 +52,8 @@ struct ModelLoader final : AssetCallbacks
 
 struct ModelContext 
 {
-    ModelGeometryLayout defaultLayout;
     Mutex requestsMutex;
+    ModelGeometryLayout defaultLayout;
     Array<ModelLoadRequest> requests;
 };
 

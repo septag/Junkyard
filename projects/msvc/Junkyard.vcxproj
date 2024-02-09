@@ -85,7 +85,8 @@
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <LanguageStandard>stdcpp20</LanguageStandard>
       <LanguageStandard_C>stdc11</LanguageStandard_C>
-      <DisableSpecificWarnings>4324</DisableSpecificWarnings>
+      <DisableSpecificWarnings>
+      </DisableSpecificWarnings>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
       <UseFullPaths>false</UseFullPaths>
       <AdditionalOptions>/d1trimfile:..\..\code\ %(AdditionalOptions)</AdditionalOptions>
@@ -133,7 +134,8 @@ echo No | copy /-Y $(SolutionDir)..\..\code\External\meshoptimizer\lib\win64\mes
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <LanguageStandard>stdcpp20</LanguageStandard>
       <LanguageStandard_C>stdc11</LanguageStandard_C>
-      <DisableSpecificWarnings>4324;4390</DisableSpecificWarnings>
+      <DisableSpecificWarnings>
+      </DisableSpecificWarnings>
       <DebugInformationFormat>None</DebugInformationFormat>
       <AdditionalOptions>/d1trimfile:..\..\code\ %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
@@ -182,7 +184,8 @@ echo No | copy /-Y $(SolutionDir)..\..\code\External\meshoptimizer\lib\win64\mes
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <LanguageStandard>stdcpp20</LanguageStandard>
       <LanguageStandard_C>stdc11</LanguageStandard_C>
-      <DisableSpecificWarnings>4324</DisableSpecificWarnings>
+      <DisableSpecificWarnings>
+      </DisableSpecificWarnings>
       <WholeProgramOptimization>false</WholeProgramOptimization>
       <AdditionalOptions>/d1trimfile:..\..\code\ %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
@@ -255,19 +258,26 @@ echo No | copy /-Y $(SolutionDir)..\..\code\External\meshoptimizer\lib\win64\mes
     <ClCompile Include="..\..\code\DebugTools\DebugDraw.cpp" />
     <ClCompile Include="..\..\code\DebugTools\FrameInfoHud.cpp" />
     <ClCompile Include="..\..\code\Engine.cpp" />
-    <ClCompile Include="..\..\code\External\imgui\imgui.cpp" />
+    <ClCompile Include="..\..\code\External\imgui\imgui.cpp">
+      <DisableSpecificWarnings Condition="'$(Configuration)|$(Platform)'=='Release|x64'">4390</DisableSpecificWarnings>
+    </ClCompile>
     <ClCompile Include="..\..\code\External\imgui\imgui_demo.cpp">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='ReleaseDev|x64'">true</ExcludedFromBuild>
     </ClCompile>
-    <ClCompile Include="..\..\code\External\imgui\imgui_draw.cpp" />
+    <ClCompile Include="..\..\code\External\imgui\imgui_draw.cpp">
+      <DisableSpecificWarnings Condition="'$(Configuration)|$(Platform)'=='Release|x64'">4390</DisableSpecificWarnings>
+    </ClCompile>
     <ClCompile Include="..\..\code\External\imgui\imgui_tables.cpp">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">false</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">false</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='ReleaseDev|x64'">false</ExcludedFromBuild>
+      <DisableSpecificWarnings Condition="'$(Configuration)|$(Platform)'=='Release|x64'">4390</DisableSpecificWarnings>
     </ClCompile>
-    <ClCompile Include="..\..\code\External\imgui\imgui_widgets.cpp" />
+    <ClCompile Include="..\..\code\External\imgui\imgui_widgets.cpp">
+      <DisableSpecificWarnings Condition="'$(Configuration)|$(Platform)'=='Release|x64'">4390</DisableSpecificWarnings>
+    </ClCompile>
     <ClCompile Include="..\..\code\External\volk\volk.c">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='ReleaseDev|x64'">true</ExcludedFromBuild>

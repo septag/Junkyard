@@ -17,21 +17,23 @@ static constexpr uint32 kResultOk = MakeFourCC('O', 'K', '0', '0');
 
 struct RemoteServicesContext
 {
-    SocketTCP serverSock;
-    SocketTCP serverPeerSock;
     Mutex serverPeerMtx;
     Thread serverThread;
-    bool serverQuit;
-    Array<RemoteCommandDesc> commands;
 
+    SocketTCP serverSock;
+    SocketTCP serverPeerSock;
     SocketTCP clientSock;
+    RemoteDisconnectCallback disconnectFn;
+    uint8 _padding1[8];
+    Array<RemoteCommandDesc> commands;
+    uint8 _padding2[40];
+
     Mutex clientMtx;
     Thread clientThread;
-    RemoteDisconnectCallback disconnectFn;
+    String<128> peerUrl;
+    bool serverQuit;
     bool clientQuit;
     bool clientIsConnected;
-
-    String<128> peerUrl;
 };
 
 static RemoteServicesContext gRemoteServices;

@@ -1,5 +1,7 @@
 #include "Buffers.h"
 
+#include "StringUtil.h"
+
 DEFINE_HANDLE(HandleDummy);
 
 _private::HandlePoolTable* _private::handleCreatePoolTable(uint32 capacity, Allocator* alloc)
@@ -162,5 +164,58 @@ bool _private::handleGrowPoolTableWithBuffer(HandlePoolTable** pTbl, void* buff,
     return true;
 }
 
+size_t Blob::ReadStringBinary(char* outStr, [[maybe_unused]] uint32 outStrSize) const
+{
+    uint32 len = 0;
+    size_t readStrBytes = 0;
+    size_t readBytes = Read<uint32>(&len);
+    ASSERT(readBytes == sizeof(len));
+    ASSERT(len < outStrSize);
+    if (len) {
+        readStrBytes = Read(outStr, len);
+        ASSERT(readStrBytes == len);
+    }
+    outStr[len] = '\0';
+    return readStrBytes + readBytes;
+}
+
+
+size_t Blob::ReadStringBinary16(char* outStr, [[maybe_unused]] uint32 outStrSize) const
+{
+    uint16 len = 0;
+    size_t readStrBytes = 0;
+    size_t readBytes = Read<uint16>(&len);
+    ASSERT(readBytes == sizeof(len));
+    ASSERT(len < outStrSize);
+    if (len) {
+        readStrBytes = Read(outStr, len);
+        ASSERT(readStrBytes == len);
+    }
+    outStr[len] = '\0';
+    return readStrBytes + readBytes;
+}
+
+size_t Blob::WriteStringBinary(const char* str, uint32 len)
+{
+    ASSERT(str);
+    if (len == 0)
+        len = strLen(str);
+    size_t writtenBytes = Write<uint32>(len);
+    if (len) 
+        writtenBytes += Write(str, len);
+    return writtenBytes;
+}
+
+size_t Blob::WriteStringBinary16(const char* str, uint32 len)
+{
+    ASSERT(str);
+    if (len == 0)
+        len = strLen(str);
+    ASSERT(len < UINT16_MAX);
+    size_t writtenBytes = Write<uint16>(uint16(len));
+    if (len) 
+        writtenBytes += Write(str, len);
+    return writtenBytes;
+}
 
 

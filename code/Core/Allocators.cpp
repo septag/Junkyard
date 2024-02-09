@@ -77,8 +77,11 @@ struct MemTempStack
     uint16 numStackframes;
 };
 
-struct MemTempContext
+struct alignas(CACHE_LINE_SIZE) MemTempContext
 {
+    atomicUint32 isInUse;  // This is atomic because we are accessing it in the memTempReset thread
+    uint8 _padding1[CACHE_LINE_SIZE - sizeof(atomicUint32)];
+
     Array<MemTempStack> allocStack;
     uint32 generationIdx;   // Just a counter to make temp IDs unique
     uint32 resetCount;
@@ -87,7 +90,7 @@ struct MemTempContext
     size_t peakBytes;
     uint8* buffer;
     size_t bufferSize;
-    alignas(CACHE_LINE_SIZE) atomicUint32 isInUse;  // This is atomic because we are accessing it in the memTempReset thread
+    
     float noresetTime;
     uint32 threadId;
     char threadName[32];
@@ -95,6 +98,8 @@ struct MemTempContext
     bool init;      // is Buffer initialized ?
     bool used;      // Temp allocator is used since last reset ?
     bool debugMode; // Allocate from heap
+
+    uint8 _paddingBottom[53];
 
     ~MemTempContext();
 };
@@ -106,8 +111,8 @@ struct MemState
     Allocator*		 defaultAlloc       = &heapAlloc;
     MemHeapAllocator heapAlloc;
     size_t           pageSize           = sysGetPageSize();
-    Mutex            tempMtx;
     Array<MemTempContext*> tempCtxs; 
+    Mutex            tempMtx;
     bool             captureTempStackTrace;
     bool             enableMemPro;
 
