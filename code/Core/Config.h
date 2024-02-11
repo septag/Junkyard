@@ -62,3 +62,7 @@
 #endif
 
 #define CONFIG_DEV_MODE CONFIG_ENABLE_ASSERT
+
+#if !defined(CONFIG_APP_NAME)
+    #define CONFIG_APP_NAME "Junkyard"
+#endif

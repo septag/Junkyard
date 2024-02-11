@@ -27,6 +27,7 @@
 #include "Log.h"
 #include "BlitSort.h"
 #include "TracyHelper.h"
+#include "Debug.h"
 
 #if PLATFORM_POSIX
     #include <stdlib.h>

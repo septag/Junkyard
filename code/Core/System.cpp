@@ -10,7 +10,7 @@
     #elif PLATFORM_ANDROID
         #include "SystemPosix.cpp"
         #include "SystemAndroid.cpp"
-    #elif PLATFORM_APPLE
+    #elif PLATFORM_OSX
         #include "SystemMac.cpp"
     #else
         #error "Not implemented"

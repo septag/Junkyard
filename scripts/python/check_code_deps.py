@@ -1,3 +1,5 @@
+#!/usr/bin/env python
+
 import argparse
 import sys
 import os
@@ -85,11 +87,12 @@ def check_dependency_for_module(root_dir, module_name):
             print('\t\t{}: {} - line: {}'.format(e[0], e[1], e[2]))
 
 arg_parser = argparse.ArgumentParser(description='')
-arg_parser.add_argument('--codedir', help='Root of the code directory', required=True)
+arg_parser.add_argument('--codedir', help='Root of the code directory', default='../../code')
 args = arg_parser.parse_args(sys.argv[1:])
 
 if not os.path.isdir(args.codedir):
     print('Error:', 'code directory is invalid:', args.codedir)
+    exit(-1)
 
 code_dir = os.path.normpath(os.path.abspath(args.codedir))
 

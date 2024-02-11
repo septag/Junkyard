@@ -10,17 +10,6 @@
 template <typename _T, uint32 _Reserve>
 struct Array;
 
-// TODO: alloca is not a safe function to be used, change all alloca instances to memAllocTemp at some point
-#if PLATFORM_WINDOWS
-    #include <malloc.h> // _alloca
-    #ifdef alloca	
-        #undef alloca
-    #endif
-    #define alloca(_size) _alloca(_size)
-#else
-    #include <alloca.h>	// alloca
-#endif
-
 enum class AllocatorType
 {
     Unknown,

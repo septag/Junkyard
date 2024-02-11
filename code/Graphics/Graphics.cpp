@@ -39,6 +39,7 @@
 #include "../Core/TracyHelper.h"
 #include "../Core/MathAll.h"
 #include "../Core/TracyHelper.h"
+#include "../Core/Debug.h"
 
 #include "../Common/VirtualFS.h"
 #include "../Common/Application.h"

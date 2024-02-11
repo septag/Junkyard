@@ -1,4 +1,4 @@
-#include "Base.h"
+#include "Debug.h"
 
 #if PLATFORM_WINDOWS
 
@@ -493,6 +493,5 @@ bool debugRemedyBG_DeleteAllWatches()
     Blob res = debugRemedyBG_SendCommand(cmdBuffer, &tempAlloc);
     return debugRemedyBG_GetResult(res) == RDBG_COMMAND_RESULT_OK;
 }
-
 
 #endif // PLATFORM_WINDOWS

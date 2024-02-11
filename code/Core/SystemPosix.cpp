@@ -42,7 +42,6 @@ struct alignas(CACHE_LINE_SIZE) MutexImpl
     alignas(CACHE_LINE_SIZE) atomicUint32 spinlock;
     pthread_mutex_t handle;
     uint32 spinCount;
-    uint8 _padding[CACHE_LINE_SIZE - sizeof(pthread_mutex_t) - sizeof(uint32)];
 };
 
 struct SemaphoreImpl

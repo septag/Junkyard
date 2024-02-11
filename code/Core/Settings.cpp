@@ -1,6 +1,7 @@
 #include "Settings.h"
 #include "Allocators.h"
 #include "System.h"
+#include "Debug.h"
 
 #include "External/mgustavsson/ini.h"
 

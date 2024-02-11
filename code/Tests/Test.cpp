@@ -261,6 +261,7 @@ struct AppImpl final : AppCallbacks
         float height = (float)appGetFramebufferHeight();
 
         static Mat4 modelMat = kMat4Ident;
+        MemTempAllocator tmpAlloc;
 
         { // draw something
             PROFILE_ZONE_NAME("DrawSomething", true);
@@ -298,7 +299,7 @@ struct AppImpl final : AppCallbacks
                     const ModelMesh& mesh = model->meshes[IdToIndex(node.meshId)];
 
                     // Buffers
-                    uint64* offsets = (uint64*)alloca(sizeof(uint64)*mesh.numVertexBuffers);
+                    uint64* offsets = tmpAlloc.MallocTyped<uint64>(mesh.numVertexBuffers);
                     memset(offsets, 0x0, sizeof(uint64)*mesh.numVertexBuffers);
                     gfxCmdBindVertexBuffers(0, mesh.numVertexBuffers, mesh.gpuBuffers.vertexBuffers, offsets);
                     gfxCmdBindIndexBuffer(mesh.gpuBuffers.indexBuffer, 0, GfxIndexType::Uint32);
@@ -313,7 +314,7 @@ struct AppImpl final : AppCallbacks
                     }
 
                 }
-            }            
+            }
         }
 
         {

@@ -3,7 +3,6 @@
 #include <stdarg.h> // va_list
 #include <stdio.h>  // puts
 
-#include "Memory.h"
 #include "TracyHelper.h"
 #include "System.h"
 #include "Buffers.h"
@@ -38,9 +37,6 @@ struct LogContext
     LogLevel logLevel = DEFAULT_LOG_LEVEL;
     bool breakOnErrors;
     bool treatWarningsAsErrors;
-#if PLATFORM_ANDROID
-    char appName[32];
-#endif
 };
 
 static LogContext gLog;
@@ -48,11 +44,11 @@ static LogContext gLog;
 // corrosponds to EngineLogLevel
 static const char* kLogEntryTypes[static_cast<uint32>(LogLevel::_Count)] = { 
     "", 
-    "[ERROR] ", 
-    "[WARN] ", 
+    "[ERR] ",
+    "[WRN] ",
     "", 
     "", 
-    "[D] "
+    "[DBG] "
 };
 
 void logSetSettings(LogLevel logLevel, bool breakOnErrors, bool treatWarningsAsErrors)
@@ -98,16 +94,6 @@ static void logPrintToTerminal(const LogEntry& entry)
 }
 
 #if PLATFORM_ANDROID
-void logSetAppNameAndroid(const char* appName)
-{
-    strCopy(gLog.appName, sizeof(gLog.appName), appName);
-}
-
-const char* logGetAppNameAndroid()
-{
-    return gLog.appName;
-}
-
 static void logPrintToAndroidLog(const LogEntry& entry)
 {
     SysAndroidLogType androidLogType;
@@ -120,7 +106,7 @@ static void logPrintToAndroidLog(const LogEntry& entry)
     default:			    androidLogType = SysAndroidLogType::Unknown;
     }
         
-    sysAndroidPrintToLog(androidLogType, gLog.appName, entry.text);
+    sysAndroidPrintToLog(androidLogType, CONFIG_APP_NAME, entry.text);
 }
 #endif // PLATFORM_ANDROID
 

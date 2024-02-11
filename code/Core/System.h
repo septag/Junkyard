@@ -494,8 +494,7 @@ enum class SysWin32Folder
 };
 API char* pathWin32GetFolder(SysWin32Folder folder, char* dst, size_t dstSize);
 
-#elif PLATFORM_ANDROID  
-
+#elif PLATFORM_ANDROID
 typedef struct ANativeActivity ANativeActivity; // <android/native_activity.h>
 
 enum class SysAndroidLogType 
@@ -516,11 +515,6 @@ API JNIEnv* sysAndroidAcquireJniEnv(ANativeActivity* activity);
 API void sysAndroidReleaseJniEnv(ANativeActivity* activity);    
 API JNIEnv* sysAndroidGetJniEnv();
 API Path sysAndroidGetCacheDirectory(ANativeActivity* activity);
-
-#elif PLATFORM_OSX
-
-void sysApplePrintToLog(const char* text);
-
 #endif
 
 //----------------------------------------------------------------------------------------------------------------------

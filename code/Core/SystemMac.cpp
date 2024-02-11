@@ -1,7 +1,7 @@
 #include "System.h"
 
 #if PLATFORM_APPLE
-#include "Memory.h"
+#include "Allocators.h"
 #include "Buffers.h"
 #include "Log.h"
 
@@ -15,8 +15,10 @@
 #include <sys/sysctl.h>
 #include <pthread.h>
 #include <spawn.h>
+#include <signal.h>             // kill
+#include <stdio.h>              // puts
 
-#include <Foundation/Foundation.h>
+//#include <Foundation/Foundation.h>
 
 struct SemaphoreImpl
 {
@@ -119,9 +121,21 @@ void sysGetSysInfo(SysInfo* info)
 {
     memset(info, 0x0, sizeof(*info));
     
-    NSProcessInfo* nsinfo = [NSProcessInfo processInfo];
-    info->coreCount = (uint32)[nsinfo activeProcessorCount];
-    info->physicalMemorySize = (size_t)[nsinfo physicalMemory];
+    {
+        int ncpu;
+        size_t ncpuLen = sizeof(ncpu);
+        if (sysctlbyname("hw.ncpu", &ncpu, &ncpuLen, nullptr, 0) == 0)
+            info->coreCount = (uint32)ncpu;
+    }
+    
+    {
+        uint64 physMem;
+        size_t physMemSize = sizeof(physMem);
+        if (sysctlbyname("hw.memsize", &physMem, &physMemSize, nullptr, 0) == 0)
+            info->physicalMemorySize = physMem;
+    }
+        
+    info->pageSize = sysGetPageSize();
     
     // TODO
 }
@@ -187,12 +201,10 @@ bool SysProcess::Run(const char* cmdline, SysProcessFlags flags, const char* cwd
     }
     
     if (cwd) {
-        if (@available(macOS 10.15, *)) {
+        if (__builtin_available(macOS 10.15, *))
             posix_spawn_file_actions_addchdir_np(&fileActions, cwd);
-        }
-        else {
+        else
             ASSERT_MSG(0, "Not implemented for versions less than macOS 10.15");
-        }
     }
     
     // split command-line arguments
@@ -309,8 +321,8 @@ bool sysIsDebuggerPresent()
 
     // Retrieve the process information
     if (sysctl(mib, 4, &info, &size, NULL, 0) == -1) {
-        NSLog(@"Failed to retrieve process information.");
-        return NO;
+        puts("Failed to retrieve process information.");
+        return false;
     }
 
     // Check if the P_TRACED flag is set, indicating a debugger is attached
@@ -319,7 +331,7 @@ bool sysIsDebuggerPresent()
 
 void sysApplePrintToLog(const char* text)
 {
-    NSLog(@"%s", text);
+    puts(text);
 }
 
 char* pathGetHomeDir(char* dst, size_t dstSize)

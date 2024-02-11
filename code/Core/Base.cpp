@@ -1,6 +1,24 @@
 #include "Base.h"
 
+#if PLATFORM_APPLE
+    #define strcpy_s(dest, size, src)  strlcpy(dest, src, size)
+    #define strcat_s(dest, size, src)  strlcat(dest, src, size)
+#elif PLATFORM_POSIX
+    #ifndef __STDC_LIB_EXT1__
+        #error "C11 is required for bounds-checking string functions"
+    #endif
+    // Ensure bounds-checking interface for string functions (string.h)
+    #define __STDC_WANT_LIB_EXT1__ 1
+#endif
+
 #include <time.h>   // time
+#include <stdio.h>  // puts
+#include <string.h>
+#include <stdarg.h>
+
+#if PLATFORM_ANDROID
+    #include <android/log.h>
+#endif
 
 ////////////////////////////////////////////////////////////////////////////////////////////////
 // Random
@@ -21,6 +39,9 @@ NO_INLINE static RandomContextCtor& RandomCtx()
     static thread_local RandomContextCtor randomCtx;
     return randomCtx; 
 }
+
+static AssertFailCallback gAssertFailCallback;
+static void* gAssertFailUserData;
 
 // Convert a randomized uint32_t value to a float value x in the range 0.0f <= x < 1.0f. Contributed by Jonatan Hedborg
 PRAGMA_DIAGNOSTIC_PUSH()
@@ -112,3 +133,39 @@ int randomNewIntInRange(int _min, int _max)
 {
     return randomNewIntInRange(&RandomCtx().ctx, _min, _max);
 }
+
+void assertDebugMessage(const char* fmt, ...)
+{
+    char msgFmt[4972];
+    char msg[4972];
+    
+    va_list args;
+    va_start(args, fmt);
+    vsnprintf(msgFmt, sizeof(msgFmt), fmt, args);
+    va_end(args);
+
+    strcpy_s(msg, sizeof(msg), "[ASSERT_FAIL] ");
+    strcat_s(msg, sizeof(msg), msgFmt);
+    
+    puts(msg);
+
+    #if PLATFORM_WINDOWS
+    strConcat(msg, sizeof(msg), "\n");
+    sysWin32PrintToDebugger(msg);
+    #elif PLATFORM_ANDROID
+    __android_log_write(ANDROID_LOG_FATAL, CONFIG_APP_NAME, msg);
+    #endif
+}
+
+void assertSetFailCallback(AssertFailCallback callback, void* userdata)
+{
+    gAssertFailCallback = callback;
+    gAssertFailUserData = userdata;
+}
+
+void assertRunFailCallback()
+{
+    if (gAssertFailCallback)
+        gAssertFailCallback(gAssertFailUserData);
+}
+

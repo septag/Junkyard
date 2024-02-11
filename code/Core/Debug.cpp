@@ -1,47 +1,21 @@
-#include "Base.h"
-
-#ifdef BUILD_UNITY
-    #if PLATFORM_WINDOWS
-        #include "DebugWin.cpp"
-    #elif PLATFORM_ANDROID  
-        #include "DebugAndroid.cpp"
-    #endif
-#endif 
+#include "Debug.h"
 
 #include <stdarg.h> // va_list/va_start
 #include <stdio.h>  // puts
 
 #include "System.h"         // sysAndroidPrintXXX/sysWinDebugger..
 #include "Buffers.h"
-#include "Log.h"
+#include "StringUtil.h"
+
+#ifdef BUILD_UNITY
+    #if PLATFORM_WINDOWS
+        #include "DebugWin.cpp"
+    #elif PLATFORM_ANDROID  
+        #include "DebugClang.cpp"
+    #endif
+#endif 
 
 static bool gDebugCaptureStacktraceForFiberProtector;
-
-void debugBreakMessage(const char* fmt, ...)
-{
-    char msgFmt[4972];
-    char msg[4972];
-    
-    va_list args;
-    va_start(args, fmt);
-    strPrintFmtArgs(msgFmt, sizeof(msgFmt), fmt, args);
-    va_end(args);
-
-    strConcat(strCopy(msg, sizeof(msg), "[ASSERT_FAIL] "), sizeof(msg), msgFmt);
-    
-    puts(msg);
-
-    #if PLATFORM_WINDOWS
-        strConcat(msg, sizeof(msg), "\n");
-        sysWin32PrintToDebugger(msg);
-    #elif PLATFORM_ANDROID
-        sysAndroidPrintToLog(SysAndroidLogType::Debug, logGetAppNameAndroid(), msg);
-    #elif PLATFORM_APPLE
-        sysApplePrintToLog(msg);
-    #else
-        debugPrint(msg);
-    #endif
-}
 
 void debugPrint(const char* text)
 {
@@ -49,8 +23,6 @@ void debugPrint(const char* text)
         sysWin32PrintToDebugger(text);
     #elif PLATFORM_ANDROID
         sysAndroidPrintToLog(SysAndroidLogType::Debug, logGetAppNameAndroid(), text);
-    #elif PLATFORM_APPLE
-        sysApplePrintToLog(text);
     #else
         puts(text);
     #endif
@@ -144,16 +116,22 @@ void debugFiberScopeProtector_Pop(uint16 id)
 
 void debugFiberScopeProtector_Check()
 {
+    char msg[512];
+    
     if (FiberProtectorCtx().items.Count()) {
-        debugBreakMessage("Found %u protected items in the fiber that are not destructed in the scope:", FiberProtectorCtx().items.Count());
+        strPrintFmt(msg, sizeof(msg), "Found %u protected items in the fiber that are not destructed in the scope:", FiberProtectorCtx().items.Count());
+        debugPrint(msg);
         
         DebugStacktraceEntry stacktraces[kDebugMaxFiberProtectorStackframes];
         for (const DebugFiberProtectorThreadContext::Item& item : FiberProtectorCtx().items) {
-            debugBreakMessage("\t%s:", item.name);
+            strPrintFmt(msg, sizeof(msg), "\t%s:", item.name);
+            debugPrint(msg);
             if (item.numStackframes) {
                 debugResolveStacktrace(item.numStackframes, item.stackframes, stacktraces);
-                for (uint16 i = 0; i < item.numStackframes; i++)
-                    debugBreakMessage("\t\t%s(%u): %s", stacktraces[i].filename, stacktraces[i].line, stacktraces[i].name);
+                for (uint16 i = 0; i < item.numStackframes; i++) {
+                    strPrintFmt(msg, sizeof(msg), "\t\t%s(%u): %s", stacktraces[i].filename, stacktraces[i].line, stacktraces[i].name);
+                    debugPrint(msg);
+                }
             }
         }
 

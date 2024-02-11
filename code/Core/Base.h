@@ -555,7 +555,7 @@ struct Pair
         first(a), second(b) {}
 };
 
-//------------------------------------------------------------------------
+//----------------------------------------------------------------------------------------------------------------------
 // Random generation
 struct RandomContext
 {
@@ -618,9 +618,50 @@ struct alignas(CACHE_LINE_SIZE) AtomicLock
     #define Main main
 #endif
 
-#include "Debug.h"
+//----------------------------------------------------------------------------------------------------------------------
+// ASSERT implementation
+#if PLATFORM_ANDROID
+    #include <signal.h> // raise
+#endif
 
-//------------------------------------------------------------------------
+using AssertFailCallback = void(*)(void* userData);
+API void assertSetFailCallback(AssertFailCallback callback, void* userdata);
+API void assertRunFailCallback();
+API void assertDebugMessage(const char* fmt, ...);
+
+#if PLATFORM_ANDROID
+    #define DEBUG_BREAK() raise(SIGINT)
+#elif COMPILER_MSVC
+    #define DEBUG_BREAK() __debugbreak()
+#elif COMPILER_CLANG
+    #if (__has_builtin(__builtin_debugtrap))
+        #define DEBUG_BREAK() __builtin_debugtrap()
+    #else
+        #define DEBUG_BREAK() __builtin_trap()    // This cannot be used in constexpr functions
+    #endif
+#elif COMPILER_GCC
+    #define DEBUG_BREAK() __builtin_trap()
+#endif
+
+// Assert macros
+// ASSERT: regular assert
+// ASSERT_MSG: Assert with a formatted message to debug output
+// ASSERT_ALWAYS: Assert even in release builds. Also with a formatted message
+#ifdef ASSERT
+    #undef ASSERT
+#endif
+
+#if CONFIG_ENABLE_ASSERT
+    #define ASSERT(_expr) do { if (!(_expr)) { assertDebugMessage(#_expr); DEBUG_BREAK(); }} while(0)
+    #define ASSERT_MSG(_expr, ...) do { if (!(_expr)) { assertDebugMessage(__VA_ARGS__); DEBUG_BREAK(); }} while(0)
+#else
+    #define ASSERT(_expr)
+    #define ASSERT_MSG(_expr, ...)
+#endif
+
+#define ASSERT_ALWAYS(_expr, ...) do { if (!(_expr)) { assertDebugMessage(__VA_ARGS__); DEBUG_BREAK(); }} while(0)
+
+//----------------------------------------------------------------------------------------------------------------------
 // RelativePointer: https://septag.dev/blog/posts/junkyard-relativeptr/
 template <typename _T>
 struct RelativePtr
@@ -657,7 +698,7 @@ private:
 };
 
 
-//------------------------------------------------------------------------
+//----------------------------------------------------------------------------------------------------------------------
 // Span: holds pointer/count pairs. useful for passing around slices of data 
 template <typename _T>
 struct Span
