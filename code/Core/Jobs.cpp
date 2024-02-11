@@ -40,11 +40,11 @@ namespace _limits
 // This has the danger of overgrowing if misused, so we have a limit check for that
 struct JobsTracyStringPool
 {
+    AtomicLock lock;
     char* buffer = nullptr;
     uint32 size = 0;
     uint32 offset = 0;
     HashTable<uint32> stringToOffset;
-    AtomicLock lock;
 
     JobsTracyStringPool();
     ~JobsTracyStringPool();

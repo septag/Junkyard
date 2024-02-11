@@ -1,25 +1,6 @@
-#include <stdlib.h>
-
 #include "Allocators.h"
 
-// MemPro
-#if MEMPRO_ENABLED
-    #define OVERRIDE_NEW_DELETE
-    #define WAIT_FOR_CONNECT true
-    #define MEMPRO_BACKTRACE(_stackframes, _maxStackframes, _hashPtr) debugCaptureStacktrace(_stackframes, _maxStackframes, 3, _hashPtr)
-    #include "External/mempro/MemPro.cpp"
-
-    #define MEMPRO_TRACK_REALLOC(oldPtr, ptr, size) \
-        do { if (oldPtr)  { \
-        MEMPRO_TRACK_FREE(oldPtr);   \
-        } \
-        MEMPRO_TRACK_ALLOC(ptr, size);} while(0)
-#else
-    #define MEMPRO_TRACK_ALLOC(ptr, size) 
-    #define MEMPRO_TRACK_REALLOC(oldPtr, ptr, size)
-    #define MEMPRO_TRACK_FREE(ptr)
-#endif
-//
+#include <stdlib.h>
 
 #include "System.h"
 #include "Buffers.h"
@@ -28,12 +9,6 @@
 #include "BlitSort.h"
 #include "TracyHelper.h"
 #include "Debug.h"
-
-#if PLATFORM_POSIX
-    #include <stdlib.h>
-#else
-    #include <malloc.h>
-#endif
 
 #include "External/tlsf/tlsf.h"
 PRAGMA_DIAGNOSTIC_PUSH()
@@ -44,29 +19,12 @@ PRAGMA_DIAGNOSTIC_IGNORED_MSVC(4127)
 #include "External/tlsf/tlsf.c"
 PRAGMA_DIAGNOSTIC_POP()
 
-#if PLATFORM_WINDOWS
-    #define aligned_malloc(_align, _size) _aligned_malloc(_size, _align)
-    #define aligned_realloc(_ptr, _align, _size) _aligned_realloc(_ptr, _size, _align)
-    #define aligned_free(_ptr) _aligned_free(_ptr)
-#else
-    INLINE void* aligned_malloc(uint32 align, size_t size);
-    INLINE void* aligned_realloc(void*, uint32, size_t);
-    INLINE void  aligned_free(void* ptr);
-#endif
-
 static constexpr size_t kTempMaxBufferSize = kGB;
 static constexpr uint32 kTempFramePeaksCount = 4;
 static constexpr uint32 kTempPageSize = 256*kKB;
 static constexpr float  kTempValidateResetTime = 5.0f;
 static constexpr uint32 kTempMaxStackframes = 8;
 
-struct MemHeapAllocator final : Allocator 
-{
-    void* Malloc(size_t size, uint32 align) override;
-    void* Realloc(void* ptr, size_t size, uint32 align) override;
-    void  Free(void* ptr, uint32 align) override;
-    AllocatorType GetType() const override { return AllocatorType::Heap; }
-};
 
 struct MemTempStack
 {
@@ -105,68 +63,22 @@ struct alignas(CACHE_LINE_SIZE) MemTempContext
     ~MemTempContext();
 };
 
-struct MemState
+struct MemTempData
 {
-    MemFailCallback  memFailFn			= nullptr;
-    void* 			 memFailUserdata	= nullptr;
-    Allocator*		 defaultAlloc       = &heapAlloc;
-    MemHeapAllocator heapAlloc;
-    size_t           pageSize           = sysGetPageSize();
-    Array<MemTempContext*> tempCtxs; 
     Mutex            tempMtx;
+    size_t           pageSize = sysGetPageSize();
+    Array<MemTempContext*> tempCtxs; 
     bool             captureTempStackTrace;
-    bool             enableMemPro;
 
-    MemState()  { tempMtx.Initialize(); ASSERT(kTempPageSize % pageSize == 0); }
-    ~MemState() { tempMtx.Release(); tempCtxs.Free(); }
+    MemTempData()  { tempMtx.Initialize(); ASSERT(kTempPageSize % pageSize == 0); }
+    ~MemTempData() { tempMtx.Release(); tempCtxs.Free(); }
 };
 
-static MemState gMem;
+static MemTempData gMemTemp;
 NO_INLINE static MemTempContext& MemGetTempContext() 
 { 
     static thread_local MemTempContext tempCtx;
     return tempCtx; 
-}
-
-void memSetFailCallback(MemFailCallback callback, void* userdata)
-{
-    gMem.memFailFn = callback;
-    gMem.memFailUserdata = userdata;
-}
-
-void memRunFailCallback()
-{
-    if (gMem.memFailFn) {
-        gMem.memFailFn(gMem.memFailUserdata);
-    }
-}
-
-void* memAlignPointer(void* ptr, size_t extra, uint32 align)
-{
-    union {
-        void* ptr;
-        uintptr_t addr;
-    } un;
-    un.ptr = ptr;
-    uintptr_t unaligned = un.addr + extra;    // space for header
-    uintptr_t aligned = AlignValue<uintptr_t>(unaligned, align);
-    un.addr = aligned;
-    return un.ptr;
-}
-
-Allocator* memDefaultAlloc()
-{
-    return static_cast<Allocator*>(&gMem.heapAlloc);
-}
-
-void memSetDefaultAlloc(Allocator* alloc)
-{
-    gMem.defaultAlloc = alloc != nullptr ? alloc : &gMem.heapAlloc;
-}
-
-void memEnableMemPro(bool enable)
-{
-    gMem.enableMemPro = enable;
 }
 
 void memTempSetDebugMode(bool enable)
@@ -177,7 +89,7 @@ void memTempSetDebugMode(bool enable)
 
 void memTempSetCaptureStackTrace(bool capture)
 {
-    gMem.captureTempStackTrace = capture;
+    gMemTemp.captureTempStackTrace = capture;
 }
 
 void memTempGetStats(Allocator* alloc, MemTransientAllocatorStats** outStats, uint32* outCount)
@@ -186,16 +98,16 @@ void memTempGetStats(Allocator* alloc, MemTransientAllocatorStats** outStats, ui
     ASSERT(outStats);
     ASSERT(outCount);
 
-    MutexScope mtx(gMem.tempMtx);
-    if (gMem.tempCtxs.Count())
-        *outStats = memAllocTyped<MemTransientAllocatorStats>(gMem.tempCtxs.Count(), alloc);
-    *outCount = gMem.tempCtxs.Count();
+    MutexScope mtx(gMemTemp.tempMtx);
+    if (gMemTemp.tempCtxs.Count())
+        *outStats = memAllocTyped<MemTransientAllocatorStats>(gMemTemp.tempCtxs.Count(), alloc);
+    *outCount = gMemTemp.tempCtxs.Count();
 
     for (uint32 i = 0; i < *outCount; i++) {
-        (*outStats)[i].curPeak = gMem.tempCtxs[i]->curFramePeak;
-        (*outStats)[i].maxPeak = gMem.tempCtxs[i]->peakBytes;
-        (*outStats)[i].threadId = gMem.tempCtxs[i]->threadId;
-        (*outStats)[i].threadName = gMem.tempCtxs[i]->threadName;
+        (*outStats)[i].curPeak = gMemTemp.tempCtxs[i]->curFramePeak;
+        (*outStats)[i].maxPeak = gMemTemp.tempCtxs[i]->peakBytes;
+        (*outStats)[i].threadId = gMemTemp.tempCtxs[i]->threadId;
+        (*outStats)[i].threadName = gMemTemp.tempCtxs[i]->threadName;
     }
 }
 
@@ -218,9 +130,9 @@ MemTempId memTempPushId()
     }
 
     if (!MemGetTempContext().used) {
-        MutexScope mtx(gMem.tempMtx);
-        if (gMem.tempCtxs.FindIf([ctx = &MemGetTempContext()](const MemTempContext* tmpCtx)->bool { return ctx == tmpCtx; }) == UINT32_MAX) {
-            gMem.tempCtxs.Push(&MemGetTempContext());
+        MutexScope mtx(gMemTemp.tempMtx);
+        if (gMemTemp.tempCtxs.FindIf([ctx = &MemGetTempContext()](const MemTempContext* tmpCtx)->bool { return ctx == tmpCtx; }) == UINT32_MAX) {
+            gMemTemp.tempCtxs.Push(&MemGetTempContext());
             MemGetTempContext().threadId = threadGetCurrentId();
             threadGetCurrentThreadName(MemGetTempContext().threadName, sizeof(MemGetTempContext().threadName));
         }
@@ -240,7 +152,7 @@ MemTempId memTempPushId()
     };
 
     if constexpr(!CONFIG_FINAL_BUILD) {
-        if (gMem.captureTempStackTrace)
+        if (gMemTemp.captureTempStackTrace)
             memStack.numStackframes = debugCaptureStacktrace(memStack.stacktrace, kTempMaxStackframes, 2);
     }
 
@@ -260,7 +172,7 @@ void memTempPopId(MemTempId id)
     MemTempStack memStack = MemGetTempContext().allocStack.PopLast();
     if (memStack.debugPointers.Count()) {
         for (_private::MemDebugPointer p : memStack.debugPointers)
-            gMem.defaultAlloc->Free(p.ptr, p.align);
+            memDefaultAlloc()->Free(p.ptr, p.align);
         memStack.debugPointers.Free();
     }
     atomicExchange32Explicit(&MemGetTempContext().isInUse, 0, AtomicMemoryOrder::Release);
@@ -313,7 +225,7 @@ void* memReallocTemp(MemTempId id, void* ptr, size_t size, uint32 align)
             size_t newSize = Clamp(MemGetTempContext().bufferSize << 1, endOffset, kTempMaxBufferSize);
 
             // Align grow size to page size for virtual memory commit
-            size_t growSize = AlignValue(newSize - MemGetTempContext().bufferSize, gMem.pageSize);
+            size_t growSize = AlignValue(newSize - MemGetTempContext().bufferSize, gMemTemp.pageSize);
             memVirtualCommit(MemGetTempContext().buffer + MemGetTempContext().bufferSize, growSize);
             MemGetTempContext().bufferSize += growSize;
         }
@@ -338,9 +250,9 @@ void* memReallocTemp(MemTempId id, void* ptr, size_t size, uint32 align)
     }
     else {
         if (ptr == nullptr)
-            ptr = gMem.defaultAlloc->Malloc(size, align);
+            ptr = memDefaultAlloc()->Malloc(size, align);
         else
-            ptr = gMem.defaultAlloc->Realloc(ptr, size, align);
+            ptr = memDefaultAlloc()->Realloc(ptr, size, align);
 
         if (ptr) {
             memStack.offset += size;
@@ -364,7 +276,7 @@ MemTempContext::~MemTempContext()
     if (debugMode) {
         for (MemTempStack& memStack : allocStack) {
             for (_private::MemDebugPointer p : memStack.debugPointers)
-                gMem.defaultAlloc->Free(p.ptr, p.align);
+                memDefaultAlloc()->Free(p.ptr, p.align);
             memStack.debugPointers.Free();
         }
     }
@@ -389,9 +301,9 @@ void* memAllocTempZero(MemTempId id, size_t size, uint32 align)
 
 void memTempReset(float dt, bool resetValidation)
 {
-    MutexScope mtx(gMem.tempMtx);
-    for (uint32 i = 0; i < gMem.tempCtxs.Count(); i++) {
-        MemTempContext* ctx = gMem.tempCtxs[i];
+    MutexScope mtx(gMemTemp.tempMtx);
+    for (uint32 i = 0; i < gMemTemp.tempCtxs.Count(); i++) {
+        MemTempContext* ctx = gMemTemp.tempCtxs[i];
 
         if (atomicLoad32Explicit(&ctx->isInUse, AtomicMemoryOrder::Acquire)) 
             continue;
@@ -415,7 +327,7 @@ void memTempReset(float dt, bool resetValidation)
                     }
 
                     maxPeakSize = Max<size_t>(kTempPageSize, maxPeakSize);
-                    maxPeakSize = AlignValue(maxPeakSize, gMem.pageSize);
+                    maxPeakSize = AlignValue(maxPeakSize, gMemTemp.pageSize);
                     if (maxPeakSize > MemGetTempContext().bufferSize) {
                         size_t growSize = maxPeakSize - MemGetTempContext().bufferSize;
                         memVirtualCommit(MemGetTempContext().buffer + MemGetTempContext().bufferSize, growSize);
@@ -436,7 +348,7 @@ void memTempReset(float dt, bool resetValidation)
                     ctx->noresetTime = 0;
 
                     if constexpr(!CONFIG_FINAL_BUILD) {
-                        if (gMem.captureTempStackTrace) {
+                        if (gMemTemp.captureTempStackTrace) {
                             DebugStacktraceEntry entries[kTempMaxStackframes];
                             uint32 index = 0;
                             logDebug("Callstacks for each remaining MemTempPush:");
@@ -452,77 +364,6 @@ void memTempReset(float dt, bool resetValidation)
                 }
             }
         } // MemTempContext->used
-    }
-}
-
-inline void* MemHeapAllocator::Malloc(size_t size, uint32 align)
-{
-    void* ptr;
-    if (align <= CONFIG_MACHINE_ALIGNMENT) {
-        ptr = malloc(size);
-        ASSERT((uintptr_t(ptr) % CONFIG_MACHINE_ALIGNMENT) == 0);   // Validate machine alignment with malloc
-    }
-    else {
-        align = Max(align, CONFIG_MACHINE_ALIGNMENT);
-        ptr = aligned_malloc(align, size);
-    }
-    if (!ptr) {
-        MEMORY_FAIL();
-        return nullptr;
-    }
-
-    TracyCAlloc(ptr, size);        
-
-    if constexpr (MEMPRO_ENABLED) {
-        if (gMem.enableMemPro)
-            MEMPRO_TRACK_ALLOC(ptr, size);
-    }
-    return ptr;
-}
-    
-inline void* MemHeapAllocator::Realloc(void* ptr, size_t size, uint32 align)
-{
-    [[maybe_unused]] void* freePtr = ptr;
-
-    if (align <= CONFIG_MACHINE_ALIGNMENT) {
-        ptr = realloc(ptr, size);
-    }
-    else {
-        align = Max(align, CONFIG_MACHINE_ALIGNMENT);
-        ptr = aligned_realloc(ptr, align, size);
-    }
-    
-    if (!ptr) {
-        MEMORY_FAIL();
-        return nullptr;
-    }
-    
-    TracyCRealloc(freePtr, ptr, size);
-
-    if constexpr (MEMPRO_ENABLED) {
-        if (gMem.enableMemPro) 
-            MEMPRO_TRACK_REALLOC(freePtr, ptr, size);
-    }
-   
-    return ptr;
-}
-    
-inline void MemHeapAllocator::Free(void* ptr, uint32 align)
-{
-    if (ptr != nullptr) {
-        if (align <= CONFIG_MACHINE_ALIGNMENT) {
-            free(ptr);
-        }
-        else {
-            aligned_free(ptr);
-        }
-    
-        TracyCFree(ptr);
-
-        if constexpr (MEMPRO_ENABLED) {
-            if (gMem.enableMemPro) 
-                MEMPRO_TRACK_FREE(ptr);
-        }
     }
 }
 
@@ -545,7 +386,7 @@ void MemBumpAllocatorBase::Initialize(size_t reserveSize, size_t pageSize, bool 
         mReserveSize = reserveSize;
     }
     else {
-        mDebugPointers = NEW(gMem.defaultAlloc, Array<_private::MemDebugPointer>);
+        mDebugPointers = NEW(memDefaultAlloc(), Array<_private::MemDebugPointer>);
     }
 }
 
@@ -559,9 +400,9 @@ void MemBumpAllocatorBase::Release()
     
     if (mDebugMode) {
         for (_private::MemDebugPointer p : *mDebugPointers)
-            gMem.defaultAlloc->Free(p.ptr, p.align);
+            memDefaultAlloc()->Free(p.ptr, p.align);
         mDebugPointers->Free();
-        memFree(mDebugPointers, gMem.defaultAlloc);
+        memFree(mDebugPointers, memDefaultAlloc());
     }
 }
 
@@ -637,9 +478,9 @@ void* MemBumpAllocatorBase::Realloc(void* ptr, size_t size, uint32 align)
     }
     else {
         if (ptr == nullptr)
-            ptr = gMem.defaultAlloc->Malloc(size, align);
+            ptr = memDefaultAlloc()->Malloc(size, align);
         else
-            ptr = gMem.defaultAlloc->Realloc(ptr, size, align);
+            ptr = memDefaultAlloc()->Realloc(ptr, size, align);
 
         if (ptr)
             mDebugPointers->Push(_private::MemDebugPointer {ptr, align});
@@ -666,7 +507,7 @@ void MemBumpAllocatorBase::Reset()
         mOffset = 0;
 
         for (_private::MemDebugPointer& dbgPtr : *mDebugPointers) 
-            gMem.defaultAlloc->Free(dbgPtr.ptr, dbgPtr.align);
+            memDefaultAlloc()->Free(dbgPtr.ptr, dbgPtr.align);
         mDebugPointers->Clear();
     }
 }
@@ -792,10 +633,7 @@ void* MemTlsfAllocator::Malloc(size_t size, uint32 align)
 
             TracyCAlloc(ptr, size);
 
-            if constexpr (MEMPRO_ENABLED) {
-                if (gMem.enableMemPro)
-                    MEMPRO_TRACK_ALLOC(ptr, size);
-            }
+            memTrackMalloc(ptr, size);
             return ptr;
         }
         else {
@@ -804,7 +642,7 @@ void* MemTlsfAllocator::Malloc(size_t size, uint32 align)
         }
     }
     else {
-        return gMem.defaultAlloc->Malloc(size, align);
+        return memDefaultAlloc()->Malloc(size, align);
     }
 }
 
@@ -822,10 +660,7 @@ void* MemTlsfAllocator::Realloc(void* ptr, size_t size, uint32 align)
             mAllocatedSize += tlsf_block_size(ptr);
             TracyCRealloc(freePtr, ptr, size);
 
-            if constexpr (MEMPRO_ENABLED) {
-                if (gMem.enableMemPro)
-                    MEMPRO_TRACK_REALLOC(freePtr, ptr, size);
-            }
+            memTrackRealloc(freePtr, ptr, size);
             return ptr;
         }
         else {
@@ -834,7 +669,7 @@ void* MemTlsfAllocator::Realloc(void* ptr, size_t size, uint32 align)
         }
     }
     else {
-        return gMem.defaultAlloc->Realloc(ptr, size, align);
+        return memDefaultAlloc()->Realloc(ptr, size, align);
     }
 }
 
@@ -847,15 +682,11 @@ void MemTlsfAllocator::Free(void* ptr, uint32 align)
             mAllocatedSize -= blockSize;
             tlsf_free(mTlsf, ptr);
             TracyCFree(ptr);
-
-            if constexpr (MEMPRO_ENABLED) {
-                if (gMem.enableMemPro)
-                    MEMPRO_TRACK_FREE(ptr);
-            }
+            memTrackFree(ptr);
         }
     }
     else {
-        return gMem.defaultAlloc->Free(ptr, align);
+        return memDefaultAlloc()->Free(ptr, align);
     }
 }
 
@@ -963,58 +794,3 @@ AllocatorType MemThreadSafeAllocator::GetType() const
     return mAlloc->GetType();
 }
 
-//------------------------------------------------------------------------
-// Custom implementation for aligned allocations
-#if !PLATFORM_WINDOWS
-INLINE void* aligned_malloc(uint32 align, size_t size)
-{
-    ASSERT(align >= CONFIG_MACHINE_ALIGNMENT);
-    
-    size_t total = size + align + sizeof(uint32);
-    uint8* ptr = (uint8*)malloc(total);
-    if (!ptr)
-        return nullptr;
-    uint8* aligned = (uint8*)memAlignPointer(ptr, sizeof(uint32), align);
-    uint32* header = (uint32*)aligned - 1;
-    *header = PtrToInt<uint32>((void*)(aligned - ptr));  // Save the offset needed to move back from aligned pointer
-    return aligned;
-}
-
-INLINE void* aligned_realloc(void* ptr, uint32 align, size_t size)
-{
-    ASSERT(align >= CONFIG_MACHINE_ALIGNMENT);
-
-    if (ptr) {
-        uint8* aligned = (uint8*)ptr;
-        uint32 offset = *((uint32*)aligned - 1);
-        ptr = aligned - offset;
-
-        size_t total = size + align + sizeof(uint32);
-        ptr = realloc(ptr, total);
-        if (!ptr)
-            return nullptr;
-        uint8* newAligned = (uint8*)memAlignPointer(ptr, sizeof(uint32), align);
-        if (newAligned == aligned)
-            return aligned;
-
-        aligned = (uint8*)ptr + offset;
-        memmove(newAligned, aligned, size);
-        uint32* header = (uint32*)newAligned - 1;
-        *header = PtrToInt<uint32>((void*)(newAligned - (uint8*)ptr));
-        return newAligned;
-    }
-    else {
-        return aligned_malloc(align, size);
-    }
-}
-
-INLINE void aligned_free(void* ptr)
-{
-    if (ptr) {
-        uint8* aligned = (uint8*)ptr;
-        uint32* header = (uint32*)aligned - 1;
-        ptr = aligned - *header;
-        free(ptr);
-    }
-}
-#endif  // !PLATFORM_WINDOWS

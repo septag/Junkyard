@@ -27,7 +27,6 @@
 //#define VOLK_VULKAN_H_PATH "../External/vulkan/include/vulkan.h"
 #include "../External/volk/volk.h"
 
-#include "../Core/Allocators.h"
 #include "../Core/StringUtil.h"
 #include "../Core/System.h"
 #include "../Core/Hash.h"
@@ -4597,18 +4596,19 @@ static constexpr const uint32 kProfileMaxQueries = 64*1024;
 
 struct GfxProfileQueryContext
 {
-    uint8 id;
-    VkQueryPool queryPool;
     AtomicLock queueLock;
-    uint32 queryCount;
+    VkQueryPool queryPool;
     
     uint64 deviation;
     int64 prevCalibration;
     int64 qpcToNs;
+
+    uint32 queryCount;
     uint32 head;
     uint32 tail;
     uint32 oldCount;
     int64* res;
+    uint8 id;
 };
 
 struct GfxProfileState

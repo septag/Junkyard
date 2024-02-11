@@ -13,7 +13,8 @@
 //  - MEMPRO_ENABLED (default=0): Enables MemPro integration (http://www.puredevsoftware.com/mempro/index.htm)
 //  - CONFIG_VALIDATE_IO_READ_WRITES (default=1): Validates IO read/writes with ASSERT to not get truncated 
 //  - CONFIG_ENABLE_ASSERT (default=1 on DEBUG and none-final, otherwise 0): Enables assertions checks, with the exception of ASSERT_ALWAYS
-// 
+//  - TRACY_ENABLE: comment/uncomment this macro to enable Tracy profiler. This macro is already defined in "ReleaseDev" config
+//
 
 #if !defined(CONFIG_FINAL_BUILD)
     #define CONFIG_FINAL_BUILD 0
@@ -66,3 +67,5 @@
 #if !defined(CONFIG_APP_NAME)
     #define CONFIG_APP_NAME "Junkyard"
 #endif
+
+// #define TRACY_ENABLE

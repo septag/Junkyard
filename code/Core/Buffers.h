@@ -31,7 +31,9 @@
 //        
 //  PoolBuffer: Fast pool memory allocator with Fixed sized elements
 //              Pools can grow by adding pages implicitly when calling `New`. For that, you need to provide allocator to the pool-buffer instead of pre-allocated pointer/size pair.
-//              
+//
+
+// TODO: This is a very commonly used header. If would be cool if we can remove the dependency to Allocators.h here
 #include "Allocators.h"
 
 //------------------------------------------------------------------------

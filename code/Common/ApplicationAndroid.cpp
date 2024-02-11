@@ -17,6 +17,7 @@
 #include "../Core/Settings.h"
 #include "../Core/Buffers.h"
 #include "../Core/Log.h"
+#include "../Core/Debug.h"
 
 #include "VirtualFS.h"
 #include "RemoteServices.h"

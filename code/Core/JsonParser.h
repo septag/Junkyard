@@ -1,10 +1,6 @@
 #pragma once
 
-#include "External/cj5/cj5.h"
-
 #include "Base.h"
-#include "Allocators.h"
-
 #include "MathTypes.h"
 
 struct JsonContext;
@@ -15,27 +11,14 @@ struct JsonErrorLocation
     uint32 col;
 };
 
-struct JsonContext
-{
-    cj5_result r;
-    Allocator* alloc;
-};
-
-// Returns number of tokens needed for 'jsonParse'
-// Returns 0 if there was an error parsing the file
-API uint32 jsonGetTokenCount(const char* json5, uint32 json5Len);
-
-API bool jsonParse(JsonContext* ctx, const char* json5, uint32 json5Len, Allocator* alloc = memDefaultAlloc());
-API bool jsonParse(JsonContext* ctx, const char* json5, uint32 json5Len, cj5_token* tokens, uint32 maxTokens);
+API JsonContext* jsonParse(const char* json5, uint32 json5Len, JsonErrorLocation* outErrLoc, Allocator* alloc = memDefaultAlloc());
 API void jsonDestroy(JsonContext* ctx);
-
-API JsonErrorLocation jsonParseGetErrorLocation(JsonContext* ctx);
 
 struct JsonNode
 {
     JsonNode() = default;
-    explicit JsonNode(JsonContext& _ctx);
-    explicit JsonNode(JsonContext& _ctx, int _tokenId, int _itemIndex = 0);
+    explicit JsonNode(JsonContext* _ctx);
+    explicit JsonNode(JsonContext* _ctx, int _tokenId, int _itemIndex = 0);
 
     bool HasChild(const char* _childNode) const;    
 
@@ -67,9 +50,53 @@ private:
     int mItemIndex = 0;
 };
 
-//------------------------------------------------------------------------
-inline JsonNode::JsonNode(JsonContext& _ctx) : mCtx(&_ctx), mTokenId(0), mItemIndex(0) {}
-inline JsonNode::JsonNode(JsonContext& _ctx, int _tokenId, int _itemIndex) : mCtx(&_ctx), mTokenId(_tokenId), mItemIndex(_itemIndex) {}
+//----------------------------------------------------------------------------------------------------------------------
+// fwd decls from cj5.h
+typedef struct cj5_result cj5_result;
+extern "C" {
+    int cj5_seek(cj5_result* r, int parent_id, const char* key);
+    int cj5_seek_hash(cj5_result* r, int parent_id, const uint32_t key_hash);
+    int cj5_seek_recursive(cj5_result* r, int parent_id, const char* key);
+    const char* cj5_get_string(cj5_result* r, int id, char* str, int max_str);
+    double cj5_get_double(cj5_result* r, int id);
+    float cj5_get_float(cj5_result* r, int id);
+    int cj5_get_int(cj5_result* r, int id);
+    uint32_t cj5_get_uint(cj5_result* r, int id);
+    uint64_t cj5_get_uint64(cj5_result* r, int id);
+    int64_t cj5_get_int64(cj5_result* r, int id);
+    bool cj5_get_bool(cj5_result* r, int id);
+    double cj5_seekget_double(cj5_result* r, int parent_id, const char* key, double def_val);
+    float cj5_seekget_float(cj5_result* r, int parent_id, const char* key, float def_val);
+    int cj5_seekget_array_int16(cj5_result* r, int parent_id, const char* key, int16_t* values, int max_values);
+    int cj5_seekget_array_uint16(cj5_result* r, int parent_id, const char* key, uint16_t* values, int max_values);
+    int cj5_seekget_int(cj5_result* r, int parent_id, const char* key, int def_val);
+    uint32_t cj5_seekget_uint(cj5_result* r, int parent_id, const char* key, uint32_t def_val);
+    uint64_t cj5_seekget_uint64(cj5_result* r, int parent_id, const char* key, uint64_t def_val);
+    int64_t cj5_seekget_int64(cj5_result* r, int parent_id, const char* key, int64_t def_val);
+    bool cj5_seekget_bool(cj5_result* r, int parent_id, const char* key, bool def_val);
+    const char* cj5_seekget_string(cj5_result* r, int parent_id, const char* key, char* str, int max_str, const char* def_val);
+    int cj5_seek(cj5_result* r, int parent_id, const char* key);
+    int cj5_seekget_array_double(cj5_result* r, int parent_id, const char* key, double* values, int max_values);
+    int cj5_seekget_array_float(cj5_result* r, int parent_id, const char* key, float* values, int max_values);
+    int cj5_seekget_array_int(cj5_result* r, int parent_id, const char* key, int* values, int max_values);
+    int cj5_seekget_array_uint(cj5_result* r, int parent_id, const char* key, uint32_t* values, int max_values);
+    int cj5_seekget_array_uint64(cj5_result* r, int parent_id, const char* key, uint64_t* values, int max_values);
+    int cj5_seekget_array_int64(cj5_result* r, int parent_id, const char* key, int64_t* values, int max_values);
+    int cj5_seekget_array_bool(cj5_result* r, int parent_id, const char* key, bool* values, int max_values);
+    int cj5_seekget_array_string(cj5_result* r, int parent_id, const char* key, char** strs, int max_str, int max_values);
+    int cj5_get_array_elem(cj5_result* r, int id, int index);
+    int cj5_get_array_elem_incremental(cj5_result* r, int id, int index, int prev_elem);
+}
+
+inline JsonNode::JsonNode(JsonContext* _ctx) : mCtx(_ctx), mTokenId(0), mItemIndex(0) 
+{
+    ASSERT(_ctx);
+}
+
+inline JsonNode::JsonNode(JsonContext* _ctx, int _tokenId, int _itemIndex) : mCtx(_ctx), mTokenId(_tokenId), mItemIndex(_itemIndex) 
+{
+    ASSERT(_ctx);
+}
 
 inline bool JsonNode::HasChild(const char* _childNode) const
 {
@@ -79,7 +106,7 @@ inline bool JsonNode::HasChild(const char* _childNode) const
 inline JsonNode JsonNode::GetChild(const char* _childNode) const
 {
     int id = cj5_seek(reinterpret_cast<cj5_result*>(mCtx), mTokenId, _childNode);
-    return JsonNode(*mCtx, id);
+    return JsonNode(mCtx, id);
 }
 
 inline bool JsonNode::IsValid() const

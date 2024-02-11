@@ -25,7 +25,8 @@
 //           Note that all arguments are case-insensitive
 //
 #include "StringUtil.h"
-#include "Buffers.h"
+
+template <typename _T, uint32 _Reserve> struct Array;
 
 struct SettingsKeyValue
 {
@@ -43,7 +44,7 @@ struct NO_VTABLE SettingsCustomCallbacks
 
     // Fill 'items' for each corrosponding categoryId
     // Can ignore implementing this if you don't want to save
-    virtual void SaveCategory(uint32 categoryId, Array<SettingsKeyValue>& items) = 0;   
+    virtual void SaveCategory(uint32 categoryId, Array<SettingsKeyValue, 8>& items) = 0;   
 };
 
 API void settingsAddCustomCallbacks(SettingsCustomCallbacks* callbacks);

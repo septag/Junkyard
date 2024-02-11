@@ -10,10 +10,11 @@ INCLUDE_PHRASE = '#include "'
 ONCE_PRAGMA = '#pragma once'
 EXCLUDE_EXTERNALS = ['MemPro', 'Tracy']
 IGNORE_MODULES = ['config', 'debug', 'atomic', 'includewin', 'tracyhelper']
+IGNORE_HEADERS = ['TargetConditionals.h']   # used as double-quotes in slang
 LINE_WIDTH = 120
 
 arg_parser = argparse.ArgumentParser(description='')
-arg_parser.add_argument('--rootdir', help='Root of the code directory (default=cwd)', default='.')
+arg_parser.add_argument('--rootdir', help='Root of the code directory (default=cwd)', default='../../code/Core')
 arg_parser.add_argument('--stbheader', help='Make stb style single header', action='store_true', default=False)
 arg_parser.add_argument('--outputname', help='Output name of the output cpp/h files (default=Core)', default='Core')
 arg_parser.add_argument('--outputdir', help='Output directory path to write cpp/h files (default=cwd)', default='.')
@@ -29,22 +30,35 @@ if not os.path.isdir(rootdir):
     exit(-1)
 
 def file_in_exclude_externals(filepath:str):
-    filedir = os.path.dirname(filepath).lower()
-    for extern in EXCLUDE_EXTERNALS:
-        if filedir.endswith(extern.lower()):
-            return True
+    root, ext = os.path.splitext(filepath)
+    ext = ext.lower()
+
+    # only consider source files to be externals, not the headers
+    if ext == '.cpp' or ext == '.c':
+        filedir = os.path.dirname(filepath).lower()
+        for extern in EXCLUDE_EXTERNALS:
+            if filedir.endswith(extern.lower()):
+                return True
     return False
 
 def parse_include_directive(line:str):
     if not line:
         return None
     
-    if line and line.startswith(INCLUDE_PHRASE):
+    if not line.startswith('#'):
+        return None
+    else:
+        line = '#' + line[1:].lstrip()
+        
+    if line.startswith(INCLUDE_PHRASE):
         start_idx = len(INCLUDE_PHRASE)
         end_idx = line.find('"', start_idx)
         if end_idx != -1:
             include_path = line[start_idx:end_idx]
-            return include_path
+            if include_path not in IGNORE_HEADERS:
+                return include_path
+            else:
+                return None
     
     return None
 

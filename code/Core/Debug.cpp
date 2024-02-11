@@ -22,7 +22,7 @@ void debugPrint(const char* text)
     #if PLATFORM_WINDOWS
         sysWin32PrintToDebugger(text);
     #elif PLATFORM_ANDROID
-        sysAndroidPrintToLog(SysAndroidLogType::Debug, logGetAppNameAndroid(), text);
+        sysAndroidPrintToLog(SysAndroidLogType::Debug, CONFIG_APP_NAME, text);
     #else
         puts(text);
     #endif

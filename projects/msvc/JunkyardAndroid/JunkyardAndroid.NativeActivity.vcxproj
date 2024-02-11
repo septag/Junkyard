@@ -261,6 +261,7 @@
       <AdditionalOptions>-funwind-tables  -fno-omit-frame-pointer %(AdditionalOptions)</AdditionalOptions>
       <UndefinePreprocessorDefinitions>
       </UndefinePreprocessorDefinitions>
+      <CLanguageStandard>c11</CLanguageStandard>
     </ClCompile>
     <Link>
       <LibraryDependencies>%(LibraryDependencies);m</LibraryDependencies>
@@ -287,6 +288,7 @@
       <TreatWarningAsError>true</TreatWarningAsError>
       <PreprocessorDefinitions>
       </PreprocessorDefinitions>
+      <CLanguageStandard>c11</CLanguageStandard>
     </ClCompile>
     <Link>
       <LibraryDependencies>%(LibraryDependencies);m</LibraryDependencies>
@@ -312,6 +314,7 @@
       <DebugInformationFormat>FullDebug</DebugInformationFormat>
       <Optimization>Full</Optimization>
       <AdditionalOptions>-funwind-tables  -fno-omit-frame-pointer %(AdditionalOptions)</AdditionalOptions>
+      <CLanguageStandard>c11</CLanguageStandard>
     </ClCompile>
     <Link>
       <LibraryDependencies>%(LibraryDependencies);m</LibraryDependencies>

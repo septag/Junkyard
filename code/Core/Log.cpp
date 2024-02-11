@@ -6,6 +6,7 @@
 #include "TracyHelper.h"
 #include "System.h"
 #include "Buffers.h"
+#include "Debug.h"
 
 #if PLATFORM_MOBILE || PLATFORM_OSX
     #define TERM_COLOR_RESET     ""
@@ -119,14 +120,11 @@ static void logPrintToDebugger(const LogEntry& entry)
 
         if (text) {
             char source[kMaxPath];
-            if (entry.sourceFile) {
+            if (entry.sourceFile)
                 strPrintFmt(source, sizeof(source), "%s(%d): ", entry.sourceFile, entry.line);
-            } 
-            else {
+            else 
                 source[0] = '\0';
-            }
-            strPrintFmt(text, newSize, "%s%s%s\n", source, 
-                kLogEntryTypes[static_cast<uint32>(entry.type)], entry.text);
+            strPrintFmt(text, newSize, "%s%s%s\n", source, kLogEntryTypes[static_cast<uint32>(entry.type)], entry.text);
             debugPrint(text);
         }
         else {

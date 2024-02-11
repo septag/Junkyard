@@ -155,6 +155,7 @@ struct AppImpl final : AppCallbacks
 
     bool Initialize() override
     {
+        memTempSetCaptureStackTrace(true);
         // Mount file-systems before initializing engine
         if (settingsGet().engine.connectToServer) {
             vfsMountRemote("data", true);

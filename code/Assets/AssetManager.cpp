@@ -219,12 +219,12 @@ static void assetLoadCacheHashDatabase()
 
     Blob blob = vfsReadFile(kAssetCacheDatabasePath, VfsFlags::TextFile, &tempAlloc);
     if (blob.IsValid()) {
-        JsonContext jctx;
         char* json;
         size_t jsonSize;
 
         blob.Detach((void**)&json, &jsonSize);
-        if (jsonParse(&jctx, json, uint32(jsonSize), &tempAlloc)) {
+        JsonContext* jctx = jsonParse(json, uint32(jsonSize), nullptr, &tempAlloc);
+        if (jctx) {
             JsonNode jroot(jctx);
 
             MutexScope mtx(gAssetMgr.hashLookupMtx);
@@ -240,7 +240,7 @@ static void assetLoadCacheHashDatabase()
                 
                 jitem = jroot.GetNextArrayItem(jitem);
             }
-            jsonDestroy(&jctx);
+            jsonDestroy(jctx);
 
             logInfo("Loaded cache database: %s", kAssetCacheDatabasePath);
         }
@@ -598,8 +598,9 @@ bool assetLoadMetaData(const char* filepath, AssetPlatform platform, Allocator* 
 
     Blob blob = vfsReadFile(assetMetaPath.CStr(), VfsFlags::TextFile, &tmpAlloc);
     if (blob.IsValid()) {
-        JsonContext jctx;
-        if (jsonParse(&jctx, (const char*)blob.Data(), uint32(blob.Size()), &tmpAlloc)) {
+        JsonErrorLocation loc;
+        JsonContext* jctx = jsonParse((const char*)blob.Data(), uint32(blob.Size()), &loc, &tmpAlloc);
+        if (jctx) {
             JsonNode jroot(jctx);
             StaticArray<AssetMetaKeyValue, 64> keys;
 
@@ -616,24 +617,24 @@ bool assetLoadMetaData(const char* filepath, AssetPlatform platform, Allocator* 
                 collectKeyValues(jplatform, &keys);
 
             blob.Free();
-            jsonDestroy(&jctx);
+            jsonDestroy(jctx);
             memTempPopId(tempId);
             
             // At this point we have popped the current temp allocator and can safely allocate from whatever allocator is coming in
             *outData = memAllocCopy<AssetMetaKeyValue>(keys.Ptr(), keys.Count(), alloc);
             *outKeyCount = keys.Count();
+
             return true;
         }
         else {
             *outData = nullptr;
             *outKeyCount = 0;
-        }
         
-        blob.Free();
-        JsonErrorLocation loc = jsonParseGetErrorLocation(&jctx); 
-        logWarning("Invalid asset meta data: %s (Json syntax error at %u:%u)", assetMetaPath.CStr(), loc.line, loc.col);
-        memTempPopId(tempId);
-        return false;
+            blob.Free();
+            logWarning("Invalid asset meta data: %s (Json syntax error at %u:%u)", assetMetaPath.CStr(), loc.line, loc.col);
+            memTempPopId(tempId);
+            return false;
+        }
     }
     else {
         *outData = nullptr;

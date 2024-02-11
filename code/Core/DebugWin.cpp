@@ -237,8 +237,6 @@ void DbgHelpUnlock()
 // RemedyBG
 static const char* kDebugRemedyBGPipeNamePrefix = "\\\\.\\pipe\\";
 
-using DebugRemedyBG_Id = uint32;
-
 bool debugRemedyBG_Initialize(const char* serverName)
 {
     ASSERT_MSG(gRemedyBG.cmdPipe == INVALID_HANDLE_VALUE, "RemedyBG is initialized before");
@@ -401,13 +399,6 @@ DebugRemedyBG_Id debugRemedyBG_AddAddressBreakpoint(uintptr_t addr, const char* 
         res.Read<DebugRemedyBG_Id>(&bid);
     return bid;
 }
-
-enum class DebugRemedyBG_ProcessorBreakpointType : uint8
-{
-    Write = RDBG_PROCESSOR_BREAKPOINT_ACCESS_KIND_WRITE,
-    ReadWrite = RDBG_PROCESSOR_BREAKPOINT_ACCESS_KIND_READ_WRITE,
-    Execute = RDBG_PROCESSOR_BREAKPOINT_ACCESS_KIND_EXECUTE
-};
 
 DebugRemedyBG_Id debugRemedyBG_AddProcessorBreakpoint(const char* addrExpr, uint8 numBytes, 
                                                       DebugRemedyBG_ProcessorBreakpointType type, const char* conditionExpr)

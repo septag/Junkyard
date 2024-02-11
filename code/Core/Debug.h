@@ -39,3 +39,36 @@ API void debugFiberScopeProtector_Check();
     }
     #endif
 #endif
+
+// RemedyBG integration
+#if PLATFORM_WINDOWS 
+using DebugRemedyBG_Id = uint32;
+
+// rdbg_ProcessorBreakpointAccessKind
+enum class DebugRemedyBG_ProcessorBreakpointType : uint8
+{
+    Write = 1,
+    ReadWrite = 2,
+    Execute = 3
+};
+
+bool debugRemedyBG_Initialize(const char* serverName);
+void debugRemedyBG_Release();
+bool debugRemedyBG_AttachToProcess(uint32 id);
+bool debugRemedyBG_DetachFromProcess();
+bool debugRemedyBG_Break();
+bool debugRemedyBG_Continue();
+bool debugRemedyBG_RunToFileAtLine(const char* filename, uint32 line);
+DebugRemedyBG_Id debugRemedyBG_AddFunctionBreakpoint(const char* funcName, const char* conditionExpr, uint32 overloadId);
+DebugRemedyBG_Id debugRemedyBG_AddFileLineBreakpoint(const char* filename, uint32 line, const char* conditionExpr);
+DebugRemedyBG_Id debugRemedyBG_AddAddressBreakpoint(uintptr_t addr, const char* conditionExpr);
+DebugRemedyBG_Id debugRemedyBG_AddProcessorBreakpoint(const char* addrExpr, uint8 numBytes, 
+                                                      DebugRemedyBG_ProcessorBreakpointType type, const char* conditionExpr);
+bool debugRemedyBG_EnableBreakpoint(DebugRemedyBG_Id bId, bool enable);
+bool debugRemedyBG_SetBreakpointCondition(DebugRemedyBG_Id bId, const char* conditionExpr);
+bool debugRemedyBG_DeleteBreakpoint(DebugRemedyBG_Id bId);
+bool debugRemedyBG_DeleteAllBreakpoints();
+DebugRemedyBG_Id debugRemedyBG_AddWatch(const char* expr, const char* comment, uint8 windowNum);
+DebugRemedyBG_Id debugRemedyBG_DeleteWatch(DebugRemedyBG_Id wId);
+#endif // PLATFORM_WINDOWS
+
