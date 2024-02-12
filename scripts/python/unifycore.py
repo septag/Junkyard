@@ -36,8 +36,11 @@ def file_in_exclude_externals(filepath:str):
     # only consider source files to be externals, not the headers
     if ext == '.cpp' or ext == '.c':
         filedir = os.path.dirname(filepath).lower()
+        filedir_sections = filedir.replace('\\', '/').lower().split('/')
         for extern in EXCLUDE_EXTERNALS:
-            if filedir.endswith(extern.lower()):
+            if extern.lower() in filedir_sections:
+                if args.verbose:
+                    print('Exclude:', os.path.abspath(filepath))
                 return True
     return False
 
@@ -62,10 +65,12 @@ def parse_include_directive(line:str):
     
     return None
 
-def preprocess_file(filepath, included_files):
+def preprocess_file(filepath, included_files, newly_included = None):
     filepath = os.path.abspath(filepath)
     if filepath not in included_files:
         included_files.add(filepath.lower())
+        if newly_included is not None:
+            newly_included.add(filepath.lower())
 
     base_dir = os.path.dirname(filepath)
     lines = []
@@ -86,10 +91,10 @@ def preprocess_file(filepath, included_files):
             if header_fullpath.lower() not in included_files:
                 if args.verbose:
                     print(header_fullpath, 'included by:', filepath)
-                content = preprocess_file(header_fullpath, included_files)
+                content = preprocess_file(header_fullpath, included_files, newly_included)
                 if content:
                     blob = blob + ('//' + '-'*(LINE_WIDTH-2) + '\n')
-                    blob = blob + ('// ' + header_filepath + '\n')
+                    blob = blob + ('// ' + header_filepath + '\n\n')
                     blob = blob + content                
         else:
             blob = blob + line
@@ -122,21 +127,26 @@ for module in modules:
     module_include_path = os.path.abspath(os.path.join(args.rootdir, module + '.h'))
     if os.path.isfile(module_include_path) and module_include_path.lower() not in included_files:
         header_blob = header_blob + preprocess_file(module_include_path, included_files)
+included_files_in_header = included_files.copy()
 
 # sources
 for module in modules:            
     module_source_path = os.path.abspath(os.path.join(args.rootdir, module + '.cpp'))
-    if os.path.isfile(module_source_path):
+    if os.path.isfile(module_source_path) and module_source_path.lower() not in included_files:
         source_blob = source_blob + preprocess_file(module_source_path, included_files)
 
 # for each included file, check if we have the source file, then include them into the cpp
-included_files_in_header = included_files.copy()
-for include_file in included_files_in_header:
-    root, ext = os.path.splitext(include_file)
-    source_filepath = root + '.cpp'
-    if os.path.isfile(source_filepath) and source_filepath not in included_files:
-        source_blob = source_blob + preprocess_file(source_filepath, included_files)
+test_extra_includes = included_files.copy()
+while len(test_extra_includes) > 0:
+    newly_included = set()
+    for include_file in test_extra_includes:
+        root, ext = os.path.splitext(include_file)
+        source_filepath = root + '.cpp'
+        if os.path.isfile(source_filepath) and source_filepath not in included_files and not file_in_exclude_externals(source_filepath):
+            source_blob = source_blob + preprocess_file(source_filepath, included_files, newly_included)
+    test_extra_includes = newly_included.copy()
 
+# Generate output code
 output_header_path = os.path.abspath(os.path.join(args.outputdir, args.outputname + '.h'))
 output_source_path = os.path.abspath(os.path.join(args.outputdir, args.outputname + '.cpp'))
 with open(output_header_path, 'wt') as f:
@@ -159,7 +169,9 @@ with open(output_header_path, 'wt') as f:
 if not args.stbheader:
     with open(output_source_path, 'wt') as f:
         f.write('// This source file is auto-generated\n')
+        f.write('// Inlined files:\n')
         for filepath in included_files:
+            # Rest of the files that are not included in header goes into source
             if filepath not in included_files_in_header:
                 f.write('//\t' + os.path.basename(filepath) + '\n')
         f.write('\n')

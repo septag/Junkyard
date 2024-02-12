@@ -350,9 +350,9 @@ static void jobsSetFiberToCurrentThread(JobsFiber* fiber)
         gJobs.maxValues[0].numBusyLongThreadsMax = Max(gJobs.maxValues[0].numBusyLongThreadsMax, gJobs.numBusyLongThreads);
     }
 
-    TracyCFiberEnter(fiber->debugName);
+    // TracyCFiberEnter(fiber->debugName);
     jobsJumpIn(fiber->co);
-    TracyCFiberLeave;
+    // TracyCFiberLeave;
 
     JobsGetThreadData()->curFiber = nullptr;
     if (type == JobsType::ShortTask)

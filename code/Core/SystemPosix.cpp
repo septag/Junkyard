@@ -29,8 +29,7 @@
     #include <linux/uuid.h>
 #endif
 
-#include "External/tracy/TracyC.h"
-
+#include "TracyHelper.h"
 #include "StringUtil.h"
 #include "Atomic.h"
 #include "Allocators.h"

@@ -10,7 +10,7 @@
     #define TRACY_FIBERS
 #endif
 
-#include "External/tracy/TracyC.h"
+#include "External/tracy/tracy/TracyC.h"
 
 #ifdef TRACY_ENABLE
     namespace _private

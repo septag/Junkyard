@@ -70,41 +70,15 @@ static SymGetSymFromAddr64Fn _SymGetSymFromAddr64;
 static UnDecorateSymbolNameFn _UnDecorateSymbolName;
 static SymGetLineFromAddr64Fn _SymGetLineFromAddr64;
 
-static bool debugInitializeStacktrace();
-
 struct DebugStacktraceContext
 {
     bool initialized;
     HINSTANCE dbghelp;
     HANDLE process;
     CRITICAL_SECTION mutex;
-
-    DebugStacktraceContext()
-    {
-        if constexpr (!CONFIG_FINAL_BUILD) {
-            initialized = debugInitializeStacktrace();
-            // TODO: I had to disable this, because in RenderDoc, this fails. Needs investigation
-            // ASSERT(initialized);
-        }
-    }
-
-    ~DebugStacktraceContext()
-    {
-        if (initialized) {
-            ASSERT(dbghelp);
-            ASSERT(_SymCleanup);
-
-            EnterCriticalSection(&mutex);
-            _SymCleanup(process);
-            LeaveCriticalSection(&mutex);
-
-            FreeLibrary(dbghelp);
-            dbghelp = nullptr;
-
-            // Note that we do not Delete the critical section here, because it will be used after deinitialization by Tracy
-            // DeleteCriticalSection(&mutex);
-        }
-    }
+    
+    DebugStacktraceContext();
+    ~DebugStacktraceContext();
 };
 
 static constexpr uint32 kDebugRemedyBGBufferSize = 8*kKB;
@@ -121,13 +95,16 @@ static bool debugInitializeStacktrace()
 {
     if (gStacktrace.initialized)
         return true;
+    gStacktrace.initialized = true;
 
+    EnterCriticalSection(&gStacktrace.mutex);
     ASSERT(gStacktrace.dbghelp == nullptr);
 
     // Load dbghelp.dll: this DLL should be provided and included in the repo
     gStacktrace.dbghelp = LoadLibraryA("dbghelp.dll");
     if (!gStacktrace.dbghelp) {
         debugPrint("Could not load DbgHelp.dll");
+        gStacktrace.initialized = false;
         return false;
     }
 
@@ -140,17 +117,15 @@ static bool debugInitializeStacktrace()
 
     gStacktrace.process = GetCurrentProcess();
 
-    InitializeCriticalSectionAndSpinCount(&gStacktrace.mutex, 100);
-
-    EnterCriticalSection(&gStacktrace.mutex);
     if (!_SymInitialize(gStacktrace.process, NULL, TRUE)) {
         LeaveCriticalSection(&gStacktrace.mutex);
         debugPrint("DbgHelp: _SymInitialize failed");
+        gStacktrace.initialized = false;
         return false;
     }
-    LeaveCriticalSection(&gStacktrace.mutex);
 
     ASSERT(_SymInitialize && _SymCleanup && _SymGetLineFromAddr64 && _SymGetSymFromAddr64 && _UnDecorateSymbolName);
+    LeaveCriticalSection(&gStacktrace.mutex);
 
     return true;
 }
@@ -165,7 +140,7 @@ NO_INLINE uint16 debugCaptureStacktrace(void** stackframes, uint16 maxStackframe
 void debugResolveStacktrace(uint16 numStacktrace, void* const* stackframes, DebugStacktraceEntry* entries)
 {
     if (!gStacktrace.initialized) {
-        gStacktrace.initialized = debugInitializeStacktrace();
+        debugInitializeStacktrace();
         ASSERT_MSG(gStacktrace.initialized, "Failed to initialize stacktrace capture");
     }  
 
@@ -214,24 +189,53 @@ void debugStacktraceSaveStopPoint(void*)
 }
 
 #ifdef TRACY_ENABLE
-void DbgHelpInit()
+void debugDbgHelpInit()
 {
     if (!gStacktrace.initialized) {
-        gStacktrace.initialized = debugInitializeStacktrace();
+        debugInitializeStacktrace();
         ASSERT_MSG(gStacktrace.initialized, "Failed to initialize stacktrace capture");
     }  
 }
 
-void DbgHelpLock()
+void debugDbgHelpLock()
 {
     EnterCriticalSection(&gStacktrace.mutex);
 }
 
-void DbgHelpUnlock()
+void debugDbgHelpUnlock()
 {
     LeaveCriticalSection(&gStacktrace.mutex);
 }
 #endif
+
+DebugStacktraceContext::DebugStacktraceContext() : dbghelp(nullptr), process(nullptr)
+{
+    if constexpr (!CONFIG_FINAL_BUILD) {
+        InitializeCriticalSectionAndSpinCount(&mutex, 32);
+        debugInitializeStacktrace();
+        // TODO: I had to disable this, because in RenderDoc, this fails. Needs investigation
+        // ASSERT(initialized);
+    }
+}
+
+DebugStacktraceContext::~DebugStacktraceContext()
+{
+    if (initialized) {
+        ASSERT(dbghelp);
+        ASSERT(_SymCleanup);
+
+        EnterCriticalSection(&mutex);
+        _SymCleanup(process);
+        FreeLibrary(dbghelp);
+        dbghelp = nullptr;
+        LeaveCriticalSection(&mutex);
+
+        // Note that we do not Delete the critical section for Tracy, because it will be used after deinitialization by Tracy
+        #if defined(TRACY_ENABLE)
+        DeleteCriticalSection(&mutex);
+        #endif
+    }
+}
 
 //----------------------------------------------------------------------------------------------------------------------
 // RemedyBG

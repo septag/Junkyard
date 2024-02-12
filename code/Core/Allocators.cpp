@@ -25,14 +25,14 @@ static constexpr uint32 kTempPageSize = 256*kKB;
 static constexpr float  kTempValidateResetTime = 5.0f;
 static constexpr uint32 kTempMaxStackframes = 8;
 
-
 struct MemTempStack
 {
     size_t baseOffset;
     size_t offset;
     void* lastAllocatedPtr;
     void* stacktrace[kTempMaxStackframes];
-    Array<_private::MemDebugPointer> debugPointers;    
+    Array<_private::MemDebugPointer> debugPointers;
+    MemTempId id;
     uint16 numStackframes;
 };
 
@@ -148,7 +148,8 @@ MemTempId memTempPushId()
     MemTempId id = (index << 16) | (MemGetTempContext().generationIdx & 0xffff);
     
     MemTempStack memStack { 
-        .baseOffset = index > 0 ? (MemGetTempContext().allocStack.Last().baseOffset + MemGetTempContext().allocStack.Last().offset) : 0
+        .baseOffset = index > 0 ? (MemGetTempContext().allocStack.Last().baseOffset + MemGetTempContext().allocStack.Last().offset) : 0,
+        .id = id
     };
 
     if constexpr(!CONFIG_FINAL_BUILD) {
@@ -354,7 +355,7 @@ void memTempReset(float dt, bool resetValidation)
                             logDebug("Callstacks for each remaining MemTempPush:");
                             for (const MemTempStack& memStack : ctx->allocStack) {
                                 debugResolveStacktrace(memStack.numStackframes, memStack.stacktrace, entries);
-                                logDebug("\t%u)", ++index);
+                                logDebug("\t%u) Id=%u", ++index, memStack.id);
                                 for (uint16 s = 0; s < memStack.numStackframes; s++) {
                                     logDebug("\t\t%s(%u): %s", entries[s].filename, entries[s].line, entries[s].name);
                                 }

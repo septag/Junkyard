@@ -32,9 +32,9 @@ API void debugFiberScopeProtector_Check();
     #ifdef __cplusplus
     extern "C" {
     #endif
-        void DbgHelpInit();
-        void DbgHelpLock();
-        void DbgHelpUnlock();
+        void debugDbgHelpInit();
+        void debugDbgHelpLock();
+        void debugDbgHelpUnlock();
     #ifdef __cplusplus
     }
     #endif

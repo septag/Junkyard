@@ -12,7 +12,7 @@ if not exist %vars_ini% (
 
 :InstallCodeDeps
 choice /c YN /M "Install code dependencies"
-if errorlevel 2 goto :InstallVulkan
+if errorlevel 2 goto :InstallTracyClient
 if errorlevel 1 goto :InstallCodeDepsStart
 
 :InstallCodeDepsStart
@@ -40,8 +40,21 @@ call Setup.bat
 popd
 if %errorlevel% neq 0 goto :End
 
+:InstallTracyClient
+choice /c YN /M "Download tracy profiler v0.10 "
+if errorlevel 2 goto :InstallVulkan
+if errorlevel 1 (
+    if not exist .downloads\Tracy-0.10.7z (
+        powershell Invoke-WebRequest -Uri "https://github.com/wolfpld/tracy/releases/download/v0.10/Tracy-0.10.7z" -OutFile .downloads\Tracy-0.10.7z
+        if %errorlevel% neq 1 goto :End
+    )
+    powershell Invoke-WebRequest -Uri "https://github.com/wolfpld/tracy/releases/download/v0.10/tracy.pdf" -OutFile .downloads\tracy.pdf
+    echo "Tracy client saved to '.downloads\Tracy-0.10.7z'"
+    call .downloads\Tracy-0.10.7z
+)
+
 :InstallVulkan
-choice /c YN /M "Install vulkan 1.3.23"
+choice /c YN /M "Install vulkan 1.3.23 "
 if errorlevel 2 goto :InstallPython 
 if errorlevel 1 (
     rem make sure to update the vulkan android layers (below) as well
@@ -64,7 +77,7 @@ if errorlevel 1 (
 )
 
 :InstallPython
-choice /c YN /M "Install python 3.11"
+choice /c YN /M "Install python 3.11 "
 if errorlevel 2 goto :SetupAndroid
 if errorlevel 1 (
     if not exist .downloads\python-3.11.1-amd64.exe (
@@ -78,7 +91,7 @@ if errorlevel 1 (
     if %errorlevel% neq 1 goto :End
 )
 
-choice /c YN /M "Install pywin32 (Not required, but useful for tools)"
+choice /c YN /M "Install pywin32 (Not required, but useful for tools) "
 if errorlevel 2 goto :SetupAndroid
 if errorlevel 1 (
     python -m pip install --upgrade pywin32
@@ -86,12 +99,12 @@ if errorlevel 1 (
 )
 
 :SetupAndroid
-choice /c YN /M "Setup android stuff"
+choice /c YN /M "Setup android stuff "
 if errorlevel 2 goto :End
 if errorlevel 1 goto :AndroidSettingsIni
 
 :AndroidSettingsIni
-choice /c YN /M "Create android app Settings.ini"
+choice /c YN /M "Create android app Settings.ini "
 if errorlevel 2 goto :AndroidLayers
 if errorlevel 1 goto :AndroidSettingsIniStart
 
@@ -117,7 +130,7 @@ for /f "usebackq tokens=2 delims=:" %%f in (`ipconfig ^| findstr /c:%ip_address_
 )
 
 :AndroidLayers
-choice /c YN /M "Install vulkan android layers"
+choice /c YN /M "Install vulkan android layers "
 if errorlevel 2 goto :AndroidScrCpy
 if errorlevel 1 goto :AndroidLayersStart
 
@@ -132,7 +145,7 @@ powershell Expand-Archive -Force -Path .downloads\android-binaries-1.3.231.1.zip
 if %errorlevel% neq 1 goto :End
 
 :AndroidScrCpy
-choice /c YN /M "Download ScrCpy (for remote viewing)"
+choice /c YN /M "Download ScrCpy (for remote android viewing) "
 if errorlevel 2 goto :Gnirehtet
 if errorlevel 1 goto :AndroidScrCpyStart
 
@@ -147,7 +160,7 @@ echo ScrCpy = .downloads\scrcpy\scrcpy.exe >> %vars_ini%
 powershell Invoke-Item %vars_ini%
 
 :Gnirehtet
-choice /c YN /M "Download Gnirehtet (for reverse usb tethering)"
+choice /c YN /M "Download Gnirehtet (for reverse usb tethering) "
 if errorlevel 2 goto :End
 if errorlevel 1 goto :GnirehtetStart
 

@@ -107,6 +107,7 @@ API void jobsGetBudgetStats(JobsBudgetStats* stats);
 API void jobsResetBudgetStats();
 API uint32 jobsGetWorkerThreadsCount(JobsType type);
 
+#if 0
 // Templated lambda functions (no need for userData)
 // Callback: [](uint32 groupIndex)
 // The Caveat here is that we need to keep the passing _Func alive as long as the task exists
@@ -130,3 +131,4 @@ inline void jobsDispatchAuto(JobsType type, _Func* fn, uint32 groupSize = 1, Job
 
     jobsDispatchAuto(type, wrapperFn, fn, groupSize, prio, stackSize);
 }
+#endif

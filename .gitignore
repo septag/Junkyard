@@ -42,6 +42,7 @@ scripts/symbols
 data/images/gen/**
 data/models/gen/**
 .cache
+.vscode
 
 # Dependency downloads
 code/External/slang/**

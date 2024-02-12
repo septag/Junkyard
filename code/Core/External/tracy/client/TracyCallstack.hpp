@@ -2,6 +2,7 @@
 #define __TRACYCALLSTACK_HPP__
 
 #include "../common/TracyApi.h"
+#include "../common/TracyForceInline.hpp"
 #include "TracyCallstack.h"
 
 #if TRACY_HAS_CALLSTACK == 2 || TRACY_HAS_CALLSTACK == 5
@@ -11,7 +12,14 @@
 #endif
 
 
-#ifdef TRACY_HAS_CALLSTACK
+#ifndef TRACY_HAS_CALLSTACK
+
+namespace tracy
+{
+static tracy_force_inline void* Callstack( int depth ) { return nullptr; }
+}
+
+#else
 
 #ifdef TRACY_DEBUGINFOD
 #  include <elfutils/debuginfod.h>
@@ -21,7 +29,6 @@
 #include <stdint.h>
 
 #include "../common/TracyAlloc.hpp"
-#include "../common/TracyForceInline.hpp"
 
 namespace tracy
 {
@@ -51,10 +58,10 @@ struct CallstackEntryData
 };
 
 CallstackSymbolData DecodeSymbolAddress( uint64_t ptr );
-CallstackSymbolData DecodeCodeAddress( uint64_t ptr );
 const char* DecodeCallstackPtrFast( uint64_t ptr );
 CallstackEntryData DecodeCallstackPtr( uint64_t ptr );
 void InitCallstack();
+void InitCallstackCritical();
 void EndCallstack();
 const char* GetKernelModulePath( uint64_t addr );
 
@@ -88,7 +95,7 @@ struct BacktraceState
     void** end;
 };
 
-[[maybe_unused]] static _Unwind_Reason_Code tracy_unwind_callback( struct _Unwind_Context* ctx, void* arg )
+static _Unwind_Reason_Code tracy_unwind_callback( struct _Unwind_Context* ctx, void* arg )
 {
     auto state = (BacktraceState*)arg;
     uintptr_t pc = _Unwind_GetIP( ctx );
@@ -103,19 +110,14 @@ struct BacktraceState
 static tracy_force_inline void* Callstack( int depth )
 {
     assert( depth >= 1 && depth < 63 );
+
     auto trace = (uintptr_t*)tracy_malloc( ( 1 + depth ) * sizeof( uintptr_t ) );
-    
-    #ifndef TRACY_UNWIND
-        BacktraceState state = { (void**)(trace+1), (void**)(trace+1+depth) };
-        _Unwind_Backtrace( tracy_unwind_callback, &state );
-    
-        *trace = (uintptr_t*)state.current - trace + 1;
-    
-        return trace;
-    #else
-        *trace = TRACY_UNWIND((void**)(trace + 1), depth);
-        return trace;
-    #endif
+    BacktraceState state = { (void**)(trace+1), (void**)(trace+1+depth) };
+    _Unwind_Backtrace( tracy_unwind_callback, &state );
+
+    *trace = (uintptr_t*)state.current - trace + 1;
+
+    return trace;
 }
 
 #elif TRACY_HAS_CALLSTACK == 3 || TRACY_HAS_CALLSTACK == 4 || TRACY_HAS_CALLSTACK == 6

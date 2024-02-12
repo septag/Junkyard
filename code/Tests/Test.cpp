@@ -206,49 +206,33 @@ struct AppImpl final : AppCallbacks
         engineRelease();
     };
     
-    static void OddTask(uint32 groupIndex, void*)
+    static void ChildTask(uint32 groupIndex, void*)
     {
         PROFILE_ZONE(true);
-        //logDebug("OddTask - %u", threadId);
+        
+        threadSleep(10);
     }
 
-    static void EvenTask(uint32 groupIndex, void* user)
+    static void MainTask(uint32 groupIndex, void*)
     {
-        PROFILE_ZONE(true);
-        //logDebug("EvenTask - %u", threadId);
-        // threadSleep(100);
+        JobsHandle handle;
+        {
+            PROFILE_ZONE(true);
+            threadSleep(3);
+            handle = jobsDispatch(JobsType::LongTask, ChildTask, nullptr, 2);
+        }
 
-        logDebug("EvenTask");
-        threadSleep(1000);
+        jobsWaitForCompletion(handle);
 
-        ((JobsSignal*)user)->Set();
-        ((JobsSignal*)user)->Raise();
-    }
-
-    static void SomeTask(uint32 groupIndex, void*)
-    {
-        PROFILE_ZONE(true);
-
-        JobsSignal signal;
-        // _private::jobsDebugThreadStats();
-        jobsDispatchAuto(JobsType::ShortTask, EvenTask, &signal, 1);
-        logDebug("Waiting on EvenTask");
-        signal.Wait();
-        logDebug("Done");
-        //jobsWaitForCompletion(handle1);
-        //jobsWaitForCompletion(handle2);
-        //logDebug("Done");
+        {
+            PROFILE_ZONE(true)
+            threadSleep(10);
+        }
     }
 
     void Update(fl32 dt) override
     {
         PROFILE_ZONE(true);
-
-        static bool one = false;
-        if (!one) {
-            one = true;
-            jobsDispatchAuto(JobsType::LongTask, SomeTask, nullptr, 1);
-        }
 
         cam->HandleMovementKeyboard(dt, 10.0f, 5.0f);
 
@@ -262,11 +246,17 @@ struct AppImpl final : AppCallbacks
         float height = (float)appGetFramebufferHeight();
 
         static Mat4 modelMat = kMat4Ident;
-        MemTempAllocator tmpAlloc;
 
         { // draw something
+
+            JobsHandle handle = jobsDispatch(JobsType::LongTask, MainTask);
+            jobsWaitForCompletion(handle);
+
+            MemTempAllocator tmpAlloc;
+
             PROFILE_ZONE_NAME("DrawSomething", true);
             PROFILE_GPU_ZONE_NAME("DrawSomething", true);
+
 
             // We are drawing to swapchain, so we need ClipSpaceTransform
             FrameTransform ubo {
