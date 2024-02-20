@@ -322,7 +322,7 @@ echo No | copy /-Y $(SolutionDir)..\..\code\External\meshoptimizer\lib\win64\mes
     <ClInclude Include="..\..\code\Core\External\sokol\sokol_args.h" />
     <ClInclude Include="..\..\code\Core\External\stb\stb_sprintf.h" />
     <ClInclude Include="..\..\code\Core\External\tlsf\tlsf.h" />
-    <ClInclude Include="..\..\code\Core\External\tracy\TracyC.h" />
+    <ClInclude Include="..\..\code\Core\External\tracy\tracy\TracyC.h" />
     <ClInclude Include="..\..\code\Core\Hash.h" />
     <ClInclude Include="..\..\code\Core\IncludeWin.h" />
     <ClInclude Include="..\..\code\Core\IniParser.h" />

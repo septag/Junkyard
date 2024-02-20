@@ -210,31 +210,32 @@ struct AppImpl final : AppCallbacks
     {
         PROFILE_ZONE(true);
         
-        threadSleep(10);
+        threadSleep(5);
+    }
+
+    static void MainTaskSub()
+    {
+        PROFILE_ZONE(true);
+        threadSleep(3);
+        JobsHandle handle;
+        handle = jobsDispatch(JobsType::LongTask, ChildTask, nullptr, 1);
+        jobsWaitForCompletion(handle);
+        threadSleep(1);
     }
 
     static void MainTask(uint32 groupIndex, void*)
     {
-        JobsHandle handle;
-        {
-            PROFILE_ZONE(true);
-            threadSleep(3);
-            handle = jobsDispatch(JobsType::LongTask, ChildTask, nullptr, 2);
-        }
-
-        jobsWaitForCompletion(handle);
-
-        {
-            PROFILE_ZONE(true)
-            threadSleep(10);
-        }
+        PROFILE_ZONE(true);
+        threadSleep(1);
+        MainTaskSub();
+        threadSleep(7);
     }
 
     void Update(fl32 dt) override
     {
         PROFILE_ZONE(true);
 
-        cam->HandleMovementKeyboard(dt, 10.0f, 5.0f);
+        cam->HandleMovementKeyboard(dt, 100.0f, 5.0f);
 
         engineBeginFrame(dt);
         
@@ -248,15 +249,14 @@ struct AppImpl final : AppCallbacks
         static Mat4 modelMat = kMat4Ident;
 
         { // draw something
-
-            JobsHandle handle = jobsDispatch(JobsType::LongTask, MainTask);
-            jobsWaitForCompletion(handle);
+            
+            // JobsHandle handle = jobsDispatch(JobsType::LongTask, MainTask);
+            // jobsWaitForCompletion(handle);
 
             MemTempAllocator tmpAlloc;
 
-            PROFILE_ZONE_NAME("DrawSomething", true);
+            // PROFILE_ZONE_NAME("DrawSomething", true);
             PROFILE_GPU_ZONE_NAME("DrawSomething", true);
-
 
             // We are drawing to swapchain, so we need ClipSpaceTransform
             FrameTransform ubo {

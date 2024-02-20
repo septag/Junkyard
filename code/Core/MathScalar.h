@@ -41,6 +41,7 @@ FORCE_INLINE bool   mathIsINF64(fl64 _f);
 FORCE_INLINE float  mathIsRound(float _f);
 FORCE_INLINE float  mathCeil(float _f);
 FORCE_INLINE float  mathLerp(float _a, float _b, float _t);
+FORCE_INLINE float  mathSmoothLerp(float _a, float _b, float _dt, float h);
 FORCE_INLINE float  mathSign(float _a);
 FORCE_INLINE float  mathAbs(float _a);
 FORCE_INLINE float  mathTan(float _a);
@@ -213,6 +214,15 @@ FORCE_INLINE float mathLerp(float _a, float _b, float _t)
 {
     // this version is more precise than: _a + (_b - _a) * _t
     return (1.0f - _t) * _a + _t * _b;
+}
+
+// SmoothLerp by Freya: https://x.com/FreyaHolmer/status/1757836988495847568?s=20
+// '_h' or half-life can be calculated like this: h = -t/mathLog2(p)
+// where 'p' is the normalized distance traveled to the target after 't' seconds
+// Useful for lerping moving targets
+FORCE_INLINE float mathSmoothLerp(float _a, float _b, float _dt, float _h)
+{
+    return _b + (_a - _b)*mathExp2(-_dt/_h);
 }
 
 FORCE_INLINE float mathSign(float _a)

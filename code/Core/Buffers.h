@@ -56,6 +56,7 @@ struct Array
     void RemoveAndShift(uint32 index);
     uint32 Count() const;
     uint32 Capacity() const;
+    bool IsEmpty() const;
     void Clear();
     _T& Last();
     _T PopLast();
@@ -111,6 +112,8 @@ struct StaticArray
     _T* Add(const _T& item);
     void RemoveAndSwap(uint32 index);
     uint32 Count() const;
+    bool IsEmpty() const;
+    bool IsFull() const;
     void Clear();
     _T& Last();
     _T& RemoveLast();
@@ -127,7 +130,7 @@ struct StaticArray
     struct Iterator 
     {
         Iterator(_T* ptr) : _ptr(ptr) {}
-        _T operator*() { return *_ptr; }
+        _T& operator*() { return *_ptr; }
         void operator++() { ++_ptr; }
         bool operator!=(Iterator it) { return _ptr != it._ptr; }
         _T* _ptr;
@@ -504,6 +507,12 @@ inline uint32 Array<_T,_Reserve>::Count() const
 }
 
 template <typename _T, uint32 _Reserve>
+inline bool Array<_T,_Reserve>::IsEmpty() const
+{
+    return mCount == 0;
+}
+
+template <typename _T, uint32 _Reserve>
 inline uint32 Array<_T,_Reserve>::Capacity() const
 {
     return mCapacity;
@@ -760,6 +769,18 @@ template<typename _T, uint32 _MaxCount>
 inline uint32 StaticArray<_T, _MaxCount>::Count() const
 {
     return mCount;
+}
+
+template<typename _T, uint32 _MaxCount>
+inline bool StaticArray<_T, _MaxCount>::IsEmpty() const
+{
+    return mCount == 0;
+}
+
+template<typename _T, uint32 _MaxCount>
+inline bool StaticArray<_T, _MaxCount>::IsFull() const
+{
+    return mCount == _MaxCount;
 }
 
 template<typename _T, uint32 _MaxCount>

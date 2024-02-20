@@ -357,9 +357,6 @@
     <ClInclude Include="..\..\code\Core\External\tlsf\tlsf.h">
       <Filter>Core\External\tlsf</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\code\Core\External\tracy\TracyC.h">
-      <Filter>Core\External\tracy</Filter>
-    </ClInclude>
     <ClInclude Include="..\..\code\External\stb\stb_image.h">
       <Filter>External\stb</Filter>
     </ClInclude>
@@ -429,6 +426,9 @@
     </ClInclude>
     <ClInclude Include="..\..\code\Common\InputTypes.h">
       <Filter>Common</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\code\Core\External\tracy\tracy\TracyC.h">
+      <Filter>Core\External\tracy</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

@@ -19,6 +19,7 @@ PRAGMA_DIAGNOSTIC_IGNORED_CLANG_GCC("-Wunused-variable")
     #undef PLATFORM_WINDOWS
 #endif
 #define TRACY_UNWIND(_stackframes, _depth) debugCaptureStacktrace(_stackframes, _depth, 2)
+#define TRACY_VK_USE_SYMBOL_TABLE
 #include "External/tracy/TracyClient.cpp"
 PRAGMA_DIAGNOSTIC_POP()
 
@@ -33,10 +34,32 @@ PRAGMA_DIAGNOSTIC_POP()
     #define PLATFORM_WINDOWS OLD_PLATFORM_WINDOWS
 #endif
 
-
 #include <string.h>
 
-//------------------------------------------------------------------------
+static TracyZoneEnterCallback gZoneEnterCallback;
+static TracyZoneExitCallback gZoneExitCallback;
+
+void tracySetZoneCallbacks(TracyZoneEnterCallback zoneEnterCallback, TracyZoneExitCallback zoneExitCallback)
+{
+    gZoneEnterCallback = zoneEnterCallback;
+    gZoneExitCallback = zoneExitCallback;
+}
+
+bool tracyRunZoneExitCallback(TracyCZoneCtx* ctx)
+{
+    if (gZoneExitCallback)
+        return gZoneExitCallback(ctx);
+    else
+        return false;
+}
+
+void tracyRunZoneEnterCallback(TracyCZoneCtx* ctx, const ___tracy_source_location_data* sourceLoc)
+{
+    if (gZoneEnterCallback)
+        gZoneEnterCallback(ctx, sourceLoc);
+}
+
+
 void _private::___tracy_emit_gpu_calibrate_serial(const struct ___tracy_gpu_calibrate_data data)
 {
     auto item = tracy::Profiler::QueueSerial();

@@ -870,10 +870,10 @@ bool gfxBeginCommandBuffer()
     if (gVk.deviceProps.limits.timestampComputeAndGraphics) {
         uint32 expectedValue = 0;
         if (atomicCompareExchange32Weak(&gVk.queryFirstCall, &expectedValue, 1)) {
+            // TODO: why are we commenting out this test ?
             //if (gVk.hasHostQueryReset)
                 VkExtensionApi::vkResetQueryPoolEXT(gVk.device, gVk.queryPool[gVk.currentFrameIdx], 0, 2);
-            vkCmdWriteTimestamp(gCmdBufferThreadData.curCmdBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, 
-                                gVk.queryPool[gVk.currentFrameIdx], 0);
+            vkCmdWriteTimestamp(gCmdBufferThreadData.curCmdBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, gVk.queryPool[gVk.currentFrameIdx], 0);
         }
     }
 
