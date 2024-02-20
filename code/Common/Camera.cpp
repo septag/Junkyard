@@ -194,28 +194,19 @@ void CameraFPS::HandleMovementKeyboard(float dt, float moveSpeed, float slowMove
 {
     if (appIsKeyDown(InputKeycode::LeftShift) || appIsKeyDown(InputKeycode::RightShift))
         moveSpeed = slowMoveSpeed;
-    
-    mSpeedTime += dt;
-    float t = mathLinearStep(mSpeedTime, 0, 0.03f);
-    float speed = mKeyDown ? mathBias(t, 0.9f)*moveSpeed : (1.0f - t)*moveSpeed;
 
+    Float3 targetPos = mPos;
     if (appIsKeyDown(InputKeycode::A) || appIsKeyDown(InputKeycode::Left)) 
-        mMoveStrafe -= speed*dt;        
+        targetPos = mPos - mRight*(moveSpeed*dt);
     if (appIsKeyDown(InputKeycode::D) || appIsKeyDown(InputKeycode::Right))
-        mMoveStrafe += speed*dt;
+        targetPos = mPos + mRight*(moveSpeed*dt);
     if (appIsKeyDown(InputKeycode::W) || appIsKeyDown(InputKeycode::Up))
-        mMoveFwd += speed*dt;
+        targetPos = mPos + mForward*(moveSpeed*dt);
     if (appIsKeyDown(InputKeycode::S) || appIsKeyDown(InputKeycode::Down))
-        mMoveFwd -= speed*dt;
+        targetPos = mPos - mForward*(moveSpeed*dt);
 
-    // speed reaches zero, so reset movement variables
-    if (mathIsEqual(speed, 0))
-        mMoveStrafe = mMoveFwd = 0;
-    mMoveStrafe = Clamp(mMoveStrafe, -moveSpeed*dt, moveSpeed*dt);
-    mMoveFwd = Clamp(mMoveFwd, -moveSpeed*dt, moveSpeed*dt);
-
-    Strafe(mMoveStrafe);
-    MoveForward(mMoveFwd);
+    float h = -0.1f/mathLog2(0.01f);
+    mPos = float3SmoothLerp(mPos, targetPos, dt, h);
 }
 
 void CameraFPS::HandleRotationMouse(const AppEvent& ev, float rotateSpeed, float zoomStep)
@@ -256,17 +247,13 @@ void CameraFPS::HandleRotationMouse(const AppEvent& ev, float rotateSpeed, float
         }
         break;
     case AppEventType::KeyDown:
-        if (!mKeyDown) {
-            mSpeedTime = 0;
+        if (!mKeyDown) 
             mKeyDown = true;
-        }
         break;
 
     case AppEventType::KeyUp:
-        if (mKeyDown && !appIsAnyKeysDown(moveKeys, CountOf(moveKeys))) {
-            mSpeedTime = 0;
+        if (mKeyDown && !appIsAnyKeysDown(moveKeys, CountOf(moveKeys)))
             mKeyDown = false;
-        }
         break;
     default:
         

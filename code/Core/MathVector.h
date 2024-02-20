@@ -36,6 +36,7 @@ FORCE_INLINE float  float3Dot(Float3 _a, Float3 _b);
 FORCE_INLINE Float3 float3Cross(Float3 _a, Float3 _b);
 FORCE_INLINE float  float3Len(Float3 _a);
 FORCE_INLINE Float3 float3Lerp(Float3 _a, Float3 _b, float _t);
+FORCE_INLINE Float3 float3SmoothLerp(Float3 _a, Float3 _b, float _dt, float _h);
 FORCE_INLINE Float3 float3Norm(Float3 _a);
 FORCE_INLINE Float3 float3NormLen(Float3 _a, float* _outlen);
 FORCE_INLINE Float3 float3Min(Float3 _a, Float3 _b);
@@ -348,6 +349,14 @@ FORCE_INLINE float float3Len(Float3 _a)
 FORCE_INLINE Float3 float3Lerp(Float3 _a, Float3 _b, float _t)
 {
     return Float3(mathLerp(_a.x, _b.x, _t), mathLerp(_a.y, _b.y, _t), mathLerp(_a.z, _b.z, _t));
+}
+
+FORCE_INLINE Float3 float3SmoothLerp(Float3 _a, Float3 _b, float _dt, float _h)
+{
+    float f = mathExp2(-_dt/_h);
+    return Float3(_b.x + (_a.x - _b.x)*f,
+                  _b.y + (_a.y - _b.y)*f,
+                  _b.z + (_a.z - _b.z)*f);
 }
 
 FORCE_INLINE Float3 float3Norm(Float3 _a)

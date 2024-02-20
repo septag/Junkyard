@@ -93,9 +93,6 @@ private:
     Float2 mLastMouse = kFloat2Zero;
     float mPitch = 0;
     float mYaw = 0;
-    float mSpeedTime = 0;
-    float mMoveStrafe = 0;
-    float mMoveFwd = 0;
     bool mMouseDown = false;
     bool mKeyDown = false;
 };
