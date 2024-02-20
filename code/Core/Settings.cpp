@@ -1,7 +1,9 @@
 #include "Settings.h"
 #include "System.h"
 #include "Debug.h"
-#include "Buffers.h"
+#include "Arrays.h"
+#include "Blobs.h"
+#include "Allocators.h"
 
 #include "External/mgustavsson/ini.h"
 

@@ -3,9 +3,11 @@
 
 #include "../Core/System.h"
 #include "../Core/Settings.h"
-#include "../Core/Buffers.h"
 #include "../Core/StringUtil.h"
 #include "../Core/Log.h"
+#include "../Core/Arrays.h"
+#include "../Core/Blobs.h"
+#include "../Core/Allocators.h"
 
 static constexpr uint32 kCmdFlag = MakeFourCC('U', 'S', 'R', 'C');
 static constexpr uint32 kCmdHello = MakeFourCC('H', 'E', 'L', 'O');

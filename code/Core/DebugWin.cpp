@@ -7,8 +7,9 @@
 #include "StringUtil.h"  // strCopy/..
 #include "IncludeWin.h"
 #include "System.h"
-#include "Buffers.h"
 #include "Log.h"
+#include "Blobs.h"
+#include "Allocators.h"
 
 #pragma pack(push, 8)
 #include <DbgHelp.h>

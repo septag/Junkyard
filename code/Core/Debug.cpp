@@ -4,8 +4,8 @@
 #include <stdio.h>  // puts
 
 #include "System.h"         // sysAndroidPrintXXX/sysWinDebugger..
-#include "Buffers.h"
 #include "StringUtil.h"
+#include "Arrays.h"
 
 #ifdef BUILD_UNITY
     #if PLATFORM_WINDOWS

@@ -8,12 +8,13 @@
 #include "External/minicoro/minicoro.h"
 
 #include "System.h"
-#include "Buffers.h"
 #include "Atomic.h"
 #include "StringUtil.h"
 #include "TracyHelper.h"
 #include "Hash.h"
 #include "Debug.h"
+#include "Arrays.h"
+#include "Allocators.h"
 
 // set this to 1 to spam output with tracy zones debugging
 #define JOBS_DEBUG_TRACY_ZONES 0

@@ -1,7 +1,7 @@
 #include "Hash.h"
 
 #include "StringUtil.h" // strLen
-#include "Buffers.h"
+#include "Allocators.h"
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 /* This file is derived from crc32.c from the zlib-1.1.3 distribution

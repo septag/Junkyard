@@ -3,7 +3,7 @@
 #include "../Core/Base.h"
 
 #if CONFIG_TOOLMODE
-#include "../Core/Buffers.h"
+#include "../Core/Blobs.h"
 
 enum class ImageEncoderCompression
 {

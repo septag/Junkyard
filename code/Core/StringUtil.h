@@ -11,7 +11,7 @@ API char*   strCopy(char* RESTRICT dst, uint32 dstSize, const char* RESTRICT src
 API char*   strCopyCount(char* RESTRICT dst, uint32 dstSize, const char* RESTRICT src, uint32 count);
 API char*   strConcat(char* RESTRICT dst, uint32 dstSize, const char* RESTRICT src);
 API char*   strConcatCount(char* RESTRICT dst, uint32 dstSize, const char* RESTRICT src, uint32 count);
-NO_ASAN API uint32  strLen(const char* str);
+NO_ASAN API uint32 strLen(const char* str);
 API uint32  strPrintFmt(char* str, uint32 size, const char* fmt, ...);
 API uint32  strPrintFmtArgs(char* str, uint32 size, const char* fmt, va_list args);
 API char*   strPrintFmtAlloc(Allocator* alloc, const char* fmt, ...);

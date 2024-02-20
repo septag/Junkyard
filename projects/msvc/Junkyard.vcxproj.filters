@@ -120,9 +120,6 @@
     <ClCompile Include="..\..\code\Core\Base.cpp">
       <Filter>Core</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\code\Core\Buffers.cpp">
-      <Filter>Core</Filter>
-    </ClCompile>
     <ClCompile Include="..\..\code\Core\Debug.cpp">
       <Filter>Core</Filter>
     </ClCompile>
@@ -226,6 +223,9 @@
     <ClCompile Include="..\..\code\Common\VirtualFS.cpp">
       <Filter>Common</Filter>
     </ClCompile>
+    <ClCompile Include="..\..\code\Core\Pools.cpp">
+      <Filter>Core</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\..\code\External\slang\slang.h">
@@ -286,9 +286,6 @@
       <Filter>Core</Filter>
     </ClInclude>
     <ClInclude Include="..\..\code\Core\BlitSort.h">
-      <Filter>Core</Filter>
-    </ClInclude>
-    <ClInclude Include="..\..\code\Core\Buffers.h">
       <Filter>Core</Filter>
     </ClInclude>
     <ClInclude Include="..\..\code\Core\Debug.h">
@@ -429,6 +426,15 @@
     </ClInclude>
     <ClInclude Include="..\..\code\Core\External\tracy\tracy\TracyC.h">
       <Filter>Core\External\tracy</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\code\Core\Arrays.h">
+      <Filter>Core</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\code\Core\Blobs.h">
+      <Filter>Core</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\code\Core\Pools.h">
+      <Filter>Core</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

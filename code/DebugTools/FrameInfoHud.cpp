@@ -3,8 +3,8 @@
 #include "../Core/Log.h"
 #include "../Core/MathTypes.h"
 #include "../Core/MathScalar.h"
-#include "../Core/Buffers.h"
 #include "../Core/Atomic.h"
+#include "../Core/Blobs.h"
 #include "../Common/Application.h"
 #include "../Common/JunkyardSettings.h"
 #include "../ImGui/ImGuiWrapper.h"
@@ -13,7 +13,7 @@
 
 struct FrameInfoContext
 {
-    RingBuffer frameTimes;
+    RingBlob frameTimes;
     uint32 targetFps;
     String<256> statusText;
     Color statusColor;
@@ -32,7 +32,7 @@ void frameInfoRender(float dt, bool *pOpen)
     const ImVec2 kDisplaySize = ImGui::GetIO().DisplaySize;
     ImGuiStyle& kStyle = ImGui::GetStyle();
 
-    RingBuffer& frameTimes = gFrameInfo.frameTimes;
+    RingBlob& frameTimes = gFrameInfo.frameTimes;
 
     // First-time initialization
     if (gFrameInfo.targetFps == 0)

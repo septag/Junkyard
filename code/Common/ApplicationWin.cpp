@@ -10,9 +10,10 @@
 #include "../Core/System.h"
 #include "../Core/Settings.h"
 #include "../Core/IncludeWin.h"
-#include "../Core/Buffers.h"
 #include "../Core/Log.h"
 #include "../Core/Debug.h"
+#include "../Core/Arrays.h"
+#include "../Core/Allocators.h"
 
 #include "../Core/External/mgustavsson/ini.h"
 

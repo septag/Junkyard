@@ -28,10 +28,11 @@
     <ClInclude Include="..\..\..\code\Common\RemoteServices.h" />
     <ClInclude Include="..\..\..\code\Common\VirtualFS.h" />
     <ClInclude Include="..\..\..\code\Core\Allocators.h" />
+    <ClInclude Include="..\..\..\code\Core\Arrays.h" />
     <ClInclude Include="..\..\..\code\Core\Atomic.h" />
     <ClInclude Include="..\..\..\code\Core\Base.h" />
     <ClInclude Include="..\..\..\code\Core\BlitSort.h" />
-    <ClInclude Include="..\..\..\code\Core\Buffers.h" />
+    <ClInclude Include="..\..\..\code\Core\Blobs.h" />
     <ClInclude Include="..\..\..\code\Core\Debug.h" />
     <ClInclude Include="..\..\..\code\Core\External\c89atomic\c89atomic.h" />
     <ClInclude Include="..\..\..\code\Core\External\cj5\cj5.h" />
@@ -51,6 +52,7 @@
     <ClInclude Include="..\..\..\code\Core\MathScalar.h" />
     <ClInclude Include="..\..\..\code\Core\MathTypes.h" />
     <ClInclude Include="..\..\..\code\Core\MathVector.h" />
+    <ClInclude Include="..\..\..\code\Core\Pools.h" />
     <ClInclude Include="..\..\..\code\Core\Settings.h" />
     <ClInclude Include="..\..\..\code\Core\StringUtil.h" />
     <ClInclude Include="..\..\..\code\Core\System.h" />
@@ -96,7 +98,6 @@
     <ClCompile Include="..\..\..\code\Common\VirtualFS.cpp" />
     <ClCompile Include="..\..\..\code\Core\Allocators.cpp" />
     <ClCompile Include="..\..\..\code\Core\Base.cpp" />
-    <ClCompile Include="..\..\..\code\Core\Buffers.cpp" />
     <ClCompile Include="..\..\..\code\Core\Debug.cpp" />
     <ClCompile Include="..\..\..\code\Core\DebugClang.cpp" />
     <ClCompile Include="..\..\..\code\Core\DebugWin.cpp">
@@ -110,6 +111,7 @@
     <ClCompile Include="..\..\..\code\Core\JsonParser.cpp" />
     <ClCompile Include="..\..\..\code\Core\Log.cpp" />
     <ClCompile Include="..\..\..\code\Core\MathAll.cpp" />
+    <ClCompile Include="..\..\..\code\Core\Pools.cpp" />
     <ClCompile Include="..\..\..\code\Core\Settings.cpp" />
     <ClCompile Include="..\..\..\code\Core\StringUtil.cpp" />
     <ClCompile Include="..\..\..\code\Core\StringUtilWin.cpp" />

@@ -14,7 +14,7 @@ PRAGMA_DIAGNOSTIC_IGNORED_CLANG_GCC("-Wunused-function")
 PRAGMA_DIAGNOSTIC_POP()
 
 #include "Atomic.h"
-#include "Buffers.h"
+#include "Blobs.h"
 
 static thread_local JNIEnv* gJniEnv = nullptr;
 static atomicUint32 gJniAttachedThreadCount;

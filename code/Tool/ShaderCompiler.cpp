@@ -7,9 +7,9 @@
 
 #include "../External/slang/slang.h"
 
-#include "../Core/Buffers.h"
 #include "../Core/Log.h"
 #include "../Core/TracyHelper.h"
+#include "../Core/Blobs.h"
 
 struct ShaderCompiler
 {

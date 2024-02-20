@@ -297,6 +297,8 @@ private:
     uint8 mData[64];
 };
 
+// Async file
+// TODO: (experimental) Currently, not implemented in platforms other than windows
 struct AsyncFile
 {
     Path filepath;

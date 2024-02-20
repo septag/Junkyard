@@ -7,7 +7,8 @@
 #include "../Core/StringUtil.h"
 #include "../Core/Settings.h"
 #include "../Core/TracyHelper.h"
-#include "../Core/Buffers.h"
+#include "../Core/Arrays.h"
+#include "../Core/Allocators.h"
 
 #if PLATFORM_ANDROID
     #include "Application.h"    // appGetNativeAssetManagerHandle

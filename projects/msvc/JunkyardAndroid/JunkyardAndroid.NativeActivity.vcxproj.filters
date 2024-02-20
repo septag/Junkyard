@@ -148,9 +148,6 @@
     <ClInclude Include="..\..\..\code\Core\BlitSort.h">
       <Filter>Core</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\..\code\Core\Buffers.h">
-      <Filter>Core</Filter>
-    </ClInclude>
     <ClInclude Include="..\..\..\code\Core\Debug.h">
       <Filter>Core</Filter>
     </ClInclude>
@@ -253,6 +250,15 @@
     <ClInclude Include="..\..\..\code\Common\VirtualFS.h">
       <Filter>Common</Filter>
     </ClInclude>
+    <ClInclude Include="..\..\..\code\Core\Arrays.h">
+      <Filter>Core</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\code\Core\Blobs.h">
+      <Filter>Core</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\code\Core\Pools.h">
+      <Filter>Core</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\..\..\code\External\imgui\imgui.cpp">
@@ -323,9 +329,6 @@
     </ClCompile>
     <ClCompile Include="..\..\..\code\Graphics\Graphics.cpp">
       <Filter>Graphics</Filter>
-    </ClCompile>
-    <ClCompile Include="..\..\..\code\Core\Buffers.cpp">
-      <Filter>Core</Filter>
     </ClCompile>
     <ClCompile Include="..\..\..\code\Tests\AssetTest.cpp">
       <Filter>Tests</Filter>
@@ -405,6 +408,9 @@
     </ClCompile>
     <ClCompile Include="..\..\..\code\Common\VirtualFS.cpp">
       <Filter>Common</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\..\code\Core\Pools.cpp">
+      <Filter>Core</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>

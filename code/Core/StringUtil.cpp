@@ -4,14 +4,12 @@
 #include <stdlib.h>
 
 #define STB_SPRINTF_IMPLEMENTATION
-// #define STB_SPRINTF_STATIC
 PRAGMA_DIAGNOSTIC_PUSH()
 PRAGMA_DIAGNOSTIC_IGNORED_CLANG_GCC("-Wunused-function")
 PRAGMA_DIAGNOSTIC_IGNORED_CLANG_GCC("-Wunused-parameter")
 PRAGMA_DIAGNOSTIC_IGNORED_CLANG_GCC("-Wsign-compare")
 PRAGMA_DIAGNOSTIC_IGNORED_CLANG_GCC("-Wstrict-aliasing")
 PRAGMA_DIAGNOSTIC_IGNORED_CLANG_GCC("-Wconditional-uninitialized")
-PRAGMA_DIAGNOSTIC_IGNORED_MSVC(4505)
 #include "External/stb/stb_sprintf.h"
 PRAGMA_DIAGNOSTIC_POP();
 #undef STB_SPRINTF_IMPLEMENTATION
@@ -22,7 +20,7 @@ PRAGMA_DIAGNOSTIC_POP();
     #endif
 #endif
 
-#include "Buffers.h"
+#include "Arrays.h"
 
 uint32 strPrintFmt(char* str, uint32 size, const char* fmt, ...)
 {
@@ -107,10 +105,10 @@ uint32 strLen(const char* str)
     himagic = 0x80808080L;
     lomagic = 0x01010101L;
     #if ARCH_64BIT
-        /* 64-bit version of the magic.  */
-        /* Do the shift in two steps to avoid a warning if long has 32 bits.  */
-        himagic = ((himagic << 16) << 16) | himagic;
-        lomagic = ((lomagic << 16) << 16) | lomagic;
+    /* 64-bit version of the magic.  */
+    /* Do the shift in two steps to avoid a warning if long has 32 bits.  */
+    himagic = ((himagic << 16) << 16) | himagic;
+    lomagic = ((lomagic << 16) << 16) | lomagic;
     #endif
 
     for (;;) {
@@ -128,15 +126,15 @@ uint32 strLen(const char* str)
             if (cp[3] == 0)
                 return (uint32)(intptr_t)(cp - str + 3);
             #if ARCH_64BIT
-                if (cp[4] == 0)
-                    return (uint32)(intptr_t)(cp - str + 4);
-                if (cp[5] == 0)
-                    return (uint32)(intptr_t)(cp - str + 5);
-                if (cp[6] == 0)
-                    return (uint32)(intptr_t)(cp - str + 6);
-                if (cp[7] == 0)
-                    return (uint32)(intptr_t)(cp - str + 7);
-            #endif
+            if (cp[4] == 0)
+                return (uint32)(intptr_t)(cp - str + 4);
+            if (cp[5] == 0)
+                return (uint32)(intptr_t)(cp - str + 5);
+            if (cp[6] == 0)
+                return (uint32)(intptr_t)(cp - str + 6);
+            if (cp[7] == 0)
+                return (uint32)(intptr_t)(cp - str + 7);
+            #endif // ARCH_64BIT
         }
     }
 
@@ -163,10 +161,10 @@ NO_ASAN INLINE uint32 strLenCount(const char* str, uint32 _max)
     himagic = 0x80808080L;
     lomagic = 0x01010101L;
     #if ARCH_64BIT
-        /* 64-bit version of the magic.  */
-        /* Do the shift in two steps to avoid a warning if long has 32 bits.  */
-        himagic = ((himagic << 16) << 16) | himagic;
-        lomagic = ((lomagic << 16) << 16) | lomagic;
+    /* 64-bit version of the magic.  */
+    /* Do the shift in two steps to avoid a warning if long has 32 bits.  */
+    himagic = ((himagic << 16) << 16) | himagic;
+    lomagic = ((lomagic << 16) << 16) | lomagic;
     #endif
 
     for (;;) {
@@ -187,15 +185,15 @@ NO_ASAN INLINE uint32 strLenCount(const char* str, uint32 _max)
             if (cp[3] == 0)
                 return Min(_max, baseOffset + 3);
             #if ARCH_64BIT
-                if (cp[4] == 0)
-                    return Min(_max, baseOffset + 4);
-                if (cp[5] == 0)
-                    return Min(_max, baseOffset + 5);
-                if (cp[6] == 0)
-                    return Min(_max, baseOffset + 6);
-                if (cp[7] == 0)
-                    return Min(_max, baseOffset + 7);
-            #endif
+            if (cp[4] == 0)
+                return Min(_max, baseOffset + 4);
+            if (cp[5] == 0)
+                return Min(_max, baseOffset + 5);
+            if (cp[6] == 0)
+                return Min(_max, baseOffset + 6);
+            if (cp[7] == 0)
+                return Min(_max, baseOffset + 7);
+            #endif // ARCH_64BIT
         }
     }
 

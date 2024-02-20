@@ -1,11 +1,11 @@
 @echo off
 
-build-test
+call build-test
 if %errorlevel% neq 0 (
     exit /b -1
 )
 
-build-tool
+call build-tool
 if %errorlevel% neq 0 (
     exit /b -1
 )

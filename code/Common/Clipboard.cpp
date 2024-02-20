@@ -1,6 +1,5 @@
 #include "Clipboard.h"
 
-#include "../Core/Buffers.h"
 #include "../Core/Hash.h"
 #include "../Core/Atomic.h"
 #include "../Core/StringUtil.h"

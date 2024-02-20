@@ -5,8 +5,9 @@
 
 #include "TracyHelper.h"
 #include "System.h"
-#include "Buffers.h"
 #include "Debug.h"
+#include "Arrays.h"
+#include "Allocators.h"
 
 #if PLATFORM_MOBILE || PLATFORM_OSX
     #define TERM_COLOR_RESET     ""

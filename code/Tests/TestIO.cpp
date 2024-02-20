@@ -8,6 +8,8 @@
 #include "../Core/System.h"
 #include "../Core/Atomic.h"
 #include "../Core/Hash.h"
+#include "../Core/Allocators.h"
+#include "../Core/Pools.h"
 
 #include "../UnityBuild.inl"
 
@@ -443,8 +445,10 @@ struct AppImpl final : AppCallbacks
         fileAlloc.Initialize(8*kGB, kGB);
 
         MemTempAllocator tmpAlloc;
-        PoolBuffer<CPIO_Request> reqPool(&tmpAlloc);
+        FixedSizePool<CPIO_Request> reqPool(&tmpAlloc);
+        #if 0
         reqPool.Reserve(numFiles);
+
 
         uint32 pageSize = (uint32)sysGetPageSize();
         HANDLE hCompletionPort = CreateIoCompletionPort(INVALID_HANDLE_VALUE, nullptr, 0, 0);
@@ -494,6 +498,7 @@ struct AppImpl final : AppCallbacks
         fileAlloc.Release();
         
         totalSize = threadData.totalSize;
+        #endif
     }
 
     struct NoCacheRequest
@@ -512,7 +517,7 @@ struct AppImpl final : AppCallbacks
         fileAlloc.Initialize(8*kGB, kGB);
 
         MemTempAllocator tmpAlloc;
-        PoolBuffer<NoCacheRequest> reqPool(&tmpAlloc);
+        FixedSizePool<NoCacheRequest> reqPool(&tmpAlloc);
         reqPool.Reserve(numFiles);
 
         uint32 pageSize = (uint32)sysGetPageSize();

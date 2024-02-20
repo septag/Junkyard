@@ -1,7 +1,6 @@
 #pragma once
 
-#include "../Core/Base.h"
-#include "../Core/Buffers.h"
+#include "../Core/Blobs.h"
 
 enum class VfsFlags : uint32
 {

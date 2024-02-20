@@ -1,10 +1,11 @@
 #include "Console.h"
 
 #include "../Core/StringUtil.h"
-#include "../Core/Buffers.h"
 #include "../Core/System.h"
 #include "../Core/Log.h"
 #include "../Core/IniParser.h"
+#include "../Core/Allocators.h"
+#include "../Core/Arrays.h"
 
 #include "../Common/RemoteServices.h"
 #include "../Common/VirtualFS.h"

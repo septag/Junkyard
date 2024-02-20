@@ -4,6 +4,7 @@
 #include "../External/ispc_texcomp/include/ispc_texcomp.h"
 
 #include "../Core/StringUtil.h"
+#include "../Core/Allocators.h"
 
 struct ImageEncoderInfo
 {

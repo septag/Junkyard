@@ -1,8 +1,8 @@
 #include "IniParser.h"
 
 #include "StringUtil.h"
-#include "Buffers.h"
 #include "System.h"
+#include "Allocators.h"
 
 #define INI_IMPLEMENTATION
 #define INI_MALLOC(ctx, size)       memAlloc(size, (Allocator*)ctx)
