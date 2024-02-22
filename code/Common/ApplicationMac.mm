@@ -9,8 +9,8 @@
 #include "../Core/StringUtil.h"
 #include "../Core/Allocators.h"
 #include "../Core/Log.h"
-#include "../Core/Buffers.h"
 #include "../Core/Debug.h"
+#include "../Core/Arrays.h"
 
 #include "JunkyardSettings.h"
 #include "VirtualFS.h"
