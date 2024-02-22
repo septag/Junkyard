@@ -86,6 +86,7 @@ static constexpr uint32 kDebugRemedyBGBufferSize = 8*kKB;
 
 struct DebugRemedyBGContext
 {
+    SysProcess remedybgProc;
     HANDLE cmdPipe = INVALID_HANDLE_VALUE;
 };
 
@@ -242,12 +243,26 @@ DebugStacktraceContext::~DebugStacktraceContext()
 // RemedyBG
 static const char* kDebugRemedyBGPipeNamePrefix = "\\\\.\\pipe\\";
 
-bool debugRemedyBG_Initialize(const char* serverName)
+bool debugRemedyBG_Initialize(const char* serverName, const char* remedybgPath)
 {
+    ASSERT(remedybgPath);
     ASSERT_MSG(gRemedyBG.cmdPipe == INVALID_HANDLE_VALUE, "RemedyBG is initialized before");
 
     ASSERT_MSG(!sysIsDebuggerPresent(), "Another debugger is already attached to this executable");
     ASSERT_ALWAYS(strLen(serverName) <= RDBG_MAX_SERVERNAME_LEN, "ServerName is too long for RemedyBG sessions: %s", serverName);
+
+    // Open remedybg executable and attach the current process to it
+    Path remedybgCmdline(remedybgPath);
+    remedybgCmdline.Append(" --servername ");
+    remedybgCmdline.Append(serverName);
+    if (!gRemedyBG.remedybgProc.Run(remedybgCmdline.CStr(), SysProcessFlags::None)) {
+        logError("RemedyBG: Could not run RemedyBG instance '%s'", remedybgPath);
+        return false;
+    }
+    // wait until the program is actually running, then we can connect
+    while (!gRemedyBG.remedybgProc.IsRunning())
+        threadSleep(20);
+    threadSleep(100);   // wait a little more so remedybg gets it's shit together
 
     String<256> pipeName(kDebugRemedyBGPipeNamePrefix);
     pipeName.Append(serverName);
@@ -264,7 +279,14 @@ bool debugRemedyBG_Initialize(const char* serverName)
         return false;
     }
 
-    return true;
+    if (debugRemedyBG_AttachToProcess(0)) {
+        logDebug("RemedyBG launched and attached to the process");
+        return true;
+    }
+    else {
+        logError("Attaching RemedyBG debugger to the current process failed");
+        return false;
+    }
 }
 
 void debugRemedyBG_Release()
@@ -272,6 +294,8 @@ void debugRemedyBG_Release()
     if (gRemedyBG.cmdPipe != INVALID_HANDLE_VALUE) 
         CloseHandle(gRemedyBG.cmdPipe);
     gRemedyBG.cmdPipe = INVALID_HANDLE_VALUE;
+    if (gRemedyBG.remedybgProc.IsValid())
+        gRemedyBG.remedybgProc.Abort();
 }
 
 static Blob debugRemedyBG_SendCommand(const Blob& cmdBuffer, Allocator* outBufferAlloc)

@@ -455,6 +455,7 @@ struct SysProcess
     void Wait() const;
     bool IsRunning() const;
     void Abort();
+    bool IsValid() const;
 
     int GetExitCode() const;
     uint32 ReadStdOut(void* data, uint32 size) const;

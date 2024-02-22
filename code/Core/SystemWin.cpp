@@ -700,6 +700,11 @@ bool SysProcess::IsRunning() const
     return WaitForSingleObject(mProcess, 0) != WAIT_OBJECT_0;
 }
 
+bool SysProcess::IsValid() const
+{
+    return mProcess != INVALID_HANDLE_VALUE;
+}
+
 static void sysTerminateChildProcesses(DWORD parentProcessId) 
 {
     HANDLE hSnapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
@@ -736,6 +741,9 @@ void SysProcess::Abort()
     BOOL r = TerminateProcess(mProcess, 1);
     if (!r) {
         logError("Process failed to terminate: 0x%x (ErrorCode: %u)", mProcess, GetLastError());
+    }
+    else {
+        mProcess = INVALID_HANDLE_VALUE;
     }
 }
 
