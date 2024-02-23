@@ -145,7 +145,7 @@ struct JobsContext
     Semaphore semaphores[uint32(JobsType::_Count)];
     JobsAtomicPool<JobsInstance, _limits::kJobsMaxInstances>* instancePool;
     JobsAtomicPool<JobsFiberProperties, _limits::kJobsMaxPending>* fiberPropsPool;
-    StaticArray<void*, 7> pointers;    // Storing memory pointers, For garbage collection at release
+    StaticArray<Pair<void*, uint32>, 7> pointers;    // Storing memory pointers, For garbage collection at release
 
     // Stats
     size_t runtimeHeapTotal;
@@ -640,7 +640,7 @@ void jobsInitialize(const JobsInitParams& initParams)
     uint32 numTotalThreads = gJobs.numThreads[0] + gJobs.numThreads[1] + 1;
     atomicALockInitialize(&gJobs.waitingListLock, numTotalThreads, memAllocAlignedTyped<AtomicALockThread>(numTotalThreads, alignof(AtomicALockThread), initParams.alloc));
     if (initParams.alloc->GetType() != AllocatorType::Bump)
-        gJobs.pointers.Add(gJobs.waitingListLock.slots);
+        gJobs.pointers.Add(Pair<void*, uint32>(gJobs.waitingListLock.slots, alignof(AtomicALockThread)));
     #endif
 
     gJobs.semaphores[uint32(JobsType::ShortTask)].Initialize();
@@ -654,7 +654,7 @@ void jobsInitialize(const JobsInitParams& initParams)
         size_t poolSize = MemTlsfAllocator::GetMemoryRequirement(allocSize);
         void* buffer = memAlloc(poolSize, initParams.alloc);
         if (initParams.alloc->GetType() != AllocatorType::Bump)
-            gJobs.pointers.Add(buffer);
+            gJobs.pointers.Add(Pair<void*, uint32>(buffer, 0));
 
         gJobs.tlsfAlloc.Initialize(allocSize, buffer, poolSize, initParams.debugAllocations);
         gJobs.runtimeAlloc.SetAllocator(&gJobs.tlsfAlloc);
@@ -668,7 +668,7 @@ void jobsInitialize(const JobsInitParams& initParams)
     // LongTasks
     gJobs.threads[uint32(JobsType::LongTask)] = NEW_ARRAY(initParams.alloc, Thread, gJobs.numThreads[uint32(JobsType::LongTask)]);
     if (initParams.alloc->GetType() != AllocatorType::Bump)
-        gJobs.pointers.Add(gJobs.threads[uint32(JobsType::LongTask)]);
+        gJobs.pointers.Add(Pair<void*, uint32>(gJobs.threads[uint32(JobsType::LongTask)], 0));
 
     for (uint32 i = 0; i < gJobs.numThreads[uint32(JobsType::LongTask)]; i++) {
         char name[32];
@@ -687,7 +687,7 @@ void jobsInitialize(const JobsInitParams& initParams)
     // ShortTasks
     gJobs.threads[uint32(JobsType::ShortTask)] = NEW_ARRAY(initParams.alloc, Thread, gJobs.numThreads[uint32(JobsType::ShortTask)]);
     if (initParams.alloc->GetType() != AllocatorType::Bump)
-        gJobs.pointers.Add(gJobs.threads[uint32(JobsType::ShortTask)]);
+        gJobs.pointers.Add(Pair<void*, uint32>(gJobs.threads[uint32(JobsType::ShortTask)], 0));
 
     for (uint32 i = 0; i < gJobs.numThreads[uint32(JobsType::ShortTask)]; i++) {
         char name[32];
@@ -745,8 +745,8 @@ void jobsRelease()
     gJobs.semaphores[uint32(JobsType::ShortTask)].Release();
     gJobs.semaphores[uint32(JobsType::LongTask)].Release();
 
-    for (void* ptr : gJobs.pointers)
-        memFree(ptr, gJobs.initParams.alloc);
+    for (Pair<void*, uint32> p : gJobs.pointers)
+        memFreeAligned(p.first, p.second, gJobs.initParams.alloc);
 }
 
 void jobsGetBudgetStats(JobsBudgetStats* stats)

@@ -18,6 +18,8 @@
 #include <ws2tcpip.h>
 #include <ShlObj.h>     // SH family of functions
 
+#pragma comment(lib, "ws2_32.lib")
+
 namespace _limits 
 {
     const uint32 kSysMaxCores = 128;
@@ -937,6 +939,43 @@ bool sysWin32SetPrivilege(const char* name, bool enable)
     CloseHandle(tokenHandle);
     return true;
 }
+
+ SysWin32ShellExecuteResult sysWin32ShellExecute(const char* filepath, const char* args, 
+                                                 const char* cwd, SysWin32ShowWindow showFlag, 
+                                                 const char* operation,
+                                                 void** pInstance)
+ {
+     HINSTANCE hInst = ShellExecuteA(nullptr, operation, filepath, args, cwd, (INT)showFlag);
+
+     INT_PTR errCode = INT_PTR(hInst);
+     if (errCode <= 32) {
+         switch (errCode) {
+         case 0:
+         case SE_ERR_OOM:
+             return SysWin32ShellExecuteResult::OutOfMemory;
+         case SE_ERR_DLLNOTFOUND:
+         case SE_ERR_FNF:
+             return SysWin32ShellExecuteResult::FileNotFound;
+         case SE_ERR_PNF:
+             return SysWin32ShellExecuteResult::PathNotFound;
+         case ERROR_BAD_FORMAT:
+             return SysWin32ShellExecuteResult::BadFormat;
+         case SE_ERR_ASSOCINCOMPLETE:
+         case SE_ERR_NOASSOC:
+             return SysWin32ShellExecuteResult::NoAssociation;
+         case SE_ERR_ACCESSDENIED:
+             return SysWin32ShellExecuteResult::AccessDenied;
+         default:
+             return SysWin32ShellExecuteResult::UnknownError;
+         }
+     }
+     else {
+         if (pInstance)
+             *pInstance = hInst;
+         return SysWin32ShellExecuteResult::Ok;
+     }
+ }
+
 
 bool SysUUID::operator==(const SysUUID& uuid) const
 {

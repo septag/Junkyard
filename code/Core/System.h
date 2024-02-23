@@ -477,10 +477,46 @@ private:
 // Platform specific 
 #if PLATFORM_WINDOWS
 
+// https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-showwindow
+enum class SysWin32ShowWindow : int
+{
+    Hide = 0,
+    Normal = 1,
+    Minimized = 2,
+    Maximized = 3,
+    NotActive = 4,
+    Show = 5,
+    Minimize = 6,
+    MinimizedNotActive = 7,
+    Restore = 9,
+    Default = 10,
+    ForceMinimize = 11
+};
+
+enum class SysWin32ShellExecuteResult
+{
+    Ok,
+    OutOfMemory,
+    FileNotFound,
+    PathNotFound,
+    BadFormat,
+    AccessDenied,
+    NoAssociation,
+    UnknownError
+};
+
 API bool sysWin32IsProcessRunning(const char* execName);
 API bool sysWin32GetRegisterLocalMachineString(const char* subkey, const char* value, char* dst, size_t dstSize);
 API void sysWin32PrintToDebugger(const char* text); 
 API bool sysWin32SetPrivilege(const char* name, bool enable = true);
+
+// https://learn.microsoft.com/en-us/windows/win32/api/shellapi/nf-shellapi-shellexecutea
+// For "operation": valid ops are "edit", "explore", "find", "open", "print", "runas"
+API SysWin32ShellExecuteResult sysWin32ShellExecute(const char* filepath, const char* args = nullptr, 
+                                                    const char* cwd = nullptr, 
+                                                    SysWin32ShowWindow showFlag = SysWin32ShowWindow::Default, 
+                                                    const char* operation = nullptr,
+                                                    void** pInstance = nullptr);
 
 enum class SysWin32Folder
 {
