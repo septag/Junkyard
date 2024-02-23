@@ -34,6 +34,8 @@ struct Array
     _T* Push(const _T& item);
     void RemoveAndSwap(uint32 index);
     void RemoveAndShift(uint32 index);
+    void RemoveRangeAndShift(uint32 index, uint32 endIndex = INVALID_INDEX);
+
     uint32 Count() const;
     uint32 Capacity() const;
     bool IsEmpty() const;
@@ -164,7 +166,7 @@ inline _T* Array<_T,_Reserve>::Push(const _T& item)
 {
     _T* newItem = Push();
     if (newItem)
-    *newItem = item;
+        *newItem = item;
     return newItem;
 }
 
@@ -177,21 +179,36 @@ inline void Array<_T,_Reserve>::RemoveAndSwap(uint32 index)
     #endif
     --mCount;
     if (index < mCount)
-    Swap<_T>(mBuffer[index], mBuffer[mCount]);
+        Swap<_T>(mBuffer[index], mBuffer[mCount]);
 }
 
 template <typename _T, uint32 _Reserve>
 inline void Array<_T,_Reserve>::RemoveAndShift(uint32 index)
 {
-    ASSERT(mBuffer);
-    #ifdef CONFIG_CHECK_OUTOFBOUNDS
-    ASSERT_MSG(index < mCount, "Index out of bounds (count: %u, index: %u)", mCount, index);
-    #endif
-    --mCount;
-    for (uint32 i = index; i < mCount; i++)
-    mBuffer[i] = mBuffer[i+1];
+    Pop(index);
 }
 
+template <typename _T, uint32 _Reserve>
+inline void Array<_T,_Reserve>::RemoveRangeAndShift(uint32 index, uint32 endIndex)
+{
+    if (endIndex == INVALID_INDEX)
+        endIndex = mCount;
+
+    #ifdef CONFIG_CHECK_OUTOFBOUNDS
+    ASSERT(endIndex > index);
+    ASSERT(endIndex <= mCount);
+    #endif
+
+    uint32 removeCount = endIndex - index;
+    for (uint32 i = 0; i < removeCount; i++) {
+        uint32 start = i + index;
+        uint32 end = i + endIndex;
+        if (end < mCount)
+            mBuffer[start] = mBuffer[end];
+    }
+
+    mCount -= removeCount;
+}
 
 template <typename _T, uint32 _Reserve>
 inline uint32 Array<_T,_Reserve>::Count() const
@@ -257,14 +274,7 @@ inline _T Array<_T,_Reserve>::PopLast()
 template <typename _T, uint32 _Reserve>
 inline _T Array<_T,_Reserve>::PopFirst()
 {
-    ASSERT(mCount > 0);
-    _T first = mBuffer[0];
-    // shuffle all items to the left
-    for (uint32 i = 1, c = mCount; i < c; i++) {
-        mBuffer[i-1] = mBuffer[i];
-    }
-    --mCount;
-    return first;
+    return Pop(0);
 }
 
 template <typename _T, uint32 _Reserve>
@@ -277,9 +287,8 @@ inline _T Array<_T,_Reserve>::Pop(uint32 index)
 
     _T item = mBuffer[index];
     // shuffle all items to the left
-    for (uint32 i = index+1, c = mCount; i < c; i++) {
+    for (uint32 i = index+1, c = mCount; i < c; i++)
         mBuffer[i-1] = mBuffer[i];
-    }
     --mCount;
     return item;
 }

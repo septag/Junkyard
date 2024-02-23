@@ -126,7 +126,7 @@ if args.verbose:
 for module in modules:
     module_include_path = os.path.abspath(os.path.join(args.rootdir, module + '.h'))
     if os.path.isfile(module_include_path) and module_include_path.lower() not in included_files:
-        header_blob = header_blob + preprocess_file(module_include_path, included_files)
+        header_blob = header_blob + preprocess_file(module_include_path, included_files) + '\n'
 included_files_in_header = included_files.copy()
 
 # sources
@@ -143,7 +143,7 @@ while len(test_extra_includes) > 0:
         root, ext = os.path.splitext(include_file)
         source_filepath = root + '.cpp'
         if os.path.isfile(source_filepath) and source_filepath not in included_files and not file_in_exclude_externals(source_filepath):
-            source_blob = source_blob + preprocess_file(source_filepath, included_files, newly_included)
+            source_blob = source_blob + preprocess_file(source_filepath, included_files, newly_included) + '\n'
     test_extra_includes = newly_included.copy()
 
 # Generate output code
@@ -157,6 +157,7 @@ with open(output_header_path, 'wt') as f:
     f.write('\n')
     f.write('#pragma once\n')
     f.write(header_blob)
+    f.write('\n')
     if args.stbheader:
         f.write('\n//' + '-'*(LINE_WIDTH-2) + '\n')
         f.write('// ' + args.outputname + ' implementation\n')

@@ -788,12 +788,17 @@ bool sysWin32IsProcessRunning(const char* execName)
         return false;
     }
 
+    bool isRunning = false;
     do {
-        if (strIsEqualNoCase(entry.szExeFile, execNameTrimmed)) {
-            CloseHandle(snapshot);
-            return true;
+        if constexpr (sizeof(CHAR) == 2) {
+            char exeFile[MAX_PATH];
+            if (strWideToUtf8((const wchar_t*)entry.szExeFile, exeFile, sizeof(exeFile)))
+                isRunning = strIsEqualNoCase(exeFile, execNameTrimmed);
         }
-    } while (Process32Next(snapshot, &entry));
+        else {
+            isRunning = strIsEqualNoCase((const char*)entry.szExeFile, execNameTrimmed);
+        }
+    } while (!isRunning && Process32Next(snapshot, &entry));
 
     CloseHandle(snapshot);
     return false;
