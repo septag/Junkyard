@@ -262,7 +262,7 @@ bool debugRemedyBG_Initialize(const char* serverName, const char* remedybgPath)
     // wait until the program is actually running, then we can connect
     while (!gRemedyBG.remedybgProc.IsRunning())
         threadSleep(20);
-    threadSleep(100);   // wait a little more so remedybg gets it's shit together
+    threadSleep(200);   // wait a little more so remedybg gets it's shit together
 
     String<256> pipeName(kDebugRemedyBGPipeNamePrefix);
     pipeName.Append(serverName);
@@ -341,6 +341,9 @@ static inline rdbg_CommandResult debugRemedyBG_GetResult(Blob& resultBuff)
 
 bool debugRemedyBG_AttachToProcess(uint32 id)
 {
+    if (gRemedyBG.cmdPipe == INVALID_HANDLE_VALUE)
+        return 0;
+
     DEBUG_REMEDYBG_BEGINCOMMAND(RDBG_COMMAND_ATTACH_TO_PROCESS_BY_PID);
 
     if (id == 0)
@@ -355,6 +358,9 @@ bool debugRemedyBG_AttachToProcess(uint32 id)
 
 bool debugRemedyBG_DetachFromProcess()
 {
+    if (gRemedyBG.cmdPipe == INVALID_HANDLE_VALUE)
+        return 0;
+
     DEBUG_REMEDYBG_BEGINCOMMAND(RDBG_COMMAND_DETACH_FROM_PROCESS);
     Blob res = debugRemedyBG_SendCommand(cmdBuffer, &tempAlloc);
     return debugRemedyBG_GetResult(res) == RDBG_COMMAND_RESULT_OK;
@@ -362,6 +368,9 @@ bool debugRemedyBG_DetachFromProcess()
 
 bool debugRemedyBG_Break()
 {
+    if (gRemedyBG.cmdPipe == INVALID_HANDLE_VALUE)
+        return 0;
+    
     DEBUG_REMEDYBG_BEGINCOMMAND(RDBG_COMMAND_BREAK_EXECUTION);
     Blob res = debugRemedyBG_SendCommand(cmdBuffer, &tempAlloc);
     return debugRemedyBG_GetResult(res) == RDBG_COMMAND_RESULT_OK;
@@ -376,17 +385,22 @@ bool debugRemedyBG_Continue()
 
 bool debugRemedyBG_RunToFileAtLine(const char* filename, uint32 line)
 {
+    if (gRemedyBG.cmdPipe == INVALID_HANDLE_VALUE)
+        return 0;
+
     ASSERT(filename);
     DEBUG_REMEDYBG_BEGINCOMMAND(RDBG_COMMAND_RUN_TO_FILE_AT_LINE);
     cmdBuffer.WriteStringBinary16(filename);
     cmdBuffer.Write<uint32>(line);
     Blob res = debugRemedyBG_SendCommand(cmdBuffer, &tempAlloc);
     return debugRemedyBG_GetResult(res) == RDBG_COMMAND_RESULT_OK;
-
 }
 
 DebugRemedyBG_Id debugRemedyBG_AddFunctionBreakpoint(const char* funcName, const char* conditionExpr, uint32 overloadId)
 {
+    if (gRemedyBG.cmdPipe == INVALID_HANDLE_VALUE)
+        return 0;
+
     ASSERT(funcName);
     DEBUG_REMEDYBG_BEGINCOMMAND(RDBG_COMMAND_ADD_BREAKPOINT_AT_FUNCTION);
     cmdBuffer.WriteStringBinary16(funcName);
@@ -402,6 +416,9 @@ DebugRemedyBG_Id debugRemedyBG_AddFunctionBreakpoint(const char* funcName, const
 
 DebugRemedyBG_Id debugRemedyBG_AddFileLineBreakpoint(const char* filename, uint32 line, const char* conditionExpr)
 {
+    if (gRemedyBG.cmdPipe == INVALID_HANDLE_VALUE)
+        return 0;
+
     ASSERT(filename);
     DEBUG_REMEDYBG_BEGINCOMMAND(RDBG_COMMAND_ADD_BREAKPOINT_AT_FILENAME_LINE);
     cmdBuffer.WriteStringBinary16(filename);
@@ -417,6 +434,9 @@ DebugRemedyBG_Id debugRemedyBG_AddFileLineBreakpoint(const char* filename, uint3
 
 DebugRemedyBG_Id debugRemedyBG_AddAddressBreakpoint(uintptr_t addr, const char* conditionExpr)
 {
+    if (gRemedyBG.cmdPipe == INVALID_HANDLE_VALUE)
+        return 0;
+
     ASSERT(addr);
     DEBUG_REMEDYBG_BEGINCOMMAND(RDBG_COMMAND_ADD_BREAKPOINT_AT_ADDRESS);
     cmdBuffer.Write<uint64>(addr);
@@ -429,11 +449,19 @@ DebugRemedyBG_Id debugRemedyBG_AddAddressBreakpoint(uintptr_t addr, const char* 
     return bid;
 }
 
-DebugRemedyBG_Id debugRemedyBG_AddProcessorBreakpoint(const char* addrExpr, uint8 numBytes, 
+DebugRemedyBG_Id debugRemedyBG_AddProcessorBreakpoint(const void* addr, uint8 numBytes, 
                                                       DebugRemedyBG_ProcessorBreakpointType type, const char* conditionExpr)
 {
-    ASSERT(addrExpr);
+    if (gRemedyBG.cmdPipe == INVALID_HANDLE_VALUE)
+        return 0;
+
+    ASSERT_MSG(numBytes <= 8, "Processor breakpoints cannot be more than 8 bytes");
+
+    ASSERT(addr);
     DEBUG_REMEDYBG_BEGINCOMMAND(RDBG_COMMAND_ADD_PROCESSOR_BREAKPOINT);
+
+    char addrExpr[64];
+    strPrintFmt(addrExpr, sizeof(addrExpr), "0x%llx", addr);
     cmdBuffer.WriteStringBinary16(addrExpr);
     cmdBuffer.Write<uint8>(numBytes);
     cmdBuffer.Write<uint8>(uint8(type));
@@ -443,11 +471,15 @@ DebugRemedyBG_Id debugRemedyBG_AddProcessorBreakpoint(const char* addrExpr, uint
     DebugRemedyBG_Id bid = 0;
     if (debugRemedyBG_GetResult(res) == RDBG_COMMAND_RESULT_OK)
         res.Read<DebugRemedyBG_Id>(&bid);
+
     return bid;
 }
 
 bool debugRemedyBG_EnableBreakpoint(DebugRemedyBG_Id bId, bool enable)
 {
+    if (gRemedyBG.cmdPipe == INVALID_HANDLE_VALUE)
+        return 0;
+
     DEBUG_REMEDYBG_BEGINCOMMAND(RDBG_COMMAND_ENABLE_BREAKPOINT);
     cmdBuffer.Write<rdbg_Id>(bId);
     cmdBuffer.Write<rdbg_Bool>(enable);
@@ -457,6 +489,9 @@ bool debugRemedyBG_EnableBreakpoint(DebugRemedyBG_Id bId, bool enable)
 
 bool debugRemedyBG_SetBreakpointCondition(DebugRemedyBG_Id bId, const char* conditionExpr)
 {
+    if (gRemedyBG.cmdPipe == INVALID_HANDLE_VALUE)
+        return 0;
+
     DEBUG_REMEDYBG_BEGINCOMMAND(RDBG_COMMAND_ENABLE_BREAKPOINT);
     cmdBuffer.Write<rdbg_Id>(bId);
     cmdBuffer.WriteStringBinary16(conditionExpr ? conditionExpr : "");
@@ -466,6 +501,9 @@ bool debugRemedyBG_SetBreakpointCondition(DebugRemedyBG_Id bId, const char* cond
 
 bool debugRemedyBG_DeleteBreakpoint(DebugRemedyBG_Id bId)
 {
+    if (gRemedyBG.cmdPipe == INVALID_HANDLE_VALUE)
+        return 0;
+
     DEBUG_REMEDYBG_BEGINCOMMAND(RDBG_COMMAND_DELETE_BREAKPOINT);
     cmdBuffer.Write<rdbg_Id>(bId);
     Blob res = debugRemedyBG_SendCommand(cmdBuffer, &tempAlloc);
@@ -474,6 +512,9 @@ bool debugRemedyBG_DeleteBreakpoint(DebugRemedyBG_Id bId)
 
 bool debugRemedyBG_DeleteAllBreakpoints()
 {
+    if (gRemedyBG.cmdPipe == INVALID_HANDLE_VALUE)
+        return 0;
+
     DEBUG_REMEDYBG_BEGINCOMMAND(RDBG_COMMAND_DELETE_ALL_BREAKPOINTS);
     Blob res = debugRemedyBG_SendCommand(cmdBuffer, &tempAlloc);
     return debugRemedyBG_GetResult(res) == RDBG_COMMAND_RESULT_OK;
@@ -481,6 +522,9 @@ bool debugRemedyBG_DeleteAllBreakpoints()
 
 DebugRemedyBG_Id debugRemedyBG_AddWatch(const char* expr, const char* comment, uint8 windowNum)
 {
+    if (gRemedyBG.cmdPipe == INVALID_HANDLE_VALUE)
+        return 0;
+
     ASSERT(expr);
     DEBUG_REMEDYBG_BEGINCOMMAND(RDBG_COMMAND_ADD_WATCH);
     cmdBuffer.Write<uint8>(windowNum);
@@ -496,6 +540,9 @@ DebugRemedyBG_Id debugRemedyBG_AddWatch(const char* expr, const char* comment, u
 
 DebugRemedyBG_Id debugRemedyBG_DeleteWatch(DebugRemedyBG_Id wId)
 {
+    if (gRemedyBG.cmdPipe == INVALID_HANDLE_VALUE)
+        return 0;
+
     ASSERT(wId);
     DEBUG_REMEDYBG_BEGINCOMMAND(RDBG_COMMAND_DELETE_WATCH);
     cmdBuffer.Write<rdbg_Id>(wId);
@@ -509,6 +556,9 @@ DebugRemedyBG_Id debugRemedyBG_DeleteWatch(DebugRemedyBG_Id wId)
 
 bool debugRemedyBG_DeleteAllWatches()
 {
+    if (gRemedyBG.cmdPipe == INVALID_HANDLE_VALUE)
+        return 0;
+
     DEBUG_REMEDYBG_BEGINCOMMAND(RDBG_COMMAND_DELETE_ALL_WATCHES);
     Blob res = debugRemedyBG_SendCommand(cmdBuffer, &tempAlloc);
     return debugRemedyBG_GetResult(res) == RDBG_COMMAND_RESULT_OK;

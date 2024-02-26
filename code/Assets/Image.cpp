@@ -491,7 +491,7 @@ bool _private::assetInitializeImageManager()
     // - placeholder images
     // - Asset loaders for the images
     // - Descriptor cache management for reloads
-    if (!settingsGet().graphics.headless) {
+    if (settingsGet().graphics.enable && !settingsGet().graphics.headless) {
         const uint32 kWhitePixel = 0xffffffff;
         GfxImageDesc imageDesc = GfxImageDesc {
             .width = 1,

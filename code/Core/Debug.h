@@ -62,7 +62,7 @@ API bool debugRemedyBG_RunToFileAtLine(const char* filename, uint32 line);
 API DebugRemedyBG_Id debugRemedyBG_AddFunctionBreakpoint(const char* funcName, const char* conditionExpr = nullptr, uint32 overloadId = 0);
 API DebugRemedyBG_Id debugRemedyBG_AddFileLineBreakpoint(const char* filename, uint32 line, const char* conditionExpr = nullptr);
 API DebugRemedyBG_Id debugRemedyBG_AddAddressBreakpoint(uintptr_t addr, const char* conditionExpr = nullptr);
-API DebugRemedyBG_Id debugRemedyBG_AddProcessorBreakpoint(const char* addrExpr, uint8 numBytes, 
+API DebugRemedyBG_Id debugRemedyBG_AddProcessorBreakpoint(const void* addr, uint8 numBytes, 
                                                           DebugRemedyBG_ProcessorBreakpointType type, const char* conditionExpr = nullptr);
 API bool debugRemedyBG_EnableBreakpoint(DebugRemedyBG_Id bId, bool enable);
 API bool debugRemedyBG_SetBreakpointCondition(DebugRemedyBG_Id bId, const char* conditionExpr);
