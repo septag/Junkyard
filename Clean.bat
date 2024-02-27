@@ -6,6 +6,9 @@ del /Q Bin\Release\*.dll
 del /Q Bin\ReleaseDev\*.dll
 del /Q Bin\build_cmd\*.dll
 
+rem Delete ini files
+del /Q *.ini
+
 rem Delete generated files
 del /Q *.spv 
 del /Q *.hlsl 

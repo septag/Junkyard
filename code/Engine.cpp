@@ -177,9 +177,9 @@ bool engineInitialize()
     if (gfxSettings.enable) {
         if (!gfxSettings.headless) {
             AppDisplayInfo dinfo = appGetDisplayInfo();
-            logInfo("(init) Window Size: %ux%u", appGetWindowWidth(), appGetWindowHeight());
+            logInfo("(init) Logical Window Size: %ux%u", appGetWindowWidth(), appGetWindowHeight());
             logInfo("(init) Framebuffer Size: %ux%u", appGetFramebufferWidth(), appGetFramebufferHeight());
-            logInfo("(init) Display (%ux%u), DPI scale: %.1f, RefreshRate: %uhz", dinfo.width, dinfo.height, dinfo.dpiScale, dinfo.refreshRate);
+            logInfo("(init) Display (%ux%u), DPI scale: %.2f, RefreshRate: %uhz", dinfo.width, dinfo.height, dinfo.dpiScale, dinfo.refreshRate);
         }
 
         if (!_private::gfxInitialize()) {

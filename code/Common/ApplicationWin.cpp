@@ -57,8 +57,10 @@ struct AppWindowsState
 {
     bool valid;
     char name[32];
+    // Window dimensions are logical and does not include DPI scaling. They also present Client area, excluding the border
     uint16 windowWidth;
     uint16 windowHeight;
+    // Framebuffer dimensions equals window dimensions on HighDPI, but scaled down on non-HighDPI
     uint16 framebufferWidth;
     uint16 framebufferHeight;
     char windowTitle[128];
@@ -77,8 +79,8 @@ struct AppWindowsState
     uint16 displayHeight;
     uint16 displayRefreshRate;
     HMONITOR wndMonitor;
-    RECT mainRect;
-    RECT consoleRect;
+    RECT mainRect;          // Actual window dimensions that is serialized. Different than windowWidth/windowHeight above
+    RECT consoleRect;       // Actual console window dimensions
 
     HANDLE hStdin;
     HANDLE hStdOut;
@@ -259,7 +261,7 @@ static void appWinLoadInitRects()
         return rc;
     };
 
-    gApp.mainRect = RECT {0, 0, gApp.windowWidth, gApp.windowHeight};
+    gApp.mainRect = RECT {0, 0, -1, -1};
     gApp.consoleRect = RECT {1, 1, -1, -1};     // empty (leave it as it is)
     if (windowsIni) {
         GetWindowData(windowsIni, "Main", &gApp.mainRect);
@@ -293,7 +295,7 @@ static void appWinSaveInitRects()
 
         RECT mainRect, consoleRect;
         if (GetWindowRect(gApp.hwnd, &mainRect))
-            PutWindowData(windowsIni, "Main", RECT {mainRect.left, mainRect.top, mainRect.left + gApp.windowWidth, mainRect.top + gApp.windowHeight});
+            PutWindowData(windowsIni, "Main", mainRect);
         if (GetWindowRect(GetConsoleWindow(), &consoleRect))
             PutWindowData(windowsIni, "Console", consoleRect);
 
@@ -344,7 +346,7 @@ static bool appWinUpdateDisplayInfo()
     
     if (gApp.desc.highDPI) {
         gApp.contentScale = gApp.windowScale;
-        gApp.mouseScale = 1.0f;
+        gApp.mouseScale = 1.0f / gApp.windowScale;
     }
     else {
         gApp.contentScale = 1.0f;
@@ -702,13 +704,13 @@ static bool appWinUpdateDimensions()
 {
     RECT rect;
     if (GetClientRect(gApp.hwnd, &rect)) {
-        gApp.windowWidth = uint16((fl32)(rect.right - rect.left) / gApp.windowScale);
-        gApp.windowHeight = uint16((fl32)(rect.bottom - rect.top) / gApp.windowScale);
-        const uint16 fbWidth = uint16((fl32)gApp.windowWidth * gApp.contentScale);
-        const uint16 fbHeight = uint16((fl32)gApp.windowHeight * gApp.contentScale);
+        gApp.windowWidth = uint16(float(rect.right - rect.left) / gApp.windowScale);
+        gApp.windowHeight = uint16(float(rect.bottom - rect.top) / gApp.windowScale);
+        const uint16 fbWidth = uint16(float(gApp.windowWidth) * gApp.contentScale);
+        const uint16 fbHeight = uint16(float(gApp.windowHeight) * gApp.contentScale);
         if ((fbWidth != gApp.framebufferWidth) || (fbHeight != gApp.framebufferHeight)) {
-            gApp.framebufferWidth = uint16((fl32)gApp.windowWidth * gApp.contentScale);
-            gApp.framebufferHeight = uint16((fl32)gApp.windowHeight * gApp.contentScale);
+            gApp.framebufferWidth = uint16(float(gApp.windowWidth) * gApp.contentScale);
+            gApp.framebufferHeight = uint16(float(gApp.windowHeight) * gApp.contentScale);
             // prevent a framebuffer size of 0 when window is minimized
             if (gApp.framebufferWidth == 0)
                 gApp.framebufferWidth = 1;
@@ -746,9 +748,15 @@ static bool appWinCreateWindow()
     else {
         winStyle = WS_CLIPSIBLINGS | WS_CLIPCHILDREN | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX | WS_MAXIMIZEBOX | WS_SIZEBOX;
     }
-    AdjustWindowRectEx(&rect, winStyle, FALSE, winExStyle);
-    const int winWidth = rect.right - rect.left;
-    const int winHeight = rect.bottom - rect.top;
+
+    if (rect.right == -1 || rect.bottom == -1) {
+        rect = {0, 0, uint16(float(gApp.windowWidth)*gApp.windowScale) , uint16(float(gApp.windowHeight)*gApp.windowScale) };
+        AdjustWindowRectEx(&rect, winStyle, FALSE, winExStyle);
+        gApp.windowModified = true;
+    }
+
+    const int winWidth = uint16(rect.right - rect.left);
+    const int winHeight = uint16(rect.bottom - rect.top);
     
     static wchar_t winTitleWide[128];
     strUt8ToWide(gApp.windowTitle, winTitleWide, sizeof(winTitleWide));

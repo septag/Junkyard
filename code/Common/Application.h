@@ -95,7 +95,7 @@ struct AppDesc
     uint16 width              = 1280;
     uint16 height             = 800;
     const char* windowTitle   = nullptr;
-    bool highDPI              = false;
+    bool highDPI              = true;
     bool fullscreen           = false;
     bool userCursor           = true;
     bool enableClipboard      = true;

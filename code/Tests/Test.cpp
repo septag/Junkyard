@@ -518,8 +518,7 @@ int Main(int argc, char* argv[])
     static AppImpl impl;
     appInitialize(AppDesc { 
         .callbacks = &impl, 
-        .windowTitle = "Junkyard",
-        .highDPI = false
+        .windowTitle = "Junkyard"
     });
 
     settingsRelease();
