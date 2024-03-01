@@ -394,7 +394,6 @@ int Main(int argc, char* argv[])
     appInitialize(AppDesc { 
         .callbacks = &impl, 
         .windowTitle = "Junkyard: Asset Loading test",
-        .highDPI = false
     });
 
     settingsRelease();

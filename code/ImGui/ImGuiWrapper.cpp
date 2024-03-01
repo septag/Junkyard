@@ -583,6 +583,7 @@ void _private::imguiBeginFrame(float dt)
 
     ImGuiIO& io = ImGui::GetIO();
     io.DisplaySize = ImVec2(float(appGetFramebufferWidth()), float(appGetFramebufferHeight()));
+    io.FontGlobalScale = appGetDisplayInfo().dpiScale;
     io.DeltaTime = dt;
     if (io.DeltaTime == 0) 
         io.DeltaTime = 0.033f;

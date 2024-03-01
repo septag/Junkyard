@@ -429,7 +429,10 @@ static GfxContext gVk;
 static thread_local GfxCommandBufferThreadData gCmdBufferThreadData;
 
 static constexpr const char* kVkValidationLayer = "VK_LAYER_KHRONOS_validation";
-static constexpr const char* kAdrenoDebugLayer = "VK_LAYER_ADRENO_debug";
+static constexpr const char* kAdrenoDebugLayer = "VK_LAYER_ADRENO_debug";\
+
+// #define GFX_LOCK_POOL_TEMP(_type) AtomicLockScope CONCAT(mtx, __LINE__)(gVk.pools.locks[GfxObjectPools::_type])
+#define GFX_LOCK_POOL_TEMP(_type)
 
 #if PLATFORM_WINDOWS
     static const char* kGfxVkExtensions[] = {
@@ -749,13 +752,13 @@ static GfxPipelineLayout gfxCreatePipelineLayout(const GfxShader& shader,
                         .Add<GfxPushConstantDesc>(pushConstants, numPushConstants)
                         .Hash();
 
-    atomicLockEnter(&gVk.pools.locks[GfxObjectPools::PIPELINE_LAYOUTS]);
+    // atomicLockEnter(&gVk.pools.locks[GfxObjectPools::PIPELINE_LAYOUTS]);
     if (GfxPipelineLayout pipLayout = gVk.pools.pipelineLayouts.FindIf(
         [hash](const GfxPipelineLayoutData& item)->bool { return item.hash == hash; }); pipLayout.IsValid())
     {
         GfxPipelineLayoutData& item = gVk.pools.pipelineLayouts.Data(pipLayout);
         ++item.refCount;
-        atomicLockExit(&gVk.pools.locks[GfxObjectPools::PIPELINE_LAYOUTS]);
+        // atomicLockExit(&gVk.pools.locks[GfxObjectPools::PIPELINE_LAYOUTS]);
         if (layoutOut)
             *layoutOut = item.layout;
         return pipLayout;
@@ -767,7 +770,7 @@ static GfxPipelineLayout gfxCreatePipelineLayout(const GfxShader& shader,
         
         VkDescriptorSetLayout* vkDescriptorSetLayouts = nullptr;
         if (numDescriptorSetLayouts) {   
-            AtomicLockScope lk(gVk.pools.locks[GfxObjectPools::DESCRIPTOR_SET_LAYOUTS]);
+            GFX_LOCK_POOL_TEMP(DESCRIPTOR_SET_LAYOUTS);
             vkDescriptorSetLayouts = tempAlloc.MallocTyped<VkDescriptorSetLayout>(numDescriptorSetLayouts);
             for (uint32 i = 0; i < numDescriptorSetLayouts; i++) {
                 GfxDescriptorSetLayoutData& dsLayoutData = gVk.pools.descriptorSetLayouts.Data(descriptorSetLayouts[i]);
@@ -807,7 +810,7 @@ static GfxPipelineLayout gfxCreatePipelineLayout(const GfxShader& shader,
             return GfxPipelineLayout();
         }
         
-        AtomicLockScope mtx(gVk.pools.locks[GfxObjectPools::PIPELINE_LAYOUTS]);
+        GFX_LOCK_POOL_TEMP(PIPELINE_LAYOUTS);
         GfxPipelineLayoutData prevPipLayout;
         GfxPipelineLayoutData pipLayoutData = GfxPipelineLayoutData {
             .hash = hash,
@@ -833,7 +836,6 @@ static GfxPipelineLayout gfxCreatePipelineLayout(const GfxShader& shader,
 
 static void gfxDestroyPipelineLayout(GfxPipelineLayout layout)
 {
-    AtomicLockScope lk(gVk.pools.locks[GfxObjectPools::PIPELINE_LAYOUTS]);
     GfxPipelineLayoutData& layoutData = gVk.pools.pipelineLayouts.Data(layout);
     ASSERT(layoutData.refCount > 0);
     if (--layoutData.refCount == 0) {
@@ -841,6 +843,7 @@ static void gfxDestroyPipelineLayout(GfxPipelineLayout layout)
             vkDestroyPipelineLayout(gVk.device, layoutData.layout, &gVk.allocVk);
         memset(&layoutData, 0x0, sizeof(layoutData));
 
+        AtomicLockScope lk(gVk.pools.locks[GfxObjectPools::PIPELINE_LAYOUTS]);
         gVk.pools.pipelineLayouts.Remove(layout);
     }
 }
@@ -1419,7 +1422,7 @@ static GfxSwapchain gfxCreateSwapchain(VkSurfaceKHR surface, uint16 width, uint1
     }
 
     // Framebuffers
-    AtomicLockScope lk(gVk.pools.locks[GfxObjectPools::IMAGES]);
+    GFX_LOCK_POOL_TEMP(IMAGES);
     VkImageView depthImageView = depth ? gVk.pools.images.Data(newSwapchain.depthImage).view : nullptr;
     for (uint32 i = 0; i < numImages; i++) {
         const VkImageView attachments[] = {newSwapchain.imageViews[i], depthImageView};
@@ -2812,7 +2815,8 @@ void gfxDestroyBuffer(GfxBuffer buffer)
         return;
     
     GfxBufferData bufferData;
-    { AtomicLockScope lk(gVk.pools.locks[GfxObjectPools::BUFFERS]);
+    { 
+        GFX_LOCK_POOL_TEMP(BUFFERS);
         bufferData = gVk.pools.buffers.Data(buffer);
     }
 
@@ -2820,8 +2824,9 @@ void gfxDestroyBuffer(GfxBuffer buffer)
     if (bufferData.stagingBuffer) 
         vmaDestroyBuffer(gVk.vma, bufferData.stagingBuffer, bufferData.stagingAllocation);
 
-    { AtomicLockScope lk(gVk.pools.locks[GfxObjectPools::BUFFERS]);
-       gVk.pools.buffers.Remove(buffer);
+    { 
+        AtomicLockScope lk(gVk.pools.locks[GfxObjectPools::BUFFERS]);
+        gVk.pools.buffers.Remove(buffer);
     }
 }
 
@@ -2832,7 +2837,7 @@ void gfxCmdUpdateBuffer(GfxBuffer buffer, const void* data, uint32 size)
 
     GfxBufferData bufferData;
     {
-        AtomicLockScope lk(gVk.pools.locks[GfxObjectPools::BUFFERS]);
+        GFX_LOCK_POOL_TEMP(BUFFERS);
         bufferData = gVk.pools.buffers.Data(buffer);
     }
     ASSERT(size <= bufferData.size);
@@ -3081,7 +3086,7 @@ GfxImage gfxCreateImage(const GfxImageDesc& desc)
         imageData.numStackframes = debugCaptureStacktrace(imageData.stackframes, (uint16)CountOf(imageData.stackframes), 2);
 #endif
 
-    // MutexScope mtx(gVk.pools.mutex);
+    AtomicLockScope lk(gVk.pools.locks[GfxObjectPools::IMAGES]);
     return gVk.pools.images.Add(imageData);
 }
 
@@ -3090,7 +3095,6 @@ void gfxDestroyImage(GfxImage image)
     if (!image.IsValid())
         return;
 
-    AtomicLockScope lk(gVk.pools.locks[GfxObjectPools::IMAGES]);
     GfxImageData& imageData = gVk.pools.images.Data(image);
     
     if (imageData.sizeBytes) {
@@ -3103,6 +3107,7 @@ void gfxDestroyImage(GfxImage image)
         memset(&imageData, 0x0, sizeof(imageData));
     }    
 
+    AtomicLockScope lk(gVk.pools.locks[GfxObjectPools::IMAGES]);
     gVk.pools.images.Remove(image);
 }
 
@@ -3577,13 +3582,13 @@ GfxPipeline gfxCreatePipeline(const GfxPipelineDesc& desc)
     };
 
     #if !CONFIG_FINAL_BUILD
-        if (settingsGet().graphics.trackResourceLeaks)
-            pipData.numStackframes = debugCaptureStacktrace(pipData.stackframes, (uint16)CountOf(pipData.stackframes), 2);
+    if (settingsGet().graphics.trackResourceLeaks)
+        pipData.numStackframes = debugCaptureStacktrace(pipData.stackframes, (uint16)CountOf(pipData.stackframes), 2);
     #endif
     
     GfxPipeline pip;
     {
-        AtomicLockScope lk(gVk.pools.locks[GfxObjectPools::PIPELINES]);
+        GFX_LOCK_POOL_TEMP(PIPELINES);
         pip = gVk.pools.pipelines.Add(pipData);
     }
 
@@ -3607,7 +3612,6 @@ void gfxDestroyPipeline(GfxPipeline pipeline)
     if (!pipeline.IsValid())
         return;
 
-    AtomicLockScope lk(gVk.pools.locks[GfxObjectPools::PIPELINES]);
     GfxPipelineData& pipData = gVk.pools.pipelines.Data(pipeline);
 
     {   // Remove from shader <-> pipeline table
@@ -3632,6 +3636,7 @@ void gfxDestroyPipeline(GfxPipeline pipeline)
     if (pipData.pipeline)
         vkDestroyPipeline(gVk.device, pipData.pipeline, &gVk.allocVk);
 
+    AtomicLockScope lk(gVk.pools.locks[GfxObjectPools::PIPELINES]);
     gVk.pools.pipelines.Remove(pipeline);
 }
 
@@ -3794,7 +3799,6 @@ void gfxDestroyDescriptorSetLayout(GfxDescriptorSetLayout layout)
     if (!layout.IsValid())
         return;
 
-    AtomicLockScope lk(gVk.pools.locks[GfxObjectPools::DESCRIPTOR_SET_LAYOUTS]);
     GfxDescriptorSetLayoutData& layoutData = gVk.pools.descriptorSetLayouts.Data(layout);
     ASSERT(layoutData.refCount > 0);
     if (--layoutData.refCount == 0) {
@@ -3804,6 +3808,7 @@ void gfxDestroyDescriptorSetLayout(GfxDescriptorSetLayout layout)
             memFree(layoutData.bindings, &gVk.alloc);
         memset(&layoutData, 0x0, sizeof(layoutData));
 
+        AtomicLockScope lk(gVk.pools.locks[GfxObjectPools::DESCRIPTOR_SET_LAYOUTS]);
         gVk.pools.descriptorSetLayouts.Remove(layout);
     }
 }
@@ -3817,7 +3822,7 @@ GfxDescriptorSet gfxCreateDescriptorSet(GfxDescriptorSetLayout layout)
     uint32 numVariableDescCounts = 0;
 
     {
-        AtomicLockScope lk(gVk.pools.locks[GfxObjectPools::DESCRIPTOR_SET_LAYOUTS]);
+        GFX_LOCK_POOL_TEMP(DESCRIPTOR_SET_LAYOUTS);
         const GfxDescriptorSetLayoutData& layoutData = gVk.pools.descriptorSetLayouts.Data(layout);
         vkLayout = layoutData.layout;
 
@@ -3876,12 +3881,12 @@ void gfxDestroyDescriptorSet(GfxDescriptorSet dset)
 
     GfxDescriptorSetData dsetData;
     {
-        AtomicLockScope lk(gVk.pools.locks[GfxObjectPools::DESCRIPTOR_SETS]);
+        GFX_LOCK_POOL_TEMP(DESCRIPTOR_SETS);
         dsetData = gVk.pools.descriptorSets.Data(dset);
     }
 
     {
-        AtomicLockScope lk(gVk.pools.locks[GfxObjectPools::DESCRIPTOR_SET_LAYOUTS]);
+        GFX_LOCK_POOL_TEMP(DESCRIPTOR_SET_LAYOUTS);
         ASSERT_MSG(gVk.pools.descriptorSetLayouts.IsValid(dsetData.layout), 
                    "Cannot destroy descriptor set. Make sure you do not destroy the parent pipeline before this");
         const GfxDescriptorSetLayoutData& layoutData = gVk.pools.descriptorSetLayouts.Data(dsetData.layout);
@@ -3902,6 +3907,8 @@ void gfxDestroyDescriptorSet(GfxDescriptorSet dset)
     }
 
     vkFreeDescriptorSets(gVk.device, gVk.descriptorPool, 1, &dsetData.descriptorSet);
+
+    AtomicLockScope lk(gVk.pools.locks[GfxObjectPools::DESCRIPTOR_SETS]);
     gVk.pools.descriptorSets.Remove(dset);
 }
 
@@ -3970,7 +3977,7 @@ void gfxUpdateDescriptorSet(GfxDescriptorSet dset, uint32 numBindings, const Gfx
         case GfxDescriptorType::UniformBuffer: 
         case GfxDescriptorType::UniformBufferDynamic:
         {
-            AtomicLockScope lk(gVk.pools.locks[GfxObjectPools::BUFFERS]);
+            GFX_LOCK_POOL_TEMP(BUFFERS);
             const GfxBufferData& bufferData = gVk.pools.buffers.Data(binding.buffer.buffer);
             bufferInfos[i] = {
                 .buffer = bufferData.buffer,
@@ -3982,7 +3989,7 @@ void gfxUpdateDescriptorSet(GfxDescriptorSet dset, uint32 numBindings, const Gfx
         } 
         case GfxDescriptorType::Sampler:
         {
-            AtomicLockScope lk(gVk.pools.locks[GfxObjectPools::IMAGES]);
+            GFX_LOCK_POOL_TEMP(IMAGES);
             imageInfos[i] = {
                 .sampler = binding.image.IsValid() ? gVk.pools.images.Data(binding.image).sampler : VK_NULL_HANDLE,
                 .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
@@ -3992,7 +3999,7 @@ void gfxUpdateDescriptorSet(GfxDescriptorSet dset, uint32 numBindings, const Gfx
         }
         case GfxDescriptorType::CombinedImageSampler:
         {
-            AtomicLockScope lk(gVk.pools.locks[GfxObjectPools::IMAGES]);
+            GFX_LOCK_POOL_TEMP(IMAGES);
             if (!binding.imageArrayCount) {
                 const GfxImageData* imageData = binding.image.IsValid() ? &gVk.pools.images.Data(binding.image) : nullptr;
                 imageInfos[i] = VkDescriptorImageInfo {
@@ -4021,7 +4028,7 @@ void gfxUpdateDescriptorSet(GfxDescriptorSet dset, uint32 numBindings, const Gfx
         }
         case GfxDescriptorType::SampledImage:
         {
-            AtomicLockScope lk(gVk.pools.locks[GfxObjectPools::IMAGES]);
+            GFX_LOCK_POOL_TEMP(IMAGES);
             imageInfos[i] = {
                 .imageView = binding.image.IsValid() ? gVk.pools.images.Data(binding.image).view : VK_NULL_HANDLE,
                 .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
@@ -4066,7 +4073,7 @@ void gfxCmdBindDescriptorSets(GfxPipeline pipeline, uint32 numDescriptorSets, co
     VkPipelineLayout pipLayoutVk;
 
     {
-        AtomicLockScope lk(gVk.pools.locks[GfxObjectPools::DESCRIPTOR_SETS]);
+        GFX_LOCK_POOL_TEMP(DESCRIPTOR_SETS);
         for (uint32 i = 0; i < numDescriptorSets; i++) {
             const GfxDescriptorSetData& dsData = gVk.pools.descriptorSets.Data(descriptorSets[i]);
             descriptorSetsVk[i] = dsData.descriptorSet;
@@ -4074,8 +4081,8 @@ void gfxCmdBindDescriptorSets(GfxPipeline pipeline, uint32 numDescriptorSets, co
     }
 
     {
-        AtomicLockScope lk(gVk.pools.locks[GfxObjectPools::PIPELINES]);
-        AtomicLockScope lk2(gVk.pools.locks[GfxObjectPools::PIPELINE_LAYOUTS]);
+        GFX_LOCK_POOL_TEMP(PIPELINES);
+        GFX_LOCK_POOL_TEMP(PIPELINE_LAYOUTS);
         pipLayoutVk = gVk.pools.pipelineLayouts.Data(gVk.pools.pipelines.Data(pipeline).pipelineLayout).layout;
     }
     
@@ -4090,7 +4097,7 @@ void gfxCmdBindPipeline(GfxPipeline pipeline)
     ASSERT_MSG(cmdBufferVk, "CmdXXX functions must come between Begin/End CommandBuffer calls");
 
     {
-        AtomicLockScope lk(gVk.pools.locks[GfxObjectPools::PIPELINES]);
+        GFX_LOCK_POOL_TEMP(PIPELINES);
         pipVk = gVk.pools.pipelines.Data(pipeline).pipeline;
     }
 
@@ -4234,7 +4241,7 @@ void gfxCmdBindVertexBuffers(uint32 firstBinding, uint32 numBindings, const GfxB
     ASSERT_MSG(cmdBufferVk, "CmdXXX functions must come between Begin/End CommandBuffer calls");
 
     { 
-        AtomicLockScope lk(gVk.pools.locks[GfxObjectPools::BUFFERS]);
+        GFX_LOCK_POOL_TEMP(BUFFERS);
         for (uint32 i = 0; i < numBindings; i++) {
             const GfxBufferData& vb = gVk.pools.buffers.Data(vertexBuffers[i]);
             buffersVk[i] = vb.buffer;
@@ -4251,7 +4258,7 @@ void gfxCmdBindIndexBuffer(GfxBuffer indexBuffer, uint64 offset, GfxIndexType in
 
     VkBuffer bufferVk;
     {
-        AtomicLockScope lk(gVk.pools.locks[GfxObjectPools::BUFFERS]);
+        GFX_LOCK_POOL_TEMP(BUFFERS);
         bufferVk = gVk.pools.buffers.Data(indexBuffer).buffer;
     }
 
@@ -4266,7 +4273,7 @@ void gfxWaitForIdle()
 
 GfxImageInfo gfxGetImageInfo(GfxImage img)
 {
-    AtomicLockScope lk(gVk.pools.locks[GfxObjectPools::IMAGES]);
+    GFX_LOCK_POOL_TEMP(IMAGES);
     const GfxImageData& data = gVk.pools.images.Data(img);
     return GfxImageInfo {
         .width = data.width,
@@ -4286,7 +4293,7 @@ void _private::gfxRecreatePipelinesWithNewShader(uint32 shaderHash, GfxShader* s
         MemTempAllocator tmpAlloc;
         GfxPipelineData* pipDatas;
         {
-            AtomicLockScope lk(gVk.pools.locks[GfxObjectPools::PIPELINES]);
+            GFX_LOCK_POOL_TEMP(PIPELINES);
             pipDatas = tmpAlloc.MallocTyped<GfxPipelineData>(pipelineList.Count());
             for (uint32 i = 0; i < pipelineList.Count(); i++) {
                 const GfxPipelineData& srcData = gVk.pools.pipelines.Data(pipelineList[i]);
@@ -4332,7 +4339,7 @@ void _private::gfxRecreatePipelinesWithNewShader(uint32 shaderHash, GfxShader* s
             for (uint32 sidx = 0; sidx < CountOf(shaderStages); sidx++) 
                 vkDestroyShaderModule(gVk.device, shaderStages[sidx].module, &gVk.allocVk);
 
-            AtomicLockScope lk(gVk.pools.locks[GfxObjectPools::PIPELINES]);
+            GFX_LOCK_POOL_TEMP(PIPELINES);
             gVk.pools.pipelines.Data(pipelineList[i]).pipeline = pipeline;
         }   // For each pipeline in the list
     }
@@ -4525,7 +4532,7 @@ GfxDynamicUniformBuffer gfxCreateDynamicUniformBuffer(uint32 count, uint32 strid
     if (!buffer.IsValid())
         return GfxDynamicUniformBuffer {};
 
-    AtomicLockScope lk(gVk.pools.locks[GfxObjectPools::BUFFERS]);
+    GFX_LOCK_POOL_TEMP(BUFFERS);
     GfxBufferData& bufferData = gVk.pools.buffers.Data(buffer);
 
     return GfxDynamicUniformBuffer {
@@ -4551,7 +4558,7 @@ void GfxDynamicUniformBuffer::Flush(const GfxDyanmicUniformBufferRange* ranges, 
 {
     VmaAllocation allocation;
     {
-        AtomicLockScope lk(gVk.pools.locks[GfxObjectPools::BUFFERS]);
+        GFX_LOCK_POOL_TEMP(BUFFERS);
         GfxBufferData& bufferData = gVk.pools.buffers.Data(this->buffer);
         allocation = bufferData.allocation;
 
