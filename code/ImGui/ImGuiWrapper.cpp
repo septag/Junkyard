@@ -338,7 +338,7 @@ bool _private::imguiInitialize()
 
     {
         size_t poolSize = MemTlsfAllocator::GetMemoryRequirement(_limits::kImGuiRuntimeHeapSize);
-        gImGui.runtimeHeap.Initialize(_limits::kImGuiRuntimeHeapSize, memAlloc(poolSize, initHeap), poolSize,\
+        gImGui.runtimeHeap.Initialize(_limits::kImGuiRuntimeHeapSize, memAlloc(poolSize, initHeap), poolSize,
                                       settingsGet().engine.debugAllocations);
     }
     
@@ -476,7 +476,7 @@ bool _private::imguiInitialize()
         .numVertexBufferBindings = 1,
         .vertexBufferBindings = &vertexBufferBindingDesc,
         .rasterizer = GfxRasterizerDesc {
-            .cullMode = GfxCullModeFlags::Back,
+            .cullMode = GfxCullModeFlags::None,
             .frontFace = GfxFrontFace::Clockwise
         },
         .blend = {
