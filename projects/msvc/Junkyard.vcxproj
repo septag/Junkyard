@@ -252,6 +252,11 @@ echo No | copy /-Y $(SolutionDir)..\..\code\External\meshoptimizer\lib\win64\mes
     <ClCompile Include="..\..\code\Core\StringUtil.cpp" />
     <ClCompile Include="..\..\code\Core\StringUtilWin.cpp" />
     <ClCompile Include="..\..\code\Core\System.cpp" />
+    <ClCompile Include="..\..\code\Core\SystemMac.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='ReleaseDev|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
+    </ClCompile>
     <ClCompile Include="..\..\code\Core\SystemWin.cpp" />
     <ClCompile Include="..\..\code\Core\TracyHelper.cpp" />
     <ClCompile Include="..\..\code\DebugTools\BudgetViewer.cpp" />
@@ -383,7 +388,6 @@ echo No | copy /-Y $(SolutionDir)..\..\code\External\meshoptimizer\lib\win64\mes
     <None Include="..\..\code\Common\ApplicationMac.mm">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
     </None>
-    <None Include="..\..\code\Core\SystemMac.mm" />
     <None Include="..\..\code\Graphics\ValidateEnumsVk.inl" />
     <None Include="..\..\code\UnityBuild.inl" />
   </ItemGroup>

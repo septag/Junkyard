@@ -4,8 +4,7 @@
 // Stuff that are currently in the System.h/cpp
 // - Thread: Regular threads implementation, along with helpers like sleep/yield. 'Destroy' waits for the thread to return
 // - Mutex/MutexScope: Mutexes (CriticalSection), with scoped RAII helper
-// - Semaphore: Semaphore, 'Post' increases the semaphore count, each 'Wait' decreases the count
-//                 until it's zero and then waits on it
+// - Semaphore: Semaphore, synchronised queue. 'Post' increases the semaphore count, each 'Wait' decreases the count until it's zero and then waits on it
 // - Signal: Signals/Events. 'Raise' sets the signal to 1, 'Wait' waits for the signal until it's 1 then resets it to zero
 // - HighRes timer functions (timerXXX): 'timerInitialize' must be called before calling any other functions
 // - GeneralOS functions: like Loading DLLs, Getting symbols, PageSize, etc.
@@ -16,16 +15,12 @@
 //
 #include "StringUtil.h"
 
-// fwd
-struct NO_VTABLE Allocator;
-Allocator* memDefaultAlloc();
-
 #if PLATFORM_ANDROID
     struct _JNIEnv;
     typedef _JNIEnv JNIEnv;
 #endif
 
-//--------------------------------------------------------------------------------------------------
+//----------------------------------------------------------------------------------------------------------------------
 // Thread
 enum class ThreadCreateFlags : uint32
 {
@@ -69,7 +64,7 @@ private:
     uint8 mData[256];
 };
 
-//--------------------------------------------------------------------------------------------------
+//----------------------------------------------------------------------------------------------------------------------
 // Mutex
 struct alignas(CACHE_LINE_SIZE) Mutex
 {
@@ -95,7 +90,7 @@ private:
     Mutex& mMtx;
 };
 
-//--------------------------------------------------------------------------------------------------
+//----------------------------------------------------------------------------------------------------------------------
 // Semaphore
 struct alignas(16) Semaphore
 {
@@ -109,7 +104,7 @@ private:
     uint8 mData[128];
 };
 
-//--------------------------------------------------------------------------------------------------
+//----------------------------------------------------------------------------------------------------------------------
 // Signal
 struct alignas(16) Signal
 {
@@ -128,7 +123,7 @@ private:
     uint8 mData[128];
 };
 
-//------------------------------------------------------------------------
+//----------------------------------------------------------------------------------------------------------------------
 // Thread
 API void    threadYield();
 API uint32  threadGetCurrentId();
@@ -137,7 +132,7 @@ API void    threadSetCurrentThreadName(const char* name);
 API void    threadGetCurrentThreadName(char* nameOut, uint32 nameSize);
 API void    threadSleep(uint32 msecs);
 
-//--------------------------------------------------------------------------------------------------
+//----------------------------------------------------------------------------------------------------------------------
 // Timer
 API uint64 timerGetTicks();
 API uint64 timerLapTime(uint64* lastTime);
@@ -164,9 +159,32 @@ private:
 namespace _private 
 {
     void timerInitialize(); // Called by TimerInitializer
+
+    // Used internally by system platform source files. Defined in System.cpp
+    void sysCountersAddThread(size_t stackSize);
+    void sysCountersRemoveThread(size_t stackSize);
+    void sysCountersAddMutex();
+    void sysCountersRemoveMutex();
+    void sysCountersAddSignal();
+    void sysCountersRemoveSignal();
+    void sysCountersAddSemaphore();
+    void sysCountersRemoveSemaphore();
+
+    bool socketParseUrl(const char* url, char* address, size_t addressSize, char* port, size_t portSize, const char** pResource = nullptr);
 }
 
-//------------------------------------------------------------------------
+struct SysPrimitiveStats
+{
+    uint32 numMutexes;
+    uint32 numSignals;
+    uint32 numSemaphores;
+    uint32 numThreads;
+    uint64 threadStackSize;
+};
+
+SysPrimitiveStats sysGetPrimitiveStats();
+
+//----------------------------------------------------------------------------------------------------------------------
 // Memory
 enum class MemVirtualFlags : uint32
 {
@@ -188,7 +206,7 @@ void memVirtualRelease(void* ptr, size_t size);
 MemVirtualStats memVirtualGetStats();
 bool memVirtualEnableLargePages(size_t* largePageSize);
 
-//--------------------------------------------------------------------------------------------------
+//----------------------------------------------------------------------------------------------------------------------
 // Path 
 enum class PathType
 {
@@ -252,7 +270,7 @@ struct Path : String<kMaxPath>
     bool IsDir() const;
 };
 
-//--------------------------------------------------------------------------------------------------
+//----------------------------------------------------------------------------------------------------------------------
 // File
 enum class FileOpenFlags : uint32
 {
@@ -380,7 +398,7 @@ private:
     uint16 mLive;
 };
 
-//--------------------------------------------------------------------------------------------------
+//----------------------------------------------------------------------------------------------------------------------
 // General OS
 using DLLHandle = void*;
 

@@ -412,6 +412,9 @@
     <ClCompile Include="..\..\..\code\Core\Pools.cpp">
       <Filter>Core</Filter>
     </ClCompile>
+    <ClCompile Include="..\..\..\code\Core\SystemMac.cpp">
+      <Filter>Core</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <FxCompile Include="..\..\..\code\Shaders\ImGui.hlsl">
@@ -428,9 +431,6 @@
     </FxCompile>
   </ItemGroup>
   <ItemGroup>
-    <None Include="..\..\..\code\Core\SystemMac.mm">
-      <Filter>Core</Filter>
-    </None>
     <None Include="..\..\..\code\Graphics\ValidateEnumsVk.inl">
       <Filter>Graphics</Filter>
     </None>

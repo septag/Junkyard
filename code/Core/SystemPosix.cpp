@@ -9,6 +9,7 @@
 #include <sys/socket.h>         // socket funcs
 #if PLATFORM_ANDROID || PLATFORM_LINUX
     #include <sys/prctl.h>          // prctl
+    #include <semaphore.h>
 #else
     #include <sched.h>
 #endif
@@ -45,9 +46,7 @@ struct alignas(CACHE_LINE_SIZE) MutexImpl
 
 struct SemaphoreImpl
 {
-    pthread_mutex_t mutex;
-    pthread_cond_t cond;
-    uint32 count;
+    sem_t sem;
 };
 
 struct SignalImpl 
@@ -168,6 +167,8 @@ bool Thread::Start(const ThreadDesc& desc)
     // Ensure that thread callback is running
     thrd->sem.Wait();
     thrd->init = true;
+
+    _private::sysCountersAddThread(thrd->stackSize);
     return true;
 }
 
@@ -187,7 +188,10 @@ int Thread::Stop()
     }
 
     thrd->sem.Release();
-    memset(mData, 0x0, sizeof(Thread));
+
+    _private::sysCountersRemoveThread(thrd->stackSize);
+
+    memset(mData, 0x0, sizeof(Thread));        
     return cast.i;
 }
 
@@ -304,6 +308,8 @@ void Mutex::Initialize(uint32 spinCount)
     
     r = pthread_mutex_init(&_m->handle, &attr);
     ASSERT_ALWAYS(r == 0, "pthread_mutex_init failed");
+
+    _private::sysCountersAddMutex();
 }
 
 void Mutex::Release()
@@ -311,6 +317,8 @@ void Mutex::Release()
     MutexImpl* _m = reinterpret_cast<MutexImpl*>(mData);
 
     pthread_mutex_destroy(&_m->handle);
+
+    _private::sysCountersRemoveMutex();
 }
 
 void Mutex::Enter()
@@ -343,68 +351,56 @@ bool Mutex::TryEnter()
     return pthread_mutex_trylock(&_m->handle) == 0;
 }
 
+//----------------------------------------------------------------------------------------------------------------------
+// Semaphore (Different impl on apple platform)
 #if !PLATFORM_APPLE
-//------------------------------------------------------------------------
-// Semaphore
 void Semaphore::Initialize()
 {
     SemaphoreImpl* sem = reinterpret_cast<SemaphoreImpl*>(mData);
 
-    sem->count = 0;
-    [[maybe_unused]] int r = pthread_mutex_init(&sem->mutex, NULL);
-    ASSERT_ALWAYS(r == 0, "pthread_mutex_init failed");
+    [[maybe_unused]] int r = sem_init(&sem->sem, 0, 0);
+    ASSERT_MSG(r == 0, "Initialize semaphore failed");
 
-    r = pthread_cond_init(&sem->cond, NULL);
-    ASSERT_ALWAYS(r == 0, "pthread_cond_init failed");
+    _private::sysCountersAddSemaphore();
 }
 
 void Semaphore::Release()
 {
     SemaphoreImpl* sem = reinterpret_cast<SemaphoreImpl*>(mData);
+    sem_destroy(&sem->sem);
 
-    pthread_cond_destroy(&sem->cond);
-    pthread_mutex_destroy(&sem->mutex);
+    _private::sysCountersRemoveSemaphore();
 }
 
 void Semaphore::Post(uint32 count)
 {
     SemaphoreImpl* sem = reinterpret_cast<SemaphoreImpl*>(mData);
-
-    [[maybe_unused]] int r = pthread_mutex_lock(&sem->mutex);
+    [[maybe_unused]] int r = sem_post(&sem->sem);
     ASSERT(r == 0);
-    for (int ii = 0; ii < count; ii++) {
-        r = pthread_cond_signal(&sem->cond);
-        ASSERT(r == 0);
-    }
-
-    sem->count += count;
-    [[maybe_unused]] int r2 = pthread_mutex_unlock(&sem->mutex);
-    ASSERT(r2 == 0);
 }
 
 bool Semaphore::Wait(uint32 msecs)
 {
     SemaphoreImpl* sem = reinterpret_cast<SemaphoreImpl*>(mData);
-
-    [[maybe_unused]] int r = pthread_mutex_lock(&sem->mutex);
-    ASSERT(r == 0);
-
-    if (msecs == -1) {
-        while (r == 0 && sem->count <= 0) r = pthread_cond_wait(&sem->cond, &sem->mutex);
-    } else {
+    [[maybe_unused]] int r;
+    if (msecs == UINT32_MAX) {
+        r = sem_wait(&sem->sem);
+    }
+    else {
         struct timespec ts;
+        #if defined(__ANDROID_API__) && __ANDROID_API__ >= 28
+        clock_gettime(CLOCK_MONOTONIC, &ts);
+        timespecAdd(&ts, msecs);
+        r = sem_timedwait_monotonic_np(&sem->sem, &ts);
+        #else
         clock_gettime(CLOCK_REALTIME, &ts);
         timespecAdd(&ts, msecs);
-        while (r == 0 && sem->count <= 0)
-            r = pthread_cond_timedwait(&sem->cond, &sem->mutex, &ts);
+        r = sem_timedwait(&sem->sem, &ts);
+        #endif
     }
 
-    bool ok = r == 0;
-    if (ok)
-        --sem->count;
-
-    r = pthread_mutex_unlock(&sem->mutex);
-    return ok;
+    ASSERT(r == 0 || r == ETIMEDOUT);
+    return r == 0;
 }
 #endif // PLATFORM_APPLE
 
@@ -421,6 +417,8 @@ void Signal::Initialize()
 
     [[maybe_unused]] int r2 = pthread_cond_init(&sig->cond, NULL);
     ASSERT_MSG(r2 == 0, "pthread_cond_init failed");
+
+    _private::sysCountersAddSignal();
 }
 
 void Signal::Release()
@@ -429,6 +427,8 @@ void Signal::Release()
 
     pthread_cond_destroy(&sig->cond);
     pthread_mutex_destroy(&sig->mutex);
+
+    _private::sysCountersRemoveSignal();
 }
 
 void Signal::Raise()
@@ -458,9 +458,16 @@ bool Signal::Wait(uint32 msecs)
             r = pthread_cond_wait(&sig->cond, &sig->mutex);
         } else {
             struct timespec ts;
+
+            #if defined(__ANDROID_API__) && __ANDROID_API__ >= 28
+            clock_gettime(CLOCK_MONOTONIC, &ts);
+            timespecAdd(&ts, msecs);
+            r = pthread_cond_timedwait_monotonic_np(&sig->cond, &sig->mutex, &ts);
+            #else
             clock_gettime(CLOCK_REALTIME, &ts);
             timespecAdd(&ts, msecs);
             r = pthread_cond_timedwait(&sig->cond, &sig->mutex, &ts);
+            #endif
         }
 
         ASSERT(r == 0 || r == ETIMEDOUT);
@@ -486,13 +493,19 @@ bool Signal::WaitOnCondition(bool(*condFn)(int value, int reference), int refere
     
     bool timedOut = false;
     while (condFn(sig->value, reference)) {
-    if (msecs == -1) {
-        r = pthread_cond_wait(&sig->cond, &sig->mutex);
-    } else {
-        struct timespec ts;
-        clock_gettime(CLOCK_REALTIME, &ts);
-        timespecAdd(&ts, msecs);
-        r = pthread_cond_timedwait(&sig->cond, &sig->mutex, &ts);
+        if (msecs == -1) {
+            r = pthread_cond_wait(&sig->cond, &sig->mutex);
+        } else {
+            struct timespec ts;
+            #if defined(__ANDROID_API__) && __ANDROID_API__ >= 28
+            clock_gettime(CLOCK_MONOTONIC, &ts);
+            timespecAdd(&ts, msecs);
+            r = pthread_cond_timedwait_monotonic_np(&sig->cond, &sig->mutex, &ts);
+            #else
+            clock_gettime(CLOCK_REALTIME, &ts);
+            timespecAdd(&ts, msecs);
+            r = pthread_cond_timedwait(&sig->cond, &sig->mutex, &ts);
+            #endif
         }
 
         ASSERT(r == 0 || r == ETIMEDOUT);
@@ -952,8 +965,6 @@ namespace _private
         default:                return SocketErrorCode::Unknown;
         }
     }
-
-    bool socketParseUrl(const char* url, char* address, size_t addressSize, char* port, size_t portSize, const char** pResource = nullptr);
 } // namespace _private
 
 #define SOCKET_INVALID -1

@@ -66,7 +66,7 @@ static_assert(sizeof(SignalImpl) <= sizeof(Signal), "Signal size mismatch");
 static_assert(sizeof(ThreadImpl) <= sizeof(Thread), "Thread size mismatch");
 static_assert(sizeof(UUIDImpl) <= sizeof(SysUUID), "UUID size mismatch");
 
-//------------------------------------------------------------------------
+//----------------------------------------------------------------------------------------------------------------------
 // Thread
 static DWORD WINAPI threadStubFn(LPVOID arg)
 {
@@ -79,6 +79,7 @@ static DWORD WINAPI threadStubFn(LPVOID arg)
     thrd->sem.Post();
     DWORD r = static_cast<DWORD>(thrd->threadFn(thrd->userData));
     atomicStore32Explicit(&thrd->running, 0, AtomicMemoryOrder::Release);
+
     return r;
 }
 
@@ -115,6 +116,9 @@ bool Thread::Start(const ThreadDesc& desc)
 
     thrd->sem.Wait();   // Ensure that thread callback is init
     thrd->init = true;
+
+    _private::sysCountersAddThread(thrd->stackSize);
+
     return true;
 }
 
@@ -134,6 +138,9 @@ int Thread::Stop()
     }
 
     thrd->init = false;
+
+    _private::sysCountersRemoveThread(thrd->stackSize);
+
     return static_cast<int>(exitCode);
 }
 
@@ -167,12 +174,16 @@ void Mutex::Initialize(uint32 spinCount)
     MutexImpl* _m = reinterpret_cast<MutexImpl*>(mData);
     [[maybe_unused]] BOOL r = InitializeCriticalSectionAndSpinCount(&_m->handle, spinCount);
     ASSERT_ALWAYS(r, "InitializeCriticalSection failed");
+
+    _private::sysCountersAddMutex();
 }
 
 void Mutex::Release()
 {
     MutexImpl* _m = reinterpret_cast<MutexImpl*>(mData);
     DeleteCriticalSection(&_m->handle);
+
+    _private::sysCountersRemoveMutex();
 }
 
 void Mutex::Enter()
@@ -199,6 +210,8 @@ void Semaphore::Initialize()
     SemaphoreImpl* _sem = reinterpret_cast<SemaphoreImpl*>(mData);
     _sem->handle = CreateSemaphoreA(nullptr, 0, LONG_MAX, nullptr);
     ASSERT_ALWAYS(_sem->handle != INVALID_HANDLE_VALUE, "Failed to create semaphore");
+
+    _private::sysCountersAddSemaphore();
 }
 
 void Semaphore::Release()
@@ -207,6 +220,8 @@ void Semaphore::Release()
     if (_sem->handle != INVALID_HANDLE_VALUE) {
         CloseHandle(_sem->handle);
         _sem->handle = INVALID_HANDLE_VALUE;
+
+        _private::sysCountersRemoveSemaphore();
     }
 }
 
@@ -234,12 +249,16 @@ void Signal::Initialize()
     ASSERT_ALWAYS(r, "InitializeCriticalSectionAndSpinCount failed");
     InitializeConditionVariable(&_sig->cond);
     _sig->value = 0;
+
+    _private::sysCountersAddSignal();
 }
 
 void Signal::Release()
 {
     SignalImpl* _sig = reinterpret_cast<SignalImpl*>(mData);
     DeleteCriticalSection(&_sig->mutex);
+
+    _private::sysCountersRemoveSignal();
 }
 
 void Signal::Raise()
@@ -1467,8 +1486,6 @@ namespace _private
         default:                ASSERT_MSG(0, "Unknown socket error: %d", WSAGetLastError()); return SocketErrorCode::Unknown;
         }
     }
-
-    bool socketParseUrl(const char* url, char* address, size_t addressSize, char* port, size_t portSize, const char** pResource = nullptr);
 } // namespace _private
 
 // Implemented in System.cpp

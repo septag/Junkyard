@@ -1,5 +1,6 @@
 #include "System.h"
 
+#include "Atomic.h"
 #include "StringUtil.h"
 #include "Blobs.h"
 
@@ -15,6 +16,17 @@
         #error "Not implemented"
     #endif
 #endif
+
+struct SysCounters
+{
+    atomicUint32 numThreads;
+    atomicUint32 numMutexes;
+    atomicUint32 numSemaphores;
+    atomicUint32 numSignals;
+    atomicUint64 threadStackSize;
+};
+
+static SysCounters gSysCounters;
 
 // We are doing static initilization for timers
 // We don't do much of that because of many pitfalls of this approach. 
@@ -215,48 +227,97 @@ void sysGenerateCmdLineFromArgcArgv(int argc, const char* argv[], char** outStri
     *outStringLen = static_cast<uint32>(len);
 }
 
-namespace _private 
+bool _private::socketParseUrl(const char* url, char* address, size_t addressSize, char* port, size_t portSize, const char** pResource)
 {
-    bool socketParseUrl(const char* url, char* address, size_t addressSize, char* port, size_t portSize, const char** pResource)
-    {
-        uint32 urlLen = strLen(url);
+    uint32 urlLen = strLen(url);
     
-        // skip the 'protocol://' part
-        if (const char* addressBegin = strFindStr(url, "://"); addressBegin)
-            url = addressBegin + 2;
+    // skip the 'protocol://' part
+    if (const char* addressBegin = strFindStr(url, "://"); addressBegin)
+        url = addressBegin + 2;
     
-        // find end of address part of url
-        char const* addressEnd = strFindChar(url, ':');
-        if (!addressEnd) addressEnd = strFindChar(url, '/');
-        if (!addressEnd) addressEnd = url + urlLen;
+    // find end of address part of url
+    char const* addressEnd = strFindChar(url, ':');
+    if (!addressEnd) addressEnd = strFindChar(url, '/');
+    if (!addressEnd) addressEnd = url + urlLen;
         
-        // extract address
-        uint32 addressLen = PtrToInt<uint32>((void*)(addressEnd - url));
-        if(addressLen >= addressSize) 
-            return false;
-        memcpy(address, url, addressLen);
-        address[addressLen] = '\0';
+    // extract address
+    uint32 addressLen = PtrToInt<uint32>((void*)(addressEnd - url));
+    if(addressLen >= addressSize) 
+        return false;
+    memcpy(address, url, addressLen);
+    address[addressLen] = '\0';
         
-        // check if there's a port defined
-        char const* portEnd = addressEnd;
-        if (*addressEnd == ':') {
-            ++addressEnd;
-            portEnd = strFindChar(addressEnd, '/');
-            if (!portEnd) 
-                portEnd = addressEnd + strLen(addressEnd);
-            uint32 portLen = PtrToInt<uint32>((void*)(portEnd - addressEnd));
-            if (portLen >= portSize) 
-                return false;
-            memcpy(port, addressEnd, portLen);
-            port[portLen] = '\0';
-        }
-        else {
+    // check if there's a port defined
+    char const* portEnd = addressEnd;
+    if (*addressEnd == ':') {
+        ++addressEnd;
+        portEnd = strFindChar(addressEnd, '/');
+        if (!portEnd) 
+            portEnd = addressEnd + strLen(addressEnd);
+        uint32 portLen = PtrToInt<uint32>((void*)(portEnd - addressEnd));
+        if (portLen >= portSize) 
             return false;
-        }    
-    
-        if (pResource)
-            *pResource = portEnd;    
-        return true;    
+        memcpy(port, addressEnd, portLen);
+        port[portLen] = '\0';
     }
-}   // namespace _private
+    else {
+        return false;
+    }    
+    
+    if (pResource)
+        *pResource = portEnd;    
+    return true;    
+}
 
+void _private::sysCountersAddThread(size_t stackSize)
+{
+    atomicFetchAdd32Explicit(&gSysCounters.numThreads, 1, AtomicMemoryOrder::Relaxed);
+    atomicFetchAdd64Explicit(&gSysCounters.threadStackSize, stackSize, AtomicMemoryOrder::Relaxed);
+}
+
+void _private::sysCountersRemoveThread(size_t stackSize)
+{
+    atomicFetchSub32Explicit(&gSysCounters.numThreads, 1, AtomicMemoryOrder::Relaxed);
+    atomicFetchSub64Explicit(&gSysCounters.threadStackSize, stackSize, AtomicMemoryOrder::Relaxed);
+}
+
+void _private::sysCountersAddMutex()
+{
+    atomicFetchAdd32Explicit(&gSysCounters.numMutexes, 1, AtomicMemoryOrder::Relaxed);
+}
+
+void _private::sysCountersRemoveMutex()
+{
+    atomicFetchSub32Explicit(&gSysCounters.numMutexes, 1, AtomicMemoryOrder::Relaxed);
+}
+
+void _private::sysCountersAddSignal()
+{
+    atomicFetchAdd32Explicit(&gSysCounters.numSignals, 1, AtomicMemoryOrder::Relaxed);
+}
+
+void _private::sysCountersRemoveSignal()
+{
+    atomicFetchSub32Explicit(&gSysCounters.numSignals, 1, AtomicMemoryOrder::Relaxed);
+}
+
+void _private::sysCountersAddSemaphore()
+{
+    atomicFetchAdd32Explicit(&gSysCounters.numSemaphores, 1, AtomicMemoryOrder::Relaxed);
+}
+
+void _private::sysCountersRemoveSemaphore()
+{
+    atomicFetchSub32Explicit(&gSysCounters.numSemaphores, 1, AtomicMemoryOrder::Relaxed);
+}
+
+SysPrimitiveStats sysGetPrimitiveStats()
+{
+    return SysPrimitiveStats {
+        .numMutexes = gSysCounters.numMutexes,
+        .numSignals = gSysCounters.numSignals,
+        .numSemaphores = gSysCounters.numSemaphores,
+        .numThreads = gSysCounters.numThreads,
+        .threadStackSize = gSysCounters.threadStackSize
+    };
+}

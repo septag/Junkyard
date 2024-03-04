@@ -55,6 +55,7 @@ void budgetViewerRender(float dt, bool* pOpen)
         bool assetOpen = strToBool(imguiGetSetting("Budgets.AssetManager"));
         bool gfxOpen = strToBool(imguiGetSetting("Budgets.Graphics"));
         bool imguiOpen = strToBool(imguiGetSetting("Budgets.ImGui"));
+        bool systemOpen = strToBool(imguiGetSetting("Budgets.System"));
 
         transientOpen = ImGui::CollapsingHeader("Transient Allocators", nullptr, transientOpen ? ImGuiTreeNodeFlags_DefaultOpen : 0);
         if (transientOpen) {
@@ -262,12 +263,23 @@ void budgetViewerRender(float dt, bool* pOpen)
             imguiLabel("InitHeapSize", "%_$llu", stats.initHeapSize);
         }
 
+        systemOpen = ImGui::CollapsingHeader("System/OS", nullptr, systemOpen ? ImGuiTreeNodeFlags_DefaultOpen : 0);
+        if (systemOpen) {
+            SysPrimitiveStats stats = sysGetPrimitiveStats();
+            imguiLabel("Mutexes", "%u", stats.numMutexes);
+            imguiLabel("Semaphores", "%u", stats.numSemaphores);
+            imguiLabel("Signals", "%u", stats.numSignals);
+            imguiLabel("Threads", "%u", stats.numThreads);
+            imguiLabel("ThreadsStackMemory", "%_$llu", stats.threadStackSize);
+        }
+
         //
         imguiSetSetting("Budgets.TransientAllocs", transientOpen);
         imguiSetSetting("Budgets.Jobs", jobsOpen);
         imguiSetSetting("Budgets.AssetManager", assetOpen);
         imguiSetSetting("Budgets.Graphics", gfxOpen);
         imguiSetSetting("Budgets.ImGui", imguiOpen);
+        imguiSetSetting("Budgets.System", systemOpen);
     }
     ImGui::End();
 }

@@ -49,6 +49,8 @@ void Semaphore::Initialize()
     SemaphoreImpl* sem = (SemaphoreImpl*)mData;
     sem->handle = dispatch_semaphore_create(0);
     ASSERT_MSG(sem->handle != NULL, "dispatch_semaphore_create failed");
+
+    _private::sysCountersAddSemaphore();
 }
 
 void Semaphore::Release()
@@ -58,6 +60,8 @@ void Semaphore::Release()
         // ObjC ARC doesn't need dispatch_release (?)
         // dispatch_release(sem->handle);
         sem->handle = NULL;
+
+        _private::sysCountersRemoveSemaphore();
     }
 }
 
