@@ -210,6 +210,10 @@ bool appInitialize(const AppDesc& desc)
     gApp.desc.width = desc.width;
     gApp.desc.height = desc.height;
     gApp.desc.clipboardSizeBytes = desc.clipboardSizeBytes;
+    
+    // TODO: currently, I don't quite understand how highDPI works on Mac
+    //       So forcefully disable highDPI for now
+    gApp.desc.highDPI = false;
 
     gApp.firstFrame = true;
     gApp.windowWidth = gApp.desc.width;
@@ -335,9 +339,9 @@ static void appMacFrame()
         }
         
         if (gApp.desc.highDPI) {
-            gApp.framebufferWidth = 2 * gApp.windowWidth;
-            gApp.framebufferHeight = 2 * gApp.windowHeight;
             gApp.dpiScale = [screen backingScaleFactor];
+            gApp.framebufferWidth = gApp.dpiScale * gApp.windowWidth;
+            gApp.framebufferHeight = gApp.dpiScale * gApp.windowHeight;
         }
         else {
             gApp.framebufferWidth = gApp.windowWidth;
@@ -366,17 +370,14 @@ static void appMacFrame()
         gApp.viewDelegate = [[appMacMetalViewDelegate alloc] init];
         gApp.view = [[appMacMetalView alloc] init];
         [gApp.view updateTrackingAreas];
-        gApp.view.preferredFramesPerSecond = 60;
         gApp.view.delegate = gApp.viewDelegate;
         gApp.view.device = gApp.metalDevice;
         gApp.view.colorPixelFormat = MTLPixelFormatBGRA8Unorm;
         gApp.view.depthStencilPixelFormat = MTLPixelFormatDepth32Float_Stencil8;
         gApp.window.contentView = gApp.view;
         [gApp.window makeFirstResponder:gApp.view];
-        if (!gApp.desc.highDPI) {
-            CGSize drawableSize = { (CGFloat) gApp.framebufferWidth, (CGFloat) gApp.framebufferHeight };
-            gApp.view.drawableSize = drawableSize;
-        }
+        CGSize drawableSize = { (CGFloat) gApp.framebufferWidth, (CGFloat) gApp.framebufferHeight };
+        gApp.view.drawableSize = drawableSize;
         appMacUpdateDimensions();
         // gApp.view.layer.magnificationFilter = kCAFilterNearest;
         gApp.valid = true;

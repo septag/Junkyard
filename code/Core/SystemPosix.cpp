@@ -44,10 +44,13 @@ struct alignas(CACHE_LINE_SIZE) MutexImpl
     uint32 spinCount;
 };
 
+#if !PLATFORM_APPLE
 struct SemaphoreImpl
 {
     sem_t sem;
 };
+static_assert(sizeof(SemaphoreImpl) <= sizeof(Semaphore), "Sempahore size mismatch");
+#endif
 
 struct SignalImpl 
 {
@@ -83,7 +86,6 @@ struct UUIDImpl
 #endif
 
 static_assert(sizeof(MutexImpl) <= sizeof(Mutex), "Mutex size mismatch");
-static_assert(sizeof(SemaphoreImpl) <= sizeof(Semaphore), "Sempahore size mismatch");
 static_assert(sizeof(SignalImpl) <= sizeof(Signal), "Signal size mismatch");
 static_assert(sizeof(ThreadImpl) <= sizeof(Thread), "Thread size mismatch");
 static_assert(sizeof(UUIDImpl) <= sizeof(SysUUID), "UUID size mismatch");

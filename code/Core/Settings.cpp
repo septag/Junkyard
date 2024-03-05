@@ -241,8 +241,12 @@ bool settingsInitializeFromCommandLine(int argc, char* argv[])
         .argv = argv
     });
 
-    if (sargs_num_args(args) > 0) 
-        debugPrint("Loading settings from CommandLine:\n");
+    if (sargs_num_args(args) > 0) {
+        debugPrint("Loading settings from CommandLine:");
+        #if PLATFORM_WINDOWS
+        debugPrint("\n");
+        #endif
+    }
 
     for (int i = 0; i < sargs_num_args(args); i++) {
         const char* key = sargs_key_at(args, i);
@@ -275,9 +279,12 @@ bool settingsInitializeFromCommandLine(int argc, char* argv[])
                 settingsSetValue(key, value);
 
             char msg[256];
-            strPrintFmt(msg, sizeof(msg), "\t%d) %s%s = %s\n", i+1, key, !predefined ? "(*)" : "", value);
+            strPrintFmt(msg, sizeof(msg), "\t%d) %s%s = %s", i+1, key, !predefined ? "(*)" : "", value);
             debugPrint(msg);
-        }        
+            #if PLATFORM_WINDOWS
+            debugPrint("\n");
+            #endif
+        }
 
     }
 
