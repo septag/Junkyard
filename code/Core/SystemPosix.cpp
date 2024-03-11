@@ -669,6 +669,16 @@ bool pathMove(const char* src, const char* dest)
     return rename(src, dest) == 0;
 }
 
+bool pathMakeTemp(char* dst, size_t dstSize, const char* namePrefix, const char* dir)
+{
+    if (dir == nullptr)
+        dir = "/tmp";
+    pathJoin(dst, dstSize, dir, namePrefix);
+    strConcat(dst, uint32(dstSize), "XXXXXX");
+    mktemp(dst);
+    return dst[0] ? true : false;
+}
+
 //------------------------------------------------------------------------
 // Virtual memory
 struct MemVirtualStatsAtomic 
@@ -890,11 +900,12 @@ size_t File::Read(void* dst, size_t size)
         ASSERT_ALWAYS((uintptr_t)dst % pagesz == 0, "buffers must be aligned with NoCache flag");
     }
     ssize_t r = read(f->id, dst, size);
-    return r != -1 ? r : SIZE_MAX;
+    return r != -1 ? r : 0;
 }
 
 size_t File::Write(const void* src, size_t size)
 {
+    ASSERT(size);
     FilePosix* f = (FilePosix*)mData;
     ASSERT(f->id != -1);
 
@@ -904,8 +915,8 @@ size_t File::Write(const void* src, size_t size)
         return bytesWritten;
     }
     else {
-        return SIZE_MAX;
-    }    
+        return 0;
+    }
 }
 
 size_t File::Seek(size_t offset, FileSeekMode mode)

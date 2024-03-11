@@ -242,6 +242,7 @@ INLINE bool pathIsFile(const char* path);
 INLINE bool pathIsDir(const char* path);
 API bool pathCreateDir(const char* path);
 API bool pathMove(const char* src, const char* dest);
+API bool pathMakeTemp(char* dst, size_t dstSize, const char* namePrefix, const char* dir = nullptr);
 
 struct Path : String<kMaxPath>
 {

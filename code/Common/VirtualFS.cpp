@@ -179,10 +179,31 @@ static size_t vfsDiskWriteFile(const char* path, VfsFlags flags, const Blob& blo
     auto SaveToDisk = [](const char* path, VfsFlags, const Blob& blob)->size_t 
     {
         File f;
-        if (f.Open(path, FileOpenFlags::Write)) {
+        char tempPath[kMaxPath];
+        char tempName[kMaxPath];
+        pathFileName(path, tempName, sizeof(tempName));
+
+        #if PLATFORM_WINDOWS
+        // On windows, we better use the same path of the destination file
+        // Because if it's a different volume, then it does a copy/delete instead
+        char tempDir[kMaxPath];
+        pathDirectory(path, tempDir, sizeof(tempDir));
+        #else
+        char* tempDir = nullptr;    // use /tmp on posix
+        #endif
+        
+        bool makeTempSuccess = pathMakeTemp(tempPath, sizeof(tempPath), tempName, tempDir);
+        if (!makeTempSuccess)
+            logWarning("Making temp file failed: %s", path);
+
+        if (f.Open(makeTempSuccess ? tempPath : path, FileOpenFlags::Write)) {
             size_t bytesWritten = f.Write(blob.Data(), blob.Size());
             f.Close();
-            return bytesWritten;
+            
+            if (bytesWritten && makeTempSuccess)
+                return pathMove(tempPath, path);
+            else
+                return bytesWritten;
         }
 
         return 0;

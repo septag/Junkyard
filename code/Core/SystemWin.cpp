@@ -884,7 +884,7 @@ bool pathCreateDir(const char* path)
 
 bool pathMove(const char* src, const char* dest)
 {
-    return bool(MoveFileA(src, dest));
+    return bool(MoveFileExA(src, dest, MOVEFILE_REPLACE_EXISTING|MOVEFILE_COPY_ALLOWED));
 }
 
 char* pathGetHomeDir(char* dst, size_t dstSize)
@@ -1256,19 +1256,20 @@ size_t File::Read(void* dst, size_t size)
 
     DWORD bytesRead;
     if (!ReadFile(f->handle, dst, (DWORD)size, &bytesRead, NULL))
-        return SIZE_MAX;
+        return 0;
 
     return size_t(bytesRead);
 }
 
 size_t File::Write(const void* src, size_t size)
 {
+    ASSERT(size);
     FileWin* f = (FileWin*)mData;
     ASSERT(f->handle != INVALID_HANDLE_VALUE);
 
     DWORD bytesWritten;
     if (!WriteFile(f->handle, src, (DWORD)size, &bytesWritten, NULL))
-        return SIZE_MAX;
+        return 0;
     f->size += bytesWritten;
 
     return bytesWritten;
