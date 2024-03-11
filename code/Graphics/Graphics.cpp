@@ -429,7 +429,7 @@ static GfxContext gVk;
 static thread_local GfxCommandBufferThreadData gCmdBufferThreadData;
 
 static constexpr const char* kVkValidationLayer = "VK_LAYER_KHRONOS_validation";
-static constexpr const char* kAdrenoDebugLayer = "VK_LAYER_ADRENO_debug";\
+static constexpr const char* kAdrenoDebugLayer = "VK_LAYER_ADRENO_debug";
 
 // #define GFX_LOCK_POOL_TEMP(_type) AtomicLockScope CONCAT(mtx, __LINE__)(gVk.pools.locks[GfxObjectPools::_type])
 #define GFX_LOCK_POOL_TEMP(_type)

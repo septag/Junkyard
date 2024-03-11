@@ -70,6 +70,7 @@
 //        randomNewUint()/randomNewFloat()/randomNewFloatInRange()/randomIntInRange()
 //
 //  Base memory abstraction: Includes the main interface "Allocator" for interfacing with memory allocations
+//                           Read here for more info: https://septag.dev/blog/posts/junkyard-memory-01/
 //
 
 #include <stdint.h>     // uint32, int64_t, etc..

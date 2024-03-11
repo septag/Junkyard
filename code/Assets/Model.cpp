@@ -627,8 +627,7 @@ static const GfxVertexInputAttributeDesc* modelFindAttribute(const ModelGeometry
 }
 
 // Note: `alloc` shouldn't be temp allocator
-Pair<Model*, uint32> modelLoadGltf(const char* filepath, Allocator* alloc, const ModelLoadParams& params, 
-                                   char* errorDesc, uint32 errorDescSize)
+Span<Model> modelLoadGltf(const char* filepath, Allocator* alloc, const ModelLoadParams& params, char* errorDesc, uint32 errorDescSize)
 {
     PROFILE_ZONE(true);
 
@@ -881,7 +880,7 @@ Pair<Model*, uint32> modelLoadGltf(const char* filepath, Allocator* alloc, const
 
     // Allocate one big chunk and copy the temp data over to it
     uint32 modelBufferSize = uint32(tmpAlloc.GetOffset() - tmpAlloc.GetPointerOffset(model));
-    return Pair<Model*, uint32>(memAllocCopyRawBytes<Model>(model, modelBufferSize, alloc), modelBufferSize);
+    return Span<Model>(memAllocCopyRawBytes<Model>(model, modelBufferSize, alloc), modelBufferSize);
 }
 
 static void modelDestroy(Model* model, Allocator* alloc)
@@ -1017,9 +1016,9 @@ AssetResult ModelLoader::Load(AssetHandle handle, const AssetLoadParams& params,
 
     if (newCacheHash != cacheHash) {
         char errorDesc[512];
-        Pair<Model*, uint32> modelBuffer = modelLoadGltf(params.path, params.alloc, modelParams, errorDesc, sizeof(errorDesc));
-        Model* model = modelBuffer.first;
-        uint32 modelBufferSize = modelBuffer.second;
+        Span<Model> modelBuffer = modelLoadGltf(params.path, params.alloc, modelParams, errorDesc, sizeof(errorDesc));
+        Model* model = modelBuffer.Ptr();
+        uint32 modelBufferSize = modelBuffer.Count();
         if (!model) {
             logError(errorDesc);
             return AssetResult {};
@@ -1089,9 +1088,9 @@ static void modelLoadTask(uint32 groupIndex, void* userData)
 
     if (cacheHash != oldCacheHash) {
         TimerStopWatch timer;
-        Pair<Model*, uint32> result = modelLoadGltf(filepath, memDefaultAlloc(), loadModelParams, errorMsg, sizeof(errorMsg));
-        Model* model = result.first;
-        uint32 modelBufferSize = result.second;
+        Span<Model> result = modelLoadGltf(filepath, memDefaultAlloc(), loadModelParams, errorMsg, sizeof(errorMsg));
+        Model* model = result.Ptr();
+        uint32 modelBufferSize = result.Count();
     
         if (model) {
             #if CONFIG_TOOLMODE

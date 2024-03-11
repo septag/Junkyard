@@ -917,6 +917,18 @@ char* pathGetCacheDir(char* dst, size_t dstSize, const char* appName)
     }
 }
 
+bool pathMakeTemp(char* dst, size_t dstSize, const char* namePrefix, const char* dir)
+{
+    static char osTempPath[kMaxPath] = {};
+    if (dir == nullptr) {
+        if (osTempPath[0] == '\0')
+            GetTempPathA(sizeof(osTempPath), osTempPath);
+        dir = osTempPath;
+    }
+
+    ASSERT(dstSize >= kMaxPath);
+    return GetTempFileNameA(dir, namePrefix, 0, dst) != 0;
+}
 
 bool sysIsDebuggerPresent()
 {

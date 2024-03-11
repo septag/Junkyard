@@ -39,7 +39,7 @@ struct Blob
     inline void Detach(void** outData, size_t* outSize);
 
     inline void SetAllocator(Allocator* alloc);
-    inline void SetGrowPolicy(GrowPolicy policy, uint32 amount = 0);
+    inline void SetGrowPolicy(GrowPolicy policy, uint32 amount = 4096);
     inline void SetAlignment(uint8 align);
     inline void SetSize(size_t size);
     inline void Reserve(size_t capacity);
@@ -459,8 +459,9 @@ inline void Blob::SetAlignment(uint8 align)
 
 inline void Blob::SetGrowPolicy(GrowPolicy policy, uint32 amount)
 {
+    ASSERT(amount);
     mGrowPolicy = policy;
-    mGrowCount = amount == 0 ? 4096u : AlignValue(amount, CACHE_LINE_SIZE);
+    mGrowCount = AlignValue(amount, CACHE_LINE_SIZE);
 }
 
 inline size_t Blob::ReadStringBinary(char* outStr, [[maybe_unused]] uint32 outStrSize) const

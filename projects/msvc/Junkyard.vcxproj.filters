@@ -229,6 +229,9 @@
     <ClCompile Include="..\..\code\Core\SystemMac.cpp">
       <Filter>Core</Filter>
     </ClCompile>
+    <ClCompile Include="..\..\code\Core\SystemPosix.cpp">
+      <Filter>Core</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\..\code\External\slang\slang.h">

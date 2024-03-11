@@ -1,5 +1,20 @@
 #pragma once
 
+//
+// Allocators: includes some common allocators 
+//
+//      MemTempAllocator: This is a stack-like bump allocator. Covers all Temp allocations that happen within a small scope
+//                        https://septag.dev/blog/posts/junkyard-memory-01/#allocations/allocatortypes/tempallocator
+//      MemBumpAllocatorBase: This is a simple form of linear allocator. Like temp allocator, the logic is that all allocated memory is layed out continously in memory
+//                            https://septag.dev/blog/posts/junkyard-memory-01/#allocations/allocatortypes/bumpallocator
+//                            Current implemented backends: MemBumpAllocatorVM
+//      MemTlsfAllocator: TLSF is a generic embeddable allocator (MemTlsfAllocator) using Two-Level Segregated Fit memory allocator implementation
+//                        https://septag.dev/blog/posts/junkyard-memory-01/#allocations/allocatortypes/tlsfallocator
+//      
+//      MemSingleShotMalloc: This helps me with allocating several buffers with one allocation call.
+//                           https://septag.dev/blog/posts/junkyard-memory-01/#buffersandcontainers/memsingleshotmalloc
+//                          
+
 #include "Base.h"
 
 template <typename _T, uint32 _Reserve> struct Array;
@@ -12,7 +27,7 @@ struct MemTransientAllocatorStats
     const char* threadName;
 };
 
-//------------------------------------------------------------------------
+//----------------------------------------------------------------------------------------------------------------------
 // Temp Allocator: Stack-based temp allocator. Grows by page. Only works within a single thread context.
 using MemTempId = uint32;
 API [[nodiscard]] MemTempId memTempPushId();

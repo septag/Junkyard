@@ -75,8 +75,10 @@ char* pathFileExtension(const char *path, char *dst, size_t dstSize)
     int len = strLen(path);
     if (len > 0) {
         const char *start = strrchr(path, '/');
+        #if PLATFORM_WINDOWS
         if (!start)
             start = strrchr(path, '\\');
+        #endif
         if (!start)
             start = path;
         const char *end = &path[len - 1];
@@ -95,8 +97,10 @@ char* pathFileExtension(const char *path, char *dst, size_t dstSize)
 char* pathFileNameAndExt(const char *path, char *dst, size_t dstSize)
 {
     const char *r = strrchr(path, '/');
+    #if PLATFORM_WINDOWS
     if (!r)
         r = strrchr(path, '\\');
+    #endif
     if (r) {
         strCopy(dst, (uint32)dstSize, r + 1);
     }
@@ -109,8 +113,10 @@ char* pathFileNameAndExt(const char *path, char *dst, size_t dstSize)
 char* pathFileName(const char* path, char* dst, size_t dstSize)
 {
     const char *r = strrchr(path, '/');
+    #if PLATFORM_WINDOWS
     if (!r)
         r = strrchr(path, '\\');
+    #endif
     if (r) {
         strCopy(dst, (uint32)dstSize, r + 1);
     }
@@ -125,12 +131,13 @@ char* pathFileName(const char* path, char* dst, size_t dstSize)
     return dst;
 }
 
-
 char* pathDirectory(const char *path, char *dst, size_t dstSize)
 {
     const char *r = strrchr(path, '/');
+    #if PLATFORM_WINDOWS
     if (!r)
         r = strrchr(path, '\\');
+    #endif
     if (r) {
         int o = (int)(intptr_t)(r - path);
         if (dst == path) {
@@ -139,6 +146,11 @@ char* pathDirectory(const char *path, char *dst, size_t dstSize)
         else {
             strCopyCount(dst, (uint32)dstSize, path, o);
         }
+
+        #if PLATFORM_WINDOWS
+        // if (o > 0 && dst[o-1] == ':')
+        //    strConcat(dst, (uint32)dstSize, "\\");
+        #endif
     }
     else if (dst != path) {
         *dst = '\0';
@@ -174,10 +186,10 @@ static char* pathJoin(char *dst, size_t dstSize, const char *sep, const char *pa
 
 char* pathJoin(char *dst, size_t dstSize, const char *pathA, const char *pathB)
 {
-    #if PLATFORM_WINDOWS || PLATFORM_SCARLETT
-        const char *kSep = "\\";
+    #if PLATFORM_WINDOWS
+    const char *kSep = "\\";
     #else
-        const char *kSep = "/";
+    const char *kSep = "/";
     #endif
 
     return pathJoin(dst, dstSize, kSep, pathA, pathB);
