@@ -10,7 +10,7 @@ if %errorlevel% neq 0 (
     exit /b -1
 )
 
-pushd ..\projects\msvc
+pushd ..\projects\Windows
 msbuild Junkyard.sln -target:Rebuild -Property:Configuration=Debug -verbosity:minimal
 if %errorlevel% neq 0 (
     popd
@@ -30,7 +30,7 @@ if %errorlevel% neq 0 (
 )
 popd
 
-pushd ..\projects\msvc\JunkyardAndroid
+pushd ..\projects\Android
 msbuild JunkyardAndroid.sln -target:Rebuild -Property:Configuration=Debug -verbosity:minimal
 if %errorlevel% neq 0 (
     popd

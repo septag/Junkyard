@@ -1,0 +1,40 @@
+# To see setting key/values, look into Settings.h 
+# Every section (brackets) are struct suffixes in that file. For example, SettingGraphics would be [Graphics] here
+# Every key=value is exactly the same field in the structs
+
+[Engine]
+# connectToServer = true
+# remoteServicesUrl = [your_ip]:[port]
+# logLevel = Info
+# jobsThreadCount = 0
+# debugAllocations = false
+# breakOnErrors = false
+# treatWarningsAsErrors = false
+# enableMemPro = false
+
+[Graphics]
+# enable = true
+# validate = false
+# headless = false
+# surfaceSRGB = false
+# listExtensions = false
+# enableAdrenoDebug = false
+# validateBestPractices = false
+# validateSynchronization = false
+# shaderDumpIntermediates = false
+# shaderDumpProperties = false
+# shaderDebug = false
+# enableGpuProfile = false
+# enableImGui = true
+# enableVsync = true
+
+[Tooling]
+# enableServer = false
+# serverPort = 6006
+
+[App]
+# launchMinimized = false
+
+
+
+

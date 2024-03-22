@@ -1,6 +1,6 @@
 @echo off
 
-pushd %~dp0..\projects\msvc
+pushd %~dp0..\projects\Windows
 
 vcperf /start Junkyard
 msbuild Junkyard.sln -property:Configuration=Debug /t:Rebuild

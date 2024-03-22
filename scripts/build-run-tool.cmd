@@ -2,7 +2,7 @@
 
 rem call "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvars64.bat"
 
-pushd %~dp0..\projects\msvc
+pushd %~dp0..\projects\Windows
 msbuild Junkyard.sln -property:Configuration=Debug /t:JunkyardTool
 popd
 
