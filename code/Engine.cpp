@@ -166,8 +166,9 @@ bool engineInitialize()
         }
 
         // We have the connection, open up some tools on the host, based on the platform
+        // TODO: com.junkyard.example is hardcoded, should be named after the actual package name
         if constexpr (PLATFORM_ANDROID) {
-            conExecuteRemote("exec scripts\\close-logcats.cmd com.JunkyardAndroid && scripts\\android-logcat.bat");
+            conExecuteRemote("exec scripts\\Android\\android-close-logcats.bat com.junkyard.example && scripts\\Android\\android-logcat.bat");
             conExecuteRemote("exec-once {ScrCpy}");
         }
     }

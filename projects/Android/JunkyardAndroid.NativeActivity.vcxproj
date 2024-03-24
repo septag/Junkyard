@@ -276,7 +276,7 @@
       <AdditionalOptions>-rdynamic %(AdditionalOptions)</AdditionalOptions>
     </Link>
     <PostBuildEvent>
-      <Command>call $(SolutionDir)..\..\scripts\android-export-symbols.cmd $(TargetName) $(TargetPath) $(LLVMToolchainPrebuiltRoot)
+      <Command>call $(SolutionDir)..\..\scripts\Android\android-export-symbols.cmd $(TargetName) $(TargetPath) $(LLVMToolchainPrebuiltRoot)
 
 
 </Command>
@@ -300,7 +300,7 @@
       <LibraryDependencies>%(LibraryDependencies);m</LibraryDependencies>
     </Link>
     <PostBuildEvent>
-      <Command>call $(SolutionDir)..\..\scripts\android-export-symbols.cmd $(TargetName) $(TargetPath) $(LLVMToolchainPrebuiltRoot)
+      <Command>call $(SolutionDir)..\..\scripts\Android\android-export-symbols.cmd $(TargetName) $(TargetPath) $(LLVMToolchainPrebuiltRoot)
 
 
 </Command>
@@ -328,7 +328,7 @@
       <NoExecStackRequired>true</NoExecStackRequired>
     </Link>
     <PostBuildEvent>
-      <Command>call $(SolutionDir)..\..\scripts\android-export-symbols.cmd $(TargetName) $(TargetPath) $(LLVMToolchainPrebuiltRoot)
+      <Command>call $(SolutionDir)..\..\scripts\Android\android-export-symbols.cmd $(TargetName) $(TargetPath) $(LLVMToolchainPrebuiltRoot)
 
 
 </Command>

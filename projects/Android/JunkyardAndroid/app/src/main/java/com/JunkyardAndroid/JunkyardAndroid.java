@@ -1,5 +1,5 @@
 
-package com.JunkyardAndroid;
+package com.junkyard.example;
 
 import android.app.Activity;
 import android.widget.TextView;

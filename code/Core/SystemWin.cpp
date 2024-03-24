@@ -917,7 +917,7 @@ char* pathGetCacheDir(char* dst, size_t dstSize, const char* appName)
     }
 }
 
-bool pathMakeTemp(char* dst, size_t dstSize, const char* namePrefix, const char* dir)
+bool pathMakeTemp(char* dst, [[maybe_unused]] size_t dstSize, const char* namePrefix, const char* dir)
 {
     static char osTempPath[kMaxPath] = {};
     if (dir == nullptr) {

@@ -126,7 +126,7 @@ echo No | copy /-Y $(SolutionDir)..\..\code\External\meshoptimizer\lib\win64\mes
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>NDEBUG;_ITERATOR_DEBUG_LEVEL=0;_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>NDEBUG;_ITERATOR_DEBUG_LEVEL=0;CONFIG_FINAL_BUILD=1;_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <TreatWarningAsError>true</TreatWarningAsError>
       <ExceptionHandling>false</ExceptionHandling>
@@ -138,6 +138,7 @@ echo No | copy /-Y $(SolutionDir)..\..\code\External\meshoptimizer\lib\win64\mes
       </DisableSpecificWarnings>
       <DebugInformationFormat>None</DebugInformationFormat>
       <AdditionalOptions>/d1trimfile:..\..\code\ %(AdditionalOptions)</AdditionalOptions>
+      <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -176,7 +177,7 @@ echo No | copy /-Y $(SolutionDir)..\..\code\External\meshoptimizer\lib\win64\mes
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>NDEBUG;TRACY_ENABLE;_ITERATOR_DEBUG_LEVEL=0;CONFIG_ENABLE_ASSERT;_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>NDEBUG;TRACY_ENABLE;_ITERATOR_DEBUG_LEVEL=0;CONFIG_ENABLE_ASSERT=1;_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <TreatWarningAsError>true</TreatWarningAsError>
       <ExceptionHandling>false</ExceptionHandling>

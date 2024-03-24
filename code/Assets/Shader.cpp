@@ -304,6 +304,9 @@ AssetResult ShaderLoader::Load(AssetHandle handle, const AssetLoadParams& params
             return AssetResult { .cacheHash = newCacheHash };
         }
     #else
+        UNUSED(cacheHash);
+        UNUSED(params);
+        UNUSED(handle);
         ASSERT_MSG(0, "None ToolMode builds does not support shader compilation");
         return AssetResult {};
     #endif
