@@ -169,7 +169,7 @@ struct JobsContext
     uint32 fiberHeapAllocSize;
     MaxValues maxValues[2];     // Index: 0 = Write, 1 = Present
 
-    bool quit;
+    atomicUint32 quit;
 };
 
 static JobsContext gJobs;
@@ -451,7 +451,9 @@ static int jobsThreadFn(void* userData)
 
     uint32 spinCount = !PLATFORM_MOBILE;
     uint32 typeIndex = uint32(jobsGetThreadData()->type);
-    while (!gJobs.quit) {
+    
+    // Watch out for this atomic check. It still might deadlock the threads (Quit=1) in rare occasions
+    while (atomicLoad32Explicit(&gJobs.quit, AtomicMemoryOrder::Acquire) != 1) {
         gJobs.semaphores[typeIndex].Wait();
 
         bool waitingListIsLive = false;
@@ -719,7 +721,7 @@ void jobsInitialize(const JobsInitParams& initParams)
 
 void jobsRelease()
 {
-    gJobs.quit = true;
+    atomicStore32Explicit(&gJobs.quit, 1, AtomicMemoryOrder::Release);
 
     gJobs.semaphores[uint32(JobsType::ShortTask)].Post(gJobs.numThreads[uint32(JobsType::ShortTask)]);
     gJobs.semaphores[uint32(JobsType::LongTask)].Post(gJobs.numThreads[uint32(JobsType::LongTask)]);
