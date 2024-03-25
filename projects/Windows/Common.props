@@ -38,4 +38,8 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup />
+  <PropertyGroup>
+    <LocalDebuggerWorkingDirectory>$(SolutionDir)..\..\</LocalDebuggerWorkingDirectory>
+    <DebuggerFlavor>WindowsLocalDebugger</DebuggerFlavor>
+  </PropertyGroup>
 </Project>
