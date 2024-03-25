@@ -17,6 +17,33 @@
     #endif
 #endif
 
+#if defined(__SSE2__)
+#include <emmintrin.h>    // _mm_pause
+#endif
+
+#if CPU_ARM
+#include <arm_acle.h>     // __yield
+#endif 
+
+#if PLATFORM_WINDOWS
+    #if ARCH_32BIT && CPU_X86
+        #if !COMPILER_MSVC
+            #include <x86intrin.h>
+        #endif
+    #endif
+    #include <intrin.h>
+    #if COMPILER_MSVC
+        #pragma intrinsic(_mm_pause)
+        #pragma intrinsic(__rdtsc)
+    #endif
+#elif PLATFORM_APPLE
+    #include <mach/mach_time.h>
+#endif
+
+#if !PLATFORM_WINDOWS
+    #include <sys/time.h>
+#endif
+
 struct SysCounters
 {
     atomicUint32 numThreads;
@@ -333,3 +360,83 @@ SysPrimitiveStats sysGetPrimitiveStats()
         .threadStackSize = gSysCounters.threadStackSize
     };
 }
+
+// Reference: https://rigtorp.se/spinlock/
+// TODO (consider): https://www.intel.com/content/www/us/en/developer/articles/technical/a-common-construct-to-avoid-the-contention-of-threads-architecture-agnostic-spin-wait-loops.html
+// Another good reference code: https://github.dev/concurrencykit/ck
+void SpinLockMutex::Enter()
+{
+    while (atomicExchange32Explicit(&mLocked, 1, AtomicMemoryOrder::Acquire) == 1) {
+        uint32 spinCount = 1;
+        do {
+            if (spinCount++ & 1023)
+                sysPauseCpu();
+            else
+                threadYield();
+        } while (atomicLoad32Explicit(&mLocked, AtomicMemoryOrder::Relaxed));
+    }
+}
+
+void SpinLockMutex::Exit()
+{
+    atomicStore32Explicit(&mLocked, 0, AtomicMemoryOrder::Release);
+}
+
+bool SpinLockMutex::TryEnter()
+{
+    return atomicLoad32Explicit(&mLocked, AtomicMemoryOrder::Relaxed) == 0 &&
+           atomicExchange32Explicit(&mLocked, 1, AtomicMemoryOrder::Acquire) == 0;
+}
+
+void sysPauseCpu()
+{
+#if CPU_X86
+    _mm_pause();
+#elif CPU_ARM 
+    __yield();
+#else
+    #error "Not implemented"
+#endif
+}
+
+// https://github.com/google/benchmark/blob/v1.1.0/src/cycleclock.h
+uint64 sysGetCpuClock()
+{
+#if PLATFORM_APPLE
+    return mach_absolute_time();
+#elif PLATFORM_WINDOWS
+    return __rdtsc();
+#elif CPU_ARM && ARCH_64BIT
+    uint64 vtm;
+    asm volatile("mrs %0, cntvct_el0" : "=r"(vtm));
+    return vtm;
+#elif CPU_ARM
+    #if (__ARM_ARCH >= 6)
+        uint32 pmccntr;
+        uint32 pmuseren;
+        uint32 pmcntenset;
+        // Read the user mode perf monitor counter access permissions.
+        asm volatile("mrc p15, 0, %0, c9, c14, 0" : "=r"(pmuseren));
+        if (pmuseren & 1) {    // Allows reading perfmon counters for user mode code.
+            asm volatile("mrc p15, 0, %0, c9, c12, 1" : "=r"(pmcntenset));
+            if (pmcntenset & 0x80000000ul) {    // Is it counting?
+                asm volatile("mrc p15, 0, %0, c9, c13, 0" : "=r"(pmccntr));
+                // The counter is set up to count every 64th cycle
+                return (int64_t)pmccntr * 64;    // Should optimize to << 6
+            }
+        }
+    #endif // (__ARM_ARCH >= 6)
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
+    return (int64_t)tv.tv_sec * 1000000 + tv.tv_usec;
+#elif CPU_X86 && ARCH_32BIT
+    int64_t ret;
+    __asm__ volatile("rdtsc" : "=A"(ret));
+    return ret;
+#elif CPU_X86 && ARCH_64BIT
+    uint64 low, high;
+    __asm__ volatile("rdtsc" : "=a"(low), "=d"(high));
+    return (high << 32) | low;
+#endif
+}
+

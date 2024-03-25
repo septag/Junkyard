@@ -1,9 +1,9 @@
 #include "FrameInfoHud.h"
 
 #include "../Core/Log.h"
+#include "../Core/System.h"
 #include "../Core/MathTypes.h"
 #include "../Core/MathScalar.h"
-#include "../Core/Atomic.h"
 #include "../Core/Blobs.h"
 #include "../Common/Application.h"
 #include "../Common/JunkyardSettings.h"
@@ -18,7 +18,7 @@ struct FrameInfoContext
     String<256> statusText;
     Color statusColor;
     float statusShowTime;
-    AtomicLock statusLock;
+    SpinLockMutex statusLock;
 };
 
 static FrameInfoContext gFrameInfo;
@@ -139,7 +139,7 @@ void frameInfoRender(float dt, bool *pOpen)
 
     // Status text at the bottom
     {
-        AtomicLockScope lock(gFrameInfo.statusLock);
+        SpinLockMutexScope lock(gFrameInfo.statusLock);
         ImDrawList* fgDrawList = ImGui::GetForegroundDrawList();
         float y = kDisplaySize.y - kLineSize;
         gFrameInfo.statusShowTime += dt;
@@ -153,7 +153,7 @@ void frameInfoRender(float dt, bool *pOpen)
 
 static void frameInfoLogCallback(const LogEntry& entry, void*)
 {
-    AtomicLockScope lock(gFrameInfo.statusLock);
+    SpinLockMutexScope lock(gFrameInfo.statusLock);
 
     gFrameInfo.statusText = entry.text;  
     gFrameInfo.statusShowTime = 0;

@@ -1,8 +1,8 @@
 #include "Clipboard.h"
 
 #include "../Core/Hash.h"
-#include "../Core/Atomic.h"
 #include "../Core/StringUtil.h"
+#include "../Core/System.h"
 
 namespace _limits
 {
@@ -12,12 +12,12 @@ namespace _limits
 
 struct ClipboardContext
 {
-    AtomicLock lock;
+    SpinLockMutex lock;
+    MemThreadSafeAllocator scrapAlloc;
+    MemTlsfAllocator tlsfAlloc;
+
     HashTable<ClipboardVarHandle> nameToHandle;
     HandlePool<ClipboardVarHandle, ClipboardVar> vars;
-    MemTlsfAllocator tlsfAlloc;
-    MemThreadSafeAllocator scrapAlloc;
-    
     size_t initHeapStart;
     size_t initHeapSize;
 };
@@ -56,14 +56,14 @@ void clipboardRelease()
 ClipboardVar& clipboardGet(ClipboardVarHandle handle)
 {
     ASSERT(handle.IsValid());
-    AtomicLockScope lock(gClipboard.lock);
+    SpinLockMutexScope lock(gClipboard.lock);
     ASSERT(gClipboard.vars.IsValid(handle));
     return gClipboard.vars.Data(handle);
 }
 
 ClipboardVar& clipboardGet(const char* name)
 {
-    AtomicLockScope lock(gClipboard.lock);
+    SpinLockMutexScope lock(gClipboard.lock);
     
     uint32 index = gClipboard.nameToHandle.Find(hashFnv32Str(name));
     if (index != INVALID_INDEX) {
@@ -80,7 +80,7 @@ ClipboardVar& clipboardGet(const char* name)
 
 ClipboardVarHandle clipboardAdd(const char* name, const ClipboardVar* var)
 {
-    AtomicLockScope lock(gClipboard.lock);
+    SpinLockMutexScope lock(gClipboard.lock);
 
     ClipboardVar prevValue;
     static ClipboardVar DummyVar {};
@@ -93,7 +93,7 @@ ClipboardVarHandle clipboardAdd(const char* name, const ClipboardVar* var)
 
 ClipboardVarHandle clipboardFind(const char* name)
 {
-    AtomicLockScope lock(gClipboard.lock);
+    SpinLockMutexScope lock(gClipboard.lock);
     return gClipboard.nameToHandle.FindAndFetch(hashFnv32Str(name), ClipboardVarHandle());
 }
 
@@ -127,7 +127,6 @@ void ClipboardVar::SetString(const char* str, uint32 len)
         len = strLen(str);
     char* oldString = valueString;
     valueString = memAllocCopy<char>(str, len + 1, &gClipboard.scrapAlloc);
-    atomicThreadFence(AtomicMemoryOrder::Acqrel);
     memFree(oldString, &gClipboard.scrapAlloc);
 }
 
@@ -139,7 +138,6 @@ void ClipboardVar::SetBuffer(const void* data, uint32 size)
     type = ClipboardVarType::Buffer;
     void* oldBuffer = valuePointer;
     valuePointer = memAllocCopyRawBytes(data, size, &gClipboard.scrapAlloc);
-    atomicThreadFence(AtomicMemoryOrder::Acqrel);
     memFree(oldBuffer, &gClipboard.scrapAlloc);
 }
 

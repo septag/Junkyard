@@ -18,8 +18,6 @@
 #include <signal.h>             // kill
 #include <stdio.h>              // puts
 
-//#include <Foundation/Foundation.h>
-
 struct SemaphoreImpl
 {
     dispatch_semaphore_t handle;

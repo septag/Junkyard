@@ -18,6 +18,7 @@
 
 // set this to 1 to spam output with tracy zones debugging
 #define JOBS_DEBUG_TRACY_ZONES 0
+#define JOBS_USE_ANDERSON_LOCK 1 // Experimental
 
 namespace _limits
 {
@@ -30,14 +31,48 @@ namespace _limits
 #endif
 }
 
-#define JOBS_USE_ANDERSON_LOCK  // Experimental
-#ifdef JOBS_USE_ANDERSON_LOCK
-    using JobsLock = AtomicALock;
-    using JobsLockScope = AtomicALockScope;
+#if JOBS_USE_ANDERSON_LOCK
+// Anderson's lock: Implementation is a modified form of: https://github.com/concurrencykit/ck/blob/master/include/spinlock/anderson.h
+struct alignas(CACHE_LINE_SIZE) JobsAndersonLockThread
+{
+    uint32 locked;
+    uint8 _padding1[CACHE_LINE_SIZE - sizeof(uint32)];
+    uint32 position;
+    uint8 _padding2[CACHE_LINE_SIZE - sizeof(uint32)];
+};
+
+struct alignas(CACHE_LINE_SIZE) JobsAndersonLock
+{
+    inline void Initialize(uint32 numThreads, JobsAndersonLockThread* threads);
+    inline uint32 Enter();
+    inline void Exit(uint32 slot);
+
+    JobsAndersonLockThread* mSlots;
+    uint32 mCount;
+    uint32 mWrap;
+    uint32 mMask;
+    char _padding1[CACHE_LINE_SIZE - sizeof(uint32)*3 - sizeof(void*)];
+    uint32 mNext;
+    char _padding2[CACHE_LINE_SIZE - sizeof(uint32)];
+};
+
+struct JobsAndersonLockScope
+{
+    JobsAndersonLockScope() = delete;
+    JobsAndersonLockScope(const JobsAndersonLockScope& _lock) = delete;
+    inline explicit JobsAndersonLockScope(JobsAndersonLock& _lock) : mLock(_lock) { mSlot = mLock.Enter(); }
+    inline ~JobsAndersonLockScope() { mLock.Exit(mSlot); }
+        
+private:
+    JobsAndersonLock& mLock;
+    uint32 mSlot;
+};
+    using JobsLock = JobsAndersonLock;
+    using JobsLockScope = JobsAndersonLockScope;
 #else
-    using JobsLock = AtomicLock;
-    using JobsLockScope = AtomicLockScope;
-#endif
+    using JobsLock = SpinLockMutex;
+    using JobsLockScope = SpinLockMutex;
+#endif  // JOBS_CONFIG_USE_ANDERSON_LOCK
 
 struct JobsFiber;
 
@@ -504,7 +539,7 @@ static int jobsThreadFn(void* userData)
             gJobs.semaphores[typeIndex].Post();
 
             if (spinCount & 1023) 
-                atomicPauseCpu();
+                sysPauseCpu();
             else
                 threadYield();
         }
@@ -587,7 +622,7 @@ void jobsWaitForCompletion(JobsHandle instance)
         }
         else {
             if (spinCount++ & 1023)
-                atomicPauseCpu();   // Main thread just loops 
+                sysPauseCpu();   // Main thread just loops 
             else
                 threadYield();
         }
@@ -640,9 +675,9 @@ void jobsInitialize(const JobsInitParams& initParams)
 
     #ifdef JOBS_USE_ANDERSON_LOCK
     uint32 numTotalThreads = gJobs.numThreads[0] + gJobs.numThreads[1] + 1;
-    atomicALockInitialize(&gJobs.waitingListLock, numTotalThreads, memAllocAlignedTyped<AtomicALockThread>(numTotalThreads, alignof(AtomicALockThread), initParams.alloc));
+    gJobs.waitingListLock.Initialize(numTotalThreads, memAllocAlignedTyped<JobsAndersonLockThread>(numTotalThreads, alignof(JobsAndersonLockThread), initParams.alloc));
     if (initParams.alloc->GetType() != AllocatorType::Bump)
-        gJobs.pointers.Add(Pair<void*, uint32>(gJobs.waitingListLock.slots, alignof(AtomicALockThread)));
+        gJobs.pointers.Add(Pair<void*, uint32>(gJobs.waitingListLock.mSlots, alignof(JobsAndersonLockThread)));
     #endif
 
     gJobs.semaphores[uint32(JobsType::ShortTask)].Initialize();
@@ -823,7 +858,7 @@ void JobsSignal::WaitOnCondition(bool(*condFn)(int value, int reference), int re
         }
         else {
             if (spinCount++ & 1023)
-                atomicPauseCpu();   // Main thread just loops 
+                sysPauseCpu();   // Main thread just loops 
             else
                 threadYield();
         }
@@ -885,3 +920,75 @@ inline void JobsAtomicPool<_T, _MaxCount>::Delete(_T* p)
     ASSERT_MSG(idx != _MaxCount, "Pool delete fault");
     mPtrs[idx] = p;
 }
+
+//----------------------------------------------------------------------------------------------------------------------
+// Anderson lock implementation
+#if JOBS_USE_ANDERSON_LOCK
+inline void JobsAndersonLock::Initialize(uint32 numThreads, JobsAndersonLockThread* threads)
+{
+    ASSERT(threads);
+    ASSERT(numThreads);
+
+    memset(threads, 0x0, sizeof(JobsAndersonLockThread)*numThreads);
+    mSlots = threads;
+
+    for (uint32 i = 1; i < numThreads; i++) {
+        mSlots[i].locked = 1;
+        mSlots[i].position = i;
+    }
+
+    mCount = numThreads;
+    mMask = numThreads - 1;
+
+    if (numThreads & (numThreads - 1)) 
+        mWrap = (UINT32_MAX % numThreads) + 1;
+    else
+        mWrap = 0;
+
+    c89atomic_compiler_fence();
+}
+
+inline uint32 JobsAndersonLock::Enter()
+{
+    uint32 position, next;
+
+    if (mWrap) {
+        position = c89atomic_load_explicit_32(&next, c89atomic_memory_order_acquire);
+
+        do {
+            if (position == UINT32_MAX)
+                next = mWrap;
+            else 
+                next = position + 1;
+        } while (c89atomic_compare_exchange_strong_32(&mNext, &position, next) == false);
+
+        position %= mCount;
+    } else {
+        position = c89atomic_fetch_add_32(&next, 1);
+        position &= mMask;
+    }
+
+    c89atomic_thread_fence(c89atomic_memory_order_acq_rel);
+
+    while (c89atomic_load_explicit_32(&mSlots[position].locked, c89atomic_memory_order_acquire))
+        sysPauseCpu();
+
+    c89atomic_store_explicit_32(&mSlots[position].locked, 1, c89atomic_memory_order_release);
+
+    return position;
+}
+
+inline void JobsAndersonLock::Exit(uint32 slot)
+{
+    uint32 position;
+
+    c89atomic_thread_fence(c89atomic_memory_order_acq_rel);
+
+    if (mWrap == 0)
+        position = (mSlots[slot].position + 1) & mMask;
+    else
+        position = (mSlots[slot].position + 1) % mCount;
+
+    c89atomic_store_explicit_32(&mSlots[position].locked, 0, c89atomic_memory_order_release);
+}
+#endif // JOBS_USE_ANDERSON_LOCK

@@ -59,7 +59,7 @@
 //      - RelativePtr<T>: Defines a relative pointer of type T (-> gets you T*). 
 //                        Instead of the actual pointer, stores a 32bit offset from the RelativePtr object to the pointer you assign to it
 //                        It is very powerful, but use with care. Because allocate memory should always lineary placed in memory after the RelativePtr
-//      - AtomicLock: Used for SpinLocks. See Atomic.h for the actual locking functions. Placed here to reduce Atomic.h inclusion overhead
+//      - SpinLock: Used for SpinLocks. See Atomic.h for the actual locking functions. Placed here to reduce Atomic.h inclusion overhead
 //      - Span: A pair of templated pointer/size type. Used for holding a range of data in memory. 
 //
 //  Random Generator: Base has a default PCG random number generator, with two approaches:
@@ -607,14 +607,6 @@ template<> inline constexpr int DivCeil(int value, int divider) { return (value 
 template<> inline constexpr uint16 DivCeil(uint16 value, uint16 divider) { return (value + divider - 1)/divider; }
 template<> inline constexpr uint32 DivCeil(uint32 value, uint32 divider) { return (value + divider - 1)/divider; }
 template<> inline constexpr uint64 DivCeil(uint64 value, uint64 divider) { return (value + divider - 1)/divider; }
-
-// Implemented in Atomic.h
-// We put this in here to avoid expensive c89atomic.h include
-struct alignas(CACHE_LINE_SIZE) AtomicLock
-{
-    uint32 locked = 0;
-    uint8 padding[CACHE_LINE_SIZE - sizeof(uint32)];
-};
 
 #if defined(Main)
     #undef Main

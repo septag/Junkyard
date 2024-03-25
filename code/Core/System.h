@@ -15,11 +15,6 @@
 //
 #include "StringUtil.h"
 
-#if PLATFORM_ANDROID
-    struct _JNIEnv;
-    typedef _JNIEnv JNIEnv;
-#endif
-
 //----------------------------------------------------------------------------------------------------------------------
 // Thread
 enum class ThreadCreateFlags : uint32
@@ -88,6 +83,83 @@ struct MutexScope
 
 private:
     Mutex& mMtx;
+};
+
+//----------------------------------------------------------------------------------------------------------------------
+// ReadWriteMutex
+struct alignas(CACHE_LINE_SIZE) ReadWriteMutex
+{
+    void Initialize();
+    void Release();
+
+    bool TryRead();
+    bool TryWrite();
+
+    void EnterRead();
+    void ExitRead();
+
+    void EnterWrite();
+    void ExitWrite();
+
+private:
+    uint8 mData[64];
+};
+
+struct ReadWriteMutexReadScope
+{
+    ReadWriteMutexReadScope() = delete;
+    ReadWriteMutexReadScope(const ReadWriteMutexReadScope&) = delete;
+    explicit ReadWriteMutexReadScope(ReadWriteMutex& mtx) : mMtx(mtx) { mMtx.EnterRead(); }
+    ~ReadWriteMutexReadScope() { mMtx.ExitRead(); }
+
+private:
+    ReadWriteMutex& mMtx;
+};
+
+struct ReadWriteMutexWriteScope
+{
+    ReadWriteMutexWriteScope() = delete;
+    ReadWriteMutexWriteScope(const ReadWriteMutexWriteScope&) = delete;
+    explicit ReadWriteMutexWriteScope(ReadWriteMutex& mtx) : mMtx(mtx) { mMtx.EnterRead(); }
+    ~ReadWriteMutexWriteScope() { mMtx.ExitRead(); }
+
+private:
+    ReadWriteMutex& mMtx;
+};
+
+struct ReadWriteMutexScope
+{
+    ReadWriteMutexScope() = delete;
+    ReadWriteMutexScope(const ReadWriteMutexScope&) = delete;
+    explicit ReadWriteMutexScope(ReadWriteMutex& mtx) : mMtx(mtx) { mMtx.EnterRead(); }
+    ~ReadWriteMutexScope() { mMtx.ExitRead(); }
+
+private:
+    ReadWriteMutex& mMtx;
+};
+
+//----------------------------------------------------------------------------------------------------------------------
+// SpinLock
+struct alignas(CACHE_LINE_SIZE) SpinLockMutex
+{
+    void Enter();
+    void Exit();
+    bool TryEnter();
+
+private:
+    uint32 mLocked = 0;
+    [[maybe_unused]] uint8  _padding[CACHE_LINE_SIZE - sizeof(uint32)];
+};
+
+struct SpinLockMutexScope
+{
+    SpinLockMutexScope() = delete;
+    SpinLockMutexScope(const SpinLockMutexScope&) = delete;
+    inline explicit SpinLockMutexScope(SpinLockMutex& lock) : mLock(lock) { mLock.Enter(); }
+    inline ~SpinLockMutexScope() { mLock.Exit(); }
+        
+private:
+    SpinLockMutex& mLock;
 };
 
 //----------------------------------------------------------------------------------------------------------------------
@@ -437,6 +509,9 @@ struct SysUUID
     bool operator==(const SysUUID& uuid) const;
 };
 
+API void sysPauseCpu();
+API uint64 sysGetCpuClock();
+
 API [[nodiscard]] DLLHandle sysLoadDLL(const char* filepath, char** pErrorMsg = nullptr);
 API void sysUnloadDLL(DLLHandle dll);
 API void* sysSymbolAddress(DLLHandle dll, const char* symbolName);
@@ -553,6 +628,9 @@ enum class SysWin32Folder
 API char* pathWin32GetFolder(SysWin32Folder folder, char* dst, size_t dstSize);
 
 #elif PLATFORM_ANDROID
+struct _JNIEnv;
+typedef _JNIEnv JNIEnv;
+
 typedef struct ANativeActivity ANativeActivity; // <android/native_activity.h>
 
 enum class SysAndroidLogType 

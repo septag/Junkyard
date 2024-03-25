@@ -37,11 +37,16 @@
 #include "Log.h"
 
 // "Adaptive" mutex implementation using early spinlock
-struct alignas(CACHE_LINE_SIZE) MutexImpl
+struct MutexImpl
 {
     alignas(CACHE_LINE_SIZE) atomicUint32 spinlock;
     pthread_mutex_t handle;
     uint32 spinCount;
+};
+
+struct ReadWriteMutexImpl
+{
+    pthread_rwlock_t handle;
 };
 
 #if !PLATFORM_APPLE
@@ -89,6 +94,7 @@ static_assert(sizeof(MutexImpl) <= sizeof(Mutex), "Mutex size mismatch");
 static_assert(sizeof(SignalImpl) <= sizeof(Signal), "Signal size mismatch");
 static_assert(sizeof(ThreadImpl) <= sizeof(Thread), "Thread size mismatch");
 static_assert(sizeof(UUIDImpl) <= sizeof(SysUUID), "UUID size mismatch");
+
 
 static inline void timespecAdd(struct timespec* _ts, int32_t _msecs)
 {
@@ -293,7 +299,7 @@ void threadSetCurrentThreadPriority(ThreadPriority prio)
     threadSetPriority(pthread_self(), prio);
 }
 
-//--------------------------------------------------------------------------------------------------
+//----------------------------------------------------------------------------------------------------------------------
 // Mutex
 void Mutex::Initialize(uint32 spinCount)
 {
@@ -330,7 +336,7 @@ void Mutex::Enter()
     for (uint32 i = 0, c = _m->spinCount; i < c; i++) {
         if (atomicExchange32Explicit(&_m->spinlock, 1, AtomicMemoryOrder::Acquire) == 0)
             return;
-        atomicPauseCpu();
+        sysPauseCpu();
     }
     
     pthread_mutex_lock(&_m->handle);
@@ -351,6 +357,56 @@ bool Mutex::TryEnter()
     if (atomicExchange32Explicit(&_m->spinlock, 1, AtomicMemoryOrder::Acquire) == 0)
         return true;
     return pthread_mutex_trylock(&_m->handle) == 0;
+}
+
+//----------------------------------------------------------------------------------------------------------------------
+// ReadWriteMutex
+void ReadWriteMutex::Initialize()
+{
+    ReadWriteMutexImpl* m = reinterpret_cast<ReadWriteMutexImpl*>(mData);
+    pthread_rwlock_init(&m->handle, nullptr);
+}
+
+void ReadWriteMutex::Release()
+{
+    ReadWriteMutexImpl* m = reinterpret_cast<ReadWriteMutexImpl*>(mData);
+    pthread_rwlock_destroy(&m->handle);
+}
+
+bool ReadWriteMutex::TryRead()
+{
+    ReadWriteMutexImpl* m = reinterpret_cast<ReadWriteMutexImpl*>(mData);
+    return pthread_rwlock_tryrdlock(&m->handle) == 0;
+}
+
+bool ReadWriteMutex::TryWrite()
+{
+    ReadWriteMutexImpl* m = reinterpret_cast<ReadWriteMutexImpl*>(mData);
+    return pthread_rwlock_trywrlock(&m->handle) == 0;
+}
+
+void ReadWriteMutex::EnterRead()
+{
+    ReadWriteMutexImpl* m = reinterpret_cast<ReadWriteMutexImpl*>(mData);
+    pthread_rwlock_rdlock(&m->handle);
+}
+
+void ReadWriteMutex::ExitRead()
+{
+    ReadWriteMutexImpl* m = reinterpret_cast<ReadWriteMutexImpl*>(mData);
+    pthread_rwlock_unlock(&m->handle);
+}
+
+void ReadWriteMutex::EnterWrite()
+{
+    ReadWriteMutexImpl* m = reinterpret_cast<ReadWriteMutexImpl*>(mData);
+    pthread_rwlock_wrlock(&m->handle);
+}
+
+void ReadWriteMutex::ExitWrite()
+{
+    ReadWriteMutexImpl* m = reinterpret_cast<ReadWriteMutexImpl*>(mData);
+    pthread_rwlock_unlock(&m->handle);
 }
 
 //----------------------------------------------------------------------------------------------------------------------
@@ -675,7 +731,7 @@ bool pathMakeTemp(char* dst, size_t dstSize, const char* namePrefix, const char*
         dir = "/tmp";
     pathJoin(dst, dstSize, dir, namePrefix);
     strConcat(dst, uint32(dstSize), "XXXXXX");
-    mktemp(dst);
+    mkstemp(dst);
     return dst[0] ? true : false;
 }
 

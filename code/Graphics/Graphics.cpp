@@ -265,7 +265,7 @@ struct GfxObjectPools
         POOL_COUNT
     };
 
-    AtomicLock locks[POOL_COUNT];
+    SpinLockMutex locks[POOL_COUNT];
 
     HandlePool<GfxBuffer, GfxBufferData> buffers;
     HandlePool<GfxImage, GfxImageData> images;
@@ -375,7 +375,7 @@ struct GfxContext
     Mutex shaderPipelinesTableMtx;
     Mutex garbageMtx;
     
-    AtomicLock pendingCmdBuffersLock;
+    SpinLockMutex pendingCmdBuffersLock;
     StaticArray<VkCommandBuffer, 32> pendingCmdBuffers;
     HashTable<Array<GfxPipeline>> shaderPipelinesTable;
     Array<GfxDeferredCommand> deferredCmds;
@@ -383,7 +383,7 @@ struct GfxContext
     size_t initHeapStart;
     size_t initHeapSize;
 
-    AtomicLock threadDataLock;
+    SpinLockMutex threadDataLock;
     StaticArray<GfxCommandBufferThreadData*, 32> initializedThreadData;
 
     Blob deferredCmdBuffer;
@@ -431,7 +431,7 @@ static thread_local GfxCommandBufferThreadData gCmdBufferThreadData;
 static constexpr const char* kVkValidationLayer = "VK_LAYER_KHRONOS_validation";
 static constexpr const char* kAdrenoDebugLayer = "VK_LAYER_ADRENO_debug";
 
-// #define GFX_LOCK_POOL_TEMP(_type) AtomicLockScope CONCAT(mtx, __LINE__)(gVk.pools.locks[GfxObjectPools::_type])
+// #define GFX_LOCK_POOL_TEMP(_type) SpinLockScope CONCAT(mtx, __LINE__)(gVk.pools.locks[GfxObjectPools::_type])
 #define GFX_LOCK_POOL_TEMP(_type)
 
 #if PLATFORM_WINDOWS
@@ -656,7 +656,7 @@ static VkCommandBuffer gfxGetNewCommandBuffer()
         gCmdBufferThreadData.initialized = true;
 
         // Add to thread data collection for later house-cleaning
-        AtomicLockScope lock(gVk.threadDataLock);
+        SpinLockMutexScope lock(gVk.threadDataLock);
         gVk.initializedThreadData.Add(&gCmdBufferThreadData);
     }
     else {
@@ -764,7 +764,7 @@ static GfxPipelineLayout gfxCreatePipelineLayout(const GfxShader& shader,
         return pipLayout;
     }
     else {
-        atomicLockExit(&gVk.pools.locks[GfxObjectPools::PIPELINE_LAYOUTS]);
+        gVk.pools.locks[GfxObjectPools::PIPELINE_LAYOUTS].Exit();
     
         MemTempAllocator tempAlloc;
         
@@ -843,7 +843,7 @@ static void gfxDestroyPipelineLayout(GfxPipelineLayout layout)
             vkDestroyPipelineLayout(gVk.device, layoutData.layout, &gVk.allocVk);
         memset(&layoutData, 0x0, sizeof(layoutData));
 
-        AtomicLockScope lk(gVk.pools.locks[GfxObjectPools::PIPELINE_LAYOUTS]);
+        SpinLockMutexScope lk(gVk.pools.locks[GfxObjectPools::PIPELINE_LAYOUTS]);
         gVk.pools.pipelineLayouts.Remove(layout);
     }
 }
@@ -894,7 +894,7 @@ void gfxEndCommandBuffer()
     }
 
     // Recoding finished, push it for submittion
-    AtomicLockScope lock(gVk.pendingCmdBuffersLock);
+    SpinLockMutexScope lock(gVk.pendingCmdBuffersLock);
     gVk.pendingCmdBuffers.Add(gCmdBufferThreadData.curCmdBuffer);
     gCmdBufferThreadData.curCmdBuffer = VK_NULL_HANDLE;
 }
@@ -2601,7 +2601,8 @@ void gfxEndFrame()
     MemTempAllocator tmpAlloc;
 
     // Flip the current index here for other threads (mainly loaders) to submit to next frame
-    {   AtomicLockScope lock(gVk.pendingCmdBuffersLock);
+    {   
+        SpinLockMutexScope lock(gVk.pendingCmdBuffersLock);
         cmdBuffersVk = memAllocCopy<VkCommandBuffer>(gVk.pendingCmdBuffers.Ptr(), gVk.pendingCmdBuffers.Count(), &tmpAlloc);
         numCmdBuffers = gVk.pendingCmdBuffers.Count();
         gVk.pendingCmdBuffers.Clear();
@@ -2805,7 +2806,7 @@ GfxBuffer gfxCreateBuffer(const GfxBufferDesc& desc)
             bufferData.numStackframes = debugCaptureStacktrace(bufferData.stackframes, (uint16)CountOf(bufferData.stackframes), 2);
     #endif
 
-    AtomicLockScope lk(gVk.pools.locks[GfxObjectPools::BUFFERS]);
+    SpinLockMutexScope lk(gVk.pools.locks[GfxObjectPools::BUFFERS]);
     return gVk.pools.buffers.Add(bufferData);
 }
 
@@ -2825,7 +2826,7 @@ void gfxDestroyBuffer(GfxBuffer buffer)
         vmaDestroyBuffer(gVk.vma, bufferData.stagingBuffer, bufferData.stagingAllocation);
 
     { 
-        AtomicLockScope lk(gVk.pools.locks[GfxObjectPools::BUFFERS]);
+        SpinLockMutexScope lk(gVk.pools.locks[GfxObjectPools::BUFFERS]);
         gVk.pools.buffers.Remove(buffer);
     }
 }
@@ -2872,9 +2873,9 @@ void gfxCmdPushConstants(GfxPipeline pipeline, GfxShaderStage stage, const void*
     ASSERT_MSG(cmdBufferVk, "CmdXXX functions must come between Begin/End CommandBuffer calls");
 
     { 
-        AtomicLockScope lk1(gVk.pools.locks[GfxObjectPools::PIPELINES]);
+        SpinLockMutexScope lk1(gVk.pools.locks[GfxObjectPools::PIPELINES]);
         const GfxPipelineData& pipData = gVk.pools.pipelines.Data(pipeline);
-        AtomicLockScope lk2(gVk.pools.locks[GfxObjectPools::PIPELINE_LAYOUTS]);
+        SpinLockMutexScope lk2(gVk.pools.locks[GfxObjectPools::PIPELINE_LAYOUTS]);
         pipLayoutVk = gVk.pools.pipelineLayouts.Data(pipData.pipelineLayout).layout;
     }
 
@@ -3086,7 +3087,7 @@ GfxImage gfxCreateImage(const GfxImageDesc& desc)
         imageData.numStackframes = debugCaptureStacktrace(imageData.stackframes, (uint16)CountOf(imageData.stackframes), 2);
 #endif
 
-    AtomicLockScope lk(gVk.pools.locks[GfxObjectPools::IMAGES]);
+    SpinLockMutexScope lk(gVk.pools.locks[GfxObjectPools::IMAGES]);
     return gVk.pools.images.Add(imageData);
 }
 
@@ -3107,7 +3108,7 @@ void gfxDestroyImage(GfxImage image)
         memset(&imageData, 0x0, sizeof(imageData));
     }    
 
-    AtomicLockScope lk(gVk.pools.locks[GfxObjectPools::IMAGES]);
+    SpinLockMutexScope lk(gVk.pools.locks[GfxObjectPools::IMAGES]);
     gVk.pools.images.Remove(image);
 }
 
@@ -3636,7 +3637,7 @@ void gfxDestroyPipeline(GfxPipeline pipeline)
     if (pipData.pipeline)
         vkDestroyPipeline(gVk.device, pipData.pipeline, &gVk.allocVk);
 
-    AtomicLockScope lk(gVk.pools.locks[GfxObjectPools::PIPELINES]);
+    SpinLockMutexScope lk(gVk.pools.locks[GfxObjectPools::PIPELINES]);
     gVk.pools.pipelines.Remove(pipeline);
 }
 
@@ -3725,17 +3726,17 @@ GfxDescriptorSetLayout gfxCreateDescriptorSetLayout(const GfxShader& shader, con
                         .AddCStringArray(names, numBindings)
                         .Hash();
 
-    atomicLockEnter(&gVk.pools.locks[GfxObjectPools::DESCRIPTOR_SET_LAYOUTS]);
+    gVk.pools.locks[GfxObjectPools::DESCRIPTOR_SET_LAYOUTS].Enter();
     if (GfxDescriptorSetLayout layout = gVk.pools.descriptorSetLayouts.FindIf(
         [hash](const GfxDescriptorSetLayoutData& item)->bool { return item.hash == hash; }); layout.IsValid())
     {
         GfxDescriptorSetLayoutData& item = gVk.pools.descriptorSetLayouts.Data(layout);
         ++item.refCount;
-        atomicLockExit(&gVk.pools.locks[GfxObjectPools::DESCRIPTOR_SET_LAYOUTS]);
+        gVk.pools.locks[GfxObjectPools::DESCRIPTOR_SET_LAYOUTS].Exit();
         return layout;
     }
     else {
-        atomicLockExit(&gVk.pools.locks[GfxObjectPools::DESCRIPTOR_SET_LAYOUTS]);
+        gVk.pools.locks[GfxObjectPools::DESCRIPTOR_SET_LAYOUTS].Exit();
 
         VkDescriptorSetLayoutCreateInfo layoutCreateInfo {
             .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
@@ -3784,7 +3785,7 @@ GfxDescriptorSetLayout gfxCreateDescriptorSetLayout(const GfxShader& shader, con
                 dsLayoutData.numStackframes = debugCaptureStacktrace(dsLayoutData.stackframes, (uint16)CountOf(dsLayoutData.stackframes), 2);
         #endif
 
-        AtomicLockScope mtx(gVk.pools.locks[GfxObjectPools::DESCRIPTOR_SET_LAYOUTS]);
+        SpinLockMutexScope mtx(gVk.pools.locks[GfxObjectPools::DESCRIPTOR_SET_LAYOUTS]);
         GfxDescriptorSetLayoutData prevLayout;
         layout = gVk.pools.descriptorSetLayouts.Add(dsLayoutData, &prevLayout);
 
@@ -3808,7 +3809,7 @@ void gfxDestroyDescriptorSetLayout(GfxDescriptorSetLayout layout)
             memFree(layoutData.bindings, &gVk.alloc);
         memset(&layoutData, 0x0, sizeof(layoutData));
 
-        AtomicLockScope lk(gVk.pools.locks[GfxObjectPools::DESCRIPTOR_SET_LAYOUTS]);
+        SpinLockMutexScope lk(gVk.pools.locks[GfxObjectPools::DESCRIPTOR_SET_LAYOUTS]);
         gVk.pools.descriptorSetLayouts.Remove(layout);
     }
 }
@@ -3870,7 +3871,7 @@ GfxDescriptorSet gfxCreateDescriptorSet(GfxDescriptorSetLayout layout)
             descriptorSetData.numStackframes = debugCaptureStacktrace(descriptorSetData.stackframes, (uint16)CountOf(descriptorSetData.stackframes), 2);
     #endif
 
-    AtomicLockScope lk(gVk.pools.locks[GfxObjectPools::DESCRIPTOR_SETS]);
+    SpinLockMutexScope lk(gVk.pools.locks[GfxObjectPools::DESCRIPTOR_SETS]);
     return gVk.pools.descriptorSets.Add(descriptorSetData);
 }
 
@@ -3908,7 +3909,7 @@ void gfxDestroyDescriptorSet(GfxDescriptorSet dset)
 
     vkFreeDescriptorSets(gVk.device, gVk.descriptorPool, 1, &dsetData.descriptorSet);
 
-    AtomicLockScope lk(gVk.pools.locks[GfxObjectPools::DESCRIPTOR_SETS]);
+    SpinLockMutexScope lk(gVk.pools.locks[GfxObjectPools::DESCRIPTOR_SETS]);
     gVk.pools.descriptorSets.Remove(dset);
 }
 
@@ -3927,13 +3928,13 @@ void gfxUpdateDescriptorSet(GfxDescriptorSet dset, uint32 numBindings, const Gfx
     GfxDescriptorSetData dsetData; 
     
     {   
-        AtomicLockScope lk1(gVk.pools.locks[GfxObjectPools::DESCRIPTOR_SETS]);
+        SpinLockMutexScope lk1(gVk.pools.locks[GfxObjectPools::DESCRIPTOR_SETS]);
         dsetData = gVk.pools.descriptorSets.Data(dset);
     }
 
     MemTempAllocator tempAlloc;
 
-    AtomicLockScope lk2(gVk.pools.locks[GfxObjectPools::DESCRIPTOR_SET_LAYOUTS]);
+    SpinLockMutexScope lk2(gVk.pools.locks[GfxObjectPools::DESCRIPTOR_SET_LAYOUTS]);
     GfxDescriptorSetLayoutData& layoutData = gVk.pools.descriptorSetLayouts.Data(dsetData.layout);
     bool hasImage = false;
 
@@ -4602,7 +4603,7 @@ static constexpr const uint32 kProfileMaxQueries = 64*1024;
 
 struct GfxProfileQueryContext
 {
-    AtomicLock queueLock;
+    SpinLockMutex queueLock;
     VkQueryPool queryPool;
     
     uint64 deviation;
@@ -4629,7 +4630,7 @@ static GfxProfileState gGfxProfile;
 
 INLINE uint16 gfxProfileGetNextQueryId(GfxProfileQueryContext* ctx)
 {
-    AtomicLockScope lock(ctx->queueLock);
+    SpinLockMutexScope lock(ctx->queueLock);
     uint32 id = ctx->head;
     ctx->head = (ctx->head + 1) % ctx->queryCount;
     ASSERT(ctx->head != ctx->tail);

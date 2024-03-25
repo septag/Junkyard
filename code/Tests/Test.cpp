@@ -30,103 +30,6 @@
 
 #include "../Engine.h"
 
-#define TEST_IO 0
-
-#if TEST_IO
-#include <dirent.h>
-#include "../Core/Atomic.h"
-
-static RandomContext gRand = randomCreateContext(666);
-
-static void BruteforceBlockMethod(const Path* paths, int numFiles, atomicUint64& totalSize, atomicUint64& hashTime)
-{
-    for (int i = 0; i < numFiles; i++) {
-        File f;
-        MemTempAllocator tmpAlloc;
-        bool r = f.Open(paths[i].CStr(), FileOpenFlags::Read|FileOpenFlags::SeqScan);
-        ASSERT(r);
-        uint8* buffer = tmpAlloc.MallocTyped<uint8>((uint32)f.GetSize());
-        uint32 bytesRead = f.Read<uint8>(buffer, (uint32)f.GetSize());
-        ASSERT(bytesRead == f.GetSize());
-
-        // ProcessAndShowInfo(paths[i].CStr(), buffer, bytesRead, &hashTime);
-        f.Close();
-        atomicFetchAdd64(&totalSize, (uint64)bytesRead);
-    }
-}
-
-static void BruteforceTaskBlockMethod(const Path* paths, int numFiles, atomicUint64& totalSize, atomicUint64& hashTime)
-{
-    struct IOTask
-    {
-        atomicUint64 totalSize;
-        const Path* paths;
-        atomicUint64* hashTime;
-    };
-    IOTask task { .paths = paths, .hashTime = &hashTime };
-
-    JobsHandle handle = jobsDispatch(JobsType::LongTask, [](uint32 groupIndex, void* userData) {
-        IOTask* task = (IOTask*)userData;
-        File f;
-        bool r = f.Open(task->paths[groupIndex].CStr(), FileOpenFlags::Read|FileOpenFlags::SeqScan);
-        ASSERT(r);
-        MemTempAllocator tmpAlloc;
-        uint8* buffer = tmpAlloc.MallocTyped<uint8>((uint32)f.GetSize());
-        uint32 bytesRead = f.Read<uint8>(buffer, (uint32)f.GetSize());
-        ASSERT(bytesRead == f.GetSize());
-
-        // ProcessAndShowInfo(task->paths[groupIndex].CStr(), buffer, bytesRead, task->hashTime);
-        f.Close();
-        atomicFetchAdd64(&task->totalSize, bytesRead);
-    }, &task, numFiles);
-    jobsWaitForCompletion(handle);
-    totalSize = task.totalSize;
-}
-
-static void TestIO()
-{
-    // scan the directory and gather all the TGA files
-    Path rootDir = "/sdcard/Documents/junkyard/TestIO";
-    MemTempAllocator tmpAlloc;
-    Array<Path> pathsArr(&tmpAlloc);
-    char filename[32];
-    for (uint32 i = 0; i < 1024; i++) {
-        strPrintFmt(filename, sizeof(filename), "%u.tga", i+1);
-        pathsArr.Push(Path::Join(rootDir, filename));
-    }
-
-    Path* paths = nullptr;
-    int numFiles;
-    pathsArr.Detach(&paths, (uint32*)&numFiles);
-
-    logInfo("Found %d files", numFiles);
-    logInfo("Ready.");
-        
-    using BenchmarkCallback = void(*)(const Path* paths, int numFiles, atomicUint64& totalSize, atomicUint64& hashTime);
-    auto BenchmarkIO = [paths, numFiles](const char* name, BenchmarkCallback callback) {
-        logInfo("Cleaning file-system cache ...");
-
-        atomicUint64 totalSize = 0;
-        atomicUint64 hashTime = 0;
-
-        logInfo("# %s:", name);
-
-        TimerStopWatch stopWatch;
-        callback(paths, numFiles, totalSize, hashTime);
-
-        uint64 elapsed = stopWatch.Elapsed();
-        logInfo("  Took: %.2f s (%.0f ms)", timerToSec(elapsed), timerToMS(elapsed));
-        logInfo("  Total size: %_$llu", totalSize);
-        float bandwith = float(double(totalSize/kMB)/timerToSec(elapsed));
-        logInfo("  Bandwidth: %.0f MB/s (%.2f GB/s)", bandwith, bandwith/1024.0f);
-        logInfo("");
-    };
-
-    BenchmarkIO("Blocking - Read files one by one", BruteforceBlockMethod);
-    BenchmarkIO("Blocking - Read files with jobs", BruteforceTaskBlockMethod);
-}
-#endif
-
 struct AppImpl final : AppCallbacks
 {
     GfxPipeline pipeline;
@@ -188,10 +91,6 @@ struct AppImpl final : AppCallbacks
         }, this);
 
         logInfo("Use right mouse button to rotate camera. And [TAB] to switch between Orbital and FPS (WASD) camera");
-
-        #if TEST_IO
-        TestIO();
-        #endif
 
         return true;
     };

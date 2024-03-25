@@ -394,7 +394,7 @@ struct AppImpl final : AppCallbacks
 
             if (alldone)
                 break;
-            atomicPauseCpu();
+            sysPauseCpu();
         }
 
         myalloc.Release();

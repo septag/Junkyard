@@ -17,7 +17,8 @@
 
 #include "Base.h"
 
-template <typename _T, uint32 _Reserve> struct Array;
+template <typename _T, uint32 _Reserve> struct Array; // Fwd from Array.h
+using SpinLockFake = uint8[CACHE_LINE_SIZE];
 
 struct MemTransientAllocatorStats
 {
@@ -128,7 +129,7 @@ private:
     void  BackendRelease(void* ptr, size_t size) override;
 };
 
-struct MemThreadSafeAllocator final : Allocator
+struct alignas(CACHE_LINE_SIZE) MemThreadSafeAllocator final : Allocator
 {
     MemThreadSafeAllocator() {}
     explicit MemThreadSafeAllocator(Allocator* alloc);
@@ -140,10 +141,9 @@ struct MemThreadSafeAllocator final : Allocator
     AllocatorType GetType() const override;
 
 private:
-    [[maybe_unused]] uint8 _padding1[alignof(AtomicLock) - sizeof(Allocator)];
-    AtomicLock mLock;
     Allocator* mAlloc = nullptr;
-    [[maybe_unused]] uint8 _padding2[alignof(AtomicLock) - sizeof(Allocator*)];
+    [[maybe_unused]] uint8 _padding1[CACHE_LINE_SIZE - sizeof(Allocator) - sizeof(Allocator*)];
+    SpinLockFake mLock;
 };
 
 //------------------------------------------------------------------------

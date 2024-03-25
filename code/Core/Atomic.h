@@ -12,8 +12,6 @@ using atomicPtr = c89atomic_uint32;
 using atomicPtr = c89atomic_uint64;
 #endif
 
-// Note: AtomicLock is declared in Base.h
-
 enum class AtomicMemoryOrder : uint32
 {
     Relaxed = c89atomic_memory_order_relaxed,
@@ -23,27 +21,6 @@ enum class AtomicMemoryOrder : uint32
     Acqrel  = c89atomic_memory_order_acq_rel,
     Seqcst  = c89atomic_memory_order_seq_cst
 };
-
-// Atomic SpinLock
-FORCE_INLINE void atomicLockEnter(AtomicLock* lock);
-FORCE_INLINE void atomicLockExit(AtomicLock* lock);
-FORCE_INLINE bool atomicLockTryEnter(AtomicLock* lock);
-
-#ifdef __cplusplus
-struct AtomicLockScope
-{
-    AtomicLockScope() = delete;
-    AtomicLockScope(const AtomicLockScope&) = delete;
-    inline explicit AtomicLockScope(AtomicLock& lock) : mLock(lock) { atomicLockEnter(&mLock); }
-    inline ~AtomicLockScope() { atomicLockExit(&mLock); }
-        
-private:
-    AtomicLock& mLock;
-};
-#endif
-
-FORCE_INLINE void atomicPauseCpu(void);
-FORCE_INLINE uint64 atomicCycleClock(void);
 
 FORCE_INLINE void atomicThreadFence(AtomicMemoryOrder order);
 FORCE_INLINE void atomicSignalFence(AtomicMemoryOrder order);
@@ -97,86 +74,6 @@ FORCE_INLINE bool atomicCompareExchange64WeakExplicit(
 FORCE_INLINE bool atomicCompareExchange64StrongExplicit(
     atomicUint64* a, unsigned long long* expected, uint64 desired,
     AtomicMemoryOrder success, AtomicMemoryOrder fail);
-
-////////////////////////////////////////////////////////////////////////////////////////////////////
-#if PLATFORM_WINDOWS
-#    if ARCH_32BIT && CPU_X86
-#       if !COMPILER_MSVC
-#          include <x86intrin.h>
-#       endif
-#    endif
-#    include <intrin.h>
-#    if COMPILER_MSVC
-#        pragma intrinsic(_mm_pause)
-#        pragma intrinsic(__rdtsc)
-#    endif
-#elif PLATFORM_APPLE
-#    include <mach/mach_time.h>
-#endif
-
-#if !PLATFORM_WINDOWS
-#   include <sys/time.h>
-#endif
-
-#if defined(__SSE2__)
-#    include <emmintrin.h>    // _mm_pause
-#endif
-
-#if CPU_ARM
-    #include <arm_acle.h>     // __yield
-#endif 
-
-FORCE_INLINE void atomicPauseCpu()
-{
-#if CPU_X86
-    _mm_pause();
-#elif CPU_ARM 
-    __yield();
-#else
-    #error "Not implemented"
-#endif
-}
-
-// https://github.com/google/benchmark/blob/v1.1.0/src/cycleclock.h
-FORCE_INLINE uint64 atomicCycleClock()
-{
-#if PLATFORM_APPLE
-    return mach_absolute_time();
-#elif PLATFORM_WINDOWS
-    return __rdtsc();
-#elif CPU_ARM && ARCH_64BIT
-    uint64 vtm;
-    asm volatile("mrs %0, cntvct_el0" : "=r"(vtm));
-    return vtm;
-#elif CPU_ARM
-#   if (__ARM_ARCH >= 6)
-    uint32 pmccntr;
-    uint32 pmuseren;
-    uint32 pmcntenset;
-    // Read the user mode perf monitor counter access permissions.
-    asm volatile("mrc p15, 0, %0, c9, c14, 0" : "=r"(pmuseren));
-    if (pmuseren & 1) {    // Allows reading perfmon counters for user mode code.
-        asm volatile("mrc p15, 0, %0, c9, c12, 1" : "=r"(pmcntenset));
-        if (pmcntenset & 0x80000000ul) {    // Is it counting?
-            asm volatile("mrc p15, 0, %0, c9, c13, 0" : "=r"(pmccntr));
-            // The counter is set up to count every 64th cycle
-            return (int64_t)pmccntr * 64;    // Should optimize to << 6
-        }
-    }
-#   endif // (__ARM_ARCH >= 6)
-    struct timeval tv;
-    gettimeofday(&tv, NULL);
-    return (int64_t)tv.tv_sec * 1000000 + tv.tv_usec;
-#elif CPU_X86 && ARCH_32BIT
-    int64_t ret;
-    __asm__ volatile("rdtsc" : "=A"(ret));
-    return ret;
-#elif CPU_X86 && ARCH_64BIT
-    uint64 low, high;
-    __asm__ volatile("rdtsc" : "=a"(low), "=d"(high));
-    return (high << 32) | low;
-#endif
-}
 
 FORCE_INLINE void atomicThreadFence(AtomicMemoryOrder order)
 {
@@ -418,136 +315,7 @@ FORCE_INLINE bool atomicCompareExchange64StrongExplicit(
     #define atomicFetchOrPtrExplicit atomicFetchOr32Explicit
     #define atomicFetchAndPtrExplicit atomicFetchAnd32Explicit
     #define atomicExchangePtrExplicit atomicExchange32Explicit
-    #define atomicCompareExchangePtrWeakExplicit atomicCompareExchange32WeakExplicit
+0    #define atomicCompareExchangePtrWeakExplicit atomicCompareExchange32WeakExplicit
     #define atomicCompareExchangePtrStrongExplicit atomicCompareExchange32StrongExplicit
 #endif    // ARCH_64BIT
 
-// Reference: https://rigtorp.se/spinlock/
-// TODO (consider): https://www.intel.com/content/www/us/en/developer/articles/technical/a-common-construct-to-avoid-the-contention-of-threads-architecture-agnostic-spin-wait-loops.html
-// Another good reference code: https://github.dev/concurrencykit/ck
-void threadYield(); // System.h
-FORCE_INLINE void atomicLockEnter(AtomicLock* lock)
-{
-    while (atomicExchange32Explicit(&lock->locked, 1, AtomicMemoryOrder::Acquire) == 1) {
-        uint32 spinCount = !PLATFORM_MOBILE;    // On mobile hardware, we start from yielding then proceed with Pause
-        do {
-            if (spinCount++ & 1023)
-                atomicPauseCpu();
-            else
-                threadYield();
-        } while (atomicLoad32Explicit(&lock->locked, AtomicMemoryOrder::Relaxed));
-    }
-}
-
-FORCE_INLINE void atomicLockExit(AtomicLock* lock)
-{
-    atomicStore32Explicit(&lock->locked, 0, AtomicMemoryOrder::Release);
-}
-
-FORCE_INLINE bool atomicLockTryEnter(AtomicLock* lock)
-{
-    return atomicLoad32Explicit(&lock->locked, AtomicMemoryOrder::Relaxed) == 0 &&
-           atomicExchange32Explicit(&lock->locked, 1, AtomicMemoryOrder::Acquire) == 0;
-}
-
-//----------------------------------------------------------------------------------------------------------------------
-// Anderson's lock: Implementation is a modified form of: https://github.com/concurrencykit/ck/blob/master/include/spinlock/anderson.h
-struct alignas(CACHE_LINE_SIZE) AtomicALockThread
-{
-    uint32 locked;
-    uint8 _padding1[CACHE_LINE_SIZE - sizeof(uint32)];
-    uint32 position;
-    uint8 _padding2[CACHE_LINE_SIZE - sizeof(uint32)];
-};
-
-struct alignas(CACHE_LINE_SIZE) AtomicALock
-{
-    AtomicALockThread* slots;
-    uint32 count;
-    uint32 wrap;
-    uint32 mask;
-    char _padding1[CACHE_LINE_SIZE - sizeof(uint32)*3 - sizeof(void*)];
-    uint32 next;
-    char _padding2[CACHE_LINE_SIZE - sizeof(uint32)];
-};
-
-FORCE_INLINE void atomicALockInitialize(AtomicALock* lock, uint32 numThreads, AtomicALockThread* threads)
-{
-    ASSERT(threads);
-    ASSERT(numThreads);
-
-    memset(threads, 0x0, sizeof(AtomicALockThread)*numThreads);
-    lock->slots = threads;
-
-    for (uint32 i = 1; i < numThreads; i++) {
-        lock->slots[i].locked = 1;
-        lock->slots[i].position = i;
-    }
-
-    lock->count = numThreads;
-    lock->mask = numThreads - 1;
-
-    if (numThreads & (numThreads - 1)) 
-        lock->wrap = (UINT32_MAX % numThreads) + 1;
-    else
-        lock->wrap = 0;
-
-    c89atomic_compiler_fence();
-}
-
-FORCE_INLINE uint32 atomicALockEnter(AtomicALock* lock)
-{
-    uint32 position, next;
-    uint32 count = lock->count;
-
-    if (lock->wrap) {
-        position = c89atomic_load_explicit_32(&lock->next, c89atomic_memory_order_acquire);
-
-        do {
-            if (position == UINT32_MAX)
-                next = lock->wrap;
-            else 
-                next = position + 1;
-        } while (c89atomic_compare_exchange_strong_32(&lock->next, &position, next) == false);
-
-        position %= count;
-    } else {
-        position = c89atomic_fetch_add_32(&lock->next, 1);
-        position &= lock->mask;
-    }
-
-    c89atomic_thread_fence(c89atomic_memory_order_acq_rel);
-
-    while (c89atomic_load_explicit_32(&lock->slots[position].locked, c89atomic_memory_order_acquire))
-        atomicPauseCpu();
-
-    c89atomic_store_explicit_32(&lock->slots[position].locked, 1, c89atomic_memory_order_release);
-
-    return position;
-}
-
-FORCE_INLINE void atomicALockExit(AtomicALock* lock, uint32 slot)
-{
-    uint32 position;
-
-    c89atomic_thread_fence(c89atomic_memory_order_acq_rel);
-
-    if (lock->wrap == 0)
-        position = (lock->slots[slot].position + 1) & lock->mask;
-    else
-        position = (lock->slots[slot].position + 1) % lock->count;
-
-    c89atomic_store_explicit_32(&lock->slots[position].locked, 0, c89atomic_memory_order_release);
-}
-
-struct AtomicALockScope
-{
-    AtomicALockScope() = delete;
-    AtomicALockScope(const AtomicALockScope& _lock) = delete;
-    inline explicit AtomicALockScope(AtomicALock& _lock) : lock(_lock) { slot = atomicALockEnter(&lock); }
-    inline ~AtomicALockScope() { atomicALockExit(&lock, slot); }
-        
-private:
-    AtomicALock& lock;
-    uint32 slot;
-};

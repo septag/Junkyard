@@ -30,6 +30,11 @@ struct MutexImpl
     CRITICAL_SECTION handle;
 };
 
+struct ReadWriteMutexImpl
+{
+    SRWLOCK handle;
+};
+
 struct SemaphoreImpl 
 {
     HANDLE handle;
@@ -167,7 +172,7 @@ void Thread::SetPriority(ThreadPriority prio)
     ASSERT(r);
 }
 
-//--------------------------------------------------------------------------------------------------
+//----------------------------------------------------------------------------------------------------------------------
 // Mutex
 void Mutex::Initialize(uint32 spinCount)
 {
@@ -204,6 +209,55 @@ bool Mutex::TryEnter()
     return TryEnterCriticalSection(&_m->handle) == TRUE;
 }
 
+//----------------------------------------------------------------------------------------------------------------------
+// ReadWriteMutex
+void ReadWriteMutex::Initialize()
+{
+    ReadWriteMutexImpl* m = reinterpret_cast<ReadWriteMutexImpl*>(mData);
+    InitializeSRWLock(&m->handle);
+}
+
+void ReadWriteMutex::Release()
+{
+}
+
+bool ReadWriteMutex::TryRead()
+{
+    ReadWriteMutexImpl* m = reinterpret_cast<ReadWriteMutexImpl*>(mData);
+    return TryAcquireSRWLockShared(&m->handle) != 0;
+}
+
+bool ReadWriteMutex::TryWrite()
+{
+    ReadWriteMutexImpl* m = reinterpret_cast<ReadWriteMutexImpl*>(mData);
+    return TryAcquireSRWLockExclusive(&m->handle) != 0;
+}
+
+void ReadWriteMutex::EnterRead()
+{
+    ReadWriteMutexImpl* m = reinterpret_cast<ReadWriteMutexImpl*>(mData);
+    AcquireSRWLockShared(&m->handle);
+}
+
+void ReadWriteMutex::ExitRead()
+{
+    ReadWriteMutexImpl* m = reinterpret_cast<ReadWriteMutexImpl*>(mData);
+    ReleaseSRWLockShared(&m->handle);
+}
+
+void ReadWriteMutex::EnterWrite()
+{
+    ReadWriteMutexImpl* m = reinterpret_cast<ReadWriteMutexImpl*>(mData);
+    AcquireSRWLockExclusive(&m->handle);
+}
+
+void ReadWriteMutex::ExitWrite()
+{
+    ReadWriteMutexImpl* m = reinterpret_cast<ReadWriteMutexImpl*>(mData);
+    ReleaseSRWLockExclusive(&m->handle);
+}
+
+//----------------------------------------------------------------------------------------------------------------------
 // Semaphore
 void Semaphore::Initialize()
 {

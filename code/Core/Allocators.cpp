@@ -761,6 +761,8 @@ float MemTlsfAllocator::CalculateFragmentation()
 // MemThreadSafeAllocator
 MemThreadSafeAllocator::MemThreadSafeAllocator(Allocator* alloc) : mAlloc(alloc)
 {
+    SpinLockMutex* lock = (SpinLockMutex*)mLock;
+    memset(lock, 0x0, sizeof(SpinLockMutex));
 }
 
 void MemThreadSafeAllocator::SetAllocator(Allocator* alloc)
@@ -771,21 +773,24 @@ void MemThreadSafeAllocator::SetAllocator(Allocator* alloc)
 void* MemThreadSafeAllocator::Malloc(size_t size, uint32 align)
 {
     ASSERT(mAlloc);
-    AtomicLockScope lock(mLock);
+    SpinLockMutex* lock_ = (SpinLockMutex*)mLock;
+    SpinLockMutexScope lock(*lock_);
     return mAlloc->Malloc(size, align);
 }
 
 void* MemThreadSafeAllocator::Realloc(void* ptr, size_t size, uint32 align)
 {
     ASSERT(mAlloc);
-    AtomicLockScope lock(mLock);
+    SpinLockMutex* lock_ = (SpinLockMutex*)mLock;
+    SpinLockMutexScope lock(*lock_);
     return mAlloc->Realloc(ptr, size, align);
 }
 
 void MemThreadSafeAllocator::Free(void* ptr, uint32 align)
 {
     ASSERT(mAlloc);
-    AtomicLockScope lock(mLock);
+    SpinLockMutex* lock_ = (SpinLockMutex*)mLock;
+    SpinLockMutexScope lock(*lock_);
     mAlloc->Free(ptr, align);
 }
 
