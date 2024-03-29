@@ -122,7 +122,7 @@ struct HashTable
     _T& GetMutable(uint32 index);
     void Remove(uint32 index);
 
-    const _T& FindAndFetch(uint32 key, const _T& notFoundValue) const;
+    const _T& FindAndFetch(uint32 key, const _T& notFoundValue = {}) const;
     void FindAndRemove(uint32 key);
 
     uint32 Capacity() const;
@@ -338,7 +338,12 @@ inline uint32 HashTable<_T>::AddIfNotFound(uint32 key, const _T& value)
 template <typename _T>
 inline uint32 HashTable<_T>::Add(uint32 key, const _T& value)
 {
-    ASSERT(mHashTable);
+    if (mHashTable == nullptr) {
+        ASSERT(mAlloc);
+        Reserve(32);
+        ASSERT(mHashTable);
+    }
+    
     if (mHashTable->count == mHashTable->capacity) {
         [[maybe_unused]] bool r = false;
         ASSERT_MSG(mAlloc, "Only hashtables with allocators can be self-grown automatically");

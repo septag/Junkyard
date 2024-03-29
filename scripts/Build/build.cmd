@@ -40,7 +40,6 @@ if "%CONFIG%"=="debugasan" (
 if "%CONFIG%"=="releasedev" (
     set COMPILE_FLAGS=%COMPILE_FLAGS% /O2 /Zi /MD 
     set DEFINES=%DEFINES% -D_ITERATOR_DEBUG_LEVEL=0 -DTRACY_ENABLE -DCONFIG_ENABLE_ASSERT=1
-    set LIBS=%LIBS% "dbghelp.lib"
     set LINK_FLAGS=%LINK_FLAGS% /DEBUG:FULL
     set CONFIG_KNOWN=1
 )
@@ -48,13 +47,12 @@ if "%CONFIG%"=="releasedev" (
 if "%CONFIG%"=="releaseasan" (
     set COMPILE_FLAGS=%COMPILE_FLAGS% /O2 /Zi /MD /fsanitize=address
     set DEFINES=%DEFINES% -D_ITERATOR_DEBUG_LEVEL=0 -DCONFIG_ENABLE_ASSERT=1
-    set LIBS=%LIBS% "dbghelp.lib"
     set LINK_FLAGS=%LINK_FLAGS% /DEBUG:FULL
     set CONFIG_KNOWN=1
 )
 
 if "%CONFIG%"=="release" (
-    set COMPILE_FLAGS=%COMPILE_FLAGS% /O2 /MT /fsanitize=address
+    set COMPILE_FLAGS=%COMPILE_FLAGS% /O2 /MT
     set DEFINES=%DEFINES% -D_ITERATOR_DEBUG_LEVEL=0 -DCONFIG_FINAL_BUILD=1
     set LIBS=%LIBS%
     set LINK_FLAGS=%LINK_FLAGS%
@@ -68,14 +66,10 @@ if %CONFIG_KNOWN% neq 1 (
 )
 
 
-if "%CONFIG%"=="release" (
-    set COMPILE_FLAGS=%COMPILE_FLAGS% /O2 /MD
-)
-
 set DEFINES=%DEFINES% -D_MBCS -D_CRT_SECURE_NO_WARNINGS -DBUILD_UNITY 
 set COMPILE_FLAGS=%COMPILE_FLAGS% /std:c++20 /GR- /EHs-
 set LINK_FLAGS=%LINK_FLAGS% /INCREMENTAL:NO
-set LIBS=%LIBS% "User32.lib" "ws2_32.lib" "Shell32.lib" "Ole32.lib" "Advapi32.lib"
+set LIBS=%LIBS% "User32.lib"
 
 pushd Bin\build_cmd
 set OUTPUT_DIR=%cd%
@@ -97,11 +91,11 @@ echo No | copy /-Y %ROOT_DIR%\code\External\dbghelp\dbghelp.dll %OUTPUT_DIR%
 echo No | copy /-Y %ROOT_DIR%\code\External\ispc_texcomp\lib\win64\ispc_texcomp.dll %OUTPUT_DIR%
 echo No | copy /-Y %ROOT_DIR%\code\External\meshoptimizer\lib\win64\meshoptimizer.dll %OUTPUT_DIR%
 
-:Quit
-popd
-
 if %errorlevel%==0 (
     echo Success. Output binaries are in "Bin\build_cmd"
 )
+
+:Quit
+popd
 
 exit /b %errorlevel%

@@ -402,41 +402,20 @@ void sysPauseCpu()
 // https://github.com/google/benchmark/blob/v1.1.0/src/cycleclock.h
 uint64 sysGetCpuClock()
 {
-#if PLATFORM_APPLE
+#if PLATFORM_APPLE  // TODO: maybe we can get rid of this and use the asm one
     return mach_absolute_time();
-#elif PLATFORM_WINDOWS
+#elif PLATFORM_WINDOWS && CPU_X86
     return __rdtsc();
 #elif CPU_ARM && ARCH_64BIT
     uint64 vtm;
     asm volatile("mrs %0, cntvct_el0" : "=r"(vtm));
     return vtm;
-#elif CPU_ARM
-    #if (__ARM_ARCH >= 6)
-        uint32 pmccntr;
-        uint32 pmuseren;
-        uint32 pmcntenset;
-        // Read the user mode perf monitor counter access permissions.
-        asm volatile("mrc p15, 0, %0, c9, c14, 0" : "=r"(pmuseren));
-        if (pmuseren & 1) {    // Allows reading perfmon counters for user mode code.
-            asm volatile("mrc p15, 0, %0, c9, c12, 1" : "=r"(pmcntenset));
-            if (pmcntenset & 0x80000000ul) {    // Is it counting?
-                asm volatile("mrc p15, 0, %0, c9, c13, 0" : "=r"(pmccntr));
-                // The counter is set up to count every 64th cycle
-                return (int64_t)pmccntr * 64;    // Should optimize to << 6
-            }
-        }
-    #endif // (__ARM_ARCH >= 6)
-    struct timeval tv;
-    gettimeofday(&tv, NULL);
-    return (int64_t)tv.tv_sec * 1000000 + tv.tv_usec;
-#elif CPU_X86 && ARCH_32BIT
-    int64_t ret;
-    __asm__ volatile("rdtsc" : "=A"(ret));
-    return ret;
 #elif CPU_X86 && ARCH_64BIT
     uint64 low, high;
     __asm__ volatile("rdtsc" : "=a"(low), "=d"(high));
     return (high << 32) | low;
+#else
+    #error "Not implemented for this platform"
 #endif
 }
 

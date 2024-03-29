@@ -96,7 +96,6 @@ struct ModelMaterial
     Float3 emissiveFactor;
     ModelMaterialAlphaMode alphaMode;
     float alphaCutoff;
-    void* userData;     // TODO: we can remove this later
     bool doubleSided;
     bool unlit;
 };

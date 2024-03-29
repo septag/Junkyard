@@ -16,7 +16,7 @@
 #include <tlhelp32.h>   // CreateToolhelp32Snapshot
 #include <winsock2.h>
 #include <ws2tcpip.h>
-#include <ShlObj.h>     // SH family of functions
+#include <ShlObj.h>     // SH family of functions (Shell32)
 
 #pragma comment(lib, "ws2_32.lib")
 
@@ -24,6 +24,95 @@ namespace _limits
 {
     const uint32 kSysMaxCores = 128;
 }
+
+// Only load "AdvApi32.dll" if any of these functions are used
+struct AdvApi32
+{
+    typedef LSTATUS (*RegGetValueAFn)(
+        _In_ HKEY hkey,
+        _In_opt_ LPCSTR lpSubKey,
+        _In_opt_ LPCSTR lpValue,
+        _In_ DWORD dwFlags,
+        _Out_opt_ LPDWORD pdwType,
+        _When_((dwFlags & 0x7F) == RRF_RT_REG_SZ ||
+               (dwFlags & 0x7F) == RRF_RT_REG_EXPAND_SZ ||
+               (dwFlags & 0x7F) == (RRF_RT_REG_SZ | RRF_RT_REG_EXPAND_SZ) ||
+               *pdwType == REG_SZ ||
+               *pdwType == REG_EXPAND_SZ, _Post_z_)
+        _When_((dwFlags & 0x7F) == RRF_RT_REG_MULTI_SZ ||
+               *pdwType == REG_MULTI_SZ, _Post_ _NullNull_terminated_)
+        _Out_writes_bytes_to_opt_(*pcbData,*pcbData) PVOID pvData,
+        _Inout_opt_ LPDWORD pcbData);
+
+    typedef BOOL (*OpenProcessTokenFn)(
+        _In_ HANDLE ProcessHandle,
+        _In_ DWORD DesiredAccess,
+        _Outptr_ PHANDLE TokenHandle
+    );
+
+    typedef BOOL (*AdjustTokenPrivilegesFn)(
+        _In_ HANDLE TokenHandle,
+        _In_ BOOL DisableAllPrivileges,
+        _In_opt_ PTOKEN_PRIVILEGES NewState,
+        _In_ DWORD BufferLength,
+        _Out_writes_bytes_to_opt_(BufferLength,*ReturnLength) PTOKEN_PRIVILEGES PreviousState,
+        _Out_opt_ PDWORD ReturnLength
+    );
+
+    typedef BOOL (*LookupPrivilegeValueAFn)(
+        _In_opt_ LPCSTR lpSystemName,
+        _In_     LPCSTR lpName,
+        _Out_    PLUID   lpLuid
+    );
+
+    HANDLE dll;
+    RegGetValueAFn RegGetValueA;
+    OpenProcessTokenFn OpenProcessToken;
+    AdjustTokenPrivilegesFn AdjustTokenPrivileges;
+    LookupPrivilegeValueAFn LookupPrivilegeValueA;
+};
+
+struct Ole32
+{
+    typedef int (*StringFromGUID2Fn)(
+        _In_ REFGUID rguid,
+        _Out_writes_to_(cchMax, return) LPOLESTR lpsz,
+        _In_ int cchMax
+    );
+
+    typedef HRESULT (*CoCreateGuidFn)(
+        _Out_ GUID  FAR * pguid
+    );
+
+    typedef void (*CoTaskMemFreeFn)(
+        _Frees_ptr_opt_ LPVOID pv
+    );
+
+    typedef HRESULT (*CLSIDFromStringFn)(
+        _In_ LPCOLESTR lpsz,
+        _Out_ LPCLSID pclsid
+    );
+
+    HANDLE dll;
+    StringFromGUID2Fn StringFromGUID2;
+    CoCreateGuidFn CoCreateGuid;
+    CoTaskMemFreeFn CoTaskMemFree;
+    CLSIDFromStringFn CLSIDFromString;
+};
+
+struct Shell32
+{
+    typedef HINSTANCE (*ShellExecuteAFn)(_In_opt_ HWND hwnd, _In_opt_ LPCSTR lpOperation, _In_ LPCSTR lpFile, _In_opt_ LPCSTR lpParameters,
+                                       _In_opt_ LPCSTR lpDirectory, _In_ INT nShowCmd);
+    typedef HRESULT (*SHGetKnownFolderPathFn)(_In_ REFKNOWNFOLDERID rfid,
+                            _In_ DWORD /* KNOWN_FOLDER_FLAG */ dwFlags,
+                            _In_opt_ HANDLE hToken,
+                            _Outptr_ PWSTR *ppszPath); // free *ppszPath with CoTaskMemFree
+
+    HANDLE dll;
+    ShellExecuteAFn ShellExecuteA;
+    SHGetKnownFolderPathFn SHGetKnownFolderPath;
+};
 
 struct MutexImpl 
 {
@@ -70,6 +159,63 @@ static_assert(sizeof(SemaphoreImpl) <= sizeof(Semaphore), "Sempahore size mismat
 static_assert(sizeof(SignalImpl) <= sizeof(Signal), "Signal size mismatch");
 static_assert(sizeof(ThreadImpl) <= sizeof(Thread), "Thread size mismatch");
 static_assert(sizeof(UUIDImpl) <= sizeof(SysUUID), "UUID size mismatch");
+
+//----------------------------------------------------------------------------------------------------------------------
+// AdvApi32
+static AdvApi32 gAdvApi32;
+
+static void sysLoadAdvApi32()
+{
+    if (gAdvApi32.dll == nullptr) {
+        gAdvApi32.dll = (HANDLE)sysLoadDLL("Advapi32.dll");
+        ASSERT_ALWAYS(gAdvApi32.dll, "Could not load system DLL: Advapi32.dll");
+
+        gAdvApi32.RegGetValueA = (AdvApi32::RegGetValueAFn)sysSymbolAddress(gAdvApi32.dll, "RegGetValueA");
+        gAdvApi32.OpenProcessToken = (AdvApi32::OpenProcessTokenFn)sysSymbolAddress(gAdvApi32.dll, "OpenProcessToken");
+        gAdvApi32.AdjustTokenPrivileges = (AdvApi32::AdjustTokenPrivilegesFn)sysSymbolAddress(gAdvApi32.dll, "AdjustTokenPrivileges");
+        gAdvApi32.LookupPrivilegeValueA = (AdvApi32::LookupPrivilegeValueAFn)sysSymbolAddress(gAdvApi32.dll, "LookupPrivilegeValueA");
+
+        ASSERT_ALWAYS(gAdvApi32.RegGetValueA && gAdvApi32.OpenProcessToken && gAdvApi32.AdjustTokenPrivileges && gAdvApi32.LookupPrivilegeValueA,
+                      "Loading AdvApi32 API failed");
+    }
+}
+
+//----------------------------------------------------------------------------------------------------------------------
+// Ole32
+static Ole32 gOle32;
+
+static void sysLoadOle32()
+{
+    if (gOle32.dll == nullptr) {
+        gOle32.dll = (HANDLE)sysLoadDLL("Ole32.dll");
+        ASSERT_ALWAYS(gOle32.dll, "Could not load system DLL: Ole32.dll");
+
+        gOle32.StringFromGUID2 = (Ole32::StringFromGUID2Fn)sysSymbolAddress(gOle32.dll, "StringFromGUID2");
+        gOle32.CoCreateGuid = (Ole32::CoCreateGuidFn)sysSymbolAddress(gOle32.dll, "CoCreateGuid");
+        gOle32.CoTaskMemFree = (Ole32::CoTaskMemFreeFn)sysSymbolAddress(gOle32.dll, "CoTaskMemFree");
+        gOle32.CLSIDFromString = (Ole32::CLSIDFromStringFn)sysSymbolAddress(gOle32.dll, "CLSIDFromString");
+
+        ASSERT_ALWAYS(gOle32.StringFromGUID2 && gOle32.CoCreateGuid && gOle32.CoTaskMemFree && gOle32.CLSIDFromString,
+                      "Loading Ole32 API failed");
+    }
+}
+
+//----------------------------------------------------------------------------------------------------------------------
+// Shell32
+static Shell32 gShell32;
+
+static void sysLoadShell32()
+{
+    if (gShell32.dll == nullptr) {
+        gShell32.dll = (HANDLE)sysLoadDLL("Shell32.dll");
+        ASSERT_ALWAYS(gShell32.dll, "Could not load system DLL: Shell32.dll");
+
+        gShell32.ShellExecuteA = (Shell32::ShellExecuteAFn)sysSymbolAddress(gShell32.dll, "ShellExecuteA");
+        gShell32.SHGetKnownFolderPath = (Shell32::SHGetKnownFolderPathFn)sysSymbolAddress(gShell32.dll, "SHGetKnownFolderPath");
+
+        ASSERT_ALWAYS(gShell32.ShellExecuteA && gShell32.SHGetKnownFolderPath, "Loading Shell32 API failed");
+    }
+}
 
 //----------------------------------------------------------------------------------------------------------------------
 // Thread
@@ -480,7 +626,7 @@ uint64 timerGetTicks()
 
 DLLHandle sysLoadDLL(const char* filepath, char** pErrorMsg)
 {
-    auto dll = (DLLHandle)LoadLibraryA(filepath);
+    DLLHandle dll = (DLLHandle)LoadLibraryA(filepath);
     if (dll == nullptr && pErrorMsg) {
         static char errMsg[64];
         strPrintFmt(errMsg, sizeof(errMsg), "GetLastError: %u", GetLastError());
@@ -513,33 +659,10 @@ size_t sysGetPageSize()
 
 bool sysWin32GetRegisterLocalMachineString(const char* subkey, const char* value, char* dst, size_t dstSize)
 {
-    // Only load the DLL and function if it's used 
-    typedef LSTATUS (*RegGetValueAFn_)(
-        _In_ HKEY hkey,
-        _In_opt_ LPCSTR lpSubKey,
-        _In_opt_ LPCSTR lpValue,
-        _In_ DWORD dwFlags,
-        _Out_opt_ LPDWORD pdwType,
-        _When_((dwFlags & 0x7F) == RRF_RT_REG_SZ ||
-                (dwFlags & 0x7F) == RRF_RT_REG_EXPAND_SZ ||
-                (dwFlags & 0x7F) == (RRF_RT_REG_SZ | RRF_RT_REG_EXPAND_SZ) ||
-                *pdwType == REG_SZ ||
-                *pdwType == REG_EXPAND_SZ, _Post_z_)
-            _When_((dwFlags & 0x7F) == RRF_RT_REG_MULTI_SZ ||
-                *pdwType == REG_MULTI_SZ, _Post_ _NullNull_terminated_)
-        _Out_writes_bytes_to_opt_(*pcbData,*pcbData) PVOID pvData,
-        _Inout_opt_ LPDWORD pcbData);
-    static DLLHandle dll = nullptr;
-    static RegGetValueAFn_ RegGetValueAFn = nullptr;
-
-    if (!RegGetValueAFn) {
-        dll = sysLoadDLL("Advapi32.dll");
-        ASSERT_ALWAYS(dll, "Could not load system DLL: Advapi32.dll");
-        RegGetValueAFn = (RegGetValueAFn_)sysSymbolAddress(dll, "RegGetValueA");
-    }
+    sysLoadAdvApi32();
 
     DWORD dataSize = (DWORD)dstSize;
-    return RegGetValueAFn(HKEY_LOCAL_MACHINE, subkey, value, RRF_RT_REG_SZ|RRF_RT_REG_EXPAND_SZ, nullptr, dst, &dataSize) == ERROR_SUCCESS;
+    return gAdvApi32.RegGetValueA(HKEY_LOCAL_MACHINE, subkey, value, RRF_RT_REG_SZ|RRF_RT_REG_EXPAND_SZ, nullptr, dst, &dataSize) == ERROR_SUCCESS;
 }
 
 static uint32 sysGetPhysicalCoresCount()
@@ -943,10 +1066,13 @@ bool pathMove(const char* src, const char* dest)
 
 char* pathGetHomeDir(char* dst, size_t dstSize)
 {
+    sysLoadOle32();
+    sysLoadShell32();
+
     PWSTR homeDir = nullptr;
-    if (SUCCEEDED(SHGetKnownFolderPath(FOLDERID_Profile, 0, nullptr, &homeDir))) {
+    if (SUCCEEDED(gShell32.SHGetKnownFolderPath(FOLDERID_Profile, 0, nullptr, &homeDir))) {
         strWideToUtf8(homeDir, dst, (uint32)dstSize);
-        CoTaskMemFree(homeDir);
+        gOle32.CoTaskMemFree(homeDir);
         return dst;
     }
     else {
@@ -957,11 +1083,14 @@ char* pathGetHomeDir(char* dst, size_t dstSize)
 
 char* pathGetCacheDir(char* dst, size_t dstSize, const char* appName)
 {
+    sysLoadOle32();
+    sysLoadShell32();
+
     PWSTR homeDir = nullptr;
-    if (SUCCEEDED(SHGetKnownFolderPath(FOLDERID_LocalAppData, 0, nullptr, &homeDir))) {
+    if (SUCCEEDED(gShell32.SHGetKnownFolderPath(FOLDERID_LocalAppData, 0, nullptr, &homeDir))) {
         char homeDirUtf8[CONFIG_MAX_PATH];
         strWideToUtf8(homeDir, homeDirUtf8, sizeof(homeDirUtf8));
-        CoTaskMemFree(homeDir);
+        gOle32.CoTaskMemFree(homeDir);
         pathJoin(dst, dstSize, homeDirUtf8, appName);
         return dst;
     }
@@ -998,13 +1127,15 @@ void sysWin32PrintToDebugger(const char* text)
 // TODO: dynalically load functions from DLL to prevent linking with Advapi32.lib
 bool sysWin32SetPrivilege(const char* name, bool enable)
 {
+    sysLoadAdvApi32();
+
     HANDLE tokenHandle;
     TOKEN_PRIVILEGES tp;
 
-    if (!OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, &tokenHandle)) 
+    if (!gAdvApi32.OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, &tokenHandle)) 
         return false;
 
-    if (!LookupPrivilegeValueA(nullptr, name, &tp.Privileges[0].Luid)) 
+    if (!gAdvApi32.LookupPrivilegeValueA(nullptr, name, &tp.Privileges[0].Luid)) 
         return false;
     tp.PrivilegeCount = 1;
 
@@ -1013,7 +1144,7 @@ bool sysWin32SetPrivilege(const char* name, bool enable)
     else
         tp.Privileges[0].Attributes = 0;
 
-    BOOL status = AdjustTokenPrivileges(tokenHandle, FALSE, &tp, 0, nullptr, 0);
+    BOOL status = gAdvApi32.AdjustTokenPrivileges(tokenHandle, FALSE, &tp, 0, nullptr, 0);
     // It is possible for AdjustTokenPrivileges to return TRUE and still not succeed.
     // So always check for the last error value.
     DWORD error = GetLastError();
@@ -1030,7 +1161,9 @@ bool sysWin32SetPrivilege(const char* name, bool enable)
                                                  const char* operation,
                                                  void** pInstance)
  {
-     HINSTANCE hInst = ShellExecuteA(nullptr, operation, filepath, args, cwd, (INT)showFlag);
+     sysLoadShell32();
+
+     HINSTANCE hInst = gShell32.ShellExecuteA(nullptr, operation, filepath, args, cwd, (INT)showFlag);
 
      INT_PTR errCode = INT_PTR(hInst);
      if (errCode <= 32) {
@@ -1069,8 +1202,10 @@ bool SysUUID::operator==(const SysUUID& uuid) const
 
 bool sysUUIDGenerate(SysUUID* _uuid)
 {
+    sysLoadOle32();
+
     UUIDImpl* uuid = reinterpret_cast<UUIDImpl*>(_uuid);
-    if (CoCreateGuid(&uuid->guid) != S_OK)
+    if (gOle32.CoCreateGuid(&uuid->guid) != S_OK)
         return false;
 
     return true;
@@ -1078,10 +1213,12 @@ bool sysUUIDGenerate(SysUUID* _uuid)
 
 bool sysUUIDToString(const SysUUID& _uuid, char* str, uint32 size)
 {
+    sysLoadOle32();
+
     const UUIDImpl& uuid = reinterpret_cast<const UUIDImpl&>(_uuid);
     wchar_t guidStr[39];
 
-    StringFromGUID2(uuid.guid, guidStr, CountOf(guidStr));
+    gOle32.StringFromGUID2(uuid.guid, guidStr, CountOf(guidStr));
     if (WideCharToMultiByte(CP_UTF8, 0, guidStr, -1, str, size, nullptr, nullptr) == 0)
         return false;
 
@@ -1098,6 +1235,8 @@ bool sysUUIDToString(const SysUUID& _uuid, char* str, uint32 size)
 
 bool sysUUIDFromString(SysUUID* _uuid, const char* str)
 {
+    sysLoadOle32();
+
     ASSERT(str);
 
     if (str[0] == 0)
@@ -1121,7 +1260,7 @@ bool sysUUIDFromString(SysUUID* _uuid, const char* str)
     wchar_t guidStr[64];
     if (MultiByteToWideChar(CP_UTF8, 0, strTmp, -1, guidStr, sizeof(guidStr)) == 0) 
         return false;
-    if (CLSIDFromString(guidStr, &uuid->guid) != S_OK) 
+    if (gOle32.CLSIDFromString(guidStr, &uuid->guid) != S_OK) 
         return false;
     return true;
 }
@@ -1139,6 +1278,9 @@ bool sysGetEnvVar(const char* name, char* outValue, uint32 valueSize)
 
 char* pathWin32GetFolder(SysWin32Folder folder, char* dst, size_t dstSize)
 {
+    sysLoadOle32();
+    sysLoadShell32();
+
     static const KNOWNFOLDERID folderIds[] = {
         FOLDERID_Documents,
         FOLDERID_Fonts,
@@ -1153,9 +1295,9 @@ char* pathWin32GetFolder(SysWin32Folder folder, char* dst, size_t dstSize)
     static_assert(CountOf(folderIds) == uint32(SysWin32Folder::_Count));
 
     PWSTR folderPath = nullptr;
-    if (SUCCEEDED(SHGetKnownFolderPath(folderIds[uint32(folder)], 0, nullptr, &folderPath))) {
+    if (SUCCEEDED(gShell32.SHGetKnownFolderPath(folderIds[uint32(folder)], 0, nullptr, &folderPath))) {
         strWideToUtf8(folderPath, dst, (uint32)dstSize);
-        CoTaskMemFree(folderPath);
+        gOle32.CoTaskMemFree(folderPath);
         return dst;
     }
     else {

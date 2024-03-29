@@ -50,12 +50,25 @@
   </ImportGroup>
   <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+    <Import Project="Common.props" />
+    <Import Project="CommonDebug.props" />
+    <Import Project="Tools.props" />
   </ImportGroup>
   <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+    <Import Project="Common.props" />
+    <Import Project="CommonRelease.props" />
+    <Import Project="CommonFinal.props" />
+    <Import Project="StandardLibsReleaseStatic.props" />
   </ImportGroup>
   <ImportGroup Condition="'$(Configuration)|$(Platform)'=='ReleaseDev|x64'" Label="PropertySheets">
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+    <Import Project="Common.props" />
+    <Import Project="CommonRelease.props" />
+    <Import Project="EnableDebugSymbols.props" />
+    <Import Project="Tools.props" />
+    <Import Project="Tracy.props" />
+    <Import Project="StandardLibsRelease.props" />
   </ImportGroup>
   <PropertyGroup Label="UserMacros" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
@@ -75,22 +88,9 @@
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <ClCompile>
-      <WarningLevel>Level4</WarningLevel>
-      <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>_DEBUG;_CRT_SECURE_NO_WARNINGS;_ITERATOR_DEBUG_LEVEL=0;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <ConformanceMode>true</ConformanceMode>
-      <TreatWarningAsError>false</TreatWarningAsError>
       <ExceptionHandling>false</ExceptionHandling>
-      <RuntimeTypeInfo>false</RuntimeTypeInfo>
-      <MultiProcessorCompilation>true</MultiProcessorCompilation>
-      <LanguageStandard>stdcpp20</LanguageStandard>
-      <LanguageStandard_C>stdc11</LanguageStandard_C>
       <DisableSpecificWarnings>
       </DisableSpecificWarnings>
-      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
-      <UseFullPaths>false</UseFullPaths>
-      <AdditionalOptions>/d1trimfile:..\..\code\ %(AdditionalOptions)</AdditionalOptions>
-      <SupportJustMyCode>false</SupportJustMyCode>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -105,40 +105,16 @@
       </Message>
     </PreBuildEvent>
     <PostBuildEvent>
-      <Command>echo No | copy /-Y $(SolutionDir)..\..\code\External\slang\bin\windows-x64\release\slang.dll $(OutDir)
-
-
-echo No | copy /-Y $(SolutionDir)..\..\code\External\slang\bin\windows-x64\release\slang-glslang.dll $(OutDir)
-
-echo No | copy /-Y $(SolutionDir)..\..\code\External\ispc_texcomp\lib\win64\ispc_texcomp.dll $(OutDir)
-
-echo No | copy /-Y $(SolutionDir)..\..\code\External\dbghelp\dbghelp.dll $(OutDir)
-
-echo No | copy /-Y $(SolutionDir)..\..\code\External\meshoptimizer\lib\win64\meshoptimizer.dll $(OutDir)</Command>
+      <Command>
+      </Command>
     </PostBuildEvent>
-    <PostBuildEvent>
-      <Message>Copying shared binaries</Message>
-    </PostBuildEvent>
+    <PostBuildEvent />
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <ClCompile>
-      <WarningLevel>Level4</WarningLevel>
-      <FunctionLevelLinking>true</FunctionLevelLinking>
-      <IntrinsicFunctions>true</IntrinsicFunctions>
-      <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>NDEBUG;_ITERATOR_DEBUG_LEVEL=0;CONFIG_FINAL_BUILD=1;_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <ConformanceMode>true</ConformanceMode>
-      <TreatWarningAsError>true</TreatWarningAsError>
       <ExceptionHandling>false</ExceptionHandling>
-      <RuntimeTypeInfo>false</RuntimeTypeInfo>
-      <MultiProcessorCompilation>true</MultiProcessorCompilation>
-      <LanguageStandard>stdcpp20</LanguageStandard>
-      <LanguageStandard_C>stdc11</LanguageStandard_C>
       <DisableSpecificWarnings>
       </DisableSpecificWarnings>
-      <DebugInformationFormat>None</DebugInformationFormat>
-      <AdditionalOptions>/d1trimfile:..\..\code\ %(AdditionalOptions)</AdditionalOptions>
-      <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -156,39 +132,16 @@ echo No | copy /-Y $(SolutionDir)..\..\code\External\meshoptimizer\lib\win64\mes
       </Message>
     </PreBuildEvent>
     <PostBuildEvent>
-      <Command>echo No | copy /-Y $(SolutionDir)..\..\code\External\slang\bin\windows-x64\release\slang.dll $(OutDir)
-
-
-echo No | copy /-Y $(SolutionDir)..\..\code\External\slang\bin\windows-x64\release\slang-glslang.dll $(OutDir)
-
-echo No | copy /-Y $(SolutionDir)..\..\code\External\ispc_texcomp\lib\win64\ispc_texcomp.dll $(OutDir)
-
-echo No | copy /-Y $(SolutionDir)..\..\code\External\dbghelp\dbghelp.dll $(OutDir)
-
-echo No | copy /-Y $(SolutionDir)..\..\code\External\meshoptimizer\lib\win64\meshoptimizer.dll $(OutDir)</Command>
+      <Command>
+      </Command>
     </PostBuildEvent>
-    <PostBuildEvent>
-      <Message>Copying shared binaries</Message>
-    </PostBuildEvent>
+    <PostBuildEvent />
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='ReleaseDev|x64'">
     <ClCompile>
-      <WarningLevel>Level4</WarningLevel>
-      <FunctionLevelLinking>true</FunctionLevelLinking>
-      <IntrinsicFunctions>true</IntrinsicFunctions>
-      <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>NDEBUG;TRACY_ENABLE;_ITERATOR_DEBUG_LEVEL=0;CONFIG_ENABLE_ASSERT=1;_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <ConformanceMode>true</ConformanceMode>
-      <TreatWarningAsError>true</TreatWarningAsError>
       <ExceptionHandling>false</ExceptionHandling>
-      <RuntimeTypeInfo>false</RuntimeTypeInfo>
-      <MultiProcessorCompilation>true</MultiProcessorCompilation>
-      <LanguageStandard>stdcpp20</LanguageStandard>
-      <LanguageStandard_C>stdc11</LanguageStandard_C>
       <DisableSpecificWarnings>
       </DisableSpecificWarnings>
-      <WholeProgramOptimization>false</WholeProgramOptimization>
-      <AdditionalOptions>/d1trimfile:..\..\code\ %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -205,20 +158,10 @@ echo No | copy /-Y $(SolutionDir)..\..\code\External\meshoptimizer\lib\win64\mes
       </Message>
     </PreBuildEvent>
     <PostBuildEvent>
-      <Command>echo No | copy /-Y $(SolutionDir)..\..\code\External\slang\bin\windows-x64\release\slang.dll $(OutDir)
-
-
-echo No | copy /-Y $(SolutionDir)..\..\code\External\slang\bin\windows-x64\release\slang-glslang.dll $(OutDir)
-
-echo No | copy /-Y $(SolutionDir)..\..\code\External\ispc_texcomp\lib\win64\ispc_texcomp.dll $(OutDir)
-
-echo No | copy /-Y $(SolutionDir)..\..\code\External\dbghelp\dbghelp.dll $(OutDir)
-
-echo No | copy /-Y $(SolutionDir)..\..\code\External\meshoptimizer\lib\win64\meshoptimizer.dll $(OutDir)</Command>
+      <Command>
+      </Command>
     </PostBuildEvent>
-    <PostBuildEvent>
-      <Message>Copying shared binaries</Message>
-    </PostBuildEvent>
+    <PostBuildEvent />
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="..\..\code\Assets\AssetManager.cpp" />

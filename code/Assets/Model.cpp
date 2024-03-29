@@ -792,7 +792,7 @@ Span<Model> modelLoadGltf(const char* filepath, Allocator* alloc, const ModelLoa
     } // foreach (mesh)
 
 
-    // Construct materials (from previously created array
+    // Construct materials (from previously created array)
     if (materials.Count()) {
         model->numMaterials = materials.Count();
         model->materials = tmpAlloc.MallocZeroTyped<RelativePtr<ModelMaterial>>(materials.Count());

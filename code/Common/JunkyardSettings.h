@@ -11,6 +11,14 @@
     #endif
 #endif
 
+#ifndef DEFAULT_CACHE_USAGE 
+    #if CONFIG_FINAL_BUILD
+        #define DEFAULT_CACHE_USAGE true
+    #else
+        #define DEFAULT_CACHE_USAGE false
+    #endif
+#endif
+
 struct SettingsGraphics
 {
     bool enable = true;             // Enable graphics subsystem. (cmdline="enableGraphics")
@@ -63,7 +71,7 @@ struct SettingsEngine
     bool breakOnErrors = false;                 // Break when logError happens
     bool treatWarningsAsErrors = false;         // Break when logWarning happens
     bool enableMemPro = false;                  // Enables MemPro instrumentation (https://www.puredevsoftware.com/mempro/index.htm)
-    bool useCacheOnly = false;                  // This option only uses cache to load assets and bypasses Remote or Local disk assets
+    bool useCacheOnly = DEFAULT_CACHE_USAGE;    // This option only uses cache to load assets and bypasses Remote or Local disk assets
 };
 
 struct SettingsDebug

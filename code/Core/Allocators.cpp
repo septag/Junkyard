@@ -113,42 +113,44 @@ void memTempGetStats(Allocator* alloc, MemTransientAllocatorStats** outStats, ui
 
 MemTempId memTempPushId()
 {
+    MemTempContext& ctx = MemGetTempContext();
+
     // Note that we use an atomic var for syncing between threads and memTempReset caller thread
     // The reason is because while someone Pushed the mem temp stack. Reset might be called and mess things up
-    atomicExchange32Explicit(&MemGetTempContext().isInUse, 1, AtomicMemoryOrder::Release);
+    atomicExchange32Explicit(&ctx.isInUse, 1, AtomicMemoryOrder::Release);
 
-    ++MemGetTempContext().generationIdx;
-    ASSERT_MSG(MemGetTempContext().generationIdx <= UINT16_MAX, "Too many push temp allocator, generation overflowed");
+    ++ctx.generationIdx;
+    ASSERT_MSG(ctx.generationIdx <= UINT16_MAX, "Too many push temp allocator, generation overflowed");
 
-    if (!MemGetTempContext().init) {
-        if (MemGetTempContext().buffer == nullptr && !MemGetTempContext().debugMode) {
-            MemGetTempContext().buffer = (uint8*)memVirtualReserve(kTempMaxBufferSize);
-            MemGetTempContext().bufferSize = kTempPageSize;
-            memVirtualCommit(MemGetTempContext().buffer, MemGetTempContext().bufferSize); 
+    if (!ctx.init) {
+        if (ctx.buffer == nullptr && !ctx.debugMode) {
+            ctx.buffer = (uint8*)memVirtualReserve(kTempMaxBufferSize);
+            ctx.bufferSize = kTempPageSize;
+            memVirtualCommit(ctx.buffer, ctx.bufferSize); 
         }
-        MemGetTempContext().init = true;
+        ctx.init = true;
     }
 
-    if (!MemGetTempContext().used) {
+    if (!ctx.used) {
         MutexScope mtx(gMemTemp.tempMtx);
-        if (gMemTemp.tempCtxs.FindIf([ctx = &MemGetTempContext()](const MemTempContext* tmpCtx)->bool { return ctx == tmpCtx; }) == UINT32_MAX) {
-            gMemTemp.tempCtxs.Push(&MemGetTempContext());
-            MemGetTempContext().threadId = threadGetCurrentId();
-            threadGetCurrentThreadName(MemGetTempContext().threadName, sizeof(MemGetTempContext().threadName));
+        if (gMemTemp.tempCtxs.FindIf([ctx = &ctx](const MemTempContext* tmpCtx)->bool { return ctx == tmpCtx; }) == UINT32_MAX) {
+            gMemTemp.tempCtxs.Push(&ctx);
+            ctx.threadId = threadGetCurrentId();
+            threadGetCurrentThreadName(ctx.threadName, sizeof(ctx.threadName));
         }
 
-        MemGetTempContext().used = true;
+        ctx.used = true;
     }
 
-    uint32 index = MemGetTempContext().allocStack.Count();
+    uint32 index = ctx.allocStack.Count();
     ASSERT_MSG(index <= UINT16_MAX, "Temp stack depth is too high! Perhaps a mistake in Push/Pop order");
 
     // Id: High bits is the index to the allocStack
     //     Low bits is the call generation
-    MemTempId id = (index << 16) | (MemGetTempContext().generationIdx & 0xffff);
+    MemTempId id = (index << 16) | (ctx.generationIdx & 0xffff);
     
     MemTempStack memStack { 
-        .baseOffset = index > 0 ? (MemGetTempContext().allocStack.Last().baseOffset + MemGetTempContext().allocStack.Last().offset) : 0,
+        .baseOffset = index > 0 ? (ctx.allocStack.Last().baseOffset + ctx.allocStack.Last().offset) : 0,
         .id = id
     };
 
@@ -157,40 +159,44 @@ MemTempId memTempPushId()
             memStack.numStackframes = debugCaptureStacktrace(memStack.stacktrace, kTempMaxStackframes, 2);
     }
 
-    MemGetTempContext().allocStack.Push(memStack);
+    ctx.allocStack.Push(memStack);
     return id;
 }
 
 void memTempPopId(MemTempId id)
 {
+    MemTempContext& ctx = MemGetTempContext();
+
     ASSERT(id);
-    ASSERT(MemGetTempContext().used);
-    ASSERT(MemGetTempContext().generationIdx);
+    ASSERT(ctx.used);
+    ASSERT(ctx.generationIdx);
 
     [[maybe_unused]] uint32 index = id >> 16;
-    ASSERT_MSG(index == MemGetTempContext().allocStack.Count() - 1, "Invalid temp Push/Pop order");
+    ASSERT_MSG(index == ctx.allocStack.Count() - 1, "Invalid temp Push/Pop order");
 
-    MemTempStack memStack = MemGetTempContext().allocStack.PopLast();
+    MemTempStack memStack = ctx.allocStack.PopLast();
     if (memStack.debugPointers.Count()) {
         for (_private::MemDebugPointer p : memStack.debugPointers)
             memDefaultAlloc()->Free(p.ptr, p.align);
         memStack.debugPointers.Free();
     }
-    atomicExchange32Explicit(&MemGetTempContext().isInUse, 0, AtomicMemoryOrder::Release);
+    atomicExchange32Explicit(&ctx.isInUse, 0, AtomicMemoryOrder::Release);
 }
 
 void* memReallocTemp(MemTempId id, void* ptr, size_t size, uint32 align)
 {
+    MemTempContext& ctx = MemGetTempContext();
+
     ASSERT(id);
-    ASSERT(MemGetTempContext().used);
+    ASSERT(ctx.used);
     ASSERT(size);
 
     uint32 index = id >> 16;
-    ASSERT_MSG(index == MemGetTempContext().allocStack.Count() - 1, "Invalid temp id, likely doesn't belong to current temp stack scope");
+    ASSERT_MSG(index == ctx.allocStack.Count() - 1, "Invalid temp id, likely doesn't belong to current temp stack scope");
 
-    MemTempStack& memStack = MemGetTempContext().allocStack[index];
+    MemTempStack& memStack = ctx.allocStack[index];
 
-    if (!MemGetTempContext().debugMode) {
+    if (!ctx.debugMode) {
         align = Max(align, CONFIG_MACHINE_ALIGNMENT);
         size = AlignValue<size_t>(size, align);
 
@@ -222,26 +228,28 @@ void* memReallocTemp(MemTempId id, void* ptr, size_t size, uint32 align)
         }
 
         // Grow the buffer if necessary (double size policy)
-        if (endOffset > MemGetTempContext().bufferSize) {
-            size_t newSize = Clamp(MemGetTempContext().bufferSize << 1, endOffset, kTempMaxBufferSize);
+        if (endOffset > ctx.bufferSize) {
+            size_t newSize = Clamp(ctx.bufferSize << 1, endOffset, kTempMaxBufferSize);
 
             // Align grow size to page size for virtual memory commit
-            size_t growSize = AlignValue(newSize - MemGetTempContext().bufferSize, gMemTemp.pageSize);
-            memVirtualCommit(MemGetTempContext().buffer + MemGetTempContext().bufferSize, growSize);
-            MemGetTempContext().bufferSize += growSize;
+            size_t growSize = AlignValue(newSize - ctx.bufferSize, gMemTemp.pageSize);
+            memVirtualCommit(ctx.buffer + ctx.bufferSize, growSize);
+            ctx.bufferSize += growSize;
         }
 
-        MemGetTempContext().curFramePeak = Max<size_t>(MemGetTempContext().curFramePeak, endOffset);
-        MemGetTempContext().peakBytes = Max<size_t>(MemGetTempContext().peakBytes, endOffset);
+        ctx.curFramePeak = Max<size_t>(ctx.curFramePeak, endOffset);
+        ctx.peakBytes = Max<size_t>(ctx.peakBytes, endOffset);
 
         // Create the pointer if we are not re-using the previous one
-        if (!newPtr) {
-            newPtr = MemGetTempContext().buffer + offset;
+        if (newPtr == nullptr) {
+            newPtr = ctx.buffer + offset;
+
+            // Fill the alighnment gap with zeros
+            memset(ctx.buffer + memStack.offset + memStack.baseOffset, 0x0, offset - memStack.offset - memStack.baseOffset);
 
             // we are not re-using the previous allocation, memcpy the previous block in case of realloc
-            if (ptr) {
-                memcpy(newPtr, ptr, *((size_t*)ptr - 1));
-            }
+            if (ptr)
+                memcpy(newPtr, ptr, lastSize);
         }
 
         *((size_t*)newPtr - 1) = size;
@@ -259,7 +267,7 @@ void* memReallocTemp(MemTempId id, void* ptr, size_t size, uint32 align)
             memStack.offset += size;
             size_t endOffset = memStack.baseOffset + memStack.offset;
 
-            MemGetTempContext().peakBytes = Max<size_t>(MemGetTempContext().peakBytes, endOffset);
+            ctx.peakBytes = Max<size_t>(ctx.peakBytes, endOffset);
             memStack.debugPointers.Push(_private::MemDebugPointer {ptr, align});
         }
         return ptr;

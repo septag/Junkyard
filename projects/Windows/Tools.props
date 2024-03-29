@@ -13,6 +13,16 @@
     <ClCompile>
       <PreprocessorDefinitions>CONFIG_TOOLMODE=1;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
+    <PostBuildEvent>
+      <Command>echo No | copy /-Y $(SolutionDir)..\..\code\External\slang\bin\windows-x64\release\slang.dll $(OutDir)
+echo No | copy /-Y $(SolutionDir)..\..\code\External\slang\bin\windows-x64\release\slang-glslang.dll $(OutDir)
+echo No | copy /-Y $(SolutionDir)..\..\code\External\ispc_texcomp\lib\win64\ispc_texcomp.dll $(OutDir)
+echo No | copy /-Y $(SolutionDir)..\..\code\External\dbghelp\dbghelp.dll $(OutDir)
+echo No | copy /-Y $(SolutionDir)..\..\code\External\meshoptimizer\lib\win64\meshoptimizer.dll $(OutDir)</Command>
+    </PostBuildEvent>
+    <PostBuildEvent>
+      <Message>Copying extra DLLs ...</Message>
+    </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup />
 </Project>

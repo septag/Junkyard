@@ -121,13 +121,14 @@ inline String<_Size>::String(const char* cstr)
 {
     char* end = strCopy(mStr, _Size, cstr);
     mLen = PtrToInt<uint32>(reinterpret_cast<void*>(end - mStr));
+    memset(end, 0x0, _Size - mLen);
 }
 
 template <uint32 _Size> 
 inline String<_Size>::String(char ch)
 {
+    memset(mStr, 0x0, sizeof(mStr));
     mStr[0] = ch;
-    mStr[1] = '\0';
     mLen = 1;
 }
 

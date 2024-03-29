@@ -6,6 +6,7 @@
 #include "../Core/Jobs.h"
 #include "../Core/MathAll.h"
 #include "../Core/System.h"
+#include "../Core/Hash.h"
 
 #include "../Common/VirtualFS.h"
 #include "../Common/Application.h"
@@ -39,6 +40,7 @@ struct AppImpl final : AppCallbacks
     AssetHandleModel modelAsset;
     AssetHandleShader modelShaderAsset;
     Array<GfxDescriptorSet> descriptorSets;
+    HashTable<GfxDescriptorSet> materialToDset;
     CameraFPS   fpsCam;
     CameraOrbit orbitCam;
     Camera*     cam;
@@ -198,7 +200,8 @@ struct AppImpl final : AppCallbacks
                     for (uint32 smi = 0; smi < mesh.numSubmeshes; smi++) {
                         const ModelSubmesh& submesh = mesh.submeshes[smi];
                         const ModelMaterial* mtl = model->materials[IdToIndex(submesh.materialId)].Get();
-                        GfxDescriptorSet dset(PtrToInt<uint32>(mtl->userData));
+                        
+                        GfxDescriptorSet dset = materialToDset.FindAndFetch(hashMurmur32(mtl, sizeof(*mtl), 0));
                         gfxCmdBindDescriptorSets(pipeline, 1, &dset);
                         gfxCmdDrawIndexed(mesh.numIndices, 1, 0, 0, 0);
                     }
@@ -384,7 +387,7 @@ struct AppImpl final : AppCallbacks
 
                 gfxUpdateDescriptorSet(dset, CountOf(descBindings), descBindings);
 
-                material->userData = IntToPtr(uint32(dset));
+                materialToDset.Add(hashMurmur32(material, sizeof(*material), 0), dset);
                 descriptorSets.Push(dset);
             }
         }
@@ -401,6 +404,7 @@ struct AppImpl final : AppCallbacks
         gfxDestroyPipeline(pipeline);
         gfxDestroyBuffer(uniformBuffer);
         descriptorSets.Free();
+        materialToDset.Free();
     }
 };
 
