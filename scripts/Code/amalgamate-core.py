@@ -177,5 +177,6 @@ if not args.stbheader:
                 f.write('//\t' + os.path.basename(filepath) + '\n')
         f.write('\n')
         f.write('#include "{}.h"\n'.format(args.outputname))
+        f.write('#define BUILD_UNITY\n')
         f.write(source_blob)
     print('Generated file:', output_source_path)
