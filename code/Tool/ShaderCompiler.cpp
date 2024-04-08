@@ -94,12 +94,13 @@ Pair<GfxShader*, uint32> shaderCompile(const Blob& blob, const char* filepath, c
 
     SlangCompileRequest* req = spCreateCompileRequest(gShaderCompiler.slang);
 
-    spSetCodeGenTarget(req, SLANG_SPIRV);
+    int targetIdx = spAddCodeGenTarget(req, SLANG_SPIRV);
     spSetMatrixLayoutMode(req, SLANG_MATRIX_LAYOUT_COLUMN_MAJOR);
 
     if (desc.debug) {
         spSetDebugInfoLevel(req, SLANG_DEBUG_INFO_LEVEL_MAXIMAL);
         spSetOptimizationLevel(req, SLANG_OPTIMIZATION_LEVEL_NONE);
+        spSetTargetFlags(req, targetIdx, SLANG_TARGET_FLAG_GENERATE_SPIRV_DIRECTLY);
     }
     
     if (desc.dumpIntermediates) {
@@ -115,7 +116,7 @@ Pair<GfxShader*, uint32> shaderCompile(const Blob& blob, const char* filepath, c
     for (uint32 i = 0; i < desc.numDefines; i++) 
         spAddPreprocessorDefine(req, desc.defines[i].define.CStr(), desc.defines[i].value.CStr());
         
-    int translationUnitIdx = spAddTranslationUnit(req, SLANG_SOURCE_LANGUAGE_HLSL, "");
+    int translationUnitIdx = spAddTranslationUnit(req, SLANG_SOURCE_LANGUAGE_SLANG, "");
     spAddTranslationUnitSourceStringSpan(req, translationUnitIdx, filepath, 
         reinterpret_cast<const char*>(blob.Data()),
         reinterpret_cast<const char*>(blob.Data()) + blob.Size());

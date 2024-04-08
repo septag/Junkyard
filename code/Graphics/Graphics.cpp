@@ -394,11 +394,13 @@ struct GfxContext
     GfxUpdateImageDescriptorCallback updateImageDescCallback;
 
     bool hasAstcDecodeMode;     // VK_EXT_astc_decode_mode extension is available. use it for ImageViews
+    bool hasDebugUtils;
     bool hasPipelineExecutableProperties;
     bool hasMemoryBudget;
     bool hasHostQueryReset;
     bool hasFloat16Support;
     bool hasDescriptorIndexing;
+    bool hasNonSemanticInfo;
     bool initialized;
 };
 
@@ -1566,7 +1568,7 @@ bool _private::gfxInitialize()
     // Enable Validation
     VkValidationFeaturesEXT validationFeatures;
     StaticArray<VkValidationFeatureEnableEXT, 5> validationFeatureFlags;
-    if (settings.validate) {
+    if constexpr (!CONFIG_FINAL_BUILD) {
         if (gfxHasInstanceExtension("VK_EXT_debug_utils"))
             enabledInstanceExtensions.Add("VK_EXT_debug_utils");
         else if (gfxHasInstanceExtension("VK_EXT_debug_report"))
@@ -1633,9 +1635,8 @@ bool _private::gfxInitialize()
 
     //------------------------------------------------------------------------
     // Validation layer and callbacks
-    if (settings.validate) {
+    if constexpr (!CONFIG_FINAL_BUILD) {
         if (gfxHasInstanceExtension("VK_EXT_debug_utils")) {
-            
             VkExtensionApi::vkCreateDebugUtilsMessengerEXT = 
                 (PFN_vkCreateDebugUtilsMessengerEXT)vkGetInstanceProcAddr(gVk.instance, "vkCreateDebugUtilsMessengerEXT");
             VkExtensionApi::vkDestroyDebugUtilsMessengerEXT = 
@@ -1660,6 +1661,8 @@ bool _private::gfxInitialize()
                 logError("Gfx: vkCreateDebugUtilsMessengerEXT failed");
                 return false;
             }
+
+            gVk.hasDebugUtils = true;
         }
         else if (gfxHasInstanceExtension("VK_EXT_debug_report")) {
             VkExtensionApi::vkCreateDebugReportCallbackEXT = 
@@ -1910,6 +1913,7 @@ bool _private::gfxInitialize()
     if (gfxHasVulkanVersion(GfxApiVersion::Vulkan_1_2) && !gVk.deviceFeatures12.shaderFloat16)
         gVk.hasFloat16Support = false;
 
+    gVk.hasNonSemanticInfo = gfxHasDeviceExtension("VK_KHR_shader_non_semantic_info");
     gVk.hasDescriptorIndexing = gfxHasDeviceExtension("VK_EXT_descriptor_indexing");
 
     StaticArray<const char*, 32> enabledDeviceExtensions;
@@ -1949,6 +1953,8 @@ bool _private::gfxInitialize()
     }
     if (gVk.hasFloat16Support)
         enabledDeviceExtensions.Add("VK_KHR_shader_float16_int8");
+    if (gVk.hasNonSemanticInfo)
+        enabledDeviceExtensions.Add("VK_KHR_shader_non_semantic_info");
     if (gVk.hasDescriptorIndexing)
         enabledDeviceExtensions.Add("VK_EXT_descriptor_indexing");
 

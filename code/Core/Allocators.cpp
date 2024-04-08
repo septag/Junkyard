@@ -203,10 +203,12 @@ void* memReallocTemp(MemTempId id, void* ptr, size_t size, uint32 align)
         // For a common case that we call realloc several times (dynamic Arrays), we can reuse the last allocated pointer
         void* newPtr = nullptr;
         size_t lastSize = 0;
-        if (ptr && memStack.lastAllocatedPtr == ptr) {
+        if (ptr) {
             lastSize = *((size_t*)ptr - 1);
             ASSERT(size > lastSize);
-            newPtr = ptr;
+
+            if (memStack.lastAllocatedPtr == ptr)
+                newPtr = ptr;
         }
 
         // align to requested alignment

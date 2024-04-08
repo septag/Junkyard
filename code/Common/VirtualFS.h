@@ -2,6 +2,8 @@
 
 #include "../Core/Blobs.h"
 
+struct Path;
+
 enum class VfsFlags : uint32
 {
     None = 0x0,
@@ -32,7 +34,7 @@ API bool vfsMountPackageBundle(const char* alias);
 
 // If file fails to load, Blob.IsValid() == false
 // Note: This function works without initializing the virtual file-system
-API Blob vfsReadFile(const char* path, VfsFlags flags, Allocator* alloc = memDefaultAlloc());
+API Blob vfsReadFile(const char* path, VfsFlags flags, Allocator* alloc = memDefaultAlloc(), Path* outResolvedPath = nullptr);
 
 // If file fails to write, it will return 0, otherwise, it will return the number of bytes written
 API size_t vfsWriteFile(const char* path, const Blob& blob, VfsFlags flags);

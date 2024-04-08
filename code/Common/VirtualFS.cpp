@@ -130,7 +130,7 @@ static uint32 vfsDiskResolvePath(char* dstPath, uint32 dstPathSize, const char* 
     }
 }
 
-static Blob vfsDiskReadFile(const char* path, VfsFlags flags, Allocator* alloc)
+static Blob vfsDiskReadFile(const char* path, VfsFlags flags, Allocator* alloc, Path* outResolvedPath = nullptr)
 {
     PROFILE_ZONE_WITH_TEXT(path, strLen(path), true);
 
@@ -165,9 +165,13 @@ static Blob vfsDiskReadFile(const char* path, VfsFlags flags, Allocator* alloc)
 
     char resolvedPath[kMaxPath];
     if (vfsDiskResolvePath(resolvedPath, sizeof(resolvedPath), path, flags) != UINT32_MAX) {
+        if (outResolvedPath)
+            *outResolvedPath = resolvedPath;
         return LoadFromDisk(resolvedPath, flags, alloc);
     }
     else {
+        if (outResolvedPath)
+            *outResolvedPath = path;
         return LoadFromDisk(path, flags, alloc);
     }
 }
@@ -984,7 +988,7 @@ bool vfsMountPackageBundle(const char*)
 }
 #endif // !PLATFORM_MOBILE
 
-Blob vfsReadFile(const char* path, VfsFlags flags, Allocator* alloc)
+Blob vfsReadFile(const char* path, VfsFlags flags, Allocator* alloc, Path* outResolvedPath)
 {
     ASSERT((flags & VfsFlags::CreateDirs) != VfsFlags::CreateDirs);
     ASSERT((flags & VfsFlags::Append) != VfsFlags::Append);
@@ -994,7 +998,7 @@ Blob vfsReadFile(const char* path, VfsFlags flags, Allocator* alloc)
         VfsMountType type = gVfs.mounts[idx].type;
         ASSERT_MSG(type != VfsMountType::Remote, "Remote file requests cannot be done in blocking mode, call vfsReadFileAsync");
         if (type == VfsMountType::Local)
-            return vfsDiskReadFile(path, flags, alloc);
+            return vfsDiskReadFile(path, flags, alloc, outResolvedPath);
         #if PLATFORM_MOBILE
         else if (type == VfsMountType::PackageBundle)
             return vfsPackageBundleReadFile(path, flags, alloc);
@@ -1004,14 +1008,17 @@ Blob vfsReadFile(const char* path, VfsFlags flags, Allocator* alloc)
     }
     else {
         #if PLATFORM_ANDROID
-            // take a guess, and see if we have 'assets' at the start, 
-            const char* normPath = path;
-            if (normPath[0] == '/')
-                normPath++;
-            const char predefinedAssets[] = "assets/";
-            if (strIsEqualNoCaseCount(normPath, predefinedAssets, sizeof(predefinedAssets)-1))
-                return vfsPackageBundleReadFile(normPath + sizeof(predefinedAssets) - 1, flags, alloc);
+        // take a guess, and see if we have 'assets' at the start, 
+        const char* normPath = path;
+        if (normPath[0] == '/')
+            normPath++;
+        const char predefinedAssets[] = "assets/";
+        if (strIsEqualNoCaseCount(normPath, predefinedAssets, sizeof(predefinedAssets)-1))
+            return vfsPackageBundleReadFile(normPath + sizeof(predefinedAssets) - 1, flags, alloc);
         #endif // PALTFORM_ANDROID
+
+        if (outResolvedPath)
+            *outResolvedPath = path;
         return vfsDiskReadFile(path, flags, alloc);
     }
 }

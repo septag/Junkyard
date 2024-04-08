@@ -29,8 +29,8 @@ struct Blob
         Multiply
     };
 
-    inline Blob() : Blob(memDefaultAlloc()) {}
-    inline explicit Blob(Allocator* alloc) : mAlloc(alloc) {}
+    inline Blob() : Blob(memDefaultAlloc()) { SetGrowPolicy(GrowPolicy::Linear); }
+    inline explicit Blob(Allocator* alloc) : mAlloc(alloc) { SetGrowPolicy(GrowPolicy::Linear); }
     inline explicit Blob(void* buffer, size_t size);
     inline Blob& operator=(const Blob&) = default;
     inline Blob(const Blob&) = default;
@@ -39,7 +39,7 @@ struct Blob
     inline void Detach(void** outData, size_t* outSize);
 
     inline void SetAllocator(Allocator* alloc);
-    inline void SetGrowPolicy(GrowPolicy policy, uint32 amount = 4096);
+    inline void SetGrowPolicy(GrowPolicy policy, uint32 growSize = 4096);
     inline void SetAlignment(uint8 align);
     inline void SetSize(size_t size);
     inline void Reserve(size_t capacity);
@@ -74,7 +74,7 @@ private:
     size_t     mCapacity = 0;
     uint32     mAlign = CONFIG_MACHINE_ALIGNMENT;
     GrowPolicy mGrowPolicy = GrowPolicy::None;
-    uint32     mGrowCount = 4096u;
+    uint32     mGrowSize = 4096u;
 };
 
 //----------------------------------------------------------------------------------------------------------------------
@@ -353,35 +353,33 @@ inline size_t Blob::Write(const void* src, size_t size)
     ASSERT(src);
     ASSERT(size);
 
-    size_t writeBytes = Min(mCapacity - mSize, size);
-    if (writeBytes < size) {
-        ASSERT_MSG(mAlloc, "Growable blobs should have allocator");
+    size_t requiredCapacity = mSize + size;
+    size_t writeBytes = size;
+    if (requiredCapacity > mCapacity && mAlloc) {
         ASSERT_MSG(mGrowPolicy != GrowPolicy::None, "Growable blobs should have a grow policy");
-        ASSERT(mGrowCount);
+        ASSERT(mGrowSize);
 
-        if (mGrowPolicy == GrowPolicy::Linear) {
-            mCapacity += mGrowCount;
-            mBuffer = memReallocAligned(mBuffer, mCapacity, mAlign, mAlloc);
-        }
-        else if (mGrowPolicy == GrowPolicy::Multiply) {
-            if (!mCapacity)
-            mCapacity = mGrowCount;
-            else
-            mCapacity <<= 1;
-            mBuffer = memReallocAligned(mBuffer, mCapacity, mAlign, mAlloc);
-        }
+        size_t targetCapacity = mCapacity;
+        if (mGrowPolicy == GrowPolicy::Linear) 
+            targetCapacity += mGrowSize;
+        else if (mGrowPolicy == GrowPolicy::Multiply)
+            targetCapacity = targetCapacity ? (targetCapacity << 1) : mGrowSize;
 
-        return Write(src, size);
+        mCapacity = (requiredCapacity > targetCapacity) ? AlignValue(requiredCapacity, size_t(mGrowSize)) : targetCapacity;        
+        mBuffer = memReallocAligned(mBuffer, mCapacity, mAlign, mAlloc);
+    }
+    else {
+        writeBytes = Min(mCapacity - mSize, size);  
     }
 
     if (writeBytes) {
         uint8* buff = reinterpret_cast<uint8*>(mBuffer);
-        memcpy(buff + mSize, src, writeBytes);
-        mSize += writeBytes;
+        memcpy(buff + mSize, src, size);
+        mSize += size;
     }
 
     #if CONFIG_VALIDATE_IO_READ_WRITES
-    ASSERT(writeBytes == size);
+    ASSERT(writeBytes == size);     
     #endif
     return writeBytes;
 }
@@ -452,16 +450,19 @@ inline void Blob::CopyTo(Blob* otherBlob) const
 
 inline void Blob::SetAlignment(uint8 align)
 {
+    ASSERT_MSG(mAlloc, "Alignment only workes for blobs with allocators");
+    ASSERT_MSG(mBuffer == nullptr, "Cannot change alignment when buffer is already created");
+
     if (align < CONFIG_MACHINE_ALIGNMENT)
-    align = CONFIG_MACHINE_ALIGNMENT;
+        align = CONFIG_MACHINE_ALIGNMENT;
     mAlign = align;
 }
 
-inline void Blob::SetGrowPolicy(GrowPolicy policy, uint32 amount)
+inline void Blob::SetGrowPolicy(GrowPolicy policy, uint32 growSize)
 {
-    ASSERT(amount);
+    ASSERT(growSize);
     mGrowPolicy = policy;
-    mGrowCount = AlignValue(amount, CACHE_LINE_SIZE);
+    mGrowSize = AlignValue(growSize, CACHE_LINE_SIZE);
 }
 
 inline size_t Blob::ReadStringBinary(char* outStr, [[maybe_unused]] uint32 outStrSize) const

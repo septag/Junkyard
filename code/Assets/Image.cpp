@@ -278,6 +278,8 @@ static Pair<AssetImage*, uint32> assetBakeImage(const char* filepath, Allocator*
         contentBlob.Attach(pixels, imageSize, &tmpAlloc);
     }
     
+    // Create image header and serialize memory. So header comes first, then re-copy the final contents at the end
+    // We have to do this because there is also a lot of scratch work in between image buffers creation
     AssetImage* header = tmpAlloc.MallocTyped<AssetImage>();
     *header = AssetImage {
         .width = uint32(imgWidth),

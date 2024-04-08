@@ -40,7 +40,7 @@ struct ShaderLoader final : AssetCallbacks
 
 static ShaderLoader gShaderLoader;
 
-// MT: runs in task threads, dispatched by asset server
+// MT: runs in task threads, dispatched by asset server for remote loads
 #if CONFIG_TOOLMODE
 static void shaderCompileLoadTask(uint32 groupIndex, void* userData)
 {
@@ -83,12 +83,17 @@ static void shaderCompileLoadTask(uint32 groupIndex, void* userData)
     
     if (cacheHash != oldCacheHash) {
         TimerStopWatch timer;
-        Blob fileBlob = vfsReadFile(filepath, VfsFlags::None, &tmpAlloc);
+        Path shaderAbsolutePath;
+        Blob fileBlob = vfsReadFile(filepath, VfsFlags::None, &tmpAlloc, &shaderAbsolutePath);
         if (fileBlob.IsValid()) {
+            #if PLATFORM_WINDOWS
+            shaderAbsolutePath.ConvertToWin();
+            #endif
+
             // Compilation
             char compileErrorDesc[512];
-            Pair<GfxShader*, uint32> shaderCompileResult = shaderCompile(fileBlob, filepath, compileDesc, compileErrorDesc, 
-                                                                      sizeof(compileErrorDesc), memDefaultAlloc());
+            Pair<GfxShader*, uint32> shaderCompileResult = shaderCompile(fileBlob, shaderAbsolutePath.CStr(), compileDesc, 
+                                                                         compileErrorDesc, sizeof(compileErrorDesc), memDefaultAlloc());
             GfxShader* shader = shaderCompileResult.first;
             uint32 shaderDataSize = shaderCompileResult.second;
 
@@ -257,7 +262,7 @@ GfxShader* assetGetShader(AssetHandleShader shaderHandle)
     return reinterpret_cast<GfxShader*>(_private::assetGetData(shaderHandle));
 }
 
-// MT: Runs from a task thread (AssetManager)
+// MT: Runs from a task thread (AssetManager) for local loads
 AssetResult ShaderLoader::Load(AssetHandle handle, const AssetLoadParams& params, uint32 cacheHash, Allocator*)
 {
     #if CONFIG_TOOLMODE
@@ -286,14 +291,19 @@ AssetResult ShaderLoader::Load(AssetHandle handle, const AssetLoadParams& params
         });
 
         if (newCacheHash != cacheHash) {
-            Blob blob = vfsReadFile(params.path, VfsFlags::None, &tmpAlloc);
+            Path shaderAbsolutePath;
+            Blob blob = vfsReadFile(params.path, VfsFlags::None, &tmpAlloc, &shaderAbsolutePath);
             if (!blob.IsValid()) {
                 logError("Opening shader file failed: %s", params.path);
                 return AssetResult {};
             }
 
+            #if PLATFORM_WINDOWS
+            shaderAbsolutePath.ConvertToWin();
+            #endif
+
             char errorDiag[1024];
-            Pair<GfxShader*, uint32> shader = shaderCompile(blob, params.path, compileDesc, errorDiag, sizeof(errorDiag), params.alloc);
+            Pair<GfxShader*, uint32> shader = shaderCompile(blob, shaderAbsolutePath.CStr(), compileDesc, errorDiag, sizeof(errorDiag), params.alloc);
             if (shader.first)
                 shader.first->hash = uint32(handle);
             else 

@@ -1,6 +1,6 @@
 @echo off
 
-set slang_dist=v2024.0.0/slang-2024.0.0-win64.zip
+set slang_dist=v2024.1.6/slang-2024.1.6-win64.zip
 
 if not exist slang.zip (
     powershell Invoke-WebRequest -Uri https://github.com/shader-slang/slang/releases/download/%slang_dist% -OutFile slang.zip
