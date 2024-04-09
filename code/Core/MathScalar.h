@@ -71,7 +71,14 @@ FORCE_INLINE float  mathGain(float _time, float _gain);
 FORCE_INLINE float  mathAngleDiff(float _a, float _b);
 FORCE_INLINE float  mathAngleLerp(float _a, float _b, float _t);
 
-////////////////////////////////////////////////////////////////////////////////////////////////////
+
+//    ██╗███╗   ██╗██╗     ██╗███╗   ██╗███████╗███████╗
+//    ██║████╗  ██║██║     ██║████╗  ██║██╔════╝██╔════╝
+//    ██║██╔██╗ ██║██║     ██║██╔██╗ ██║█████╗  ███████╗
+//    ██║██║╚██╗██║██║     ██║██║╚██╗██║██╔══╝  ╚════██║
+//    ██║██║ ╚████║███████╗██║██║ ╚████║███████╗███████║
+//    ╚═╝╚═╝  ╚═══╝╚══════╝╚═╝╚═╝  ╚═══╝╚══════╝╚══════╝
+                                                      
 #if defined(__SSE2__) || (COMPILER_MSVC && ARCH_64BIT)
 FORCE_INLINE float mathSqrt(float x)
 {

@@ -424,7 +424,6 @@ namespace VkExtensionApi
     static PFN_vkGetPipelineExecutableInternalRepresentationsKHR vkGetPipelineExecutableInternalRepresentationsKHR;
 
     static PFN_vkGetPhysicalDeviceProperties2KHR vkGetPhysicalDeviceProperties2KHR;
-    static PFN_vkResetQueryPoolEXT vkResetQueryPoolEXT;
 };
 
 static GfxContext gVk;
@@ -874,9 +873,9 @@ bool gfxBeginCommandBuffer()
     if (gVk.deviceProps.limits.timestampComputeAndGraphics) {
         uint32 expectedValue = 0;
         if (atomicCompareExchange32Weak(&gVk.queryFirstCall, &expectedValue, 1)) {
-            // TODO: why are we commenting out this test ?
-            //if (gVk.hasHostQueryReset)
-                VkExtensionApi::vkResetQueryPoolEXT(gVk.device, gVk.queryPool[gVk.currentFrameIdx], 0, 2);
+            if (gVk.hasHostQueryReset)
+                vkResetQueryPoolEXT(gVk.device, gVk.queryPool[gVk.currentFrameIdx], 0, 2);
+
             vkCmdWriteTimestamp(gCmdBufferThreadData.curCmdBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, gVk.queryPool[gVk.currentFrameIdx], 0);
         }
     }
@@ -1479,7 +1478,7 @@ bool _private::gfxInitialize()
 
     gVk.pools.Initialize();
 
-    //------------------------------------------------------------------------
+    //------------------------------------------------------------------------------------------------------------------
     // Layers
     uint32 numLayers = 0;
     vkEnumerateInstanceLayerProperties(&numLayers, nullptr);
@@ -1490,7 +1489,7 @@ bool _private::gfxInitialize()
         vkEnumerateInstanceLayerProperties(&numLayers, gVk.layers);
     }
 
-    //------------------------------------------------------------------------
+    //------------------------------------------------------------------------------------------------------------------
     // Instance Extensions
     uint32 numInstanceExtensions = 0;
     vkEnumerateInstanceExtensionProperties(nullptr, &numInstanceExtensions, nullptr);
@@ -1508,7 +1507,7 @@ bool _private::gfxInitialize()
         }
     }
 
-    //------------------------------------------------------------------------
+    //------------------------------------------------------------------------------------------------------------------
     // Instance
     VkApplicationInfo appInfo {};
 
@@ -1559,7 +1558,7 @@ bool _private::gfxInitialize()
     instCreateInfo.enabledLayerCount = enabledLayers.Count();
     instCreateInfo.ppEnabledLayerNames = enabledLayers.Ptr();
    
-    //------------------------------------------------------------------------
+    //------------------------------------------------------------------------------------------------------------------
     // Instance extensions
     StaticArray<const char*, 32> enabledInstanceExtensions;
     for (uint32 i = 0; i < sizeof(kGfxVkExtensions)/sizeof(const char*); i++)
@@ -1633,7 +1632,7 @@ bool _private::gfxInitialize()
 
     volkLoadInstanceOnly(gVk.instance);
 
-    //------------------------------------------------------------------------
+    //------------------------------------------------------------------------------------------------------------------
     // Validation layer and callbacks
     if constexpr (!CONFIG_FINAL_BUILD) {
         if (gfxHasInstanceExtension("VK_EXT_debug_utils")) {
@@ -1690,7 +1689,7 @@ bool _private::gfxInitialize()
         }
     }
 
-    //------------------------------------------------------------------------
+    //------------------------------------------------------------------------------------------------------------------
     // Surface (Implementation is platform dependent)
     if (!settings.headless) {
         gVk.surface = gfxCreateWindowSurface(appGetNativeWindowHandle());
@@ -1700,7 +1699,7 @@ bool _private::gfxInitialize()
         }
     }
 
-    //------------------------------------------------------------------------
+    //------------------------------------------------------------------------------------------------------------------
     // Physical Device(s)
     uint32 numDevices = 0;
     uint32 gfxQueueFamilyIdx = UINT32_MAX;
@@ -1770,7 +1769,7 @@ bool _private::gfxInitialize()
         return false;
     }
 
-    //------------------------------------------------------------------------
+    //------------------------------------------------------------------------------------------------------------------
     // Physical device is created, gather information about driver/hardware and show it before we continue initialization other stuff
     {
         vkGetPhysicalDeviceProperties(gVk.physicalDevice, &gVk.deviceProps);
@@ -1855,7 +1854,7 @@ bool _private::gfxInitialize()
         }
     }
 
-    //------------------------------------------------------------------------
+    //------------------------------------------------------------------------------------------------------------------
     // Device extensions
     uint32 numDevExtensions;
     vkEnumerateDeviceExtensionProperties(gVk.physicalDevice, nullptr, &numDevExtensions, nullptr);
@@ -1872,7 +1871,7 @@ bool _private::gfxInitialize()
         }
     }
 
-    //------------------------------------------------------------------------
+    //------------------------------------------------------------------------------------------------------------------
     // Logical device and Queues
     StaticArray<VkDeviceQueueCreateInfo, 4> queueCreateInfos;
     if (!settings.headless) {
@@ -1900,7 +1899,7 @@ bool _private::gfxInitialize()
         }
     }
 
-    //------------------------------------------------------------------------
+    //------------------------------------------------------------------------------------------------------------------
     // Device Extensions that we need
     gVk.hasAstcDecodeMode = gfxHasDeviceExtension("VK_EXT_astc_decode_mode");
     gVk.hasMemoryBudget = gfxHasDeviceExtension("VK_EXT_memory_budget");
@@ -1947,10 +1946,9 @@ bool _private::gfxInitialize()
 
     if (gVk.hasMemoryBudget)
         enabledDeviceExtensions.Add("VK_EXT_memory_budget");
-    if (gVk.hasHostQueryReset) {
+    if (gVk.hasHostQueryReset)
         enabledDeviceExtensions.Add("VK_EXT_host_query_reset");
-        VkExtensionApi::vkResetQueryPoolEXT = (PFN_vkResetQueryPoolEXT)vkGetInstanceProcAddr(gVk.instance, "vkResetQueryPoolEXT");
-    }
+
     if (gVk.hasFloat16Support)
         enabledDeviceExtensions.Add("VK_KHR_shader_float16_int8");
     if (gVk.hasNonSemanticInfo)
@@ -2016,7 +2014,7 @@ bool _private::gfxInitialize()
     logInfo("(init) Vulkan device created");
     volkLoadDevice(gVk.device);
 
-    //------------------------------------------------------------------------
+    //------------------------------------------------------------------------------------------------------------------
     // VMA
     {
         static const VmaVulkanFunctions vmaFuncs {
@@ -2050,7 +2048,7 @@ bool _private::gfxInitialize()
         }
     }
 
-    //------------------------------------------------------------------------
+    //-------------------------------------------------------------------------------------------------------------------
     // Graphics/Present Queue
     if (!settings.headless) {
         ASSERT(gfxQueueFamilyIdx != UINT32_MAX);
@@ -2071,7 +2069,7 @@ bool _private::gfxInitialize()
     gVk.deferredCmdBuffer.SetAllocator(&gVk.alloc);
     gVk.deferredCmdBuffer.SetGrowPolicy(Blob::GrowPolicy::Linear);
 
-    //------------------------------------------------------------------------
+    //------------------------------------------------------------------------------------------------------------------
     // SwapChain support and capabilities
     if (!settings.headless) {
         ASSERT(gVk.surface);
@@ -2107,7 +2105,7 @@ bool _private::gfxInitialize()
         gVk.swapchain = gfxCreateSwapchain(gVk.surface, appGetFramebufferWidth(), appGetFramebufferHeight(), nullptr, true);
     }
 
-    //------------------------------------------------------------------------
+    //------------------------------------------------------------------------------------------------------------------
     // Synchronization
     VkSemaphoreCreateInfo semaphoreCreateInfo {};
     semaphoreCreateInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
@@ -2191,7 +2189,7 @@ bool _private::gfxInitialize()
 
     logInfo("(init) Gfx initialized");
 
-    //------------------------------------------------------------------------
+    //------------------------------------------------------------------------------------------------------------------
     // Profiling
     #ifdef TRACY_ENABLE
         if (settings.enableGpuProfile) {
@@ -2213,6 +2211,7 @@ bool _private::gfxInitialize()
                 logError("Gfx: Creating main query pool failed");
                 return false;
             }
+            vkResetQueryPoolEXT(gVk.device, gVk.queryPool[i], 0, 2);
         }
     }
 
@@ -2593,11 +2592,11 @@ void gfxEndFrame()
     PROFILE_ZONE(true);
 
     #ifdef TRACY_ENABLE
-        if (gfxHasProfileSamples()) {
-            gfxBeginCommandBuffer();
-            gfxProfileCollectSamples();
-            gfxEndCommandBuffer();
-        }
+    if (gfxHasProfileSamples()) {
+        gfxBeginCommandBuffer();
+        gfxProfileCollectSamples();
+        gfxEndCommandBuffer();
+    }
     #endif
     
     uint32 frameIdx = gVk.currentFrameIdx;

@@ -2,22 +2,6 @@
 
 #include "Base.h"
 
-// Some math constants
-inline constexpr float kPI           = 3.1415926535897932384626433832795f;
-static constexpr float kPI2          = 6.2831853071795864769252867665590f;
-static constexpr float kInvPI        = (1.0f / 3.1415926535897932384626433832795f);
-static constexpr float kPIHalf       = 1.5707963267948966192313216916398f;
-static constexpr float kPIQuarter    = 0.7853981633974483096156608458199f;
-static constexpr float kSqrt2        = 1.4142135623730950488016887242097f;
-static constexpr float kLogNat10     = 2.3025850929940456840179914546844f;
-static constexpr float kInvLogNat2   = 1.4426950408889634073599246810019f;
-static constexpr float kLogNat2H     = 0.6931471805599453094172321214582f;
-static constexpr float kLogNat2L     = 1.90821492927058770002e-10f;
-static constexpr float kE            = 2.7182818284590452353602874713527f;
-static constexpr float kNearZero     = (1.0f / (float)(1 << 28));
-static constexpr float kFloatMin     = (1.175494e-38f);
-static constexpr float kFloatMax     = (3.402823e+38f);
-
 PRAGMA_DIAGNOSTIC_PUSH()
 PRAGMA_DIAGNOSTIC_IGNORED_MSVC(4201)    // nonstandard extension used : nameless struct/union
 PRAGMA_DIAGNOSTIC_IGNORED_MSVC(4204)    // nonstandard extension used: non-constant aggregate initializer
@@ -367,8 +351,30 @@ struct Box
     explicit constexpr Box(const Transform3D& _tx, Float3 _e) : tx(_tx), e(_e) {}
 };
 
-////////////////////////////////////////////////////////////////////////////////////////////////////
-// Predefined static primitives
+
+//
+//     ██████╗ ██████╗ ███╗   ██╗███████╗████████╗ █████╗ ███╗   ██╗████████╗███████╗
+//    ██╔════╝██╔═══██╗████╗  ██║██╔════╝╚══██╔══╝██╔══██╗████╗  ██║╚══██╔══╝██╔════╝
+//    ██║     ██║   ██║██╔██╗ ██║███████╗   ██║   ███████║██╔██╗ ██║   ██║   ███████╗
+//    ██║     ██║   ██║██║╚██╗██║╚════██║   ██║   ██╔══██║██║╚██╗██║   ██║   ╚════██║
+//    ╚██████╗╚██████╔╝██║ ╚████║███████║   ██║   ██║  ██║██║ ╚████║   ██║   ███████║
+//     ╚═════╝ ╚═════╝ ╚═╝  ╚═══╝╚══════╝   ╚═╝   ╚═╝  ╚═╝╚═╝  ╚═══╝   ╚═╝   ╚══════╝
+
+inline constexpr float kPI           = 3.1415926535897932384626433832795f;
+inline constexpr float kPI2          = 6.2831853071795864769252867665590f;
+inline constexpr float kInvPI        = (1.0f / 3.1415926535897932384626433832795f);
+inline constexpr float kPIHalf       = 1.5707963267948966192313216916398f;
+inline constexpr float kPIQuarter    = 0.7853981633974483096156608458199f;
+inline constexpr float kSqrt2        = 1.4142135623730950488016887242097f;
+inline constexpr float kLogNat10     = 2.3025850929940456840179914546844f;
+inline constexpr float kInvLogNat2   = 1.4426950408889634073599246810019f;
+inline constexpr float kLogNat2H     = 0.6931471805599453094172321214582f;
+inline constexpr float kLogNat2L     = 1.90821492927058770002e-10f;
+inline constexpr float kE            = 2.7182818284590452353602874713527f;
+inline constexpr float kNearZero     = (1.0f / (float)(1 << 28));
+inline constexpr float kFloatMin     = (1.175494e-38f);
+inline constexpr float kFloatMax     = (3.402823e+38f);
+
 inline constexpr Float2 kFloat2Zero  { 0.0f, 0.0f };
 inline constexpr Float2 kFloat2UnitX { 1.0f, 0.0f };
 inline constexpr Float2 kFloat2UnitY { 0.0f, 1.0f };

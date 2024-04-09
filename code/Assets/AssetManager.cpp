@@ -524,7 +524,9 @@ static AssetResult assetLoadObjRemote(AssetHandle handle, const AssetTypeManager
         .loadedFromCache = outLoadedFromCache
     };
 
-    typeMgr.callbacks->LoadRemote(handle, loadParams, cacheHash, &asyncLoadData, [](AssetHandle, const AssetResult& result, void* userData) {
+    typeMgr.callbacks->LoadRemote(handle, loadParams, cacheHash, &asyncLoadData, 
+                                  [](AssetHandle, const AssetResult& result, void* userData) 
+    {
         AsyncLoadData* params = reinterpret_cast<AsyncLoadData*>(userData);
         
         if (result.cacheHash == params->cacheHash) {
@@ -1053,8 +1055,6 @@ void _private::assetUpdateCache(float dt)
             gAssetMgr.cacheSyncDelayTm = 0;
             gAssetMgr.cacheSyncInvalidated = false;
             jobsDispatchAuto(JobsType::LongTask, [](uint32, void*) { assetSaveCacheHashDatabase(); });
-            // logDebug("SyncCache");
-            
         }            
     }
 }
