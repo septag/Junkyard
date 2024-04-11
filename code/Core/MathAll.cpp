@@ -2,6 +2,12 @@
 
 #include <math.h>
 
+//    ███████╗ ██████╗ █████╗ ██╗      █████╗ ██████╗ 
+//    ██╔════╝██╔════╝██╔══██╗██║     ██╔══██╗██╔══██╗
+//    ███████╗██║     ███████║██║     ███████║██████╔╝
+//    ╚════██║██║     ██╔══██║██║     ██╔══██║██╔══██╗
+//    ███████║╚██████╗██║  ██║███████╗██║  ██║██║  ██║
+//    ╚══════╝ ╚═════╝╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝╚═╝  ╚═╝
 float mathCopySign(float _x, float _y)
 {
     return ::copysignf(_x, _y);
@@ -59,6 +65,14 @@ float mathLog(float _a)
     }
 #endif // if not __SSE2__
 
+    
+//    ███╗   ███╗ █████╗ ████████╗██╗  ██╗
+//    ████╗ ████║██╔══██╗╚══██╔══╝██║  ██║
+//    ██╔████╔██║███████║   ██║   ███████║
+//    ██║╚██╔╝██║██╔══██║   ██║   ╚════██║
+//    ██║ ╚═╝ ██║██║  ██║   ██║        ██║
+//    ╚═╝     ╚═╝╚═╝  ╚═╝   ╚═╝        ╚═╝
+                                        
 Mat4 mat4ViewLookAt(Float3 eye, Float3 target, Float3 up)
 {
     Float3 zaxis = float3Norm(float3Sub(target, eye));
@@ -276,30 +290,17 @@ Mat4 mat4ScaleRotateTranslate(float _sx, float _sy, float _sz, float _ax, float 
                     0.0f,                           0.0f,           0.0f,                           1.0f);
 }
 
-Mat3 mat3Inverse(const Mat3& _a)
+Mat4 mat4FromNormal(Float3 _normal, float _scale, Float3 _pos)
 {
-    float xx = _a.f[0];
-    float xy = _a.f[3];
-    float xz = _a.f[6];
-    float yx = _a.f[1];
-    float yy = _a.f[4];
-    float yz = _a.f[7];
-    float zx = _a.f[2];
-    float zy = _a.f[5];
-    float zz = _a.f[8];
+    Float3 tangent;
+    Float3 bitangent;
+    float3Tangent(&tangent, &bitangent, _normal);
     
-    float det = 0.0f;
-    det += xx * (yy * zz - yz * zy);
-    det -= xy * (yx * zz - yz * zx);
-    det += xz * (yx * zy - yy * zx);
+    Float4 row1 = Float4(float3Mulf(bitangent, _scale), 0.0f);
+    Float4 row2 = Float4(float3Mulf(_normal, _scale), 0.0f);
+    Float4 row3 = Float4(float3Mulf(tangent, _scale), 0.0f);
     
-    float det_rcp = 1.0f / det;
-    
-    return Mat3(+(yy * zz - yz * zy) * det_rcp, -(xy * zz - xz * zy) * det_rcp,
-        +(xy * yz - xz * yy) * det_rcp, -(yx * zz - yz * zx) * det_rcp,
-        +(xx * zz - xz * zx) * det_rcp, -(xx * yz - xz * yx) * det_rcp,
-        +(yx * zy - yy * zx) * det_rcp, -(xx * zy - xy * zx) * det_rcp,
-        +(xx * yy - xy * yx) * det_rcp);
+    return Mat4(row1.f, row2.f, row3.f, Float4(_pos, 1.0f).f);
 }
 
 Mat4 mat4Inverse(const Mat4& _a)
@@ -352,6 +353,171 @@ Mat4 mat4Inverse(const Mat4& _a)
             +(xx * (yy * zz - zy * yz) - xy * (yx * zz - zx * yz) + xz * (yx * zy - zx * yy))*det_rcp));
 }
 
+Quat mat4ToQuat(const Mat4& m)
+{
+    float trace, r, rinv;
+    Quat q;
+    
+    trace = m.m11 + m.m22 + m.m33;
+    if (trace >= 0.0f) {
+        r = mathSqrt(1.0f + trace);
+        rinv = 0.5f / r;
+        
+        q.x = rinv * (m.m32 - m.m23);
+        q.y = rinv * (m.m13 - m.m31);
+        q.z = rinv * (m.m21 - m.m12);
+        q.w = r * 0.5f;
+    } 
+    else if (m.m11 >= m.m22 && m.m11 >= m.m33) {
+        r = mathSqrt(1.0f - m.m22 - m.m33 + m.m11);
+        rinv = 0.5f / r;
+        
+        q.x = r * 0.5f;
+        q.y = rinv * (m.m21 + m.m12);
+        q.z = rinv * (m.m31 + m.m13);
+        q.w = rinv * (m.m32 - m.m23);
+    } 
+    else if (m.m22 >= m.m33) {
+        r = mathSqrt(1.0f - m.m11 - m.m33 + m.m22);
+        rinv = 0.5f / r;
+        
+        q.x = rinv * (m.m21 + m.m12);
+        q.y = r * 0.5f;
+        q.z = rinv * (m.m32 + m.m23);
+        q.w = rinv * (m.m13 - m.m31);
+    } 
+    else {
+        r = mathSqrt(1.0f - m.m11 - m.m22 + m.m33);
+        rinv = 0.5f / r;
+        
+        q.x = rinv * (m.m31 + m.m13);
+        q.y = rinv * (m.m32 + m.m23);
+        q.z = r * 0.5f;
+        q.w = rinv * (m.m21 - m.m12);
+    }
+    
+    return q;
+}
+
+Mat4 mat4FromNormalAngle(Float3 _normal, float _scale, Float3 _pos, float _angle)
+{
+    Float3 tangent;
+    Float3 bitangent;
+    float3TangentAngle(&tangent, &bitangent, _normal, _angle);
+    
+    Float4 row1 = Float4(float3Mulf(bitangent, _scale), 0.0f);
+    Float4 row2 = Float4(float3Mulf(_normal, _scale), 0.0f);
+    Float4 row3 = Float4(float3Mulf(tangent, _scale), 0.0f);
+    
+    return Mat4(row1.f, row2.f, row3.f, Float4(_pos, 1.0f).f);
+}
+
+Mat4 mat4ProjectPlane(Float3 planeNormal)
+{
+    float xx = planeNormal.x * planeNormal.x;
+    float yy = planeNormal.y * planeNormal.y;
+    float zz = planeNormal.z * planeNormal.z;
+    float xy = planeNormal.x * planeNormal.y;
+    float xz = planeNormal.x * planeNormal.z;
+    float yz = planeNormal.y * planeNormal.z;
+    
+    return Mat4(1.0f - xx,      -xy,        -xz,        0.0f,
+                -xy,            1.0f - yy,  -yz,        0.0f,
+                -xz,            -yz,        1.0f - zz,  0.0f,
+                0.0f,           0.0f,       0.0f,       1.0f);
+}
+
+Mat4 mat4Mul(const Mat4& _a, const Mat4& _b)
+{
+    return Mat4(
+        mat4MulFloat4(_a, Float4(_b.fc1)).f, 
+        mat4MulFloat4(_a, Float4(_b.fc2)).f,
+        mat4MulFloat4(_a, Float4(_b.fc3)).f, 
+        mat4MulFloat4(_a, Float4(_b.fc4)).f);
+}
+
+//    ███╗   ███╗ █████╗ ████████╗██████╗ 
+//    ████╗ ████║██╔══██╗╚══██╔══╝╚════██╗
+//    ██╔████╔██║███████║   ██║    █████╔╝
+//    ██║╚██╔╝██║██╔══██║   ██║    ╚═══██╗
+//    ██║ ╚═╝ ██║██║  ██║   ██║   ██████╔╝
+//    ╚═╝     ╚═╝╚═╝  ╚═╝   ╚═╝   ╚═════╝ 
+Mat3 mat3Inverse(const Mat3& _a)
+{
+    float xx = _a.f[0];
+    float xy = _a.f[3];
+    float xz = _a.f[6];
+    float yx = _a.f[1];
+    float yy = _a.f[4];
+    float yz = _a.f[7];
+    float zx = _a.f[2];
+    float zy = _a.f[5];
+    float zz = _a.f[8];
+    
+    float det = 0.0f;
+    det += xx * (yy * zz - yz * zy);
+    det -= xy * (yx * zz - yz * zx);
+    det += xz * (yx * zy - yy * zx);
+    
+    float det_rcp = 1.0f / det;
+    
+    return Mat3(+(yy * zz - yz * zy) * det_rcp, -(xy * zz - xz * zy) * det_rcp,
+        +(xy * yz - xz * yy) * det_rcp, -(yx * zz - yz * zx) * det_rcp,
+        +(xx * zz - xz * zx) * det_rcp, -(xx * yz - xz * yx) * det_rcp,
+        +(yx * zy - yy * zx) * det_rcp, -(xx * zy - xy * zx) * det_rcp,
+        +(xx * yy - xy * yx) * det_rcp);
+}
+
+Mat3 mat3Mul(const Mat3& _a, const Mat3& _b)
+{
+    return Mat3(
+        mat3MulFloat3(_a, Float3(_b.fc1)), 
+        mat3MulFloat3(_a, Float3(_b.fc2)),
+        mat3MulFloat3(_a, Float3(_b.fc3)));
+}
+
+Mat4 mat3InverseTransform(const Mat4& _mat)
+{
+    float det = (_mat.m11 * (_mat.m22 * _mat.m33 - _mat.m23 * _mat.m32) +
+        _mat.m12 * (_mat.m23 * _mat.m31 - _mat.m21 * _mat.m33) +
+        _mat.m13 * (_mat.m21 * _mat.m32 - _mat.m22 * _mat.m31));
+    float det_rcp = 1.0f / det;
+    float tx = _mat.m14;
+    float ty = _mat.m24;
+    float tz = _mat.m34;
+    
+    Mat4 r = Mat4((_mat.m22 * _mat.m33 - _mat.m23 * _mat.m32) * det_rcp,
+                  (_mat.m13 * _mat.m32 - _mat.m12 * _mat.m33) * det_rcp,
+                  (_mat.m12 * _mat.m23 - _mat.m13 * _mat.m22) * det_rcp, 0.0f,
+                  (_mat.m23 * _mat.m31 - _mat.m21 * _mat.m33) * det_rcp,
+                  (_mat.m11 * _mat.m33 - _mat.m13 * _mat.m31) * det_rcp,
+                  (_mat.m13 * _mat.m21 - _mat.m11 * _mat.m23) * det_rcp, 0,
+                  (_mat.m21 * _mat.m32 - _mat.m22 * _mat.m31) * det_rcp,
+                  (_mat.m12 * _mat.m31 - _mat.m11 * _mat.m32) * det_rcp,
+                  (_mat.m11 * _mat.m22 - _mat.m12 * _mat.m21) * det_rcp, 0, 0.0f,
+                  0.0f, 0.0f, 1.0f);
+    
+    r.f[12] = -(tx * r.m11 + ty * r.m12 + tz * r.m13);
+    r.f[13] = -(tx * r.m21 + ty * r.m22 + tz * r.m23);
+    r.f[14] = -(tx * r.m31 + ty * r.m32 + tz * r.m33);
+    return r;
+}
+
+Mat3 mat3Abs(const Mat3& m)
+{
+    return Mat3(
+        mathAbs(m.m11), mathAbs(m.m12), mathAbs(m.m13), 
+        mathAbs(m.m21), mathAbs(m.m22), mathAbs(m.m23), 
+        mathAbs(m.m31), mathAbs(m.m32), mathAbs(m.m33));
+}
+
+
+//    ███████╗██╗      ██████╗  █████╗ ████████╗██████╗ 
+//    ██╔════╝██║     ██╔═══██╗██╔══██╗╚══██╔══╝╚════██╗
+//    █████╗  ██║     ██║   ██║███████║   ██║    █████╔╝
+//    ██╔══╝  ██║     ██║   ██║██╔══██║   ██║   ██╔═══╝ 
+//    ██║     ███████╗╚██████╔╝██║  ██║   ██║   ███████╗
+//    ╚═╝     ╚══════╝ ╚═════╝ ╚═╝  ╚═╝   ╚═╝   ╚══════╝
 Float2 float2CalcLinearFit2D(const Float2* _points, int _num)
 {
     float sumX = 0.0f;
@@ -377,6 +543,13 @@ Float2 float2CalcLinearFit2D(const Float2* _points, int _num)
     return Float2((-sumX * sumY + _num * sumXY) * invDet, (sumXX * sumY - sumX * sumXY) * invDet);
 }
 
+
+//    ███████╗██╗      ██████╗  █████╗ ████████╗██████╗ 
+//    ██╔════╝██║     ██╔═══██╗██╔══██╗╚══██╔══╝╚════██╗
+//    █████╗  ██║     ██║   ██║███████║   ██║    █████╔╝
+//    ██╔══╝  ██║     ██║   ██║██╔══██║   ██║    ╚═══██╗
+//    ██║     ███████╗╚██████╔╝██║  ██║   ██║   ██████╔╝
+//    ╚═╝     ╚══════╝ ╚═════╝ ╚═╝  ╚═╝   ╚═╝   ╚═════╝ 
 Float3 float3CalcLinearFit3D(const Float3* _points, int _num)
 {
     float sumX = 0.0f;
@@ -415,6 +588,13 @@ Float3 float3CalcLinearFit3D(const Float3* _points, int _num)
                   matInv.f[6] * sumXZ + matInv.f[7] * sumYZ + matInv.f[8] * sumZ);
 }
 
+
+//     ██████╗ ██████╗ ██╗      ██████╗ ██████╗ 
+//    ██╔════╝██╔═══██╗██║     ██╔═══██╗██╔══██╗
+//    ██║     ██║   ██║██║     ██║   ██║██████╔╝
+//    ██║     ██║   ██║██║     ██║   ██║██╔══██╗
+//    ╚██████╗╚██████╔╝███████╗╚██████╔╝██║  ██║
+//     ╚═════╝ ╚═════╝ ╚══════╝ ╚═════╝ ╚═╝  ╚═╝
 void colorRGBtoHSV(float _hsv[3], const float _rgb[3])
 {
     float K = 0.f;
@@ -487,129 +667,12 @@ Float4 colorToFloat4SRGB(Float4 cf)
     return cf;
 }
 
-Mat3 mat3Mul(const Mat3& _a, const Mat3& _b)
-{
-    return Mat3(
-        mat3MulFloat3(_a, Float3(_b.fc1)), 
-        mat3MulFloat3(_a, Float3(_b.fc2)),
-        mat3MulFloat3(_a, Float3(_b.fc3)));
-}
-
-Quat mat4ToQuat(const Mat4& m)
-{
-    float trace, r, rinv;
-    Quat q;
-    
-    trace = m.m11 + m.m22 + m.m33;
-    if (trace >= 0.0f) {
-        r = mathSqrt(1.0f + trace);
-        rinv = 0.5f / r;
-        
-        q.x = rinv * (m.m32 - m.m23);
-        q.y = rinv * (m.m13 - m.m31);
-        q.z = rinv * (m.m21 - m.m12);
-        q.w = r * 0.5f;
-    } 
-    else if (m.m11 >= m.m22 && m.m11 >= m.m33) {
-        r = mathSqrt(1.0f - m.m22 - m.m33 + m.m11);
-        rinv = 0.5f / r;
-        
-        q.x = r * 0.5f;
-        q.y = rinv * (m.m21 + m.m12);
-        q.z = rinv * (m.m31 + m.m13);
-        q.w = rinv * (m.m32 - m.m23);
-    } 
-    else if (m.m22 >= m.m33) {
-        r = mathSqrt(1.0f - m.m11 - m.m33 + m.m22);
-        rinv = 0.5f / r;
-        
-        q.x = rinv * (m.m21 + m.m12);
-        q.y = r * 0.5f;
-        q.z = rinv * (m.m32 + m.m23);
-        q.w = rinv * (m.m13 - m.m31);
-    } 
-    else {
-        r = mathSqrt(1.0f - m.m11 - m.m22 + m.m33);
-        rinv = 0.5f / r;
-        
-        q.x = rinv * (m.m31 + m.m13);
-        q.y = rinv * (m.m32 + m.m23);
-        q.z = r * 0.5f;
-        q.w = rinv * (m.m21 - m.m12);
-    }
-    
-    return q;
-}
-
-Mat4 mat3InverseTransform(const Mat4& _mat)
-{
-    float det = (_mat.m11 * (_mat.m22 * _mat.m33 - _mat.m23 * _mat.m32) +
-                 _mat.m12 * (_mat.m23 * _mat.m31 - _mat.m21 * _mat.m33) +
-                 _mat.m13 * (_mat.m21 * _mat.m32 - _mat.m22 * _mat.m31));
-    float det_rcp = 1.0f / det;
-    float tx = _mat.m14;
-    float ty = _mat.m24;
-    float tz = _mat.m34;
-    
-    Mat4 r = Mat4((_mat.m22 * _mat.m33 - _mat.m23 * _mat.m32) * det_rcp,
-        (_mat.m13 * _mat.m32 - _mat.m12 * _mat.m33) * det_rcp,
-        (_mat.m12 * _mat.m23 - _mat.m13 * _mat.m22) * det_rcp, 0.0f,
-        (_mat.m23 * _mat.m31 - _mat.m21 * _mat.m33) * det_rcp,
-        (_mat.m11 * _mat.m33 - _mat.m13 * _mat.m31) * det_rcp,
-        (_mat.m13 * _mat.m21 - _mat.m11 * _mat.m23) * det_rcp, 0,
-        (_mat.m21 * _mat.m32 - _mat.m22 * _mat.m31) * det_rcp,
-        (_mat.m12 * _mat.m31 - _mat.m11 * _mat.m32) * det_rcp,
-        (_mat.m11 * _mat.m22 - _mat.m12 * _mat.m21) * det_rcp, 0, 0.0f,
-        0.0f, 0.0f, 1.0f);
-    
-    r.f[12] = -(tx * r.m11 + ty * r.m12 + tz * r.m13);
-    r.f[13] = -(tx * r.m21 + ty * r.m22 + tz * r.m23);
-    r.f[14] = -(tx * r.m31 + ty * r.m32 + tz * r.m33);
-    return r;
-}
-
-Mat4 mat4FromNormal(Float3 _normal, float _scale, Float3 _pos)
-{
-    Float3 tangent;
-    Float3 bitangent;
-    float3Tangent(&tangent, &bitangent, _normal);
-    
-    Float4 row1 = Float4(float3Mulf(bitangent, _scale), 0.0f);
-    Float4 row2 = Float4(float3Mulf(_normal, _scale), 0.0f);
-    Float4 row3 = Float4(float3Mulf(tangent, _scale), 0.0f);
-    
-    return Mat4(row1.f, row2.f, row3.f, Float4(_pos, 1.0f).f);
-}
-
-Mat4 sx_mat4_from_normal_angle(Float3 _normal, float _scale, Float3 _pos,
-    float _angle)
-{
-    Float3 tangent;
-    Float3 bitangent;
-    float3TangentAngle(&tangent, &bitangent, _normal, _angle);
-    
-    Float4 row1 = Float4(float3Mulf(bitangent, _scale), 0.0f);
-    Float4 row2 = Float4(float3Mulf(_normal, _scale), 0.0f);
-    Float4 row3 = Float4(float3Mulf(tangent, _scale), 0.0f);
-    
-    return Mat4(row1.f, row2.f, row3.f, Float4(_pos, 1.0f).f);
-}
-
-Mat4 mat4ProjectPlane(Float3 planeNormal)
-{
-    float xx = planeNormal.x * planeNormal.x;
-    float yy = planeNormal.y * planeNormal.y;
-    float zz = planeNormal.z * planeNormal.z;
-    float xy = planeNormal.x * planeNormal.y;
-    float xz = planeNormal.x * planeNormal.z;
-    float yz = planeNormal.y * planeNormal.z;
-    
-    return Mat4(1.0f - xx,      -xy,        -xz,        0.0f,
-                -xy,            1.0f - yy,  -yz,        0.0f,
-                -xz,            -yz,        1.0f - zz,  0.0f,
-                0.0f,           0.0f,       0.0f,       1.0f);
-}
-
+//     ██████╗ ██╗   ██╗ █████╗ ████████╗
+//    ██╔═══██╗██║   ██║██╔══██╗╚══██╔══╝
+//    ██║   ██║██║   ██║███████║   ██║   
+//    ██║▄▄ ██║██║   ██║██╔══██║   ██║   
+//    ╚██████╔╝╚██████╔╝██║  ██║   ██║   
+//     ╚══▀▀═╝  ╚═════╝ ╚═╝  ╚═╝   ╚═╝   
 Mat3 quatToMat3(Quat quat)
 {
     float norm = mathSqrt(quatDot(quat, quat));
@@ -754,15 +817,13 @@ Quat quatFromEuler(Float3 _vec3)
     return q;
 }
 
-Mat4 mat4Mul(const Mat4& _a, const Mat4& _b)
-{
-    return Mat4(
-        mat4MulFloat4(_a, Float4(_b.fc1)).f, 
-        mat4MulFloat4(_a, Float4(_b.fc2)).f,
-        mat4MulFloat4(_a, Float4(_b.fc3)).f, 
-        mat4MulFloat4(_a, Float4(_b.fc4)).f);
-}
 
+//    ██████╗ ██╗      █████╗ ███╗   ██╗███████╗
+//    ██╔══██╗██║     ██╔══██╗████╗  ██║██╔════╝
+//    ██████╔╝██║     ███████║██╔██╗ ██║█████╗  
+//    ██╔═══╝ ██║     ██╔══██║██║╚██╗██║██╔══╝  
+//    ██║     ███████╗██║  ██║██║ ╚████║███████╗
+//    ╚═╝     ╚══════╝╚═╝  ╚═╝╚═╝  ╚═══╝╚══════╝
 Float3 planeNormal(Float3 _va, Float3 _vb, Float3 _vc)
 {
     Float3 ba = float3Sub(_vb, _va);
@@ -800,14 +861,12 @@ Float3 planeOrigin(Plane _plane)
     return float3Mulf(Float3(_plane.normal), -_plane.dist);
 }
 
-INLINE Mat3 mat3Abs(const Mat3& m)
-{
-    return Mat3(
-        mathAbs(m.m11), mathAbs(m.m12), mathAbs(m.m13), 
-        mathAbs(m.m21), mathAbs(m.m22), mathAbs(m.m23), 
-        mathAbs(m.m31), mathAbs(m.m32), mathAbs(m.m33));
-}
-
+//     █████╗  █████╗ ██████╗ ██████╗ 
+//    ██╔══██╗██╔══██╗██╔══██╗██╔══██╗
+//    ███████║███████║██████╔╝██████╔╝
+//    ██╔══██║██╔══██║██╔══██╗██╔══██╗
+//    ██║  ██║██║  ██║██████╔╝██████╔╝
+//    ╚═╝  ╚═╝╚═╝  ╚═╝╚═════╝ ╚═════╝ 
 AABB AABBFromBox(const Box* box)
 {
     Float3 center = box->tx.pos;

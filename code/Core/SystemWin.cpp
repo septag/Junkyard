@@ -25,6 +25,14 @@ namespace _limits
     const uint32 kSysMaxCores = 128;
 }
 
+//
+//    ██╗    ██╗██╗███╗   ██╗██████╗ ██████╗      █████╗ ██████╗ ██╗
+//    ██║    ██║██║████╗  ██║╚════██╗╚════██╗    ██╔══██╗██╔══██╗██║
+//    ██║ █╗ ██║██║██╔██╗ ██║ █████╔╝ █████╔╝    ███████║██████╔╝██║
+//    ██║███╗██║██║██║╚██╗██║ ╚═══██╗██╔═══╝     ██╔══██║██╔═══╝ ██║
+//    ╚███╔███╔╝██║██║ ╚████║██████╔╝███████╗    ██║  ██║██║     ██║
+//     ╚══╝╚══╝ ╚═╝╚═╝  ╚═══╝╚═════╝ ╚══════╝    ╚═╝  ╚═╝╚═╝     ╚═╝
+
 // Only load "AdvApi32.dll" if any of these functions are used
 struct AdvApi32
 {
@@ -114,52 +122,6 @@ struct Shell32
     SHGetKnownFolderPathFn SHGetKnownFolderPath;
 };
 
-struct MutexImpl 
-{
-    CRITICAL_SECTION handle;
-};
-
-struct ReadWriteMutexImpl
-{
-    SRWLOCK handle;
-};
-
-struct SemaphoreImpl 
-{
-    HANDLE handle;
-};
-
-struct SignalImpl 
-{
-    CRITICAL_SECTION mutex;
-    CONDITION_VARIABLE cond;
-    int value;
-};
-
-struct ThreadImpl
-{
-    Semaphore sem;
-    ThreadEntryFunc threadFn;
-    HANDLE handle;
-    void* userData;
-    size_t stackSize;
-    char name[32];
-    DWORD tId;
-    atomicUint32 running;
-    bool init;
-};
-
-struct UUIDImpl
-{
-    GUID guid;
-};
-
-static_assert(sizeof(MutexImpl) <= sizeof(Mutex), "Mutex size mismatch");
-static_assert(sizeof(SemaphoreImpl) <= sizeof(Semaphore), "Sempahore size mismatch");
-static_assert(sizeof(SignalImpl) <= sizeof(Signal), "Signal size mismatch");
-static_assert(sizeof(ThreadImpl) <= sizeof(Thread), "Thread size mismatch");
-static_assert(sizeof(UUIDImpl) <= sizeof(SysUUID), "UUID size mismatch");
-
 //----------------------------------------------------------------------------------------------------------------------
 // AdvApi32
 static AdvApi32 gAdvApi32;
@@ -217,8 +179,27 @@ static void sysLoadShell32()
     }
 }
 
-//----------------------------------------------------------------------------------------------------------------------
-// Thread
+//    ████████╗██╗  ██╗██████╗ ███████╗ █████╗ ██████╗ 
+//    ╚══██╔══╝██║  ██║██╔══██╗██╔════╝██╔══██╗██╔══██╗
+//       ██║   ███████║██████╔╝█████╗  ███████║██║  ██║
+//       ██║   ██╔══██║██╔══██╗██╔══╝  ██╔══██║██║  ██║
+//       ██║   ██║  ██║██║  ██║███████╗██║  ██║██████╔╝
+//       ╚═╝   ╚═╝  ╚═╝╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝╚═════╝ 
+
+struct ThreadImpl
+{
+    Semaphore sem;
+    ThreadEntryFunc threadFn;
+    HANDLE handle;
+    void* userData;
+    size_t stackSize;
+    char name[32];
+    DWORD tId;
+    atomicUint32 running;
+    bool init;
+};
+static_assert(sizeof(ThreadImpl) <= sizeof(Thread), "Thread size mismatch");
+
 static DWORD WINAPI threadStubFn(LPVOID arg)
 {
     ThreadImpl* thrd = reinterpret_cast<ThreadImpl*>(arg);
@@ -318,8 +299,69 @@ void Thread::SetPriority(ThreadPriority prio)
     ASSERT(r);
 }
 
-//----------------------------------------------------------------------------------------------------------------------
-// Mutex
+void threadYield()
+{
+    SwitchToThread();
+}
+
+uint32 threadGetCurrentId()
+{
+    return GetCurrentThreadId();
+}
+
+void threadSleep(uint32 msecs)
+{
+    Sleep((DWORD)msecs);
+}
+
+void threadSetCurrentThreadPriority(ThreadPriority prio)
+{
+    int prioWin = 0;
+    switch (prio) {
+    case ThreadPriority::Normal:    prioWin = THREAD_PRIORITY_NORMAL; break;
+    case ThreadPriority::Idle:      prioWin = THREAD_PRIORITY_IDLE; break;
+    case ThreadPriority::Realtime:  prioWin = THREAD_PRIORITY_TIME_CRITICAL; break;
+    case ThreadPriority::High:      prioWin = THREAD_PRIORITY_HIGHEST; break;
+    case ThreadPriority::Low:       prioWin = THREAD_PRIORITY_LOWEST; break;
+    }
+
+    [[maybe_unused]] BOOL r = SetThreadPriority(GetCurrentThread(), prioWin);
+    ASSERT(r);
+}
+
+void threadSetCurrentThreadName(const char* name)
+{
+    wchar_t namew[32];
+    strUt8ToWide(name, namew, sizeof(namew));
+    SetThreadDescription(GetCurrentThread(), namew);
+
+    #if TRACY_ENABLE
+    TracyCSetThreadName(name);
+    #endif
+}
+
+void threadGetCurrentThreadName(char* nameOut, uint32 nameSize)
+{
+    PWSTR namew;
+    if (SUCCEEDED(GetThreadDescription(GetCurrentThread(), &namew)))
+        strWideToUtf8(namew, nameOut, nameSize);
+    else 
+        nameOut[0] = 0;
+}
+
+//    ███╗   ███╗██╗   ██╗████████╗███████╗██╗  ██╗
+//    ████╗ ████║██║   ██║╚══██╔══╝██╔════╝╚██╗██╔╝
+//    ██╔████╔██║██║   ██║   ██║   █████╗   ╚███╔╝ 
+//    ██║╚██╔╝██║██║   ██║   ██║   ██╔══╝   ██╔██╗ 
+//    ██║ ╚═╝ ██║╚██████╔╝   ██║   ███████╗██╔╝ ██╗
+//    ╚═╝     ╚═╝ ╚═════╝    ╚═╝   ╚══════╝╚═╝  ╚═╝
+
+struct MutexImpl 
+{
+    CRITICAL_SECTION handle;
+};
+static_assert(sizeof(MutexImpl) <= sizeof(Mutex), "Mutex size mismatch");
+
 void Mutex::Initialize(uint32 spinCount)
 {
     MutexImpl* _m = reinterpret_cast<MutexImpl*>(mData);
@@ -355,8 +397,19 @@ bool Mutex::TryEnter()
     return TryEnterCriticalSection(&_m->handle) == TRUE;
 }
 
-//----------------------------------------------------------------------------------------------------------------------
-// ReadWriteMutex
+//    ██████╗ ███████╗ █████╗ ██████╗ ██╗    ██╗██████╗ ██╗████████╗███████╗    ███╗   ███╗██╗   ██╗████████╗███████╗██╗  ██╗
+//    ██╔══██╗██╔════╝██╔══██╗██╔══██╗██║    ██║██╔══██╗██║╚══██╔══╝██╔════╝    ████╗ ████║██║   ██║╚══██╔══╝██╔════╝╚██╗██╔╝
+//    ██████╔╝█████╗  ███████║██║  ██║██║ █╗ ██║██████╔╝██║   ██║   █████╗      ██╔████╔██║██║   ██║   ██║   █████╗   ╚███╔╝ 
+//    ██╔══██╗██╔══╝  ██╔══██║██║  ██║██║███╗██║██╔══██╗██║   ██║   ██╔══╝      ██║╚██╔╝██║██║   ██║   ██║   ██╔══╝   ██╔██╗ 
+//    ██║  ██║███████╗██║  ██║██████╔╝╚███╔███╔╝██║  ██║██║   ██║   ███████╗    ██║ ╚═╝ ██║╚██████╔╝   ██║   ███████╗██╔╝ ██╗
+//    ╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝╚═════╝  ╚══╝╚══╝ ╚═╝  ╚═╝╚═╝   ╚═╝   ╚══════╝    ╚═╝     ╚═╝ ╚═════╝    ╚═╝   ╚══════╝╚═╝  ╚═╝
+
+struct ReadWriteMutexImpl
+{
+    SRWLOCK handle;
+};
+static_assert(sizeof(ReadWriteMutexImpl) < sizeof(ReadWriteMutex), "ReadWriteMutex mismatch");
+
 void ReadWriteMutex::Initialize()
 {
     ReadWriteMutexImpl* m = reinterpret_cast<ReadWriteMutexImpl*>(mData);
@@ -403,8 +456,19 @@ void ReadWriteMutex::ExitWrite()
     ReleaseSRWLockExclusive(&m->handle);
 }
 
-//----------------------------------------------------------------------------------------------------------------------
-// Semaphore
+
+//    ███████╗███████╗███╗   ███╗ █████╗ ██████╗ ██╗  ██╗ ██████╗ ██████╗ ███████╗
+//    ██╔════╝██╔════╝████╗ ████║██╔══██╗██╔══██╗██║  ██║██╔═══██╗██╔══██╗██╔════╝
+//    ███████╗█████╗  ██╔████╔██║███████║██████╔╝███████║██║   ██║██████╔╝█████╗  
+//    ╚════██║██╔══╝  ██║╚██╔╝██║██╔══██║██╔═══╝ ██╔══██║██║   ██║██╔══██╗██╔══╝  
+//    ███████║███████╗██║ ╚═╝ ██║██║  ██║██║     ██║  ██║╚██████╔╝██║  ██║███████╗
+//    ╚══════╝╚══════╝╚═╝     ╚═╝╚═╝  ╚═╝╚═╝     ╚═╝  ╚═╝ ╚═════╝ ╚═╝  ╚═╝╚══════╝
+struct SemaphoreImpl 
+{
+    HANDLE handle;
+};
+static_assert(sizeof(SemaphoreImpl) <= sizeof(Semaphore), "Sempahore size mismatch");
+
 void Semaphore::Initialize()
 {
     SemaphoreImpl* _sem = reinterpret_cast<SemaphoreImpl*>(mData);
@@ -439,9 +503,22 @@ bool Semaphore::Wait(uint32 msecs)
     return WaitForSingleObject(_sem->handle, (DWORD)msecs) == WAIT_OBJECT_0;
 }
 
-//--------------------------------------------------------------------------------------------------
-// Signal
+//    ███████╗██╗ ██████╗ ███╗   ██╗ █████╗ ██╗     
+//    ██╔════╝██║██╔════╝ ████╗  ██║██╔══██╗██║     
+//    ███████╗██║██║  ███╗██╔██╗ ██║███████║██║     
+//    ╚════██║██║██║   ██║██║╚██╗██║██╔══██║██║     
+//    ███████║██║╚██████╔╝██║ ╚████║██║  ██║███████╗
+//    ╚══════╝╚═╝ ╚═════╝ ╚═╝  ╚═══╝╚═╝  ╚═╝╚══════╝
 // https://github.com/mattiasgustavsson/libs/blob/master/thread.h
+
+struct SignalImpl 
+{
+    CRITICAL_SECTION mutex;
+    CONDITION_VARIABLE cond;
+    int value;
+};
+static_assert(sizeof(SignalImpl) <= sizeof(Signal), "Signal size mismatch");
+
 void Signal::Initialize()
 {
     SignalImpl* _sig = reinterpret_cast<SignalImpl*>(mData);
@@ -536,60 +613,12 @@ void Signal::Set(int value)
     LeaveCriticalSection(&_sig->mutex);
 }
 
-//--------------------------------------------------------------------------------------------------
-// Thread
-void threadYield()
-{
-    SwitchToThread();
-}
-
-uint32 threadGetCurrentId()
-{
-    return GetCurrentThreadId();
-}
-
-void threadSleep(uint32 msecs)
-{
-    Sleep((DWORD)msecs);
-}
-
-void threadSetCurrentThreadPriority(ThreadPriority prio)
-{
-    int prioWin = 0;
-    switch (prio) {
-    case ThreadPriority::Normal:    prioWin = THREAD_PRIORITY_NORMAL; break;
-    case ThreadPriority::Idle:      prioWin = THREAD_PRIORITY_IDLE; break;
-    case ThreadPriority::Realtime:  prioWin = THREAD_PRIORITY_TIME_CRITICAL; break;
-    case ThreadPriority::High:      prioWin = THREAD_PRIORITY_HIGHEST; break;
-    case ThreadPriority::Low:       prioWin = THREAD_PRIORITY_LOWEST; break;
-    }
-
-    [[maybe_unused]] BOOL r = SetThreadPriority(GetCurrentThread(), prioWin);
-    ASSERT(r);
-}
-
-void threadSetCurrentThreadName(const char* name)
-{
-    wchar_t namew[32];
-    strUt8ToWide(name, namew, sizeof(namew));
-    SetThreadDescription(GetCurrentThread(), namew);
-
-    #if TRACY_ENABLE
-        TracyCSetThreadName(name);
-    #endif
-}
-
-void threadGetCurrentThreadName(char* nameOut, uint32 nameSize)
-{
-    PWSTR namew;
-    if (SUCCEEDED(GetThreadDescription(GetCurrentThread(), &namew)))
-        strWideToUtf8(namew, nameOut, nameSize);
-    else 
-        nameOut[0] = 0;
-}
-
-//--------------------------------------------------------------------------------------------------
-// Timer
+//    ████████╗██╗███╗   ███╗███████╗██████╗ 
+//    ╚══██╔══╝██║████╗ ████║██╔════╝██╔══██╗
+//       ██║   ██║██╔████╔██║█████╗  ██████╔╝
+//       ██║   ██║██║╚██╔╝██║██╔══╝  ██╔══██╗
+//       ██║   ██║██║ ╚═╝ ██║███████╗██║  ██║
+//       ╚═╝   ╚═╝╚═╝     ╚═╝╚══════╝╚═╝  ╚═╝
 struct TimerState
 {
     bool init;
@@ -600,7 +629,7 @@ static TimerState gTimer;
 
 // Tip by johaness spohr
 // https://gist.github.com/jspohr/3dc4f00033d79ec5bdaf67bc46c813e3
-static int64 timerInt64MulDiv(int64 value, int64 numer, int64 denom) 
+FORCE_INLINE int64 timerInt64MulDiv(int64 value, int64 numer, int64 denom) 
 {
     int64 q = value / denom;
     int64 r = value % denom;
@@ -623,6 +652,96 @@ uint64 timerGetTicks()
     QueryPerformanceCounter(&li);
     return timerInt64MulDiv(li.QuadPart - gTimer.start.QuadPart, 1000000000, gTimer.freq.QuadPart);
 }
+
+//    ██╗   ██╗██╗   ██╗██╗██████╗ 
+//    ██║   ██║██║   ██║██║██╔══██╗
+//    ██║   ██║██║   ██║██║██║  ██║
+//    ██║   ██║██║   ██║██║██║  ██║
+//    ╚██████╔╝╚██████╔╝██║██████╔╝
+//     ╚═════╝  ╚═════╝ ╚═╝╚═════╝ 
+struct UUIDImpl
+{
+    GUID guid;
+};
+static_assert(sizeof(UUIDImpl) <= sizeof(SysUUID), "UUID size mismatch");
+
+bool SysUUID::operator==(const SysUUID& uuid) const
+{
+    return memcmp(data, uuid.data, sizeof(UUIDImpl)) == 0;
+}
+
+bool uuidGenerate(SysUUID* _uuid)
+{
+    sysLoadOle32();
+
+    UUIDImpl* uuid = reinterpret_cast<UUIDImpl*>(_uuid);
+    if (gOle32.CoCreateGuid(&uuid->guid) != S_OK)
+    return false;
+
+    return true;
+}
+
+bool uuidToString(const SysUUID& _uuid, char* str, uint32 size)
+{
+    sysLoadOle32();
+
+    const UUIDImpl& uuid = reinterpret_cast<const UUIDImpl&>(_uuid);
+    wchar_t guidStr[39];
+
+    gOle32.StringFromGUID2(uuid.guid, guidStr, CountOf(guidStr));
+    if (WideCharToMultiByte(CP_UTF8, 0, guidStr, -1, str, size, nullptr, nullptr) == 0)
+    return false;
+
+    // strip brackets
+    uint32 len = strLen(str);
+    if (str[0] == '{') {
+        memmove(str, str + 1, len + 1);
+        --len;
+    }
+    if (str[len - 1] == '}')
+    str[len - 1] = 0;
+    return true;
+}
+
+bool uuidFromString(SysUUID* _uuid, const char* str)
+{
+    sysLoadOle32();
+
+    ASSERT(str);
+
+    if (str[0] == 0)
+    return false;
+
+    char strTmp[64] {};
+
+    uint32 len = strLen(str);
+    if (str[0] != '{') {
+        strTmp[0] = '{';
+        strConcat(strTmp, sizeof(strTmp), str);
+        if (str[len - 1] != '}') 
+        strConcat(strTmp, sizeof(strTmp), "}");
+    }
+    else {
+        ASSERT(str[len - 1] == '}');
+        strCopy(strTmp, sizeof(strTmp), str);
+    }        
+
+    UUIDImpl* uuid = reinterpret_cast<UUIDImpl*>(_uuid);
+    wchar_t guidStr[64];
+    if (MultiByteToWideChar(CP_UTF8, 0, strTmp, -1, guidStr, sizeof(guidStr)) == 0) 
+    return false;
+    if (gOle32.CLSIDFromString(guidStr, &uuid->guid) != S_OK) 
+    return false;
+    return true;
+}
+
+
+//     ██████╗ ███████╗███╗   ██╗███████╗██████╗  █████╗ ██╗          ██████╗ ███████╗
+//    ██╔════╝ ██╔════╝████╗  ██║██╔════╝██╔══██╗██╔══██╗██║         ██╔═══██╗██╔════╝
+//    ██║  ███╗█████╗  ██╔██╗ ██║█████╗  ██████╔╝███████║██║         ██║   ██║███████╗
+//    ██║   ██║██╔══╝  ██║╚██╗██║██╔══╝  ██╔══██╗██╔══██║██║         ██║   ██║╚════██║
+//    ╚██████╔╝███████╗██║ ╚████║███████╗██║  ██║██║  ██║███████╗    ╚██████╔╝███████║
+//     ╚═════╝ ╚══════╝╚═╝  ╚═══╝╚══════╝╚═╝  ╚═╝╚═╝  ╚═╝╚══════╝     ╚═════╝ ╚══════╝
 
 DLLHandle sysLoadDLL(const char* filepath, char** pErrorMsg)
 {
@@ -1002,6 +1121,106 @@ bool sysWin32IsProcessRunning(const char* execName)
     return false;
 }
 
+SysWin32ShellExecuteResult sysWin32ShellExecute(const char* filepath, const char* args, 
+                                                const char* cwd, SysWin32ShowWindow showFlag, 
+                                                const char* operation,
+                                                void** pInstance)
+{
+    sysLoadShell32();
+
+    HINSTANCE hInst = gShell32.ShellExecuteA(nullptr, operation, filepath, args, cwd, (INT)showFlag);
+
+    INT_PTR errCode = INT_PTR(hInst);
+    if (errCode <= 32) {
+        switch (errCode) {
+        case 0:
+        case SE_ERR_OOM:
+            return SysWin32ShellExecuteResult::OutOfMemory;
+        case SE_ERR_DLLNOTFOUND:
+        case SE_ERR_FNF:
+            return SysWin32ShellExecuteResult::FileNotFound;
+        case SE_ERR_PNF:
+            return SysWin32ShellExecuteResult::PathNotFound;
+        case ERROR_BAD_FORMAT:
+            return SysWin32ShellExecuteResult::BadFormat;
+        case SE_ERR_ASSOCINCOMPLETE:
+        case SE_ERR_NOASSOC:
+            return SysWin32ShellExecuteResult::NoAssociation;
+        case SE_ERR_ACCESSDENIED:
+            return SysWin32ShellExecuteResult::AccessDenied;
+        default:
+            return SysWin32ShellExecuteResult::UnknownError;
+        }
+    }
+    else {
+        if (pInstance)
+            *pInstance = hInst;
+        return SysWin32ShellExecuteResult::Ok;
+    }
+}
+
+
+bool sysSetEnvVar(const char* name, const char* value)
+{
+    return SetEnvironmentVariableA(name, value) == TRUE;
+}
+
+bool sysGetEnvVar(const char* name, char* outValue, uint32 valueSize)
+{
+    DWORD dwValueSize = GetEnvironmentVariableA(name, outValue, valueSize);
+    return dwValueSize != 0 && dwValueSize < valueSize;
+}
+
+bool sysIsDebuggerPresent()
+{
+    return IsDebuggerPresent();
+}
+
+void sysWin32PrintToDebugger(const char* text)
+{
+    OutputDebugStringA(text);
+}
+
+// https://learn.microsoft.com/en-us/windows/win32/memory/creating-a-file-mapping-using-large-pages
+// TODO: dynalically load functions from DLL to prevent linking with Advapi32.lib
+bool sysWin32SetPrivilege(const char* name, bool enable)
+{
+    sysLoadAdvApi32();
+
+    HANDLE tokenHandle;
+    TOKEN_PRIVILEGES tp;
+
+    if (!gAdvApi32.OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, &tokenHandle)) 
+        return false;
+
+    if (!gAdvApi32.LookupPrivilegeValueA(nullptr, name, &tp.Privileges[0].Luid)) 
+        return false;
+    tp.PrivilegeCount = 1;
+
+    if (enable) 
+        tp.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
+    else
+        tp.Privileges[0].Attributes = 0;
+
+    BOOL status = gAdvApi32.AdjustTokenPrivileges(tokenHandle, FALSE, &tp, 0, nullptr, 0);
+    // It is possible for AdjustTokenPrivileges to return TRUE and still not succeed.
+    // So always check for the last error value.
+    DWORD error = GetLastError();
+    if (!status || error != ERROR_SUCCESS) {
+        logError("AdjustTokenPrivileges failed. Code: %u", error);
+    }
+    
+    CloseHandle(tokenHandle);
+    return true;
+}
+
+//    ██████╗  █████╗ ████████╗██╗  ██╗
+//    ██╔══██╗██╔══██╗╚══██╔══╝██║  ██║
+//    ██████╔╝███████║   ██║   ███████║
+//    ██╔═══╝ ██╔══██║   ██║   ██╔══██║
+//    ██║     ██║  ██║   ██║   ██║  ██║
+//    ╚═╝     ╚═╝  ╚═╝   ╚═╝   ╚═╝  ╚═╝
+
 char* pathGetMyPath(char* dst, size_t dstSize)
 {
     GetModuleFileNameA(NULL, dst, (DWORD)dstSize);
@@ -1113,169 +1332,6 @@ bool pathMakeTemp(char* dst, [[maybe_unused]] size_t dstSize, const char* namePr
     return GetTempFileNameA(dir, namePrefix, 0, dst) != 0;
 }
 
-bool sysIsDebuggerPresent()
-{
-    return IsDebuggerPresent();
-}
-
-void sysWin32PrintToDebugger(const char* text)
-{
-    OutputDebugStringA(text);
-}
-
-// https://learn.microsoft.com/en-us/windows/win32/memory/creating-a-file-mapping-using-large-pages
-// TODO: dynalically load functions from DLL to prevent linking with Advapi32.lib
-bool sysWin32SetPrivilege(const char* name, bool enable)
-{
-    sysLoadAdvApi32();
-
-    HANDLE tokenHandle;
-    TOKEN_PRIVILEGES tp;
-
-    if (!gAdvApi32.OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, &tokenHandle)) 
-        return false;
-
-    if (!gAdvApi32.LookupPrivilegeValueA(nullptr, name, &tp.Privileges[0].Luid)) 
-        return false;
-    tp.PrivilegeCount = 1;
-
-    if (enable) 
-        tp.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
-    else
-        tp.Privileges[0].Attributes = 0;
-
-    BOOL status = gAdvApi32.AdjustTokenPrivileges(tokenHandle, FALSE, &tp, 0, nullptr, 0);
-    // It is possible for AdjustTokenPrivileges to return TRUE and still not succeed.
-    // So always check for the last error value.
-    DWORD error = GetLastError();
-    if (!status || error != ERROR_SUCCESS) {
-        logError("AdjustTokenPrivileges failed. Code: %u", error);
-    }
-    
-    CloseHandle(tokenHandle);
-    return true;
-}
-
- SysWin32ShellExecuteResult sysWin32ShellExecute(const char* filepath, const char* args, 
-                                                 const char* cwd, SysWin32ShowWindow showFlag, 
-                                                 const char* operation,
-                                                 void** pInstance)
- {
-     sysLoadShell32();
-
-     HINSTANCE hInst = gShell32.ShellExecuteA(nullptr, operation, filepath, args, cwd, (INT)showFlag);
-
-     INT_PTR errCode = INT_PTR(hInst);
-     if (errCode <= 32) {
-         switch (errCode) {
-         case 0:
-         case SE_ERR_OOM:
-             return SysWin32ShellExecuteResult::OutOfMemory;
-         case SE_ERR_DLLNOTFOUND:
-         case SE_ERR_FNF:
-             return SysWin32ShellExecuteResult::FileNotFound;
-         case SE_ERR_PNF:
-             return SysWin32ShellExecuteResult::PathNotFound;
-         case ERROR_BAD_FORMAT:
-             return SysWin32ShellExecuteResult::BadFormat;
-         case SE_ERR_ASSOCINCOMPLETE:
-         case SE_ERR_NOASSOC:
-             return SysWin32ShellExecuteResult::NoAssociation;
-         case SE_ERR_ACCESSDENIED:
-             return SysWin32ShellExecuteResult::AccessDenied;
-         default:
-             return SysWin32ShellExecuteResult::UnknownError;
-         }
-     }
-     else {
-         if (pInstance)
-             *pInstance = hInst;
-         return SysWin32ShellExecuteResult::Ok;
-     }
- }
-
-
-bool SysUUID::operator==(const SysUUID& uuid) const
-{
-    return memcmp(data, uuid.data, sizeof(UUIDImpl)) == 0;
-}
-
-bool sysUUIDGenerate(SysUUID* _uuid)
-{
-    sysLoadOle32();
-
-    UUIDImpl* uuid = reinterpret_cast<UUIDImpl*>(_uuid);
-    if (gOle32.CoCreateGuid(&uuid->guid) != S_OK)
-        return false;
-
-    return true;
-}
-
-bool sysUUIDToString(const SysUUID& _uuid, char* str, uint32 size)
-{
-    sysLoadOle32();
-
-    const UUIDImpl& uuid = reinterpret_cast<const UUIDImpl&>(_uuid);
-    wchar_t guidStr[39];
-
-    gOle32.StringFromGUID2(uuid.guid, guidStr, CountOf(guidStr));
-    if (WideCharToMultiByte(CP_UTF8, 0, guidStr, -1, str, size, nullptr, nullptr) == 0)
-        return false;
-
-    // strip brackets
-    uint32 len = strLen(str);
-    if (str[0] == '{') {
-        memmove(str, str + 1, len + 1);
-        --len;
-    }
-    if (str[len - 1] == '}')
-        str[len - 1] = 0;
-    return true;
-}
-
-bool sysUUIDFromString(SysUUID* _uuid, const char* str)
-{
-    sysLoadOle32();
-
-    ASSERT(str);
-
-    if (str[0] == 0)
-        return false;
-
-    char strTmp[64] {};
-
-    uint32 len = strLen(str);
-    if (str[0] != '{') {
-        strTmp[0] = '{';
-        strConcat(strTmp, sizeof(strTmp), str);
-        if (str[len - 1] != '}') 
-            strConcat(strTmp, sizeof(strTmp), "}");
-    }
-    else {
-        ASSERT(str[len - 1] == '}');
-        strCopy(strTmp, sizeof(strTmp), str);
-    }        
-
-    UUIDImpl* uuid = reinterpret_cast<UUIDImpl*>(_uuid);
-    wchar_t guidStr[64];
-    if (MultiByteToWideChar(CP_UTF8, 0, strTmp, -1, guidStr, sizeof(guidStr)) == 0) 
-        return false;
-    if (gOle32.CLSIDFromString(guidStr, &uuid->guid) != S_OK) 
-        return false;
-    return true;
-}
-
-bool sysSetEnvVar(const char* name, const char* value)
-{
-    return SetEnvironmentVariableA(name, value) == TRUE;
-}
-
-bool sysGetEnvVar(const char* name, char* outValue, uint32 valueSize)
-{
-    DWORD dwValueSize = GetEnvironmentVariableA(name, outValue, valueSize);
-    return dwValueSize != 0 && dwValueSize < valueSize;
-}
-
 char* pathWin32GetFolder(SysWin32Folder folder, char* dst, size_t dstSize)
 {
     sysLoadOle32();
@@ -1306,8 +1362,12 @@ char* pathWin32GetFolder(SysWin32Folder folder, char* dst, size_t dstSize)
     }
 }
 
-//----------------------------------------------------------------------------------------------------------------------
-// Virtual mem
+//    ███╗   ███╗███████╗███╗   ███╗ ██████╗ ██████╗ ██╗   ██╗
+//    ████╗ ████║██╔════╝████╗ ████║██╔═══██╗██╔══██╗╚██╗ ██╔╝
+//    ██╔████╔██║█████╗  ██╔████╔██║██║   ██║██████╔╝ ╚████╔╝ 
+//    ██║╚██╔╝██║██╔══╝  ██║╚██╔╝██║██║   ██║██╔══██╗  ╚██╔╝  
+//    ██║ ╚═╝ ██║███████╗██║ ╚═╝ ██║╚██████╔╝██║  ██║   ██║   
+//    ╚═╝     ╚═╝╚══════╝╚═╝     ╚═╝ ╚═════╝ ╚═╝  ╚═╝   ╚═╝   
 static MemVirtualStats gVMStats;
 
 void* memVirtualReserve(size_t size, MemVirtualFlags flags)
@@ -1369,8 +1429,12 @@ bool memVirtualEnableLargePages(size_t* largePageSize)
     return true;
 }
 
-//----------------------------------------------------------------------------------------------------------------------
-// File
+//    ███████╗██╗██╗     ███████╗
+//    ██╔════╝██║██║     ██╔════╝
+//    █████╗  ██║██║     █████╗  
+//    ██╔══╝  ██║██║     ██╔══╝  
+//    ██║     ██║███████╗███████╗
+//    ╚═╝     ╚═╝╚══════╝╚══════╝
 struct FileWin
 {
     HANDLE      handle;
@@ -1654,8 +1718,12 @@ bool asyncIsFinished(AsyncFile* file, bool* outError)
     return r;
 }
 
-//----------------------------------------------------------------------------------------------------------------------
-// SocketTCP
+//    ███████╗ ██████╗  ██████╗██╗  ██╗███████╗████████╗
+//    ██╔════╝██╔═══██╗██╔════╝██║ ██╔╝██╔════╝╚══██╔══╝
+//    ███████╗██║   ██║██║     █████╔╝ █████╗     ██║   
+//    ╚════██║██║   ██║██║     ██╔═██╗ ██╔══╝     ██║   
+//    ███████║╚██████╔╝╚██████╗██║  ██╗███████╗   ██║   
+//    ╚══════╝ ╚═════╝  ╚═════╝╚═╝  ╚═╝╚══════╝   ╚═╝   
 namespace _private
 {
     static bool gSocketInitialized;

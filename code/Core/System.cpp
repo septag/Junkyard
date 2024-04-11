@@ -266,6 +266,37 @@ void sysGenerateCmdLineFromArgcArgv(int argc, const char* argv[], char** outStri
     *outStringLen = static_cast<uint32>(len);
 }
 
+void sysPauseCpu()
+{
+#if CPU_X86
+    _mm_pause();
+#elif CPU_ARM 
+    __yield();
+#else
+    #error "Not implemented"
+#endif
+}
+
+// https://github.com/google/benchmark/blob/v1.1.0/src/cycleclock.h
+uint64 sysGetCpuClock()
+{
+#if PLATFORM_APPLE  // TODO: maybe we can get rid of this and use the asm one
+    return mach_absolute_time();
+#elif PLATFORM_WINDOWS && CPU_X86
+    return __rdtsc();
+#elif CPU_ARM && ARCH_64BIT
+    uint64 vtm;
+    asm volatile("mrs %0, cntvct_el0" : "=r"(vtm));
+    return vtm;
+#elif CPU_X86 && ARCH_64BIT
+    uint64 low, high;
+    __asm__ volatile("rdtsc" : "=a"(low), "=d"(high));
+    return (high << 32) | low;
+#else
+    #error "Not implemented for this platform"
+#endif
+}
+
 bool _private::socketParseUrl(const char* url, char* address, size_t addressSize, char* port, size_t portSize, const char** pResource)
 {
     uint32 urlLen = strLen(url);
@@ -361,6 +392,13 @@ SysPrimitiveStats sysGetPrimitiveStats()
     };
 }
 
+//    ███████╗██████╗ ██╗███╗   ██╗██╗      ██████╗  ██████╗██╗  ██╗    ███╗   ███╗██╗   ██╗████████╗███████╗██╗  ██╗
+//    ██╔════╝██╔══██╗██║████╗  ██║██║     ██╔═══██╗██╔════╝██║ ██╔╝    ████╗ ████║██║   ██║╚══██╔══╝██╔════╝╚██╗██╔╝
+//    ███████╗██████╔╝██║██╔██╗ ██║██║     ██║   ██║██║     █████╔╝     ██╔████╔██║██║   ██║   ██║   █████╗   ╚███╔╝ 
+//    ╚════██║██╔═══╝ ██║██║╚██╗██║██║     ██║   ██║██║     ██╔═██╗     ██║╚██╔╝██║██║   ██║   ██║   ██╔══╝   ██╔██╗ 
+//    ███████║██║     ██║██║ ╚████║███████╗╚██████╔╝╚██████╗██║  ██╗    ██║ ╚═╝ ██║╚██████╔╝   ██║   ███████╗██╔╝ ██╗
+//    ╚══════╝╚═╝     ╚═╝╚═╝  ╚═══╝╚══════╝ ╚═════╝  ╚═════╝╚═╝  ╚═╝    ╚═╝     ╚═╝ ╚═════╝    ╚═╝   ╚══════╝╚═╝  ╚═╝
+
 // Reference: https://rigtorp.se/spinlock/
 // TODO (consider): https://www.intel.com/content/www/us/en/developer/articles/technical/a-common-construct-to-avoid-the-contention-of-threads-architecture-agnostic-spin-wait-loops.html
 // Another good reference code: https://github.dev/concurrencykit/ck
@@ -388,34 +426,4 @@ bool SpinLockMutex::TryEnter()
            atomicExchange32Explicit(&mLocked, 1, AtomicMemoryOrder::Acquire) == 0;
 }
 
-void sysPauseCpu()
-{
-#if CPU_X86
-    _mm_pause();
-#elif CPU_ARM 
-    __yield();
-#else
-    #error "Not implemented"
-#endif
-}
-
-// https://github.com/google/benchmark/blob/v1.1.0/src/cycleclock.h
-uint64 sysGetCpuClock()
-{
-#if PLATFORM_APPLE  // TODO: maybe we can get rid of this and use the asm one
-    return mach_absolute_time();
-#elif PLATFORM_WINDOWS && CPU_X86
-    return __rdtsc();
-#elif CPU_ARM && ARCH_64BIT
-    uint64 vtm;
-    asm volatile("mrs %0, cntvct_el0" : "=r"(vtm));
-    return vtm;
-#elif CPU_X86 && ARCH_64BIT
-    uint64 low, high;
-    __asm__ volatile("rdtsc" : "=a"(low), "=d"(high));
-    return (high << 32) | low;
-#else
-    #error "Not implemented for this platform"
-#endif
-}
 

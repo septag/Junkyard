@@ -11,6 +11,13 @@
 #include "Blobs.h"
 #include "Allocators.h"
 
+
+//    ███████╗████████╗ █████╗  ██████╗██╗  ██╗████████╗██████╗  █████╗  ██████╗███████╗
+//    ██╔════╝╚══██╔══╝██╔══██╗██╔════╝██║ ██╔╝╚══██╔══╝██╔══██╗██╔══██╗██╔════╝██╔════╝
+//    ███████╗   ██║   ███████║██║     █████╔╝    ██║   ██████╔╝███████║██║     █████╗  
+//    ╚════██║   ██║   ██╔══██║██║     ██╔═██╗    ██║   ██╔══██╗██╔══██║██║     ██╔══╝  
+//    ███████║   ██║   ██║  ██║╚██████╗██║  ██╗   ██║   ██║  ██║██║  ██║╚██████╗███████╗
+//    ╚══════╝   ╚═╝   ╚═╝  ╚═╝ ╚═════╝╚═╝  ╚═╝   ╚═╝   ╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝╚══════╝
 #pragma pack(push, 8)
 #include <DbgHelp.h>
 
@@ -82,16 +89,7 @@ struct DebugStacktraceContext
     ~DebugStacktraceContext();
 };
 
-static constexpr uint32 kDebugRemedyBGBufferSize = 8*kKB;
-
-struct DebugRemedyBGContext
-{
-    SysProcess remedybgProc;
-    HANDLE cmdPipe = INVALID_HANDLE_VALUE;
-};
-
 static DebugStacktraceContext gStacktrace;
-static DebugRemedyBGContext gRemedyBG;
 
 static bool debugInitializeStacktrace()
 {
@@ -239,9 +237,22 @@ DebugStacktraceContext::~DebugStacktraceContext()
     }
 }
 
-//----------------------------------------------------------------------------------------------------------------------
-// RemedyBG
+
+//    ██████╗ ███████╗███╗   ███╗███████╗██████╗ ██╗   ██╗██████╗  ██████╗ 
+//    ██╔══██╗██╔════╝████╗ ████║██╔════╝██╔══██╗╚██╗ ██╔╝██╔══██╗██╔════╝ 
+//    ██████╔╝█████╗  ██╔████╔██║█████╗  ██║  ██║ ╚████╔╝ ██████╔╝██║  ███╗
+//    ██╔══██╗██╔══╝  ██║╚██╔╝██║██╔══╝  ██║  ██║  ╚██╔╝  ██╔══██╗██║   ██║
+//    ██║  ██║███████╗██║ ╚═╝ ██║███████╗██████╔╝   ██║   ██████╔╝╚██████╔╝
+//    ╚═╝  ╚═╝╚══════╝╚═╝     ╚═╝╚══════╝╚═════╝    ╚═╝   ╚═════╝  ╚═════╝ 
 static const char* kDebugRemedyBGPipeNamePrefix = "\\\\.\\pipe\\";
+static constexpr uint32 kDebugRemedyBGBufferSize = 8*kKB;
+
+struct DebugRemedyBGContext
+{
+    SysProcess remedybgProc;
+    HANDLE cmdPipe = INVALID_HANDLE_VALUE;
+};
+static DebugRemedyBGContext gRemedyBG;
 
 bool debugRemedyBG_Initialize(const char* serverName, const char* remedybgPath)
 {

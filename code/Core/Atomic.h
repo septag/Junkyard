@@ -75,6 +75,13 @@ FORCE_INLINE bool atomicCompareExchange64StrongExplicit(
     atomicUint64* a, unsigned long long* expected, uint64 desired,
     AtomicMemoryOrder success, AtomicMemoryOrder fail);
 
+
+//    ██╗███╗   ██╗██╗     ██╗███╗   ██╗███████╗███████╗
+//    ██║████╗  ██║██║     ██║████╗  ██║██╔════╝██╔════╝
+//    ██║██╔██╗ ██║██║     ██║██╔██╗ ██║█████╗  ███████╗
+//    ██║██║╚██╗██║██║     ██║██║╚██╗██║██╔══╝  ╚════██║
+//    ██║██║ ╚████║███████╗██║██║ ╚████║███████╗███████║
+//    ╚═╝╚═╝  ╚═══╝╚══════╝╚═╝╚═╝  ╚═══╝╚══════╝╚══════╝
 FORCE_INLINE void atomicThreadFence(AtomicMemoryOrder order)
 {
     c89atomic_thread_fence(static_cast<c89atomic_memory_order>(order));

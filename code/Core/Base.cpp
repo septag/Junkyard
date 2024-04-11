@@ -48,7 +48,12 @@
 
 #include "TracyHelper.h"
 
-// Random
+//    ██████╗  █████╗ ███╗   ██╗██████╗  ██████╗ ███╗   ███╗
+//    ██╔══██╗██╔══██╗████╗  ██║██╔══██╗██╔═══██╗████╗ ████║
+//    ██████╔╝███████║██╔██╗ ██║██║  ██║██║   ██║██╔████╔██║
+//    ██╔══██╗██╔══██║██║╚██╗██║██║  ██║██║   ██║██║╚██╔╝██║
+//    ██║  ██║██║  ██║██║ ╚████║██████╔╝╚██████╔╝██║ ╚═╝ ██║
+//    ╚═╝  ╚═╝╚═╝  ╚═╝╚═╝  ╚═══╝╚═════╝  ╚═════╝ ╚═╝     ╚═╝
 // https://github.com/mattiasgustavsson/libs/blob/master/rnd.h
 struct RandomContextCtor
 {
@@ -65,30 +70,6 @@ NO_INLINE static RandomContextCtor& RandomCtx()
     static thread_local RandomContextCtor randomCtx;
     return randomCtx; 
 }
-
-// Assert
-static AssertFailCallback gAssertFailCallback;
-static void* gAssertFailUserData;
-
-// Memory
-struct MemHeapAllocator final : Allocator 
-{
-    void* Malloc(size_t size, uint32 align) override;
-    void* Realloc(void* ptr, size_t size, uint32 align) override;
-    void  Free(void* ptr, uint32 align) override;
-    AllocatorType GetType() const override { return AllocatorType::Heap; }
-};
-
-struct MemBaseContext
-{
-    MemFailCallback  memFailFn;
-    void* 			 memFailUserdata;
-    Allocator*		 defaultAlloc = &heapAlloc;
-    MemHeapAllocator heapAlloc;
-    bool             enableMemPro;
-};
-
-static MemBaseContext gMemBase;
 
 // Convert a randomized uint32_t value to a float value x in the range 0.0f <= x < 1.0f. Contributed by Jonatan Hedborg
 PRAGMA_DIAGNOSTIC_PUSH()
@@ -181,6 +162,15 @@ int randomNewIntInRange(int _min, int _max)
     return randomNewIntInRange(&RandomCtx().ctx, _min, _max);
 }
 
+//     █████╗ ███████╗███████╗███████╗██████╗ ████████╗
+//    ██╔══██╗██╔════╝██╔════╝██╔════╝██╔══██╗╚══██╔══╝
+//    ███████║███████╗███████╗█████╗  ██████╔╝   ██║   
+//    ██╔══██║╚════██║╚════██║██╔══╝  ██╔══██╗   ██║   
+//    ██║  ██║███████║███████║███████╗██║  ██║   ██║   
+//    ╚═╝  ╚═╝╚══════╝╚══════╝╚══════╝╚═╝  ╚═╝   ╚═╝   
+static AssertFailCallback gAssertFailCallback;
+static void* gAssertFailUserData;
+
 void assertDebugMessage(const char* fmt, ...)
 {
     char msgFmt[4972];
@@ -215,6 +205,31 @@ void assertRunFailCallback()
     if (gAssertFailCallback)
         gAssertFailCallback(gAssertFailUserData);
 }
+
+//     █████╗ ██╗     ██╗      ██████╗  ██████╗ █████╗ ████████╗██╗ ██████╗ ███╗   ██╗
+//    ██╔══██╗██║     ██║     ██╔═══██╗██╔════╝██╔══██╗╚══██╔══╝██║██╔═══██╗████╗  ██║
+//    ███████║██║     ██║     ██║   ██║██║     ███████║   ██║   ██║██║   ██║██╔██╗ ██║
+//    ██╔══██║██║     ██║     ██║   ██║██║     ██╔══██║   ██║   ██║██║   ██║██║╚██╗██║
+//    ██║  ██║███████╗███████╗╚██████╔╝╚██████╗██║  ██║   ██║   ██║╚██████╔╝██║ ╚████║
+//    ╚═╝  ╚═╝╚══════╝╚══════╝ ╚═════╝  ╚═════╝╚═╝  ╚═╝   ╚═╝   ╚═╝ ╚═════╝ ╚═╝  ╚═══╝
+struct MemHeapAllocator final : Allocator 
+{
+    void* Malloc(size_t size, uint32 align) override;
+    void* Realloc(void* ptr, size_t size, uint32 align) override;
+    void  Free(void* ptr, uint32 align) override;
+    AllocatorType GetType() const override { return AllocatorType::Heap; }
+};
+
+struct MemBaseContext
+{
+    MemFailCallback  memFailFn;
+    void* 			 memFailUserdata;
+    Allocator*		 defaultAlloc = &heapAlloc;
+    MemHeapAllocator heapAlloc;
+    bool             enableMemPro;
+};
+
+static MemBaseContext gMemBase;
 
 #if PLATFORM_WINDOWS
     #define aligned_malloc(_align, _size) _aligned_malloc(_size, _align)

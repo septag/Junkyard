@@ -8,6 +8,14 @@
 
 struct MemTlsfAllocator;
 
+
+//    ████████╗██╗   ██╗██████╗ ███████╗███████╗
+//    ╚══██╔══╝╚██╗ ██╔╝██╔══██╗██╔════╝██╔════╝
+//       ██║    ╚████╔╝ ██████╔╝█████╗  ███████╗
+//       ██║     ╚██╔╝  ██╔═══╝ ██╔══╝  ╚════██║
+//       ██║      ██║   ██║     ███████╗███████║
+//       ╚═╝      ╚═╝   ╚═╝     ╚══════╝╚══════╝
+                                              
 // 1-1 to vulkan
 enum class GfxFormat: uint32
 {
@@ -605,7 +613,7 @@ ENABLE_BITMASK(GfxColorComponentFlags);
 // }
 //
 // finalColor = finalColor & colorWriteMask;
-typedef struct GfxBlendAttachmentDesc 
+struct GfxBlendAttachmentDesc 
 {
     bool enable;
     GfxBlendFactor srcColorBlendFactor;
@@ -615,10 +623,10 @@ typedef struct GfxBlendAttachmentDesc
     GfxBlendFactor dstAlphaBlendFactor;
     GfxBlendOp alphaBlendOp;
     GfxColorComponentFlags colorWriteMask;
-} GfxBlendAttachmentDesc;
 
-API const GfxBlendAttachmentDesc* gfxBlendAttachmentDescGetDefault();
-API const GfxBlendAttachmentDesc* gfxBlendAttachmentDescGetAlphaBlending();
+    static const GfxBlendAttachmentDesc* GetDefault();
+    static const GfxBlendAttachmentDesc* GetAlphaBlending();
+};
 
 // 1-1 vulkan
 enum class GfxLogicOp : uint32
@@ -749,7 +757,7 @@ struct GfxShaderVertexAttributeInfo
     GfxFormat   format;
 };
 
-// Note: Binary representation is serialized
+// Note: Binary representation and it is serialized
 struct GfxShader
 {
     char   name[32];
@@ -988,7 +996,14 @@ struct GfxImageInfo
     size_t         sizeBytes;
 };
 
-//----------------------------------------------------------------------------------------------------------------------
+
+//     █████╗ ██████╗ ██╗
+//    ██╔══██╗██╔══██╗██║
+//    ███████║██████╔╝██║
+//    ██╔══██║██╔═══╝ ██║
+//    ██║  ██║██║     ██║
+//    ╚═╝  ╚═╝╚═╝     ╚═╝
+                       
 API bool gfxHasDeviceExtension(const char* extension);
 API bool gfxHasInstanceExtension(const char* extension);
 API const GfxPhysicalDeviceProperties& gfxGetPhysicalDeviceProperties();
@@ -997,7 +1012,24 @@ API void gfxDestroySurfaceAndSwapchain();
 API void gfxRecreateSurfaceAndSwapchain();
 API void gfxResizeSwapchain(uint16 width, uint16 height);
 
-// Create/Destroy resources explicitly
+API void gfxWaitForIdle();
+API void gfxGetBudgetStats(GfxBudgetStats* stats);
+API float gfxGetRenderTimeNs();  // Note: This functions calls Vk functions. So not that cheap
+
+// This function is mainly used for android platform where you need to transform the clip-space (MVPC)
+// Depending on the orientation of the device
+API Mat4 gfxGetClipspaceTransform();
+API bool gfxIsRenderingToSwapchain();
+
+using GfxUpdateImageDescriptorCallback = void(*)(GfxDescriptorSet dset, uint32 numBindings, const GfxDescriptorBindingDesc* bindings);
+API void gfxSetUpdateImageDescriptorCallback(GfxUpdateImageDescriptorCallback callback);
+
+// Begin/End frame (TODO: Take this to private namespace)
+API void gfxBeginFrame();
+API void gfxEndFrame();
+
+//----------------------------------------------------------------------------------------------------------------------
+// Create/Destroy resources
 API GfxBuffer gfxCreateBuffer(const GfxBufferDesc& desc);
 API void      gfxDestroyBuffer(GfxBuffer buffer);
 
@@ -1018,10 +1050,7 @@ API void gfxDestroyDescriptorSetLayout(GfxDescriptorSetLayout layout);
 API GfxDescriptorSet gfxCreateDescriptorSet(GfxDescriptorSetLayout layout);
 API void gfxDestroyDescriptorSet(GfxDescriptorSet dset);
 
-// Update descriptor sets
-// Should not come in between RenderPasses or you will get UB
-API void gfxUpdateDescriptorSet(GfxDescriptorSet dset, uint32 numBindings, const GfxDescriptorBindingDesc* bindings);
-
+//----------------------------------------------------------------------------------------------------------------------
 // CommandBuffer Begin/End
 API bool gfxBeginCommandBuffer();
 API void gfxEndCommandBuffer();
@@ -1041,23 +1070,17 @@ API void gfxCmdDrawIndexed(uint32 indexCount, uint32 instanceCount, uint32 first
 API void gfxCmdSetScissors(uint32 firstScissors, uint32 numScissors, const Recti* scissors, bool isSwapchain = false);
 API void gfxCmdSetViewports(uint32 firstViewport, uint32 numViewports, const GfxViewport* viewports, bool isSwapchain = false);
 
-// Begin/End frame (TODO: Take this to private namespace)
-API void gfxBeginFrame();
-API void gfxEndFrame();
+//----------------------------------------------------------------------------------------------------------------------
+// Update descriptor sets
+// Should not come in between RenderPasses or you will get UB
+API void gfxUpdateDescriptorSet(GfxDescriptorSet dset, uint32 numBindings, const GfxDescriptorBindingDesc* bindings);
 
-API void gfxWaitForIdle();
-API void gfxGetBudgetStats(GfxBudgetStats* stats);
-API float gfxGetRenderTimeNs();  // Note: This functions calls Vk functions. So not that cheap
-
-// This function is mainly used for android platform where you need to transform the clip-space (MVPC)
-// Depending on the orientation of the device
-API Mat4 gfxGetClipspaceTransform();
-API bool gfxIsRenderingToSwapchain();
-
-using GfxUpdateImageDescriptorCallback = void(*)(GfxDescriptorSet dset, uint32 numBindings, const GfxDescriptorBindingDesc* bindings);
-API void gfxSetUpdateImageDescriptorCallback(GfxUpdateImageDescriptorCallback callback);
-
-// Tracy GPU Profiling 
+//    ██████╗ ██████╗  ██████╗ ███████╗██╗██╗     ██╗███╗   ██╗ ██████╗ 
+//    ██╔══██╗██╔══██╗██╔═══██╗██╔════╝██║██║     ██║████╗  ██║██╔════╝ 
+//    ██████╔╝██████╔╝██║   ██║█████╗  ██║██║     ██║██╔██╗ ██║██║  ███╗
+//    ██╔═══╝ ██╔══██╗██║   ██║██╔══╝  ██║██║     ██║██║╚██╗██║██║   ██║
+//    ██║     ██║  ██║╚██████╔╝██║     ██║███████╗██║██║ ╚████║╚██████╔╝
+//    ╚═╝     ╚═╝  ╚═╝ ╚═════╝ ╚═╝     ╚═╝╚══════╝╚═╝╚═╝  ╚═══╝ ╚═════╝ 
 #ifdef TRACY_ENABLE
     #include "../Core/TracyHelper.h"
 
@@ -1104,8 +1127,13 @@ API void gfxSetUpdateImageDescriptorCallback(GfxUpdateImageDescriptorCallback ca
     #define PROFILE_GPU_ZONE_END(active)
 #endif // TRACY_ENABLE
 
-//----------------------------------------------------------------------------------------------------------------------
-// DynamicUniformBuffer
+
+//    ██████╗ ██╗   ██╗███╗   ██╗ █████╗ ███╗   ███╗██╗ ██████╗    ██╗   ██╗██████╗  ██████╗ 
+//    ██╔══██╗╚██╗ ██╔╝████╗  ██║██╔══██╗████╗ ████║██║██╔════╝    ██║   ██║██╔══██╗██╔═══██╗
+//    ██║  ██║ ╚████╔╝ ██╔██╗ ██║███████║██╔████╔██║██║██║         ██║   ██║██████╔╝██║   ██║
+//    ██║  ██║  ╚██╔╝  ██║╚██╗██║██╔══██║██║╚██╔╝██║██║██║         ██║   ██║██╔══██╗██║   ██║
+//    ██████╔╝   ██║   ██║ ╚████║██║  ██║██║ ╚═╝ ██║██║╚██████╗    ╚██████╔╝██████╔╝╚██████╔╝
+//    ╚═════╝    ╚═╝   ╚═╝  ╚═══╝╚═╝  ╚═╝╚═╝     ╚═╝╚═╝ ╚═════╝     ╚═════╝ ╚═════╝  ╚═════╝ 
 struct GfxDyanmicUniformBufferRange
 {
     uint32 index;
@@ -1141,8 +1169,13 @@ namespace _private
 } // _private
 
 
-//----------------------------------------------------------------------------------------------------------------------
-// @impl GfxDynamicUniforBuffer
+
+//    ██╗███╗   ██╗██╗     ██╗███╗   ██╗███████╗███████╗
+//    ██║████╗  ██║██║     ██║████╗  ██║██╔════╝██╔════╝
+//    ██║██╔██╗ ██║██║     ██║██╔██╗ ██║█████╗  ███████╗
+//    ██║██║╚██╗██║██║     ██║██║╚██╗██║██╔══╝  ╚════██║
+//    ██║██║ ╚████║███████╗██║██║ ╚████║███████╗███████║
+//    ╚═╝╚═╝  ╚═══╝╚══════╝╚═╝╚═╝  ╚═══╝╚══════╝╚══════╝
 inline void* GfxDynamicUniformBuffer::Data(uint32 index)
 {
 #ifdef CONFIG_CHECK_OUTOFBOUNDS    
@@ -1163,3 +1196,33 @@ inline void GfxDynamicUniformBuffer::Flush(uint32 index, uint32 _count)
     Flush(&range, 1);
 }
 
+
+inline const GfxBlendAttachmentDesc* GfxBlendAttachmentDesc::GetDefault()
+{
+    static GfxBlendAttachmentDesc desc {
+        .enable = true,
+        .srcColorBlendFactor = GfxBlendFactor::One,
+        .dstColorBlendFactor = GfxBlendFactor::Zero,
+        .blendOp = GfxBlendOp::Add,
+        .srcAlphaBlendFactor = GfxBlendFactor::One,
+        .dstAlphaBlendFactor = GfxBlendFactor::Zero,
+        .alphaBlendOp = GfxBlendOp::Add,
+        .colorWriteMask = GfxColorComponentFlags::All
+    };
+    return &desc;
+}
+
+inline const GfxBlendAttachmentDesc* GfxBlendAttachmentDesc::GetAlphaBlending()
+{
+    static GfxBlendAttachmentDesc desc {
+        .enable = true,
+        .srcColorBlendFactor = GfxBlendFactor::SrcAlpha,
+        .dstColorBlendFactor = GfxBlendFactor::OneMinusSrcAlpha,
+        .blendOp = GfxBlendOp::Add,
+        .srcAlphaBlendFactor = GfxBlendFactor::One,
+        .dstAlphaBlendFactor = GfxBlendFactor::Zero,
+        .alphaBlendOp = GfxBlendOp::Add,
+        .colorWriteMask = GfxColorComponentFlags::RGB
+    };
+    return &desc;
+}

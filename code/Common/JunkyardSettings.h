@@ -26,7 +26,6 @@ struct SettingsGraphics
     bool headless = false;          // Device is created, but with no views/swapchain/gfx-queue. only used for comput. (cmdline="headlessGraphics")
     bool surfaceSRGB = false;       // SRGB surface for Swap-chain
     bool listExtensions = false;    // Show device extensions upon initialization
-    bool enableAdrenoDebug = false; // Tries to enable VK_LAYER_ADRENO_debug layer if available, validate should be enabled
     bool validateBestPractices = false;   // see VK_EXT_validation_features
     bool validateSynchronization = false;   // see VK_EXT_validation_features
     bool shaderDumpIntermediates = false;   // Dumps all shader intermediates (glsl/spv/asm) in the current working dir

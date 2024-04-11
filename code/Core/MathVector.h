@@ -2,11 +2,25 @@
 
 #include "MathScalar.h"
 
+
+//    ██╗███╗   ██╗████████╗██████╗ 
+//    ██║████╗  ██║╚══██╔══╝╚════██╗
+//    ██║██╔██╗ ██║   ██║    █████╔╝
+//    ██║██║╚██╗██║   ██║   ██╔═══╝ 
+//    ██║██║ ╚████║   ██║   ███████╗
+//    ╚═╝╚═╝  ╚═══╝   ╚═╝   ╚══════╝
 FORCE_INLINE Int2 int2Add(Int2 _a, Int2 _b);
 FORCE_INLINE Int2 int2Sub(Int2 _a, Int2 _b);
 FORCE_INLINE Int2 int2Min(Int2 _a, Int2 _b);
 FORCE_INLINE Int2 int2Max(Int2 _a, Int2 _b);
 
+
+//    ███████╗██╗      ██████╗  █████╗ ████████╗██████╗ 
+//    ██╔════╝██║     ██╔═══██╗██╔══██╗╚══██╔══╝╚════██╗
+//    █████╗  ██║     ██║   ██║███████║   ██║    █████╔╝
+//    ██╔══╝  ██║     ██║   ██║██╔══██║   ██║   ██╔═══╝ 
+//    ██║     ███████╗╚██████╔╝██║  ██║   ██║   ███████╗
+//    ╚═╝     ╚══════╝ ╚═════╝ ╚═╝  ╚═╝   ╚═╝   ╚══════╝
 FORCE_INLINE float  float2Dot(Float2 _a, Float2 _b);
 FORCE_INLINE float  float2Len(Float2 _a);
 FORCE_INLINE Float2 float2Norm(Float2 _a);
@@ -24,6 +38,13 @@ FORCE_INLINE Float2 float2Mul(Float2 _a, Float2 _b);
 FORCE_INLINE Float2 float2Mulf(Float2 _a, float _b);
 API          Float2 float2CalcLinearFit2D(const Float2* _points, int _num);
 
+
+//    ███████╗██╗      ██████╗  █████╗ ████████╗██████╗ 
+//    ██╔════╝██║     ██╔═══██╗██╔══██╗╚══██╔══╝╚════██╗
+//    █████╗  ██║     ██║   ██║███████║   ██║    █████╔╝
+//    ██╔══╝  ██║     ██║   ██║██╔══██║   ██║    ╚═══██╗
+//    ██║     ███████╗╚██████╔╝██║  ██║   ██║   ██████╔╝
+//    ╚═╝     ╚══════╝ ╚═════╝ ╚═╝  ╚═╝   ╚═╝   ╚═════╝ 
 FORCE_INLINE Float3 float3Abs(Float3 _a);
 FORCE_INLINE Float3 float3Neg(Float3 _a);
 FORCE_INLINE Float3 float3Add(Float3 _a, Float3 _b);
@@ -49,11 +70,24 @@ FORCE_INLINE Float2 float3ToLatLong(Float3 _dir);
 FORCE_INLINE Float3 float3MulQuat(Float3 _vec, Quat _quat);
 API          Float3 float3CalcLinearFit3D(const Float3* _points, int _num);
 
+//    ███████╗██╗      ██████╗  █████╗ ████████╗██╗  ██╗
+//    ██╔════╝██║     ██╔═══██╗██╔══██╗╚══██╔══╝██║  ██║
+//    █████╗  ██║     ██║   ██║███████║   ██║   ███████║
+//    ██╔══╝  ██║     ██║   ██║██╔══██║   ██║   ╚════██║
+//    ██║     ███████╗╚██████╔╝██║  ██║   ██║        ██║
+//    ╚═╝     ╚══════╝ ╚═════╝ ╚═╝  ╚═╝   ╚═╝        ╚═╝
 FORCE_INLINE Float4 float4Mul(Float4 _a, Float4 _b);
 FORCE_INLINE Float4 float4Mulf(Float4 _a, float _b);
 FORCE_INLINE Float4 float4Add(Float4 _a, Float4 _b);
 FORCE_INLINE Float4 float4Sub(Float4 _a, Float4 _b);
 
+
+//    ██████╗ ██╗      █████╗ ███╗   ██╗███████╗
+//    ██╔══██╗██║     ██╔══██╗████╗  ██║██╔════╝
+//    ██████╔╝██║     ███████║██╔██╗ ██║█████╗  
+//    ██╔═══╝ ██║     ██╔══██║██║╚██╗██║██╔══╝  
+//    ██║     ███████╗██║  ██║██║ ╚████║███████╗
+//    ╚═╝     ╚══════╝╚═╝  ╚═╝╚═╝  ╚═══╝╚══════╝
 API          Float3 planeNormal(Float3 _va, Float3 _vb, Float3 _vc);
 API          Plane  plane3Points(Float3 _va, Float3 _vb, Float3 _vc);
 API          Plane  planeNormalPoint(Float3 _normal, Float3 _p);
@@ -61,6 +95,14 @@ API          float  planeDistance(Plane _plane, Float3 _p);
 API          Float3 planeProjectPoint(Plane _plane, Float3 _p);
 API          Float3 planeOrigin(Plane _plane);
 
+
+
+//    ██████╗ ███████╗ ██████╗████████╗
+//    ██╔══██╗██╔════╝██╔════╝╚══██╔══╝
+//    ██████╔╝█████╗  ██║        ██║   
+//    ██╔══██╗██╔══╝  ██║        ██║   
+//    ██║  ██║███████╗╚██████╗   ██║   
+//    ╚═╝  ╚═╝╚══════╝ ╚═════╝   ╚═╝   
 FORCE_INLINE Rect   rectCenterExtents(Float2 center, Float2 extents);
 FORCE_INLINE Rect   rectExpand(const Rect rc, Float2 expand);
 FORCE_INLINE bool   rectTestPoint(const Rect rc, Float2 pt);
@@ -83,6 +125,13 @@ FORCE_INLINE int    rectiHeight(const Recti rc);
 FORCE_INLINE Int2   rectiGetCorner(const Recti* rc, int index);
 FORCE_INLINE void   rectiGetCorners(Int2 corners[4], const Recti* rc);
 
+
+//    ███╗   ███╗ █████╗ ████████╗██╗  ██╗
+//    ████╗ ████║██╔══██╗╚══██╔══╝██║  ██║
+//    ██╔████╔██║███████║   ██║   ███████║
+//    ██║╚██╔╝██║██╔══██║   ██║   ╚════██║
+//    ██║ ╚═╝ ██║██║  ██║   ██║        ██║
+//    ╚═╝     ╚═╝╚═╝  ╚═╝   ╚═╝        ╚═╝
 FORCE_INLINE Float4 mat4Row1(const Mat4& m);
 FORCE_INLINE Float4 mat4Row2(const Mat4& m);
 FORCE_INLINE Float4 mat4Row3(const Mat4& m);
@@ -126,12 +175,12 @@ API          Mat4   mat4PerspectiveFOVLH(float fov_y, float aspect, float zn, fl
 API          Mat4   mat4Ortho(float width, float height, float zn, float zf, float offset = 0, bool d3dNdc = false);
 API          Mat4   mat4OrthoLH(float width, float height, float zn, float zf, float offset = 0, bool d3dNdc = false);
 API          Mat4   mat4OrthoOffCenter(float xmin, float ymin, float xmax, float ymax, float zn,
-                                           float zf, float offset = 0, bool d3dNdc = false);
+                                       float zf, float offset = 0, bool d3dNdc = false);
 API          Mat4   mat4OrthoOffCenterLH(float xmin, float ymin, float xmax, float ymax, float zn,
-                                             float zf, float offset = 0, bool d3dNdc = false);
+                                         float zf, float offset = 0, bool d3dNdc = false);
 API          Mat4   mat4ScaleRotateTranslate(float _sx, float _sy, float _sz, 
-                                                 float _ax, float _ay, float _az,
-                                                 float _tx, float _ty, float _tz);
+                                            float _ax, float _ay, float _az,
+                                            float _tx, float _ty, float _tz);
 API          Mat4   mat4Mul(const Mat4& _a, const Mat4& _b);
 API          Mat4   mat4Inverse(const Mat4& _a);
 API          Mat4   mat4InverseTransform(const Mat4& _a);
@@ -139,6 +188,13 @@ API          Quat   mat4ToQuat(const Mat4& _mat);
 API          Mat4   mat4ProjectPlane(Float3 planeNormal);
 FORCE_INLINE Transform3D mat4ToTransform3D(const Mat4& mat);
 
+
+//    ███╗   ███╗ █████╗ ████████╗██████╗ 
+//    ████╗ ████║██╔══██╗╚══██╔══╝╚════██╗
+//    ██╔████╔██║███████║   ██║    █████╔╝
+//    ██║╚██╔╝██║██╔══██║   ██║    ╚═══██╗
+//    ██║ ╚═╝ ██║██║  ██║   ██║   ██████╔╝
+//    ╚═╝     ╚═╝╚═╝  ╚═╝   ╚═╝   ╚═════╝ 
 FORCE_INLINE Mat3   mat3Transpose(const Mat3& _a);
 FORCE_INLINE Float3 mat3MulFloat3(const Mat3& _mat, Float3 _vec);
 FORCE_INLINE Mat3   mat3MulInverse(const Mat3& _a, const Mat3& _b);
@@ -151,7 +207,13 @@ FORCE_INLINE Mat3   mat3Scale(float sx, float sy);
 FORCE_INLINE Mat3   mat3ScaleRotateTranslate(float sx, float sy, float angle, float tx, float ty);
 API          Mat3   mat3Inverse(const Mat3& _a);
 API          Mat3   mat3Mul(const Mat3& _a, const Mat3& _b);
-
+                            
+//     ██████╗ ██╗   ██╗ █████╗ ████████╗
+//    ██╔═══██╗██║   ██║██╔══██╗╚══██╔══╝
+//    ██║   ██║██║   ██║███████║   ██║   
+//    ██║▄▄ ██║██║   ██║██╔══██║   ██║   
+//    ╚██████╔╝╚██████╔╝██║  ██║   ██║   
+//     ╚══▀▀═╝  ╚═════╝ ╚═╝  ╚═╝   ╚═╝   
 API          Mat3   quatToMat3(Quat quat);
 API          Mat4   quatToMat4(Quat quat);
 FORCE_INLINE Float3 quaMulXYZ(Quat _qa, Quat _qb);
@@ -169,6 +231,13 @@ API          Quat   quatSlerp(Quat _a, Quat _b, float t);
 API          Float3 quatToEuler(Quat _quat);
 API          Quat   quatFromEuler(Float3 _float3);
 
+
+//     ██████╗ ██████╗ ██╗      ██████╗ ██████╗ 
+//    ██╔════╝██╔═══██╗██║     ██╔═══██╗██╔══██╗
+//    ██║     ██║   ██║██║     ██║   ██║██████╔╝
+//    ██║     ██║   ██║██║     ██║   ██║██╔══██╗
+//    ╚██████╗╚██████╔╝███████╗╚██████╔╝██║  ██║
+//     ╚═════╝ ╚═════╝ ╚══════╝ ╚═════╝ ╚═╝  ╚═╝
 FORCE_INLINE Float4 colorToFloat4(Color c);
 API          Color  colorBlend(Color _a, Color _b, float _t);
 API          Float4 colorToFloat4SRGB(Float4 cf);
@@ -176,6 +245,13 @@ API          Float4 colorToFloat4Linear(Float4 c);
 API          void   colorRGBToHSV(float _hsv[3], const float _rgb[3]);
 API          void   colorHSVToRGB(float _rgb[3], const float _hsv[3]);
 
+
+//     █████╗  █████╗ ██████╗ ██████╗ 
+//    ██╔══██╗██╔══██╗██╔══██╗██╔══██╗
+//    ███████║███████║██████╔╝██████╔╝
+//    ██╔══██║██╔══██║██╔══██╗██╔══██╗
+//    ██║  ██║██║  ██║██████╔╝██████╔╝
+//    ╚═╝  ╚═╝╚═╝  ╚═╝╚═════╝ ╚═════╝ 
 FORCE_INLINE bool   AABBIsEmpty(const AABB& aabb);
 FORCE_INLINE void   AABBAddPoint(AABB* aabb, Float3 pt);
 FORCE_INLINE AABB   AABBUnify(const AABB& aabb1, const AABB& aabb2);
@@ -192,6 +268,13 @@ FORCE_INLINE AABB   AABBScale(const AABB& aabb, Float3 scale);
 API          AABB   AABBTransform(const AABB& aabb, const Mat4& mat);
 API          AABB   AABBFromBox(const Box* box);
 
+
+//    ████████╗██████╗  █████╗ ███╗   ██╗███████╗███████╗ ██████╗ ██████╗ ███╗   ███╗██████╗ ██████╗ 
+//    ╚══██╔══╝██╔══██╗██╔══██╗████╗  ██║██╔════╝██╔════╝██╔═══██╗██╔══██╗████╗ ████║╚════██╗██╔══██╗
+//       ██║   ██████╔╝███████║██╔██╗ ██║███████╗█████╗  ██║   ██║██████╔╝██╔████╔██║ █████╔╝██║  ██║
+//       ██║   ██╔══██╗██╔══██║██║╚██╗██║╚════██║██╔══╝  ██║   ██║██╔══██╗██║╚██╔╝██║ ╚═══██╗██║  ██║
+//       ██║   ██║  ██║██║  ██║██║ ╚████║███████║██║     ╚██████╔╝██║  ██║██║ ╚═╝ ██║██████╔╝██████╔╝
+//       ╚═╝   ╚═╝  ╚═╝╚═╝  ╚═╝╚═╝  ╚═══╝╚══════╝╚═╝      ╚═════╝ ╚═╝  ╚═╝╚═╝     ╚═╝╚═════╝ ╚═════╝ 
 FORCE_INLINE Transform3D transform3DMul(const Transform3D& txa, const Transform3D& txb);
 FORCE_INLINE Float3      transform3DMulFloat3(const Transform3D& tx, Float3 v);
 FORCE_INLINE Float3      transform3DMulFloat3Scale(const Transform3D& tx, Float3 scale, Float3 v);
@@ -208,7 +291,9 @@ FORCE_INLINE Transform3D transform3Df(float x, float y, float z, float rx, float
 //    ██║██║╚██╗██║██║     ██║██║╚██╗██║██╔══╝  ╚════██║
 //    ██║██║ ╚████║███████╗██║██║ ╚████║███████╗███████║
 //    ╚═╝╚═╝  ╚═══╝╚══════╝╚═╝╚═╝  ╚═══╝╚══════╝╚══════╝
-                                                      
+
+//----------------------------------------------------------------------------------------------------------------------
+// @impl Quat
 FORCE_INLINE Float3 quaMulXYZ(Quat _qa, Quat _qb)
 {
     const float ax = _qa.x;
@@ -292,6 +377,8 @@ FORCE_INLINE Quat quatRotateZ(float _az)
     return Quat(0.0f, 0.0f, sz, cz);
 }
 
+//----------------------------------------------------------------------------------------------------------------------
+// @impl Float3
 FORCE_INLINE Float3 float3Abs(Float3 _a)
 {
     return Float3(mathAbs(_a.x), mathAbs(_a.y), mathAbs(_a.z));
@@ -460,6 +547,8 @@ FORCE_INLINE Float3 float3MulQuat(Float3 _vec, Quat _quat)
     return quaMulXYZ(_quat, tmp1);
 }
 
+//----------------------------------------------------------------------------------------------------------------------
+// @impl Mat4
 FORCE_INLINE Float4 mat4Row1(const Mat4& m)
 {
     return Float4(m.m11, m.m12, m.m13, m.m14);
@@ -628,35 +717,6 @@ FORCE_INLINE Float4 mat4MulFloat4(const Mat4& _mat, Float4 _vec)
         _vec.x * _mat.m41 + _vec.y * _mat.m42 + _vec.z * _mat.m43 + _vec.w * _mat.m44);
 }
 
-FORCE_INLINE Float4 float4Mul(Float4 _a, Float4 _b)
-{
-    return Float4(_a.x * _b.x, _a.y * _b.y, _a.z * _b.z, _a.w * _b.w);
-}
-
-FORCE_INLINE Float4 float4Mulf(Float4 _a, float _b)
-{
-    return Float4(_a.x * _b, _a.y * _b, _a.z * _b, _a.w * _b);
-}
-
-FORCE_INLINE Float4 float4Add(Float4 _a, Float4 _b)
-{
-    return Float4(_a.x + _b.x, _a.y + _b.y, _a.z + _b.z, _a.w + _b.w);
-}
-
-FORCE_INLINE Float4 float4Sub(Float4 _a, Float4 _b)
-{
-    return Float4(_a.x - _b.x, _a.y - _b.y, _a.z - _b.z, _a.w - _b.w);
-}
-
-FORCE_INLINE Mat4 mat4Transpose(const Mat4& _a)
-{
-    return Mat4(_a.m11, _a.m21, _a.m31, _a.m41,
-                _a.m12, _a.m22, _a.m32, _a.m42, 
-                _a.m13, _a.m23, _a.m33, _a.m43, 
-                _a.m14, _a.m24, _a.m34, _a.m44);
-}
-
-
 /// Convert LH to RH projection matrix and vice versa.
 FORCE_INLINE void mat4ProjFlipHandedness(Mat4* _dst, const Mat4& _src)
 {
@@ -699,6 +759,43 @@ FORCE_INLINE void mat4ViewFlipHandedness(Mat4* _dst, const Mat4& _src)
     _dst->m44 = _src.m44;
 }
 
+FORCE_INLINE Mat4 mat4Transpose(const Mat4& _a)
+{
+    return Mat4(_a.m11, _a.m21, _a.m31, _a.m41,
+                _a.m12, _a.m22, _a.m32, _a.m42, 
+                _a.m13, _a.m23, _a.m33, _a.m43, 
+                _a.m14, _a.m24, _a.m34, _a.m44);
+}
+
+FORCE_INLINE Transform3D mat4ToTransform3D(const Mat4& mat)
+{
+    return Transform3D(Float3(mat.fc4),  Mat3(mat.fc1, mat.fc2, mat.fc3));
+}
+
+//----------------------------------------------------------------------------------------------------------------------
+// @impl Float4
+FORCE_INLINE Float4 float4Mul(Float4 _a, Float4 _b)
+{
+    return Float4(_a.x * _b.x, _a.y * _b.y, _a.z * _b.z, _a.w * _b.w);
+}
+
+FORCE_INLINE Float4 float4Mulf(Float4 _a, float _b)
+{
+    return Float4(_a.x * _b, _a.y * _b, _a.z * _b, _a.w * _b);
+}
+
+FORCE_INLINE Float4 float4Add(Float4 _a, Float4 _b)
+{
+    return Float4(_a.x + _b.x, _a.y + _b.y, _a.z + _b.z, _a.w + _b.w);
+}
+
+FORCE_INLINE Float4 float4Sub(Float4 _a, Float4 _b)
+{
+    return Float4(_a.x - _b.x, _a.y - _b.y, _a.z - _b.z, _a.w - _b.w);
+}
+
+//----------------------------------------------------------------------------------------------------------------------
+// @impl Color
 FORCE_INLINE CONSTFN float colorValueToLinear(float _a)
 {
     const float lo = _a / 12.92f;
@@ -721,7 +818,8 @@ FORCE_INLINE Float4 colorToFloat4(Color c)
     return Float4((float)c.r * rcp, (float)c.g * rcp, (float)c.b * rcp, (float)c.a * rcp);
 }
 
-
+//----------------------------------------------------------------------------------------------------------------------
+// @impl Mat3
 FORCE_INLINE Mat3 mat3Transpose(const Mat3& _a)
 {
     return Mat3(_a.m11, _a.m21, _a.m31, 
@@ -793,7 +891,8 @@ FORCE_INLINE Mat3 mat3ScaleRotateTranslate(float sx, float sy, float angle, floa
                 0.0f,   0.0f,  1.0f);
 }
 
-//
+//----------------------------------------------------------------------------------------------------------------------
+// @impl Float2
 FORCE_INLINE float float2Dot(Float2 _a, Float2 _b)
 {
     return _a.x * _b.x + _a.y * _b.y;
@@ -876,6 +975,8 @@ FORCE_INLINE Float2 float2Mulf(Float2 _a, float _b)
     return Float2(_a.x * _b, _a.y * _b);
 }
 
+//----------------------------------------------------------------------------------------------------------------------
+// @impl Int2
 FORCE_INLINE Int2 int2Add(Int2 _a, Int2 _b)
 {
     return Int2(_a.x + _b.x, _a.y + _b.y);
@@ -896,6 +997,8 @@ FORCE_INLINE Int2 int2Max(Int2 _a, Int2 _b)
     return Int2(_a.x > _b.x ? _a.x : _b.x, _a.y > _b.y ? _a.y : _b.y);
 }
 
+//----------------------------------------------------------------------------------------------------------------------
+// @impl Rect
 FORCE_INLINE Rect rectCenterExtents(Float2 center, Float2 extents)
 {
     return Rect(float2Sub(center, extents), float2Add(center, extents));
@@ -1037,6 +1140,8 @@ FORCE_INLINE void rectiGetCorners(Int2 corners[4], const Recti* rc)
         corners[0] = rectiGetCorner(rc, i);
 }
 
+//----------------------------------------------------------------------------------------------------------------------
+// @impl AABB
 FORCE_INLINE bool AABBIsEmpty(const AABB& aabb)
 {
     return aabb.xmin >= aabb.xmax || aabb.ymin >= aabb.ymax || aabb.zmin >= aabb.zmax;
@@ -1151,6 +1256,8 @@ FORCE_INLINE AABB AABBScale(const AABB& aabb, Float3 scale)
                 p.x + e.x, p.y + e.y, p.z + e.z);
 }
 
+//----------------------------------------------------------------------------------------------------------------------
+// @impl AABB
 FORCE_INLINE Transform3D transform3DMul(const Transform3D& txa, const Transform3D& txb)
 {
     return Transform3D(float3Add(mat3MulFloat3(txa.rot, txb.pos), txa.pos), mat3Mul(txa.rot, txb.rot));
@@ -1197,11 +1304,6 @@ FORCE_INLINE Transform3D transform3Df(float x, float y, float z, float rx, float
     return Transform3D(Float3(x, y, z), Mat3(rot.fc1, rot.fc2, rot.fc3));
 }
 
-
-FORCE_INLINE Transform3D mat4ToTransform3D(const Mat4& mat)
-{
-   return Transform3D(Float3(mat.fc4),  Mat3(mat.fc1, mat.fc2, mat.fc3));
-}
 
 //
 //     ██████╗██████╗ ██████╗      ██████╗ ██████╗ ███████╗██████╗  █████╗ ████████╗ ██████╗ ██████╗ ███████╗

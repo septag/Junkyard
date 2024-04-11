@@ -174,7 +174,7 @@ bool _private::ddInitialize()
             .vertexBufferBindings = &vertexBufferBindingDesc,
             .blend = {
                 .numAttachments = 1,
-                .attachments = gfxBlendAttachmentDescGetDefault()
+                .attachments = GfxBlendAttachmentDesc::GetDefault()
             },
             .depthStencil = GfxDepthStencilDesc {
                 .depthTestEnable = true,

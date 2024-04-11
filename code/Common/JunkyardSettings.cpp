@@ -134,10 +134,6 @@ bool SettingsJunkyardParser::ParseSetting(uint32 categoryId, const char* key, co
             graphics->listExtensions = strToBool(value);
             return true;
         }
-        else if (strIsEqualNoCase(key, "enableAdrenoDebug")) {
-            graphics->enableAdrenoDebug = strToBool(value);
-            return true;
-        }
         else if (strIsEqualNoCase(key, "validateBestPractices")) {
             graphics->validateBestPractices = strToBool(value);
             return true;

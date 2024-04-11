@@ -481,7 +481,7 @@ bool _private::imguiInitialize()
         },
         .blend = {
             .numAttachments = 1,
-            .attachments = gfxBlendAttachmentDescGetAlphaBlending()
+            .attachments = GfxBlendAttachmentDesc::GetAlphaBlending()
         }
     });
     ASSERT(gImGui.pipeline.IsValid());

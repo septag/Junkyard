@@ -36,66 +36,6 @@
 #include "Allocators.h"
 #include "Log.h"
 
-// "Adaptive" mutex implementation using early spinlock
-struct MutexImpl
-{
-    alignas(CACHE_LINE_SIZE) atomicUint32 spinlock;
-    pthread_mutex_t handle;
-    uint32 spinCount;
-};
-
-struct ReadWriteMutexImpl
-{
-    pthread_rwlock_t handle;
-};
-
-#if !PLATFORM_APPLE
-struct SemaphoreImpl
-{
-    sem_t sem;
-};
-static_assert(sizeof(SemaphoreImpl) <= sizeof(Semaphore), "Sempahore size mismatch");
-#endif
-
-struct SignalImpl 
-{
-    pthread_mutex_t mutex;
-    pthread_cond_t cond;
-    int value;
-};
-
-struct ThreadImpl
-{
-    Semaphore sem;
-    Allocator* alloc;
-    ThreadEntryFunc entryFn;
-    pthread_t handle;
-    char name[32];
-    void* userData;
-    size_t stackSize;
-    pid_t tId;
-    atomicUint32 running;
-    bool init;
-};
-
-#if !PLATFORM_ANDROID
-struct UUIDImpl
-{
-    uuid_t uuid;
-};
-#else
-struct UUIDImpl
-{
-    guid_t uuid;
-};
-#endif
-
-static_assert(sizeof(MutexImpl) <= sizeof(Mutex), "Mutex size mismatch");
-static_assert(sizeof(SignalImpl) <= sizeof(Signal), "Signal size mismatch");
-static_assert(sizeof(ThreadImpl) <= sizeof(Thread), "Thread size mismatch");
-static_assert(sizeof(UUIDImpl) <= sizeof(SysUUID), "UUID size mismatch");
-
-
 static inline void timespecAdd(struct timespec* _ts, int32_t _msecs)
 {
     auto timespecToNs = [](const struct timespec* _ts)->uint64
@@ -113,8 +53,27 @@ static inline void timespecAdd(struct timespec* _ts, int32_t _msecs)
     timespecFromNs(_ts, ns + (uint64)(_msecs)*1000000);
 }
 
-//------------------------------------------------------------------------
-// Thread
+//    ████████╗██╗  ██╗██████╗ ███████╗ █████╗ ██████╗ 
+//    ╚══██╔══╝██║  ██║██╔══██╗██╔════╝██╔══██╗██╔══██╗
+//       ██║   ███████║██████╔╝█████╗  ███████║██║  ██║
+//       ██║   ██╔══██║██╔══██╗██╔══╝  ██╔══██║██║  ██║
+//       ██║   ██║  ██║██║  ██║███████╗██║  ██║██████╔╝
+//       ╚═╝   ╚═╝  ╚═╝╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝╚═════╝ 
+struct ThreadImpl
+{
+    Semaphore sem;
+    Allocator* alloc;
+    ThreadEntryFunc entryFn;
+    pthread_t handle;
+    char name[32];
+    void* userData;
+    size_t stackSize;
+    pid_t tId;
+    atomicUint32 running;
+    bool init;
+};
+static_assert(sizeof(ThreadImpl) <= sizeof(Thread), "Thread size mismatch");
+
 static void* threadStubFn(void* arg)
 {
     ThreadImpl* thrd = reinterpret_cast<ThreadImpl*>(arg);
@@ -299,8 +258,20 @@ void threadSetCurrentThreadPriority(ThreadPriority prio)
     threadSetPriority(pthread_self(), prio);
 }
 
-//----------------------------------------------------------------------------------------------------------------------
-// Mutex
+//    ███╗   ███╗██╗   ██╗████████╗███████╗██╗  ██╗
+//    ████╗ ████║██║   ██║╚══██╔══╝██╔════╝╚██╗██╔╝
+//    ██╔████╔██║██║   ██║   ██║   █████╗   ╚███╔╝ 
+//    ██║╚██╔╝██║██║   ██║   ██║   ██╔══╝   ██╔██╗ 
+//    ██║ ╚═╝ ██║╚██████╔╝   ██║   ███████╗██╔╝ ██╗
+//    ╚═╝     ╚═╝ ╚═════╝    ╚═╝   ╚══════╝╚═╝  ╚═╝
+struct MutexImpl
+{
+    alignas(CACHE_LINE_SIZE) atomicUint32 spinlock;
+    pthread_mutex_t handle;
+    uint32 spinCount;
+};
+static_assert(sizeof(MutexImpl) <= sizeof(Mutex), "Mutex size mismatch");
+
 void Mutex::Initialize(uint32 spinCount)
 {
     MutexImpl* _m = reinterpret_cast<MutexImpl*>(mData);
@@ -359,8 +330,18 @@ bool Mutex::TryEnter()
     return pthread_mutex_trylock(&_m->handle) == 0;
 }
 
-//----------------------------------------------------------------------------------------------------------------------
-// ReadWriteMutex
+//    ██████╗ ███████╗ █████╗ ██████╗ ██╗    ██╗██████╗ ██╗████████╗███████╗    ███╗   ███╗██╗   ██╗████████╗███████╗██╗  ██╗
+//    ██╔══██╗██╔════╝██╔══██╗██╔══██╗██║    ██║██╔══██╗██║╚══██╔══╝██╔════╝    ████╗ ████║██║   ██║╚══██╔══╝██╔════╝╚██╗██╔╝
+//    ██████╔╝█████╗  ███████║██║  ██║██║ █╗ ██║██████╔╝██║   ██║   █████╗      ██╔████╔██║██║   ██║   ██║   █████╗   ╚███╔╝ 
+//    ██╔══██╗██╔══╝  ██╔══██║██║  ██║██║███╗██║██╔══██╗██║   ██║   ██╔══╝      ██║╚██╔╝██║██║   ██║   ██║   ██╔══╝   ██╔██╗ 
+//    ██║  ██║███████╗██║  ██║██████╔╝╚███╔███╔╝██║  ██║██║   ██║   ███████╗    ██║ ╚═╝ ██║╚██████╔╝   ██║   ███████╗██╔╝ ██╗
+//    ╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝╚═════╝  ╚══╝╚══╝ ╚═╝  ╚═╝╚═╝   ╚═╝   ╚══════╝    ╚═╝     ╚═╝ ╚═════╝    ╚═╝   ╚══════╝╚═╝  ╚═╝
+struct ReadWriteMutexImpl
+{
+    pthread_rwlock_t handle;
+};
+static_assert(sizeof(ReadWriteMutexImpl) <= sizeof(ReadWriteMutex), "ReadWriteMutex mismatch");
+
 void ReadWriteMutex::Initialize()
 {
     ReadWriteMutexImpl* m = reinterpret_cast<ReadWriteMutexImpl*>(mData);
@@ -409,9 +390,19 @@ void ReadWriteMutex::ExitWrite()
     pthread_rwlock_unlock(&m->handle);
 }
 
-//----------------------------------------------------------------------------------------------------------------------
-// Semaphore (Different impl on apple platform)
+//    ███████╗███████╗███╗   ███╗ █████╗ ██████╗ ██╗  ██╗ ██████╗ ██████╗ ███████╗
+//    ██╔════╝██╔════╝████╗ ████║██╔══██╗██╔══██╗██║  ██║██╔═══██╗██╔══██╗██╔════╝
+//    ███████╗█████╗  ██╔████╔██║███████║██████╔╝███████║██║   ██║██████╔╝█████╗  
+//    ╚════██║██╔══╝  ██║╚██╔╝██║██╔══██║██╔═══╝ ██╔══██║██║   ██║██╔══██╗██╔══╝  
+//    ███████║███████╗██║ ╚═╝ ██║██║  ██║██║     ██║  ██║╚██████╔╝██║  ██║███████╗
+//    ╚══════╝╚══════╝╚═╝     ╚═╝╚═╝  ╚═╝╚═╝     ╚═╝  ╚═╝ ╚═════╝ ╚═╝  ╚═╝╚══════╝
 #if !PLATFORM_APPLE
+struct SemaphoreImpl
+{
+    sem_t sem;
+};
+static_assert(sizeof(SemaphoreImpl) <= sizeof(Semaphore), "Sempahore size mismatch");
+
 void Semaphore::Initialize()
 {
     SemaphoreImpl* sem = reinterpret_cast<SemaphoreImpl*>(mData);
@@ -462,9 +453,22 @@ bool Semaphore::Wait(uint32 msecs)
 }
 #endif // PLATFORM_APPLE
 
-//--------------------------------------------------------------------------------------------------
-// Signal
+//    ███████╗██╗ ██████╗ ███╗   ██╗ █████╗ ██╗     
+//    ██╔════╝██║██╔════╝ ████╗  ██║██╔══██╗██║     
+//    ███████╗██║██║  ███╗██╔██╗ ██║███████║██║     
+//    ╚════██║██║██║   ██║██║╚██╗██║██╔══██║██║     
+//    ███████║██║╚██████╔╝██║ ╚████║██║  ██║███████╗
+//    ╚══════╝╚═╝ ╚═════╝ ╚═╝  ╚═══╝╚═╝  ╚═╝╚══════╝
+
 // https://github.com/mattiasgustavsson/libs/blob/master/thread.h
+struct SignalImpl 
+{
+    pthread_mutex_t mutex;
+    pthread_cond_t cond;
+    int value;
+};
+static_assert(sizeof(SignalImpl) <= sizeof(Signal), "Signal size mismatch");
+
 void Signal::Initialize()
 {
     SignalImpl* sig = reinterpret_cast<SignalImpl*>(mData);
@@ -598,6 +602,7 @@ void Signal::Increment()
     pthread_mutex_unlock(&sig->mutex);
 }
 
+
 void Signal::Set(int value)
 {
     SignalImpl* sig = reinterpret_cast<SignalImpl*>(mData);
@@ -608,9 +613,13 @@ void Signal::Set(int value)
     pthread_mutex_unlock(&sig->mutex);
 }
 
+//    ████████╗██╗███╗   ███╗███████╗██████╗ 
+//    ╚══██╔══╝██║████╗ ████║██╔════╝██╔══██╗
+//       ██║   ██║██╔████╔██║█████╗  ██████╔╝
+//       ██║   ██║██║╚██╔╝██║██╔══╝  ██╔══██╗
+//       ██║   ██║██║ ╚═╝ ██║███████╗██║  ██║
+//       ╚═╝   ╚═╝╚═╝     ╚═╝╚══════╝╚═╝  ╚═╝
 #if !PLATFORM_APPLE
-//--------------------------------------------------------------------------------------------------
-// Timer
 struct TimerState
 {
     bool init;
@@ -634,6 +643,12 @@ uint64 timerGetTicks()
 }
 #endif
 
+//     ██████╗ ███████╗███╗   ██╗███████╗██████╗  █████╗ ██╗          ██████╗ ███████╗
+//    ██╔════╝ ██╔════╝████╗  ██║██╔════╝██╔══██╗██╔══██╗██║         ██╔═══██╗██╔════╝
+//    ██║  ███╗█████╗  ██╔██╗ ██║█████╗  ██████╔╝███████║██║         ██║   ██║███████╗
+//    ██║   ██║██╔══╝  ██║╚██╗██║██╔══╝  ██╔══██╗██╔══██║██║         ██║   ██║╚════██║
+//    ╚██████╔╝███████╗██║ ╚████║███████╗██║  ██║██║  ██║███████╗    ╚██████╔╝███████║
+//     ╚═════╝ ╚══════╝╚═╝  ╚═══╝╚══════╝╚═╝  ╚═╝╚═╝  ╚═╝╚══════╝     ╚═════╝ ╚══════╝
 DLLHandle sysLoadDLL(const char* filepath, char** pErrorMsg)
 {
     DLLHandle dll = dlopen(filepath, RTLD_LOCAL | RTLD_LAZY);
@@ -679,6 +694,12 @@ bool sysGetEnvVar(const char* name, char* outValue, uint32 valueSize)
     return true;
 }
 
+//    ██████╗  █████╗ ████████╗██╗  ██╗
+//    ██╔══██╗██╔══██╗╚══██╔══╝██║  ██║
+//    ██████╔╝███████║   ██║   ███████║
+//    ██╔═══╝ ██╔══██║   ██║   ██╔══██║
+//    ██║     ██║  ██║   ██║   ██║  ██║
+//    ╚═╝     ╚═╝  ╚═╝   ╚═╝   ╚═╝  ╚═╝
 char* pathAbsolute(const char* path, char* dst, size_t dstSize)
 {
     char absPath[kMaxPath];
@@ -735,8 +756,12 @@ bool pathMakeTemp(char* dst, size_t dstSize, const char* namePrefix, const char*
     return dst[0] ? true : false;
 }
 
-//------------------------------------------------------------------------
-// Virtual memory
+//    ███╗   ███╗███████╗███╗   ███╗ ██████╗ ██████╗ ██╗   ██╗
+//    ████╗ ████║██╔════╝████╗ ████║██╔═══██╗██╔══██╗╚██╗ ██╔╝
+//    ██╔████╔██║█████╗  ██╔████╔██║██║   ██║██████╔╝ ╚████╔╝ 
+//    ██║╚██╔╝██║██╔══╝  ██║╚██╔╝██║██║   ██║██╔══██╗  ╚██╔╝  
+//    ██║ ╚═╝ ██║███████╗██║ ╚═╝ ██║╚██████╔╝██║  ██║   ██║   
+//    ╚═╝     ╚═╝╚══════╝╚═╝     ╚═╝ ╚═════╝ ╚═╝  ╚═╝   ╚═╝   
 struct MemVirtualStatsAtomic 
 {
     atomicUint64 commitedBytes;
@@ -803,7 +828,26 @@ MemVirtualStats memVirtualGetStats()
     };
 }
 
-bool sysUUIDGenerate(SysUUID* uuid)
+//    ██╗   ██╗██╗   ██╗██╗██████╗ 
+//    ██║   ██║██║   ██║██║██╔══██╗
+//    ██║   ██║██║   ██║██║██║  ██║
+//    ██║   ██║██║   ██║██║██║  ██║
+//    ╚██████╔╝╚██████╔╝██║██████╔╝
+//     ╚═════╝  ╚═════╝ ╚═╝╚═════╝ 
+#if !PLATFORM_ANDROID
+struct UUIDImpl
+{
+    uuid_t uuid;
+};
+#else
+struct UUIDImpl
+{
+    guid_t uuid;
+};
+#endif
+static_assert(sizeof(UUIDImpl) <= sizeof(SysUUID), "UUID size mismatch");
+
+bool uuidGenerate(SysUUID* uuid)
 {
 #if !PLATFORM_ANDROID
     UUIDImpl* u = reinterpret_cast<UUIDImpl*>(uuid);
@@ -816,7 +860,7 @@ bool sysUUIDGenerate(SysUUID* uuid)
 #endif
 }
 
-bool sysUUIDToString(const SysUUID& uuid, char* str, uint32 size)
+bool uuidToString(const SysUUID& uuid, char* str, uint32 size)
 {
 #if !PLATFORM_ANDROID
     ASSERT(size >= 36);
@@ -834,7 +878,7 @@ bool sysUUIDToString(const SysUUID& uuid, char* str, uint32 size)
 #endif
 }
 
-bool sysUUIDFromString(SysUUID* uuid, const char* str)
+bool uuidFromString(SysUUID* uuid, const char* str)
 {
 #if !PLATFORM_ANDROID
     UUIDImpl* u = reinterpret_cast<UUIDImpl*>(uuid);
@@ -855,8 +899,12 @@ bool SysUUID::operator==(const SysUUID& uuid) const
     return memcmp(&uuid, this, sizeof(UUIDImpl)) == 0;
 }
 
-//----------------------------------------------------------------------------------------------------------------------
-// File
+//    ███████╗██╗██╗     ███████╗
+//    ██╔════╝██║██║     ██╔════╝
+//    █████╗  ██║██║     █████╗  
+//    ██╔══╝  ██║██║     ██╔══╝  
+//    ██║     ██║███████╗███████╗
+//    ╚═╝     ╚═╝╚══════╝╚══════╝
 #undef _LARGEFILE64_SOURCE
 #ifndef __O_LARGEFILE4
     #define __O_LARGEFILE 0
@@ -1008,8 +1056,12 @@ bool File::IsOpen() const
     return f->id != -1;
 }
 
-//----------------------------------------------------------------------------------------------------------------------
-// Socket
+//    ███████╗ ██████╗  ██████╗██╗  ██╗███████╗████████╗
+//    ██╔════╝██╔═══██╗██╔════╝██║ ██╔╝██╔════╝╚══██╔══╝
+//    ███████╗██║   ██║██║     █████╔╝ █████╗     ██║   
+//    ╚════██║██║   ██║██║     ██╔═██╗ ██╔══╝     ██║   
+//    ███████║╚██████╔╝╚██████╗██║  ██╗███████╗   ██║   
+//    ╚══════╝ ╚═════╝  ╚═════╝╚═╝  ╚═╝╚══════╝   ╚═╝   
 #define SOCKET_INVALID -1
 #define SOCKET_ERROR -1
 
