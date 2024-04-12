@@ -23,7 +23,7 @@ enum class VfsMountType
 };
 
 // Note: these callbacks are called from a VirtualFS worker thread
-//       So, care must be taken when implementing these callbacks so they would be thread-safe
+//       So, care must be taken when implementing these callbacks. Make sure global data access is thread-safe
 using VfsReadAsyncCallback = void(*)(const char* path, const Blob& blob, void* user);
 using VfsWriteAsyncCallback = void(*)(const char* path, size_t bytesWritten, const Blob& originalBlob, void* user);
 using VfsFileChangeCallback = void(*)(const char* path);

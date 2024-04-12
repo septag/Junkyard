@@ -409,7 +409,7 @@ struct GfxContext
 
     GfxBudgetStats::DescriptorBudgetStats descriptorStats;
 
-    GfxUpdateImageDescriptorCallback updateImageDescCallback;
+    _private::GfxUpdateImageDescriptorCallback updateImageDescCallback;
 
     bool hasAstcDecodeMode;     // VK_EXT_astc_decode_mode extension is available. use it for ImageViews
     bool hasDebugUtils;
@@ -3977,7 +3977,7 @@ void gfxUpdateDescriptorSet(GfxDescriptorSet dset, uint32 numBindings, const Gfx
         gVk.updateImageDescCallback(dset, numBindings, bindings);
 }
 
-void gfxSetUpdateImageDescriptorCallback(GfxUpdateImageDescriptorCallback callback)
+void _private::gfxSetUpdateImageDescriptorCallback(_private::GfxUpdateImageDescriptorCallback callback)
 {
     gVk.updateImageDescCallback = callback;
 }
@@ -4221,7 +4221,7 @@ void GfxObjectPools::Release()
 //    ██╔══╝  ██╔══██╗██╔══██║██║╚██╔╝██║██╔══╝      ╚════██║  ╚██╔╝  ██║╚██╗██║██║     
 //    ██║     ██║  ██║██║  ██║██║ ╚═╝ ██║███████╗    ███████║   ██║   ██║ ╚████║╚██████╗
 //    ╚═╝     ╚═╝  ╚═╝╚═╝  ╚═╝╚═╝     ╚═╝╚══════╝    ╚══════╝   ╚═╝   ╚═╝  ╚═══╝ ╚═════╝
-void gfxBeginFrame()
+void _private::gfxBeginFrame()
 {
     PROFILE_ZONE(true);
 
@@ -4274,7 +4274,7 @@ void gfxBeginFrame()
     gVk.swapchain.imageIdx = imageIdx;
 }
 
-void gfxEndFrame()
+void _private::gfxEndFrame()
 {
     ASSERT_MSG(gVk.swapchain.imageIdx != UINT32_MAX, "gfxBeginFrame is not called");
     ASSERT_MSG(gCmdBufferThreadData.curCmdBuffer == VK_NULL_HANDLE, "Graphics should not be in recording state");

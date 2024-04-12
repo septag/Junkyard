@@ -18,7 +18,7 @@ enum class AssetPlatform : uint32
 {
     Auto = 0,
     PC,
-    Android
+    Android 
 };
 
 INLINE const char* assetPlatformGetStr(AssetPlatform platform)
@@ -131,6 +131,13 @@ struct AssetCacheDesc
     uint64 lastModified;
 };
 
+
+//     █████╗ ██████╗ ██╗
+//    ██╔══██╗██╔══██╗██║
+//    ███████║██████╔╝██║
+//    ██╔══██║██╔═══╝ ██║
+//    ██║  ██║██║     ██║
+//    ╚═╝  ╚═╝╚═╝     ╚═╝
 API void assetRegister(const AssetTypeDesc& desc);
 API void assetUnregister(uint32 fourcc);
 
@@ -143,8 +150,6 @@ API AssetHandle assetAddRef(AssetHandle handle);
 API AssetBarrier assetCreateBarrier();
 API void assetDestroyBarrier(AssetBarrier barrier);
 API bool assetWait(AssetBarrier barrier, uint32 msecs = UINT32_MAX);
-
-API void assetCollectGarbage();
 
 API bool assetLoadMetaData(const char* filepath, AssetPlatform platform, Allocator* alloc,
                            AssetMetaKeyValue** outData, uint32* outKeyCount);
@@ -186,9 +191,17 @@ namespace _private
     void* assetGetDataUnsafe(AssetHandle handle);
 
     void assetUpdateCache(float dt);
+
+    void assetCollectGarbage();
 }
 
-//------------------------------------------------------------------------
+
+//    ██╗███╗   ██╗██╗     ██╗███╗   ██╗███████╗███████╗
+//    ██║████╗  ██║██║     ██║████╗  ██║██╔════╝██╔════╝
+//    ██║██╔██╗ ██║██║     ██║██╔██╗ ██║█████╗  ███████╗
+//    ██║██║╚██╗██║██║     ██║██║╚██╗██║██╔══╝  ╚════██║
+//    ██║██║ ╚████║███████╗██║██║ ╚████║███████╗███████║
+//    ╚═╝╚═╝  ╚═══╝╚══════╝╚═╝╚═╝  ╚═══╝╚══════╝╚══════╝
 template <> inline bool assetGetMetaValue(const AssetMetaKeyValue* data, uint32 count, const char* key, bool defaultValue)
 {
     const char* value = assetGetMetaValue(data, count, key);

@@ -305,7 +305,7 @@ void engineBeginFrame(float dt)
     // Begin graphics
     if (!settingsGet().graphics.headless) {
         _private::imguiBeginFrame(dt);
-        gfxBeginFrame();
+        _private::gfxBeginFrame();
     }
 
     gEng.rawFrameStartTime = timerGetTicks();
@@ -318,8 +318,8 @@ void engineEndFrame(float dt)
     gEng.rawFrameTime = timerDiff(timerGetTicks(), gEng.rawFrameStartTime);
 
     if (!settingsGet().graphics.headless) {
-        gfxEndFrame();
-        assetCollectGarbage();
+        _private::gfxEndFrame();
+        _private::assetCollectGarbage();
     }
 
     _private::assetUpdateCache(dt);

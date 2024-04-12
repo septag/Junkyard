@@ -1021,13 +1021,6 @@ API float gfxGetRenderTimeNs();  // Note: This functions calls Vk functions. So 
 API Mat4 gfxGetClipspaceTransform();
 API bool gfxIsRenderingToSwapchain();
 
-using GfxUpdateImageDescriptorCallback = void(*)(GfxDescriptorSet dset, uint32 numBindings, const GfxDescriptorBindingDesc* bindings);
-API void gfxSetUpdateImageDescriptorCallback(GfxUpdateImageDescriptorCallback callback);
-
-// Begin/End frame (TODO: Take this to private namespace)
-API void gfxBeginFrame();
-API void gfxEndFrame();
-
 //----------------------------------------------------------------------------------------------------------------------
 // Create/Destroy resources
 API GfxBuffer gfxCreateBuffer(const GfxBufferDesc& desc);
@@ -1166,9 +1159,16 @@ namespace _private
 
     void gfxReleaseImageManager();
     void gfxRecreatePipelinesWithNewShader(uint32 shaderHash, GfxShader* shader);
+
+    using GfxUpdateImageDescriptorCallback = void(*)(GfxDescriptorSet dset, uint32 numBindings, const GfxDescriptorBindingDesc* bindings);
+    void gfxSetUpdateImageDescriptorCallback(GfxUpdateImageDescriptorCallback callback);
+
+    // Begin/End frame (TODO: Take this to private namespace)
+    void gfxBeginFrame();
+    void gfxEndFrame();
+
+
 } // _private
-
-
 
 //    ██╗███╗   ██╗██╗     ██╗███╗   ██╗███████╗███████╗
 //    ██║████╗  ██║██║     ██║████╗  ██║██╔════╝██╔════╝

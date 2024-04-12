@@ -542,7 +542,7 @@ bool _private::assetInitializeImageManager()
         .async = true
     });
 
-    gfxSetUpdateImageDescriptorCallback(assetUpdateImageDescriptorSetCache);
+    _private::gfxSetUpdateImageDescriptorCallback(assetUpdateImageDescriptorSetCache);
 
     logInfo("(init) Image asset manager");
     return true;

@@ -22,8 +22,12 @@
 
 #include "../Engine.h"
 
-#define ASSET_HASH_SEED 0x4354a
-
+//     ██████╗ ██╗      ██████╗ ██████╗  █████╗ ██╗     ███████╗
+//    ██╔════╝ ██║     ██╔═══██╗██╔══██╗██╔══██╗██║     ██╔════╝
+//    ██║  ███╗██║     ██║   ██║██████╔╝███████║██║     ███████╗
+//    ██║   ██║██║     ██║   ██║██╔══██╗██╔══██║██║     ╚════██║
+//    ╚██████╔╝███████╗╚██████╔╝██████╔╝██║  ██║███████╗███████║
+//     ╚═════╝ ╚══════╝ ╚═════╝ ╚═════╝ ╚═╝  ╚═╝╚══════╝╚══════╝
 namespace _limits
 {
     static constexpr uint32 kAssetMaxTypes = 8;
@@ -33,6 +37,7 @@ namespace _limits
     static constexpr size_t kAssetRuntimeSize = kMB;
 }
 
+static constexpr uint32 kAssetHashSeed = 0x4354a;
 static constexpr uint32 kAssetCacheFileId = MakeFourCC('A', 'C', 'C', 'H');
 static constexpr uint32 kAssetCacheVersion = 1;
 static constexpr float kAssetCacheSaveDelay = 2.0;
@@ -106,8 +111,16 @@ struct AssetManager
 
 static AssetManager gAssetMgr;
 
+//----------------------------------------------------------------------------------------------------------------------
+// @fwd
 static void assetFileChanged(const char* filepath);
 
+//     ██████╗ █████╗  ██████╗██╗  ██╗███████╗
+//    ██╔════╝██╔══██╗██╔════╝██║  ██║██╔════╝
+//    ██║     ███████║██║     ███████║█████╗  
+//    ██║     ██╔══██║██║     ██╔══██║██╔══╝  
+//    ╚██████╗██║  ██║╚██████╗██║  ██║███████╗
+//     ╚═════╝╚═╝  ╚═╝ ╚═════╝╚═╝  ╚═╝╚══════╝
 static AssetResult assetLoadFromCache(const AssetTypeManager& typeMgr, const AssetLoadParams& params, uint32 cacheHash, bool* outSuccess)
 {
     Path strippedPath;
@@ -279,7 +292,35 @@ static void assetSaveCacheHashDatabase()
 
 }
 
+uint32 assetMakeCacheHash(const AssetCacheDesc& desc)
+{
+    HashMurmur32Incremental hasher(kAssetHashSeed);
 
+    return hasher.Add<char>(desc.filepath, strLen(desc.filepath))
+                 .AddAny(desc.loadParams, desc.loadParamsSize)
+                 .AddAny(desc.metaData, sizeof(AssetMetaKeyValue)*desc.numMeta)
+                 .Add<uint64>(&desc.lastModified)
+                 .Hash();
+}
+
+void _private::assetUpdateCache(float dt)
+{
+    if (gAssetMgr.cacheSyncInvalidated) {
+        gAssetMgr.cacheSyncDelayTm += dt;
+        if (gAssetMgr.cacheSyncDelayTm >= kAssetCacheSaveDelay)  {
+            gAssetMgr.cacheSyncDelayTm = 0;
+            gAssetMgr.cacheSyncInvalidated = false;
+            jobsDispatchAuto(JobsType::LongTask, [](uint32, void*) { assetSaveCacheHashDatabase(); });
+        }            
+    }
+}
+
+//    ██╗███╗   ██╗██╗████████╗ ██╗██████╗ ███████╗██╗███╗   ██╗██╗████████╗
+//    ██║████╗  ██║██║╚══██╔══╝██╔╝██╔══██╗██╔════╝██║████╗  ██║██║╚══██╔══╝
+//    ██║██╔██╗ ██║██║   ██║  ██╔╝ ██║  ██║█████╗  ██║██╔██╗ ██║██║   ██║   
+//    ██║██║╚██╗██║██║   ██║ ██╔╝  ██║  ██║██╔══╝  ██║██║╚██╗██║██║   ██║   
+//    ██║██║ ╚████║██║   ██║██╔╝   ██████╔╝███████╗██║██║ ╚████║██║   ██║   
+//    ╚═╝╚═╝  ╚═══╝╚═╝   ╚═╝╚═╝    ╚═════╝ ╚══════╝╚═╝╚═╝  ╚═══╝╚═╝   ╚═╝   
 bool _private::assetInitialize()
 {
     gAssetMgr.initialized = true;
@@ -409,6 +450,13 @@ INLINE AssetPlatform assetGetCurrentPlatform()
     }
 }
 
+
+//    ██╗      ██████╗  █████╗ ██████╗ 
+//    ██║     ██╔═══██╗██╔══██╗██╔══██╗
+//    ██║     ██║   ██║███████║██║  ██║
+//    ██║     ██║   ██║██╔══██║██║  ██║
+//    ███████╗╚██████╔╝██║  ██║██████╔╝
+//    ╚══════╝ ╚═════╝ ╚═╝  ╚═╝╚═════╝ 
 static AssetHandle assetCreateNew(uint32 typeMgrIdx, uint32 assetHash, const AssetLoadParams& params, const void* extraParams)
 {
     const AssetTypeManager& typeMgr = gAssetMgr.typeManagers[typeMgrIdx];
@@ -451,17 +499,6 @@ static AssetHandle assetCreateNew(uint32 typeMgrIdx, uint32 assetHash, const Ass
 
     gAssetMgr.assetLookup.Add(assetHash, handle);
     return handle;
-}
-
-uint32 assetMakeCacheHash(const AssetCacheDesc& desc)
-{
-    HashMurmur32Incremental hasher(ASSET_HASH_SEED);
-
-    return hasher.Add<char>(desc.filepath, strLen(desc.filepath))
-                 .AddAny(desc.loadParams, desc.loadParamsSize)
-                 .AddAny(desc.metaData, sizeof(AssetMetaKeyValue)*desc.numMeta)
-                 .Add<uint64>(&desc.lastModified)
-                 .Hash();
 }
 
 static AssetResult assetLoadObjLocal(AssetHandle handle, const AssetTypeManager& typeMgr, const AssetLoadParams& loadParams, uint32 hash,
@@ -563,6 +600,200 @@ static AssetResult assetLoadObjRemote(AssetHandle handle, const AssetTypeManager
     return asyncLoadData.result;
 }
 
+// Runs from worker thread
+static void assetLoadTask(uint32 groupIndex, void* userData)
+{
+    UNUSED(groupIndex);
+    void* prevObj = nullptr;
+    uint64 userValue = PtrToInt<uint64>(userData);
+    AssetLoadMethod method = AssetLoadMethod(userValue & 0xffffffff);
+    AssetHandle handle { uint32(userValue >> 32) };
+    TimerStopWatch timer;
+
+    gAssetMgr.assetsMtx.Enter();
+    Asset& asset = gAssetMgr.assets.Data(handle);
+    const char* filepath = asset.params->path;
+    const AssetTypeManager& typeMgr = gAssetMgr.typeManagers[asset.typeMgrIdx];
+    const AssetLoadParams& loadParams = *asset.params;
+    uint32 hash = asset.hash;
+    gAssetMgr.assetsMtx.Exit();
+
+    AssetResult result;
+    bool loadedFromCache = false;
+
+    if (method == AssetLoadMethod::Local)
+        result = assetLoadObjLocal(handle, typeMgr, loadParams, hash, &loadedFromCache);
+    else if (method == AssetLoadMethod::Remote)
+        result = assetLoadObjRemote(handle, typeMgr, loadParams, hash, &loadedFromCache);
+    else {
+        ASSERT(0);
+        result = AssetResult {};
+    }
+
+    MutexScope mtx(gAssetMgr.assetsMtx);
+    asset = gAssetMgr.assets.Data(handle);  
+    if (asset.obj != typeMgr.asyncObj)
+        prevObj = asset.obj;
+
+    if (result.obj) {
+        asset.state = AssetState::Alive;
+        asset.obj = result.obj;
+        asset.objBufferSize = result.objBufferSize;
+
+        if (!loadedFromCache) {
+            gAssetMgr.cacheSyncInvalidated = true;
+            gAssetMgr.cacheSyncDelayTm = 0;
+            assetSaveToCache(typeMgr, loadParams, result, asset.hash);
+        }
+
+        // Load external asset resources right after we saved the blob to cache.
+        // LoadResources can cause the original data to be changed or set some external handles/pointers. 
+        if (!loadParams.dontCreateResources) {
+            if (!typeMgr.callbacks->InitializeSystemResources(result.obj, loadParams)) {
+                logError("Failed creating resources for %s: %s", typeMgr.name.CStr(), filepath);
+                typeMgr.callbacks->Release(result.obj, loadParams.alloc);
+                result.obj = nullptr;
+            }
+        }
+    }
+
+    if (!result.obj) {
+        asset.state = AssetState::LoadFailed;
+        asset.obj = typeMgr.failedObj;
+    }
+    else {
+        logVerbose("(load) %s: %s (%.1f ms)%s", typeMgr.name.CStr(), filepath, timer.ElapsedMS(), loadedFromCache ? " [cached]" : "");
+    }
+
+    asset.depends = result.depends;
+    asset.numDepends = result.numDepends;
+    for (uint32 i = 0; i < asset.numDepends; i++)
+        asset.depends[i].params.path = asset.depends[i].path.CStr();
+
+    // Handle reloading of the object
+    if (prevObj) {
+        AssetGarbage garbage {
+            .typeMgrIdx = asset.typeMgrIdx,
+            .alloc = asset.params->alloc
+        };
+
+        // try to reload the object, we also provide the previous handle for book keeping
+        if (!typeMgr.callbacks->ReloadSync(handle, prevObj)) {
+            logWarning("Asset '%s' cannot get reloaded", filepath);
+            asset.obj = prevObj;
+            garbage.obj = result.obj;     
+        }
+        else {
+            garbage.obj = prevObj;
+        }
+
+        gAssetMgr.garbage.Push(garbage);
+    }
+
+    // Decrement any barrier, so we can unblock the thread waiting on load
+    if (asset.params->barrier.IsValid()) {
+        Signal& sig = gAssetMgr.barriers.Data(asset.params->barrier);
+        sig.Decrement();
+        sig.Raise();
+        asset.params->barrier = AssetBarrier();
+    }
+}
+
+AssetHandle assetLoad(const AssetLoadParams& params, const void* extraParams)
+{
+    ASSERT(gAssetMgr.initialized);
+
+    if (params.path[0] == '\0')
+        return AssetHandle();
+
+    uint32 typeMgrIdx = gAssetMgr.typeManagers.FindIf(
+        [params](const AssetTypeManager& typeMgr) { return typeMgr.fourcc == params.typeId; });
+    ASSERT_MSG(typeMgrIdx != UINT32_MAX, "AssetType with FourCC %x is not registered", params.typeId);
+    AssetTypeManager& typeMgr = gAssetMgr.typeManagers[typeMgrIdx];
+
+    if (typeMgr.extraParamTypeSize && !extraParams) {
+        logWarning("Extra parameters not provided for asset type '%s'. Set extra parameters in 'next' field with the type of '%s'",
+            typeMgr.name.CStr(), typeMgr.extraParamTypeName.CStr());
+        ASSERT_MSG(false, "AssetLoadParams.next must not be nullptr for this type of asset (%s)", typeMgr.name.CStr());
+        return AssetHandle();
+    }
+
+    // check if asset is already loaded
+    // Calculate asset hash. This is different from "Cache" hash. Asset hash should always retain it's value for each unique asset
+    // Unique assets are also defined by their extra custom init params 
+    HashMurmur32Incremental hasher(kAssetHashSeed);
+    uint32 assetHash = hasher.Add<char>(params.path, strLen(params.path))
+                             .Add<uint32>(&params.tags)
+                             .AddAny(extraParams, typeMgr.extraParamTypeSize)
+                             .Hash();
+
+    AssetHandle handle = gAssetMgr.assetLookup.FindAndFetch(assetHash, AssetHandle());
+    if (handle.IsValid()) {
+        MutexScope mtx(gAssetMgr.assetsMtx);
+        Asset& asset = gAssetMgr.assets.Data(handle);
+        ++asset.refCount;
+    }
+    else {
+        handle = assetCreateNew(typeMgrIdx, assetHash, params, extraParams);
+        
+        MutexScope mtx(gAssetMgr.assetsMtx);
+        Asset& asset = gAssetMgr.assets.Data(handle);
+        asset.state = AssetState::Loading;
+        asset.obj = typeMgr.asyncObj;
+
+        if (asset.params->barrier.IsValid()) {
+            Signal& sig = gAssetMgr.barriers.Data(asset.params->barrier);
+            sig.Increment();
+        }
+
+        static_assert(sizeof(void*) == sizeof(uint64), "No support for 32bits in this part");
+        uint64 userValue = (static_cast<uint64>(uint32(handle))<<32) |
+                           ((remoteIsConnected() ? (uint64)AssetLoadMethod::Remote : (uint64)AssetLoadMethod::Local) & 0xffffffff);
+        jobsDispatchAuto(JobsType::LongTask, assetLoadTask, IntToPtr<uint64>(userValue));
+    }
+
+    return handle;
+}
+
+// TODO: consider the case where assetLoad is called but then immediately user calls unload
+//       In this case, unload should check for Loading state and postpone the operation
+//       For now, we have an assert check to enforce that
+void assetUnload(AssetHandle handle)
+{
+    if (handle.IsValid()) {
+        ASSERT(gAssetMgr.initialized);
+        MutexScope mtx(gAssetMgr.assetsMtx);
+        Asset& asset = gAssetMgr.assets.Data(handle);
+
+        if (asset.state != AssetState::Alive) {
+            logWarning("Asset is either failed or already released: %s", asset.params->path);
+            return;
+        }
+    
+        if (--asset.refCount == 0) {
+            AssetCallbacks* callbacks = gAssetMgr.typeManagers[asset.typeMgrIdx].callbacks;
+            if (callbacks)
+                callbacks->Release(asset.obj, asset.params->alloc);
+
+            memFree(asset.params, &gAssetMgr.runtimeAlloc);
+            memFree(asset.depends, &gAssetMgr.runtimeAlloc);
+            memFree(asset.metaData, &gAssetMgr.runtimeAlloc);
+            asset.params = nullptr;
+            asset.metaData = nullptr;
+            asset.depends = nullptr;
+    
+            gAssetMgr.assetLookup.FindAndRemove(asset.hash);
+            gAssetMgr.assets.Remove(handle);
+        }
+    }
+}
+
+//    ███╗   ███╗███████╗████████╗ █████╗ ██████╗  █████╗ ████████╗ █████╗ 
+//    ████╗ ████║██╔════╝╚══██╔══╝██╔══██╗██╔══██╗██╔══██╗╚══██╔══╝██╔══██╗
+//    ██╔████╔██║█████╗     ██║   ███████║██║  ██║███████║   ██║   ███████║
+//    ██║╚██╔╝██║██╔══╝     ██║   ██╔══██║██║  ██║██╔══██║   ██║   ██╔══██║
+//    ██║ ╚═╝ ██║███████╗   ██║   ██║  ██║██████╔╝██║  ██║   ██║   ██║  ██║
+//    ╚═╝     ╚═╝╚══════╝   ╚═╝   ╚═╝  ╚═╝╚═════╝ ╚═╝  ╚═╝   ╚═╝   ╚═╝  ╚═╝
 bool assetLoadMetaData(const char* filepath, AssetPlatform platform, Allocator* alloc, AssetMetaKeyValue** outData, uint32* outKeyCount)
 {
     ASSERT(outData);
@@ -682,212 +913,58 @@ const char* assetGetMetaValue(const AssetMetaKeyValue* data, uint32 count, const
     return nullptr;
 }
 
-// Runs from worker thread
-static void assetLoadTask(uint32 groupIndex, void* userData)
-{
-    UNUSED(groupIndex);
-    void* prevObj = nullptr;
-    uint64 userValue = PtrToInt<uint64>(userData);
-    AssetLoadMethod method = AssetLoadMethod(userValue & 0xffffffff);
-    AssetHandle handle { uint32(userValue >> 32) };
-    TimerStopWatch timer;
 
-    gAssetMgr.assetsMtx.Enter();
-    Asset& asset = gAssetMgr.assets.Data(handle);
-    const char* filepath = asset.params->path;
-    const AssetTypeManager& typeMgr = gAssetMgr.typeManagers[asset.typeMgrIdx];
-    const AssetLoadParams& loadParams = *asset.params;
-    uint32 hash = asset.hash;
-    gAssetMgr.assetsMtx.Exit();
-
-    AssetResult result;
-    bool loadedFromCache = false;
-
-    if (method == AssetLoadMethod::Local)
-        result = assetLoadObjLocal(handle, typeMgr, loadParams, hash, &loadedFromCache);
-    else if (method == AssetLoadMethod::Remote)
-        result = assetLoadObjRemote(handle, typeMgr, loadParams, hash, &loadedFromCache);
-    else {
-        ASSERT(0);
-        result = AssetResult {};
-    }
-
-    MutexScope mtx(gAssetMgr.assetsMtx);
-    asset = gAssetMgr.assets.Data(handle);  
-    if (asset.obj != typeMgr.asyncObj)
-        prevObj = asset.obj;
-
-    if (result.obj) {
-        asset.state = AssetState::Alive;
-        asset.obj = result.obj;
-        asset.objBufferSize = result.objBufferSize;
-
-        if (!loadedFromCache) {
-            gAssetMgr.cacheSyncInvalidated = true;
-            gAssetMgr.cacheSyncDelayTm = 0;
-            assetSaveToCache(typeMgr, loadParams, result, asset.hash);
-        }
-
-        // Load external asset resources right after we saved the blob to cache.
-        // LoadResources can cause the original data to be changed or set some external handles/pointers. 
-        if (!loadParams.dontCreateResources) {
-            if (!typeMgr.callbacks->InitializeSystemResources(result.obj, loadParams)) {
-                logError("Failed creating resources for %s: %s", typeMgr.name.CStr(), filepath);
-                typeMgr.callbacks->Release(result.obj, loadParams.alloc);
-                result.obj = nullptr;
-            }
-        }
-    }
-
-    if (!result.obj) {
-        asset.state = AssetState::LoadFailed;
-        asset.obj = typeMgr.failedObj;
-    }
-    else {
-        logVerbose("(load) %s: %s (%.1f ms)%s", typeMgr.name.CStr(), filepath, timer.ElapsedMS(), loadedFromCache ? " [cached]" : "");
-    }
-
-    asset.depends = result.depends;
-    asset.numDepends = result.numDepends;
-    for (uint32 i = 0; i < asset.numDepends; i++)
-        asset.depends[i].params.path = asset.depends[i].path.CStr();
-
-    // Handle reloading of the object
-    if (prevObj) {
-        AssetGarbage garbage {
-            .typeMgrIdx = asset.typeMgrIdx,
-            .alloc = asset.params->alloc
-        };
-
-        // try to reload the object, we also provide the previous handle for book keeping
-        if (!typeMgr.callbacks->ReloadSync(handle, prevObj)) {
-            logWarning("Asset '%s' cannot get reloaded", filepath);
-            asset.obj = prevObj;
-            garbage.obj = result.obj;     
-        }
-        else {
-            garbage.obj = prevObj;
-        }
-
-        gAssetMgr.garbage.Push(garbage);
-    }
-
-    // Decrement any barrier, so we can unblock the thread waiting on load
-    if (asset.params->barrier.IsValid()) {
-        Signal& sig = gAssetMgr.barriers.Data(asset.params->barrier);
-        sig.Decrement();
-        sig.Raise();
-        asset.params->barrier = AssetBarrier();
-    }
-}
-
-static void assetFileChanged(const char* filepath)
-{
-    MutexScope mtx(gAssetMgr.assetsMtx);
-    for (uint32 i = 0; i < gAssetMgr.assets.Count(); i++) {
-        AssetHandle handle = gAssetMgr.assets.HandleAt(i);
-        Asset& asset = gAssetMgr.assets.Data(handle);
-
-        const char* assetPath = asset.params->path;
-        if (assetPath[0] == '/')
-            ++assetPath;
-        if (strIsEqualNoCase(filepath, assetPath)) {
-            uint64 userValue = (static_cast<uint64>(uint32(handle))<<32) |
-                ((remoteIsConnected() ? (uint64)AssetLoadMethod::Remote : (uint64)AssetLoadMethod::Local) & 0xffffffff);
-            jobsDispatchAuto(JobsType::LongTask, assetLoadTask, IntToPtr<uint64>(userValue));
-        }
-    }
-}
-
-AssetHandle assetLoad(const AssetLoadParams& params, const void* extraParams)
+//    ██████╗ ███████╗ ██████╗ ██╗███████╗████████╗███████╗██████╗ 
+//    ██╔══██╗██╔════╝██╔════╝ ██║██╔════╝╚══██╔══╝██╔════╝██╔══██╗
+//    ██████╔╝█████╗  ██║  ███╗██║███████╗   ██║   █████╗  ██████╔╝
+//    ██╔══██╗██╔══╝  ██║   ██║██║╚════██║   ██║   ██╔══╝  ██╔══██╗
+//    ██║  ██║███████╗╚██████╔╝██║███████║   ██║   ███████╗██║  ██║
+//    ╚═╝  ╚═╝╚══════╝ ╚═════╝ ╚═╝╚══════╝   ╚═╝   ╚══════╝╚═╝  ╚═╝
+void assetRegister(const AssetTypeDesc& desc)
 {
     ASSERT(gAssetMgr.initialized);
 
-    if (params.path[0] == '\0')
-        return AssetHandle();
-
-    uint32 typeMgrIdx = gAssetMgr.typeManagers.FindIf(
-        [params](const AssetTypeManager& typeMgr) { return typeMgr.fourcc == params.typeId; });
-    ASSERT_MSG(typeMgrIdx != UINT32_MAX, "AssetType with FourCC %x is not registered", params.typeId);
-    AssetTypeManager& typeMgr = gAssetMgr.typeManagers[typeMgrIdx];
-
-    if (typeMgr.extraParamTypeSize && !extraParams) {
-        logWarning("Extra parameters not provided for asset type '%s'. Set extra parameters in 'next' field with the type of '%s'",
-            typeMgr.name.CStr(), typeMgr.extraParamTypeName.CStr());
-        ASSERT_MSG(false, "AssetLoadParams.next must not be nullptr for this type of asset (%s)", typeMgr.name.CStr());
-        return AssetHandle();
+    if (uint32 index = gAssetMgr.typeManagers.FindIf([desc](const AssetTypeManager& typeMgr) { 
+            return typeMgr.fourcc == desc.fourcc || typeMgr.name.IsEqual(desc.name); });
+        index != UINT32_MAX)
+    {
+        ASSERT_MSG(0, "AssetType '%s' is already registered", desc.name);
+        return;
     }
 
-    // check if asset is already loaded
-    // Calculate asset hash. This is different from "Cache" hash. Asset hash should always retain it's value for each unique asset
-    // Unique assets are also defined by their extra custom init params 
-    HashMurmur32Incremental hasher(ASSET_HASH_SEED);
-    uint32 assetHash = hasher.Add<char>(params.path, strLen(params.path))
-                             .Add<uint32>(&params.tags)
-                             .AddAny(extraParams, typeMgr.extraParamTypeSize)
-                             .Hash();
-
-    AssetHandle handle = gAssetMgr.assetLookup.FindAndFetch(assetHash, AssetHandle());
-    if (handle.IsValid()) {
-        MutexScope mtx(gAssetMgr.assetsMtx);
-        Asset& asset = gAssetMgr.assets.Data(handle);
-        ++asset.refCount;
-    }
-    else {
-        handle = assetCreateNew(typeMgrIdx, assetHash, params, extraParams);
-        
-        MutexScope mtx(gAssetMgr.assetsMtx);
-        Asset& asset = gAssetMgr.assets.Data(handle);
-        asset.state = AssetState::Loading;
-        asset.obj = typeMgr.asyncObj;
-
-        if (asset.params->barrier.IsValid()) {
-            Signal& sig = gAssetMgr.barriers.Data(asset.params->barrier);
-            sig.Increment();
-        }
-
-        static_assert(sizeof(void*) == sizeof(uint64), "No support for 32bits in this part");
-        uint64 userValue = (static_cast<uint64>(uint32(handle))<<32) |
-                           ((remoteIsConnected() ? (uint64)AssetLoadMethod::Remote : (uint64)AssetLoadMethod::Local) & 0xffffffff);
-        jobsDispatchAuto(JobsType::LongTask, assetLoadTask, IntToPtr<uint64>(userValue));
-    }
-
-    return handle;
+    gAssetMgr.typeManagers.Push(AssetTypeManager {
+        .name = desc.name,
+        .fourcc = desc.fourcc,
+        .callbacks = desc.callbacks,
+        .extraParamTypeSize = desc.extraParamTypeSize,
+        .extraParamTypeName = desc.extraParamTypeName,
+        .failedObj = desc.failedObj,
+        .asyncObj = desc.asyncObj,
+    });
 }
 
-// TODO: consider the case where assetLoad is called but then immediately user calls unload
-//       In this case, unload should check for Loading state and postpone the operation
-//       For now, we have an assert check to enforce that
-void assetUnload(AssetHandle handle)
+void assetUnregister(uint32 fourcc)
 {
-    if (handle.IsValid()) {
-        ASSERT(gAssetMgr.initialized);
-        MutexScope mtx(gAssetMgr.assetsMtx);
-        Asset& asset = gAssetMgr.assets.Data(handle);
+    if (!gAssetMgr.initialized)
+        return;
 
-        if (asset.state != AssetState::Alive) {
-            logWarning("Asset is either failed or already released: %s", asset.params->path);
-            return;
-        }
-    
-        if (--asset.refCount == 0) {
-            AssetCallbacks* callbacks = gAssetMgr.typeManagers[asset.typeMgrIdx].callbacks;
-            if (callbacks)
-                callbacks->Release(asset.obj, asset.params->alloc);
-
-            memFree(asset.params, &gAssetMgr.runtimeAlloc);
-            memFree(asset.depends, &gAssetMgr.runtimeAlloc);
-            memFree(asset.metaData, &gAssetMgr.runtimeAlloc);
-            asset.params = nullptr;
-            asset.metaData = nullptr;
-            asset.depends = nullptr;
-    
-            gAssetMgr.assetLookup.FindAndRemove(asset.hash);
-            gAssetMgr.assets.Remove(handle);
-        }
+    if (uint32 index = gAssetMgr.typeManagers.FindIf([fourcc](const AssetTypeManager& typeMgr) {
+            return typeMgr.fourcc == fourcc; });
+        index != UINT32_MAX)
+    {
+        AssetTypeManager* typeMgr = &gAssetMgr.typeManagers[index];
+        ASSERT_MSG(!typeMgr->unregistered, "AssetTypeManager '%s' is already unregistered", typeMgr->name.CStr());
+        typeMgr->unregistered = true;
     }
 }
 
+
+//    ███╗   ███╗██╗███████╗ ██████╗
+//    ████╗ ████║██║██╔════╝██╔════╝
+//    ██╔████╔██║██║███████╗██║     
+//    ██║╚██╔╝██║██║╚════██║██║     
+//    ██║ ╚═╝ ██║██║███████║╚██████╗
+//    ╚═╝     ╚═╝╚═╝╚══════╝ ╚═════╝
 void* _private::assetGetData(AssetHandle handle)
 {
     ASSERT(gAssetMgr.initialized);
@@ -945,44 +1022,6 @@ AssetHandle assetAddRef(AssetHandle handle)
     return handle;
 }
 
-void assetRegister(const AssetTypeDesc& desc)
-{
-    ASSERT(gAssetMgr.initialized);
-
-    if (uint32 index = gAssetMgr.typeManagers.FindIf([desc](const AssetTypeManager& typeMgr) { 
-            return typeMgr.fourcc == desc.fourcc || typeMgr.name.IsEqual(desc.name); });
-        index != UINT32_MAX)
-    {
-        ASSERT_MSG(0, "AssetType '%s' is already registered", desc.name);
-        return;
-    }
-
-    gAssetMgr.typeManagers.Push(AssetTypeManager {
-        .name = desc.name,
-        .fourcc = desc.fourcc,
-        .callbacks = desc.callbacks,
-        .extraParamTypeSize = desc.extraParamTypeSize,
-        .extraParamTypeName = desc.extraParamTypeName,
-        .failedObj = desc.failedObj,
-        .asyncObj = desc.asyncObj,
-    });
-}
-
-void assetUnregister(uint32 fourcc)
-{
-    if (!gAssetMgr.initialized)
-        return;
-
-    if (uint32 index = gAssetMgr.typeManagers.FindIf([fourcc](const AssetTypeManager& typeMgr) {
-            return typeMgr.fourcc == fourcc; });
-        index != UINT32_MAX)
-    {
-        AssetTypeManager* typeMgr = &gAssetMgr.typeManagers[index];
-        ASSERT_MSG(!typeMgr->unregistered, "AssetTypeManager '%s' is already unregistered", typeMgr->name.CStr());
-        typeMgr->unregistered = true;
-    }
-}
-
 AssetBarrier assetCreateBarrier()
 {
     ASSERT(gAssetMgr.initialized);
@@ -1012,7 +1051,7 @@ bool assetWait(AssetBarrier barrier, uint32 msecs)
     return sig.WaitOnCondition([](int value, int reference)->bool {return value > reference;}, 0, msecs);
 }
 
-void assetCollectGarbage()
+void _private::assetCollectGarbage()
 {
     MutexScope mtx(gAssetMgr.assetsMtx);
     for (AssetGarbage& garbage : gAssetMgr.garbage) {
@@ -1047,14 +1086,20 @@ void assetGetBudgetStats(AssetBudgetStats* stats)
     stats->runtimeHeap = &gAssetMgr.tlsfAlloc;
 }
 
-void _private::assetUpdateCache(float dt)
+static void assetFileChanged(const char* filepath)
 {
-    if (gAssetMgr.cacheSyncInvalidated) {
-        gAssetMgr.cacheSyncDelayTm += dt;
-        if (gAssetMgr.cacheSyncDelayTm >= kAssetCacheSaveDelay)  {
-            gAssetMgr.cacheSyncDelayTm = 0;
-            gAssetMgr.cacheSyncInvalidated = false;
-            jobsDispatchAuto(JobsType::LongTask, [](uint32, void*) { assetSaveCacheHashDatabase(); });
-        }            
+    MutexScope mtx(gAssetMgr.assetsMtx);
+    for (uint32 i = 0; i < gAssetMgr.assets.Count(); i++) {
+        AssetHandle handle = gAssetMgr.assets.HandleAt(i);
+        Asset& asset = gAssetMgr.assets.Data(handle);
+
+        const char* assetPath = asset.params->path;
+        if (assetPath[0] == '/')
+            ++assetPath;
+        if (strIsEqualNoCase(filepath, assetPath)) {
+            uint64 userValue = (static_cast<uint64>(uint32(handle))<<32) |
+                ((remoteIsConnected() ? (uint64)AssetLoadMethod::Remote : (uint64)AssetLoadMethod::Local) & 0xffffffff);
+            jobsDispatchAuto(JobsType::LongTask, assetLoadTask, IntToPtr<uint64>(userValue));
+        }
     }
 }
