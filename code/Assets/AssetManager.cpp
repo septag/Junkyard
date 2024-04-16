@@ -93,12 +93,13 @@ struct AssetManager
     HandlePool<AssetBarrier, Signal> barriers;
     HashTable<AssetHandle> assetLookup;     // key: hash of the asset (path+params)
                                             // This HashTable is used for looking up already loaded assets 
+                                            // It doesn't need a mutex in this context. because it's fixed and we are not accessing the same slot from multiple threads
     
     Array<AssetGarbage> garbage;
     uint8 _padding[8];
 
-    Mutex assetsMtx;                        // Mutex used for 'assets' HandlePool (see above)
-    Mutex hashLookupMtx;
+    ReadWriteMutex assetsMtx;               // Mutex used for 'assets' HandlePool (see above)
+    ReadWriteMutex hashLookupMtx;
     HashTable<uint32> hashLookup;           // Key: hash of the asset(path+params), value: cache hash
 
     size_t initHeapStart;
@@ -217,7 +218,7 @@ static void assetSaveToCache(const AssetTypeManager& typeMgr, const AssetLoadPar
         uint32 hash = uint32((userData >> 32)&0xffffffff);
         uint32 cacheHash = uint32(userData&0xffffffff);
 
-        MutexScope mtx(gAssetMgr.hashLookupMtx);
+        ReadWriteMutexWriteScope mtx(gAssetMgr.hashLookupMtx);
         if (uint32 index = gAssetMgr.hashLookup.Find(hash); index != UINT32_MAX) 
             gAssetMgr.hashLookup.Set(index, cacheHash); // TODO: get delete the old file
         else
@@ -240,7 +241,7 @@ static void assetLoadCacheHashDatabase()
         if (jctx) {
             JsonNode jroot(jctx);
 
-            MutexScope mtx(gAssetMgr.hashLookupMtx);
+            ReadWriteMutexWriteScope mtx(gAssetMgr.hashLookupMtx);
             JsonNode jitem = jroot.GetArrayItem();
             while (jitem.IsValid()) {
                 uint32 hash = jitem.GetChildValue<uint32>("hash", 0);
@@ -270,19 +271,21 @@ static void assetSaveCacheHashDatabase()
     
     blob.Write("[\n", 2);
 
-    MutexScope mtx(gAssetMgr.hashLookupMtx);
-    const uint32* keys = gAssetMgr.hashLookup.Keys();
-    const uint32* values = gAssetMgr.hashLookup.Values();
+    {
+        ReadWriteMutexReadScope mtx(gAssetMgr.hashLookupMtx);
+        const uint32* keys = gAssetMgr.hashLookup.Keys();
+        const uint32* values = gAssetMgr.hashLookup.Values();
 
-    for (uint32 i = 0; i < gAssetMgr.hashLookup.Capacity(); i++) {
-        if (keys[i]) {
-            strPrintFmt(line, sizeof(line), 
-                        "\t{\n"
-                        "\t\thash: 0x%x,\n"
-                        "\t\tcacheHash: 0x%x\n"
-                        "\t},\n", 
-                        keys[i], values[i]);
-            blob.Write(line, strLen(line));
+        for (uint32 i = 0; i < gAssetMgr.hashLookup.Capacity(); i++) {
+            if (keys[i]) {
+                strPrintFmt(line, sizeof(line), 
+                            "\t{\n"
+                            "\t\thash: 0x%x,\n"
+                            "\t\tcacheHash: 0x%x\n"
+                            "\t},\n", 
+                            keys[i], values[i]);
+                blob.Write(line, strLen(line));
+            }
         }
     }
     blob.Write("]\n", 2);
@@ -491,11 +494,11 @@ static AssetHandle assetCreateNew(uint32 typeMgrIdx, uint32 assetHash, const Ass
     AssetHandle handle;
     Asset prevAsset;
     {
-        MutexScope mtx(gAssetMgr.assetsMtx);
+        ReadWriteMutexWriteScope mtx(gAssetMgr.assetsMtx);
         handle = gAssetMgr.assets.Add(asset, &prevAsset);
+        ASSERT(!prevAsset.params);
+        ASSERT(!prevAsset.metaData);
     }
-    ASSERT(!prevAsset.params);
-    ASSERT(!prevAsset.metaData);
 
     gAssetMgr.assetLookup.Add(assetHash, handle);
     return handle;
@@ -506,7 +509,7 @@ static AssetResult assetLoadObjLocal(AssetHandle handle, const AssetTypeManager&
 {
     uint32 cacheHash;
     {
-        MutexScope mtx(gAssetMgr.hashLookupMtx);
+        ReadWriteMutexReadScope mtx(gAssetMgr.hashLookupMtx);
         cacheHash = gAssetMgr.hashLookup.FindAndFetch(hash, 0);
     }
 
@@ -520,7 +523,7 @@ static AssetResult assetLoadObjLocal(AssetHandle handle, const AssetTypeManager&
         result = assetLoadFromCache(typeMgr, loadParams, cacheHash, outLoadedFromCache);
 
         if (!*outLoadedFromCache) {
-            MutexScope mtx(gAssetMgr.hashLookupMtx);
+            ReadWriteMutexWriteScope mtx(gAssetMgr.hashLookupMtx);
             gAssetMgr.hashLookup.FindAndRemove(hash);
 
             gAssetMgr.cacheSyncInvalidated = true;
@@ -537,7 +540,7 @@ static AssetResult assetLoadObjRemote(AssetHandle handle, const AssetTypeManager
 
     uint32 cacheHash;
     {
-        MutexScope mtx(gAssetMgr.hashLookupMtx);
+        ReadWriteMutexReadScope mtx(gAssetMgr.hashLookupMtx);
         cacheHash = gAssetMgr.hashLookup.FindAndFetch(hash, 0);
     }
     
@@ -571,7 +574,7 @@ static AssetResult assetLoadObjRemote(AssetHandle handle, const AssetTypeManager
             params->result = assetLoadFromCache(*params->typeMgr, *params->loadParams, result.cacheHash, params->loadedFromCache);
 
             if (!*params->loadedFromCache) {
-                MutexScope mtx(gAssetMgr.hashLookupMtx);
+                ReadWriteMutexWriteScope mtx(gAssetMgr.hashLookupMtx);
                 gAssetMgr.hashLookup.FindAndRemove(params->hash);
 
                 gAssetMgr.cacheSyncInvalidated = true;
@@ -610,13 +613,13 @@ static void assetLoadTask(uint32 groupIndex, void* userData)
     AssetHandle handle { uint32(userValue >> 32) };
     TimerStopWatch timer;
 
-    gAssetMgr.assetsMtx.Enter();
+    gAssetMgr.assetsMtx.EnterRead();
     Asset& asset = gAssetMgr.assets.Data(handle);
-    const char* filepath = asset.params->path;
+    Path filepath = asset.params->path;
     const AssetTypeManager& typeMgr = gAssetMgr.typeManagers[asset.typeMgrIdx];
     const AssetLoadParams& loadParams = *asset.params;
     uint32 hash = asset.hash;
-    gAssetMgr.assetsMtx.Exit();
+    gAssetMgr.assetsMtx.ExitRead();
 
     AssetResult result;
     bool loadedFromCache = false;
@@ -630,8 +633,8 @@ static void assetLoadTask(uint32 groupIndex, void* userData)
         result = AssetResult {};
     }
 
-    MutexScope mtx(gAssetMgr.assetsMtx);
-    asset = gAssetMgr.assets.Data(handle);  
+    ReadWriteMutexReadScope mtx(gAssetMgr.assetsMtx);
+    asset = gAssetMgr.assets.Data(handle);
     if (asset.obj != typeMgr.asyncObj)
         prevObj = asset.obj;
 
@@ -649,11 +652,16 @@ static void assetLoadTask(uint32 groupIndex, void* userData)
         // Load external asset resources right after we saved the blob to cache.
         // LoadResources can cause the original data to be changed or set some external handles/pointers. 
         if (!loadParams.dontCreateResources) {
+            // TODO: This is fucked! I should probably change the design here
+            //       Because this is reentrant (assets can load other assets) so we have to release the lock 
+            gAssetMgr.assetsMtx.ExitRead();
             if (!typeMgr.callbacks->InitializeSystemResources(result.obj, loadParams)) {
-                logError("Failed creating resources for %s: %s", typeMgr.name.CStr(), filepath);
+                logError("Failed creating resources for %s: %s", typeMgr.name.CStr(), filepath.CStr());
                 typeMgr.callbacks->Release(result.obj, loadParams.alloc);
                 result.obj = nullptr;
             }
+            gAssetMgr.assetsMtx.EnterRead();
+            asset = gAssetMgr.assets.Data(handle);
         }
     }
 
@@ -662,7 +670,7 @@ static void assetLoadTask(uint32 groupIndex, void* userData)
         asset.obj = typeMgr.failedObj;
     }
     else {
-        logVerbose("(load) %s: %s (%.1f ms)%s", typeMgr.name.CStr(), filepath, timer.ElapsedMS(), loadedFromCache ? " [cached]" : "");
+        logVerbose("(load) %s: %s (%.1f ms)%s", typeMgr.name.CStr(), filepath.CStr(), timer.ElapsedMS(), loadedFromCache ? " [cached]" : "");
     }
 
     asset.depends = result.depends;
@@ -679,7 +687,7 @@ static void assetLoadTask(uint32 groupIndex, void* userData)
 
         // try to reload the object, we also provide the previous handle for book keeping
         if (!typeMgr.callbacks->ReloadSync(handle, prevObj)) {
-            logWarning("Asset '%s' cannot get reloaded", filepath);
+            logWarning("Asset '%s' cannot get reloaded", filepath.CStr());
             asset.obj = prevObj;
             garbage.obj = result.obj;     
         }
@@ -729,14 +737,14 @@ AssetHandle assetLoad(const AssetLoadParams& params, const void* extraParams)
 
     AssetHandle handle = gAssetMgr.assetLookup.FindAndFetch(assetHash, AssetHandle());
     if (handle.IsValid()) {
-        MutexScope mtx(gAssetMgr.assetsMtx);
+        ReadWriteMutexReadScope mtx(gAssetMgr.assetsMtx);
         Asset& asset = gAssetMgr.assets.Data(handle);
         ++asset.refCount;
     }
     else {
         handle = assetCreateNew(typeMgrIdx, assetHash, params, extraParams);
         
-        MutexScope mtx(gAssetMgr.assetsMtx);
+        ReadWriteMutexReadScope mtx(gAssetMgr.assetsMtx);
         Asset& asset = gAssetMgr.assets.Data(handle);
         asset.state = AssetState::Loading;
         asset.obj = typeMgr.asyncObj;
@@ -762,28 +770,37 @@ void assetUnload(AssetHandle handle)
 {
     if (handle.IsValid()) {
         ASSERT(gAssetMgr.initialized);
-        MutexScope mtx(gAssetMgr.assetsMtx);
+        gAssetMgr.assetsMtx.EnterRead();
         Asset& asset = gAssetMgr.assets.Data(handle);
 
         if (asset.state != AssetState::Alive) {
+            gAssetMgr.assetsMtx.ExitRead();
             logWarning("Asset is either failed or already released: %s", asset.params->path);
             return;
         }
     
         if (--asset.refCount == 0) {
             AssetCallbacks* callbacks = gAssetMgr.typeManagers[asset.typeMgrIdx].callbacks;
+            gAssetMgr.assetsMtx.ExitRead();
+
             if (callbacks)
                 callbacks->Release(asset.obj, asset.params->alloc);
 
-            memFree(asset.params, &gAssetMgr.runtimeAlloc);
-            memFree(asset.depends, &gAssetMgr.runtimeAlloc);
-            memFree(asset.metaData, &gAssetMgr.runtimeAlloc);
-            asset.params = nullptr;
-            asset.metaData = nullptr;
-            asset.depends = nullptr;
+            uint32 assetHash;
+            {
+                ReadWriteMutexWriteScope mtx(gAssetMgr.assetsMtx);
+                asset = gAssetMgr.assets.Data(handle);
+                memFree(asset.params, &gAssetMgr.runtimeAlloc);
+                memFree(asset.depends, &gAssetMgr.runtimeAlloc);
+                memFree(asset.metaData, &gAssetMgr.runtimeAlloc);
+                asset.params = nullptr;
+                asset.metaData = nullptr;
+                asset.depends = nullptr;
+                gAssetMgr.assets.Remove(handle);
+                assetHash = asset.hash;
+            }
     
-            gAssetMgr.assetLookup.FindAndRemove(asset.hash);
-            gAssetMgr.assets.Remove(handle);
+            gAssetMgr.assetLookup.FindAndRemove(assetHash);
         }
     }
 }
@@ -883,7 +900,7 @@ bool assetLoadMetaData(AssetHandle handle, Allocator* alloc, AssetMetaKeyValue**
 {
     ASSERT(handle.IsValid());
 
-    MutexScope mtx(gAssetMgr.assetsMtx);
+    ReadWriteMutexReadScope mtx(gAssetMgr.assetsMtx);
     Asset& asset = gAssetMgr.assets.Data(handle);
     if (asset.numMeta && asset.metaData) {
         *outData = memAllocCopy<AssetMetaKeyValue>(asset.metaData, asset.numMeta, alloc);
@@ -969,15 +986,7 @@ void* _private::assetGetData(AssetHandle handle)
 {
     ASSERT(gAssetMgr.initialized);
     
-    MutexScope mtx(gAssetMgr.assetsMtx);
-    Asset& asset = gAssetMgr.assets.Data(handle);
-    return asset.obj;
-}
-
-void* _private::assetGetDataUnsafe(AssetHandle handle)
-{
-    ASSERT(gAssetMgr.initialized);
-
+    ReadWriteMutexReadScope mtx(gAssetMgr.assetsMtx);
     Asset& asset = gAssetMgr.assets.Data(handle);
     return asset.obj;
 }
@@ -987,7 +996,7 @@ AssetInfo assetGetInfo(AssetHandle handle)
     ASSERT(gAssetMgr.initialized);
     ASSERT(handle.IsValid());
 
-    MutexScope mtx(gAssetMgr.assetsMtx);
+    ReadWriteMutexReadScope mtx(gAssetMgr.assetsMtx);
     Asset& asset = gAssetMgr.assets.Data(handle);
 
     return AssetInfo {
@@ -1006,7 +1015,7 @@ bool assetIsAlive(AssetHandle handle)
     ASSERT(gAssetMgr.initialized);
     ASSERT(handle.IsValid());
 
-    MutexScope mtx(gAssetMgr.assetsMtx);
+    ReadWriteMutexReadScope mtx(gAssetMgr.assetsMtx);
     Asset& asset = gAssetMgr.assets.Data(handle);
     return asset.state == AssetState::Alive;
 }
@@ -1016,7 +1025,7 @@ AssetHandle assetAddRef(AssetHandle handle)
     ASSERT(gAssetMgr.initialized);
     ASSERT(handle.IsValid());
 
-    MutexScope mtx(gAssetMgr.assetsMtx);
+    ReadWriteMutexReadScope mtx(gAssetMgr.assetsMtx);
     Asset& asset = gAssetMgr.assets.Data(handle);
     ++asset.refCount;
     return handle;
@@ -1053,7 +1062,7 @@ bool assetWait(AssetBarrier barrier, uint32 msecs)
 
 void _private::assetCollectGarbage()
 {
-    MutexScope mtx(gAssetMgr.assetsMtx);
+    ReadWriteMutexReadScope mtx(gAssetMgr.assetsMtx);
     for (AssetGarbage& garbage : gAssetMgr.garbage) {
         AssetTypeManager* typeMgr = &gAssetMgr.typeManagers[garbage.typeMgrIdx];
         if (!typeMgr->unregistered) {
@@ -1088,7 +1097,8 @@ void assetGetBudgetStats(AssetBudgetStats* stats)
 
 static void assetFileChanged(const char* filepath)
 {
-    MutexScope mtx(gAssetMgr.assetsMtx);
+    // TOOD: this implmentation can potentially get very slow when there are too many assets
+    ReadWriteMutexReadScope mtx(gAssetMgr.assetsMtx);
     for (uint32 i = 0; i < gAssetMgr.assets.Count(); i++) {
         AssetHandle handle = gAssetMgr.assets.HandleAt(i);
         Asset& asset = gAssetMgr.assets.Data(handle);

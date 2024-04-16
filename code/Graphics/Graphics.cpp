@@ -269,7 +269,6 @@ struct GfxCommandBufferThreadData
     bool renderingToSwapchain;
 };
 
-// TODO: see if we can remove the mutex here, it creates way too much contention
 struct GfxObjectPools
 {
     enum PoolIndex
@@ -283,7 +282,7 @@ struct GfxObjectPools
         POOL_COUNT
     };
 
-    SpinLockMutex locks[POOL_COUNT];
+    ReadWriteMutex locks[POOL_COUNT];
 
     HandlePool<GfxBuffer, GfxBufferData> buffers;
     HandlePool<GfxImage, GfxImageData> images;
@@ -428,8 +427,8 @@ static thread_local GfxCommandBufferThreadData gCmdBufferThreadData;
 static constexpr const char* kVkValidationLayer = "VK_LAYER_KHRONOS_validation";
 static constexpr const char* kAdrenoDebugLayer = "VK_LAYER_ADRENO_debug";
 
-// #define GFX_LOCK_POOL_TEMP(_type) SpinLockScope CONCAT(mtx, __LINE__)(gVk.pools.locks[GfxObjectPools::_type])
-#define GFX_LOCK_POOL_TEMP(_type)
+#define GFX_LOCK_POOL_TEMP(_type) ReadWriteMutexReadScope CONCAT(mtx, __LINE__)(gVk.pools.locks[GfxObjectPools::_type])
+// #define GFX_LOCK_POOL_TEMP(_type)
 
 #if PLATFORM_WINDOWS
     static const char* kGfxVkExtensions[] = {
@@ -1849,9 +1848,9 @@ void gfxCmdPushConstants(GfxPipeline pipeline, GfxShaderStage stage, const void*
     ASSERT_MSG(cmdBufferVk, "CmdXXX functions must come between Begin/End CommandBuffer calls");
 
     { 
-        SpinLockMutexScope lk1(gVk.pools.locks[GfxObjectPools::PIPELINES]);
+        ReadWriteMutexReadScope lk1(gVk.pools.locks[GfxObjectPools::PIPELINES]);
         const GfxPipelineData& pipData = gVk.pools.pipelines.Data(pipeline);
-        SpinLockMutexScope lk2(gVk.pools.locks[GfxObjectPools::PIPELINE_LAYOUTS]);
+        ReadWriteMutexReadScope lk2(gVk.pools.locks[GfxObjectPools::PIPELINE_LAYOUTS]);
         pipLayoutVk = gVk.pools.pipelineLayouts.Data(pipData.pipelineLayout).layout;
     }
 
@@ -2452,19 +2451,19 @@ static GfxPipelineLayout gfxCreatePipelineLayout(const GfxShader& shader,
                         .Add<GfxPushConstantDesc>(pushConstants, numPushConstants)
                         .Hash();
 
-    // atomicLockEnter(&gVk.pools.locks[GfxObjectPools::PIPELINE_LAYOUTS]);
+    gVk.pools.locks[GfxObjectPools::PIPELINE_LAYOUTS].EnterRead();
     if (GfxPipelineLayout pipLayout = gVk.pools.pipelineLayouts.FindIf(
         [hash](const GfxPipelineLayoutData& item)->bool { return item.hash == hash; }); pipLayout.IsValid())
     {
         GfxPipelineLayoutData& item = gVk.pools.pipelineLayouts.Data(pipLayout);
         ++item.refCount;
-        // atomicLockExit(&gVk.pools.locks[GfxObjectPools::PIPELINE_LAYOUTS]);
+        gVk.pools.locks[GfxObjectPools::PIPELINE_LAYOUTS].ExitRead();
         if (layoutOut)
             *layoutOut = item.layout;
         return pipLayout;
     }
     else {
-        gVk.pools.locks[GfxObjectPools::PIPELINE_LAYOUTS].Exit();
+        gVk.pools.locks[GfxObjectPools::PIPELINE_LAYOUTS].ExitRead();
     
         MemTempAllocator tempAlloc;
         
@@ -2543,7 +2542,7 @@ static void gfxDestroyPipelineLayout(GfxPipelineLayout layout)
             vkDestroyPipelineLayout(gVk.device, layoutData.layout, &gVk.allocVk);
         memset(&layoutData, 0x0, sizeof(layoutData));
 
-        SpinLockMutexScope lk(gVk.pools.locks[GfxObjectPools::PIPELINE_LAYOUTS]);
+        ReadWriteMutexWriteScope lk(gVk.pools.locks[GfxObjectPools::PIPELINE_LAYOUTS]);
         gVk.pools.pipelineLayouts.Remove(layout);
     }
 }
@@ -3037,7 +3036,7 @@ void gfxDestroyPipeline(GfxPipeline pipeline)
     if (pipData.pipeline)
         vkDestroyPipeline(gVk.device, pipData.pipeline, &gVk.allocVk);
 
-    SpinLockMutexScope lk(gVk.pools.locks[GfxObjectPools::PIPELINES]);
+    ReadWriteMutexWriteScope lk(gVk.pools.locks[GfxObjectPools::PIPELINES]);
     gVk.pools.pipelines.Remove(pipeline);
 }
 
@@ -3245,11 +3244,11 @@ GfxBuffer gfxCreateBuffer(const GfxBufferDesc& desc)
     }
 
     #if !CONFIG_FINAL_BUILD
-        if (settingsGet().graphics.trackResourceLeaks)
-            bufferData.numStackframes = debugCaptureStacktrace(bufferData.stackframes, (uint16)CountOf(bufferData.stackframes), 2);
+    if (settingsGet().graphics.trackResourceLeaks)
+        bufferData.numStackframes = debugCaptureStacktrace(bufferData.stackframes, (uint16)CountOf(bufferData.stackframes), 2);
     #endif
 
-    SpinLockMutexScope lk(gVk.pools.locks[GfxObjectPools::BUFFERS]);
+    ReadWriteMutexWriteScope lk(gVk.pools.locks[GfxObjectPools::BUFFERS]);
     return gVk.pools.buffers.Add(bufferData);
 }
 
@@ -3269,7 +3268,7 @@ void gfxDestroyBuffer(GfxBuffer buffer)
         vmaDestroyBuffer(gVk.vma, bufferData.stagingBuffer, bufferData.stagingAllocation);
 
     { 
-        SpinLockMutexScope lk(gVk.pools.locks[GfxObjectPools::BUFFERS]);
+        ReadWriteMutexWriteScope lk(gVk.pools.locks[GfxObjectPools::BUFFERS]);
         gVk.pools.buffers.Remove(buffer);
     }
 }
@@ -3571,7 +3570,7 @@ GfxImage gfxCreateImage(const GfxImageDesc& desc)
         imageData.numStackframes = debugCaptureStacktrace(imageData.stackframes, (uint16)CountOf(imageData.stackframes), 2);
 #endif
 
-    SpinLockMutexScope lk(gVk.pools.locks[GfxObjectPools::IMAGES]);
+    ReadWriteMutexWriteScope lk(gVk.pools.locks[GfxObjectPools::IMAGES]);
     return gVk.pools.images.Add(imageData);
 }
 
@@ -3592,7 +3591,7 @@ void gfxDestroyImage(GfxImage image)
         memset(&imageData, 0x0, sizeof(imageData));
     }    
 
-    SpinLockMutexScope lk(gVk.pools.locks[GfxObjectPools::IMAGES]);
+    ReadWriteMutexWriteScope lk(gVk.pools.locks[GfxObjectPools::IMAGES]);
     gVk.pools.images.Remove(image);
 }
 
@@ -3640,17 +3639,17 @@ GfxDescriptorSetLayout gfxCreateDescriptorSetLayout(const GfxShader& shader, con
                         .AddCStringArray(names, numBindings)
                         .Hash();
 
-    gVk.pools.locks[GfxObjectPools::DESCRIPTOR_SET_LAYOUTS].Enter();
+    gVk.pools.locks[GfxObjectPools::DESCRIPTOR_SET_LAYOUTS].EnterRead();
     if (GfxDescriptorSetLayout layout = gVk.pools.descriptorSetLayouts.FindIf(
         [hash](const GfxDescriptorSetLayoutData& item)->bool { return item.hash == hash; }); layout.IsValid())
     {
         GfxDescriptorSetLayoutData& item = gVk.pools.descriptorSetLayouts.Data(layout);
         ++item.refCount;
-        gVk.pools.locks[GfxObjectPools::DESCRIPTOR_SET_LAYOUTS].Exit();
+        gVk.pools.locks[GfxObjectPools::DESCRIPTOR_SET_LAYOUTS].ExitRead();
         return layout;
     }
     else {
-        gVk.pools.locks[GfxObjectPools::DESCRIPTOR_SET_LAYOUTS].Exit();
+        gVk.pools.locks[GfxObjectPools::DESCRIPTOR_SET_LAYOUTS].ExitRead();
 
         VkDescriptorSetLayoutCreateInfo layoutCreateInfo {
             .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
@@ -3695,11 +3694,11 @@ GfxDescriptorSetLayout gfxCreateDescriptorSetLayout(const GfxShader& shader, con
         }
 
         #if !CONFIG_FINAL_BUILD
-            if (settingsGet().graphics.trackResourceLeaks)
-                dsLayoutData.numStackframes = debugCaptureStacktrace(dsLayoutData.stackframes, (uint16)CountOf(dsLayoutData.stackframes), 2);
+        if (settingsGet().graphics.trackResourceLeaks)
+            dsLayoutData.numStackframes = debugCaptureStacktrace(dsLayoutData.stackframes, (uint16)CountOf(dsLayoutData.stackframes), 2);
         #endif
 
-        SpinLockMutexScope mtx(gVk.pools.locks[GfxObjectPools::DESCRIPTOR_SET_LAYOUTS]);
+        ReadWriteMutexWriteScope mtx(gVk.pools.locks[GfxObjectPools::DESCRIPTOR_SET_LAYOUTS]);
         GfxDescriptorSetLayoutData prevLayout;
         layout = gVk.pools.descriptorSetLayouts.Add(dsLayoutData, &prevLayout);
 
@@ -3723,7 +3722,7 @@ void gfxDestroyDescriptorSetLayout(GfxDescriptorSetLayout layout)
             memFree(layoutData.bindings, &gVk.alloc);
         memset(&layoutData, 0x0, sizeof(layoutData));
 
-        SpinLockMutexScope lk(gVk.pools.locks[GfxObjectPools::DESCRIPTOR_SET_LAYOUTS]);
+        ReadWriteMutexWriteScope lk(gVk.pools.locks[GfxObjectPools::DESCRIPTOR_SET_LAYOUTS]);
         gVk.pools.descriptorSetLayouts.Remove(layout);
     }
 }
@@ -3781,11 +3780,11 @@ GfxDescriptorSet gfxCreateDescriptorSet(GfxDescriptorSetLayout layout)
     }
 
     #if !CONFIG_FINAL_BUILD
-        if (settingsGet().graphics.trackResourceLeaks)
-            descriptorSetData.numStackframes = debugCaptureStacktrace(descriptorSetData.stackframes, (uint16)CountOf(descriptorSetData.stackframes), 2);
+    if (settingsGet().graphics.trackResourceLeaks)
+        descriptorSetData.numStackframes = debugCaptureStacktrace(descriptorSetData.stackframes, (uint16)CountOf(descriptorSetData.stackframes), 2);
     #endif
 
-    SpinLockMutexScope lk(gVk.pools.locks[GfxObjectPools::DESCRIPTOR_SETS]);
+    ReadWriteMutexWriteScope lk(gVk.pools.locks[GfxObjectPools::DESCRIPTOR_SETS]);
     return gVk.pools.descriptorSets.Add(descriptorSetData);
 }
 
@@ -3823,7 +3822,7 @@ void gfxDestroyDescriptorSet(GfxDescriptorSet dset)
 
     vkFreeDescriptorSets(gVk.device, gVk.descriptorPool, 1, &dsetData.descriptorSet);
 
-    SpinLockMutexScope lk(gVk.pools.locks[GfxObjectPools::DESCRIPTOR_SETS]);
+    ReadWriteMutexWriteScope lk(gVk.pools.locks[GfxObjectPools::DESCRIPTOR_SETS]);
     gVk.pools.descriptorSets.Remove(dset);
 }
 
@@ -3842,13 +3841,13 @@ void gfxUpdateDescriptorSet(GfxDescriptorSet dset, uint32 numBindings, const Gfx
     GfxDescriptorSetData dsetData; 
     
     {   
-        SpinLockMutexScope lk1(gVk.pools.locks[GfxObjectPools::DESCRIPTOR_SETS]);
+        ReadWriteMutexReadScope lk1(gVk.pools.locks[GfxObjectPools::DESCRIPTOR_SETS]);
         dsetData = gVk.pools.descriptorSets.Data(dset);
     }
 
     MemTempAllocator tempAlloc;
 
-    SpinLockMutexScope lk2(gVk.pools.locks[GfxObjectPools::DESCRIPTOR_SET_LAYOUTS]);
+    ReadWriteMutexReadScope lk2(gVk.pools.locks[GfxObjectPools::DESCRIPTOR_SET_LAYOUTS]);
     GfxDescriptorSetLayoutData& layoutData = gVk.pools.descriptorSetLayouts.Data(dsetData.layout);
     bool hasImage = false;
 
@@ -4647,7 +4646,6 @@ enum class GpuContextType : uint8_t
 };
 
 static constexpr uint32 kTracy_GpuContextCalibration = 1 << 0;      // TracyQueue.hpp -> GpuContextFlags
-
 static constexpr const uint32 kProfileMaxQueries = 64*1024;
 
 struct GfxProfileQueryContext
@@ -4695,7 +4693,7 @@ static void gfxProfileCalibrate(const GfxProfileQueryContext& ctx, int64* tCpu, 
     uint64 ts[2];
     uint64 deviation;
     do {
-        VkExtensionApi::vkGetCalibratedTimestampsEXT(gVk.device, 2, spec, ts, &deviation);
+        vkGetCalibratedTimestampsEXT(gVk.device, 2, spec, ts, &deviation);
     } while(deviation > ctx.deviation);
 
     #if PLATFORM_WINDOWS
@@ -4794,7 +4792,7 @@ static bool gfxInitializeProfileQueryContext(GfxProfileQueryContext* ctx, uint8 
         uint64 ts[2];
         uint64 deviation[kNumProbes];
         for(uint32 i = 0; i < kNumProbes; i++)
-            VkExtensionApi::vkGetCalibratedTimestampsEXT(gVk.device, 2, spec, ts, &deviation[i]);
+            vkGetCalibratedTimestampsEXT(gVk.device, 2, spec, ts, &deviation[i]);
 
         uint64 minDeviation = deviation[0];
         for (uint32 i = 1; i < kNumProbes; i++) {
@@ -4840,22 +4838,24 @@ static bool gfxInitializeProfiler()
 {
     VkTimeDomainEXT timeDomain = VK_TIME_DOMAIN_DEVICE_EXT;
 
-    if (gfxHasDeviceExtension(VK_EXT_CALIBRATED_TIMESTAMPS_EXTENSION_NAME)) {
-        if (!VkExtensionApi::vkGetPhysicalDeviceCalibrateableTimeDomainsEXT) {
-            VkExtensionApi::vkGetPhysicalDeviceCalibrateableTimeDomainsEXT = 
+    // TODO: VK_EXT_calibrated_timestamps implementation is incorrect. Revisit this 
+    #if 0
+    if (gfxHasDeviceExtension("VK_EXT_calibrated_timestamps")) {
+        if (!vkGetPhysicalDeviceCalibrateableTimeDomainsEXT) {
+            vkGetPhysicalDeviceCalibrateableTimeDomainsEXT = 
                 (PFN_vkGetPhysicalDeviceCalibrateableTimeDomainsEXT)vkGetInstanceProcAddr(gVk.instance, "vkGetPhysicalDeviceCalibrateableTimeDomainsEXT");
         }
-        if (!VkExtensionApi::vkGetCalibratedTimestampsEXT) {
-            VkExtensionApi::vkGetCalibratedTimestampsEXT = 
+        if (!vkGetCalibratedTimestampsEXT) {
+            vkGetCalibratedTimestampsEXT = 
                 (PFN_vkGetCalibratedTimestampsEXT)vkGetInstanceProcAddr(gVk.instance, "vkGetCalibratedTimestampsEXT");
         }
     
         uint32_t num;
-        VkExtensionApi::vkGetPhysicalDeviceCalibrateableTimeDomainsEXT(gVk.physicalDevice, &num, nullptr);
+        vkGetPhysicalDeviceCalibrateableTimeDomainsEXT(gVk.physicalDevice, &num, nullptr);
         if (num > 4) 
             num = 4;
         VkTimeDomainEXT data[4];
-        VkExtensionApi::vkGetPhysicalDeviceCalibrateableTimeDomainsEXT(gVk.physicalDevice, &num, data);
+        vkGetPhysicalDeviceCalibrateableTimeDomainsEXT(gVk.physicalDevice, &num, data);
         VkTimeDomainEXT supportedDomain = (VkTimeDomainEXT)-1;
         #if PLATFORM_WINDOWS
             supportedDomain = VK_TIME_DOMAIN_QUERY_PERFORMANCE_COUNTER_EXT;
@@ -4870,10 +4870,11 @@ static bool gfxInitializeProfiler()
             }
         }
     }
+    #endif
 
     gGfxProfile.timeDomain = timeDomain;
 
-    //------------------------------------------------------------------------
+    //------------------------------------------------------------------------------------------------------------------
     // Make a temp command pool
     VkCommandPool cmdPool;
     VkCommandPoolCreateInfo poolCreateInfo {
@@ -4885,7 +4886,8 @@ static bool gfxInitializeProfiler()
         return false;
     }
 
-    //------------------------------------------------------------------------
+    //------------------------------------------------------------------------------------------------------------------
+    //
     const char* name = "GfxQueue";
     for (uint32 i = 0; i < kMaxFramesInFlight; i++) {
         GfxProfileQueryContext* ctx = &gGfxProfile.gfxQueries[i];

@@ -188,8 +188,6 @@ namespace _private
     // See Graphics.h:assetGetImage for an example
     void* assetGetData(AssetHandle handle);
 
-    void* assetGetDataUnsafe(AssetHandle handle);
-
     void assetUpdateCache(float dt);
 
     void assetCollectGarbage();

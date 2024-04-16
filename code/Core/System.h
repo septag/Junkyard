@@ -140,24 +140,12 @@ struct ReadWriteMutexWriteScope
 {
     ReadWriteMutexWriteScope() = delete;
     ReadWriteMutexWriteScope(const ReadWriteMutexWriteScope&) = delete;
-    explicit ReadWriteMutexWriteScope(ReadWriteMutex& mtx) : mMtx(mtx) { mMtx.EnterRead(); }
-    ~ReadWriteMutexWriteScope() { mMtx.ExitRead(); }
+    explicit ReadWriteMutexWriteScope(ReadWriteMutex& mtx) : mMtx(mtx) { mMtx.EnterWrite(); }
+    ~ReadWriteMutexWriteScope() { mMtx.ExitWrite(); }
 
 private:
     ReadWriteMutex& mMtx;
 };
-
-struct ReadWriteMutexScope
-{
-    ReadWriteMutexScope() = delete;
-    ReadWriteMutexScope(const ReadWriteMutexScope&) = delete;
-    explicit ReadWriteMutexScope(ReadWriteMutex& mtx) : mMtx(mtx) { mMtx.EnterRead(); }
-    ~ReadWriteMutexScope() { mMtx.ExitRead(); }
-
-private:
-    ReadWriteMutex& mMtx;
-};
-
 
 
 //    ███████╗██████╗ ██╗███╗   ██╗██╗      ██████╗  ██████╗██╗  ██╗    ███╗   ███╗██╗   ██╗████████╗███████╗██╗  ██╗

@@ -331,7 +331,7 @@ struct AppImpl : AppCallbacks
             },
             .blend = {
                 .numAttachments = 1,
-                .attachments = gfxBlendAttachmentDescGetDefault()
+                .attachments = GfxBlendAttachmentDesc::GetDefault()
             },
             .depthStencil = GfxDepthStencilDesc {
                 .depthTestEnable = true,

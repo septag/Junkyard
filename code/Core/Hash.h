@@ -11,10 +11,11 @@
 //     Murmur3: Suitable for hashing larger data blobs. It has two versions, 32bit and 128bit. 
 // 
 // HashTable: Fibonacci based hash table. 
-//            No allocation or deallocation happen in ctor/dtor. Memory should be allocated explicity with `Reserve` and `Free` calls.
-//            It can grow if you provide allocator, otherwise, it cannot if you provide pre-allocated buffer/size pairs instead
-//            Becareful not to add duplicates. `Add` method can add multiple hashes if any free slot is found. 
-//            In that case, you should use `AddIfNotFound` method.
+//            - No allocation or deallocation happen in ctor/dtor. Memory should be allocated explicity with `Reserve` and `Free` calls.
+//            - It can grow if you provide allocator, otherwise, it cannot if you provide pre-allocated buffer/size pairs instead
+//            - Becareful not to add duplicates. `Add` method can add multiple hashes if any free slot is found. 
+//              In that case, you should use `AddIfNotFound` method.
+//                               
 //      
 
 #include "Base.h"
@@ -78,40 +79,14 @@ struct HashMurmur32Incremental
 //    ██╔══██║██╔══██║╚════██║██╔══██║       ██║   ██╔══██║██╔══██╗██║     ██╔══╝  
 //    ██║  ██║██║  ██║███████║██║  ██║       ██║   ██║  ██║██████╔╝███████╗███████╗
 //    ╚═╝  ╚═╝╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝       ╚═╝   ╚═╝  ╚═╝╚═════╝ ╚══════╝╚══════╝
-namespace _private
-{
-    struct HashTableData
-    {
-        uint32* keys;
-        uint8* 	values;      // Can be any POD data or opaque type
-        uint32	bitshift;
-        uint32	valueStride;
-        uint32	count;
-        uint32	capacity;
-    };
 
-    API [[nodiscard]] HashTableData* hashtableCreate(uint32 capacity, 
-                                                     uint32 valueStride,
-                                                     Allocator* alloc = memDefaultAlloc());
-    API void hashtableDestroy(HashTableData* tbl, Allocator* alloc = memDefaultAlloc());
-    API bool hashtableGrow(HashTableData** pTbl, Allocator* alloc = memDefaultAlloc());
-    
-    API uint32 hashtableAdd(HashTableData* tbl, uint32 key, const void* value);
-    API uint32 hashtableAddKey(HashTableData* tbl, uint32 key);
-    API uint32 hashtableFind(const HashTableData* tbl, uint32 key);
-    API void hashtableClear(HashTableData* tbl);
-
-    // TODO: memory control (without allocator)
-    API size_t hashtableGetMemoryRequirement(uint32 capacity, uint32 valueStride);
-    API HashTableData* hashtableCreateWithBuffer(uint32 capacity, uint32 valueStride, void* buff, size_t size);
-    API bool hashtableGrowWithBuffer(HashTableData** pTbl, void* buff, size_t size);
-} // _private
+namespace _private { struct HashTableData; };
 
 template <typename _T>
 struct HashTable
 {
     HashTable() : mHashTable(nullptr), mAlloc(memDefaultAlloc()) {}
-    explicit HashTable(Allocator* alloc) :  mHashTable(nullptr), mAlloc(alloc) {}
+    explicit HashTable(Allocator* alloc) : mHashTable(nullptr), mAlloc(alloc) {}
     explicit HashTable(uint32 capacity, void* buff, size_t size);
 
     void SetAllocator(Allocator* alloc);
@@ -150,6 +125,35 @@ private:
 };
 
 using HashTableUint = HashTable<uint32>;
+
+namespace _private
+{
+    struct HashTableData
+    {
+        uint32* keys;
+        uint8* 	values;      // Can be any POD data or opaque type
+        uint32	bitshift;
+        uint32	valueStride;
+        uint32	count;
+        uint32	capacity;
+    };
+
+    API [[nodiscard]] HashTableData* hashtableCreate(uint32 capacity, 
+                                                     uint32 valueStride,
+                                                     Allocator* alloc = memDefaultAlloc());
+    API void hashtableDestroy(HashTableData* tbl, Allocator* alloc = memDefaultAlloc());
+    API bool hashtableGrow(HashTableData** pTbl, Allocator* alloc = memDefaultAlloc());
+    
+    API uint32 hashtableAdd(HashTableData* tbl, uint32 key, const void* value);
+    API uint32 hashtableAddKey(HashTableData* tbl, uint32 key);
+    API uint32 hashtableFind(const HashTableData* tbl, uint32 key);
+    API void hashtableClear(HashTableData* tbl);
+
+    // TODO: memory control (without allocator)
+    API size_t hashtableGetMemoryRequirement(uint32 capacity, uint32 valueStride);
+    API HashTableData* hashtableCreateWithBuffer(uint32 capacity, uint32 valueStride, void* buff, size_t size);
+    API bool hashtableGrowWithBuffer(HashTableData** pTbl, void* buff, size_t size);
+} // _private
 
 //    ██╗███╗   ██╗██╗     ██╗███╗   ██╗███████╗███████╗
 //    ██║████╗  ██║██║     ██║████╗  ██║██╔════╝██╔════╝
@@ -364,12 +368,11 @@ inline uint32 HashTable<_T>::Add(uint32 key, const _T& value)
     }
     
     if (mHashTable->count == mHashTable->capacity) {
-        [[maybe_unused]] bool r = false;
-        ASSERT_MSG(mAlloc, "Only hashtables with allocators can be self-grown automatically");
-        if (mAlloc) 
-            r = _private::hashtableGrow(&mHashTable, mAlloc);
+        ASSERT_MSG(mAlloc, "Only hashtables with allocators can grow");
+        [[maybe_unused]] bool r = _private::hashtableGrow(&mHashTable, mAlloc);
         ASSERT_ALWAYS(r, "could not grow hash-table");
     }
+
     uint32 h = _private::hashtableAddKey(mHashTable, key);
 
     // do memcpy with template types, so it leaves some hints for the compiler to optimize
@@ -382,11 +385,8 @@ inline _T* HashTable<_T>::Add(uint32 key)
 {
     ASSERT(mHashTable);
     if (mHashTable->count == mHashTable->capacity) {
-        bool r = false;
-        ASSERT_MSG(mAlloc, "HashTable full. Only hashtables with allocators can be self-grown automatically");
-        if (mAlloc) 
-            r = _private::hashtableGrow(&mHashTable, mAlloc);
-        UNUSED(r);
+        ASSERT_MSG(mAlloc, "HashTable full. Only hashtables with allocators can grow");
+        [[maybe_unused]] bool r = _private::hashtableGrow(&mHashTable, mAlloc);
         ASSERT_ALWAYS(r, "could not grow hash-table");
     }
     uint32 h = _private::hashtableAddKey(mHashTable, key);
