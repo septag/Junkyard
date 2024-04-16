@@ -212,7 +212,7 @@ bool _private::assetInitializeShaderManager()
     #endif
 
     // Register asset loader
-    assetRegister(AssetTypeDesc {
+    assetRegisterType(AssetTypeDesc {
         .fourcc = kShaderAssetType,
         .name = "Shader",
         .callbacks = &gShaderLoader,
@@ -240,7 +240,7 @@ void _private::assetReleaseShaderManager()
     #if CONFIG_TOOLMODE
         shaderReleaseCompiler();
     #endif
-    assetUnregister(kShaderAssetType);
+    assetUnregisterType(kShaderAssetType);
     gShaderLoader.requestsMtx.Release();
     gShaderLoader.requests.Free();
 }

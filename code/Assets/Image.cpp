@@ -517,7 +517,7 @@ bool _private::assetInitializeImageManager()
             .format = GfxFormat::R8G8B8A8_UNORM
         };
 
-        assetRegister(AssetTypeDesc {
+        assetRegisterType(AssetTypeDesc {
             .fourcc = kImageAssetType,
             .name = "Image",
             .callbacks = &gImageMgr.imageLoader,
@@ -562,7 +562,7 @@ void _private::assetReleaseImageManager()
         gImageMgr.updateCache.Free();
         gImageMgr.updateCacheMtx.Release();
 
-        assetUnregister(kImageAssetType);
+        assetUnregisterType(kImageAssetType);
     }
 }
 
@@ -715,3 +715,4 @@ void AssetImageCallbacks::Release(void* data, Allocator* alloc)
 
     memFree(image, alloc);
 }
+

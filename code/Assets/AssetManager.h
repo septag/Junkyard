@@ -138,8 +138,8 @@ struct AssetCacheDesc
 //    ██╔══██║██╔═══╝ ██║
 //    ██║  ██║██║     ██║
 //    ╚═╝  ╚═╝╚═╝     ╚═╝
-API void assetRegister(const AssetTypeDesc& desc);
-API void assetUnregister(uint32 fourcc);
+API void assetRegisterType(const AssetTypeDesc& desc);
+API void assetUnregisterType(uint32 fourcc);
 
 API AssetHandle assetLoad(const AssetLoadParams& params, const void* extraParams);
 API void assetUnload(AssetHandle handle);
@@ -192,7 +192,6 @@ namespace _private
 
     void assetCollectGarbage();
 }
-
 
 //    ██╗███╗   ██╗██╗     ██╗███╗   ██╗███████╗███████╗
 //    ██║████╗  ██║██║     ██║████╗  ██║██╔════╝██╔════╝

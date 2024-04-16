@@ -458,17 +458,17 @@ void* MemBumpAllocatorBase::Realloc(void* ptr, size_t size, uint32 align)
         }
 
         // align to requested alignment
-        size_t offset_ = mOffset;
+        size_t offset = mOffset;
         if (newPtr == nullptr) {
-            offset_ += sizeof(size_t);
-            if (offset_ % align != 0) 
-                offset_ = AlignValue<size_t>(offset_, align);
+            offset += sizeof(size_t);
+            if (offset % align != 0) 
+                offset = AlignValue<size_t>(offset, align);
         }
         else {
-            ASSERT(offset_ % align == 0);
+            ASSERT(offset % align == 0);
         }
     
-        size_t endOffset = offset_ + (size - lastSize);
+        size_t endOffset = offset + (size - lastSize);
 
         if (endOffset > mReserveSize) {
             MEMORY_FAIL();
@@ -487,7 +487,7 @@ void* MemBumpAllocatorBase::Realloc(void* ptr, size_t size, uint32 align)
 
         // Create the pointer if we are not re-using the previous one
         if (!newPtr) {
-            newPtr = mBuffer + offset_;
+            newPtr = mBuffer + offset;
 
             // we are not re-using the previous allocation, memcpy the previous block in case of realloc
             if (ptr)

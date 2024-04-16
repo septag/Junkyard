@@ -1282,7 +1282,7 @@ Model* assetGetModel(AssetHandleModel modelHandle)
 
 bool _private::assetInitializeModelManager()
 {
-    assetRegister(AssetTypeDesc {
+    assetRegisterType(AssetTypeDesc {
         .fourcc = kModelAssetType,
         .name = "Model",
         .callbacks = &gModelLoader,
@@ -1312,5 +1312,5 @@ bool _private::assetInitializeModelManager()
 
 void _private::assetReleaseModelManager()
 {
-    assetUnregister(kModelAssetType);
+    assetUnregisterType(kModelAssetType);
 }

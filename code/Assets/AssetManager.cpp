@@ -937,7 +937,7 @@ const char* assetGetMetaValue(const AssetMetaKeyValue* data, uint32 count, const
 //    ██╔══██╗██╔══╝  ██║   ██║██║╚════██║   ██║   ██╔══╝  ██╔══██╗
 //    ██║  ██║███████╗╚██████╔╝██║███████║   ██║   ███████╗██║  ██║
 //    ╚═╝  ╚═╝╚══════╝ ╚═════╝ ╚═╝╚══════╝   ╚═╝   ╚══════╝╚═╝  ╚═╝
-void assetRegister(const AssetTypeDesc& desc)
+void assetRegisterType(const AssetTypeDesc& desc)
 {
     ASSERT(gAssetMgr.initialized);
 
@@ -960,7 +960,7 @@ void assetRegister(const AssetTypeDesc& desc)
     });
 }
 
-void assetUnregister(uint32 fourcc)
+void assetUnregisterType(uint32 fourcc)
 {
     if (!gAssetMgr.initialized)
         return;
@@ -1113,3 +1113,4 @@ static void assetFileChanged(const char* filepath)
         }
     }
 }
+
