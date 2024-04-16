@@ -173,10 +173,10 @@ struct GfxBufferData
     VmaAllocation           stagingAllocation;
     void*                   mappedBuffer;
 
-#if !CONFIG_FINAL_BUILD
+    #if !CONFIG_FINAL_BUILD
     void*                   stackframes[8];
     uint16                  numStackframes;
-#endif
+    #endif
 };
 
 struct GfxImageData

@@ -1068,6 +1068,95 @@ API void gfxCmdSetViewports(uint32 firstViewport, uint32 numViewports, const Gfx
 // Should not come in between RenderPasses or you will get UB
 API void gfxUpdateDescriptorSet(GfxDescriptorSet dset, uint32 numBindings, const GfxDescriptorBindingDesc* bindings);
 
+// VkCommandBuffer
+typedef struct VkCommandBuffer_T* VkCommandBuffer;
+
+// VkBuffer
+typedef uint32_t VkFlags;
+struct VmaAllocation_T;
+typedef VmaAllocation_T* VmaAllocation;
+typedef VkFlags VkMemoryPropertyFlags;
+typedef struct VkBuffer_T* VkBuffer;
+
+// VkDescriptorSet
+typedef struct VkDescriptorSetLayout_T* VkDescriptorSetLayout;
+enum VkDescriptorType : int;
+
+// VkPipeline
+struct VkGraphicsPipelineCreateInfo;
+typedef struct VkPipelineLayout_T* VkPipelineLayout;
+typedef struct VkPipeline_T* VkPipeline;
+
+inline constexpr uint32 MAX_DESCRIPTOR_SETS_PER_LAYOUT = 2;
+
+struct GfxBuffer2
+{
+    GfxBufferType           type;
+    GfxBufferUsage          memUsage;
+    uint32                  size;
+    VmaAllocation           allocation;
+    VkMemoryPropertyFlags   memFlags;
+    VkBuffer                buffer;
+    VkBuffer                stagingBuffer;
+    VmaAllocation           stagingAllocation;
+    void*                   mappedBuffer;
+};
+
+struct GfxDescriptorSetLayoutBinding2
+{
+    const char* name;
+    uint32 nameHash;
+    uint32 variableDescCount;
+    uint32 bindingId;
+    VkDescriptorType descriptorType;
+};
+
+struct GfxDescriptorSetLayout2
+{
+    VkDescriptorSetLayout layout;
+    uint32 numBindings;
+    GfxDescriptorSetLayoutBinding2* bindings;
+};
+
+struct GfxPipelineLayout2
+{
+    uint32 numDescriptorSetLayouts;
+    GfxDescriptorSetLayout2 descriptorSetLayouts[MAX_DESCRIPTOR_SETS_PER_LAYOUT];
+    VkPipelineLayout layout;
+};
+
+struct GfxPipeline2
+{
+    VkPipeline pipeline;
+    GfxPipelineLayout2 pipelineLayout;
+    VkGraphicsPipelineCreateInfo* createInfo;
+};
+
+struct GfxCommandBuffer2
+{
+    void UpdateBuffer(GfxBuffer2& buffer, const void* data, size_t size) const;
+
+    void BindPipeline(const GfxPipeline2& pipeline) const;
+    void BindDescriptorSets(const GfxPipelineLayout2& layout, uint32 numDescriptorSets, const GfxDescriptorSet* descriptorSets, 
+                            const uint32* dynOffsets = nullptr, uint32 dynOffsetCount = 0) const;
+    void BindVertexBuffers(uint32 firstBinding, uint32 numBindings, const GfxBuffer* vertexBuffers, const uint64* offsets) const;
+    void BindIndexBuffer(const GfxBuffer2& indexBuffer, uint64 offset, GfxIndexType indexType) const;
+
+    void PushConstants(const GfxPipeline2& pipeline, GfxShaderStage stage, const void* data, uint32 size) const;
+    void Draw(uint32 vertexCount, uint32 instanceCount, uint32 firstVertex, uint32 firstInstance) const;
+    void DrawIndexed(uint32 indexCount, uint32 instanceCount, uint32 firstIndex, uint32 vertexOffset, uint32 firstInstance) const;
+    void SetScissors(uint32 firstScissors, uint32 numScissors, const Recti* scissors, bool isSwapchain = false) const;
+    void SetViewports(uint32 firstViewport, uint32 numViewports, const GfxViewport* viewports, bool isSwapchain = false) const;
+
+    static GfxCommandBuffer2 Begin();
+    void End();
+
+    void BeginSwapchainRenderPass(Color bgColor = kColorBlack);
+    void EndSwapchainRenderPass();
+
+    VkCommandBuffer mCmdBuffer;
+};
+
 //    ██████╗ ██████╗  ██████╗ ███████╗██╗██╗     ██╗███╗   ██╗ ██████╗ 
 //    ██╔══██╗██╔══██╗██╔═══██╗██╔════╝██║██║     ██║████╗  ██║██╔════╝ 
 //    ██████╔╝██████╔╝██║   ██║█████╗  ██║██║     ██║██╔██╗ ██║██║  ███╗
