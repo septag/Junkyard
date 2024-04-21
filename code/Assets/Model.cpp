@@ -1129,7 +1129,7 @@ static bool modelHandlerServerFn([[maybe_unused]] uint32 cmd, const Blob& incomi
     // spawn and pass the copy it over to a task
     Blob* taskDataBlob = NEW(memDefaultAlloc(), Blob)();
     incomingData.CopyTo(taskDataBlob);
-    jobsDispatchAuto(JobsType::LongTask, modelLoadTask, taskDataBlob, 1, JobsPriority::Low);
+    jobsDispatchAndForget(JobsType::LongTask, modelLoadTask, taskDataBlob, 1, JobsPriority::Low);
 
     return true;
 }

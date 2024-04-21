@@ -378,7 +378,7 @@ static bool assetImageHandlerServerFn([[maybe_unused]] uint32 cmd, const Blob& i
     // get a copy of incomingData pass it on to a task
     Blob* taskDataBlob = NEW(memDefaultAlloc(), Blob)();
     incomingData.CopyTo(taskDataBlob);
-    jobsDispatchAuto(JobsType::LongTask, assetLoadImageTask, taskDataBlob, 1, JobsPriority::Low);
+    jobsDispatchAndForget(JobsType::LongTask, assetLoadImageTask, taskDataBlob, 1, JobsPriority::Low);
 
     return true;
 }

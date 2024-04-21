@@ -100,8 +100,8 @@ API void jobsWaitForCompletion(JobsHandle handle);
 API bool jobsIsRunning(JobsHandle handle);
 
 // In this version, we don't care about waiting on the handle. Handle will be automatically delete itself after job is finished
-API void jobsDispatchAuto(JobsType type, JobsCallback callback, void* userData = nullptr, 
-                          uint32 groupSize = 1, JobsPriority prio = JobsPriority::Normal, uint32 stackSize = 0);
+API void jobsDispatchAndForget(JobsType type, JobsCallback callback, void* userData = nullptr, 
+                               uint32 groupSize = 1, JobsPriority prio = JobsPriority::Normal, uint32 stackSize = 0);
 
 API void jobsGetBudgetStats(JobsBudgetStats* stats);
 API void jobsResetBudgetStats();

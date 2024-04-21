@@ -419,6 +419,7 @@ void MemBumpAllocatorBase::Release()
         if (mCommitSize)
             BackendDecommit(mBuffer, mCommitSize);
         BackendRelease(mBuffer, mReserveSize);
+        mBuffer = nullptr;
     }
     
     if (mDebugMode) {
@@ -426,7 +427,13 @@ void MemBumpAllocatorBase::Release()
             memDefaultAlloc()->Free(p.ptr, p.align);
         mDebugPointers->Free();
         memFree(mDebugPointers, memDefaultAlloc());
+        mDebugPointers = nullptr;
     }
+}
+
+bool MemBumpAllocatorBase::IsInitialized() const
+{
+    return !mDebugMode ? (mBuffer != nullptr) : (mDebugPointers != nullptr);
 }
 
 void MemBumpAllocatorBase::CommitAll()

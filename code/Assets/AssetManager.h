@@ -14,6 +14,12 @@ struct AssetMetaKeyValue
     String32 value;
 };
 
+struct AssetMetaData
+{
+    uint32 numKeyValues;
+    AssetMetaKeyValue keyValues;
+};
+
 enum class AssetPlatform : uint32
 {
     Auto = 0,
@@ -191,7 +197,54 @@ namespace _private
     void assetUpdateCache(float dt);
 
     void assetCollectGarbage();
+
+    void assetInitialize2();
+    void assetRelease2();
 }
+
+DEFINE_HANDLE(AssetGroupHandle);
+DEFINE_HANDLE(AssetHandle);
+
+struct AssetParams
+{
+    Path path;
+    uint32 typeId;
+    AssetPlatform platform;
+    RelativePtr<uint8> typeSpecificParams;
+};
+
+struct AssetGroup
+{
+    AssetGroupHandle mHandle;
+
+    void AddToLoadQueue(const AssetParams** params, uint32 numAssets, AssetHandle* outHandles = nullptr) const;
+    void AddToLoadQueue(const AssetParams* params, AssetHandle* outHandle = nullptr) const;
+    void Load() const;
+
+    bool IsLoadFinished() const;
+    void WaitForLoadFinish() const;
+
+    void Unload() const;
+    Span<AssetHandle> GetAssetHandles(Allocator* alloc) const;
+};
+
+API AssetGroup assetCreateGroup();
+API void assetDestroyGroup(AssetGroup group);
+
+struct AssetData
+{
+    AssetParams* params;
+    AssetParams* depends;
+    uint32 numDepends;
+    uint32 typeId;
+    AssetState state;
+    uint32 refCount;
+    AssetMetaKeyValue* metadata;
+    uint32 numMetadata;
+    void* cpuData;
+    void* gpuData;
+};
+
 
 //    ██╗███╗   ██╗██╗     ██╗███╗   ██╗███████╗███████╗
 //    ██║████╗  ██║██║     ██║████╗  ██║██╔════╝██╔════╝

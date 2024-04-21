@@ -104,6 +104,7 @@ struct MemBumpAllocatorBase : Allocator
     void Release();
     void Reset();
     void CommitAll();
+    bool IsInitialized() const;
 
     [[nodiscard]] void* Malloc(size_t size, uint32 align = CONFIG_MACHINE_ALIGNMENT) override;
     [[nodiscard]] void* Realloc(void* ptr, size_t size, uint32 align = CONFIG_MACHINE_ALIGNMENT) override;

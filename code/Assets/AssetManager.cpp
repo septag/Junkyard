@@ -313,7 +313,7 @@ void _private::assetUpdateCache(float dt)
         if (gAssetMgr.cacheSyncDelayTm >= kAssetCacheSaveDelay)  {
             gAssetMgr.cacheSyncDelayTm = 0;
             gAssetMgr.cacheSyncInvalidated = false;
-            jobsDispatchAuto(JobsType::LongTask, [](uint32, void*) { assetSaveCacheHashDatabase(); });
+            jobsDispatchAndForget(JobsType::LongTask, [](uint32, void*) { assetSaveCacheHashDatabase(); });
         }            
     }
 }
@@ -757,7 +757,7 @@ AssetHandle assetLoad(const AssetLoadParams& params, const void* extraParams)
         static_assert(sizeof(void*) == sizeof(uint64), "No support for 32bits in this part");
         uint64 userValue = (static_cast<uint64>(uint32(handle))<<32) |
                            ((remoteIsConnected() ? (uint64)AssetLoadMethod::Remote : (uint64)AssetLoadMethod::Local) & 0xffffffff);
-        jobsDispatchAuto(JobsType::LongTask, assetLoadTask, IntToPtr<uint64>(userValue));
+        jobsDispatchAndForget(JobsType::LongTask, assetLoadTask, IntToPtr<uint64>(userValue));
     }
 
     return handle;
@@ -1109,8 +1109,223 @@ static void assetFileChanged(const char* filepath)
         if (strIsEqualNoCase(filepath, assetPath)) {
             uint64 userValue = (static_cast<uint64>(uint32(handle))<<32) |
                 ((remoteIsConnected() ? (uint64)AssetLoadMethod::Remote : (uint64)AssetLoadMethod::Local) & 0xffffffff);
-            jobsDispatchAuto(JobsType::LongTask, assetLoadTask, IntToPtr<uint64>(userValue));
+            jobsDispatchAndForget(JobsType::LongTask, assetLoadTask, IntToPtr<uint64>(userValue));
         }
     }
 }
+
+
+//    ███╗   ██╗███████╗██╗    ██╗    ███████╗████████╗██╗   ██╗███████╗███████╗
+//    ████╗  ██║██╔════╝██║    ██║    ██╔════╝╚══██╔══╝██║   ██║██╔════╝██╔════╝
+//    ██╔██╗ ██║█████╗  ██║ █╗ ██║    ███████╗   ██║   ██║   ██║█████╗  █████╗  
+//    ██║╚██╗██║██╔══╝  ██║███╗██║    ╚════██║   ██║   ██║   ██║██╔══╝  ██╔══╝  
+//    ██║ ╚████║███████╗╚███╔███╔╝    ███████║   ██║   ╚██████╔╝██║     ██║     
+//    ╚═╝  ╚═══╝╚══════╝ ╚══╝╚══╝     ╚══════╝   ╚═╝    ╚═════╝ ╚═╝     ╚═╝     
+
+namespace limits
+{
+    inline constexpr uint32 ASSET_MAX_GROUPS = 1024;
+    inline constexpr uint32 ASSET_MAX_THREADS = 128;
+    inline constexpr size_t ASSET_MAX_SCRATCH_SIZE_PER_THREAD = 512*kMB;
+}
+
+struct AssetDependencyHeader
+{
+    AssetParams params;
+    RelativePtr<AssetDependencyHeader> next;    // Pointer to the next one in the dependency list (or = 0 if none)
+};
+
+struct AssetDataHeader
+{
+    uint32 totalSize;
+    uint32 numDepends;
+    uint32 typeId;
+    AssetState state;
+    uint32 refCount;
+    uint32 dataBufferSize;
+
+    RelativePtr<AssetParams> params;
+    RelativePtr<AssetDependencyHeader> depends;
+    RelativePtr<AssetMetaData> metaData;
+    RelativePtr<uint8> dataBuffer;
+};
+
+struct AssetScratchMemArena
+{
+    SpinLockMutex threadToAllocatorTableMtx;
+    HashTableUint threadToAllocatorTable;
+    MemBumpAllocatorVM allocators[limits::ASSET_MAX_THREADS];
+    uint32 numAllocators;
+};
+
+struct AssetGroupInternal
+{
+    AssetScratchMemArena memArena;
+    Array<AssetParams*> params;
+};
+
+struct AssetMan
+{
+    HandlePool<AssetGroupHandle, AssetGroupInternal> groups;
+};
+
+static AssetMan gAssetMan;
+
+//----------------------------------------------------------------------------------------------------------------------
+// These functions should be exported for per asset type loading
+using DataChunk = Pair<void*, uint32>;
+
+static DataChunk assetLoadAndBakeData(const AssetMetaData& metaData, const AssetParams& params, Allocator* alloc)
+{
+    return DataChunk();
+}
+
+static MemBumpAllocatorVM& assetGetCurrentThreadAllocator(AssetScratchMemArena& arena)
+{
+    MemBumpAllocatorVM* alloc = nullptr;
+    {
+        SpinLockMutexScope mtx(arena.threadToAllocatorTableMtx);
+        uint32 tId = threadGetCurrentId();
+        uint32 allocIndex = arena.threadToAllocatorTable.Find(tId);
+
+        if (allocIndex != -1) {
+            alloc = &arena.allocators[allocIndex];
+        }
+        else {
+            allocIndex = arena.numAllocators++;
+            alloc = &arena.allocators[allocIndex];
+            arena.threadToAllocatorTable.Add(tId, allocIndex);
+        }
+    }
+
+    if (!alloc->IsInitialized())
+        alloc->Initialize(limits::ASSET_MAX_SCRATCH_SIZE_PER_THREAD, 512*kKB);
+
+    return *alloc;
+}
+
+static void assetLoadBatchTask(uint32 groupIdx, void* userData)
+{
+    Array<Span<AssetParams*>>* slices = (Array<Span<AssetParams*>>*)userData;
+    Span<AssetParams*> slice = (*slices)[groupIdx];
+
+    for (AssetParams* params : slice) {
+        // TODO: Load each asset in the slice
+
+    }
+}
+
+void _private::assetInitialize2()
+{
+}
+
+void _private::assetRelease2()
+{
+}
+
+static void assetLoad()
+{
+}
+
+AssetGroup assetCreateGroup()
+{
+    return AssetGroup();
+}
+
+void assetDestroyGroup(AssetGroup group)
+{
+}
+
+void AssetGroup::AddToLoadQueue(const AssetParams** params, uint32 numAssets, AssetHandle* outHandles) const
+{
+    AssetGroupInternal& group = gAssetMan.groups.Data(mHandle);
+    MemBumpAllocatorVM& alloc = assetGetCurrentThreadAllocator(group.memArena);
+    
+    for (uint32 i = 0; i < numAssets; i++)
+        group.params.Push(const_cast<AssetParams*>(params[i]));
+}
+
+void AssetGroup::AddToLoadQueue(const AssetParams* params, AssetHandle* outHandle) const
+{
+    AddToLoadQueue(&params, 1, outHandle);
+}
+
+void AssetGroup::Load() const
+{
+    AssetGroupInternal& group = gAssetMan.groups.Data(mHandle);
+    MemBumpAllocatorVM& alloc = assetGetCurrentThreadAllocator(group.memArena);
+    
+    // Make a copy of all params and dispatch to the jobs
+    // TODO: we can also sort by typeId
+    
+    MemTempAllocator tempAlloc;
+    Array<AssetParams*> assetList(&tempAlloc);
+
+    for (AssetParams* params : group.params) {
+        uint32 typeManIdx = gAssetMgr.typeManagers.FindIf(
+            [params](const AssetTypeManager& typeMgr) { return typeMgr.fourcc == params->typeId; });
+        ASSERT_MSG(typeManIdx != UINT32_MAX, "AssetType with FourCC %x is not registered", params->typeId);
+
+        const AssetTypeManager& typeMan = gAssetMgr.typeManagers[typeManIdx];
+
+        AssetParams* newParams = memAllocCopy<AssetParams>(params, 1, &alloc);
+        if (!params->typeSpecificParams.IsNull()) {
+            uint8* typeSpecificParamsCopy = memAllocCopy<uint8>(params->typeSpecificParams.Get(), typeMan.extraParamTypeSize, &alloc);
+            newParams->typeSpecificParams = typeSpecificParamsCopy;
+        }
+        
+        assetList.Push(newParams);        
+    }
+
+    //------------------------------------------------------------------------------------------------------------------
+    auto LoadEntryTask = [](uint32, void* userData)
+    {
+        // TODO: Do some kind of pace control for loads
+        Span<AssetParams*>* assetList = (Span<AssetParams*>*)userData;
+        ASSERT(assetList->Count());
+        uint32 numThreads = jobsGetWorkerThreadsCount(JobsType::LongTask);
+        uint32 tasksPerThread = assetList->Count() / numThreads;
+        uint32 tasksRemain = assetList->Count() % numThreads;
+
+        uint32 tasksIdx = 0;
+        MemTempAllocator tempAlloc;
+        Array<Span<AssetParams*>> slices(&tempAlloc);
+
+        for (uint32 i = 0; i < assetList->Count();) {
+            uint32 numTasks = tasksPerThread + (tasksRemain ? (tasksRemain--, 1) : 0);
+            if (numTasks == 0)
+                break;
+
+            slices.Push(assetList->Slice(i, numTasks));
+
+            i += numTasks;
+        }
+
+        JobsHandle jhandle = jobsDispatch(JobsType::LongTask, assetLoadBatchTask, &slices, slices.Count());
+        jobsWaitForCompletion(jhandle);
+    };
+
+    Span<AssetParams*>* assetListCopy = memAllocTyped<Span<AssetParams*>>(1, &alloc);
+    *assetListCopy = Span<AssetParams*>(memAllocCopy<AssetParams*>(assetList.Ptr(), assetList.Count(), &alloc), assetList.Count());
+    jobsDispatchAndForget(JobsType::LongTask, LoadEntryTask, assetListCopy, 1);
+}
+
+bool AssetGroup::IsLoadFinished() const
+{
+    return false;
+}
+
+void AssetGroup::WaitForLoadFinish() const
+{
+}
+
+void AssetGroup::Unload() const
+{
+}
+
+Span<AssetHandle> AssetGroup::GetAssetHandles(Allocator* alloc) const
+{
+    return Span<AssetHandle>();
+}
+
 

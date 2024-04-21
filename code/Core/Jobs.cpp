@@ -591,7 +591,7 @@ JobsHandle jobsDispatch(JobsType type, JobsCallback callback, void* userData, ui
     return jobsDispatchInternal(false, type, callback, userData, groupSize, prio, stackSize);
 }
 
-void jobsDispatchAuto(JobsType type, JobsCallback callback, void* userData, uint32 groupSize, JobsPriority prio, uint32 stackSize)
+void jobsDispatchAndForget(JobsType type, JobsCallback callback, void* userData, uint32 groupSize, JobsPriority prio, uint32 stackSize)
 {
     jobsDispatchInternal(true, type, callback, userData, groupSize, prio, stackSize);
 }

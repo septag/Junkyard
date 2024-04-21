@@ -145,7 +145,7 @@ static bool shaderCompileShaderHandlerServerFn([[maybe_unused]] uint32 cmd, cons
     // Get a copy of incomingData and pass it on to a task
     Blob* taskDataBlob = NEW(memDefaultAlloc(), Blob)();
     incomingData.CopyTo(taskDataBlob);
-    jobsDispatchAuto(JobsType::LongTask, shaderCompileLoadTask, taskDataBlob, 1, JobsPriority::Low);
+    jobsDispatchAndForget(JobsType::LongTask, shaderCompileLoadTask, taskDataBlob, 1, JobsPriority::Low);
     
     return true;
 }

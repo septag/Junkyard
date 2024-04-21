@@ -740,8 +740,8 @@ template <typename _T>
 struct Span
 {
     Span() : mData(nullptr), mCount(0) {}
-    Span(_T* data, uint32 count) : mData(data), mCount(count) {}
-    Span(_T* data, _T* end) : mData(data), mCount(PtrToInt<uint32>(end - data)) { ASSERT(data); ASSERT(end); }
+    explicit Span(_T* data, uint32 count) : mData(data), mCount(count) {}
+    explicit Span(_T* data, _T* end) : mData(data), mCount(PtrToInt<uint32>(end - data)) { ASSERT(data); ASSERT(end); }
 
     _T& operator[](uint32 index)    
     { 
