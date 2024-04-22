@@ -43,6 +43,14 @@ enum class JobsType : uint32
     _Count
 };
 
+enum class JobsStackSize : uint32
+{
+    Small = 0,  // 64kb
+    Medium,     // 512kb
+    Large,      // 2048kb
+    _Count
+};
+
 struct JobsBudgetStats
 {
     uint32 maxShortTaskThreads;
@@ -50,17 +58,15 @@ struct JobsBudgetStats
     uint32 numBusyShortThreads;
     uint32 numBusyLongThreads;
 
-    uint32 numFibers;
-    uint32 maxFibers;
+    uint32 numActiveFibers;
+    uint32 numMaxActiveFibers;
 
     uint32 numJobs;
     uint32 maxJobs;
     
-    size_t fiberHeapSize;
-    size_t fiberHeapMax;
-
     size_t initHeapStart;
     size_t initHeapSize;
+    size_t fibersMemoryPoolSize;
 };
 
 struct alignas(CACHE_LINE_SIZE) JobsSignal
@@ -85,7 +91,6 @@ struct JobsInitParams
     uint32 numLongTaskThreads = 0;  // Default: total number of cores - 1
     uint32 defaultShortTaskStackSize = kMB;
     uint32 defaultLongTaskStackSize = kMB;
-    uint32 maxFibers = 0;       // Maximum fibers in execution. Default=_limits::kJobsMaxFibers
     bool debugAllocations = false;
 };
 
@@ -94,7 +99,8 @@ API void jobsRelease();
 
 // Dispatches the job and returns the handle. Handle _must_ be waited on later, with a call to `jobsWaitForCompletion`
 API [[nodiscard]] JobsHandle jobsDispatch(JobsType type, JobsCallback callback, void* userData = nullptr, 
-                                          uint32 groupSize = 1, JobsPriority prio = JobsPriority::Normal, uint32 stackSize = 0);
+                                          uint32 groupSize = 1, JobsPriority prio = JobsPriority::Normal, 
+                                          JobsStackSize stackSize = JobsStackSize::Medium);
 // Might yield the current running job as well. Also deletes the JobHandle after it's finished
 API void jobsWaitForCompletion(JobsHandle handle);
 API bool jobsIsRunning(JobsHandle handle);

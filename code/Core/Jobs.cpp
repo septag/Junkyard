@@ -30,7 +30,6 @@
 
 namespace _limits
 {
-    inline constexpr uint32 JOBS_MAX_FIBERS = 128;  // TODO: Remove this limitation and use a better allocation scheme
     inline constexpr uint32 JOBS_MAX_INSTANCES = 1024;
     inline constexpr uint32 JOBS_MAX_PENDING = JOBS_MAX_INSTANCES*4;
 
@@ -38,6 +37,12 @@ namespace _limits
     inline constexpr uint32 JOBS_TRACY_MAX_STACKDEPTH = 8;
 #endif
 }
+
+inline constexpr size_t JOBS_STACK_SIZES[uint32(JobsStackSize::_Count)] = {
+    64*kKB,
+    512*kKB,
+    2*kMB
+};
 
 #if JOBS_USE_ANDERSON_LOCK
 // Anderson's lock: Implementation is a modified form of: https://github.com/concurrencykit/ck/blob/master/include/spinlock/anderson.h
@@ -171,6 +176,32 @@ struct alignas(CACHE_LINE_SIZE) JobsAtomicPool
     uint8 _reserved2[CACHE_LINE_SIZE - sizeof(void*) * 2];
 };
 
+struct JobsFiberMemAllocator
+{
+    struct Pool
+    {
+        uint8** ptrs;
+        uint8* buffer;
+        Pool* next;
+        uint32 index;
+    };
+
+    SpinLockMutex mLock;
+    MemBumpAllocatorVM mAlloc;
+
+    size_t mAllocationSize;
+    size_t mPoolSize;
+    Pool* mPools;
+    uint32 mNumItemsInPool;
+    
+
+    void Initialize(size_t allocationSize);
+    void Release();
+    void* Allocate();
+    void Free(void* ptr);
+    Pool* CreatePool();
+};
+
 struct JobsContext
 {
     JobsInitParams initParams;
@@ -178,9 +209,7 @@ struct JobsContext
     uint32 numThreads[uint32(JobsType::_Count)];
     uint8 _padding1[8];
 
-    MemTlsfAllocator tlsfAlloc;
-    uint8 _padding2[alignof(MemThreadSafeAllocator) - sizeof(MemTlsfAllocator)];
-    MemThreadSafeAllocator runtimeAlloc;
+    JobsFiberMemAllocator fiberAllocators[uint32(JobsStackSize::_Count)];
     JobsWaitingList waitingLists[uint32(JobsType::_Count)];
     uint8 _padding3[sizeof(JobsWaitingList) * 2 - alignof(JobsLock)];
     JobsLock waitingListLock;
@@ -196,16 +225,15 @@ struct JobsContext
 
     atomicUint32 numBusyShortThreads;
     atomicUint32 numBusyLongThreads;
-    atomicUint32 numFibers;
+    atomicUint32 numActiveFibers;
     atomicUint32 numInstances;
+    uint32 maxActiveFibers;
 
     struct MaxValues
     {
         uint32 numBusyShortThreadsMax;
         uint32 numBusyLongThreadsMax;
-        uint32 numFibersMax;
         uint32 numInstancesMax;
-        uint32 maxFiberHeap;
     };
 
     uint32 fiberHeapAllocSize;
@@ -243,23 +271,37 @@ static void jobsEntryFn(mco_coro* co)
 
 static JobsFiber* jobsCreateFiber(JobsFiberProperties* props)
 {
-    auto McoMallocFn = [](size_t size, void* allocData)->void*
+    auto McoMallocFn = [](size_t size, void*)->void*
     {
-        Allocator* alloc = reinterpret_cast<Allocator*>(allocData);
-        return memAllocAligned(size, 16, alloc);
+        JobsFiberMemAllocator* alloc = nullptr;
+        for (uint32 i = 0; i < uint32(JobsStackSize::_Count); i++) {
+            if (size <= JOBS_STACK_SIZES[i] + 4096) {
+                alloc = &gJobs.fiberAllocators[i];
+                break;
+            }
+        }
+        ASSERT(alloc);
+
+        return alloc->Allocate();
     };
 
-    auto McoFreeFn = [](void* ptr, size_t size, void* allocData)
+    auto McoFreeFn = [](void* ptr, size_t size, void*)
     {
-        UNUSED(size);
-        Allocator* alloc = reinterpret_cast<Allocator*>(allocData);
-        memFreeAligned(ptr, 16, alloc);
+        JobsFiberMemAllocator* alloc = nullptr;
+        for (uint32 i = 0; i < uint32(JobsStackSize::_Count); i++) {
+            if (size <= JOBS_STACK_SIZES[i] + 4096) {
+                alloc = &gJobs.fiberAllocators[i];
+                break;
+            }
+        }
+        ASSERT(alloc);
+
+        return alloc->Free(ptr);
     };    
 
     mco_desc desc = mco_desc_init(jobsEntryFn, props->stackSize);
     desc.alloc_cb = McoMallocFn;
     desc.dealloc_cb = McoFreeFn;
-    desc.allocator_data = &gJobs.runtimeAlloc;
 
     mco_coro* co;
     mco_result r = mco_create(&co, &desc);
@@ -277,9 +319,8 @@ static JobsFiber* jobsCreateFiber(JobsFiberProperties* props)
 
     mco_push(co, &fiber, sizeof(fiber));
 
-    atomicFetchAdd32Explicit(&gJobs.numFibers, 1, AtomicMemoryOrder::Relaxed);
-    gJobs.maxValues[0].numFibersMax = Max(gJobs.numFibers, gJobs.maxValues[0].numFibersMax);
-    gJobs.maxValues[0].maxFiberHeap = Max<uint32>(uint32(gJobs.tlsfAlloc.GetAllocatedSize()), gJobs.maxValues[0].maxFiberHeap);
+    atomicFetchAdd32Explicit(&gJobs.numActiveFibers, 1, AtomicMemoryOrder::Relaxed);
+    gJobs.maxActiveFibers = Max<uint32>(gJobs.numActiveFibers, gJobs.maxActiveFibers);
 
     return reinterpret_cast<JobsFiber*>(co->storage);
 }
@@ -294,7 +335,7 @@ NO_INLINE static void jobsDestroyFiber(JobsFiber* fiber)
     ASSERT(fiber->co);
     mco_destroy(fiber->co);
 
-    atomicFetchSub32Explicit(&gJobs.numFibers, 1, AtomicMemoryOrder::Relaxed);
+    atomicFetchSub32Explicit(&gJobs.numActiveFibers, 1, AtomicMemoryOrder::Relaxed);
 }
 
 static void jobsSetFiberToCurrentThread(JobsFiber* fiber)
@@ -605,17 +646,19 @@ void jobsGetBudgetStats(JobsBudgetStats* stats)
     stats->numBusyShortThreads = m.numBusyShortThreadsMax;
     stats->numBusyLongThreads = m.numBusyLongThreadsMax;
 
-    stats->maxFibers = gJobs.initParams.maxFibers ? gJobs.initParams.maxFibers : _limits::JOBS_MAX_FIBERS;
-    stats->numFibers = m.numFibersMax;
+    stats->numMaxActiveFibers = gJobs.maxActiveFibers;
+    stats->numActiveFibers = gJobs.numActiveFibers;
 
     stats->maxJobs = _limits::JOBS_MAX_INSTANCES;
     stats->numJobs = m.numInstancesMax;
 
-    stats->fiberHeapSize = m.maxFiberHeap;
-    stats->fiberHeapMax = gJobs.runtimeHeapTotal;
-
     stats->initHeapStart = gJobs.initHeapStart;
     stats->initHeapSize = gJobs.initHeapSize;
+
+    size_t fibersAllocSize = 0;
+    for (uint32 i = 0; i < uint32(JobsStackSize::_Count); i++)
+        fibersAllocSize += gJobs.fiberAllocators[i].mAlloc.GetCommitedSize();
+    stats->fibersMemoryPoolSize = fibersAllocSize;
 }
 
 void jobsResetBudgetStats()
@@ -673,20 +716,10 @@ void jobsInitialize(const JobsInitParams& initParams)
     gJobs.semaphores[uint32(JobsType::ShortTask)].Initialize();
     gJobs.semaphores[uint32(JobsType::LongTask)].Initialize();
     
-    // Fibers stack memory pool. 
-    // Reserve 1MB for each fiber stack. Be careful with maxFibers value, because the memory pool can get huge if high number is used
-    {
-        uint32 maxFibers = initParams.maxFibers ? initParams.maxFibers : _limits::JOBS_MAX_FIBERS;
-        size_t allocSize = 2*maxFibers*kMB;
-        size_t poolSize = MemTlsfAllocator::GetMemoryRequirement(allocSize);
-        void* buffer = memAlloc(poolSize, initParams.alloc);
-        if (initParams.alloc->GetType() != AllocatorType::Bump)
-            gJobs.pointers.Add(Pair<void*, uint32>(buffer, 0));
-
-        gJobs.tlsfAlloc.Initialize(allocSize, buffer, poolSize, initParams.debugAllocations);
-        gJobs.runtimeAlloc.SetAllocator(&gJobs.tlsfAlloc);
-        gJobs.runtimeHeapTotal = allocSize;
-    }
+    // Fibers stack memory pool
+    // Note: fiber allocators does not use the init-heap and pretty much unbounded (until the hit the reserve size. See JobsFiberMemAllocator::Initialize
+    for (uint32 i = 0; i < uint32(JobsStackSize::_Count); i++)
+        gJobs.fiberAllocators[i].Initialize(JOBS_STACK_SIZES[i]);
 
     gJobs.instancePool = JobsAtomicPool<JobsInstance, _limits::JOBS_MAX_INSTANCES>::Create(initParams.alloc);
     gJobs.fiberPropsPool = JobsAtomicPool<JobsFiberProperties, _limits::JOBS_MAX_PENDING>::Create(initParams.alloc);
@@ -801,6 +834,9 @@ void jobsRelease()
 
     gJobs.semaphores[uint32(JobsType::ShortTask)].Release();
     gJobs.semaphores[uint32(JobsType::LongTask)].Release();
+
+    for (uint32 i = 0; i < uint32(JobsStackSize::_Count); i++)
+        gJobs.fiberAllocators[i].Release();
 
     for (Pair<void*, uint32> p : gJobs.pointers)
         memFreeAligned(p.first, p.second, gJobs.initParams.alloc);
@@ -1061,3 +1097,91 @@ inline void JobsAndersonLock::Exit(uint32 slot)
     c89atomic_store_explicit_32(&mSlots[position].locked, 0, c89atomic_memory_order_release);
 }
 #endif // JOBS_USE_ANDERSON_LOCK
+
+
+//    ███████╗██╗██████╗ ███████╗██████╗      █████╗ ██╗     ██╗      ██████╗  ██████╗
+//    ██╔════╝██║██╔══██╗██╔════╝██╔══██╗    ██╔══██╗██║     ██║     ██╔═══██╗██╔════╝
+//    █████╗  ██║██████╔╝█████╗  ██████╔╝    ███████║██║     ██║     ██║   ██║██║     
+//    ██╔══╝  ██║██╔══██╗██╔══╝  ██╔══██╗    ██╔══██║██║     ██║     ██║   ██║██║     
+//    ██║     ██║██████╔╝███████╗██║  ██║    ██║  ██║███████╗███████╗╚██████╔╝╚██████╗
+//    ╚═╝     ╚═╝╚═════╝ ╚══════╝╚═╝  ╚═╝    ╚═╝  ╚═╝╚══════╝╚══════╝ ╚═════╝  ╚═════╝
+                                                                                    
+void JobsFiberMemAllocator::Initialize(size_t allocationSize)
+{
+    size_t pageSize = sysGetPageSize();
+    ASSERT(allocationSize % pageSize == 0);
+    allocationSize = AlignValue(allocationSize + pageSize, pageSize);   // Leave some room for mco_coro
+    const size_t numItemsInPool = (size_t(gJobs.numThreads[uint32(JobsType::ShortTask)]) + 
+                                   size_t(gJobs.numThreads[uint32(JobsType::LongTask)])) * 2;  
+
+    mPoolSize = allocationSize * numItemsInPool + pageSize; // leave some room for Pool struct
+    mAllocationSize = allocationSize;
+    mNumItemsInPool = uint32(numItemsInPool);
+    mAlloc.Initialize(mPoolSize * 16, mPoolSize);    // Can raise this number in the future
+
+    mPools = nullptr;
+}
+
+void JobsFiberMemAllocator::Release()
+{
+    mAlloc.Release();
+}
+
+void* JobsFiberMemAllocator::Allocate()
+{
+    SpinLockMutexScope mtx(mLock);
+    
+    Pool* pool = mPools;
+    while (pool && pool->index == 0 && pool->next)
+        pool = pool->next;
+
+    // Pools are filled, create a new one
+    if (!pool || pool->index == 0) {
+        pool = CreatePool();
+        if (mPools) {
+            Pool* lastPool = mPools;
+            while (lastPool->next)
+                lastPool = lastPool->next;
+            lastPool->next = pool;
+        }
+        else {
+            mPools = pool;
+        }
+    }
+
+    ASSERT(pool && pool->index);
+    return pool->ptrs[--pool->index];
+}
+
+void JobsFiberMemAllocator::Free(void* ptr)
+{
+    SpinLockMutexScope mtx(mLock);
+
+    uint64 uptr = PtrToInt<uint64>(ptr);
+    Pool* pool = mPools;
+    
+    while (pool) {
+        if (uptr >= PtrToInt<uint64>(pool->buffer) && uptr < PtrToInt<uint64>(pool->buffer + mAllocationSize*mNumItemsInPool)) {
+            ASSERT_MSG(pool->index < mNumItemsInPool, "Invalid free on this pool");
+            pool->ptrs[pool->index++] = (uint8*)ptr;
+            return;
+        }
+
+        pool = pool->next;
+    }
+
+    ASSERT_MSG(0, "Pointer doesn't belong to the allocator");
+}
+
+JobsFiberMemAllocator::Pool* JobsFiberMemAllocator::CreatePool()
+{
+    Pool* pool = memAllocTyped<Pool>(1, &mAlloc);
+    pool->ptrs = memAllocTyped<uint8*>(mNumItemsInPool, &mAlloc);
+    pool->buffer = (uint8*)memAllocAligned(mAllocationSize*size_t(mNumItemsInPool), 16, &mAlloc);
+    pool->index = mNumItemsInPool;
+    pool->next = nullptr;
+    for (uint32 i = 0; i < mNumItemsInPool; i++)
+        pool->ptrs[mNumItemsInPool - i - 1] = pool->buffer + size_t(i)*mAllocationSize;
+    return pool;
+}
+

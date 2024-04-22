@@ -109,7 +109,7 @@ if errorlevel 2 goto :AndroidLayers
 if errorlevel 1 goto :AndroidSettingsIniStart
 
 :AndroidSettingsIniStart
-set android_config_ini=projects\msvc\JunkyardAndroid\JunkyardAndroid\app\src\main\assets\Settings.ini
+set android_config_ini=projects\Android\JunkyardAndroid\app\src\main\assets\Settings.ini
 if exist %android_config_ini% del /F %android_config_ini%
 echo Initializing android app config '%android_config_ini% ...
 

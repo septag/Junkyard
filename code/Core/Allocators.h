@@ -17,7 +17,7 @@
 
 #include "Base.h"
 
-template <typename _T, uint32 _Reserve> struct Array; // Fwd from Array.h
+template <typename _T> struct Array; // Fwd from Array.h
 using SpinLockFake = uint8[CACHE_LINE_SIZE];
 
 struct MemTransientAllocatorStats
@@ -128,7 +128,7 @@ protected:
     size_t mPageSize = 0;
     size_t mReserveSize = 0;
     void* mLastAllocatedPtr = 0;
-    Array<_private::MemDebugPointer, 8>* mDebugPointers = nullptr;
+    Array<_private::MemDebugPointer>* mDebugPointers = nullptr;
     bool mDebugMode = false;
 };
 

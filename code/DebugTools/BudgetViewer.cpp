@@ -89,21 +89,17 @@ void budgetViewerRender(float dt, bool* pOpen)
             ImGui::ProgressBar(imguiDivideInt(stats.numBusyShortThreads, stats.maxShortTaskThreads), ImVec2(-1.0f, 0), 
                                String32::Format("%u/%u", stats.numBusyShortThreads, stats.maxShortTaskThreads).CStr());
 
-            ImGui::TextColored(kTextColor, "Fibers:");
+            ImGui::TextColored(kTextColor, "Active Fibers:");
             ImGui::SameLine();
-            ImGui::ProgressBar(imguiDivideInt(stats.numFibers, stats.maxFibers), ImVec2(-1.0f, 0),
-                               String32::Format("%u/%u", stats.numFibers, stats.maxFibers).CStr());
+            ImGui::ProgressBar(imguiDivideInt(stats.numActiveFibers, stats.numMaxActiveFibers), ImVec2(-1.0f, 0),
+                               String32::Format("%u/%u", stats.numActiveFibers, stats.numMaxActiveFibers).CStr());
             
             ImGui::TextColored(kTextColor, "Jobs:");
             ImGui::SameLine();
             ImGui::ProgressBar(imguiDivideInt(stats.numJobs, stats.maxJobs), ImVec2(-1.0f, 0),
                                String32::Format("%u/%u", stats.numJobs, stats.maxJobs).CStr());
 
-            ImGui::TextColored(kTextColor, "FiberHeap:");
-            ImGui::SameLine();
-            ImGui::ProgressBar(imguiDivideInt(stats.fiberHeapSize, stats.fiberHeapMax), ImVec2(-1.0f, 0),
-                               String32::Format("%_$llu/%_$llu", stats.fiberHeapSize, stats.fiberHeapMax).CStr());
-
+            imguiLabel("FibersPoolSize", "%_$llu", stats.fibersMemoryPoolSize);
             imguiLabel("InitHeapSize", "%_$llu", stats.initHeapSize);
         }
 

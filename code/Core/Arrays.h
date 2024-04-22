@@ -22,7 +22,7 @@
 //    ██╔══██║██╔══██╗██╔══██╗██╔══██║  ╚██╔╝  
 //    ██║  ██║██║  ██║██║  ██║██║  ██║   ██║   
 //    ╚═╝  ╚═╝╚═╝  ╚═╝╚═╝  ╚═╝╚═╝  ╚═╝   ╚═╝   
-template <typename _T, uint32 _Reserve = 8>
+template <typename _T>
 struct Array
 {
     Array() : Array(memDefaultAlloc()) {}
@@ -33,7 +33,7 @@ struct Array
     void Reserve(uint32 capacity);
     void Reserve(uint32 capacity, void* buffer, size_t size);
     void Free();
-    static size_t GetMemoryRequirement(uint32 capacity = _Reserve);
+    static size_t GetMemoryRequirement(uint32 capacity);
 
     [[nodiscard]] _T* Push();
     _T* Push(const _T& item);
@@ -61,7 +61,7 @@ struct Array
     Span<_T> Detach();
 
     void ShiftLeft(uint32 count);
-    void CopyTo(Array<_T, _Reserve>* otherArray) const;
+    void CopyTo(Array<_T>* otherArray) const;
 
     uint32 Find(const _T& value);
     // _Func = [capture](const _T& item)->bool
@@ -143,28 +143,27 @@ private:
 //    ██║██║╚██╗██║██║     ██║██║╚██╗██║██╔══╝  ╚════██║
 //    ██║██║ ╚████║███████╗██║██║ ╚████║███████╗███████║
 //    ╚═╝╚═╝  ╚═══╝╚══════╝╚═╝╚═╝  ╚═══╝╚══════╝╚══════╝
-template <typename _T, uint32 _Reserve>
-inline Array<_T,_Reserve>::Array(const void* buffer, size_t size)
+template <typename _T>
+inline Array<_T>::Array(const void* buffer, size_t size)
 {
-    ASSERT_MSG(size > _Reserve*sizeof(_T), "Buffer should have at least %u bytes long", _Reserve*sizeof(_T));
-
     mCapacity = size / sizeof(_T);
+    ASSERT(mCapacity);
     mBuffer = buffer;
 }
 
-template <typename _T, uint32 _Reserve>
-inline void Array<_T, _Reserve>::SetAllocator(Allocator* alloc)
+template <typename _T>
+inline void Array<_T>::SetAllocator(Allocator* alloc)
 {
     ASSERT_MSG(mBuffer == nullptr, "buffer should be freed/uninitialized before setting allocator");
     mAlloc = alloc;
 }    
 
-template <typename _T, uint32 _Reserve>
-inline _T* Array<_T,_Reserve>::Push()
+template <typename _T>
+inline _T* Array<_T>::Push()
 {
     if (mCount >= mCapacity) {
         if (mAlloc) {
-            Reserve(mCapacity ? (mCapacity << 1) : _Reserve);
+            Reserve(mCapacity ? (mCapacity << 1) : 8);
         } 
         else {
             ASSERT(mBuffer);
@@ -176,8 +175,8 @@ inline _T* Array<_T,_Reserve>::Push()
     return &mBuffer[mCount++];
 }
 
-template <typename _T, uint32 _Reserve>
-inline _T* Array<_T,_Reserve>::Push(const _T& item)
+template <typename _T>
+inline _T* Array<_T>::Push(const _T& item)
 {
     _T* newItem = Push();
     if (newItem)
@@ -185,8 +184,8 @@ inline _T* Array<_T,_Reserve>::Push(const _T& item)
     return newItem;
 }
 
-template <typename _T, uint32 _Reserve>
-inline void Array<_T,_Reserve>::RemoveAndSwap(uint32 index)
+template <typename _T>
+inline void Array<_T>::RemoveAndSwap(uint32 index)
 {
     ASSERT(mBuffer);
     #ifdef CONFIG_CHECK_OUTOFBOUNDS
@@ -197,14 +196,14 @@ inline void Array<_T,_Reserve>::RemoveAndSwap(uint32 index)
         Swap<_T>(mBuffer[index], mBuffer[mCount]);
 }
 
-template <typename _T, uint32 _Reserve>
-inline void Array<_T,_Reserve>::RemoveAndShift(uint32 index)
+template <typename _T>
+inline void Array<_T>::RemoveAndShift(uint32 index)
 {
     Pop(index);
 }
 
-template <typename _T, uint32 _Reserve>
-inline void Array<_T,_Reserve>::RemoveRangeAndShift(uint32 index, uint32 endIndex)
+template <typename _T>
+inline void Array<_T>::RemoveRangeAndShift(uint32 index, uint32 endIndex)
 {
     if (endIndex == INVALID_INDEX)
         endIndex = mCount;
@@ -225,26 +224,26 @@ inline void Array<_T,_Reserve>::RemoveRangeAndShift(uint32 index, uint32 endInde
     mCount -= removeCount;
 }
 
-template <typename _T, uint32 _Reserve>
-inline uint32 Array<_T,_Reserve>::Count() const
+template <typename _T>
+inline uint32 Array<_T>::Count() const
 {
     return mCount;
 }
 
-template <typename _T, uint32 _Reserve>
-inline bool Array<_T,_Reserve>::IsEmpty() const
+template <typename _T>
+inline bool Array<_T>::IsEmpty() const
 {
     return mCount == 0;
 }
 
-template <typename _T, uint32 _Reserve>
-inline uint32 Array<_T,_Reserve>::Capacity() const
+template <typename _T>
+inline uint32 Array<_T>::Capacity() const
 {
     return mCapacity;
 }
 
-template <typename _T, uint32 _Reserve>
-inline void Array<_T,_Reserve>::Reserve(uint32 capacity)
+template <typename _T>
+inline void Array<_T>::Reserve(uint32 capacity)
 {
     ASSERT(mAlloc);
     mCapacity = Max(capacity, mCapacity);
@@ -252,10 +251,10 @@ inline void Array<_T,_Reserve>::Reserve(uint32 capacity)
     ASSERT(mBuffer);
 }
 
-template <typename _T, uint32 _Reserve>
-inline void Array<_T,_Reserve>::Reserve(uint32 capacity, void* buffer, [[maybe_unused]] size_t size)
+template <typename _T>
+inline void Array<_T>::Reserve(uint32 capacity, void* buffer, [[maybe_unused]] size_t size)
 {
-    capacity = Max(capacity, _Reserve);
+    capacity = Max(capacity, 8u);
 
     ASSERT(buffer);
     ASSERT_MSG(mBuffer == nullptr, "Array should not be initialized before reserve by pointer");
@@ -266,34 +265,34 @@ inline void Array<_T,_Reserve>::Reserve(uint32 capacity, void* buffer, [[maybe_u
     mBuffer = (_T*)buffer;
 }    
 
-template <typename _T, uint32 _Reserve>
-inline void Array<_T,_Reserve>::Clear()
+template <typename _T>
+inline void Array<_T>::Clear()
 {
     mCount = 0;
 }
 
-template <typename _T, uint32 _Reserve>
-inline _T& Array<_T,_Reserve>::Last()
+template <typename _T>
+inline _T& Array<_T>::Last()
 {
     ASSERT(mCount > 0);
     return mBuffer[mCount - 1];
 }
 
-template <typename _T, uint32 _Reserve>
-inline _T Array<_T,_Reserve>::PopLast()
+template <typename _T>
+inline _T Array<_T>::PopLast()
 {
     ASSERT(mCount > 0);
     return mBuffer[--mCount];
 }
 
-template <typename _T, uint32 _Reserve>
-inline _T Array<_T,_Reserve>::PopFirst()
+template <typename _T>
+inline _T Array<_T>::PopFirst()
 {
     return Pop(0);
 }
 
-template <typename _T, uint32 _Reserve>
-inline _T Array<_T,_Reserve>::Pop(uint32 index)
+template <typename _T>
+inline _T Array<_T>::Pop(uint32 index)
 {
     ASSERT(mCount > 0);
     #ifdef CONFIG_CHECK_OUTOFBOUNDS
@@ -308,8 +307,8 @@ inline _T Array<_T,_Reserve>::Pop(uint32 index)
     return item;
 }
 
-template <typename _T, uint32 _Reserve>
-inline void Array<_T,_Reserve>::Extend(const Array<_T>& arr)
+template <typename _T>
+inline void Array<_T>::Extend(const Array<_T>& arr)
 {
     if (arr.Count()) {
         uint32 newCount = mCount + arr.mCount;
@@ -321,8 +320,8 @@ inline void Array<_T,_Reserve>::Extend(const Array<_T>& arr)
     }
 }
 
-template <typename _T, uint32 _Reserve>
-inline void Array<_T,_Reserve>::ShiftLeft(uint32 count)
+template <typename _T>
+inline void Array<_T>::ShiftLeft(uint32 count)
 {
     ASSERT(count <= mCount);
     
@@ -331,8 +330,8 @@ inline void Array<_T,_Reserve>::ShiftLeft(uint32 count)
     memmove(mBuffer, mBuffer + sizeof(_T)*count, sizeof(_T)*mCount);
 }
 
-template <typename _T, uint32 _Reserve>
-inline void Array<_T, _Reserve>::CopyTo(Array<_T, _Reserve>* otherArray) const
+template <typename _T>
+inline void Array<_T>::CopyTo(Array<_T>* otherArray) const
 {
     ASSERT(otherArray);
 
@@ -345,8 +344,8 @@ inline void Array<_T, _Reserve>::CopyTo(Array<_T, _Reserve>* otherArray) const
     }
 }
 
-template <typename _T, uint32 _Reserve>
-inline const _T& Array<_T,_Reserve>::operator[](uint32 index) const
+template <typename _T>
+inline const _T& Array<_T>::operator[](uint32 index) const
 {
     #ifdef CONFIG_CHECK_OUTOFBOUNDS
     ASSERT_MSG(index < mCount, "Index out of bounds (count: %u, index: %u)", mCount, index);
@@ -354,8 +353,8 @@ inline const _T& Array<_T,_Reserve>::operator[](uint32 index) const
     return mBuffer[index];
 }
 
-template <typename _T, uint32 _Reserve>
-inline _T& Array<_T,_Reserve>::operator[](uint32 index)
+template <typename _T>
+inline _T& Array<_T>::operator[](uint32 index)
 {
     #ifdef CONFIG_CHECK_OUTOFBOUNDS
     ASSERT_MSG(index < mCount, "Index out of bounds (count: %u, index: %u)", mCount, index);
@@ -363,20 +362,20 @@ inline _T& Array<_T,_Reserve>::operator[](uint32 index)
     return mBuffer[index];
 }
 
-template <typename _T, uint32 _Reserve>
-inline const _T* Array<_T,_Reserve>::Ptr() const
+template <typename _T>
+inline const _T* Array<_T>::Ptr() const
 {
     return mBuffer;
 }
 
-template <typename _T, uint32 _Reserve>
-inline _T* Array<_T,_Reserve>::Ptr()
+template <typename _T>
+inline _T* Array<_T>::Ptr()
 {
     return mBuffer;
 }
 
-template <typename _T, uint32 _Reserve>
-inline void Array<_T,_Reserve>::Detach(_T** outBuffer, uint32* outCount)
+template <typename _T>
+inline void Array<_T>::Detach(_T** outBuffer, uint32* outCount)
 {
     ASSERT(outBuffer);
     ASSERT(outCount);
@@ -389,8 +388,8 @@ inline void Array<_T,_Reserve>::Detach(_T** outBuffer, uint32* outCount)
     mCapacity = 0;
 }
 
-template <typename _T, uint32 _Reserve>
-inline Span<_T> Array<_T,_Reserve>::Detach()
+template <typename _T>
+inline Span<_T> Array<_T>::Detach()
 {
     _T* ptr;
     uint32 count;
@@ -399,14 +398,14 @@ inline Span<_T> Array<_T,_Reserve>::Detach()
     return Span<_T>(ptr, count);
 }
 
-template<typename _T, uint32 _Reserve>
-inline bool Array<_T,_Reserve>::IsFull() const
+template<typename _T>
+inline bool Array<_T>::IsFull() const
 {
     return mCount >= mCapacity;
 }    
 
-template <typename _T, uint32 _Reserve>
-inline void Array<_T, _Reserve>::Free()
+template <typename _T>
+inline void Array<_T>::Free()
 {
     mCount = 0;
 
@@ -417,16 +416,16 @@ inline void Array<_T, _Reserve>::Free()
     }
 }
 
-template <typename _T, uint32 _Reserve>
-inline void Array<_T, _Reserve>::Shrink()
+template <typename _T>
+inline void Array<_T>::Shrink()
 {
     ASSERT(mAlloc);
-    mCapacity = Max(mCount, _Reserve);
+    mCapacity = Max(mCount, 8u);
     Reserve(mCapacity);
 }
 
-template <typename _T, uint32 _Reserve> 
-inline uint32 Array<_T, _Reserve>::Find(const _T& value)
+template <typename _T> 
+inline uint32 Array<_T>::Find(const _T& value)
 {
     for (uint32 i = 0; i < mCount; i++) {
         if (mBuffer[i] == value)
@@ -436,8 +435,8 @@ inline uint32 Array<_T, _Reserve>::Find(const _T& value)
     return UINT32_MAX;
 }
 
-template<typename _T, uint32 _Reserve>
-template<typename _Func> inline uint32 Array<_T, _Reserve>::FindIf(_Func findFunc)
+template<typename _T>
+template<typename _Func> inline uint32 Array<_T>::FindIf(_Func findFunc)
 {
     for (uint32 i = 0, c = mCount; i < c; i++) {
         if (findFunc(mBuffer[i]))
@@ -447,10 +446,10 @@ template<typename _Func> inline uint32 Array<_T, _Reserve>::FindIf(_Func findFun
     return UINT32_MAX;
 }
 
-template<typename _T, uint32 _Reserve>
-inline size_t Array<_T, _Reserve>::GetMemoryRequirement(uint32 capacity)
+template<typename _T>
+inline size_t Array<_T>::GetMemoryRequirement(uint32 capacity)
 {
-    capacity = Max(capacity, _Reserve);
+    capacity = Max(capacity, 8u);
     return capacity * sizeof(_T);
 }
 

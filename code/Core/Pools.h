@@ -70,14 +70,14 @@ struct Handle
 
 #define DEFINE_HANDLE(_Name) struct _Name##T; using _Name = Handle<_Name##T>
 
-template <typename _HandleType, typename _DataType, uint32 _Reserve = 32>
+template <typename _HandleType, typename _DataType>
 struct HandlePool
 {
     HandlePool() : HandlePool(memDefaultAlloc()) {}
     explicit HandlePool(Allocator* alloc) : mAlloc(alloc), mItems(alloc) {}
     explicit HandlePool(void* data, size_t size); 
 
-    void CopyTo(HandlePool<_HandleType, _DataType, _Reserve>* otherPool) const;
+    void CopyTo(HandlePool<_HandleType, _DataType>* otherPool) const;
 
     [[nodiscard]] _HandleType Add(const _DataType& item, _DataType* prevItem = nullptr);
     void Remove(_HandleType handle);
@@ -94,7 +94,7 @@ struct HandlePool
     void SetAllocator(Allocator* alloc);
     void Free();
 
-    static size_t GetMemoryRequirement(uint32 capacity = _Reserve);
+    static size_t GetMemoryRequirement(uint32 capacity);
     bool Grow();
     bool Grow(void* data, size_t size);
 
@@ -104,7 +104,7 @@ struct HandlePool
     // C++ stl crap compatibility. we just want to use for(auto t : array) syntax sugar
     struct Iterator 
     {
-        using HandlePool_t = HandlePool<_HandleType, _DataType, _Reserve>;
+        using HandlePool_t = HandlePool<_HandleType, _DataType>;
 
         Iterator(HandlePool_t* pool, uint32 index) : _pool(pool), mIndex(index) {}
         _DataType& operator*() { return _pool->Data(mIndex); }
@@ -118,9 +118,9 @@ struct HandlePool
     Iterator end()      { return Iterator(this, mHandles ? mHandles->count : 0); }
 
 private:
-    Allocator*                  mAlloc = nullptr;
-    _private::HandlePoolTable*  mHandles = nullptr;
-    Array<_DataType, _Reserve>  mItems;
+    Allocator* mAlloc = nullptr;
+    _private::HandlePoolTable* mHandles = nullptr;
+    Array<_DataType>  mItems;
 };
 
 #endif  // !__OBJC__
@@ -220,17 +220,10 @@ private:
 //----------------------------------------------------------------------------------------------------------------------
 // @impl HandlePool
 #ifndef __OBJC__
-template<typename _HandleType, typename _DataType, uint32 _Reserve>
-inline HandlePool<_HandleType, _DataType, _Reserve>::HandlePool(void* data, size_t size) :
-mItems((uint8*)data + GetMemoryRequirement(), size - GetMemoryRequirement())
+template<typename _HandleType, typename _DataType>
+void HandlePool<_HandleType, _DataType>::Reserve(uint32 capacity, void* buffer, size_t size)
 {
-    mHandles = _private::handleCreatePoolTableWithBuffer(_Reserve, data, GetMemoryRequirement());
-}
-
-template<typename _HandleType, typename _DataType, uint32 _Reserve>
-void HandlePool<_HandleType, _DataType, _Reserve>::Reserve(uint32 capacity, void* buffer, size_t size)
-{
-    capacity = Max(capacity, _Reserve);
+    capacity = Max(capacity, 32u);
     ASSERT_MSG(mHandles == nullptr, "pool should be freed/uninitialized before reserve by pointer");
     mAlloc = nullptr;
 
@@ -243,28 +236,29 @@ void HandlePool<_HandleType, _DataType, _Reserve>::Reserve(uint32 capacity, void
     mItems.Reserve(capacity, arrayBuffer, size - tableSize);
 }
 
-template<typename _HandleType, typename _DataType, uint32 _Reserve>
-void HandlePool<_HandleType, _DataType, _Reserve>::SetAllocator(Allocator* alloc)
+template<typename _HandleType, typename _DataType>
+void HandlePool<_HandleType, _DataType>::SetAllocator(Allocator* alloc)
 {
     ASSERT_MSG(mHandles == nullptr, "pool should be freed/uninitialized before setting allocator");
     mAlloc = alloc;
     mItems.SetAllocator(mAlloc);
 }
 
-template <typename _HandleType, typename _DataType, uint32 _Reserve>
-void HandlePool<_HandleType, _DataType, _Reserve>::CopyTo(HandlePool<_HandleType, _DataType, _Reserve>* otherPool) const
+template <typename _HandleType, typename _DataType>
+void HandlePool<_HandleType, _DataType>::CopyTo(HandlePool<_HandleType, _DataType>* otherPool) const
 {
     ASSERT_MSG(otherPool->mHandles == nullptr, "other pool should be uninitialized before cloning");
     otherPool->mHandles = _private::handleClone(mHandles, otherPool->mAlloc);
     mItems.CopyTo(&otherPool->mItems);
 }
 
-template<typename _HandleType, typename _DataType, uint32 _Reserve>
-inline _HandleType HandlePool<_HandleType, _DataType, _Reserve>::Add(const _DataType& item, _DataType* prevItem)
+template<typename _HandleType, typename _DataType>
+inline _HandleType HandlePool<_HandleType, _DataType>::Add(const _DataType& item, _DataType* prevItem)
 {
     if (mHandles == nullptr) {
         ASSERT(mAlloc);
-        mHandles = _private::handleCreatePoolTable(_Reserve, mAlloc);
+        mHandles = _private::handleCreatePoolTable(32u, mAlloc);
+        mItems.Reserve(32u);
     } 
     else if (mHandles->count == mHandles->capacity) {
         if (mAlloc) {
@@ -291,49 +285,49 @@ inline _HandleType HandlePool<_HandleType, _DataType, _Reserve>::Add(const _Data
     return handle;
 }
 
-template<typename _HandleType, typename _DataType, uint32 _Reserve>
-inline void HandlePool<_HandleType, _DataType, _Reserve>::Remove(_HandleType handle)
+template<typename _HandleType, typename _DataType>
+inline void HandlePool<_HandleType, _DataType>::Remove(_HandleType handle)
 {
     ASSERT(mHandles);
     _private::handleDel(mHandles, static_cast<uint32>(handle));
 }
 
-template<typename _HandleType, typename _DataType, uint32 _Reserve>
-inline uint32 HandlePool<_HandleType, _DataType, _Reserve>::Count() const
+template<typename _HandleType, typename _DataType>
+inline uint32 HandlePool<_HandleType, _DataType>::Count() const
 {
     return mHandles ? mHandles->count : 0;
 }
 
-template<typename _HandleType, typename _DataType, uint32 _Reserve>
-inline void HandlePool<_HandleType, _DataType, _Reserve>::Clear()
+template<typename _HandleType, typename _DataType>
+inline void HandlePool<_HandleType, _DataType>::Clear()
 {
     if (mHandles)
     _private::handleResetPoolTable(mHandles);
 }
 
-template<typename _HandleType, typename _DataType, uint32 _Reserve>
-inline bool HandlePool<_HandleType, _DataType, _Reserve>::IsValid(_HandleType handle)
+template<typename _HandleType, typename _DataType>
+inline bool HandlePool<_HandleType, _DataType>::IsValid(_HandleType handle)
 {
     ASSERT(mHandles);
     return _private::handleIsValid(mHandles, static_cast<uint32>(handle));
 }
 
-template<typename _HandleType, typename _DataType, uint32 _Reserve>
-inline _HandleType HandlePool<_HandleType, _DataType, _Reserve>::HandleAt(uint32 index)
+template<typename _HandleType, typename _DataType>
+inline _HandleType HandlePool<_HandleType, _DataType>::HandleAt(uint32 index)
 {
     ASSERT(mHandles);
     return _HandleType(_private::handleAt(mHandles, index));
 }
 
-template<typename _HandleType, typename _DataType, uint32 _Reserve>
-inline _DataType& HandlePool<_HandleType, _DataType, _Reserve>::Data(uint32 index)
+template<typename _HandleType, typename _DataType>
+inline _DataType& HandlePool<_HandleType, _DataType>::Data(uint32 index)
 {
     _HandleType handle = HandleAt(index);
     return mItems[handle.GetSparseIndex()];
 }
 
-template<typename _HandleType, typename _DataType, uint32 _Reserve>
-inline _DataType& HandlePool<_HandleType, _DataType, _Reserve>::Data(_HandleType handle)
+template<typename _HandleType, typename _DataType>
+inline _DataType& HandlePool<_HandleType, _DataType>::Data(_HandleType handle)
 {
     ASSERT(mHandles);
     ASSERT_MSG(IsValid(handle), "Invalid handle (%u): Generation=%u, SparseIndex=%u", 
@@ -341,8 +335,8 @@ inline _DataType& HandlePool<_HandleType, _DataType, _Reserve>::Data(_HandleType
     return mItems[handle.GetSparseIndex()];
 }
 
-template<typename _HandleType, typename _DataType, uint32 _Reserve>
-inline void HandlePool<_HandleType, _DataType, _Reserve>::Free()
+template<typename _HandleType, typename _DataType>
+inline void HandlePool<_HandleType, _DataType>::Free()
 {
     if (mAlloc) {
         if (mHandles) 
@@ -352,8 +346,8 @@ inline void HandlePool<_HandleType, _DataType, _Reserve>::Free()
     }
 }
 
-template<typename _HandleType, typename _DataType, uint32 _Reserve>
-template<typename _Func> inline _HandleType HandlePool<_HandleType, _DataType, _Reserve>::FindIf(_Func findFunc)
+template<typename _HandleType, typename _DataType>
+template<typename _Func> inline _HandleType HandlePool<_HandleType, _DataType>::FindIf(_Func findFunc)
 {
     if (mHandles) {
         for (uint32 i = 0, c = mHandles->count; i < c; i++) {
@@ -366,26 +360,26 @@ template<typename _Func> inline _HandleType HandlePool<_HandleType, _DataType, _
     return _HandleType();
 }
 
-template<typename _HandleType, typename _DataType, uint32 _Reserve>
-inline bool HandlePool<_HandleType, _DataType, _Reserve>::IsFull() const
+template<typename _HandleType, typename _DataType>
+inline bool HandlePool<_HandleType, _DataType>::IsFull() const
 {
     return !mHandles && mHandles->count == mHandles->capacity;
 }
 
-template<typename _HandleType, typename _DataType, uint32 _Reserve>
-inline uint32 HandlePool<_HandleType, _DataType, _Reserve>::Capacity() const
+template<typename _HandleType, typename _DataType>
+inline uint32 HandlePool<_HandleType, _DataType>::Capacity() const
 {
-    return mHandles ? mHandles->capacity : _Reserve;
+    return mHandles ? mHandles->capacity : 32u;
 }
 
-template<typename _HandleType, typename _DataType, uint32 _Reserve>
-inline size_t HandlePool<_HandleType, _DataType, _Reserve>::GetMemoryRequirement(uint32 capacity)
+template<typename _HandleType, typename _DataType>
+inline size_t HandlePool<_HandleType, _DataType>::GetMemoryRequirement(uint32 capacity)
 {
     return _private::handleGetMemoryRequirement(capacity) + Array<_DataType>::GetMemoryRequirement(capacity);
 }
 
-template<typename _HandleType, typename _DataType, uint32 _Reserve>
-inline bool HandlePool<_HandleType, _DataType, _Reserve>::Grow()
+template<typename _HandleType, typename _DataType>
+inline bool HandlePool<_HandleType, _DataType>::Grow()
 {
     ASSERT(mAlloc);
     ASSERT(mHandles);
@@ -394,8 +388,8 @@ inline bool HandlePool<_HandleType, _DataType, _Reserve>::Grow()
     return _private::handleGrowPoolTable(&mHandles, mAlloc);
 }
 
-template<typename _HandleType, typename _DataType, uint32 _Reserve>
-inline bool HandlePool<_HandleType, _DataType, _Reserve>::Grow(void* data, size_t size)
+template<typename _HandleType, typename _DataType>
+inline bool HandlePool<_HandleType, _DataType>::Grow(void* data, size_t size)
 {
     ASSERT(!mAlloc);
     ASSERT(mHandles);
