@@ -90,22 +90,22 @@ void frameInfoRender(float dt, bool *pOpen)
         uint32 lowFps = targetFps / 2;
 
         Color fpsColor, cpuColor, gpuColor;
-        if (fps <= lowFps)             fpsColor = kColorRed;
-        else if (fps <= warningFps)    fpsColor = kColorYellow;
-        else                           fpsColor = kColorGreen;
+        if (fps <= lowFps)             fpsColor = COLOR_RED;
+        else if (fps <= warningFps)    fpsColor = COLOR_YELLOW;
+        else                           fpsColor = COLOR_GREEN;
 
         float cpuTimeMs = engineGetCpuFrameTimeMS();
         float gpuTimeMs = gfxGetRenderTimeNs()/1000000.0f;
         float warnTimeMs = 1000.0f / float(warningFps);
         float lowTimeMs = 1000.0f / float(lowFps);
 
-        if (cpuTimeMs >= lowTimeMs)         cpuColor = kColorRed;
-        else if (cpuTimeMs >= warnTimeMs)   cpuColor = kColorYellow;
-        else                                cpuColor = kColorGreen;
+        if (cpuTimeMs >= lowTimeMs)         cpuColor = COLOR_RED;
+        else if (cpuTimeMs >= warnTimeMs)   cpuColor = COLOR_YELLOW;
+        else                                cpuColor = COLOR_GREEN;
 
-        if (gpuTimeMs >= lowTimeMs)         gpuColor = kColorRed;
-        else if (gpuTimeMs >= warnTimeMs)   gpuColor = kColorYellow;
-        else                                gpuColor = kColorGreen;
+        if (gpuTimeMs >= lowTimeMs)         gpuColor = COLOR_RED;
+        else if (gpuTimeMs >= warnTimeMs)   gpuColor = COLOR_YELLOW;
+        else                                gpuColor = COLOR_GREEN;
                         
         imguiLabel(kTextColorU32, fpsColor, "Fps", "%u", fps);
         imguiLabel(kTextColorU32, fpsColor, "AvgFt", "%.1fms", avgFt*1000.0f);
@@ -159,12 +159,12 @@ static void frameInfoLogCallback(const LogEntry& entry, void*)
     gFrameInfo.statusShowTime = 0;
 
     switch (entry.type) {
-    case LogLevel::Info:	gFrameInfo.statusColor = kColorWhite; break;
+    case LogLevel::Info:	gFrameInfo.statusColor = COLOR_WHITE; break;
     case LogLevel::Debug:	gFrameInfo.statusColor = Color(0, 200, 200); break;
     case LogLevel::Verbose:	gFrameInfo.statusColor = Color(128, 128, 128); break;
-    case LogLevel::Warning:	gFrameInfo.statusColor = kColorYellow; break;
-    case LogLevel::Error:	gFrameInfo.statusColor = kColorRed; break;
-    default:			    gFrameInfo.statusColor = kColorWhite; break;
+    case LogLevel::Warning:	gFrameInfo.statusColor = COLOR_YELLOW; break;
+    case LogLevel::Error:	gFrameInfo.statusColor = COLOR_RED; break;
+    default:			    gFrameInfo.statusColor = COLOR_WHITE; break;
     }
 }
 

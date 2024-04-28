@@ -115,12 +115,12 @@ FORCE_INLINE constexpr bool mathIsPow2(int n)
 
 FORCE_INLINE constexpr float mathToRad(float _deg)
 {
-    return _deg * kPI / 180.0f;
+    return _deg * M_PI / 180.0f;
 }
 
 FORCE_INLINE constexpr float mathToDeg(float _rad)
 {
-    return _rad * 180.0f / kPI;
+    return _rad * 180.0f / M_PI;
 }
 
 // Packs float to uint32
@@ -289,7 +289,7 @@ FORCE_INLINE float mathExp2(float _a)
 
 FORCE_INLINE float mathLog2(float _a)
 {
-    return mathLog(_a) * kInvLogNat2;
+    return mathLog(_a) * M_INVLOGNAT10;
 }
 
 // Returns the nearest integer not greater in magnitude than _a.
@@ -419,8 +419,8 @@ FORCE_INLINE float mathGain(float _time, float _gain)
 
 FORCE_INLINE float mathAngleDiff(float _a, float _b)
 {
-    const float dist = mathWrap(_b - _a, kPI2);
-    return mathWrap(dist * 2.0f, kPI2) - dist;
+    const float dist = mathWrap(_b - _a, M_PI2);
+    return mathWrap(dist * 2.0f, M_PI2) - dist;
 }
 
 FORCE_INLINE float mathAngleLerp(float _a, float _b, float _t)

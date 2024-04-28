@@ -360,63 +360,63 @@ struct Box
 //    ╚██████╗╚██████╔╝██║ ╚████║███████║   ██║   ██║  ██║██║ ╚████║   ██║   ███████║
 //     ╚═════╝ ╚═════╝ ╚═╝  ╚═══╝╚══════╝   ╚═╝   ╚═╝  ╚═╝╚═╝  ╚═══╝   ╚═╝   ╚══════╝
 
-inline constexpr float kPI           = 3.1415926535897932384626433832795f;
-inline constexpr float kPI2          = 6.2831853071795864769252867665590f;
-inline constexpr float kInvPI        = (1.0f / 3.1415926535897932384626433832795f);
-inline constexpr float kPIHalf       = 1.5707963267948966192313216916398f;
-inline constexpr float kPIQuarter    = 0.7853981633974483096156608458199f;
-inline constexpr float kSqrt2        = 1.4142135623730950488016887242097f;
-inline constexpr float kLogNat10     = 2.3025850929940456840179914546844f;
-inline constexpr float kInvLogNat2   = 1.4426950408889634073599246810019f;
-inline constexpr float kLogNat2H     = 0.6931471805599453094172321214582f;
-inline constexpr float kLogNat2L     = 1.90821492927058770002e-10f;
-inline constexpr float kE            = 2.7182818284590452353602874713527f;
-inline constexpr float kNearZero     = (1.0f / (float)(1 << 28));
-inline constexpr float kFloatMin     = (1.175494e-38f);
-inline constexpr float kFloatMax     = (3.402823e+38f);
+inline constexpr float M_PI           = 3.1415926535897932384626433832795f;
+inline constexpr float M_PI2          = 6.2831853071795864769252867665590f;
+inline constexpr float M_INVPI        = (1.0f / 3.1415926535897932384626433832795f);
+inline constexpr float M_HALFPI       = 1.5707963267948966192313216916398f;
+inline constexpr float M_QUARTERPI    = 0.7853981633974483096156608458199f;
+inline constexpr float M_SQRT2        = 1.4142135623730950488016887242097f;
+inline constexpr float M_LOGNAT10     = 2.3025850929940456840179914546844f;
+inline constexpr float M_INVLOGNAT10   = 1.4426950408889634073599246810019f;
+inline constexpr float M_LOGNAT2H     = 0.6931471805599453094172321214582f;
+inline constexpr float M_LOGNAT2L     = 1.90821492927058770002e-10f;
+inline constexpr float M_E            = 2.7182818284590452353602874713527f;
+inline constexpr float M_NEARZERO     = (1.0f / (float)(1 << 28));
+inline constexpr float M_FLOAT32_MIN  = (1.175494e-38f);
+inline constexpr float M_FLOAT32_MAX  = (3.402823e+38f);
 
-inline constexpr Float2 kFloat2Zero  { 0.0f, 0.0f };
-inline constexpr Float2 kFloat2UnitX { 1.0f, 0.0f };
-inline constexpr Float2 kFloat2UnitY { 0.0f, 1.0f };
+inline constexpr Float2 FLOAT2_ZERO  { 0.0f, 0.0f };
+inline constexpr Float2 FLOAT2_UNITX { 1.0f, 0.0f };
+inline constexpr Float2 FLOAT2_UNITY { 0.0f, 1.0f };
 
-inline constexpr Float3 kFloat3Zero  { 0.0f, 0.0f, 0.0f };
-inline constexpr Float3 kFloat3UnitX { 1.0f, 0.0f, 0.0f };
-inline constexpr Float3 kFloat3UnitY { 0.0f, 1.0f, 0.0f };
-inline constexpr Float3 kFloat3UnitZ { 0.0f, 0.0f, 1.0f };
+inline constexpr Float3 FLOAT3_ZERO  { 0.0f, 0.0f, 0.0f };
+inline constexpr Float3 FLOAT3_UNIX { 1.0f, 0.0f, 0.0f };
+inline constexpr Float3 FLOAT3_UNITY { 0.0f, 1.0f, 0.0f };
+inline constexpr Float3 FLOAT3_UNITZ { 0.0f, 0.0f, 1.0f };
 
-inline constexpr Float4 kFloat4Zero  { 0.0f, 0.0f, 0.0f, 1.0f };
-inline constexpr Float4 kFloat4UnitX { 1.0f, 0.0f, 0.0f, 1.0f };
-inline constexpr Float4 kFloat4UnitY { 0.0f, 1.0f, 0.0f, 1.0f };
-inline constexpr Float4 kFloat4UnitZ { 0.0f, 0.0f, 1.0f, 1.0f };
+inline constexpr Float4 FLOAT4_ZERO  { 0.0f, 0.0f, 0.0f, 1.0f };
+inline constexpr Float4 FLOAT4_UNITX { 1.0f, 0.0f, 0.0f, 1.0f };
+inline constexpr Float4 FLOAT4_UNITY { 0.0f, 1.0f, 0.0f, 1.0f };
+inline constexpr Float4 FLOAT4_UNITZ { 0.0f, 0.0f, 1.0f, 1.0f };
 
-inline constexpr Int2 kInt2Zero {0, 0};
-inline constexpr Int2 kInt2One {1, 1};
+inline constexpr Int2 INT2_ZERO {0, 0};
+inline constexpr Int2 INT2_ONE {1, 1};
 
-inline constexpr Mat3 kMat3Ident {
+inline constexpr Mat3 MAT3_IDENT {
     1.0f, 0.0f, 0.0f,
     0.0f, 1.0f, 0.0f,
     0.0f, 0.0f, 1.0f
 };
 
-inline constexpr Mat4 kMat4Ident {
+inline constexpr Mat4 MAT4_IDENT {
     1.0f, 0.0f, 0.0f, 0.0f,
     0.0f, 1.0f, 0.0f, 0.0f,
     0.0f, 0.0f, 1.0f, 0.0f,
     0.0f, 0.0f, 0.0f, 1.0f 
 };
 
-inline constexpr Quat kQuatIdent {0, 0, 0, 1.0f};
+inline constexpr Quat QUAT_INDENT {0, 0, 0, 1.0f};
 
-inline constexpr Transform3D kTransform3DIdent { kFloat3Zero, kMat3Ident };
+inline constexpr Transform3D TRANSFORM3D_IDENT { FLOAT3_ZERO, MAT3_IDENT };
 
-inline constexpr Color kColorWhite  { uint8(255), uint8(255), uint8(255), uint8(255) };
-inline constexpr Color kColorBlack  { uint8(0), uint8(0), uint8(0), uint8(255) };
-inline constexpr Color kColorRed    { uint8(255), uint8(0), uint8(0), uint8(255) };
-inline constexpr Color kColorYellow { uint8(255), uint8(255), uint8(0), uint8(255) };
-inline constexpr Color kColorGreen  { uint8(0), uint8(255), uint8(0), uint8(255) };
-inline constexpr Color kColorBlue   { uint8(0), uint8(0), uint8(255), uint8(255) };
-inline constexpr Color kColorPurple { uint8(255), uint8(0), uint8(255), uint8(255) };
+inline constexpr Color COLOR_WHITE  { uint8(255), uint8(255), uint8(255), uint8(255) };
+inline constexpr Color COLOR_BLACK  { uint8(0), uint8(0), uint8(0), uint8(255) };
+inline constexpr Color COLOR_RED    { uint8(255), uint8(0), uint8(0), uint8(255) };
+inline constexpr Color COLOR_YELLOW { uint8(255), uint8(255), uint8(0), uint8(255) };
+inline constexpr Color COLOR_GREEN  { uint8(0), uint8(255), uint8(0), uint8(255) };
+inline constexpr Color COLOR_BLUE   { uint8(0), uint8(0), uint8(255), uint8(255) };
+inline constexpr Color COLOR_PURPLE { uint8(255), uint8(0), uint8(255), uint8(255) };
 
-inline constexpr AABB kAABBEmpty { kFloatMax, kFloatMax, kFloatMax, -kFloatMax, -kFloatMax, -kFloatMax };
+inline constexpr AABB AABB_EMPTY { M_FLOAT32_MAX, M_FLOAT32_MAX, M_FLOAT32_MAX, -M_FLOAT32_MAX, -M_FLOAT32_MAX, -M_FLOAT32_MAX };
 
 PRAGMA_DIAGNOSTIC_POP()    // ignore msvc warnings

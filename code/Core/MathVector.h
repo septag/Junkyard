@@ -520,8 +520,8 @@ FORCE_INLINE void float3TangentAngle(Float3* _t, Float3* _b, Float3 _n, float _a
 
 FORCE_INLINE Float3 float3FromLatLong(float _u, float _v)
 {
-    const float phi = _u * kPI2;
-    const float theta = _v * kPI;
+    const float phi = _u * M_PI2;
+    const float theta = _v * M_PI;
 
     const float st = mathSin(theta);
     const float sp = mathSin(phi);
@@ -536,7 +536,7 @@ FORCE_INLINE Float2 float3ToLatLong(Float3 _dir)
     const float phi = mathATan2(_dir.x, _dir.y);
     const float theta = mathACos(_dir.z);
 
-    return Float2((kPI + phi) / kPI2, theta * kInvPI);
+    return Float2((M_PI + phi) / M_PI2, theta * M_INVPI);
 }
 
 FORCE_INLINE Float3 float3MulQuat(Float3 _vec, Quat _quat)

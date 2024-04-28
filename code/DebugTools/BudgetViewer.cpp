@@ -137,7 +137,7 @@ void budgetViewerRender(float dt, bool* pOpen)
             imguiLabel("RuntimeHeap fragmentation:", "%.1f%%", gBudgetViewer.assetHeapFragmentation);
 
             imguiLabel(Color(kTextColor.x, kTextColor.y, kTextColor.z, kTextColor.w), 
-                       gBudgetViewer.assetHeapValidate ? kColorGreen : kColorRed, 
+                       gBudgetViewer.assetHeapValidate ? COLOR_GREEN : COLOR_RED, 
                        "RuntimeHeap validate:",
                        gBudgetViewer.assetHeapValidate ? "Ok" : "Fail");
 
@@ -217,7 +217,7 @@ void budgetViewerRender(float dt, bool* pOpen)
             }
             imguiLabel("RuntimeHeap fragmentation:", "%.1f%%", gBudgetViewer.gfxHeapFragmentation);
             imguiLabel(Color(kTextColor.x, kTextColor.y, kTextColor.z, kTextColor.w), 
-                       gBudgetViewer.gfxHeapValidate ? kColorGreen : kColorRed, 
+                       gBudgetViewer.gfxHeapValidate ? COLOR_GREEN : COLOR_RED, 
                        "RuntimeHeap validate:",
                        gBudgetViewer.gfxHeapValidate ? "Ok" : "Fail");
 
@@ -252,7 +252,7 @@ void budgetViewerRender(float dt, bool* pOpen)
             }
             imguiLabel("RuntimeHeap fragmentation:", "%.1f%%", gBudgetViewer.imguiHeapFragmentation);
             imguiLabel(Color(kTextColor.x, kTextColor.y, kTextColor.z, kTextColor.w), 
-                       gBudgetViewer.imguiHeapValidate ? kColorGreen : kColorRed, 
+                       gBudgetViewer.imguiHeapValidate ? COLOR_GREEN : COLOR_RED, 
                        "RuntimeHeap validate:",
                        gBudgetViewer.imguiHeapValidate ? "Ok" : "Fail");
 

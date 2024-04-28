@@ -39,7 +39,7 @@ struct Camera
 
     void Setup(float fovDeg, float fnear, float ffar);
 
-    virtual void SetLookAt(Float3 pos, Float3 target, Float3 up = kFloat3UnitZ);
+    virtual void SetLookAt(Float3 pos, Float3 target, Float3 up = FLOAT3_UNITZ);
     virtual void SetViewMat(const Mat4& viewMat);
     virtual void HandleMovementKeyboard(float dt, float moveSpeed, float slowMoveSpeed);
     virtual void HandleRotationMouse(const AppEvent& ev, float rotateSpeed, float zoomStep);
@@ -60,22 +60,22 @@ struct Camera
     float Fov() const { return mFov; }
 
 protected:
-    Float3 mForward = kFloat3UnitY;
-    Float3 mRight = kFloat3UnitX;
-    Float3 mUp = kFloat3UnitZ;
-    Float3 mPos = kFloat3Zero;
+    Float3 mForward = FLOAT3_UNITY;
+    Float3 mRight = FLOAT3_UNIX;
+    Float3 mUp = FLOAT3_UNITZ;
+    Float3 mPos = FLOAT3_ZERO;
 
     float mNear = 0.1f;
     float mFar = 100.0f;
-    float mFov = kPIQuarter;
+    float mFov = M_QUARTERPI;
 };
 
 struct CameraFPS : Camera
 {
-    void SetLookAt(Float3 pos, Float3 target, Float3 up = kFloat3UnitZ) override;
+    void SetLookAt(Float3 pos, Float3 target, Float3 up = FLOAT3_UNITZ) override;
     void SetViewMat(const Mat4& viewMat) override;
 
-    void RotatePitch(float pitch, float pitchMin = -kPI, float pitchMax = kPI);
+    void RotatePitch(float pitch, float pitchMin = -M_PI, float pitchMax = M_PI);
     void RotateYaw(float yaw);
     void MoveForward(float forward);
     void Strafe(float strafe);  
@@ -89,8 +89,8 @@ struct CameraFPS : Camera
 private:
     void UpdateRotation();
 
-    Quat mQuat = kQuatIdent;
-    Float2 mLastMouse = kFloat2Zero;
+    Quat mQuat = QUAT_INDENT;
+    Float2 mLastMouse = FLOAT2_ZERO;
     float mPitch = 0;
     float mYaw = 0;
     bool mMouseDown = false;
@@ -99,7 +99,7 @@ private:
 
 struct CameraOrbit : Camera
 {
-    void SetLookAt(Float3 pos, Float3 target, Float3 up = kFloat3UnitZ) override;
+    void SetLookAt(Float3 pos, Float3 target, Float3 up = FLOAT3_UNITZ) override;
     void SetViewMat(const Mat4& viewMat) override;
 
     void RotateOrbit(float orbit);
@@ -107,11 +107,11 @@ struct CameraOrbit : Camera
     void HandleRotationMouse(const AppEvent& ev, float rotateSpeed, float zoomStep) override;
 
 private:
-    Float3 mTarget = kFloat3Zero;
+    Float3 mTarget = FLOAT3_ZERO;
     float mDistance = 0;
     float mElevation = 0;   // Angle for elevation, 0..PiHalf (Radians)
     float mOrbit = 0;       // Angle for rotating around orbit (Radians)
-    Float2 mLastMouse = kFloat2Zero;
+    Float2 mLastMouse = FLOAT2_ZERO;
     bool mMouseDown = false;
 };
 

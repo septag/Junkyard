@@ -39,7 +39,7 @@ void ddDrawGrid_XYAxis(const Camera& cam, float viewWidth, float viewHeight, con
 
     CameraFrustumPoints frustumPts = cam.GetFrustumPoints(viewWidth, viewHeight, -props.distance, props.distance);
     Mat4 viewProjMat = cam.GetPerspectiveMat(viewWidth, viewHeight) * cam.GetViewMat();
-    AABB bb = kAABBEmpty;
+    AABB bb = AABB_EMPTY;
 
     // extrude near plane
     Float3 nearPlaneN = planeNormal(frustumPts[0], frustumPts[1], frustumPts[2]);
@@ -87,7 +87,7 @@ void ddDrawGrid_XYAxis(const Camera& cam, float viewWidth, float viewHeight, con
 
         vertices[i].color = vertices[ni].color = (yoffset != 0.0f)
                 ? (!mathIsEqual(mathMod(yoffset, boldSpacing), 0.0f, 0.0001f) ? color : boldColor)
-                : kColorRed;
+                : COLOR_RED;
     }
 
     for (float xoffset = snapbox.xmin; xoffset <= snapbox.xmax; xoffset += spacing, i += 2) {
@@ -103,7 +103,7 @@ void ddDrawGrid_XYAxis(const Camera& cam, float viewWidth, float viewHeight, con
 
         vertices[i].color = vertices[ni].color = (xoffset != 0.0f)
                 ? (!mathIsEqual(mathMod(xoffset, boldSpacing), 0.0f, 0.0001f) ? color : boldColor)
-                : kColorGreen;
+                : COLOR_GREEN;
     }
 
     uint64 vertexBufferOffset = 0;

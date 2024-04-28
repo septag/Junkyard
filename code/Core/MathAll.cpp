@@ -784,7 +784,7 @@ Float3 quatToEuler(Quat _quat)
     float sinp = 2 * (_quat.w * _quat.y - _quat.z * _quat.x);
     float y;
     if (mathAbs(sinp) >= 1)
-        y = mathCopySign(kPIHalf, sinp);
+        y = mathCopySign(M_HALFPI, sinp);
     else
         y = mathASin(sinp);
     

@@ -42,7 +42,7 @@ PRAGMA_DIAGNOSTIC_POP()
     PRAGMA_DIAGNOSTIC_POP()
 #endif
 
-static constexpr uint32 kRemoteCmdLoadImage = MakeFourCC('L', 'I', 'M', 'G');
+static constexpr uint32 RCMD_LOAD_IMAGE = MakeFourCC('L', 'I', 'M', 'G');
 
 // keeps the parameters to UpdateDescriptorSet function, so we can keep the reloaded images in sync with GPU
 struct AssetDescriptorUpdateCacheItem
@@ -347,20 +347,20 @@ static void assetLoadImageTask(uint32 groupIndex, void* userData)
             outgoingBlob.Write<uint32>(bufferSize);
             outgoingBlob.Write(header, bufferSize);
 
-            remoteSendResponse(kRemoteCmdLoadImage, outgoingBlob, false, nullptr);
+            remoteSendResponse(RCMD_LOAD_IMAGE, outgoingBlob, false, nullptr);
             logVerbose("Image loaded: %s (%.1f ms)", filepath, timer.ElapsedMS());
 
             memFree(header, memDefaultAlloc());
         }
         else {
-            remoteSendResponse(kRemoteCmdLoadImage, outgoingBlob, true, errorMsg);
+            remoteSendResponse(RCMD_LOAD_IMAGE, outgoingBlob, true, errorMsg);
             logVerbose(errorMsg);
         }
     }
     else {
         outgoingBlob.Write<uint32>(cacheHash);
         outgoingBlob.Write<uint32>(0);  // nothing has loaded. it's safe to load from client's local cache
-        remoteSendResponse(kRemoteCmdLoadImage, outgoingBlob, false, nullptr);
+        remoteSendResponse(RCMD_LOAD_IMAGE, outgoingBlob, false, nullptr);
         logVerbose("Image: %s [cached]", filepath);
     }
        
@@ -372,7 +372,7 @@ static void assetLoadImageTask(uint32 groupIndex, void* userData)
 static bool assetImageHandlerServerFn([[maybe_unused]] uint32 cmd, const Blob& incomingData, Blob*, 
                                     void*, char outgoingErrorDesc[kRemoteErrorDescSize])
 {
-    ASSERT(cmd == kRemoteCmdLoadImage);
+    ASSERT(cmd == RCMD_LOAD_IMAGE);
     UNUSED(outgoingErrorDesc);
 
     // get a copy of incomingData pass it on to a task
@@ -386,7 +386,7 @@ static bool assetImageHandlerServerFn([[maybe_unused]] uint32 cmd, const Blob& i
 // MT: called from RemoteServices thread
 static void assetImageHandlerClientFn([[maybe_unused]] uint32 cmd, const Blob& incomingData, void* userData, bool error, const char* errorDesc)
 {
-    ASSERT(cmd == kRemoteCmdLoadImage);
+    ASSERT(cmd == RCMD_LOAD_IMAGE);
     UNUSED(userData);
 
     AssetHandle handle;
@@ -536,7 +536,7 @@ bool _private::assetInitializeImageManager()
     gImageMgr.requestsMtx.Initialize();
     gImageMgr.requests.SetAllocator(gImageMgr.runtimeAlloc);
     remoteRegisterCommand(RemoteCommandDesc {
-        .cmdFourCC = kRemoteCmdLoadImage,
+        .cmdFourCC = RCMD_LOAD_IMAGE,
         .serverFn = assetImageHandlerServerFn,
         .clientFn = assetImageHandlerClientFn,
         .async = true
@@ -633,7 +633,7 @@ void AssetImageCallbacks::LoadRemote(AssetHandle handle, const AssetLoadParams& 
     outgoingBlob.Write<uint32>(static_cast<uint32>(params.platform));
     outgoingBlob.Write(textureParams, sizeof(ImageLoadParams));
 
-    remoteExecuteCommand(kRemoteCmdLoadImage, outgoingBlob);
+    remoteExecuteCommand(RCMD_LOAD_IMAGE, outgoingBlob);
 
     outgoingBlob.Free();
 }

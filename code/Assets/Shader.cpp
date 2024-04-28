@@ -14,8 +14,8 @@
 
 #include "../Graphics/Graphics.h"
 
-static constexpr uint32 kShaderAssetType = MakeFourCC('S', 'H', 'A', 'D');
-static constexpr uint32 kRemoteCmdCompileShader = MakeFourCC('C', 'S', 'H', 'D');
+static constexpr uint32 SHADER_ASSET_TYPE = MakeFourCC('S', 'H', 'A', 'D');
+static constexpr uint32 RCMD_COMPILE_SHADER = MakeFourCC('C', 'S', 'H', 'D');
 
 struct ShaderLoadRequest
 {
@@ -101,13 +101,13 @@ static void shaderCompileLoadTask(uint32 groupIndex, void* userData)
                 outgoingBlob.Write<uint32>(cacheHash);
                 outgoingBlob.Write<uint32>(shaderDataSize);
                 outgoingBlob.Write(shader, shaderDataSize);
-                remoteSendResponse(kRemoteCmdCompileShader, outgoingBlob, false, nullptr);
+                remoteSendResponse(RCMD_COMPILE_SHADER, outgoingBlob, false, nullptr);
                 logVerbose("Shader loaded: %s (%.1f ms)", filepath, timer.ElapsedMS());
             }
             else {
                 char errorMsg[kRemoteErrorDescSize];
                 strPrintFmt(errorMsg, sizeof(errorMsg), "Compiling shader '%s' failed: %s", filepath, compileErrorDesc);
-                remoteSendResponse(kRemoteCmdCompileShader, outgoingBlob, true, errorMsg);
+                remoteSendResponse(RCMD_COMPILE_SHADER, outgoingBlob, true, errorMsg);
                 logVerbose(errorMsg);
             }
             memFree(shader);
@@ -115,14 +115,14 @@ static void shaderCompileLoadTask(uint32 groupIndex, void* userData)
         else {
             char errorMsg[kRemoteErrorDescSize];
             strPrintFmt(errorMsg, sizeof(errorMsg), "Opening shader file failed: %s", filepath);
-            remoteSendResponse(kRemoteCmdCompileShader, outgoingBlob, true, errorMsg);
+            remoteSendResponse(RCMD_COMPILE_SHADER, outgoingBlob, true, errorMsg);
             logVerbose(errorMsg);
         }
     }
     else {
         outgoingBlob.Write<uint32>(cacheHash);
         outgoingBlob.Write<uint32>(0);  // nothing has loaded. it's safe to load from client's local cache
-        remoteSendResponse(kRemoteCmdCompileShader, outgoingBlob, false, nullptr);
+        remoteSendResponse(RCMD_COMPILE_SHADER, outgoingBlob, false, nullptr);
         logVerbose("Shader: %s [cached]", filepath);
     }
 
@@ -139,7 +139,7 @@ static void shaderCompileLoadTask(uint32, void*)
 static bool shaderCompileShaderHandlerServerFn([[maybe_unused]] uint32 cmd, const Blob& incomingData, Blob*, 
                                                void*, char outgoingErrorDesc[kRemoteErrorDescSize])
 {
-    ASSERT(cmd == kRemoteCmdCompileShader);
+    ASSERT(cmd == RCMD_COMPILE_SHADER);
     UNUSED(outgoingErrorDesc);
     
     // Get a copy of incomingData and pass it on to a task
@@ -153,7 +153,7 @@ static bool shaderCompileShaderHandlerServerFn([[maybe_unused]] uint32 cmd, cons
 // MT: runs within RemoteServices client-thread context
 static void shaderCompileShaderHandlerClientFn([[maybe_unused]] uint32 cmd, const Blob& incomingData, void* userData, bool error, const char* errorDesc)
 {
-    ASSERT(cmd == kRemoteCmdCompileShader);
+    ASSERT(cmd == RCMD_COMPILE_SHADER);
     UNUSED(userData);
     
     AssetHandle handle {};
@@ -213,7 +213,7 @@ bool _private::assetInitializeShaderManager()
 
     // Register asset loader
     assetRegisterType(AssetTypeDesc {
-        .fourcc = kShaderAssetType,
+        .fourcc = SHADER_ASSET_TYPE,
         .name = "Shader",
         .callbacks = &gShaderLoader,
         .extraParamTypeName = "ShaderCompileDesc",
@@ -223,7 +223,7 @@ bool _private::assetInitializeShaderManager()
     });
 
     remoteRegisterCommand(RemoteCommandDesc {
-        .cmdFourCC = kRemoteCmdCompileShader,
+        .cmdFourCC = RCMD_COMPILE_SHADER,
         .serverFn = shaderCompileShaderHandlerServerFn,
         .clientFn = shaderCompileShaderHandlerClientFn,
         .async = true
@@ -240,7 +240,7 @@ void _private::assetReleaseShaderManager()
     #if CONFIG_TOOLMODE
         shaderReleaseCompiler();
     #endif
-    assetUnregisterType(kShaderAssetType);
+    assetUnregisterType(SHADER_ASSET_TYPE);
     gShaderLoader.requestsMtx.Release();
     gShaderLoader.requests.Free();
 }
@@ -250,7 +250,7 @@ AssetHandleShader assetLoadShader(const char* path, const ShaderLoadParams& desc
     AssetLoadParams loadParams {
         .path = path,
         .alloc = memDefaultAlloc(), // TODO: should be able to use custom allocator
-        .typeId = kShaderAssetType,
+        .typeId = SHADER_ASSET_TYPE,
         .barrier = barrier
     };
 
@@ -355,7 +355,7 @@ void ShaderLoader::LoadRemote(AssetHandle handle, const AssetLoadParams& params,
     outgoingBlob.Write<uint32>(static_cast<uint32>(params.platform));
     outgoingBlob.Write(&compileDesc, sizeof(compileDesc));
 
-    remoteExecuteCommand(kRemoteCmdCompileShader, outgoingBlob);
+    remoteExecuteCommand(RCMD_COMPILE_SHADER, outgoingBlob);
 
     outgoingBlob.Free();
 }

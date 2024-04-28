@@ -99,8 +99,8 @@ struct JobsFiberProperties
     JobsFiber* fiber;
     JobsFiberProperties* next;
     JobsFiberProperties* prev;
+    JobsStackSize stackSize;
     uint32 index;
-    uint32 stackSize;
 };
 
 struct JobsSignalInternal
@@ -299,7 +299,8 @@ static JobsFiber* jobsCreateFiber(JobsFiberProperties* props)
         return alloc->Free(ptr);
     };    
 
-    mco_desc desc = mco_desc_init(jobsEntryFn, props->stackSize);
+    ASSERT(props->stackSize != JobsStackSize::_Count);
+    mco_desc desc = mco_desc_init(jobsEntryFn, JOBS_STACK_SIZES[uint32(props->stackSize)]);
     desc.alloc_cb = McoMallocFn;
     desc.dealloc_cb = McoFreeFn;
 
@@ -514,7 +515,7 @@ static int jobsWorkerThread(void* userData)
 }
 
 static JobsInstance* jobsDispatchInternal(bool isAutoDelete, JobsType type, JobsCallback callback, void* userData, 
-                                          uint32 groupSize, JobsPriority prio, uint32 stackSize)
+                                          uint32 groupSize, JobsPriority prio, JobsStackSize stackSize)
 {
     ASSERT(groupSize);
 
@@ -540,9 +541,6 @@ static JobsInstance* jobsDispatchInternal(bool isAutoDelete, JobsType type, Jobs
         parent = tdata->curFiber;
     }
 
-    if (stackSize == 0)
-        stackSize = type == JobsType::ShortTask ? 256*kKB : 512*kKB;
-
     // Push workers to the end of the list, will be collected by fiber threads
     {
         JobsLockScope lock(gJobs.waitingListLock);
@@ -553,8 +551,8 @@ static JobsInstance* jobsDispatchInternal(bool isAutoDelete, JobsType type, Jobs
                 .userData = userData,
                 .instance = instance,
                 .prio = prio,
-                .index = i,
-                .stackSize = stackSize
+                .stackSize = stackSize,
+                .index = i
             };
     
             gJobs.waitingLists[uint32(type)].AddToList(props);
@@ -627,12 +625,12 @@ bool jobsIsRunning(JobsHandle handle)
     return atomicLoad32Explicit(&handle->counter, AtomicMemoryOrder::Acquire);
 }
 
-JobsHandle jobsDispatch(JobsType type, JobsCallback callback, void* userData, uint32 groupSize, JobsPriority prio, uint32 stackSize)
+JobsHandle jobsDispatch(JobsType type, JobsCallback callback, void* userData, uint32 groupSize, JobsPriority prio, JobsStackSize stackSize)
 {
     return jobsDispatchInternal(false, type, callback, userData, groupSize, prio, stackSize);
 }
 
-void jobsDispatchAndForget(JobsType type, JobsCallback callback, void* userData, uint32 groupSize, JobsPriority prio, uint32 stackSize)
+void jobsDispatchAndForget(JobsType type, JobsCallback callback, void* userData, uint32 groupSize, JobsPriority prio, JobsStackSize stackSize)
 {
     jobsDispatchInternal(true, type, callback, userData, groupSize, prio, stackSize);
 }

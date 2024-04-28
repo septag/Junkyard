@@ -26,18 +26,18 @@ PRAGMA_DIAGNOSTIC_POP()
 //       ██║   ███████╗██║ ╚═╝ ██║██║         ██║  ██║███████╗███████╗╚██████╔╝╚██████╗
 //       ╚═╝   ╚══════╝╚═╝     ╚═╝╚═╝         ╚═╝  ╚═╝╚══════╝╚══════╝ ╚═════╝  ╚═════╝
 
-static constexpr size_t kTempMaxBufferSize = kGB;
-static constexpr uint32 kTempFramePeaksCount = 4;
-static constexpr uint32 kTempPageSize = 256*kKB;
-static constexpr float  kTempValidateResetTime = 5.0f;
-static constexpr uint32 kTempMaxStackframes = 8;
+static constexpr size_t MEM_TEMP_MAX_BUFFER_SIZE = kGB;
+static constexpr uint32 MEM_TEMP_FRAME_PEAKS_COUNT = 4;
+static constexpr uint32 MEM_TEMP_PAGE_SIZE = 256*kKB;
+static constexpr float  MEM_TEMP_VALIDATE_RESET_TIME = 5.0f;
+static constexpr uint32 MEM_TEMP_MAX_STACK_FRAMES = 8;
 
 struct MemTempStack
 {
     size_t baseOffset;
     size_t offset;
     void* lastAllocatedPtr;
-    void* stacktrace[kTempMaxStackframes];
+    void* stacktrace[MEM_TEMP_MAX_STACK_FRAMES];
     Array<_private::MemDebugPointer> debugPointers;
     MemTempId id;
     uint16 numStackframes;
@@ -51,7 +51,7 @@ struct alignas(CACHE_LINE_SIZE) MemTempContext
     Array<MemTempStack> allocStack;
     uint32 generationIdx;   // Just a counter to make temp IDs unique
     uint32 resetCount;
-    size_t framePeaks[kTempFramePeaksCount];
+    size_t framePeaks[MEM_TEMP_FRAME_PEAKS_COUNT];
     size_t curFramePeak;
     size_t peakBytes;
     uint8* buffer;
@@ -77,7 +77,7 @@ struct MemTempData
     Array<MemTempContext*> tempCtxs; 
     bool             captureTempStackTrace;
 
-    MemTempData()  { tempMtx.Initialize(); ASSERT(kTempPageSize % pageSize == 0); }
+    MemTempData()  { tempMtx.Initialize(); ASSERT(MEM_TEMP_PAGE_SIZE % pageSize == 0); }
     ~MemTempData() { tempMtx.Release(); tempCtxs.Free(); }
 };
 
@@ -131,8 +131,8 @@ MemTempId memTempPushId()
 
     if (!ctx.init) {
         if (ctx.buffer == nullptr && !ctx.debugMode) {
-            ctx.buffer = (uint8*)memVirtualReserve(kTempMaxBufferSize);
-            ctx.bufferSize = kTempPageSize;
+            ctx.buffer = (uint8*)memVirtualReserve(MEM_TEMP_MAX_BUFFER_SIZE);
+            ctx.bufferSize = MEM_TEMP_PAGE_SIZE;
             memVirtualCommit(ctx.buffer, ctx.bufferSize); 
         }
         ctx.init = true;
@@ -163,7 +163,7 @@ MemTempId memTempPushId()
 
     if constexpr(!CONFIG_FINAL_BUILD) {
         if (gMemTemp.captureTempStackTrace)
-            memStack.numStackframes = debugCaptureStacktrace(memStack.stacktrace, kTempMaxStackframes, 2);
+            memStack.numStackframes = debugCaptureStacktrace(memStack.stacktrace, MEM_TEMP_MAX_STACK_FRAMES, 2);
     }
 
     ctx.allocStack.Push(memStack);
@@ -231,14 +231,14 @@ void* memReallocTemp(MemTempId id, void* ptr, size_t size, uint32 align)
     
         size_t endOffset = offset + (size - lastSize);
 
-        if (endOffset > kTempMaxBufferSize) {
+        if (endOffset > MEM_TEMP_MAX_BUFFER_SIZE) {
             MEMORY_FAIL();
             return nullptr;
         }
 
         // Grow the buffer if necessary (double size policy)
         if (endOffset > ctx.bufferSize) {
-            size_t newSize = Clamp(ctx.bufferSize << 1, endOffset, kTempMaxBufferSize);
+            size_t newSize = Clamp(ctx.bufferSize << 1, endOffset, MEM_TEMP_MAX_BUFFER_SIZE);
 
             // Align grow size to page size for virtual memory commit
             size_t growSize = AlignValue(newSize - ctx.bufferSize, gMemTemp.pageSize);
@@ -331,7 +331,7 @@ void memTempReset(float dt, bool resetValidation)
             if (ctx->allocStack.Count() == 0) {
                 ctx->generationIdx = 0;
                 ctx->framePeaks[ctx->resetCount] = ctx->curFramePeak;
-                ctx->resetCount = (ctx->resetCount + 1) % kTempFramePeaksCount;
+                ctx->resetCount = (ctx->resetCount + 1) % MEM_TEMP_FRAME_PEAKS_COUNT;
                 ctx->curFramePeak = 0;
                 ctx->noresetTime = 0;
 
@@ -339,12 +339,12 @@ void memTempReset(float dt, bool resetValidation)
                     // resize buffer to the maximum of the last 4 frames peak allocations
                     // So based on the last frames activity, we might grow or shrink the temp buffer
                     size_t maxPeakSize = 0;
-                    for (uint32 k = 0; k < kTempFramePeaksCount; k++) {
+                    for (uint32 k = 0; k < MEM_TEMP_FRAME_PEAKS_COUNT; k++) {
                         if (ctx->framePeaks[k] > maxPeakSize) 
                             maxPeakSize = ctx->framePeaks[k];
                     }
 
-                    maxPeakSize = Max<size_t>(kTempPageSize, maxPeakSize);
+                    maxPeakSize = Max<size_t>(MEM_TEMP_PAGE_SIZE, maxPeakSize);
                     maxPeakSize = AlignValue(maxPeakSize, gMemTemp.pageSize);
                     if (maxPeakSize > MemGetTempContext().bufferSize) {
                         size_t growSize = maxPeakSize - MemGetTempContext().bufferSize;
@@ -361,13 +361,13 @@ void memTempReset(float dt, bool resetValidation)
             }   // MemTempContext can reset (allocStack is empty)
             else if (resetValidation) {
                 ctx->noresetTime += dt;
-                if (ctx->noresetTime >= kTempValidateResetTime) {
-                    logWarning("Temp stack failed to pop during the frame after %.0f seconds", kTempValidateResetTime);
+                if (ctx->noresetTime >= MEM_TEMP_VALIDATE_RESET_TIME) {
+                    logWarning("Temp stack failed to pop during the frame after %.0f seconds", MEM_TEMP_VALIDATE_RESET_TIME);
                     ctx->noresetTime = 0;
 
                     if constexpr(!CONFIG_FINAL_BUILD) {
                         if (gMemTemp.captureTempStackTrace) {
-                            DebugStacktraceEntry entries[kTempMaxStackframes];
+                            DebugStacktraceEntry entries[MEM_TEMP_MAX_STACK_FRAMES];
                             uint32 index = 0;
                             logDebug("Callstacks for each remaining MemTempPush:");
                             for (const MemTempStack& memStack : ctx->allocStack) {

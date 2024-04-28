@@ -4490,13 +4490,13 @@ void gfxGetBudgetStats(GfxBudgetStats* stats)
 Mat4 gfxGetClipspaceTransform()
 {
     switch (appGetFramebufferTransform()) {
-    case AppFramebufferTransform::None:           return kMat4Ident;
-    case AppFramebufferTransform::Rotate90:       return mat4RotateZ(kPIHalf);
-    case AppFramebufferTransform::Rotate180:      return mat4RotateZ(kPI);
-    case AppFramebufferTransform::Rotate270:      return mat4RotateZ(kPI + kPIHalf);
+    case AppFramebufferTransform::None:           return MAT4_IDENT;
+    case AppFramebufferTransform::Rotate90:       return mat4RotateZ(M_HALFPI);
+    case AppFramebufferTransform::Rotate180:      return mat4RotateZ(M_PI);
+    case AppFramebufferTransform::Rotate270:      return mat4RotateZ(M_PI + M_HALFPI);
     }
 
-    return kMat4Ident;
+    return MAT4_IDENT;
 }
 
 bool gfxIsRenderingToSwapchain()

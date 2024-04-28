@@ -77,8 +77,8 @@ struct AppImpl final : AppCallbacks
         if (!CreateGraphicsObjects())
             return false;
 
-        fpsCam.SetLookAt(Float3(0, -2.0f, 3.0f), kFloat3Zero);
-        orbitCam.SetLookAt(Float3(0, -2.0f, 3.0f), kFloat3Zero);
+        fpsCam.SetLookAt(Float3(0, -2.0f, 3.0f), FLOAT3_ZERO);
+        orbitCam.SetLookAt(Float3(0, -2.0f, 3.0f), FLOAT3_ZERO);
         cam = &orbitCam;
 
         engineRegisterShortcut("TAB", [](void* userData) {
@@ -147,7 +147,7 @@ struct AppImpl final : AppCallbacks
         float width = (float)appGetFramebufferWidth();
         float height = (float)appGetFramebufferHeight();
 
-        static Mat4 modelMat = kMat4Ident;
+        static Mat4 modelMat = MAT4_IDENT;
 
         { // draw something
             

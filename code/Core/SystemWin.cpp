@@ -22,7 +22,7 @@
 
 namespace _limits 
 {
-    const uint32 kSysMaxCores = 128;
+    const uint32 SYS_MAX_CORES = 128;
 }
 
 //
@@ -786,9 +786,9 @@ bool sysWin32GetRegisterLocalMachineString(const char* subkey, const char* value
 
 static uint32 sysGetPhysicalCoresCount()
 {
-	static uint32 cahcedCoreCount = UINT32_MAX;
-	if (cahcedCoreCount != UINT32_MAX)
-		return cahcedCoreCount;
+	static uint32 cachedCoreCount = UINT32_MAX;
+	if (cachedCoreCount != UINT32_MAX)
+		return cachedCoreCount;
 
 	SYSTEM_LOGICAL_PROCESSOR_INFORMATION* buffer = nullptr;
 	DWORD returnLen = 0;
@@ -811,8 +811,10 @@ static uint32 sysGetPhysicalCoresCount()
 	}
 
 	memFree(buffer);
-	cahcedCoreCount = Clamp<uint32>(countCount, 1, _limits::kSysMaxCores);
-	return cahcedCoreCount;
+
+    ASSERT_MSG(cachedCoreCount <= _limits::SYS_MAX_CORES, "CPU core count appears to be too high. Consider increasing SYS_MAX_CORES");
+	cachedCoreCount = Clamp<uint32>(countCount, 1, _limits::SYS_MAX_CORES);
+	return cachedCoreCount;
 }
 
 // https://en.wikipedia.org/wiki/CPUID

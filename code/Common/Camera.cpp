@@ -271,11 +271,11 @@ void CameraOrbit::SetLookAt(Float3 pos, Float3 target, Float3 up)
     mDistance = float3Len(look);
     mOrbit = -mathACos(float2Dot(float2Norm(Float2(look.f)*-1.0f), Float2(1.0f, 0)));
 
-    float a = mathACos(float3Dot(float3Norm(look), mathIsEqual(look.z, 0, 0.00001f) ? kFloat3Zero : float3Norm(Float3(0, 0, look.z))));
-    mElevation = kPIHalf - a;
+    float a = mathACos(float3Dot(float3Norm(look), mathIsEqual(look.z, 0, 0.00001f) ? FLOAT3_ZERO : float3Norm(Float3(0, 0, look.z))));
+    mElevation = M_HALFPI - a;
     if (mElevation < 0)
         mElevation = -mElevation;
-    ASSERT(mElevation >= 0 && mElevation <= kPIHalf);
+    ASSERT(mElevation >= 0 && mElevation <= M_HALFPI);
 
     RotateOrbit(0);
 }
@@ -291,7 +291,7 @@ void CameraOrbit::RotateOrbit(float orbit)
 
     float x = mDistance * mathCos(mOrbit);
     float y = mDistance * mathSin(mOrbit);
-    float z = mDistance * mathCos(kPIHalf - mElevation);
+    float z = mDistance * mathCos(M_HALFPI - mElevation);
 
     Camera::SetLookAt(Float3(x, y, z), mTarget);
 }

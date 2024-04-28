@@ -78,8 +78,8 @@ struct AppImpl : AppCallbacks
         if (!CreateGraphicsObjects())
             return false;
 
-        fpsCam.SetLookAt(Float3(0, -2.0f, 3.0f), kFloat3Zero);
-        orbitCam.SetLookAt(Float3(0, -2.0f, 3.0f), kFloat3Zero);
+        fpsCam.SetLookAt(Float3(0, -2.0f, 3.0f), FLOAT3_ZERO);
+        orbitCam.SetLookAt(Float3(0, -2.0f, 3.0f), FLOAT3_ZERO);
         cam = &orbitCam;
 
         engineRegisterShortcut("TAB", [](void* userData) {

@@ -15,10 +15,10 @@ namespace _private
     // change number of kHandleGenBits to have more generation range
     // Whatever the GenBits is, max gen would be 2^GenBits-1 and max index would be 2^(32-GenBits)-1
     // Handle = [<--- high-bits: Generation --->][<--- low-bits: Index -->]
-    static inline constexpr uint32 kHandleGenBits = 14;
-    static inline constexpr uint32 kHandleIndexMask = (1 << (32 - kHandleGenBits)) - 1;
-    static inline constexpr uint32 kHandleGenMask = (1 << kHandleGenBits) - 1;
-    static inline constexpr uint32 kHandleGenShift  = 32 - kHandleGenBits;
+    static inline constexpr uint32 HANDLE_GEN_BITS = 14;
+    static inline constexpr uint32 HANDLE_INDEX_MAX = (1 << (32 - HANDLE_GEN_BITS)) - 1;
+    static inline constexpr uint32 HANDLE_GEN_MASK = (1 << HANDLE_GEN_BITS) - 1;
+    static inline constexpr uint32 HANDLE_GEN_SHIFT  = 32 - HANDLE_GEN_BITS;
 
     struct alignas(16) HandlePoolTable
     {
@@ -57,10 +57,10 @@ struct Handle
     explicit Handle(uint32 _id) : mId(_id) {}
     Handle<_T>& operator=(const Handle<_T>&) = default;
 
-    void Set(uint32 gen, uint32 index) { mId = ((gen & _private::kHandleGenMask)<<_private::kHandleGenShift) | (index&_private::kHandleIndexMask); }
+    void Set(uint32 gen, uint32 index) { mId = ((gen & _private::HANDLE_GEN_MASK)<<_private::HANDLE_GEN_SHIFT) | (index&_private::HANDLE_INDEX_MAX); }
     explicit operator uint32() const { return mId; }
-    uint32 GetSparseIndex() { return mId & _private::kHandleIndexMask; }
-    uint32 GetGen() { return (mId >> _private::kHandleGenShift) & _private::kHandleGenMask; }
+    uint32 GetSparseIndex() { return mId & _private::HANDLE_INDEX_MAX; }
+    uint32 GetGen() { return (mId >> _private::HANDLE_GEN_SHIFT) & _private::HANDLE_GEN_MASK; }
     bool IsValid() const { return mId != 0; }
     bool operator==(const Handle<_T>& v) const { return mId == v.mId; }
     bool operator!=(const Handle<_T>& v) const { return mId != v.mId; }

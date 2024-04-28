@@ -22,8 +22,8 @@
 
 #include "../Tool/MeshOptimizer.h"
 
-constexpr uint32 kModelAssetType = MakeFourCC('M', 'O', 'D', 'L');
-constexpr uint32 kRemoteCmdLoadModel = MakeFourCC('M', 'O', 'D', 'L');
+constexpr uint32 MODEL_ASSET_TYPE = MakeFourCC('M', 'O', 'D', 'L');
+constexpr uint32 RCMD_LOAD_MODEL = MakeFourCC('M', 'O', 'D', 'L');
 
 struct ModelVertexAttribute
 {
@@ -730,7 +730,7 @@ Span<Model> modelLoadGltf(const char* filepath, Allocator* alloc, const ModelLoa
 
     // Start creating the model. This is where the blob data starts
     Model* model = tmpAlloc.MallocZeroTyped<Model>();
-    model->rootTransform = kTransform3DIdent;
+    model->rootTransform = TRANSFORM3D_IDENT;
     model->layout = layout;
 
     // Meshes
@@ -817,7 +817,7 @@ Span<Model> modelLoadGltf(const char* filepath, Allocator* alloc, const ModelLoa
             srcNode->name = memAllocCopy<char>(name, sizeof(name), &tmpAlloc);
         }
 
-        dstNode->localTransform = kTransform3DIdent;
+        dstNode->localTransform = TRANSFORM3D_IDENT;
         dstNode->name = srcNode->name;
         if (dstNode->name.Length() != strLen(srcNode->name)) {
             logWarning("Model %s, Node: %s: name is too long (more than standard 31 characters), "
@@ -839,7 +839,7 @@ Span<Model> modelLoadGltf(const char* filepath, Allocator* alloc, const ModelLoa
         }
 
         // Bounds
-        AABB bounds = kAABBEmpty;
+        AABB bounds = AABB_EMPTY;
         if (dstNode->meshId) {
             const ModelMesh& mesh = model->meshes[IdToIndex(dstNode->meshId)];
             const GfxVertexInputAttributeDesc* attr = modelFindAttribute(layout, "POSITION", 0);
@@ -1100,19 +1100,19 @@ static void modelLoadTask(uint32 groupIndex, void* userData)
             outgoingBlob.Write<uint32>(cacheHash);
             outgoingBlob.Write<uint32>(modelBufferSize);
             outgoingBlob.Write(model, modelBufferSize);
-            remoteSendResponse(kRemoteCmdLoadModel, outgoingBlob, false, nullptr);
+            remoteSendResponse(RCMD_LOAD_MODEL, outgoingBlob, false, nullptr);
             logVerbose("Model loaded: %s (%.1f ms)", filepath, timer.ElapsedMS());
             memFree(model);
         }
         else {
-            remoteSendResponse(kRemoteCmdLoadModel, outgoingBlob, true, errorMsg);
+            remoteSendResponse(RCMD_LOAD_MODEL, outgoingBlob, true, errorMsg);
             logVerbose(errorMsg);
         }
     }
     else {
         outgoingBlob.Write<uint32>(cacheHash);
         outgoingBlob.Write<uint32>(0);  // nothing has loaded. it's safe to load from client's local cache
-        remoteSendResponse(kRemoteCmdLoadModel, outgoingBlob, false, nullptr);
+        remoteSendResponse(RCMD_LOAD_MODEL, outgoingBlob, false, nullptr);
         logVerbose("Model: %s [cached]", filepath);
     }
 
@@ -1123,7 +1123,7 @@ static void modelLoadTask(uint32 groupIndex, void* userData)
 static bool modelHandlerServerFn([[maybe_unused]] uint32 cmd, const Blob& incomingData, Blob*, 
                                  void*, char outgoingErrorDesc[kRemoteErrorDescSize])
 {
-    ASSERT(cmd == kRemoteCmdLoadModel);
+    ASSERT(cmd == RCMD_LOAD_MODEL);
     UNUSED(outgoingErrorDesc);
     
     // spawn and pass the copy it over to a task
@@ -1136,7 +1136,7 @@ static bool modelHandlerServerFn([[maybe_unused]] uint32 cmd, const Blob& incomi
 
 static void modelHandlerClientFn([[maybe_unused]] uint32 cmd, const Blob& incomingData, void* userData, bool error, const char* errorDesc)
 {
-    ASSERT(cmd == kRemoteCmdLoadModel);
+    ASSERT(cmd == RCMD_LOAD_MODEL);
     UNUSED(userData);
 
     AssetHandle handle;
@@ -1234,7 +1234,7 @@ void ModelLoader::LoadRemote(AssetHandle handle, const AssetLoadParams& params, 
     outgoingBlob.Write<uint32>(uint32(params.platform));
     outgoingBlob.Write<ModelLoadParams>(*modelParams);
 
-    remoteExecuteCommand(kRemoteCmdLoadModel, outgoingBlob);
+    remoteExecuteCommand(RCMD_LOAD_MODEL, outgoingBlob);
     outgoingBlob.Free();
 }
 
@@ -1268,7 +1268,7 @@ AssetHandleModel assetLoadModel(const char* path, const ModelLoadParams& params,
     AssetLoadParams assetParams {
         .path = path,
         .alloc = memDefaultAlloc(),     // TODO: replace with a custom allocator
-        .typeId = kModelAssetType,
+        .typeId = MODEL_ASSET_TYPE,
         .barrier = barrier
     };
 
@@ -1283,7 +1283,7 @@ Model* assetGetModel(AssetHandleModel modelHandle)
 bool _private::assetInitializeModelManager()
 {
     assetRegisterType(AssetTypeDesc {
-        .fourcc = kModelAssetType,
+        .fourcc = MODEL_ASSET_TYPE,
         .name = "Model",
         .callbacks = &gModelLoader,
         .extraParamTypeName = "ModelLoadParams",
@@ -1295,7 +1295,7 @@ bool _private::assetInitializeModelManager()
     gModelCtx.requestsMutex.Initialize();
     gModelCtx.requests.SetAllocator(memDefaultAlloc());
     remoteRegisterCommand(RemoteCommandDesc {
-        .cmdFourCC = kRemoteCmdLoadModel,
+        .cmdFourCC = RCMD_LOAD_MODEL,
         .serverFn = modelHandlerServerFn,
         .clientFn = modelHandlerClientFn,
         .async = true
@@ -1312,5 +1312,5 @@ bool _private::assetInitializeModelManager()
 
 void _private::assetReleaseModelManager()
 {
-    assetUnregisterType(kModelAssetType);
+    assetUnregisterType(MODEL_ASSET_TYPE);
 }
