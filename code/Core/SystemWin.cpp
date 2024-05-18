@@ -812,8 +812,8 @@ static uint32 sysGetPhysicalCoresCount()
 
 	memFree(buffer);
 
-    ASSERT_MSG(cachedCoreCount <= _limits::SYS_MAX_CORES, "CPU core count appears to be too high. Consider increasing SYS_MAX_CORES");
 	cachedCoreCount = Clamp<uint32>(countCount, 1, _limits::SYS_MAX_CORES);
+    ASSERT_MSG(cachedCoreCount <= _limits::SYS_MAX_CORES, "CPU core count appears to be too high (%u). Consider increasing SYS_MAX_CORES", cachedCoreCount);
 	return cachedCoreCount;
 }
 
