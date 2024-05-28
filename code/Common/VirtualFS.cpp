@@ -114,7 +114,9 @@ static VfsManager gVfs;
 
 //----------------------------------------------------------------------------------------------------------------------
 // @fwd
+#if CONFIG_TOOLMODE
 static void vfsDmonFn(dmon_watch_id watchId, dmon_action action, const char* rootDir, const char* filepath, const char*, void*);
+#endif
 
 
 //    ███╗   ███╗ ██████╗ ██╗   ██╗███╗   ██╗████████╗███████╗

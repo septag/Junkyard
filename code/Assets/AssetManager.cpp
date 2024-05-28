@@ -1287,7 +1287,6 @@ void AssetGroup::Load() const
         uint32 tasksPerThread = assetList->Count() / numThreads;
         uint32 tasksRemain = assetList->Count() % numThreads;
 
-        uint32 tasksIdx = 0;
         MemTempAllocator tempAlloc;
         Array<Span<AssetParams*>> slices(&tempAlloc);
 

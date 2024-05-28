@@ -424,9 +424,6 @@ struct GfxContext
 static GfxContext gVk;
 static thread_local GfxCommandBufferThreadData gCmdBufferThreadData;
 
-static constexpr const char* kVkValidationLayer = "VK_LAYER_KHRONOS_validation";
-static constexpr const char* kAdrenoDebugLayer = "VK_LAYER_ADRENO_debug";
-
 #define GFX_LOCK_POOL_TEMP(_type) ReadWriteMutexReadScope CONCAT(mtx, __LINE__)(gVk.pools.locks[GfxObjectPools::_type])
 // #define GFX_LOCK_POOL_TEMP(_type)
 
@@ -572,8 +569,8 @@ bool _private::gfxInitialize()
 
     StaticArray<const char*, 4> enabledLayers;
     if (settings.validate) {
-        if (HasLayer(kVkValidationLayer)) {
-            enabledLayers.Add(kVkValidationLayer);
+        if (HasLayer("VK_LAYER_KHRONOS_validation")) {
+            enabledLayers.Add("VK_LAYER_KHRONOS_validation");
         }
         else {
             logError("Gfx: Vulkan backend doesn't have validation layer support. Turn it off in the settings.");
