@@ -122,7 +122,11 @@ struct alignas(CACHE_LINE_SIZE) ReadWriteMutex
     void ExitWrite();
 
 private:
+    #if !PLATFORM_APPLE
     uint8 mData[64];
+    #else
+    uint8 mData[256];
+    #endif
 };
 
 struct ReadWriteMutexReadScope

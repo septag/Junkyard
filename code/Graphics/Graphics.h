@@ -1080,7 +1080,6 @@ typedef struct VkBuffer_T* VkBuffer;
 
 // VkDescriptorSet
 typedef struct VkDescriptorSetLayout_T* VkDescriptorSetLayout;
-enum VkDescriptorType : int;
 
 // VkPipeline
 struct VkGraphicsPipelineCreateInfo;
@@ -1108,7 +1107,7 @@ struct GfxDescriptorSetLayoutBinding2
     uint32 nameHash;
     uint32 variableDescCount;
     uint32 bindingId;
-    VkDescriptorType descriptorType;
+    GfxDescriptorType descriptorType;
 };
 
 struct GfxDescriptorSetLayout2

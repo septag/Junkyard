@@ -1,6 +1,3 @@
-#pragma once
-
-/////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Validate maching enums between Vk and Gfx
 static_assert(GfxFormat::Undefined == static_cast<GfxFormat>(VK_FORMAT_UNDEFINED));
 static_assert(GfxFormat::R4G4_UNORM_PACK8 == static_cast<GfxFormat>(VK_FORMAT_R4G4_UNORM_PACK8));
