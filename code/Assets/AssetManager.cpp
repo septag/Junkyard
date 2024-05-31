@@ -1180,7 +1180,7 @@ static DataChunk assetLoadAndBakeData(const AssetMetaData& metaData, const Asset
     return DataChunk();
 }
 
-static MemBumpAllocatorVM& assetGetCurrentThreadAllocator(AssetScratchMemArena& arena)
+static MemBumpAllocatorVM* assetGetOrCreateScratchAllocator(AssetScratchMemArena& arena)
 {
     MemBumpAllocatorVM* alloc = nullptr;
     {
@@ -1201,7 +1201,7 @@ static MemBumpAllocatorVM& assetGetCurrentThreadAllocator(AssetScratchMemArena& 
     if (!alloc->IsInitialized())
         alloc->Initialize(limits::ASSET_MAX_SCRATCH_SIZE_PER_THREAD, 512*kKB);
 
-    return *alloc;
+    return alloc;
 }
 
 static void assetLoadBatchTask(uint32 groupIdx, void* userData)
@@ -1223,10 +1223,6 @@ void _private::assetRelease2()
 {
 }
 
-static void assetLoad()
-{
-}
-
 AssetGroup assetCreateGroup()
 {
     return AssetGroup();
@@ -1239,7 +1235,7 @@ void assetDestroyGroup(AssetGroup group)
 void AssetGroup::AddToLoadQueue(const AssetParams** params, uint32 numAssets, AssetHandle* outHandles) const
 {
     AssetGroupInternal& group = gAssetMan.groups.Data(mHandle);
-    MemBumpAllocatorVM& alloc = assetGetCurrentThreadAllocator(group.memArena);
+    MemBumpAllocatorVM* alloc = assetGetOrCreateScratchAllocator(group.memArena);
     
     for (uint32 i = 0; i < numAssets; i++)
         group.params.Push(const_cast<AssetParams*>(params[i]));
@@ -1253,7 +1249,7 @@ void AssetGroup::AddToLoadQueue(const AssetParams* params, AssetHandle* outHandl
 void AssetGroup::Load() const
 {
     AssetGroupInternal& group = gAssetMan.groups.Data(mHandle);
-    MemBumpAllocatorVM& alloc = assetGetCurrentThreadAllocator(group.memArena);
+    MemBumpAllocatorVM* alloc = assetGetOrCreateScratchAllocator(group.memArena);
     
     // Make a copy of all params and dispatch to the jobs
     // TODO: we can also sort by typeId
@@ -1268,9 +1264,9 @@ void AssetGroup::Load() const
 
         const AssetTypeManager& typeMan = gAssetMgr.typeManagers[typeManIdx];
 
-        AssetParams* newParams = memAllocCopy<AssetParams>(params, 1, &alloc);
+        AssetParams* newParams = memAllocCopy<AssetParams>(params, 1, alloc);
         if (!params->typeSpecificParams.IsNull()) {
-            uint8* typeSpecificParamsCopy = memAllocCopy<uint8>(params->typeSpecificParams.Get(), typeMan.extraParamTypeSize, &alloc);
+            uint8* typeSpecificParamsCopy = memAllocCopy<uint8>(params->typeSpecificParams.Get(), typeMan.extraParamTypeSize, alloc);
             newParams->typeSpecificParams = typeSpecificParamsCopy;
         }
         
@@ -1304,8 +1300,8 @@ void AssetGroup::Load() const
         jobsWaitForCompletion(jhandle);
     };
 
-    Span<AssetParams*>* assetListCopy = memAllocTyped<Span<AssetParams*>>(1, &alloc);
-    *assetListCopy = Span<AssetParams*>(memAllocCopy<AssetParams*>(assetList.Ptr(), assetList.Count(), &alloc), assetList.Count());
+    Span<AssetParams*>* assetListCopy = memAllocTyped<Span<AssetParams*>>(1, alloc);
+    *assetListCopy = Span<AssetParams*>(memAllocCopy<AssetParams*>(assetList.Ptr(), assetList.Count(), alloc), assetList.Count());
     jobsDispatchAndForget(JobsType::LongTask, LoadEntryTask, assetListCopy, 1);
 }
 
