@@ -439,6 +439,22 @@ char* strRemoveWhitespace(char* dst, uint32 dstSize, const char* src)
     return dst;
 }
 
+char* strRemoveChar(char* dst, uint32 dstSize, const char* src, char ch)
+{
+    uint32 c = 0;
+    while (*src) {
+        if (*src != ch) {
+            if (c < (dstSize - 1))
+                dst[c++] = *src;
+            else
+                break;
+        }
+        src++;
+    }
+    dst[c] = '\0';
+    return dst;
+}
+
 // https://github.com/lattera/glibc/blob/master/string/strchr.c
 const char* strFindChar(const char* str, char ch)
 {
@@ -627,28 +643,19 @@ Span<char*> strSplit(const char* str, char ch, Allocator* alloc)
     const char* start = str;
     while (*s) {
         if (*s == ch) {
-            if (start != s) {
-                uint32 len = PtrToInt<uint32>((void*)(s - start));
-                char* splitItem = memAllocCopy<char>(start, len + 1, alloc);
-                splitItem[len] = 0;
-                splits.Push(splitItem);
-            }
+            uint32 len = PtrToInt<uint32>((void*)(s - start));
+            char* splitItem = memAllocCopy<char>(start, len + 1, alloc);
+            splitItem[len] = 0;
+            splits.Push(splitItem);
 
             s = strSkipChar(s, ch);
-            if (*s) {
-                start = s + 1;
-                ++s;
-            }
-            else {
-                start = s;
-            }
+            start = strSkipChar(s, ch);
         }
-        else {
-            ++s;
-        }   
+
+        if (*s) ++s;
     }
 
-    if (start != s) {
+    if (start < s) {
         uint32 len = PtrToInt<uint32>((void*)(s - start));
         char* splitItem = memAllocCopy<char>(start, len + 1, alloc);
         splits.Push(splitItem);

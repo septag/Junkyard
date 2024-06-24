@@ -26,6 +26,7 @@ API bool    strEndsWith(const char* str, const char* endsWith);
 API char*   strTrim(char* dst, uint32 dstSize, const char* src);
 API char*   strTrim(char* dst, uint32 dstSize, const char* src, char ch);
 API char*   strRemoveWhitespace(char* dst, uint32 dstSize, const char* src);
+API char*   strRemoveChar(char* dst, uint32 dstSize, const char* src, char ch);
 API char*   strReplaceChar(char* dst, uint32 dstSize, char ch, char replaceWith);
 API bool    strToBool(const char* str);
 API int     strToInt(const char* str);

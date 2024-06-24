@@ -74,7 +74,7 @@ def preprocess_file(filepath, included_files, newly_included = None):
 
     base_dir = os.path.dirname(filepath)
     lines = []
-    with open(filepath, 'rt') as file:
+    with open(filepath, 'rt', encoding='utf-8') as file:
         lines = file.readlines()
 
     blob:str = ''
@@ -149,7 +149,7 @@ while len(test_extra_includes) > 0:
 # Generate output code
 output_header_path = os.path.abspath(os.path.join(args.outputdir, args.outputname + '.h'))
 output_source_path = os.path.abspath(os.path.join(args.outputdir, args.outputname + '.cpp'))
-with open(output_header_path, 'wt') as f:
+with open(output_header_path, 'wt', encoding='utf-8') as f:
     f.write('// This header file is auto-generated\n')
     f.write('// Inlined files:\n')
     for filepath in included_files_in_header:
@@ -168,7 +168,7 @@ with open(output_header_path, 'wt') as f:
     print('Generated file:', output_header_path)
 
 if not args.stbheader:
-    with open(output_source_path, 'wt') as f:
+    with open(output_source_path, 'wt', encoding='utf-8') as f:
         f.write('// This source file is auto-generated\n')
         f.write('// Inlined files:\n')
         for filepath in included_files:

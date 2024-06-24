@@ -207,19 +207,21 @@ void* memReallocTemp(MemTempId id, void* ptr, size_t size, uint32 align)
         align = Max(align, CONFIG_MACHINE_ALIGNMENT);
         size = AlignValue<size_t>(size, align);
 
-        // For a common case that we call realloc several times (dynamic Arrays), we can reuse the last allocated pointer
         void* newPtr = nullptr;
         size_t lastSize = 0;
+        size_t addOffset = size;
         if (ptr) {
             lastSize = *((size_t*)ptr - 1);
             ASSERT(size > lastSize);
 
-            if (memStack.lastAllocatedPtr == ptr)
+            if (memStack.lastAllocatedPtr == ptr) {
                 newPtr = ptr;
+                addOffset -= lastSize;
+            }
         }
 
-        // align to requested alignment
-        size_t offset = memStack.baseOffset + memStack.offset;
+        size_t startOffset = memStack.baseOffset + memStack.offset;
+        size_t offset = startOffset;
         if (newPtr == nullptr) {
             offset += sizeof(size_t);
             if (offset % align != 0) 
@@ -229,18 +231,16 @@ void* memReallocTemp(MemTempId id, void* ptr, size_t size, uint32 align)
             ASSERT(offset % align == 0);
         }
     
-        size_t endOffset = offset + (size - lastSize);
+        size_t endOffset = offset + addOffset;
 
         if (endOffset > MEM_TEMP_MAX_BUFFER_SIZE) {
             MEMORY_FAIL();
             return nullptr;
         }
 
-        // Grow the buffer if necessary (double size policy)
         if (endOffset > ctx.bufferSize) {
             size_t newSize = Clamp(ctx.bufferSize << 1, endOffset, MEM_TEMP_MAX_BUFFER_SIZE);
 
-            // Align grow size to page size for virtual memory commit
             size_t growSize = AlignValue(newSize - ctx.bufferSize, gMemTemp.pageSize);
             memVirtualCommit(ctx.buffer + ctx.bufferSize, growSize);
             ctx.bufferSize += growSize;
@@ -249,14 +249,11 @@ void* memReallocTemp(MemTempId id, void* ptr, size_t size, uint32 align)
         ctx.curFramePeak = Max<size_t>(ctx.curFramePeak, endOffset);
         ctx.peakBytes = Max<size_t>(ctx.peakBytes, endOffset);
 
-        // Create the pointer if we are not re-using the previous one
         if (newPtr == nullptr) {
             newPtr = ctx.buffer + offset;
 
-            // Fill the alighnment gap with zeros
-            memset(ctx.buffer + memStack.offset + memStack.baseOffset, 0x0, offset - memStack.offset - memStack.baseOffset);
+            memset(ctx.buffer + startOffset, 0x0, offset - startOffset);
 
-            // we are not re-using the previous allocation, memcpy the previous block in case of realloc
             if (ptr)
                 memcpy(newPtr, ptr, lastSize);
         }
@@ -458,14 +455,20 @@ void* MemBumpAllocatorBase::Realloc(void* ptr, size_t size, uint32 align)
         // For a common case that we call realloc several times (dynamic Arrays), we can reuse the last allocated pointer
         void* newPtr = nullptr;
         size_t lastSize = 0;
-        if (ptr && mLastAllocatedPtr == ptr) {
+        size_t addOffset = size;
+        if (ptr) {
             lastSize = *((size_t*)ptr - 1);
             ASSERT(size > lastSize);
-            newPtr = ptr;
+
+            if (mLastAllocatedPtr == ptr) {
+                newPtr = ptr;
+                addOffset -= lastSize;
+            }
         }
 
         // align to requested alignment
-        size_t offset = mOffset;
+        size_t startOffset = mOffset;
+        size_t offset = startOffset;
         if (newPtr == nullptr) {
             offset += sizeof(size_t);
             if (offset % align != 0) 
@@ -475,7 +478,7 @@ void* MemBumpAllocatorBase::Realloc(void* ptr, size_t size, uint32 align)
             ASSERT(offset % align == 0);
         }
     
-        size_t endOffset = offset + (size - lastSize);
+        size_t endOffset = offset + addOffset;
 
         if (endOffset > mReserveSize) {
             MEMORY_FAIL();
@@ -496,9 +499,11 @@ void* MemBumpAllocatorBase::Realloc(void* ptr, size_t size, uint32 align)
         if (!newPtr) {
             newPtr = mBuffer + offset;
 
+            memset(mBuffer + startOffset, 0x0, offset - startOffset);
+
             // we are not re-using the previous allocation, memcpy the previous block in case of realloc
             if (ptr)
-                memcpy(newPtr, ptr, *((size_t*)ptr - 1));
+                memcpy(newPtr, ptr, lastSize);
         }
 
         *((size_t*)newPtr - 1) = size;

@@ -17,6 +17,9 @@ def get_dependencies(root_dir, module_name):
     deps = []
     if os.path.isfile(module_dep_filepath):
         with open(module_dep_filepath, 'rt') as f:
+            if args.verbose:
+                print('DEP:', module_dep_filepath)
+
             deps = f.readlines()
             deps[:] = [s.strip() for s in deps]
 
@@ -54,7 +57,9 @@ def check_dependency_for_module(root_dir, module_name):
     errors = []
     # remove all items with 
     for source_file in files_to_check:
-        with open(os.path.join(directory, source_file), 'rt') as f:
+        with open(os.path.join(directory, source_file), 'rt', encoding='utf-8') as f:
+            if args.verbose:
+                print('SOURCE:', source_file)
             lines = f.readlines()
             for lineno, line in enumerate(lines):
                 line = line.strip()
@@ -88,6 +93,7 @@ def check_dependency_for_module(root_dir, module_name):
 
 arg_parser = argparse.ArgumentParser(description='')
 arg_parser.add_argument('--codedir', help='Root of the code directory', default='../../code')
+arg_parser.add_argument('--verbose', help='Print verbose info', action='store_true', default=False)
 args = arg_parser.parse_args(sys.argv[1:])
 
 if not os.path.isdir(args.codedir):
