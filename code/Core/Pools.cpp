@@ -127,8 +127,8 @@ size_t _private::handleGetMemoryRequirement(uint32 capacity)
     
     MemSingleShotMalloc<HandlePoolTable> mallocator;
     return mallocator.AddMemberField<uint32>(offsetof(HandlePoolTable, dense), maxSize)
-    .AddMemberField<uint32>(offsetof(HandlePoolTable, sparse), maxSize)
-    .GetMemoryRequirement();
+        .AddMemberField<uint32>(offsetof(HandlePoolTable, sparse), maxSize)
+        .GetMemoryRequirement();
 }
 
 _private::HandlePoolTable* _private::handleCreatePoolTableWithBuffer(uint32 capacity, void* data, size_t size)
@@ -138,8 +138,8 @@ _private::HandlePoolTable* _private::handleCreatePoolTableWithBuffer(uint32 capa
     
     MemSingleShotMalloc<HandlePoolTable> mallocator;
     HandlePoolTable* tbl = mallocator.AddMemberField<uint32>(offsetof(HandlePoolTable, dense), maxSize)
-    .AddMemberField<uint32>(offsetof(HandlePoolTable, sparse), maxSize)
-    .Calloc(data, size);
+        .AddMemberField<uint32>(offsetof(HandlePoolTable, sparse), maxSize)
+        .Calloc(data, size);
     tbl->capacity = capacity;
     handleResetPoolTable(tbl);
     
