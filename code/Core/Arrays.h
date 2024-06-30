@@ -50,6 +50,7 @@ struct Array
     _T PopFirst();
     _T Pop(uint32 index);
     void Extend(const Array<_T>& arr);
+    void Extend(const _T* arr, uint32 numArrItems);
     const _T& operator[](uint32 index) const;
     _T& operator[](uint32 index);
     void Shrink();
@@ -316,6 +317,19 @@ inline void Array<_T>::Extend(const Array<_T>& arr)
         if (newCapacity > mCapacity)
         Reserve(newCapacity);
         memcpy(&mBuffer[mCount], arr.mBuffer, sizeof(_T)*arr.mCount);
+        mCount = newCount;
+    }
+}
+
+template <typename _T>
+inline void Array<_T>::Extend(const _T* arr, uint32 numArrItems)
+{
+    if (numArrItems) {
+        uint32 newCount = mCount + numArrItems;
+        uint32 newCapacity = Max(newCount, mCapacity);
+        if (newCapacity > mCapacity)
+            Reserve(newCapacity);
+        memcpy(&mBuffer[mCount], arr, sizeof(_T)*numArrItems);
         mCount = newCount;
     }
 }
