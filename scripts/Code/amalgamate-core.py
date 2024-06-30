@@ -9,7 +9,7 @@ BASE_HEADER = 'Base.h'
 INCLUDE_PHRASE = '#include "'
 ONCE_PRAGMA = '#pragma once'
 EXCLUDE_EXTERNALS = ['MemPro', 'Tracy']
-IGNORE_MODULES = ['config', 'debug', 'atomic', 'includewin', 'tracyhelper']
+IGNORE_MODULES = ['config', 'debug', 'includewin', 'tracyhelper']
 IGNORE_HEADERS = ['TargetConditionals.h']   # used as double-quotes in slang
 LINE_WIDTH = 120
 
