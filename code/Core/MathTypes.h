@@ -417,6 +417,8 @@ inline constexpr Color COLOR_GREEN  { uint8(0), uint8(255), uint8(0), uint8(255)
 inline constexpr Color COLOR_BLUE   { uint8(0), uint8(0), uint8(255), uint8(255) };
 inline constexpr Color COLOR_PURPLE { uint8(255), uint8(0), uint8(255), uint8(255) };
 
+inline constexpr Rect RECT_EMPTY { M_FLOAT32_MAX, M_FLOAT32_MAX, -M_FLOAT32_MAX, -M_FLOAT32_MAX };
+inline constexpr Recti RECTI_EMPTY { INT32_MAX, INT32_MAX, -INT32_MIN, -INT32_MIN };
 inline constexpr AABB AABB_EMPTY { M_FLOAT32_MAX, M_FLOAT32_MAX, M_FLOAT32_MAX, -M_FLOAT32_MAX, -M_FLOAT32_MAX, -M_FLOAT32_MAX };
 
 PRAGMA_DIAGNOSTIC_POP()    // ignore msvc warnings
