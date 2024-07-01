@@ -328,6 +328,7 @@ struct Path : String<PATH_CHARS_MAX>
     inline bool IsFile() const;
     inline bool IsDir() const;
 
+    Path& Join(const Path& path);
     static Path Join(const Path& pathA, const Path& pathB);
     static Path JoinUnix(const Path& pathA, const Path& pathB);
 
@@ -833,6 +834,13 @@ inline Path Path::GetDirectory_CStr()
     Path::GetDirectory_CStr(mStr, p.mStr, sizeof(p.mStr));
     p.mLen = strLen(p.mStr);
     return p;
+}
+
+inline Path& Path::Join(const Path& path)
+{
+    pathJoin(mStr, sizeof(mStr), mStr, path.mStr);
+    mLen = strLen(mStr);
+    return *this;
 }
 
 inline Path Path::Join(const Path& pathA, const Path& pathB)
