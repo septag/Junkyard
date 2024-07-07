@@ -3133,11 +3133,6 @@ GfxBuffer gfxCreateBuffer(const GfxBufferDesc& desc)
         .size = desc.size
     };
     
-    // We always want to use the buffer as transfer destination for non-stream 
-    // TODO: revisit the part about excluding integrated GPU from TRANSFER_DST
-    if (memUsage != GfxBufferUsage::Stream || gVk.deviceProps.deviceType != VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU)
-        usageFlags |= VK_BUFFER_USAGE_TRANSFER_DST_BIT;
-
     VkBufferCreateInfo bufferCreateInfo {
         .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
         .size = desc.size,
@@ -3149,6 +3144,14 @@ GfxBuffer gfxCreateBuffer(const GfxBufferDesc& desc)
         .flags = vmaFlags,
         .usage = VMA_MEMORY_USAGE_AUTO,
     };
+
+    if (memUsage == GfxBufferUsage::Stream) {
+        bufferCreateInfo.usage |= VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+        allocCreateInfo.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |  VMA_ALLOCATION_CREATE_MAPPED_BIT;
+    }
+    else {
+        bufferCreateInfo.usage |= VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+    }
 
     VmaAllocationInfo allocInfo;
     if (vmaCreateBuffer(gVk.vma, &bufferCreateInfo, &allocCreateInfo, &bufferData.buffer, 
@@ -3218,7 +3221,7 @@ GfxBuffer gfxCreateBuffer(const GfxBufferDesc& desc)
             };
 
             VmaAllocationCreateInfo stageAllocCreateInfo {
-                .flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT,
+                .flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT,
                 .usage = VMA_MEMORY_USAGE_AUTO,
             };
             

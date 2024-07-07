@@ -142,7 +142,6 @@ struct AppImpl final : AppCallbacks
         
         gfxBeginCommandBuffer();
         
-        gfxCmdBeginSwapchainRenderPass();
 
         float width = (float)appGetFramebufferWidth();
         float height = (float)appGetFramebufferHeight();
@@ -166,6 +165,7 @@ struct AppImpl final : AppCallbacks
             };
 
             gfxCmdUpdateBuffer(uniformBuffer, &ubo, sizeof(ubo));
+            gfxCmdBeginSwapchainRenderPass();
             gfxCmdBindPipeline(pipeline);
 
             // model transform
