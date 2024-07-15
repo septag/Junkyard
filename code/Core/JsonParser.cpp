@@ -14,18 +14,18 @@ struct JsonContext
 {
     cj5_result r;       // This should always come first, because the wrapper API casts JsonContext to cj5_result*
     uint32 numTokens;
-    Allocator* alloc;
+    MemAllocator* alloc;
     cj5_token* tokens;
 };
 
-JsonContext* jsonParse(const char* json5, uint32 json5Len, JsonErrorLocation* outErrLoc, Allocator* alloc)
+JsonContext* Json::Parse(const char* json5, uint32 json5Len, JsonErrorLocation* outErrLoc, MemAllocator* alloc)
 {
     ASSERT(json5);
     ASSERT(json5Len < INT32_MAX);
     ASSERT(alloc);
 
-    bool mainAllocIsTemp = alloc->GetType() == AllocatorType::Temp;
-    MemTempId tempMemId = mainAllocIsTemp ? ((MemTempAllocator*)alloc)->GetId() : memTempPushId();
+    bool mainAllocIsTemp = alloc->GetType() == MemAllocatorType::Temp;
+    MemTempAllocator::ID tempMemId = mainAllocIsTemp ? ((MemTempAllocator*)alloc)->GetId() : MemTempAllocator::PushId();
     MemTempAllocator tmpAlloc(tempMemId);
     Array<cj5_token> tokens(&tmpAlloc);
     tokens.Reserve(64);
@@ -57,7 +57,7 @@ JsonContext* jsonParse(const char* json5, uint32 json5Len, JsonErrorLocation* ou
         ctx->alloc = alloc;
 
         if (!mainAllocIsTemp)
-            memTempPopId(tempMemId);
+            MemTempAllocator::PopId(tempMemId);
         return ctx;
     }
     else {
@@ -68,12 +68,12 @@ JsonContext* jsonParse(const char* json5, uint32 json5Len, JsonErrorLocation* ou
             };
         }
         if (!mainAllocIsTemp)
-            memTempPopId(tempMemId);
+            MemTempAllocator::PopId(tempMemId);
         return nullptr;
     }
 }
 
-void jsonDestroy(JsonContext* ctx)
+void Json::Destroy(JsonContext* ctx)
 {
     if (ctx && ctx->alloc) 
         MemSingleShotMalloc<JsonContext>::Free(ctx, ctx->alloc);

@@ -5,21 +5,26 @@
 #if CONFIG_TOOLMODE
 #include "../Core/Blobs.h"
 
-enum class ImageEncoderCompression
+struct ImageEncoderCompression
 {
-    BC1 = 0,
-    BC3,
-    BC4,
-    BC5,
-    BC6H,
-    BC7,
-    ASTC_4x4,
-    ASTC_5x5,
-    ASTC_6x6,
-    ASTC_8x8,
-    _Count
+    enum Enum
+    {
+        BC1 = 0,
+        BC3,
+        BC4,
+        BC5,
+        BC6H,
+        BC7,
+        ASTC_4x4,
+        ASTC_5x5,
+        ASTC_6x6,
+        ASTC_8x8,
+        _Count
+    };
+
+    static ImageEncoderCompression::Enum FromString(const char* estr);
+    static bool IsASTC(ImageEncoderCompression::Enum compression);
 };
-API ImageEncoderCompression imageEncoderCompressionGetEnum(const char* estr);
 
 enum class ImageEncoderQuality
 {
@@ -44,8 +49,12 @@ struct ImageEncoderSurface
     const uint8* pixels;   // Each pixel is a U8 channel, and full RGBA (some channels can be empty)
 };
 
-API Blob imageEncoderCompress(ImageEncoderCompression compression, ImageEncoderQuality quality, 
-                              ImageEncoderFlags flags, const ImageEncoderSurface& surface, 
-                              Allocator* alloc = memDefaultAlloc());
+namespace ImageEncoder
+{
+    API Blob Compress(ImageEncoderCompression::Enum compression, ImageEncoderQuality quality, 
+                      ImageEncoderFlags flags, const ImageEncoderSurface& surface, 
+                      MemAllocator* alloc = Mem::GetDefaultAlloc());
+}
+
 
 #endif // CONFIG_TOOLMODE

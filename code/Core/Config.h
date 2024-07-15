@@ -68,4 +68,12 @@
     #define CONFIG_APP_NAME "Junkyard"
 #endif
 
+#if !defined(CONFIG_TEMP_ALLOC_MAX)
+    #define CONFIG_TEMP_ALLOC_MAX SIZE_GB
+#endif
+
+#if !defined(CONFIG_TEMP_ALLOC_PAGE_SIZE)
+    #define CONFIG_TEMP_ALLOC_PAGE_SIZE 256*SIZE_KB
+#endif
+
 // #define TRACY_ENABLE

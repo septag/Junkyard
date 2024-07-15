@@ -72,7 +72,7 @@ struct AppEvent
     float scrollX;
     float scrollY;
     uint32 numTouches;
-    InputTouchPoint touches[kInputMaxTouchPoints];
+    InputTouchPoint touches[INPUT_MAX_TOUCH_POINTS];
     uint16 windowWidth;
     uint16 windowHeight;
     uint16 framebufferWidth;
@@ -92,8 +92,8 @@ struct NO_VTABLE AppCallbacks
 struct AppDesc 
 {
     AppCallbacks* callbacks   = nullptr;
-    uint16 width              = 1280;
-    uint16 height             = 800;
+    uint16 initWidth          = 1280;
+    uint16 initHeight         = 800;
     const char* windowTitle   = nullptr;
     bool highDPI              = true;
     bool fullscreen           = false;
@@ -110,34 +110,38 @@ struct AppDisplayInfo
     float dpiScale;
 };
 
-API bool appInitialize(const AppDesc& desc);
-API void appShowMouse(bool visible);
-API void appQuit();
-API bool appSetClipboardString(const char* str);
-API const char* appGetClipboardString();
-API const char* appGetName();
+namespace App
+{
+    API bool Run(const AppDesc& desc);
+    API void ShowMouse(bool visible);
+    API void Quit();
+    API bool SetClipboardString(const char* str);
+    API const char* GetClipboardString();
+    API const char* GetName();
 
-API uint16 appGetWindowWidth();
-API uint16 appGetWindowHeight();
-API uint16 appGetFramebufferWidth();
-API uint16 appGetFramebufferHeight();
-API AppFramebufferTransform appGetFramebufferTransform();
+    API uint16 GetWindowWidth();
+    API uint16 GetWindowHeight();
+    API uint16 GetFramebufferWidth();
+    API uint16 GetFramebufferHeight();
+    API AppFramebufferTransform GetFramebufferTransform();
 
-API bool appIsMouseShown();
-API void appCaptureMouse();
-API void appReleaseMouse();
-API void* appGetNativeWindowHandle();
-API void* appGetNativeAppHandle();
-API void appRegisterEventsCallback(appOnEventCallback callback, void* userData = nullptr);
-API void appUnregisterEventsCallback(appOnEventCallback callback);
-API void appSetCursor(AppMouseCursor cursor);
-API AppDisplayInfo appGetDisplayInfo();
-API bool appIsKeyDown(InputKeycode keycode);
-API bool appIsAnyKeysDown(const InputKeycode* keycodes, uint32 numKeycodes);
-API InputKeyModifiers appGetKeyMods();
+    API bool IsMouseShown();
+    API void CaptureMouse();
+    API void ReleaseMouse();
+    API void* GetNativeWindowHandle();
+    API void* GetNativeAppHandle();
+    API void RegisterEventsCallback(appOnEventCallback callback, void* userData = nullptr);
+    API void UnregisterEventsCallback(appOnEventCallback callback);
+    API void SetCursor(AppMouseCursor cursor);
+    API AppDisplayInfo GetDisplayInfo();
+    API bool IsKeyDown(InputKeycode keycode);
+    API bool IsAnyKeysDown(const InputKeycode* keycodes, uint32 numKeycodes);
+    API InputKeyModifiers GetKeyMods();
 
-#if PLATFORM_ANDROID
-API AAssetManager* appAndroidGetAssetManager();
-API void appAndroidSetFramebufferTransform(AppFramebufferTransform transform);
-API ANativeActivity* appAndroidGetActivity();
-#endif 
+    #if PLATFORM_ANDROID
+    API AAssetManager* AndroidGetAssetManager();
+    API void AndroidSetFramebufferTransform(AppFramebufferTransform transform);
+    API ANativeActivity* AndroidGetActivity();
+    #endif 
+}
+

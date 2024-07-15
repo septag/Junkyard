@@ -18,7 +18,7 @@ PRAGMA_DIAGNOSTIC_IGNORED_CLANG_GCC("-Wunused-variable")
     #define OLD_PLATFORM_WINDOWS PLATFORM_WINDOWS
     #undef PLATFORM_WINDOWS
 #endif
-#define TRACY_UNWIND(_stackframes, _depth) debugCaptureStacktrace(_stackframes, _depth, 2)
+#define TRACY_UNWIND(_stackframes, _depth) Debug::CaptureStacktrace(_stackframes, _depth, 2)
 #define TRACY_VK_USE_SYMBOL_TABLE
 #include "External/tracy/TracyClient.cpp"
 PRAGMA_DIAGNOSTIC_POP()
@@ -39,13 +39,13 @@ PRAGMA_DIAGNOSTIC_POP()
 static TracyZoneEnterCallback gZoneEnterCallback;
 static TracyZoneExitCallback gZoneExitCallback;
 
-void tracySetZoneCallbacks(TracyZoneEnterCallback zoneEnterCallback, TracyZoneExitCallback zoneExitCallback)
+void Tracy::SetZoneCallbacks(TracyZoneEnterCallback zoneEnterCallback, TracyZoneExitCallback zoneExitCallback)
 {
     gZoneEnterCallback = zoneEnterCallback;
     gZoneExitCallback = zoneExitCallback;
 }
 
-bool tracyRunZoneExitCallback(TracyCZoneCtx* ctx)
+bool Tracy::RunZoneExitCallback(TracyCZoneCtx* ctx)
 {
     if (gZoneExitCallback)
         return gZoneExitCallback(ctx);
@@ -53,14 +53,14 @@ bool tracyRunZoneExitCallback(TracyCZoneCtx* ctx)
         return false;
 }
 
-void tracyRunZoneEnterCallback(TracyCZoneCtx* ctx, const ___tracy_source_location_data* sourceLoc)
+void Tracy::RunZoneEnterCallback(TracyCZoneCtx* ctx, const ___tracy_source_location_data* sourceLoc)
 {
     if (gZoneEnterCallback)
         gZoneEnterCallback(ctx, sourceLoc);
 }
 
 
-void _private::___tracy_emit_gpu_calibrate_serial(const struct ___tracy_gpu_calibrate_data data)
+void Tracy::_private::___tracy_emit_gpu_calibrate_serial(const struct ___tracy_gpu_calibrate_data data)
 {
     auto item = tracy::Profiler::QueueSerial();
     tracy::MemWrite(&item->hdr.type, tracy::QueueType::GpuCalibration);
@@ -71,12 +71,12 @@ void _private::___tracy_emit_gpu_calibrate_serial(const struct ___tracy_gpu_cali
     tracy::Profiler::QueueSerialFinish();
 }
 
-int64 _private::__tracy_get_time(void)
+int64 Tracy::_private::__tracy_get_time(void)
 {
     return tracy::Profiler::GetTime();
 }
 
-uint64 _private::__tracy_alloc_source_loc(uint32 line, const char* source, const char* function, const char* name)
+uint64 Tracy::_private::__tracy_alloc_source_loc(uint32 line, const char* source, const char* function, const char* name)
 {
     return tracy::Profiler::AllocSourceLocation(line, source, function, name, name ? strlen(name): 0);
 }

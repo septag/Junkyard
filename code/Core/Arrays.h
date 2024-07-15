@@ -25,11 +25,11 @@
 template <typename _T>
 struct Array
 {
-    Array() : Array(memDefaultAlloc()) {}
-    explicit Array(Allocator* alloc) : mAlloc(alloc) {}
+    Array() : Array(Mem::GetDefaultAlloc()) {}
+    explicit Array(MemAllocator* alloc) : mAlloc(alloc) {}
     explicit Array(const void* buffer, size_t size);
 
-    void SetAllocator(Allocator* alloc);
+    void SetAllocator(MemAllocator* alloc);
     void Reserve(uint32 capacity);
     void Reserve(uint32 capacity, void* buffer, size_t size);
     void Free();
@@ -85,7 +85,7 @@ struct Array
     Iterator end() const     { return Iterator(&mBuffer[mCount]); }
 
 private:
-    Allocator* mAlloc = nullptr;
+    MemAllocator* mAlloc = nullptr;
     uint32 mCapacity = 0;
     uint32 mCount = 0;
     _T* mBuffer = nullptr;
@@ -153,7 +153,7 @@ inline Array<_T>::Array(const void* buffer, size_t size)
 }
 
 template <typename _T>
-inline void Array<_T>::SetAllocator(Allocator* alloc)
+inline void Array<_T>::SetAllocator(MemAllocator* alloc)
 {
     ASSERT_MSG(mBuffer == nullptr, "buffer should be freed/uninitialized before setting allocator");
     mAlloc = alloc;
@@ -248,7 +248,7 @@ inline void Array<_T>::Reserve(uint32 capacity)
 {
     ASSERT(mAlloc);
     mCapacity = Max(capacity, mCapacity);
-    mBuffer = memReallocTyped<_T>(mBuffer, mCapacity, mAlloc);
+    mBuffer = Mem::ReallocTyped<_T>(mBuffer, mCapacity, mAlloc);
     ASSERT(mBuffer);
 }
 
@@ -424,7 +424,7 @@ inline void Array<_T>::Free()
     mCount = 0;
 
     if (mAlloc) {
-        memFree(mBuffer, mAlloc);
+        Mem::Free(mBuffer, mAlloc);
         mCapacity = 0;
         mBuffer = nullptr;
     }

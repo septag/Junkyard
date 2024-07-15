@@ -46,11 +46,11 @@
 
 struct SysCounters
 {
-    atomicUint32 numThreads;
-    atomicUint32 numMutexes;
-    atomicUint32 numSemaphores;
-    atomicUint32 numSignals;
-    atomicUint64 threadStackSize;
+    AtomicUint32 numThreads;
+    AtomicUint32 numMutexes;
+    AtomicUint32 numSemaphores;
+    AtomicUint32 numSignals;
+    AtomicUint64 threadStackSize;
 };
 
 static SysCounters gSysCounters;
@@ -60,12 +60,12 @@ static SysCounters gSysCounters;
 // But here can be a safe exception for conveniency. Because timer initialization does not involve allocations or any sensitive init code
 struct TimerInitializer
 {
-    TimerInitializer() { _private::timerInitialize(); }
+    TimerInitializer() { _private::InitializeTimer(); }
 };
 
 static TimerInitializer gTimerInit;
 
-char* pathToUnix(const char *path, char *dst, size_t dstSize)
+char* Path::ToUnix_CStr(const char *path, char *dst, size_t dstSize)
 {
     size_t len = strLen(path);
     len = Min<size_t>(len, dstSize - 1);
@@ -80,7 +80,7 @@ char* pathToUnix(const char *path, char *dst, size_t dstSize)
     return dst;
 }
 
-char* pathToWin(const char *path, char *dst, size_t dstSize)
+char* Path::ToWin_CStr(const char *path, char *dst, size_t dstSize)
 {
     size_t len = strLen(path);
     len = Min<size_t>(len, dstSize - 1);
@@ -95,7 +95,7 @@ char* pathToWin(const char *path, char *dst, size_t dstSize)
     return dst;
 }
 
-char* pathFileExtension(const char *path, char *dst, size_t dstSize)
+char* Path::GetFileExtension_CStr(const char *path, char *dst, size_t dstSize)
 {
     ASSERT(dstSize > 0);
 
@@ -121,7 +121,7 @@ char* pathFileExtension(const char *path, char *dst, size_t dstSize)
     return dst;
 }
 
-char* pathFileNameAndExt(const char *path, char *dst, size_t dstSize)
+char* Path::GetFilenameAndExtension_CStr(const char *path, char *dst, size_t dstSize)
 {
     const char *r = strrchr(path, '/');
     #if PLATFORM_WINDOWS
@@ -137,7 +137,7 @@ char* pathFileNameAndExt(const char *path, char *dst, size_t dstSize)
     return dst;
 }
 
-char* pathFileName(const char* path, char* dst, size_t dstSize)
+char* Path::GetFilename_CStr(const char* path, char* dst, size_t dstSize)
 {
     const char *r = strrchr(path, '/');
     #if PLATFORM_WINDOWS
@@ -158,7 +158,7 @@ char* pathFileName(const char* path, char* dst, size_t dstSize)
     return dst;
 }
 
-char* pathDirectory(const char *path, char *dst, size_t dstSize)
+char* Path::GetDirectory_CStr(const char *path, char *dst, size_t dstSize)
 {
     const char *r = strrchr(path, '/');
     #if PLATFORM_WINDOWS
@@ -185,7 +185,7 @@ char* pathDirectory(const char *path, char *dst, size_t dstSize)
     return dst;
 }
 
-static char* pathJoin(char *dst, size_t dstSize, const char *sep, const char *pathA, const char *pathB)
+char* Path::Join_CStr(char *dst, size_t dstSize, const char *sep, const char *pathA, const char *pathB)
 {
     ASSERT(dst != pathB);
     int len = strLen(pathA);
@@ -211,7 +211,7 @@ static char* pathJoin(char *dst, size_t dstSize, const char *sep, const char *pa
     return dst;
 }
 
-char* pathJoin(char *dst, size_t dstSize, const char *pathA, const char *pathB)
+char* Path::Join_CStr(char *dst, size_t dstSize, const char *pathA, const char *pathB)
 {
     #if PLATFORM_WINDOWS
     const char *kSep = "\\";
@@ -219,27 +219,27 @@ char* pathJoin(char *dst, size_t dstSize, const char *pathA, const char *pathB)
     const char *kSep = "/";
     #endif
 
-    return pathJoin(dst, dstSize, kSep, pathA, pathB);
+    return Path::Join_CStr(dst, dstSize, kSep, pathA, pathB);
 }
 
-char* pathJoinUnixStyle(char *dst, size_t dstSize, const char *pathA, const char *pathB)
+char* Path::JoinUnixStyle_CStr(char *dst, size_t dstSize, const char *pathA, const char *pathB)
 {
-    return pathJoin(dst, dstSize, "/", pathA, pathB);
+    return Path::Join_CStr(dst, dstSize, "/", pathA, pathB);
 }
 
-uint64 timerLapTime(uint64* lastTime)
+uint64 Timer::LapTime(uint64* lastTime)
 {
     ASSERT(lastTime);
     uint64 dt = 0;
-    uint64 now = timerGetTicks();
+    uint64 now = Timer::GetTicks();
     if (*lastTime != 0) 
-        dt = timerDiff(now, *lastTime);
+        dt = Timer::Diff(now, *lastTime);
     *lastTime = now;
     return dt;
 }
 
-void sysGenerateCmdLineFromArgcArgv(int argc, const char* argv[], char** outString, uint32* outStringLen, 
-                                    Allocator* alloc, const char* prefixCmd)
+void OS::GenerateCmdLineFromArgcArgv(int argc, const char* argv[], char** outString, uint32* outStringLen, 
+                                    MemAllocator* alloc, const char* prefixCmd)
 {
     ASSERT(outString);
     ASSERT(outStringLen);
@@ -266,7 +266,7 @@ void sysGenerateCmdLineFromArgcArgv(int argc, const char* argv[], char** outStri
     *outStringLen = static_cast<uint32>(len);
 }
 
-void sysPauseCpu()
+void OS::PauseCPU()
 {
 #if CPU_X86
     _mm_pause();
@@ -278,7 +278,7 @@ void sysPauseCpu()
 }
 
 // https://github.com/google/benchmark/blob/v1.1.0/src/cycleclock.h
-uint64 sysGetCpuClock()
+uint64 OS::GetCPUClock()
 {
 #if PLATFORM_APPLE  // TODO: maybe we can get rid of this and use the asm one
     return mach_absolute_time();
@@ -297,7 +297,7 @@ uint64 sysGetCpuClock()
 #endif
 }
 
-bool _private::socketParseUrl(const char* url, char* address, size_t addressSize, char* port, size_t portSize, const char** pResource)
+bool SocketTCP::ParseUrl(const char* url, char* address, size_t addressSize, char* port, size_t portSize, const char** pResource)
 {
     uint32 urlLen = strLen(url);
     
@@ -339,49 +339,49 @@ bool _private::socketParseUrl(const char* url, char* address, size_t addressSize
     return true;    
 }
 
-void _private::sysCountersAddThread(size_t stackSize)
+void _private::CountersAddThread(size_t stackSize)
 {
-    atomicFetchAdd32Explicit(&gSysCounters.numThreads, 1, AtomicMemoryOrder::Relaxed);
-    atomicFetchAdd64Explicit(&gSysCounters.threadStackSize, stackSize, AtomicMemoryOrder::Relaxed);
+    Atomic::FetchAddExplicit(&gSysCounters.numThreads, 1, AtomicMemoryOrder::Relaxed);
+    Atomic::FetchAddExplicit(&gSysCounters.threadStackSize, stackSize, AtomicMemoryOrder::Relaxed);
 }
 
-void _private::sysCountersRemoveThread(size_t stackSize)
+void _private::CountersRemoveThread(size_t stackSize)
 {
-    atomicFetchSub32Explicit(&gSysCounters.numThreads, 1, AtomicMemoryOrder::Relaxed);
-    atomicFetchSub64Explicit(&gSysCounters.threadStackSize, stackSize, AtomicMemoryOrder::Relaxed);
+    Atomic::FetchSubExplicit(&gSysCounters.numThreads, 1, AtomicMemoryOrder::Relaxed);
+    Atomic::FetchSubExplicit(&gSysCounters.threadStackSize, stackSize, AtomicMemoryOrder::Relaxed);
 }
 
-void _private::sysCountersAddMutex()
+void _private::CountersAddMutex()
 {
-    atomicFetchAdd32Explicit(&gSysCounters.numMutexes, 1, AtomicMemoryOrder::Relaxed);
+    Atomic::FetchAddExplicit(&gSysCounters.numMutexes, 1, AtomicMemoryOrder::Relaxed);
 }
 
-void _private::sysCountersRemoveMutex()
+void _private::CountersRemoveMutex()
 {
-    atomicFetchSub32Explicit(&gSysCounters.numMutexes, 1, AtomicMemoryOrder::Relaxed);
+    Atomic::FetchSubExplicit(&gSysCounters.numMutexes, 1, AtomicMemoryOrder::Relaxed);
 }
 
-void _private::sysCountersAddSignal()
+void _private::CountersAddSignal()
 {
-    atomicFetchAdd32Explicit(&gSysCounters.numSignals, 1, AtomicMemoryOrder::Relaxed);
+    Atomic::FetchAddExplicit(&gSysCounters.numSignals, 1, AtomicMemoryOrder::Relaxed);
 }
 
-void _private::sysCountersRemoveSignal()
+void _private::CountersRemoveSignal()
 {
-    atomicFetchSub32Explicit(&gSysCounters.numSignals, 1, AtomicMemoryOrder::Relaxed);
+    Atomic::FetchSubExplicit(&gSysCounters.numSignals, 1, AtomicMemoryOrder::Relaxed);
 }
 
-void _private::sysCountersAddSemaphore()
+void _private::CountersAddSemaphore()
 {
-    atomicFetchAdd32Explicit(&gSysCounters.numSemaphores, 1, AtomicMemoryOrder::Relaxed);
+    Atomic::FetchAddExplicit(&gSysCounters.numSemaphores, 1, AtomicMemoryOrder::Relaxed);
 }
 
-void _private::sysCountersRemoveSemaphore()
+void _private::CountersRemoveSemaphore()
 {
-    atomicFetchSub32Explicit(&gSysCounters.numSemaphores, 1, AtomicMemoryOrder::Relaxed);
+    Atomic::FetchSubExplicit(&gSysCounters.numSemaphores, 1, AtomicMemoryOrder::Relaxed);
 }
 
-SysPrimitiveStats sysGetPrimitiveStats()
+SysPrimitiveStats GetSystemPrimitiveStats()
 {
     return SysPrimitiveStats {
         .numMutexes = gSysCounters.numMutexes,
@@ -404,26 +404,26 @@ SysPrimitiveStats sysGetPrimitiveStats()
 // Another good reference code: https://github.dev/concurrencykit/ck
 void SpinLockMutex::Enter()
 {
-    while (atomicExchange32Explicit(&mLocked, 1, AtomicMemoryOrder::Acquire) == 1) {
+    while (Atomic::ExchangeExplicit(&mLocked, 1, AtomicMemoryOrder::Acquire) == 1) {
         uint32 spinCount = 1;
         do {
             if (spinCount++ & 1023)
-                sysPauseCpu();
+                OS::PauseCPU();
             else
-                threadYield();
-        } while (atomicLoad32Explicit(&mLocked, AtomicMemoryOrder::Relaxed));
+                Thread::SwitchContext();
+        } while (Atomic::LoadExplicit(&mLocked, AtomicMemoryOrder::Relaxed));
     }
 }
 
 void SpinLockMutex::Exit()
 {
-    atomicStore32Explicit(&mLocked, 0, AtomicMemoryOrder::Release);
+    Atomic::StoreExplicit(&mLocked, 0, AtomicMemoryOrder::Release);
 }
 
 bool SpinLockMutex::TryEnter()
 {
-    return atomicLoad32Explicit(&mLocked, AtomicMemoryOrder::Relaxed) == 0 &&
-           atomicExchange32Explicit(&mLocked, 1, AtomicMemoryOrder::Acquire) == 0;
+    return Atomic::LoadExplicit(&mLocked, AtomicMemoryOrder::Relaxed) == 0 &&
+           Atomic::ExchangeExplicit(&mLocked, 1, AtomicMemoryOrder::Acquire) == 0;
 }
 
 

@@ -26,15 +26,16 @@ struct ShaderCompileDesc
 
 struct GfxShader;
 struct Blob;
-struct Allocator;
+struct MemAllocator;
 
-// Note: `alloc` should not be tmpAlloc
-API Pair<GfxShader*, uint32> shaderCompile(const Blob& blob, const char* filepath, const ShaderCompileDesc& desc, 
-                                           char* errorDiag, uint32 errorDiagSize, Allocator* alloc);
-
-namespace _private
+namespace ShaderCompiler
 {
-    bool shaderInitializeCompiler();
-    void shaderReleaseCompiler();
+    bool Initialize();
+    void Release();
+
+    // Note: `alloc` should not be tmpAlloc
+    API Pair<GfxShader*, uint32> Compile(const Blob& blob, const char* filepath, const ShaderCompileDesc& desc, 
+                                         char* errorDiag, uint32 errorDiagSize, MemAllocator* alloc);
 }
+
 #endif

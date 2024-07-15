@@ -12,12 +12,12 @@
 
 #include "../Engine.h"
 
-constexpr uint32 kRemoteCmdExecuteConsoleCmd = MakeFourCC('C', 'O', 'N', 'X');
+constexpr uint32 CONSOLE_REMOTE_CMD = MakeFourCC('C', 'O', 'N', 'X');
 
 struct ConCustomVar
 {
     String32 name;
-    String<kMaxPath> value;
+    String<PATH_CHARS_MAX> value;
 };
 
 struct ConContext
@@ -28,7 +28,10 @@ struct ConContext
 
 static ConContext gConsole;
 
-bool conExecute(const char* cmd, char* outResponse, uint32 responseSize)
+namespace Console
+{
+
+bool Execute(const char* cmd, char* outResponse, uint32 responseSize)
 {
     ASSERT(cmd);
 
@@ -119,55 +122,55 @@ bool conExecute(const char* cmd, char* outResponse, uint32 responseSize)
         else {
             if (outResponse && responseSize)
                 strPrintFmt(outResponse, responseSize, "Command not found: %s", name);
-            logWarning("Command not found: %s", name);
+            LOG_WARNING("Command not found: %s", name);
             return false;
         }
     }
     else {
         if (outResponse && responseSize) 
             strPrintFmt(outResponse, responseSize, "Cannot parse command: %s", cmd);
-        logWarning("Cannot parse command: %s", cmd);
+        LOG_WARNING("Cannot parse command: %s", cmd);
         return false;
     }
 }
 
-void conExecuteRemote(const char* cmd)
+void ExecuteRemote(const char* cmd)
 {
     ASSERT(cmd);
     ASSERT(cmd[0]);
 
-    if (remoteIsConnected()) {
+    if (Remote::IsConnected()) {
         MemTempAllocator tmpAlloc;
         Blob blob(&tmpAlloc);
         blob.SetGrowPolicy(Blob::GrowPolicy::Multiply);
         blob.WriteStringBinary(cmd, strLen(cmd));
     
-        remoteExecuteCommand(kRemoteCmdExecuteConsoleCmd, blob);
+        Remote::ExecuteCommand(CONSOLE_REMOTE_CMD, blob);
     }
 }
 
-static void conHandlerClientFn([[maybe_unused]] uint32 cmd, const Blob& incomingData, void*, bool error, const char* errorDesc)
+static void HandlerClientCallback([[maybe_unused]] uint32 cmd, const Blob& incomingData, void*, bool error, const char* errorDesc)
 {
-    ASSERT(cmd == kRemoteCmdExecuteConsoleCmd);
+    ASSERT(cmd == CONSOLE_REMOTE_CMD);
     if (!error) {
         char responseText[512];
         incomingData.ReadStringBinary(responseText, sizeof(responseText));
-        logInfo(responseText);
+        LOG_INFO(responseText);
     }
     else {
-        logError(errorDesc);
+        LOG_ERROR(errorDesc);
     }
 }
 
-static bool conHandlerServerFn([[maybe_unused]] uint32 cmd, const Blob& incomingData, Blob* outgoingBlob, void*, 
-                               char outgoingErrorDesc[kRemoteErrorDescSize])
+static bool HandlerServerCallback([[maybe_unused]] uint32 cmd, const Blob& incomingData, Blob* outgoingBlob, void*, 
+                                  char outgoingErrorDesc[kRemoteErrorDescSize])
 {
-    ASSERT(cmd == kRemoteCmdExecuteConsoleCmd);
+    ASSERT(cmd == CONSOLE_REMOTE_CMD);
 
     char cmdline[1024];
     char response[1024];
     incomingData.ReadStringBinary(cmdline, sizeof(cmdline));
-    bool r = conExecute(cmdline, response, sizeof(response));
+    bool r = Execute(cmdline, response, sizeof(response));
 
     if (r)
         outgoingBlob->WriteStringBinary(response, strLen(response));
@@ -183,7 +186,7 @@ static bool conRunExternalCommand(int argc, const char* argv[])
         ASSERT(argc > 1);
     
         const char* prefixCmd = nullptr;
-        Path ext = Path(argv[1]).GetFileExtension();
+        Path ext = Path(argv[1]).GetFileExtension_CStr();
         SysProcessFlags flags = SysProcessFlags::None;
         if (ext.IsEqualNoCase(".bat") || ext.IsEqualNoCase(".cmd")) {
             prefixCmd = "cmd /k";
@@ -193,10 +196,10 @@ static bool conRunExternalCommand(int argc, const char* argv[])
         char* cmdline;
         uint32 cmdlineSize;
         MemTempAllocator tmpAlloc;
-        sysGenerateCmdLineFromArgcArgv(argc - 1, &argv[1], &cmdline, &cmdlineSize, memDefaultAlloc(), prefixCmd);
+        OS::GenerateCmdLineFromArgcArgv(argc - 1, &argv[1], &cmdline, &cmdlineSize, Mem::GetDefaultAlloc(), prefixCmd);
         SysProcess process;
         bool r = process.Run(cmdline, flags);
-        memFree(cmdline);
+        Mem::Free(cmdline);
     
         return r;
     #else
@@ -206,19 +209,19 @@ static bool conRunExternalCommand(int argc, const char* argv[])
     #endif
 }
 
-bool _private::conInitialize()
+bool Initialize()
 {
-    gConsole.commands.SetAllocator(memDefaultAlloc());
-    gConsole.vars.SetAllocator(memDefaultAlloc());
+    gConsole.commands.SetAllocator(Mem::GetDefaultAlloc());
+    gConsole.vars.SetAllocator(Mem::GetDefaultAlloc());
 
     // Custom variables that are used to be replaced with the value if they come in between {} sign
     {
         MemTempAllocator tmpAlloc;
-        IniContext varsIni = iniLoad("Vars.ini");
+        INIFileContext varsIni = INIFile::Load("Vars.ini");
         if (varsIni.IsValid()) {
-            IniSection root = varsIni.GetRootSection();
+            INIFileSection root = varsIni.GetRootSection();
             for (uint32 i = 0; i < root.GetPropertyCount(); i++) {
-                IniProperty prop = root.GetProperty(i);
+                INIFileProperty prop = root.GetProperty(i);
                 gConsole.vars.Push(ConCustomVar {
                     .name = prop.GetName(),
                     .value = prop.GetValue()
@@ -234,10 +237,10 @@ bool _private::conInitialize()
     }
 
     //
-    remoteRegisterCommand(RemoteCommandDesc {
-        .cmdFourCC = kRemoteCmdExecuteConsoleCmd,
-        .serverFn = conHandlerServerFn,
-        .clientFn = conHandlerClientFn
+    Remote::RegisterCommand(RemoteCommandDesc {
+        .cmdFourCC = CONSOLE_REMOTE_CMD,
+        .serverFn = HandlerServerCallback,
+        .clientFn = HandlerClientCallback
     });
 
     // Some common commands
@@ -248,7 +251,7 @@ bool _private::conInitialize()
         return conRunExternalCommand(argc, argv);
     };
 
-    conRegisterCommand(ConCommandDesc {
+    RegisterCommand(ConCommandDesc {
         .name = "exec",
         .help = "execute a process with command-line",
         .callback = ExecFn,
@@ -261,7 +264,7 @@ bool _private::conInitialize()
         #if PLATFORM_WINDOWS
             ASSERT(argc > 0);
             Path processName = Path(argv[0]).GetFileName();
-            if (!sysWin32IsProcessRunning(processName.CStr()))
+            if (!OS::Win32IsProcessRunning(processName.CStr()))
                 return conRunExternalCommand(argc, argv);
             else
                 return true;
@@ -272,7 +275,7 @@ bool _private::conInitialize()
         #endif
     };
 
-    conRegisterCommand(ConCommandDesc {
+    RegisterCommand(ConCommandDesc {
         .name = "exec-once",
         .help = "execute the process once, meaning that it will skip execution if the process is already running",
         .callback = ExecUniqueFn,
@@ -282,18 +285,20 @@ bool _private::conInitialize()
     return true;
 }
 
-void _private::conRelease()
+void Release()
 {
     gConsole.commands.Free();
     gConsole.vars.Free();
 }
 
-void conRegisterCommand(const ConCommandDesc& desc)
+void RegisterCommand(const ConCommandDesc& desc)
 {
     [[maybe_unused]] uint32 index = gConsole.commands.FindIf([name=desc.name](const ConCommandDesc& desc) { return strIsEqual(desc.name, name); });
     ASSERT_MSG(index == UINT32_MAX, "Command '%s' already registered", desc.name);
 
     ConCommandDesc* data = gConsole.commands.Push(desc);
     if (desc.shortcutKeys && desc.shortcutKeys[0])
-        engineRegisterShortcut(desc.shortcutKeys, [](void* userData) { conExecute(((ConCommandDesc*)userData)->name); }, data);
+        Engine::RegisterShortcut(desc.shortcutKeys, [](void* userData) { Execute(((ConCommandDesc*)userData)->name); }, data);
 }
+
+} // Console

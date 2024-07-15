@@ -24,11 +24,10 @@ struct MeshOptModel
     uint32 numMeshes;
 };
 
-void meshoptOptimizeModel(MeshOptModel* model);
-
-namespace _private
+namespace MeshOpt
 {
-    void meshoptInitialize();
+    API void Optimize(MeshOptModel* model);
+    API void Initialize();
 }
 
 #endif // CONFIG_TOOLMODE

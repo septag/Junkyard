@@ -28,28 +28,30 @@ using VfsReadAsyncCallback = void(*)(const char* path, const Blob& blob, void* u
 using VfsWriteAsyncCallback = void(*)(const char* path, size_t bytesWritten, const Blob& originalBlob, void* user);
 using VfsFileChangeCallback = void(*)(const char* path);
 
-API bool vfsMountLocal(const char* rootDir, const char* alias, bool watch);
-API bool vfsMountRemote(const char* alias, bool watch);
-API bool vfsMountPackageBundle(const char* alias);
-
-// If file fails to load, Blob.IsValid() == false
-// Note: This function works without initializing the virtual file-system
-API Blob vfsReadFile(const char* path, VfsFlags flags, Allocator* alloc = memDefaultAlloc(), Path* outResolvedPath = nullptr);
-
-// If file fails to write, it will return 0, otherwise, it will return the number of bytes written
-API size_t vfsWriteFile(const char* path, const Blob& blob, VfsFlags flags);
-
-API void vfsReadFileAsync(const char* path, VfsFlags flags, VfsReadAsyncCallback readResultFn, void* user, Allocator* alloc = memDefaultAlloc());
-API void vfsWriteFileAsync(const char* path, const Blob& blob, VfsFlags flags, VfsWriteAsyncCallback writeResultFn, void* user);
-
-API VfsMountType vfsGetMountType(const char* path);
-API uint64 vfsGetLastModified(const char* path);
-API bool vfsStripMountPath(char* outPath, uint32 outPathSize, const char* path);
-
-API void vfsRegisterFileChangeCallback(VfsFileChangeCallback callback);
-
-namespace _private 
+namespace Vfs
 {
-    bool vfsInitialize();
-    void vfsRelease();
+    API bool MountLocal(const char* rootDir, const char* alias, bool watch);
+    API bool MountRemote(const char* alias, bool watch);
+    API bool MountPackageBundle(const char* alias);
+
+    // If file fails to load, Blob.IsValid() == false
+    // Note: This function works without initializing the virtual file-system
+    API Blob ReadFile(const char* path, VfsFlags flags, MemAllocator* alloc = Mem::GetDefaultAlloc(), Path* outResolvedPath = nullptr);
+
+    // If file fails to write, it will return 0, otherwise, it will return the number of bytes written
+    API size_t WriteFile(const char* path, const Blob& blob, VfsFlags flags);
+
+    API void ReadFileAsync(const char* path, VfsFlags flags, VfsReadAsyncCallback readResultFn, void* user, MemAllocator* alloc = Mem::GetDefaultAlloc());
+    API void WriteFileAsync(const char* path, const Blob& blob, VfsFlags flags, VfsWriteAsyncCallback writeResultFn, void* user);
+
+    API VfsMountType GetMountType(const char* path);
+    API uint64 GetLastModified(const char* path);
+    API bool StripMountPath(char* outPath, uint32 outPathSize, const char* path);
+
+    API void RegisterFileChangeCallback(VfsFileChangeCallback callback);
+
+    API bool Initialize();
+    API void Release();
 }
+
+

@@ -7,17 +7,17 @@
 #include "../Core/Allocators.h"
 #include "../Core/TracyHelper.h"
 
-static thread_local Allocator* gMeshOptAlloc = nullptr;
+static thread_local MemAllocator* gMeshOptAlloc = nullptr;
 
-void _private::meshoptInitialize()
+void MeshOpt::Initialize()
 {
     meshopt_setAllocator(
-        [](size_t size)->void* { ASSERT(gMeshOptAlloc); return memAlloc(size, gMeshOptAlloc); },
-        [](void* ptr) { ASSERT(gMeshOptAlloc); memFree(ptr, gMeshOptAlloc); }
+        [](size_t size)->void* { ASSERT(gMeshOptAlloc); return Mem::Alloc(size, gMeshOptAlloc); },
+        [](void* ptr) { ASSERT(gMeshOptAlloc); Mem::Free(ptr, gMeshOptAlloc); }
     );
 }
 
-void meshoptOptimizeModel(MeshOptModel* model)
+void MeshOpt::Optimize(MeshOptModel* model)
 {
     PROFILE_ZONE(true);
 

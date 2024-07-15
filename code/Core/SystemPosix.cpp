@@ -62,14 +62,14 @@ static inline void timespecAdd(struct timespec* _ts, int32_t _msecs)
 struct ThreadImpl
 {
     Semaphore sem;
-    Allocator* alloc;
+    MemAllocator* alloc;
     ThreadEntryFunc entryFn;
     pthread_t handle;
     char name[32];
     void* userData;
     size_t stackSize;
     pid_t tId;
-    atomicUint32 running;
+    AtomicUint32 running;
     bool init;
 };
 static_assert(sizeof(ThreadImpl) <= sizeof(Thread), "Thread size mismatch");
@@ -83,17 +83,17 @@ static void* threadStubFn(void* arg)
         int32 i;
     };
 
-    thrd->tId = threadGetCurrentId();
-    threadSetCurrentThreadName(thrd->name);
+    thrd->tId = Thread::GetCurrentId();
+    Thread::SetCurrentThreadName(thrd->name);
 
     ASSERT(thrd->entryFn);
-    atomicStore32Explicit(&thrd->running, 1, AtomicMemoryOrder::Release);
+    Atomic::StoreExplicit(&thrd->running, 1, AtomicMemoryOrder::Release);
     thrd->sem.Post();
 
     cast c;
     c.i = thrd->entryFn(thrd->userData);
 
-    atomicStore32Explicit(&thrd->running, 0, AtomicMemoryOrder::Release);
+    Atomic::StoreExplicit(&thrd->running, 0, AtomicMemoryOrder::Release);
     return c.ptr;
 }
 
@@ -110,7 +110,7 @@ bool Thread::Start(const ThreadDesc& desc)
     thrd->sem.Initialize();
     thrd->entryFn = desc.entryFn;
     thrd->userData = desc.userData;
-    thrd->stackSize = Max<uint64>(static_cast<uint64>(desc.stackSize), 64*kKB);
+    thrd->stackSize = Max<uint64>(static_cast<uint64>(desc.stackSize), 64*SIZE_KB);
     strCopy(thrd->name, sizeof(thrd->name), desc.name ? desc.name : "");
 
     pthread_attr_t attr;
@@ -135,7 +135,7 @@ bool Thread::Start(const ThreadDesc& desc)
     thrd->sem.Wait();
     thrd->init = true;
 
-    _private::sysCountersAddThread(thrd->stackSize);
+    _private::CountersAddThread(thrd->stackSize);
     return true;
 }
 
@@ -156,7 +156,7 @@ int Thread::Stop()
 
     thrd->sem.Release();
 
-    _private::sysCountersRemoveThread(thrd->stackSize);
+    _private::CountersRemoveThread(thrd->stackSize);
 
     memset(mData, 0x0, sizeof(Thread));        
     return cast.i;
@@ -165,7 +165,7 @@ int Thread::Stop()
 bool Thread::IsRunning()
 {
     ThreadImpl* thrd = reinterpret_cast<ThreadImpl*>(mData);
-    return atomicLoad32Explicit(&thrd->running, AtomicMemoryOrder::Acquire) == 1;
+    return Atomic::LoadExplicit(&thrd->running, AtomicMemoryOrder::Acquire) == 1;
 }
 
 static void threadSetPriority(pthread_t threadHandle, ThreadPriority prio)
@@ -203,7 +203,7 @@ void Thread::SetPriority(ThreadPriority prio)
     threadSetPriority(reinterpret_cast<ThreadImpl*>(mData)->handle, prio);
 }
 
-void threadSetCurrentThreadName(const char* name)
+void Thread::SetCurrentThreadName(const char* name)
 {
     #if PLATFORM_APPLE
         pthread_setname_np(name);
@@ -216,7 +216,7 @@ void threadSetCurrentThreadName(const char* name)
     #endif
 }
 
-void threadGetCurrentThreadName(char* nameOut, [[maybe_unused]] uint32 nameSize)
+void Thread::GetCurrentThreadName(char* nameOut, [[maybe_unused]] uint32 nameSize)
 {
     ASSERT(nameSize > 16);
     
@@ -228,12 +228,12 @@ void threadGetCurrentThreadName(char* nameOut, [[maybe_unused]] uint32 nameSize)
     
 }
 
-void threadYield()
+void Thread::SwitchContext()
 {
     sched_yield();
 }
 
-uint32 threadGetCurrentId()
+uint32 Thread::GetCurrentId()
 {
     #if PLATFORM_LINUX
         return static_cast<uint32>((pid_t)syscall(SYS_gettid));
@@ -246,14 +246,14 @@ uint32 threadGetCurrentId()
     #endif
 }
 
-void threadSleep(uint32 msecs)
+void Thread::Sleep(uint32 msecs)
 {
     struct timespec req = { (time_t)msecs / 1000, (long)((msecs % 1000) * 1000000) };
     struct timespec rem = { 0, 0 };
     nanosleep(&req, &rem);
 }
 
-void threadSetCurrentThreadPriority(ThreadPriority prio)
+void Thread::SetCurrentThreadPriority(ThreadPriority prio)
 {
     threadSetPriority(pthread_self(), prio);
 }
@@ -266,7 +266,7 @@ void threadSetCurrentThreadPriority(ThreadPriority prio)
 //    ╚═╝     ╚═╝ ╚═════╝    ╚═╝   ╚══════╝╚═╝  ╚═╝
 struct MutexImpl
 {
-    alignas(CACHE_LINE_SIZE) atomicUint32 spinlock;
+    alignas(CACHE_LINE_SIZE) AtomicUint32 spinlock;
     pthread_mutex_t handle;
     uint32 spinCount;
 };
@@ -288,7 +288,7 @@ void Mutex::Initialize(uint32 spinCount)
     r = pthread_mutex_init(&_m->handle, &attr);
     ASSERT_ALWAYS(r == 0, "pthread_mutex_init failed");
 
-    _private::sysCountersAddMutex();
+    _private::CountersAddMutex();
 }
 
 void Mutex::Release()
@@ -297,7 +297,7 @@ void Mutex::Release()
 
     pthread_mutex_destroy(&_m->handle);
 
-    _private::sysCountersRemoveMutex();
+    _private::CountersRemoveMutex();
 }
 
 void Mutex::Enter()
@@ -305,9 +305,9 @@ void Mutex::Enter()
     MutexImpl* _m = reinterpret_cast<MutexImpl*>(mData);
 
     for (uint32 i = 0, c = _m->spinCount; i < c; i++) {
-        if (atomicExchange32Explicit(&_m->spinlock, 1, AtomicMemoryOrder::Acquire) == 0)
+        if (Atomic::ExchangeExplicit(&_m->spinlock, 1, AtomicMemoryOrder::Acquire) == 0)
             return;
-        sysPauseCpu();
+        OS::PauseCPU();
     }
     
     pthread_mutex_lock(&_m->handle);
@@ -318,14 +318,14 @@ void Mutex::Exit()
     MutexImpl* _m = reinterpret_cast<MutexImpl*>(mData);
 
     pthread_mutex_unlock(&_m->handle);
-    atomicStore32Explicit(&_m->spinlock, 0, AtomicMemoryOrder::Release);
+    Atomic::StoreExplicit(&_m->spinlock, 0, AtomicMemoryOrder::Release);
 }
 
 bool Mutex::TryEnter()
 {
     MutexImpl* _m = reinterpret_cast<MutexImpl*>(mData);
 
-    if (atomicExchange32Explicit(&_m->spinlock, 1, AtomicMemoryOrder::Acquire) == 0)
+    if (Atomic::ExchangeExplicit(&_m->spinlock, 1, AtomicMemoryOrder::Acquire) == 0)
         return true;
     return pthread_mutex_trylock(&_m->handle) == 0;
 }
@@ -410,7 +410,7 @@ void Semaphore::Initialize()
     [[maybe_unused]] int r = sem_init(&sem->sem, 0, 0);
     ASSERT_MSG(r == 0, "Initialize semaphore failed");
 
-    _private::sysCountersAddSemaphore();
+    _private::CountersAddSemaphore();
 }
 
 void Semaphore::Release()
@@ -418,7 +418,7 @@ void Semaphore::Release()
     SemaphoreImpl* sem = reinterpret_cast<SemaphoreImpl*>(mData);
     sem_destroy(&sem->sem);
 
-    _private::sysCountersRemoveSemaphore();
+    _private::CountersRemoveSemaphore();
 }
 
 void Semaphore::Post(uint32 count)
@@ -480,7 +480,7 @@ void Signal::Initialize()
     [[maybe_unused]] int r2 = pthread_cond_init(&sig->cond, NULL);
     ASSERT_MSG(r2 == 0, "pthread_cond_init failed");
 
-    _private::sysCountersAddSignal();
+    _private::CountersAddSignal();
 }
 
 void Signal::Release()
@@ -490,7 +490,7 @@ void Signal::Release()
     pthread_cond_destroy(&sig->cond);
     pthread_mutex_destroy(&sig->mutex);
 
-    _private::sysCountersRemoveSignal();
+    _private::CountersRemoveSignal();
 }
 
 void Signal::Raise()
@@ -627,7 +627,7 @@ struct TimerState
 };
 static TimerState gTimer;
 
-void _private::timerInitialize() 
+void _private::InitializeTimer() 
 {
     gTimer.init = true;
     struct timespec ts;
@@ -635,7 +635,7 @@ void _private::timerInitialize()
     gTimer.start = (uint64)ts.tv_sec*1000000000 + (uint64)ts.tv_nsec;
 }
 
-uint64 timerGetTicks() 
+uint64 Timer::GetTicks() 
 {
     struct timespec ts;
     clock_gettime(CLOCK_MONOTONIC, &ts);
@@ -649,9 +649,9 @@ uint64 timerGetTicks()
 //    ██║   ██║██╔══╝  ██║╚██╗██║██╔══╝  ██╔══██╗██╔══██║██║         ██║   ██║╚════██║
 //    ╚██████╔╝███████╗██║ ╚████║███████╗██║  ██║██║  ██║███████╗    ╚██████╔╝███████║
 //     ╚═════╝ ╚══════╝╚═╝  ╚═══╝╚══════╝╚═╝  ╚═╝╚═╝  ╚═╝╚══════╝     ╚═════╝ ╚══════╝
-DLLHandle sysLoadDLL(const char* filepath, char** pErrorMsg)
+SysDLL OS::LoadDLL(const char* filepath, char** pErrorMsg)
 {
-    DLLHandle dll = dlopen(filepath, RTLD_LOCAL | RTLD_LAZY);
+    SysDLL dll = dlopen(filepath, RTLD_LOCAL | RTLD_LAZY);
     if (dll == nullptr && pErrorMsg) {
         static char errMsg[64];
         strPrintFmt(errMsg, sizeof(errMsg), dlerror());
@@ -664,18 +664,18 @@ DLLHandle sysLoadDLL(const char* filepath, char** pErrorMsg)
     return dll;
 }
 
-void sysUnloadDLL(DLLHandle dll)
+void OS::UnloadDLL(SysDLL dll)
 {
     if (dll)
         dlclose(dll);
 }
 
-void* sysSymbolAddress(DLLHandle dll, const char* symbolName)
+void* OS::GetSymbolAddress(SysDLL dll, const char* symbolName)
 {
     return dlsym(dll, symbolName);
 }
 
-size_t sysGetPageSize()
+size_t OS::GetPageSize()
 {
     return static_cast<size_t>(sysconf(_SC_PAGESIZE));
 }
@@ -700,9 +700,9 @@ bool sysGetEnvVar(const char* name, char* outValue, uint32 valueSize)
 //    ██╔═══╝ ██╔══██║   ██║   ██╔══██║
 //    ██║     ██║  ██║   ██║   ██║  ██║
 //    ╚═╝     ╚═╝  ╚═╝   ╚═╝   ╚═╝  ╚═╝
-char* pathAbsolute(const char* path, char* dst, size_t dstSize)
+char* Path::Absolute_CStr(const char* path, char* dst, size_t dstSize)
 {
-    char absPath[kMaxPath];
+    char absPath[PATH_CHARS_MAX];
     if (realpath(path, absPath) != NULL) {
         strCopy(dst, (uint32)dstSize, absPath);
     } else {
@@ -711,7 +711,7 @@ char* pathAbsolute(const char* path, char* dst, size_t dstSize)
     return dst;
 }
 
-PathInfo pathStat(const char* path)
+PathInfo Path::Stat_CStr(const char* path)
 {
     struct stat st;
     int result = stat(path, &st);
@@ -736,21 +736,21 @@ PathInfo pathStat(const char* path)
     };
 }
 
-bool pathCreateDir(const char* path)
+bool Path::CreateDir_CStr(const char* path)
 {
     return mkdir(path, S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH) == 0;
 }
 
-bool pathMove(const char* src, const char* dest)
+bool Path::Move_CStr(const char* src, const char* dest)
 {
     return rename(src, dest) == 0;
 }
 
-bool pathMakeTemp(char* dst, size_t dstSize, const char* namePrefix, const char* dir)
+bool Path::MakeTemp_CStr(char* dst, size_t dstSize, const char* namePrefix, const char* dir)
 {
     if (dir == nullptr)
         dir = "/tmp";
-    pathJoin(dst, dstSize, dir, namePrefix);
+    Path::Join_CStr(dst, dstSize, dir, namePrefix);
     strConcat(dst, uint32(dstSize), "XXXXXX");
     mkstemp(dst);
     return dst[0] ? true : false;
@@ -764,33 +764,33 @@ bool pathMakeTemp(char* dst, size_t dstSize, const char* namePrefix, const char*
 //    ╚═╝     ╚═╝╚══════╝╚═╝     ╚═╝ ╚═════╝ ╚═╝  ╚═╝   ╚═╝   
 struct MemVirtualStatsAtomic 
 {
-    atomicUint64 commitedBytes;
-    atomicUint64 reservedBytes;
+    AtomicUint64 commitedBytes;
+    AtomicUint64 reservedBytes;
 };
 
 static MemVirtualStatsAtomic gVMStats;
 
-void* memVirtualReserve(size_t size, MemVirtualFlags flags)
+void* Mem::VirtualReserve(size_t size, MemVirtualFlags flags)
 {
     void* ptr = mmap(NULL, size, PROT_NONE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
     if (!ptr) {
-        MEMORY_FAIL();
+        MEM_FAIL();
     }
 
-    atomicFetchAdd64(&gVMStats.reservedBytes, size);
+    Atomic::FetchAdd(&gVMStats.reservedBytes, size);
     return ptr;
 }
 
-void* memVirtualCommit(void* ptr, size_t size)
+void* Mem::VirtualCommit(void* ptr, size_t size)
 {
     int r = mprotect(ptr, size, PROT_READ | PROT_WRITE);
     ASSERT(r == 0);
     
-    size_t pageSize = sysGetPageSize();
+    size_t pageSize = OS::GetPageSize();
     r = madvise(ptr, size, MADV_WILLNEED);
     if (r != 0) {
         if (errno == ENOMEM) {
-            MEMORY_FAIL();
+            MEM_FAIL();
         }
         ASSERT(0);
         return nullptr;
@@ -802,25 +802,25 @@ void* memVirtualCommit(void* ptr, size_t size)
         dummyCounter += *(uintptr*)(buff + off);
     }    
 
-    atomicFetchAdd64(&gVMStats.commitedBytes, size);
+    Atomic::FetchAdd(&gVMStats.commitedBytes, size);
     return ptr;
 }
 
-void memVirtualDecommit(void* ptr, size_t size)
+void Mem::VirtualDecommit(void* ptr, size_t size)
 {
     [[maybe_unused]] int r = madvise(ptr, size, MADV_DONTNEED);
     ASSERT(r == 0);
-    atomicFetchSub64(&gVMStats.commitedBytes, size);
+    Atomic::FetchSub(&gVMStats.commitedBytes, size);
 }
 
-void memVirtualRelease(void* ptr, size_t size)
+void Mem::VirtualRelease(void* ptr, size_t size)
 {
     [[maybe_unused]] int r = munmap(ptr, size);
     ASSERT(r == 0);
-    atomicFetchSub64(&gVMStats.reservedBytes, size);
+    Atomic::FetchSub(&gVMStats.reservedBytes, size);
 }
 
-MemVirtualStats memVirtualGetStats()
+MemVirtualStats Mem::VirtualGetStats()
 {
     return MemVirtualStats {
         .commitedBytes = gVMStats.commitedBytes,
@@ -845,9 +845,9 @@ struct UUIDImpl
     guid_t uuid;
 };
 #endif
-static_assert(sizeof(UUIDImpl) <= sizeof(SysUUID), "UUID size mismatch");
+static_assert(sizeof(UUIDImpl) <= sizeof(UniqueID), "UUID size mismatch");
 
-bool uuidGenerate(SysUUID* uuid)
+bool uuidGenerate(UniqueID* uuid)
 {
 #if !PLATFORM_ANDROID
     UUIDImpl* u = reinterpret_cast<UUIDImpl*>(uuid);
@@ -860,7 +860,7 @@ bool uuidGenerate(SysUUID* uuid)
 #endif
 }
 
-bool uuidToString(const SysUUID& uuid, char* str, uint32 size)
+bool uuidToString(const UniqueID& uuid, char* str, uint32 size)
 {
 #if !PLATFORM_ANDROID
     ASSERT(size >= 36);
@@ -878,7 +878,7 @@ bool uuidToString(const SysUUID& uuid, char* str, uint32 size)
 #endif
 }
 
-bool uuidFromString(SysUUID* uuid, const char* str)
+bool uuidFromString(UniqueID* uuid, const char* str)
 {
 #if !PLATFORM_ANDROID
     UUIDImpl* u = reinterpret_cast<UUIDImpl*>(uuid);
@@ -894,7 +894,7 @@ bool uuidFromString(SysUUID* uuid, const char* str)
 #endif
 }
 
-bool SysUUID::operator==(const SysUUID& uuid) const
+bool UniqueID::operator==(const UniqueID& uuid) const
 {
     return memcmp(&uuid, this, sizeof(UUIDImpl)) == 0;
 }
@@ -1000,7 +1000,7 @@ size_t File::Read(void* dst, size_t size)
     if ((f->flags & FileOpenFlags::NoCache) == FileOpenFlags::NoCache) {
         static size_t pagesz = 0;
         if (pagesz == 0)
-            pagesz = sysGetPageSize();
+            pagesz = OS::GetPageSize();
         ASSERT_ALWAYS((uintptr_t)dst % pagesz == 0, "buffers must be aligned with NoCache flag");
     }
     ssize_t r = read(f->id, dst, size);
@@ -1067,7 +1067,7 @@ bool File::IsOpen() const
 
 namespace _private
 {
-    static SocketErrorCode socketTranslatePlatformErrorCode()
+    static SocketErrorCode::Enum socketTranslatePlatformErrorCode()
     {
         switch (errno) {
         case EADDRINUSE:        return SocketErrorCode::AddressInUse;
@@ -1118,7 +1118,7 @@ SocketTCP SocketTCP::CreateListener()
     sock.mSock = socket(AF_INET, SOCK_STREAM, 0);
     if (sock.mSock == SOCKET_INVALID) {
         sock.mErrCode = _private::socketTranslatePlatformErrorCode();
-        logError("SocketTCP: Opening the socket failed");
+        LOG_ERROR("SocketTCP: Opening the socket failed");
         return sock;
     }
     return sock;    
@@ -1135,11 +1135,11 @@ bool SocketTCP::Listen(uint16 port, uint32 maxConnections)
 
     if (bind(mSock, (struct sockaddr*)&addr, sizeof(addr)) < 0) {
         mErrCode = _private::socketTranslatePlatformErrorCode();
-        logError("SocketTCP: failed binding the socket to port: %d", port);
+        LOG_ERROR("SocketTCP: failed binding the socket to port: %d", port);
         return false;
     }
 
-    logVerbose("SocketTCP: Listening on port '%d' for incoming connections ...", port);
+    LOG_VERBOSE("SocketTCP: Listening on port '%d' for incoming connections ...", port);
     int _maxConnections = maxConnections > INT32_MAX ? INT32_MAX : static_cast<int>(maxConnections);
     bool success = listen(mSock, _maxConnections) >= 0;
     
@@ -1162,7 +1162,7 @@ SocketTCP SocketTCP::Accept(char* clientUrl, uint32 clientUrlSize)
     newSock.mSock = accept(mSock, (struct sockaddr*)&addr, &addrlen);
     if (mLive && newSock.mSock == SOCKET_INVALID) {
         newSock.mErrCode = _private::socketTranslatePlatformErrorCode();
-        logError("SocketTCP: failed to accept the new socket");
+        LOG_ERROR("SocketTCP: failed to accept the new socket");
         return newSock;
     }
 
@@ -1184,8 +1184,8 @@ SocketTCP SocketTCP::Connect(const char* url)
 
     char address[256];
     char port[16];
-    if (!_private::socketParseUrl(url, address, sizeof(address), port, sizeof(port))) {
-        logError("SocketTCP: failed parsing the url: %s", url);
+    if (!ParseUrl(url, address, sizeof(address), port, sizeof(port))) {
+        LOG_ERROR("SocketTCP: failed parsing the url: %s", url);
         return sock;
     }
 
@@ -1198,21 +1198,21 @@ SocketTCP SocketTCP::Connect(const char* url)
 
     struct addrinfo* addri = nullptr;
     if (getaddrinfo(address, port, &hints, &addri) != 0) {
-        logError("SocketTCP: failed to resolve url: %s", url);
+        LOG_ERROR("SocketTCP: failed to resolve url: %s", url);
         return sock;
     }
 
     sock.mSock = socket(addri->ai_family, addri->ai_socktype, addri->ai_protocol);
     if (sock.mSock == SOCKET_INVALID) {
         freeaddrinfo(addri);
-        logError("SocketTCP: failed to create socket");
+        LOG_ERROR("SocketTCP: failed to create socket");
         return sock;
     }
 
     if (connect(sock.mSock, addri->ai_addr, (int)addri->ai_addrlen) == -1) {
         freeaddrinfo(addri);
         sock.mErrCode = _private::socketTranslatePlatformErrorCode();
-        logError("SocketTCP: failed to connect to url: %s", url);
+        LOG_ERROR("SocketTCP: failed to connect to url: %s", url);
         sock.Close();
         return sock;
     }
@@ -1239,7 +1239,7 @@ uint32 SocketTCP::Write(const void* src, uint32 size)
             if (mErrCode == SocketErrorCode::SocketShutdown ||
                 mErrCode == SocketErrorCode::NotConnected)
             {
-                logDebug("SocketTCP: socket connection closed forcefully by the peer");
+                LOG_DEBUG("SocketTCP: socket connection closed forcefully by the peer");
                 mLive = false;
             }
             return UINT32_MAX;
@@ -1263,7 +1263,7 @@ uint32 SocketTCP::Read(void* dst, uint32 dstSize)
         if (mErrCode == SocketErrorCode::SocketShutdown ||
             mErrCode == SocketErrorCode::NotConnected)
         {
-            logDebug("SocketTCP: socket connection closed forcefully by the peer");
+            LOG_DEBUG("SocketTCP: socket connection closed forcefully by the peer");
             mLive = false;
         }
         return UINT32_MAX;

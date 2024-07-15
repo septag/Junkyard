@@ -208,9 +208,8 @@
     </ClCompile>
     <ClCompile Include="..\..\code\Core\SystemWin.cpp" />
     <ClCompile Include="..\..\code\Core\TracyHelper.cpp" />
-    <ClCompile Include="..\..\code\DebugTools\BudgetViewer.cpp" />
+    <ClCompile Include="..\..\code\DebugTools\DebugHud.cpp" />
     <ClCompile Include="..\..\code\DebugTools\DebugDraw.cpp" />
-    <ClCompile Include="..\..\code\DebugTools\FrameInfoHud.cpp" />
     <ClCompile Include="..\..\code\Engine.cpp" />
     <ClCompile Include="..\..\code\External\imgui\imgui.cpp">
       <DisableSpecificWarnings Condition="'$(Configuration)|$(Platform)'=='Release|x64'">4390</DisableSpecificWarnings>
@@ -242,7 +241,7 @@
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='ReleaseDev|x64'">false</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">false</ExcludedFromBuild>
     </ClCompile>
-    <ClCompile Include="..\..\code\ImGui\ImGuiWrapper.cpp" />
+    <ClCompile Include="..\..\code\ImGui\ImGuiMain.cpp" />
     <ClCompile Include="..\..\code\ImGui\ImGuizmo.cpp" />
     <ClCompile Include="..\..\code\Tool\Console.cpp" />
     <ClCompile Include="..\..\code\Tool\ImageEncoder.cpp" />
@@ -293,9 +292,8 @@
     <ClInclude Include="..\..\code\Core\StringUtil.h" />
     <ClInclude Include="..\..\code\Core\System.h" />
     <ClInclude Include="..\..\code\Core\TracyHelper.h" />
-    <ClInclude Include="..\..\code\DebugTools\BudgetViewer.h" />
+    <ClInclude Include="..\..\code\DebugTools\DebugHud.h" />
     <ClInclude Include="..\..\code\DebugTools\DebugDraw.h" />
-    <ClInclude Include="..\..\code\DebugTools\FrameInfoHud.h" />
     <ClInclude Include="..\..\code\Engine.h" />
     <ClInclude Include="..\..\code\External\cgltf\cgltf.h" />
     <ClInclude Include="..\..\code\External\cgltf\cgltf_write.h" />
@@ -314,7 +312,7 @@
     <ClInclude Include="..\..\code\External\vma\include\vk_mem_alloc.h" />
     <ClInclude Include="..\..\code\External\volk\volk.h" />
     <ClInclude Include="..\..\code\Graphics\Graphics.h" />
-    <ClInclude Include="..\..\code\ImGui\ImGuiWrapper.h" />
+    <ClInclude Include="..\..\code\ImGui\ImGuiMain.h" />
     <ClInclude Include="..\..\code\ImGui\ImGuizmo.h" />
     <ClInclude Include="..\..\code\Tool\Console.h" />
     <ClInclude Include="..\..\code\Tool\ImageEncoder.h" />

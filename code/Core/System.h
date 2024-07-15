@@ -44,7 +44,7 @@ struct ThreadDesc
     ThreadEntryFunc entryFn;
     void* userData;
     const char* name;
-    size_t stackSize = kMB;
+    size_t stackSize = SIZE_MB;
     ThreadCreateFlags flags = ThreadCreateFlags::None;
 };
 
@@ -54,21 +54,20 @@ struct alignas(64) Thread
 
     bool Start(const ThreadDesc& desc);
     int  Stop();
-
     bool IsRunning();
-
     void SetPriority(ThreadPriority prio);
+
+    static void SwitchContext();
+    static uint32 GetCurrentId();
+    static void SetCurrentThreadPriority(ThreadPriority prio);
+    static void SetCurrentThreadName(const char* name);
+    static void GetCurrentThreadName(char* nameOut, uint32 nameSize);
+    static void Sleep(uint32 msecs);
 
 private:
     uint8 mData[256];
 };
 
-API void    threadYield();
-API uint32  threadGetCurrentId();
-API void    threadSetCurrentThreadPriority(ThreadPriority prio);
-API void    threadSetCurrentThreadName(const char* name);
-API void    threadGetCurrentThreadName(char* nameOut, uint32 nameSize);
-API void    threadSleep(uint32 msecs);
 
 //    ███╗   ███╗██╗   ██╗████████╗███████╗██╗  ██╗
 //    ████╗ ████║██║   ██║╚══██╔══╝██╔════╝╚██╗██╔╝
@@ -230,12 +229,16 @@ private:
 //       ██║   ██║██║╚██╔╝██║██╔══╝  ██╔══██╗
 //       ██║   ██║██║ ╚═╝ ██║███████╗██║  ██║
 //       ╚═╝   ╚═╝╚═╝     ╚═╝╚══════╝╚═╝  ╚═╝
-API uint64 timerGetTicks();
-API uint64 timerLapTime(uint64* lastTime);
-INLINE uint64 timerDiff(uint64 newTick, uint64 oldTick);
-INLINE double timerToSec(uint64 tick);
-INLINE double timerToMS(uint64 tick);
-INLINE double timerToUS(uint64 tick);
+
+namespace Timer
+{
+    API uint64 GetTicks();
+    API uint64 LapTime(uint64* lastTime);
+    INLINE uint64 Diff(uint64 newTick, uint64 oldTick);
+    INLINE double ToSec(uint64 tick);
+    INLINE double ToMS(uint64 tick);
+    INLINE double ToUS(uint64 tick);
+}
 
 struct TimerStopWatch
 {
@@ -251,34 +254,6 @@ struct TimerStopWatch
 private:
     uint64 mStart;
 };
-
-namespace _private 
-{
-    void timerInitialize(); // Called by TimerInitializer
-
-    // Used internally by system platform source files. Defined in System.cpp
-    void sysCountersAddThread(size_t stackSize);
-    void sysCountersRemoveThread(size_t stackSize);
-    void sysCountersAddMutex();
-    void sysCountersRemoveMutex();
-    void sysCountersAddSignal();
-    void sysCountersRemoveSignal();
-    void sysCountersAddSemaphore();
-    void sysCountersRemoveSemaphore();
-
-    bool socketParseUrl(const char* url, char* address, size_t addressSize, char* port, size_t portSize, const char** pResource = nullptr);
-}
-
-struct SysPrimitiveStats
-{
-    uint32 numMutexes;
-    uint32 numSignals;
-    uint32 numSemaphores;
-    uint32 numThreads;
-    uint64 threadStackSize;
-};
-
-SysPrimitiveStats sysGetPrimitiveStats();
 
 
 //    ███╗   ███╗███████╗███╗   ███╗ ██████╗ ██████╗ ██╗   ██╗
@@ -300,12 +275,15 @@ struct MemVirtualStats
     uint64 reservedBytes;
 };
 
-void* memVirtualReserve(size_t size, MemVirtualFlags flags = MemVirtualFlags::None);
-void* memVirtualCommit(void* ptr, size_t size);
-void memVirtualDecommit(void* ptr, size_t size);
-void memVirtualRelease(void* ptr, size_t size);
-MemVirtualStats memVirtualGetStats();
-bool memVirtualEnableLargePages(size_t* largePageSize);
+namespace Mem
+{
+    API void* VirtualReserve(size_t size, MemVirtualFlags flags = MemVirtualFlags::None);
+    API void* VirtualCommit(void* ptr, size_t size);
+    API void VirtualDecommit(void* ptr, size_t size);
+    API void VirtualRelease(void* ptr, size_t size);
+    API MemVirtualStats VirtualGetStats();
+    API bool VirtualEnableLargePages(size_t* largePageSize);
+}
 
 //    ██████╗  █████╗ ████████╗██╗  ██╗
 //    ██╔══██╗██╔══██╗╚══██╔══╝██║  ██║
@@ -327,33 +305,11 @@ struct PathInfo
     uint64 lastModified;
 };
 
-API char* pathGetMyPath(char* dst, size_t dstSize);
-API char* pathAbsolute(const char* path, char* dst, size_t dstSize);
-API char* pathGetCurrentDir(char* dst, size_t dstSize);
-API void  pathSetCurrentDir(const char* path);
-API char* pathGetHomeDir(char* dst, size_t dstSize);
-API char* pathGetCacheDir(char* dst, size_t dstSize, const char* appName);
-API char* pathToUnix(const char* path, char* dst, size_t dstSize);
-API char* pathToWin(const char* path, char* dst, size_t dstSize);
-API char* pathFileExtension(const char* path, char* dst, size_t dstSize);
-API char* pathFileNameAndExt(const char* path, char* dst, size_t dstSize);
-API char* pathFileName(const char* path, char* dst, size_t dstSize);
-API char* pathDirectory(const char* path, char* dst, size_t dstSize);
-API char* pathJoin(char* dst, size_t dstSize, const char* pathA, const char* pathB);
-API char* pathJoinUnixStyle(char* dst, size_t dstSize, const char* pathA, const char* pathB);
-API PathInfo pathStat(const char* path);
-INLINE bool pathExists(const char* path);
-INLINE bool pathIsFile(const char* path);
-INLINE bool pathIsDir(const char* path);
-API bool pathCreateDir(const char* path);
-API bool pathMove(const char* src, const char* dest);
-API bool pathMakeTemp(char* dst, size_t dstSize, const char* namePrefix, const char* dir = nullptr);
-
-struct Path : String<kMaxPath>
+struct Path : String<PATH_CHARS_MAX>
 {
     Path() = default;
-    Path(const char* cstr) : String<kMaxPath>(cstr) {}
-    Path(const String<kMaxPath>& str) : String<kMaxPath>(str) {}
+    Path(const char* cstr) : String<PATH_CHARS_MAX>(cstr) {}
+    Path(const String<PATH_CHARS_MAX>& str) : String<PATH_CHARS_MAX>(str) {}
 
     Path& SetToCurrentDir();
 
@@ -362,18 +318,44 @@ struct Path : String<kMaxPath>
     Path& ConvertToAbsolute();
 
     Path GetAbsolute();
-    Path GetFileExtension();
+    Path GetFileExtension_CStr();
     Path GetFileNameAndExt();
     Path GetFileName();
-    Path GetDirectory();
+    Path GetDirectory_CStr();
+
+    inline PathInfo Stat() const;
+    inline bool Exists() const;
+    inline bool IsFile() const;
+    inline bool IsDir() const;
 
     static Path Join(const Path& pathA, const Path& pathB);
     static Path JoinUnix(const Path& pathA, const Path& pathB);
 
-    PathInfo Stat() const;
-    bool Exists() const;
-    bool IsFile() const;
-    bool IsDir() const;
+    // TODO: try to move all CStr functions into Path friendly ones
+    static char* GetMyPath_CStr(char* dst, size_t dstSize);
+    static char* Absolute_CStr(const char* path, char* dst, size_t dstSize);
+    static char* GetCurrentDir_CStr(char* dst, size_t dstSize);
+    static void  SetCurrentDir_CStr(const char* path);
+    static char* GetHomeDir_CStr(char* dst, size_t dstSize);
+    static char* GetCacheDir_CStr(char* dst, size_t dstSize, const char* appName);
+    static char* ToUnix_CStr(const char* path, char* dst, size_t dstSize);
+    static char* ToWin_CStr(const char* path, char* dst, size_t dstSize);
+    static char* GetFileExtension_CStr(const char* path, char* dst, size_t dstSize);
+    static char* GetFilenameAndExtension_CStr(const char* path, char* dst, size_t dstSize);
+    static char* GetFilename_CStr(const char* path, char* dst, size_t dstSize);
+    static char* GetDirectory_CStr(const char* path, char* dst, size_t dstSize);
+    static char* Join_CStr(char* dst, size_t dstSize, const char* pathA, const char* pathB);
+    static char* JoinUnixStyle_CStr(char* dst, size_t dstSize, const char* pathA, const char* pathB);
+    static PathInfo Stat_CStr(const char* path);
+    static bool Exists_CStr(const char* path);
+    static bool IsFile_CStr(const char* path);
+    static bool IsDir_CStr(const char* path);
+    static bool CreateDir_CStr(const char* path);
+    static bool Move_CStr(const char* src, const char* dest);
+    static bool MakeTemp_CStr(char* dst, size_t dstSize, const char* namePrefix, const char* dir = nullptr);
+
+private:
+    static char* Join_CStr(char *dst, size_t dstSize, const char *sep, const char *pathA, const char *pathB);
 };
 
 //    ███████╗██╗██╗     ███████╗
@@ -444,16 +426,19 @@ using AsyncFileCallback = void(*)(AsyncFile* file, bool failed);
 
 struct AsyncFileRequest
 {
-    Allocator* alloc = memDefaultAlloc();// Allocator to allocate a continous chunk of file data 
+    MemAllocator* alloc = Mem::GetDefaultAlloc();// Allocator to allocate a continous chunk of file data 
     AsyncFileCallback readFn = nullptr;  // Callback to receive async results. see 'AsyncFileCallback'. If this value is null, then you should use Wait and IsFinished to poll for data
     void* userData = nullptr;            // user-data. Can be allocated by async functions internally as well. See 'userDataAllocatedSize'
     uint32 userDataAllocateSize = 0;     // allocate user-data for this request and copy over the provdided userData instead of using userData pointer directly
 };
 
-API AsyncFile* asyncReadFile(const char* filepath, const AsyncFileRequest& request = AsyncFileRequest());
-API void asyncClose(AsyncFile* file);
-API bool asyncWait(AsyncFile* file);
-API bool asyncIsFinished(AsyncFile* file, bool* outError = nullptr);
+namespace Async
+{
+    API AsyncFile* ReadFile(const char* filepath, const AsyncFileRequest& request = AsyncFileRequest());
+    API void Close(AsyncFile* file);
+    API bool Wait(AsyncFile* file);
+    API bool IsFinished(AsyncFile* file, bool* outError = nullptr);
+};
 
 //    ███████╗ ██████╗  ██████╗██╗  ██╗███████╗████████╗
 //    ██╔════╝██╔═══██╗██╔════╝██║ ██╔╝██╔════╝╚══██╔══╝
@@ -461,23 +446,43 @@ API bool asyncIsFinished(AsyncFile* file, bool* outError = nullptr);
 //    ╚════██║██║   ██║██║     ██╔═██╗ ██╔══╝     ██║   
 //    ███████║╚██████╔╝╚██████╗██║  ██╗███████╗   ██║   
 //    ╚══════╝ ╚═════╝  ╚═════╝╚═╝  ╚═╝╚══════╝   ╚═╝   
-enum class SocketErrorCode : uint16
+struct SocketErrorCode 
 {
-    None = 0,
-    AddressInUse,
-    AddressNotAvailable,
-    AddressUnsupported,
-    AlreadyConnected,
-    ConnectionRefused,
-    Timeout,
-    HostUnreachable,
-    ConnectionReset,
-    SocketShutdown,
-    MessageTooLarge,
-    NotConnected,
-    Unknown
+    enum Enum
+    {
+        None = 0,
+        AddressInUse,
+        AddressNotAvailable,
+        AddressUnsupported,
+        AlreadyConnected,
+        ConnectionRefused,
+        Timeout,
+        HostUnreachable,
+        ConnectionReset,
+        SocketShutdown,
+        MessageTooLarge,
+        NotConnected,
+        Unknown
+    };
+
+    static const char* ToStr(Enum code)
+    {
+        switch (code) {
+        case AddressInUse:         return "AddressInUse";
+        case AddressNotAvailable:  return "AddressNotAvailable";
+        case AddressUnsupported:   return "AddressUnsupported";
+        case AlreadyConnected:     return "AlreadyConnected";
+        case ConnectionRefused:    return "ConnectionRefused";        
+        case Timeout:              return "Timeout";
+        case HostUnreachable:      return "HostUnreachable";
+        case ConnectionReset:      return "ConnectionReset";
+        case SocketShutdown:       return "SocketShutdown";
+        case MessageTooLarge:      return "MessageTooLarge";
+        case NotConnected:         return "NotConnected";
+        default:                   return "Unknown";
+        }
+    }
 };
-INLINE const char* socketErrorCodeGetStr(SocketErrorCode code);
 
 #if PLATFORM_WINDOWS
 using SocketHandle = uint64;
@@ -491,8 +496,8 @@ struct SocketTCP
 
     void Close();
     bool IsValid() const;
-    bool IsConnected() const { return this->mLive; }
-    SocketErrorCode GetErrorCode() const { return this->mErrCode; }
+    bool IsConnected() const { return mLive; }
+    SocketErrorCode::Enum GetErrorCode() const { return mErrCode; }
 
     // Returns number of bytes written/read
     // Returns 0 if connection is closed gracefully
@@ -507,8 +512,11 @@ struct SocketTCP
     static SocketTCP Connect(const char* url);
 
 private:
+    static bool ParseUrl(const char* url, char* address, size_t addressSize, char* port, size_t portSize, const char** pResource = nullptr);
+
+private:
     SocketHandle mSock;
-    SocketErrorCode mErrCode;
+    SocketErrorCode::Enum mErrCode;
     uint16 mLive;
 };
 
@@ -518,16 +526,16 @@ private:
 //    ██║   ██║██║   ██║██║██║  ██║
 //    ╚██████╔╝╚██████╔╝██║██████╔╝
 //     ╚═════╝  ╚═════╝ ╚═╝╚═════╝ 
-struct SysUUID
+struct UniqueID
 {
     uint8 data[16];
 
-    bool operator==(const SysUUID& uuid) const;
-};
+    bool operator==(const UniqueID& uuid) const;
 
-API bool uuidGenerate(SysUUID* uuid);
-API bool uuidToString(const SysUUID& uuid, char* str, uint32 size);
-API bool uuidFromString(SysUUID* uuid, const char* str);
+    static bool Generate(UniqueID* uuid);
+    static bool ToString(const UniqueID& uuid, char* str, uint32 size);
+    static bool FromString(UniqueID* uuid, const char* str);
+};
 
 //     ██████╗ ███████╗███╗   ██╗███████╗██████╗  █████╗ ██╗          ██████╗ ███████╗
 //    ██╔════╝ ██╔════╝████╗  ██║██╔════╝██╔══██╗██╔══██╗██║         ██╔═══██╗██╔════╝
@@ -535,7 +543,7 @@ API bool uuidFromString(SysUUID* uuid, const char* str);
 //    ██║   ██║██╔══╝  ██║╚██╗██║██╔══╝  ██╔══██╗██╔══██║██║         ██║   ██║╚════██║
 //    ╚██████╔╝███████╗██║ ╚████║███████╗██║  ██║██║  ██║███████╗    ╚██████╔╝███████║
 //     ╚═════╝ ╚══════╝╚═╝  ╚═══╝╚══════╝╚═╝  ╚═╝╚═╝  ╚═╝╚══════╝     ╚═════╝ ╚══════╝
-using DLLHandle = void*;
+using SysDLL = void*;
 
 enum class SysCpuFamily 
 {
@@ -564,21 +572,24 @@ struct SysInfo
     uint32       cpuCapsNeon : 1;
 };
 
-API void sysPauseCpu();
-API uint64 sysGetCpuClock();
+namespace OS
+{
+    API void PauseCPU();
+    uint64 GetCPUClock();
 
-API [[nodiscard]] DLLHandle sysLoadDLL(const char* filepath, char** pErrorMsg = nullptr);
-API void sysUnloadDLL(DLLHandle dll);
-API void* sysSymbolAddress(DLLHandle dll, const char* symbolName);
-API size_t sysGetPageSize();
-API void sysGetSysInfo(SysInfo* info);
-API bool sysIsDebuggerPresent();
-API void sysGenerateCmdLineFromArgcArgv(int argc, const char* argv[], char** outString, uint32* outStringLen, 
-                                        Allocator* alloc = memDefaultAlloc(), const char* prefixCmd = nullptr);
+    API [[nodiscard]] SysDLL LoadDLL(const char* filepath, char** pErrorMsg = nullptr);
+    API void UnloadDLL(SysDLL dll);
+    API void* GetSymbolAddress(SysDLL dll, const char* symbolName);
+    API size_t GetPageSize();
+    API void GetSysInfo(SysInfo* info);
+    API bool IsDebuggerPresent();
+    API void GenerateCmdLineFromArgcArgv(int argc, const char* argv[], char** outString, uint32* outStringLen, 
+                                             MemAllocator* alloc = Mem::GetDefaultAlloc(), const char* prefixCmd = nullptr);
 
-// If 'value' is nullptr, then variable will be cleared from the environment
-API bool sysSetEnvVar(const char* name, const char* value);
-API bool sysGetEnvVar(const char* name, char* outValue, uint32 valueSize);
+    // If 'value' is nullptr, then variable will be cleared from the environment
+    API bool SetEnvVar(const char* name, const char* value);
+    API bool GetEnvVar(const char* name, char* outValue, uint32 valueSize);
+}
 
 #if PLATFORM_DESKTOP
 enum class SysProcessFlags : uint32
@@ -650,19 +661,6 @@ enum class SysWin32ShellExecuteResult
     UnknownError
 };
 
-API bool sysWin32IsProcessRunning(const char* execName);
-API bool sysWin32GetRegisterLocalMachineString(const char* subkey, const char* value, char* dst, size_t dstSize);
-API void sysWin32PrintToDebugger(const char* text); 
-API bool sysWin32SetPrivilege(const char* name, bool enable = true);
-
-// https://learn.microsoft.com/en-us/windows/win32/api/shellapi/nf-shellapi-shellexecutea
-// For "operation": valid ops are "edit", "explore", "find", "open", "print", "runas"
-API SysWin32ShellExecuteResult sysWin32ShellExecute(const char* filepath, const char* args = nullptr, 
-                                                    const char* cwd = nullptr, 
-                                                    SysWin32ShowWindow showFlag = SysWin32ShowWindow::Default, 
-                                                    const char* operation = nullptr,
-                                                    void** pInstance = nullptr);
-
 enum class SysWin32Folder
 {
     Documents = 0,  // %USERPROFILE%\My Documents
@@ -676,7 +674,23 @@ enum class SysWin32Folder
     Desktop,        // %USERPROFILE%\Desktop
     _Count
 };
-API char* pathWin32GetFolder(SysWin32Folder folder, char* dst, size_t dstSize);
+
+namespace OS
+{
+    API bool Win32IsProcessRunning(const char* execName);
+    API bool Win32GetRegisterLocalMachineString(const char* subkey, const char* value, char* dst, size_t dstSize);
+    API void Win32PrintToDebugger(const char* text); 
+    API bool Win32SetPrivilege(const char* name, bool enable = true);
+    // https://learn.microsoft.com/en-us/windows/win32/api/shellapi/nf-shellapi-shellexecutea
+    // For "operation": valid ops are "edit", "explore", "find", "open", "print", "runas"
+    API SysWin32ShellExecuteResult Win32ShellExecute(const char* filepath, const char* args = nullptr, 
+                                                         const char* cwd = nullptr, 
+                                                         SysWin32ShowWindow showFlag = SysWin32ShowWindow::Default, 
+                                                         const char* operation = nullptr,
+                                                         void** pInstance = nullptr);
+    API char* Win32GetFolder(SysWin32Folder folder, char* dst, size_t dstSize);
+}
+
 
 #elif PLATFORM_ANDROID
 struct _JNIEnv;
@@ -697,13 +711,42 @@ enum class SysAndroidLogType
     Silent,
 };
 
-API void sysAndroidPrintToLog(SysAndroidLogType logType, const char* tag, const char* text);
-API JNIEnv* sysAndroidAcquireJniEnv(ANativeActivity* activity);
-API void sysAndroidReleaseJniEnv(ANativeActivity* activity);    
-API JNIEnv* sysAndroidGetJniEnv();
-API Path sysAndroidGetCacheDirectory(ANativeActivity* activity);
+namespace OS
+{
+    API void AndroidPrintToLog(SysAndroidLogType logType, const char* tag, const char* text);
+    API JNIEnv* AndroidAcquireJniEnv(ANativeActivity* activity);
+    API void AndroidReleaseJniEnv(ANativeActivity* activity);    
+    API JNIEnv* AndroidGetJniEnv();
+    API Path AndroidGetCacheDirectory(ANativeActivity* activity);
+}
 #endif
 
+//----------------------------------------------------------------------------------------------------------------------
+// Used internally by system platform source files. Defined in System.cpp
+namespace _private
+{
+    void InitializeTimer(); // Called by TimerInitializer
+
+    void CountersAddThread(size_t stackSize);
+    void CountersRemoveThread(size_t stackSize);
+    void CountersAddMutex();
+    void CountersRemoveMutex();
+    void CountersAddSignal();
+    void CountersRemoveSignal();
+    void CountersAddSemaphore();
+    void CountersRemoveSemaphore();
+}
+
+struct SysPrimitiveStats
+{
+    uint32 numMutexes;
+    uint32 numSignals;
+    uint32 numSemaphores;
+    uint32 numThreads;
+    uint64 threadStackSize;
+};
+
+SysPrimitiveStats GetSystemPrimitiveStats();
 
 //    ██╗███╗   ██╗██╗     ██╗███╗   ██╗███████╗███████╗
 //    ██║████╗  ██║██║     ██║████╗  ██║██╔════╝██╔════╝
@@ -711,59 +754,59 @@ API Path sysAndroidGetCacheDirectory(ANativeActivity* activity);
 //    ██║██║╚██╗██║██║     ██║██║╚██╗██║██╔══╝  ╚════██║
 //    ██║██║ ╚████║███████╗██║██║ ╚████║███████╗███████║
 //    ╚═╝╚═╝  ╚═══╝╚══════╝╚═╝╚═╝  ╚═══╝╚══════╝╚══════╝
-INLINE bool pathExists(const char* path)
+inline bool Path::Exists_CStr(const char* path)
 {
-    return pathStat(path).type != PathType::Invalid;
+    return Path::Stat_CStr(path).type != PathType::Invalid;
 }
 
-INLINE bool pathIsFile(const char* path)
+inline bool Path::IsFile_CStr(const char* path)
 {
-    return pathStat(path).type == PathType::File;
+    return Path::Stat_CStr(path).type == PathType::File;
 }
 
-INLINE bool pathIsDir(const char* path)
+inline bool Path::IsDir_CStr(const char* path)
 {
-    return pathStat(path).type == PathType::Directory;
+    return Path::Stat_CStr(path).type == PathType::Directory;
 }
 
 inline Path& Path::SetToCurrentDir()
 {
-    pathGetCurrentDir(mStr, sizeof(mStr));
+    Path::GetCurrentDir_CStr(mStr, sizeof(mStr));
     mLen = strLen(mStr);
     return *this;
 }
 
 inline Path& Path::ConvertToUnix()
 {
-    pathToUnix(mStr, mStr, sizeof(mStr));
+    Path::ToUnix_CStr(mStr, mStr, sizeof(mStr));
     return *this;
 }
 
 inline Path& Path::ConvertToWin()
 {
-    pathToWin(mStr, mStr, sizeof(mStr));
+    Path::ToWin_CStr(mStr, mStr, sizeof(mStr));
     return *this;
 }
 
 inline Path& Path::ConvertToAbsolute()
 {
-    char abspath[kMaxPath];
-    pathAbsolute(mStr, abspath, sizeof(abspath));
+    char abspath[PATH_CHARS_MAX];
+    Path::Absolute_CStr(mStr, abspath, sizeof(abspath));
     return *this = abspath;
 }
 
 inline Path Path::GetAbsolute()
 {
     Path p;
-    pathAbsolute(mStr, p.mStr, sizeof(p.mStr));
+    Path::Absolute_CStr(mStr, p.mStr, sizeof(p.mStr));
     p.mLen = strLen(p.mStr);
     return p;
 }
 
-inline Path Path::GetFileExtension()
+inline Path Path::GetFileExtension_CStr()
 {
     Path p;
-    pathFileExtension(mStr, p.mStr, sizeof(p.mStr));
+    Path::GetFileExtension_CStr(mStr, p.mStr, sizeof(p.mStr));
     p.mLen = strLen(p.mStr);
     return p;
 }
@@ -771,7 +814,7 @@ inline Path Path::GetFileExtension()
 inline Path Path::GetFileNameAndExt()
 {
     Path p;
-    pathFileNameAndExt(mStr, p.mStr, sizeof(p.mStr));
+    Path::GetFilenameAndExtension_CStr(mStr, p.mStr, sizeof(p.mStr));
     p.mLen = strLen(p.mStr);
     return p;
 }
@@ -779,15 +822,15 @@ inline Path Path::GetFileNameAndExt()
 inline Path Path::GetFileName()
 {
     Path p;
-    pathFileName(mStr, p.mStr, sizeof(p.mStr));
+    Path::GetFilename_CStr(mStr, p.mStr, sizeof(p.mStr));
     p.mLen = strLen(p.mStr);
     return p;
 }
 
-inline Path Path::GetDirectory()
+inline Path Path::GetDirectory_CStr()
 {
     Path p;
-    pathDirectory(mStr, p.mStr, sizeof(p.mStr));
+    Path::GetDirectory_CStr(mStr, p.mStr, sizeof(p.mStr));
     p.mLen = strLen(p.mStr);
     return p;
 }
@@ -795,7 +838,7 @@ inline Path Path::GetDirectory()
 inline Path Path::Join(const Path& pathA, const Path& pathB)
 {
     Path p;
-    pathJoin(p.mStr, sizeof(p.mStr), pathA.mStr, pathB.mStr);
+    Path::Join_CStr(p.mStr, sizeof(p.mStr), pathA.mStr, pathB.mStr);
     p.mLen = strLen(p.mStr);
     return p;
 }
@@ -803,79 +846,79 @@ inline Path Path::Join(const Path& pathA, const Path& pathB)
 inline Path Path::JoinUnix(const Path& pathA, const Path& pathB)
 {
     Path p;
-    pathJoinUnixStyle(p.mStr, sizeof(p.mStr), pathA.mStr, pathB.mStr);
+    Path::JoinUnixStyle_CStr(p.mStr, sizeof(p.mStr), pathA.mStr, pathB.mStr);
     p.mLen = strLen(p.mStr);
     return p;
 }
 
 inline PathInfo Path::Stat() const
 {
-    return pathStat(mStr);
+    return Path::Stat_CStr(mStr);
 }
 
 inline bool Path::Exists() const
 {
-    return pathExists(mStr);
+    return Path::Exists_CStr(mStr);
 }
 
 inline bool Path::IsFile() const
 {
-    return pathStat(mStr).type == PathType::File;
+    return Path::Stat_CStr(mStr).type == PathType::File;
 }
 
 inline bool Path::IsDir() const
 {
-    return pathStat(mStr).type == PathType::Directory;
+    return Path::Stat_CStr(mStr).type == PathType::Directory;
 }
 
-INLINE uint64 timerDiff(uint64 newTick, uint64 oldTick)
+INLINE uint64 Timer::Diff(uint64 newTick, uint64 oldTick)
 {
     return (newTick > oldTick) ? (newTick - oldTick) : 1;
 }
 
-INLINE double timerToSec(uint64 tick)
+INLINE double Timer::ToSec(uint64 tick)
 {
     return (double)tick / 1000000000.0;
 }
 
-INLINE double timerToMS(uint64 tick)
+INLINE double Timer::ToMS(uint64 tick)
 {
     return (double)tick / 1000000.0;
 }
 
-INLINE double timerToUS(uint64 tick)
+INLINE double Timer::ToUS(uint64 tick)
 {
     return (double)tick / 1000.0;
 }
 
 inline TimerStopWatch::TimerStopWatch()
 {
-    mStart = timerGetTicks();
+    mStart = Timer::GetTicks();
 }
 
 inline void TimerStopWatch::Reset()
 {
-    mStart = timerGetTicks();
+    mStart = Timer::GetTicks();
 }
 
 inline uint64 TimerStopWatch::Elapsed() const
 {
-    return timerDiff(timerGetTicks(), mStart);
+    return Timer::Diff(Timer::GetTicks(), mStart);
 }
 
 inline double TimerStopWatch::ElapsedSec() const
 {
-    return timerToSec(Elapsed());
+    return Timer::ToSec(Elapsed());
 }
 
 inline double TimerStopWatch::ElapsedMS() const
 {
-    return timerToMS(Elapsed());
+    return Timer::ToMS(Elapsed());
 }
 
 inline double TimerStopWatch::ElapsedUS() const
 {
-    return timerToUS(Elapsed());
+    return Timer::ToUS(Elapsed());
 }
 
 template <typename _T> inline uint32 File::Read(_T* dst, uint32 count)
@@ -888,20 +931,3 @@ template <typename _T> inline uint32 File::Write(_T* dst, uint32 count)
     return static_cast<uint32>(Write((const void*)dst, sizeof(_T)*count)/sizeof(_T));
 }
 
-INLINE const char* socketErrorCodeGetStr(SocketErrorCode errCode)
-{
-    switch (errCode) {
-    case SocketErrorCode::AddressInUse:         return "AddressInUse";
-    case SocketErrorCode::AddressNotAvailable:  return "AddressNotAvailable";
-    case SocketErrorCode::AddressUnsupported:   return "AddressUnsupported";
-    case SocketErrorCode::AlreadyConnected:     return "AlreadyConnected";
-    case SocketErrorCode::ConnectionRefused:    return "ConnectionRefused";        
-    case SocketErrorCode::Timeout:              return "Timeout";
-    case SocketErrorCode::HostUnreachable:      return "HostUnreachable";
-    case SocketErrorCode::ConnectionReset:      return "ConnectionReset";
-    case SocketErrorCode::SocketShutdown:       return "SocketShutdown";
-    case SocketErrorCode::MessageTooLarge:      return "MessageTooLarge";
-    case SocketErrorCode::NotConnected:         return "NotConnected";
-    default:                                    return "Unknown";
-    }
-}

@@ -9,9 +9,9 @@
 
 #define SOKOL_ARGS_IMPL
 #define SOKOL_ASSERT(c)     ASSERT(c)
-#define SOKOL_LOG(msg)      logDebug(msg)
-#define SOKOL_CALLOC(n,s)   memAllocZero((n)*(s))
-#define SOKOL_FREE(p)       memFree(p)
+#define SOKOL_LOG(msg)      LOG_DEBUG(msg)
+#define SOKOL_CALLOC(n,s)   Mem::AllocZero((n)*(s))
+#define SOKOL_FREE(p)       Mem::Free(p)
 #define SOKOL_ARGS_API_DECL 
 #define SOKOL_API_IMPL      
 PRAGMA_DIAGNOSTIC_PUSH()
@@ -56,7 +56,7 @@ static bool settingsLoadFromINIInternal(const Blob& blob)
 {
     ASSERT(blob.IsValid());
 
-    ini_t* ini = ini_load(reinterpret_cast<const char*>(blob.Data()), memDefaultAlloc());
+    ini_t* ini = ini_load(reinterpret_cast<const char*>(blob.Data()), Mem::GetDefaultAlloc());
     if (!ini)
         return false;
 
@@ -92,7 +92,7 @@ static bool settingsLoadFromINIInternal(const Blob& blob)
 
                 char msg[256];
                 strPrintFmt(msg, sizeof(msg), "\t%u) %s%s = %s\n", ++count, keyTrimmed, !predefined ? "(*)" : "", valueTrimmed);
-                debugPrint(msg);
+                Debug::Print(msg);
             }
         } // for each custom settings parser
     }
@@ -114,7 +114,7 @@ bool settingsInitializeFromAndroidAsset(AAssetManager* assetMgr, const char* ini
 {
     char msg[256];
     strPrintFmt(msg, sizeof(msg), "Loading settings from assets: %s\n", iniFilepath);
-    debugPrint(msg);
+    Debug::Print(msg);
 
     Blob blob;
     AAsset* asset = AAssetManager_open(assetMgr, iniFilepath, AASSET_MODE_BUFFER);
@@ -133,7 +133,7 @@ bool settingsInitializeFromAndroidAsset(AAssetManager* assetMgr, const char* ini
 
     if (!blob.IsValid()) {
         strPrintFmt(msg, sizeof(msg), "Opening ini file '%s' failed\n", iniFilepath);
-        debugPrint(msg);
+        Debug::Print(msg);
         return false;
     }
 
@@ -142,7 +142,7 @@ bool settingsInitializeFromAndroidAsset(AAssetManager* assetMgr, const char* ini
 
     if (!r) {
         strPrintFmt(msg, sizeof(msg), "Parsing ini file '%s' failed\n", iniFilepath);
-        debugPrint(msg);
+        Debug::Print(msg);
     }
     return r;
 }
@@ -152,7 +152,7 @@ bool settingsInitializeFromINI(const char* iniFilepath)
 {
     char msg[256];
     strPrintFmt(msg, sizeof(msg), "Loading settings from file: %s", iniFilepath);
-    debugPrint(msg);
+    Debug::Print(msg);
 
     Blob blob;
     File f;
@@ -169,7 +169,7 @@ bool settingsInitializeFromINI(const char* iniFilepath)
 
     if (!blob.IsValid()) {
         strPrintFmt(msg, sizeof(msg), "Opening ini file '%s' failed", iniFilepath);
-        debugPrint(msg);
+        Debug::Print(msg);
         return false;
     }
 
@@ -178,7 +178,7 @@ bool settingsInitializeFromINI(const char* iniFilepath)
 
     if (!r) {
         strPrintFmt(msg, sizeof(msg), "Parsing ini file '%s' failed", iniFilepath);
-        debugPrint(msg);
+        Debug::Print(msg);
     }
     return r;
 }
@@ -187,7 +187,7 @@ void settingsSaveToINI(const char* iniFilepath)
 {
     char msg[256];
     strPrintFmt(msg, sizeof(msg), "Saving settings to file: %s", iniFilepath);
-    debugPrint(msg);
+    Debug::Print(msg);
     
     MemTempAllocator tmpAlloc;
     ini_t* ini = ini_create(&tmpAlloc);
@@ -242,9 +242,9 @@ bool settingsInitializeFromCommandLine(int argc, char* argv[])
     });
 
     if (sargs_num_args(args) > 0) {
-        debugPrint("Loading settings from CommandLine:");
+        Debug::Print("Loading settings from CommandLine:");
         #if PLATFORM_WINDOWS
-        debugPrint("\n");
+        Debug::Print("\n");
         #endif
     }
 
@@ -280,9 +280,9 @@ bool settingsInitializeFromCommandLine(int argc, char* argv[])
 
             char msg[256];
             strPrintFmt(msg, sizeof(msg), "\t%d) %s%s = %s", i+1, key, !predefined ? "(*)" : "", value);
-            debugPrint(msg);
+            Debug::Print(msg);
             #if PLATFORM_WINDOWS
-            debugPrint("\n");
+            Debug::Print("\n");
             #endif
         }
 

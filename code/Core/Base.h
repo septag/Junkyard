@@ -451,10 +451,10 @@ using fl32 = float;
 using fl64 = double;
 using uintptr = uintptr_t;
 
-static inline constexpr uint32 kMaxPath = CONFIG_MAX_PATH;
-static inline constexpr size_t kKB = 1024;
-static inline constexpr size_t kMB = 1024*1024;
-static inline constexpr size_t kGB = 1024*1024*1024;
+static inline constexpr uint32 PATH_CHARS_MAX = CONFIG_MAX_PATH;
+static inline constexpr size_t SIZE_KB = 1024;
+static inline constexpr size_t SIZE_MB = 1024*1024;
+static inline constexpr size_t SIZE_GB = 1024*1024*1024;
 
 // Minimal template min/max/clamp/Swap implementations
 template <typename T> T Max(T a, T b);
@@ -589,19 +589,24 @@ struct RandomContext
     uint64 state[2];
 };
 
-API uint32        randomGenSeed();
-API RandomContext randomCreateContext(uint32 seed = randomGenSeed());
+namespace Random
+{
+    API uint32 Seed();
+    API RandomContext CreateContext(uint32 seed = 0);
 
-API uint32        randomNewUint(RandomContext* ctx);
-API float         randomNewFloat(RandomContext* ctx);
-API float         randomNewFloatInRange(RandomContext* ctx, float _min, float _max);
-API int           randomNewIntInRange(RandomContext* ctx, int _min, int _max);
+    API uint32 Int(RandomContext* ctx);
+    API int Int(RandomContext* ctx, int _min, int _max);
 
-// Context Free random functions (Uses thread_local context)
-API uint32        randomNewUint();
-API float         randomNewFloat();
-API float         randomNewFloatInRange(float _min, float _max);
-API int           randomNewIntInRange(int _min, int _max);
+    API float Float(RandomContext* ctx);
+    API float Float(RandomContext* ctx, float _min, float _max);
+
+    // Context Free random functions (Uses thread_local context)
+    API uint32 Int();
+    API int Int(int _min, int _max);
+
+    API float Float();
+    API float Float(float _min, float _max);
+}
 
 // Misc
 INLINE constexpr uint32 MakeFourCC(uint8 _a, uint8 _b, uint8 _c, uint8 _d)
@@ -649,9 +654,13 @@ template<> inline constexpr uint64 DivCeil(uint64 value, uint64 divider) { retur
 #endif
 
 using AssertFailCallback = void(*)(void* userData);
-API void assertSetFailCallback(AssertFailCallback callback, void* userdata);
-API void assertRunFailCallback();
-API void assertDebugMessage(const char* fmt, ...);
+
+namespace Assert
+{
+    API void SetFailCallback(AssertFailCallback callback, void* userdata);
+    API void RunFailCallback();
+    API void DebugMessage(const char* fmt, ...);
+} // Assert
 
 #if PLATFORM_ANDROID
     #define DEBUG_BREAK() raise(SIGINT)
@@ -676,14 +685,14 @@ API void assertDebugMessage(const char* fmt, ...);
 #endif
 
 #if CONFIG_ENABLE_ASSERT
-    #define ASSERT(_expr) do { if (!(_expr)) { assertDebugMessage(#_expr); assertRunFailCallback(); DEBUG_BREAK(); }} while(0)
-    #define ASSERT_MSG(_expr, ...) do { if (!(_expr)) { assertDebugMessage(__VA_ARGS__); assertRunFailCallback(); DEBUG_BREAK(); }} while(0)
+    #define ASSERT(_expr) do { if (!(_expr)) { Assert::DebugMessage(#_expr); Assert::RunFailCallback(); DEBUG_BREAK(); }} while(0)
+    #define ASSERT_MSG(_expr, ...) do { if (!(_expr)) { Assert::DebugMessage(__VA_ARGS__); Assert::RunFailCallback(); DEBUG_BREAK(); }} while(0)
 #else
     #define ASSERT(_expr)
     #define ASSERT_MSG(_expr, ...)
 #endif
 
-#define ASSERT_ALWAYS(_expr, ...) do { if (!(_expr)) { assertDebugMessage(__VA_ARGS__); assertRunFailCallback(); DEBUG_BREAK(); }} while(0)
+#define ASSERT_ALWAYS(_expr, ...) do { if (!(_expr)) { Assert::DebugMessage(__VA_ARGS__); Assert::RunFailCallback(); DEBUG_BREAK(); }} while(0)
 
 
 //    ██████╗ ███████╗██╗      █████╗ ████████╗██╗██╗   ██╗███████╗    ██████╗ ████████╗██████╗ 
@@ -801,7 +810,7 @@ private:
 //    ██║  ██║███████╗███████╗╚██████╔╝╚██████╗██║  ██║   ██║   ██║╚██████╔╝██║ ╚████║
 //    ╚═╝  ╚═╝╚══════╝╚══════╝ ╚═════╝  ╚═════╝╚═╝  ╚═╝   ╚═╝   ╚═╝ ╚═════╝ ╚═╝  ╚═══╝
 // Base memory types and allocator interface
-enum class AllocatorType
+enum class MemAllocatorType
 {
     Unknown,
     Heap,       // Normal malloc/free heap allocator
@@ -810,47 +819,50 @@ enum class AllocatorType
     Tlsf        // TLSF dynamic allocator. Fixed capacity. Persists in memory and usually used for subsystems with unknown memory allocation pattern.
 };
 
-struct NO_VTABLE Allocator
+struct NO_VTABLE MemAllocator
 {
     virtual void* Malloc(size_t size, uint32 align = CONFIG_MACHINE_ALIGNMENT) = 0;
     virtual void* Realloc(void* ptr, size_t size, uint32 align = CONFIG_MACHINE_ALIGNMENT) = 0;
     virtual void  Free(void* ptr, uint32 align = CONFIG_MACHINE_ALIGNMENT) = 0;
-    virtual AllocatorType GetType() const = 0;
+    virtual MemAllocatorType GetType() const = 0;
 };
 
 using MemFailCallback = void(*)(void* userData);
 
-API void memSetFailCallback(MemFailCallback callback, void* userdata);
-API void memRunFailCallback();
-API void* memAlignPointer(void* ptr, size_t extra, uint32 align);
-API Allocator* memDefaultAlloc();
-API void memSetDefaultAlloc(Allocator* alloc);
+namespace Mem
+{
+    API void SetFailCallback(MemFailCallback callback, void* userdata);
+    API void RunFailCallback();
+    API void* AlignPointer(void* ptr, size_t extra, uint32 align);
+    API MemAllocator* GetDefaultAlloc();
+    API void SetDefaultAlloc(MemAllocator* alloc);
 
-API void memEnableMemPro(bool enable);
-API bool memIsMemProEnabled();
-API void memTrackMalloc(void* ptr, size_t size);
-API void memTrackFree(void* ptr);
-API void memTrackRealloc(void* oldPtr, void* ptr, size_t size);
+    API void EnableMemPro(bool enable);
+    API bool IsMemProEnabled();
+    API void TrackMalloc(void* ptr, size_t size);
+    API void TrackFree(void* ptr);
+    API void TrackRealloc(void* oldPtr, void* ptr, size_t size);
 
-#define MEMORY_FAIL() do { memRunFailCallback(); ASSERT_ALWAYS(0, "Out of memory"); } while (0)
+    #define MEM_FAIL() do { Mem::RunFailCallback(); ASSERT_ALWAYS(0, "Out of memory"); } while (0)
 
-FORCE_INLINE void* memAlloc(size_t size, Allocator* alloc = memDefaultAlloc());
-FORCE_INLINE void* memAllocZero(size_t size, Allocator* alloc = memDefaultAlloc());
-FORCE_INLINE void* memRealloc(void* ptr, size_t size, Allocator* alloc = memDefaultAlloc());
-FORCE_INLINE void  memFree(void* ptr, Allocator* alloc = memDefaultAlloc());
+    FORCE_INLINE void* Alloc(size_t size, MemAllocator* alloc = GetDefaultAlloc());
+    FORCE_INLINE void* AllocZero(size_t size, MemAllocator* alloc = GetDefaultAlloc());
+    FORCE_INLINE void* Realloc(void* ptr, size_t size, MemAllocator* alloc = GetDefaultAlloc());
+    FORCE_INLINE void  Free(void* ptr, MemAllocator* alloc = GetDefaultAlloc());
 
-FORCE_INLINE void* memAllocAligned(size_t size, uint32 align, Allocator* alloc = memDefaultAlloc());
-FORCE_INLINE void* memAllocAlignedZero(size_t size, uint32 align, Allocator* alloc = memDefaultAlloc());
-FORCE_INLINE void* memReallocAligned(void* ptr, size_t size, uint32 align, Allocator* alloc = memDefaultAlloc());
-FORCE_INLINE void  memFreeAligned(void* ptr, uint32 align, Allocator* alloc = memDefaultAlloc());
+    FORCE_INLINE void* AllocAligned(size_t size, uint32 align, MemAllocator* alloc = GetDefaultAlloc());
+    FORCE_INLINE void* AllocAlignedZero(size_t size, uint32 align, MemAllocator* alloc = GetDefaultAlloc());
+    FORCE_INLINE void* ReallocAligned(void* ptr, size_t size, uint32 align, MemAllocator* alloc = GetDefaultAlloc());
+    FORCE_INLINE void  FreeAligned(void* ptr, uint32 align, MemAllocator* alloc = GetDefaultAlloc());
 
-template<typename _T> _T* memAllocTyped(uint32 count = 1, Allocator* alloc = memDefaultAlloc());
-template<typename _T> _T* memAllocZeroTyped(uint32 count = 1, Allocator* alloc = memDefaultAlloc());
-template<typename _T> _T* memAllocAlignedTyped(uint32 count = 1, uint32 align = CONFIG_MACHINE_ALIGNMENT, Allocator* alloc = memDefaultAlloc());
-template<typename _T> _T* memAllocAlignedZeroTyped(uint32 count = 1, uint32 align = CONFIG_MACHINE_ALIGNMENT, Allocator* alloc = memDefaultAlloc());
-template<typename _T> _T* memReallocTyped(void* ptr, uint32 count = 1, Allocator* alloc = memDefaultAlloc());
-template<typename _T> _T* memAllocCopy(const _T* src, uint32 count = 1, Allocator* alloc = memDefaultAlloc());
-template<typename _T> _T* memAllocCopyRawBytes(const _T* src, size_t sizeBytes, Allocator* alloc = memDefaultAlloc());
+    template<typename _T> _T* AllocTyped(uint32 count = 1, MemAllocator* alloc = GetDefaultAlloc());
+    template<typename _T> _T* AllocZeroTyped(uint32 count = 1, MemAllocator* alloc = GetDefaultAlloc());
+    template<typename _T> _T* AllocAlignedTyped(uint32 count = 1, uint32 align = CONFIG_MACHINE_ALIGNMENT, MemAllocator* alloc = GetDefaultAlloc());
+    template<typename _T> _T* AllocAlignedZeroTyped(uint32 count = 1, uint32 align = CONFIG_MACHINE_ALIGNMENT, MemAllocator* alloc = GetDefaultAlloc());
+    template<typename _T> _T* ReallocTyped(void* ptr, uint32 count = 1, MemAllocator* alloc = GetDefaultAlloc());
+    template<typename _T> _T* AllocCopy(const _T* src, uint32 count = 1, MemAllocator* alloc = GetDefaultAlloc());
+    template<typename _T> _T* AllocCopyRawBytes(const _T* src, size_t sizeBytes, MemAllocator* alloc = GetDefaultAlloc());
+}
 
 //----------------------------------------------------------------------------------------------------------------------
 // new/delete overrides
@@ -860,11 +872,11 @@ namespace _private
 }
 
 #define PLACEMENT_NEW(_ptr, _type) ::new(_private::PlacementNewTag(), _ptr) _type
-#define NEW(_alloc, _type) PLACEMENT_NEW(memAlloc(sizeof(_type), _alloc), _type)
-#define ALIGNED_NEW(_alloc, _type, _align) PLACEMENT_NEW(memAllocAligned(sizeof(_type), _align, _alloc), _type)
+#define NEW(_alloc, _type) PLACEMENT_NEW(Mem::Alloc(sizeof(_type), _alloc), _type)
+#define ALIGNED_NEW(_alloc, _type, _align) PLACEMENT_NEW(Mem::AllocAligned(sizeof(_type), _align, _alloc), _type)
 
 #define PLACEMENT_NEW_ARRAY(_ptr, _type, _n) new(_private::PlacementNewTag(), _ptr) _type[_n]
-#define NEW_ARRAY(_alloc, _type, _n) PLACEMENT_NEW_ARRAY(memAlloc(sizeof(_type)*_n, _alloc), _type, _n)
+#define NEW_ARRAY(_alloc, _type, _n) PLACEMENT_NEW_ARRAY(Mem::Alloc(sizeof(_type)*_n, _alloc), _type, _n)
 
 inline void* operator new(size_t, _private::PlacementNewTag, void* _ptr) { return _ptr; }
 inline void* operator new[](size_t, _private::PlacementNewTag, void* _ptr) { return _ptr; }
@@ -876,124 +888,124 @@ inline void  operator delete(void*, _private::PlacementNewTag, void*) throw() {}
 //    ██║██║╚██╗██║██║     ██║██║╚██╗██║██╔══╝  ╚════██║
 //    ██║██║ ╚████║███████╗██║██║ ╚████║███████╗███████║
 //    ╚═╝╚═╝  ╚═══╝╚══════╝╚═╝╚═╝  ╚═══╝╚══════╝╚══════╝
-[[nodiscard]] FORCE_INLINE void* memAlloc(size_t size, Allocator* alloc)
+[[nodiscard]] FORCE_INLINE void* Mem::Alloc(size_t size, MemAllocator* alloc)
 {
     ASSERT(alloc);
     void* ptr = alloc->Malloc(size, CONFIG_MACHINE_ALIGNMENT);
     if (ptr == NULL) {
-        MEMORY_FAIL();
+        MEM_FAIL();
     }
     return ptr;
 }
 
-[[nodiscard]] FORCE_INLINE void* memAllocZero(size_t size, Allocator* alloc)
+[[nodiscard]] FORCE_INLINE void* Mem::AllocZero(size_t size, MemAllocator* alloc)
 {
     ASSERT(alloc);
     void* ptr = alloc->Malloc(size, CONFIG_MACHINE_ALIGNMENT);
     if (ptr == NULL) {
-        MEMORY_FAIL();
+        MEM_FAIL();
     }
     memset(ptr, 0x0, size);
     return ptr;
 }
 
-[[nodiscard]] FORCE_INLINE void* memRealloc(void* ptr, size_t size, Allocator* alloc)
+[[nodiscard]] FORCE_INLINE void* Mem::Realloc(void* ptr, size_t size, MemAllocator* alloc)
 {
     ASSERT(alloc);
     ptr = alloc->Realloc(ptr, size, CONFIG_MACHINE_ALIGNMENT);
     if (ptr == NULL) {
-        MEMORY_FAIL();
+        MEM_FAIL();
     }
     return ptr;
 }
 
-FORCE_INLINE void memFree(void* ptr, Allocator* alloc)
+FORCE_INLINE void Mem::Free(void* ptr, MemAllocator* alloc)
 {
     ASSERT(alloc);
     alloc->Free(ptr, CONFIG_MACHINE_ALIGNMENT);
 }
 
-[[nodiscard]] FORCE_INLINE void* memAllocAligned(size_t size, uint32 align, Allocator* alloc)
+[[nodiscard]] FORCE_INLINE void* Mem::AllocAligned(size_t size, uint32 align, MemAllocator* alloc)
 {
     ASSERT(alloc);
     align = Max(align, CONFIG_MACHINE_ALIGNMENT);
     void* ptr = alloc->Malloc(AlignValue<size_t>(size, align), align);
     if (ptr == NULL) {
-        MEMORY_FAIL();
+        MEM_FAIL();
     }
     return ptr;
 }
 
-[[nodiscard]] FORCE_INLINE void* memAllocAlignedZero(size_t size, uint32 align, Allocator* alloc)
+[[nodiscard]] FORCE_INLINE void* Mem::AllocAlignedZero(size_t size, uint32 align, MemAllocator* alloc)
 {
     ASSERT(alloc);
     align = Max(align, CONFIG_MACHINE_ALIGNMENT);
     void* ptr = alloc->Malloc(AlignValue<size_t>(size, align), align);
     if (ptr == NULL) {
-        MEMORY_FAIL();
+        MEM_FAIL();
         return nullptr;
     }
     memset(ptr, 0x0, size);
     return ptr;
 }
 
-[[nodiscard]] FORCE_INLINE void* memReallocAligned(void* ptr, size_t size, uint32 align, Allocator* alloc)
+[[nodiscard]] FORCE_INLINE void* Mem::ReallocAligned(void* ptr, size_t size, uint32 align, MemAllocator* alloc)
 {
     ASSERT(alloc);
     align = Max(align, CONFIG_MACHINE_ALIGNMENT);
     ptr = alloc->Realloc(ptr, AlignValue<size_t>(size, align), align);
     if (ptr == NULL) {
-        MEMORY_FAIL();
+        MEM_FAIL();
     }
     return ptr;
 
 }
 
-FORCE_INLINE void memFreeAligned(void* ptr, uint32 align, Allocator* alloc)
+FORCE_INLINE void Mem::FreeAligned(void* ptr, uint32 align, MemAllocator* alloc)
 {
     ASSERT(alloc);
     alloc->Free(ptr, Max(align, CONFIG_MACHINE_ALIGNMENT));
 }
 
 template<typename _T>
-[[nodiscard]] inline _T* memAllocTyped(uint32 count, Allocator* alloc)
+[[nodiscard]] inline _T* Mem::AllocTyped(uint32 count, MemAllocator* alloc)
 {
-    return reinterpret_cast<_T*>(memAlloc(sizeof(_T)*count, alloc));
+    return reinterpret_cast<_T*>(Mem::Alloc(sizeof(_T)*count, alloc));
 }
 
 template<typename _T>
-[[nodiscard]] inline _T* memAllocZeroTyped(uint32 count, Allocator* alloc)
+[[nodiscard]] inline _T* Mem::AllocZeroTyped(uint32 count, MemAllocator* alloc)
 {
-    return reinterpret_cast<_T*>(memAllocZero(sizeof(_T)*count, alloc));
+    return reinterpret_cast<_T*>(Mem::AllocZero(sizeof(_T)*count, alloc));
 }
 
 template<typename _T>
-[[nodiscard]] inline _T* memAllocAlignedTyped(uint32 count, uint32 align, Allocator* alloc)
+[[nodiscard]] inline _T* Mem::AllocAlignedTyped(uint32 count, uint32 align, MemAllocator* alloc)
 {
-    return reinterpret_cast<_T*>(memAllocAligned(sizeof(_T)*count, align, alloc));
+    return reinterpret_cast<_T*>(Mem::AllocAligned(sizeof(_T)*count, align, alloc));
 }
 
 template<typename _T>
-[[nodiscard]] inline _T* memAllocAlignedZeroTyped(uint32 count, uint32 align, Allocator* alloc)
+[[nodiscard]] inline _T* Mem::AllocAlignedZeroTyped(uint32 count, uint32 align, MemAllocator* alloc)
 {
-    return reinterpret_cast<_T*>(memAllocAlignedZero(sizeof(_T)*count, align, alloc));
+    return reinterpret_cast<_T*>(Mem::AllocAlignedZero(sizeof(_T)*count, align, alloc));
 }
 
 template<typename _T>
-[[nodiscard]] inline _T* memReallocTyped(void* ptr, uint32 count, Allocator* alloc)
+[[nodiscard]] inline _T* Mem::ReallocTyped(void* ptr, uint32 count, MemAllocator* alloc)
 {
-    return reinterpret_cast<_T*>(memRealloc(ptr, sizeof(_T)*count, alloc));
+    return reinterpret_cast<_T*>(Mem::Realloc(ptr, sizeof(_T)*count, alloc));
 }
 
 template<typename _T> 
-[[nodiscard]] inline _T* memAllocCopy(const _T* src, uint32 count, Allocator* alloc)
+[[nodiscard]] inline _T* Mem::AllocCopy(const _T* src, uint32 count, MemAllocator* alloc)
 {
     if (count == 0) {
         ASSERT(0);
         return nullptr;
     }
 
-    auto buff = memAllocTyped<_T>(count, alloc);
+    auto buff = Mem::AllocTyped<_T>(count, alloc);
     if (buff) {
         memcpy(buff, src, sizeof(_T)*count);
         return buff;
@@ -1004,14 +1016,14 @@ template<typename _T>
 }
 
 template<typename _T> 
-[[nodiscard]] inline _T* memAllocCopyRawBytes(const _T* src, size_t sizeBytes, Allocator* alloc)
+[[nodiscard]] inline _T* Mem::AllocCopyRawBytes(const _T* src, size_t sizeBytes, MemAllocator* alloc)
 {
     if (sizeBytes == 0) {
         ASSERT(0);
         return nullptr;
     }
 
-    auto buff = (_T*)memAlloc(sizeBytes, alloc);
+    auto buff = (_T*)Mem::Alloc(sizeBytes, alloc);
     if (buff) {
         memcpy(buff, src, sizeBytes);
         return buff;

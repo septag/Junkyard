@@ -34,7 +34,7 @@ namespace _limits
     static constexpr uint32 kAssetMaxAssets = 1024;
     static constexpr uint32 kAssetMaxBarriers = 32;
     static constexpr uint32 kAssetMaxGarbage = 512;
-    static constexpr size_t kAssetRuntimeSize = kMB;
+    static constexpr size_t kAssetRuntimeSize = SIZE_MB;
 }
 
 static constexpr uint32 kAssetHashSeed = 0x4354a;
@@ -59,7 +59,7 @@ struct AssetGarbage
 {
     uint32 typeMgrIdx;
     void* obj;
-    Allocator* alloc;
+    MemAllocator* alloc;
 };
 
 enum class AssetLoadMethod : uint32
@@ -125,13 +125,13 @@ static void assetFileChanged(const char* filepath);
 static AssetResult assetLoadFromCache(const AssetTypeManager& typeMgr, const AssetLoadParams& params, uint32 cacheHash, bool* outSuccess)
 {
     Path strippedPath;
-    vfsStripMountPath(strippedPath.Ptr(), sizeof(strippedPath), params.path);
+    Vfs::StripMountPath(strippedPath.Ptr(), sizeof(strippedPath), params.path);
 
     char hashStr[64];
     strPrintFmt(hashStr, sizeof(hashStr), "_%x", cacheHash);
 
     Path cachePath("/cache");
-    cachePath.Append(strippedPath.GetDirectory())
+    cachePath.Append(strippedPath.GetDirectory_CStr())
              .Append("/")
              .Append(strippedPath.GetFileName())
              .Append(hashStr)
@@ -139,7 +139,7 @@ static AssetResult assetLoadFromCache(const AssetTypeManager& typeMgr, const Ass
              .Append(typeMgr.name.CStr());    
 
     MemTempAllocator tempAlloc;
-    Blob cache = vfsReadFile(cachePath.CStr(), VfsFlags::None, &tempAlloc);
+    Blob cache = Vfs::ReadFile(cachePath.CStr(), VfsFlags::None, &tempAlloc);
 
     AssetResult result {
         .cacheHash = cacheHash
@@ -159,12 +159,12 @@ static AssetResult assetLoadFromCache(const AssetTypeManager& typeMgr, const Ass
     
                 // Allocate and Copy dependencies from runtimeHeap. This is where internal asset manager expects them to be.
                 if (result.dependsBufferSize) {
-                    result.depends = (AssetDependency*)memAlloc(result.dependsBufferSize, &gAssetMgr.runtimeAlloc);
+                    result.depends = (AssetDependency*)Mem::Alloc(result.dependsBufferSize, &gAssetMgr.runtimeAlloc);
                     cache.Read(result.depends, result.dependsBufferSize);
                 }
     
                 ASSERT(result.objBufferSize);
-                result.obj = memAlloc(result.objBufferSize, params.alloc);
+                result.obj = Mem::Alloc(result.objBufferSize, params.alloc);
                 cache.Read(result.obj, result.objBufferSize);
                 *outSuccess = true;
             }
@@ -172,7 +172,7 @@ static AssetResult assetLoadFromCache(const AssetTypeManager& typeMgr, const Ass
     }
 
     if (!*outSuccess)
-        logError("Loading asset cache failed: %s (Source: %s)", cachePath.CStr(), params.path);
+        LOG_ERROR("Loading asset cache failed: %s (Source: %s)", cachePath.CStr(), params.path);
 
     return result;
 }
@@ -180,13 +180,13 @@ static AssetResult assetLoadFromCache(const AssetTypeManager& typeMgr, const Ass
 static void assetSaveToCache(const AssetTypeManager& typeMgr, const AssetLoadParams& params, const AssetResult& result, uint32 assetHash)
 {
     Path strippedPath;
-    vfsStripMountPath(strippedPath.Ptr(), sizeof(strippedPath), params.path);
+    Vfs::StripMountPath(strippedPath.Ptr(), sizeof(strippedPath), params.path);
 
     char hashStr[64];
     strPrintFmt(hashStr, sizeof(hashStr), "_%x", result.cacheHash);
 
     Path cachePath("/cache");
-    cachePath.Append(strippedPath.GetDirectory())
+    cachePath.Append(strippedPath.GetDirectory_CStr())
              .Append("/")
              .Append(strippedPath.GetFileName())
              .Append(hashStr)
@@ -209,10 +209,10 @@ static void assetSaveToCache(const AssetTypeManager& typeMgr, const AssetLoadPar
 
     uint64 userData = (uint64(assetHash) << 32) | result.cacheHash;
     
-    vfsWriteFileAsync(cachePath.CStr(), cache, VfsFlags::CreateDirs, 
+    Vfs::WriteFileAsync(cachePath.CStr(), cache, VfsFlags::CreateDirs, 
                       [](const char* path, size_t, const Blob&, void* user) 
     {
-        logVerbose("(save) AssetCache: %s", path);
+        LOG_VERBOSE("(save) AssetCache: %s", path);
         
         uint64 userData = PtrToInt<uint64>(user);
         uint32 hash = uint32((userData >> 32)&0xffffffff);
@@ -231,13 +231,13 @@ static void assetLoadCacheHashDatabase()
 {
     MemTempAllocator tempAlloc;
 
-    Blob blob = vfsReadFile(kAssetCacheDatabasePath, VfsFlags::TextFile, &tempAlloc);
+    Blob blob = Vfs::ReadFile(kAssetCacheDatabasePath, VfsFlags::TextFile, &tempAlloc);
     if (blob.IsValid()) {
         char* json;
         size_t jsonSize;
 
         blob.Detach((void**)&json, &jsonSize);
-        JsonContext* jctx = jsonParse(json, uint32(jsonSize), nullptr, &tempAlloc);
+        JsonContext* jctx = Json::Parse(json, uint32(jsonSize), nullptr, &tempAlloc);
         if (jctx) {
             JsonNode jroot(jctx);
 
@@ -254,9 +254,9 @@ static void assetLoadCacheHashDatabase()
                 
                 jitem = jroot.GetNextArrayItem(jitem);
             }
-            jsonDestroy(jctx);
+            Json::Destroy(jctx);
 
-            logInfo("Loaded cache database: %s", kAssetCacheDatabasePath);
+            LOG_INFO("Loaded cache database: %s", kAssetCacheDatabasePath);
         }
     } 
 }
@@ -266,7 +266,7 @@ static void assetSaveCacheHashDatabase()
     MemTempAllocator tempAlloc;
 
     Blob blob(&tempAlloc);
-    blob.SetGrowPolicy(Blob::GrowPolicy::Linear, 32*kKB);
+    blob.SetGrowPolicy(Blob::GrowPolicy::Linear, 32*SIZE_KB);
     char line[1024];
     
     blob.Write("[\n", 2);
@@ -290,8 +290,8 @@ static void assetSaveCacheHashDatabase()
     }
     blob.Write("]\n", 2);
     
-    vfsWriteFileAsync(kAssetCacheDatabasePath, blob, VfsFlags::TextFile, 
-                      [](const char* path, size_t, const Blob&, void*) { logVerbose("Asset cache database saved to: %s", path); }, nullptr);
+    Vfs::WriteFileAsync(kAssetCacheDatabasePath, blob, VfsFlags::TextFile, 
+                      [](const char* path, size_t, const Blob&, void*) { LOG_VERBOSE("Asset cache database saved to: %s", path); }, nullptr);
 
 }
 
@@ -313,7 +313,7 @@ void _private::assetUpdateCache(float dt)
         if (gAssetMgr.cacheSyncDelayTm >= kAssetCacheSaveDelay)  {
             gAssetMgr.cacheSyncDelayTm = 0;
             gAssetMgr.cacheSyncInvalidated = false;
-            jobsDispatchAndForget(JobsType::LongTask, [](uint32, void*) { assetSaveCacheHashDatabase(); });
+            Jobs::DispatchAndForget(JobsType::LongTask, [](uint32, void*) { assetSaveCacheHashDatabase(); });
         }            
     }
 }
@@ -330,73 +330,73 @@ bool _private::assetInitialize()
     gAssetMgr.assetsMtx.Initialize();
     gAssetMgr.hashLookupMtx.Initialize();
 
-    MemBumpAllocatorBase* initHeap = engineGetInitHeap();
+    MemBumpAllocatorBase* initHeap = Engine::GetInitHeap();
     gAssetMgr.initHeapStart = initHeap->GetOffset();
 
     {
         size_t arraySize = Array<AssetTypeManager>::GetMemoryRequirement(_limits::kAssetMaxTypes);
-        gAssetMgr.typeManagers.Reserve(_limits::kAssetMaxTypes, memAlloc(arraySize, initHeap), arraySize);
+        gAssetMgr.typeManagers.Reserve(_limits::kAssetMaxTypes, Mem::Alloc(arraySize, initHeap), arraySize);
     }
 
     {
         size_t poolSize = HandlePool<AssetHandle, Asset>::GetMemoryRequirement(_limits::kAssetMaxAssets);
-        gAssetMgr.assets.Reserve(_limits::kAssetMaxAssets, memAlloc(poolSize, initHeap), poolSize);
+        gAssetMgr.assets.Reserve(_limits::kAssetMaxAssets, Mem::Alloc(poolSize, initHeap), poolSize);
     }
 
     {
         size_t poolSize = HandlePool<AssetBarrier, Signal>::GetMemoryRequirement(_limits::kAssetMaxBarriers);
-        gAssetMgr.barriers.Reserve(_limits::kAssetMaxBarriers, memAlloc(poolSize, initHeap), poolSize);
+        gAssetMgr.barriers.Reserve(_limits::kAssetMaxBarriers, Mem::Alloc(poolSize, initHeap), poolSize);
     }
 
     {
         size_t arraySize = Array<AssetGarbage>::GetMemoryRequirement(_limits::kAssetMaxGarbage);
-        gAssetMgr.garbage.Reserve(_limits::kAssetMaxGarbage, memAlloc(arraySize, initHeap), arraySize);
+        gAssetMgr.garbage.Reserve(_limits::kAssetMaxGarbage, Mem::Alloc(arraySize, initHeap), arraySize);
     }
 
     {
         size_t tableSize = HashTable<AssetHandle>::GetMemoryRequirement(_limits::kAssetMaxAssets);
-        gAssetMgr.assetLookup.Reserve(_limits::kAssetMaxAssets, memAlloc(tableSize, initHeap), tableSize);
+        gAssetMgr.assetLookup.Reserve(_limits::kAssetMaxAssets, Mem::Alloc(tableSize, initHeap), tableSize);
     }
 
     {
         size_t tableSize = HashTable<uint32>::GetMemoryRequirement(_limits::kAssetMaxAssets);
-        gAssetMgr.hashLookup.Reserve(_limits::kAssetMaxAssets, memAlloc(tableSize, initHeap), tableSize);
+        gAssetMgr.hashLookup.Reserve(_limits::kAssetMaxAssets, Mem::Alloc(tableSize, initHeap), tableSize);
     }
 
     {
         size_t bufferSize = MemTlsfAllocator::GetMemoryRequirement(_limits::kAssetRuntimeSize);
-        gAssetMgr.tlsfAlloc.Initialize(_limits::kAssetRuntimeSize, initHeap->Malloc(bufferSize), bufferSize, settingsGet().engine.debugAllocations);
+        gAssetMgr.tlsfAlloc.Initialize(_limits::kAssetRuntimeSize, initHeap->Malloc(bufferSize), bufferSize, SettingsJunkyard::Get().engine.debugAllocations);
         gAssetMgr.runtimeAlloc.SetAllocator(&gAssetMgr.tlsfAlloc);
     }
 
     gAssetMgr.initHeapSize = initHeap->GetOffset() - gAssetMgr.initHeapStart;
 
-    vfsRegisterFileChangeCallback(assetFileChanged);
+    Vfs::RegisterFileChangeCallback(assetFileChanged);
 
     // Create and mount cache directory
     #if PLATFORM_WINDOWS || PLATFORM_OSX || PLATFORM_LINUX
-        if (!pathIsDir(".cache"))
-            pathCreateDir(".cache");
-        vfsMountLocal(".cache", "cache", false);
+        if (!Path::IsDir_CStr(".cache"))
+            Path::CreateDir_CStr(".cache");
+        Vfs::MountLocal(".cache", "cache", false);
     #elif PLATFORM_ANDROID
-        vfsMountLocal(sysAndroidGetCacheDirectory(appAndroidGetActivity()).CStr(), "cache", false);
+        Vfs::MountLocal(OS::AndroidGetCacheDirectory(App::AndroidGetActivity()).CStr(), "cache", false);
     #endif
 
     assetLoadCacheHashDatabase();
 
     // Initialize asset managers here
     if (!assetInitializeImageManager()) {
-        logError("Failed to initialize ImageManager");
+        LOG_ERROR("Failed to initialize ImageManager");
         return false;
     }
 
     if (!assetInitializeModelManager()) {
-        logError("Failed to initialize ModelManager");
+        LOG_ERROR("Failed to initialize ModelManager");
         return false;
     }
 
     if (!assetInitializeShaderManager()) {
-        logError("Failed to initialize ShaderManager");
+        LOG_ERROR("Failed to initialize ShaderManager");
         return false;
     }
 
@@ -411,7 +411,7 @@ void _private::assetRelease()
         // Detect asset leaks and release them
         for (Asset& a : gAssetMgr.assets) {
             if (a.state == AssetState::Alive) {
-                logWarning("Asset '%s' (RefCount=%u) is not unloaded", a.params->path, a.refCount);
+                LOG_WARNING("Asset '%s' (RefCount=%u) is not unloaded", a.params->path, a.refCount);
                 if (a.obj) {
                     AssetTypeManager* typeMgr = &gAssetMgr.typeManagers[a.typeMgrIdx];
                     if (!typeMgr->unregistered) {
@@ -423,8 +423,8 @@ void _private::assetRelease()
             MemSingleShotMalloc<AssetLoadParams> mallocator;
             mallocator.Free(a.params, &gAssetMgr.runtimeAlloc);
 
-            memFree(a.depends, &gAssetMgr.runtimeAlloc);
-            memFree(a.metaData, &gAssetMgr.runtimeAlloc);
+            Mem::Free(a.depends, &gAssetMgr.runtimeAlloc);
+            Mem::Free(a.metaData, &gAssetMgr.runtimeAlloc);
         }
 
         // Release asset managers here
@@ -466,11 +466,11 @@ static AssetHandle assetCreateNew(uint32 typeMgrIdx, uint32 assetHash, const Ass
     
     uint8* nextParams;
     MemSingleShotMalloc<AssetLoadParams> mallocator;
-    mallocator.AddMemberField<char>(offsetof(AssetLoadParams, path), kMaxPath)
+    mallocator.AddMemberField<char>(offsetof(AssetLoadParams, path), PATH_CHARS_MAX)
               .AddExternalPointerField<uint8>(&nextParams, typeMgr.extraParamTypeSize);
     AssetLoadParams* newParams = mallocator.Calloc(&gAssetMgr.runtimeAlloc);
     
-    strCopy(const_cast<char*>(newParams->path), kMaxPath, params.path);
+    strCopy(const_cast<char*>(newParams->path), PATH_CHARS_MAX, params.path);
     newParams->alloc = params.alloc;
     newParams->typeId = params.typeId;
     newParams->tags = params.tags;
@@ -513,7 +513,7 @@ static AssetResult assetLoadObjLocal(AssetHandle handle, const AssetTypeManager&
         cacheHash = gAssetMgr.hashLookup.FindAndFetch(hash, 0);
     }
 
-    bool cacheOnly = settingsGet().engine.useCacheOnly;
+    bool cacheOnly = SettingsJunkyard::Get().engine.useCacheOnly;
     AssetResult result {};
     if (!cacheOnly)
         result = typeMgr.callbacks->Load(handle, loadParams, cacheHash, &gAssetMgr.runtimeAlloc);
@@ -590,7 +590,7 @@ static AssetResult assetLoadObjRemote(AssetHandle handle, const AssetTypeManager
         if (result.numDepends) {
             ASSERT(result.depends);
             ASSERT(result.dependsBufferSize);   // Only remote loads should implement this
-            params->result.depends = (AssetDependency*)memAlloc(result.dependsBufferSize, &gAssetMgr.runtimeAlloc);
+            params->result.depends = (AssetDependency*)Mem::Alloc(result.dependsBufferSize, &gAssetMgr.runtimeAlloc);
             memcpy(params->result.depends, result.depends, result.dependsBufferSize);
             params->result.numDepends = result.numDepends;
         }
@@ -656,7 +656,7 @@ static void assetLoadTask(uint32 groupIndex, void* userData)
             //       Because this is reentrant (assets can load other assets) so we have to release the lock 
             gAssetMgr.assetsMtx.ExitRead();
             if (!typeMgr.callbacks->InitializeSystemResources(result.obj, loadParams)) {
-                logError("Failed creating resources for %s: %s", typeMgr.name.CStr(), filepath.CStr());
+                LOG_ERROR("Failed creating resources for %s: %s", typeMgr.name.CStr(), filepath.CStr());
                 typeMgr.callbacks->Release(result.obj, loadParams.alloc);
                 result.obj = nullptr;
             }
@@ -670,7 +670,7 @@ static void assetLoadTask(uint32 groupIndex, void* userData)
         asset.obj = typeMgr.failedObj;
     }
     else {
-        logVerbose("(load) %s: %s (%.1f ms)%s", typeMgr.name.CStr(), filepath.CStr(), timer.ElapsedMS(), loadedFromCache ? " [cached]" : "");
+        LOG_VERBOSE("(load) %s: %s (%.1f ms)%s", typeMgr.name.CStr(), filepath.CStr(), timer.ElapsedMS(), loadedFromCache ? " [cached]" : "");
     }
 
     asset.depends = result.depends;
@@ -687,7 +687,7 @@ static void assetLoadTask(uint32 groupIndex, void* userData)
 
         // try to reload the object, we also provide the previous handle for book keeping
         if (!typeMgr.callbacks->ReloadSync(handle, prevObj)) {
-            logWarning("Asset '%s' cannot get reloaded", filepath.CStr());
+            LOG_WARNING("Asset '%s' cannot get reloaded", filepath.CStr());
             asset.obj = prevObj;
             garbage.obj = result.obj;     
         }
@@ -720,7 +720,7 @@ AssetHandle assetLoad(const AssetLoadParams& params, const void* extraParams)
     AssetTypeManager& typeMgr = gAssetMgr.typeManagers[typeMgrIdx];
 
     if (typeMgr.extraParamTypeSize && !extraParams) {
-        logWarning("Extra parameters not provided for asset type '%s'. Set extra parameters in 'next' field with the type of '%s'",
+        LOG_WARNING("Extra parameters not provided for asset type '%s'. Set extra parameters in 'next' field with the type of '%s'",
             typeMgr.name.CStr(), typeMgr.extraParamTypeName.CStr());
         ASSERT_MSG(false, "AssetLoadParams.next must not be nullptr for this type of asset (%s)", typeMgr.name.CStr());
         return AssetHandle();
@@ -756,8 +756,8 @@ AssetHandle assetLoad(const AssetLoadParams& params, const void* extraParams)
 
         static_assert(sizeof(void*) == sizeof(uint64), "No support for 32bits in this part");
         uint64 userValue = (static_cast<uint64>(uint32(handle))<<32) |
-                           ((remoteIsConnected() ? (uint64)AssetLoadMethod::Remote : (uint64)AssetLoadMethod::Local) & 0xffffffff);
-        jobsDispatchAndForget(JobsType::LongTask, assetLoadTask, IntToPtr<uint64>(userValue));
+                           ((Remote::IsConnected() ? (uint64)AssetLoadMethod::Remote : (uint64)AssetLoadMethod::Local) & 0xffffffff);
+        Jobs::DispatchAndForget(JobsType::LongTask, assetLoadTask, IntToPtr<uint64>(userValue));
     }
 
     return handle;
@@ -775,7 +775,7 @@ void assetUnload(AssetHandle handle)
 
         if (asset.state != AssetState::Alive) {
             gAssetMgr.assetsMtx.ExitRead();
-            logWarning("Asset is either failed or already released: %s", asset.params->path);
+            LOG_WARNING("Asset is either failed or already released: %s", asset.params->path);
             return;
         }
     
@@ -790,9 +790,9 @@ void assetUnload(AssetHandle handle)
             {
                 ReadWriteMutexWriteScope mtx(gAssetMgr.assetsMtx);
                 asset = gAssetMgr.assets.Data(handle);
-                memFree(asset.params, &gAssetMgr.runtimeAlloc);
-                memFree(asset.depends, &gAssetMgr.runtimeAlloc);
-                memFree(asset.metaData, &gAssetMgr.runtimeAlloc);
+                Mem::Free(asset.params, &gAssetMgr.runtimeAlloc);
+                Mem::Free(asset.depends, &gAssetMgr.runtimeAlloc);
+                Mem::Free(asset.metaData, &gAssetMgr.runtimeAlloc);
                 asset.params = nullptr;
                 asset.metaData = nullptr;
                 asset.depends = nullptr;
@@ -811,7 +811,7 @@ void assetUnload(AssetHandle handle)
 //    ██║╚██╔╝██║██╔══╝     ██║   ██╔══██║██║  ██║██╔══██║   ██║   ██╔══██║
 //    ██║ ╚═╝ ██║███████╗   ██║   ██║  ██║██████╔╝██║  ██║   ██║   ██║  ██║
 //    ╚═╝     ╚═╝╚══════╝   ╚═╝   ╚═╝  ╚═╝╚═════╝ ╚═╝  ╚═╝   ╚═╝   ╚═╝  ╚═╝
-bool assetLoadMetaData(const char* filepath, AssetPlatform platform, Allocator* alloc, AssetMetaKeyValue** outData, uint32* outKeyCount)
+bool assetLoadMetaData(const char* filepath, AssetPlatform platform, MemAllocator* alloc, AssetMetaKeyValue** outData, uint32* outKeyCount)
 {
     ASSERT(outData);
     ASSERT(outKeyCount);
@@ -840,16 +840,16 @@ bool assetLoadMetaData(const char* filepath, AssetPlatform platform, Allocator* 
     };
 
     Path path(filepath);
-    Path assetMetaPath = Path::JoinUnix(path.GetDirectory(), path.GetFileName());
+    Path assetMetaPath = Path::JoinUnix(path.GetDirectory_CStr(), path.GetFileName());
     assetMetaPath.Append(".asset");
     
-    uint32 tempId = memTempPushId();
+    uint32 tempId = MemTempAllocator::PushId();
     MemTempAllocator tmpAlloc(tempId);
 
-    Blob blob = vfsReadFile(assetMetaPath.CStr(), VfsFlags::TextFile, &tmpAlloc);
+    Blob blob = Vfs::ReadFile(assetMetaPath.CStr(), VfsFlags::TextFile, &tmpAlloc);
     if (blob.IsValid()) {
         JsonErrorLocation loc;
-        JsonContext* jctx = jsonParse((const char*)blob.Data(), uint32(blob.Size()), &loc, &tmpAlloc);
+        JsonContext* jctx = Json::Parse((const char*)blob.Data(), uint32(blob.Size()), &loc, &tmpAlloc);
         if (jctx) {
             JsonNode jroot(jctx);
             StaticArray<AssetMetaKeyValue, 64> keys;
@@ -867,11 +867,11 @@ bool assetLoadMetaData(const char* filepath, AssetPlatform platform, Allocator* 
                 collectKeyValues(jplatform, &keys);
 
             blob.Free();
-            jsonDestroy(jctx);
-            memTempPopId(tempId);
+            Json::Destroy(jctx);
+            MemTempAllocator::PopId(tempId);
             
             // At this point we have popped the current temp allocator and can safely allocate from whatever allocator is coming in
-            *outData = memAllocCopy<AssetMetaKeyValue>(keys.Ptr(), keys.Count(), alloc);
+            *outData = Mem::AllocCopy<AssetMetaKeyValue>(keys.Ptr(), keys.Count(), alloc);
             *outKeyCount = keys.Count();
 
             return true;
@@ -881,8 +881,8 @@ bool assetLoadMetaData(const char* filepath, AssetPlatform platform, Allocator* 
             *outKeyCount = 0;
         
             blob.Free();
-            logWarning("Invalid asset meta data: %s (Json syntax error at %u:%u)", assetMetaPath.CStr(), loc.line, loc.col);
-            memTempPopId(tempId);
+            LOG_WARNING("Invalid asset meta data: %s (Json syntax error at %u:%u)", assetMetaPath.CStr(), loc.line, loc.col);
+            MemTempAllocator::PopId(tempId);
             return false;
         }
     }
@@ -890,26 +890,26 @@ bool assetLoadMetaData(const char* filepath, AssetPlatform platform, Allocator* 
         *outData = nullptr;
         *outKeyCount = 0;
 
-        memTempPopId(tempId);
+        MemTempAllocator::PopId(tempId);
         return false;
     }
 }
 
 // Note: This version of LoadMetaData (provide local asset handle instead of filepath), Allocates asset's meta-data from runtimeHeap
-bool assetLoadMetaData(AssetHandle handle, Allocator* alloc, AssetMetaKeyValue** outData, uint32* outKeyCount)
+bool assetLoadMetaData(AssetHandle handle, MemAllocator* alloc, AssetMetaKeyValue** outData, uint32* outKeyCount)
 {
     ASSERT(handle.IsValid());
 
     ReadWriteMutexReadScope mtx(gAssetMgr.assetsMtx);
     Asset& asset = gAssetMgr.assets.Data(handle);
     if (asset.numMeta && asset.metaData) {
-        *outData = memAllocCopy<AssetMetaKeyValue>(asset.metaData, asset.numMeta, alloc);
+        *outData = Mem::AllocCopy<AssetMetaKeyValue>(asset.metaData, asset.numMeta, alloc);
         *outKeyCount = asset.numMeta;
         return true;
     }
     else {
         if (assetLoadMetaData(asset.params->path, assetGetCurrentPlatform(), &gAssetMgr.runtimeAlloc, &asset.metaData, &asset.numMeta)) {
-            *outData = memAllocCopy<AssetMetaKeyValue>(asset.metaData, asset.numMeta, alloc);
+            *outData = Mem::AllocCopy<AssetMetaKeyValue>(asset.metaData, asset.numMeta, alloc);
             *outKeyCount = asset.numMeta;
             return true;
         }
@@ -1108,8 +1108,8 @@ static void assetFileChanged(const char* filepath)
             ++assetPath;
         if (strIsEqualNoCase(filepath, assetPath)) {
             uint64 userValue = (static_cast<uint64>(uint32(handle))<<32) |
-                ((remoteIsConnected() ? (uint64)AssetLoadMethod::Remote : (uint64)AssetLoadMethod::Local) & 0xffffffff);
-            jobsDispatchAndForget(JobsType::LongTask, assetLoadTask, IntToPtr<uint64>(userValue));
+                ((Remote::IsConnected() ? (uint64)AssetLoadMethod::Remote : (uint64)AssetLoadMethod::Local) & 0xffffffff);
+            Jobs::DispatchAndForget(JobsType::LongTask, assetLoadTask, IntToPtr<uint64>(userValue));
         }
     }
 }
@@ -1126,7 +1126,7 @@ namespace limits
 {
     inline constexpr uint32 ASSET_MAX_GROUPS = 1024;
     inline constexpr uint32 ASSET_MAX_THREADS = 128;
-    inline constexpr size_t ASSET_MAX_SCRATCH_SIZE_PER_THREAD = 512*kMB;
+    inline constexpr size_t ASSET_MAX_SCRATCH_SIZE_PER_THREAD = 512*SIZE_MB;
 }
 
 struct AssetDependencyHeader
@@ -1175,7 +1175,7 @@ static AssetMan gAssetMan;
 // These functions should be exported for per asset type loading
 using DataChunk = Pair<void*, uint32>;
 
-static DataChunk assetLoadAndBakeData(const AssetMetaData& metaData, const AssetParams& params, Allocator* alloc)
+[[maybe_unused]] static DataChunk assetLoadAndBakeData(const AssetMetaData& metaData, const AssetParams& params, MemAllocator* alloc)
 {
     return DataChunk();
 }
@@ -1185,7 +1185,7 @@ static MemBumpAllocatorVM* assetGetOrCreateScratchAllocator(AssetScratchMemArena
     MemBumpAllocatorVM* alloc = nullptr;
     {
         SpinLockMutexScope mtx(arena.threadToAllocatorTableMtx);
-        uint32 tId = threadGetCurrentId();
+        uint32 tId = Thread::GetCurrentId();
         uint32 allocIndex = arena.threadToAllocatorTable.Find(tId);
 
         if (allocIndex != -1) {
@@ -1199,20 +1199,20 @@ static MemBumpAllocatorVM* assetGetOrCreateScratchAllocator(AssetScratchMemArena
     }
 
     if (!alloc->IsInitialized())
-        alloc->Initialize(limits::ASSET_MAX_SCRATCH_SIZE_PER_THREAD, 512*kKB);
+        alloc->Initialize(limits::ASSET_MAX_SCRATCH_SIZE_PER_THREAD, 512*SIZE_KB);
 
     return alloc;
 }
 
 static void assetLoadBatchTask(uint32 groupIdx, void* userData)
 {
-    Array<Span<AssetParams*>>* slices = (Array<Span<AssetParams*>>*)userData;
-    Span<AssetParams*> slice = (*slices)[groupIdx];
+    // Array<Span<AssetParams*>>* slices = (Array<Span<AssetParams*>>*)userData;
+    // Span<AssetParams*> slice = (*slices)[groupIdx];
 
-    for (AssetParams* params : slice) {
+    //for (AssetParams* params : slice) {
         // TODO: Load each asset in the slice
 
-    }
+    //}
 }
 
 void _private::assetInitialize2()
@@ -1235,7 +1235,7 @@ void assetDestroyGroup(AssetGroup group)
 void AssetGroup::AddToLoadQueue(const AssetParams** params, uint32 numAssets, AssetHandle* outHandles) const
 {
     AssetGroupInternal& group = gAssetMan.groups.Data(mHandle);
-    MemBumpAllocatorVM* alloc = assetGetOrCreateScratchAllocator(group.memArena);
+    // MemBumpAllocatorVM* alloc = assetGetOrCreateScratchAllocator(group.memArena);
     
     for (uint32 i = 0; i < numAssets; i++)
         group.params.Push(const_cast<AssetParams*>(params[i]));
@@ -1264,9 +1264,9 @@ void AssetGroup::Load() const
 
         const AssetTypeManager& typeMan = gAssetMgr.typeManagers[typeManIdx];
 
-        AssetParams* newParams = memAllocCopy<AssetParams>(params, 1, alloc);
+        AssetParams* newParams = Mem::AllocCopy<AssetParams>(params, 1, alloc);
         if (!params->typeSpecificParams.IsNull()) {
-            uint8* typeSpecificParamsCopy = memAllocCopy<uint8>(params->typeSpecificParams.Get(), typeMan.extraParamTypeSize, alloc);
+            uint8* typeSpecificParamsCopy = Mem::AllocCopy<uint8>(params->typeSpecificParams.Get(), typeMan.extraParamTypeSize, alloc);
             newParams->typeSpecificParams = typeSpecificParamsCopy;
         }
         
@@ -1279,7 +1279,7 @@ void AssetGroup::Load() const
         // TODO: Do some kind of pace control for loads
         Span<AssetParams*>* assetList = (Span<AssetParams*>*)userData;
         ASSERT(assetList->Count());
-        uint32 numThreads = jobsGetWorkerThreadsCount(JobsType::LongTask);
+        uint32 numThreads = Jobs::GetWorkerThreadsCount(JobsType::LongTask);
         uint32 tasksPerThread = assetList->Count() / numThreads;
         uint32 tasksRemain = assetList->Count() % numThreads;
 
@@ -1296,13 +1296,13 @@ void AssetGroup::Load() const
             i += numTasks;
         }
 
-        JobsHandle jhandle = jobsDispatch(JobsType::LongTask, assetLoadBatchTask, &slices, slices.Count());
-        jobsWaitForCompletion(jhandle);
+        JobsHandle jhandle = Jobs::Dispatch(JobsType::LongTask, assetLoadBatchTask, &slices, slices.Count());
+        Jobs::WaitForCompletion(jhandle);
     };
 
-    Span<AssetParams*>* assetListCopy = memAllocTyped<Span<AssetParams*>>(1, alloc);
-    *assetListCopy = Span<AssetParams*>(memAllocCopy<AssetParams*>(assetList.Ptr(), assetList.Count(), alloc), assetList.Count());
-    jobsDispatchAndForget(JobsType::LongTask, LoadEntryTask, assetListCopy, 1);
+    Span<AssetParams*>* assetListCopy = Mem::AllocTyped<Span<AssetParams*>>(1, alloc);
+    *assetListCopy = Span<AssetParams*>(Mem::AllocCopy<AssetParams*>(assetList.Ptr(), assetList.Count(), alloc), assetList.Count());
+    Jobs::DispatchAndForget(JobsType::LongTask, LoadEntryTask, assetListCopy, 1);
 }
 
 bool AssetGroup::IsLoadFinished() const
@@ -1318,7 +1318,7 @@ void AssetGroup::Unload() const
 {
 }
 
-Span<AssetHandle> AssetGroup::GetAssetHandles(Allocator* alloc) const
+Span<AssetHandle> AssetGroup::GetAssetHandles(MemAllocator* alloc) const
 {
     return Span<AssetHandle>();
 }

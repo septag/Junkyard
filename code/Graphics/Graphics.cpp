@@ -124,7 +124,7 @@ namespace _limits
     static constexpr uint32 kGfxMaxPipelines = 256;
     static constexpr uint32 kGfxMaxPipelineLayouts = 256;
     static constexpr uint32 kGfxMaxGarbage = 512;
-    static constexpr size_t kGfxRuntimeSize = 32*kMB;
+    static constexpr size_t kGfxRuntimeSize = 32*SIZE_MB;
 }
 
 // Fwd (TracyVk.cpp)
@@ -324,12 +324,12 @@ struct GfxDeferredCommand
     ExecuteCallback executeFn;
 };
 
-struct GfxHeapAllocator final : Allocator
+struct GfxHeapAllocator final : MemAllocator
 {
     void* Malloc(size_t size, uint32 align) override;
     void* Realloc(void* ptr, size_t size, uint32 align) override;
     void  Free(void* ptr, uint32 align) override;
-    AllocatorType GetType() const override { return AllocatorType::Heap; }
+    MemAllocatorType GetType() const override { return MemAllocatorType::Heap; }
     
     static void* vkAlloc(void* pUserData, size_t size, size_t align, VkSystemAllocationScope allocScope);
     static void* vkRealloc(void* pUserData, void* pOriginal, size_t size, size_t align, VkSystemAllocationScope allocScope);
@@ -375,7 +375,7 @@ struct GfxContext
     VkDescriptorPool descriptorPool;
 
     VkQueryPool queryPool[kMaxFramesInFlight];
-    atomicUint32 queryFirstCall;
+    AtomicUint32 queryFirstCall;
     uint32 _padding3;
 
     VkSemaphore imageAvailSemaphores[kMaxFramesInFlight];
@@ -384,7 +384,7 @@ struct GfxContext
     VkFence inflightImageFences[kMaxSwapchainImages];  // count: Swapchain.numImages
     Array<GfxGarbage> garbage;
 
-    atomicUint32 currentFrameIdx;
+    AtomicUint32 currentFrameIdx;
     uint32       prevFrameIdx;
     VmaAllocator vma;
     GfxObjectPools pools;
@@ -477,20 +477,20 @@ bool _private::gfxInitialize()
     TimerStopWatch stopwatch;
 
     if (volkInitialize() != VK_SUCCESS) {
-        logError("Volk failed to initialize. Possibly VulkanSDK is not installed (or MoltenVK dll is missing on Mac)");
+        LOG_ERROR("Volk failed to initialize. Possibly VulkanSDK is not installed (or MoltenVK dll is missing on Mac)");
         return false;
     }
 
-    MemBumpAllocatorBase* initHeap = engineGetInitHeap();
+    MemBumpAllocatorBase* initHeap = Engine::GetInitHeap();
     gVk.initHeapStart = initHeap->GetOffset();
     
     {
         size_t bufferSize = MemTlsfAllocator::GetMemoryRequirement(_limits::kGfxRuntimeSize);
-        gVk.tlsfAlloc.Initialize(_limits::kGfxRuntimeSize, initHeap->Malloc(bufferSize), bufferSize, settingsGet().engine.debugAllocations);
+        gVk.tlsfAlloc.Initialize(_limits::kGfxRuntimeSize, initHeap->Malloc(bufferSize), bufferSize, SettingsJunkyard::Get().engine.debugAllocations);
         gVk.runtimeAlloc.SetAllocator(&gVk.tlsfAlloc);
     }
 
-    const SettingsGraphics& settings = settingsGet().graphics;
+    const SettingsGraphics& settings = SettingsJunkyard::Get().graphics;
 
     gVk.allocVk = VkAllocationCallbacks {
         .pUserData = &gVk.alloc,
@@ -508,7 +508,7 @@ bool _private::gfxInitialize()
     uint32 numLayers = 0;
     vkEnumerateInstanceLayerProperties(&numLayers, nullptr);
     if (numLayers) {
-        gVk.layers = memAllocTyped<VkLayerProperties>(numLayers, initHeap);
+        gVk.layers = Mem::AllocTyped<VkLayerProperties>(numLayers, initHeap);
         gVk.numLayers = numLayers;
 
         vkEnumerateInstanceLayerProperties(&numLayers, gVk.layers);
@@ -519,15 +519,15 @@ bool _private::gfxInitialize()
     uint32 numInstanceExtensions = 0;
     vkEnumerateInstanceExtensionProperties(nullptr, &numInstanceExtensions, nullptr);
     if (numInstanceExtensions) {
-        gVk.instanceExtensions = memAllocTyped<VkExtensionProperties>(numInstanceExtensions, initHeap);
+        gVk.instanceExtensions = Mem::AllocTyped<VkExtensionProperties>(numInstanceExtensions, initHeap);
         gVk.numInstanceExtensions = numInstanceExtensions;
 
         vkEnumerateInstanceExtensionProperties(nullptr, &numInstanceExtensions, gVk.instanceExtensions);
 
         if (settings.listExtensions) {
-            logVerbose("Instance Extensions (%u):", gVk.numInstanceExtensions);
+            LOG_VERBOSE("Instance Extensions (%u):", gVk.numInstanceExtensions);
             for (uint32 i = 0; i < numInstanceExtensions; i++) {
-                logVerbose("\t%s", gVk.instanceExtensions[i].extensionName);
+                LOG_VERBOSE("\t%s", gVk.instanceExtensions[i].extensionName);
             }
         }
     }
@@ -573,7 +573,7 @@ bool _private::gfxInitialize()
             enabledLayers.Add("VK_LAYER_KHRONOS_validation");
         }
         else {
-            logError("Gfx: Vulkan backend doesn't have validation layer support. Turn it off in the settings.");
+            LOG_ERROR("Gfx: Vulkan backend doesn't have validation layer support. Turn it off in the settings.");
             return false;
         }
     }
@@ -626,15 +626,15 @@ bool _private::gfxInitialize()
     instCreateInfo.ppEnabledExtensionNames = enabledInstanceExtensions.Ptr();
     
     if (enabledLayers.Count()) {
-        logVerbose("Enabled instance layers:");
+        LOG_VERBOSE("Enabled instance layers:");
         for (const char* layer: enabledLayers)
-            logVerbose("\t%s", layer);
+            LOG_VERBOSE("\t%s", layer);
     }
 
     if (enabledInstanceExtensions.Count()) {
-        logVerbose("Enabled instance extensions:");
+        LOG_VERBOSE("Enabled instance extensions:");
         for (const char* ext: enabledInstanceExtensions) 
-            logVerbose("\t%s", ext);
+            LOG_VERBOSE("\t%s", ext);
     }
 
     if (VkResult r = vkCreateInstance(&instCreateInfo, &gVk.allocVk, &gVk.instance); r != VK_SUCCESS) {
@@ -648,10 +648,10 @@ bool _private::gfxInitialize()
         case VK_ERROR_INCOMPATIBLE_DRIVER:      errorCode = "VK_ERROR_INCOMPATIBLE_DRIVER"; break;
         default:    errorCode = "UNKNOWN";  break;
         }
-        logError("Gfx: Creating vulkan instance failed: %s", errorCode);
+        LOG_ERROR("Gfx: Creating vulkan instance failed: %s", errorCode);
         return false;
     }
-    logInfo("(init) Vulkan instance created");
+    LOG_INFO("(init) Vulkan instance created");
 
     volkLoadInstance(gVk.instance);
 
@@ -675,7 +675,7 @@ bool _private::gfxInitialize()
             };
 
             if (vkCreateDebugUtilsMessengerEXT(gVk.instance, &debugUtilsInfo, &gVk.allocVk, &gVk.debugMessenger) != VK_SUCCESS) {
-                logError("Gfx: vkCreateDebugUtilsMessengerEXT failed");
+                LOG_ERROR("Gfx: vkCreateDebugUtilsMessengerEXT failed");
                 return false;
             }
 
@@ -695,7 +695,7 @@ bool _private::gfxInitialize()
             };
             
             if (vkCreateDebugReportCallbackEXT(gVk.instance, &debugReportInfo, &gVk.allocVk, &gVk.debugReportCallback) != VK_SUCCESS) {
-                logError("Gfx: vkCreateDebugReportCallbackEXT failed");
+                LOG_ERROR("Gfx: vkCreateDebugReportCallbackEXT failed");
                 return false;
             }
         }
@@ -704,9 +704,9 @@ bool _private::gfxInitialize()
     //------------------------------------------------------------------------------------------------------------------
     // Surface (Implementation is platform dependent)
     if (!settings.headless) {
-        gVk.surface = gfxCreateWindowSurface(appGetNativeWindowHandle());
+        gVk.surface = gfxCreateWindowSurface(App::GetNativeWindowHandle());
         if (!gVk.surface) {
-            logError("Gfx: Creating window surface failed");
+            LOG_ERROR("Gfx: Creating window surface failed");
             return false;
         }
     }
@@ -771,13 +771,13 @@ bool _private::gfxInitialize()
         }
 
         if (gVk.physicalDevice == VK_NULL_HANDLE) {
-            logError("Gfx: No compatible vulkan device found");
+            LOG_ERROR("Gfx: No compatible vulkan device found");
             return false;
         }
 
     }
     else {
-        logError("Gfx: No compatible vulkan device found");
+        LOG_ERROR("Gfx: No compatible vulkan device found");
         return false;
     }
 
@@ -810,12 +810,12 @@ bool _private::gfxInitialize()
         case VK_PHYSICAL_DEVICE_TYPE_VIRTUAL_GPU:       gpuType = "VIRTUAL"; break;
         default:                                        gpuType = "UnknownType";    break;
         }
-        logInfo("(init) GPU: %s (%s)", gVk.deviceProps.deviceName, gpuType);
-        logInfo("(init) GPU memory: %_$$$llu", heapSize);
+        LOG_INFO("(init) GPU: %s (%s)", gVk.deviceProps.deviceName, gpuType);
+        LOG_INFO("(init) GPU memory: %_$$$llu", heapSize);
 
         uint32 major = VK_API_VERSION_MAJOR(gVk.deviceProps.apiVersion);
         uint32 minor = VK_API_VERSION_MINOR(gVk.deviceProps.apiVersion);
-        logInfo("(init) GPU driver vulkan version: %u.%u", major, minor);
+        LOG_INFO("(init) GPU driver vulkan version: %u.%u", major, minor);
 
         if (major == 1) {
             switch (minor) {
@@ -841,8 +841,8 @@ bool _private::gfxInitialize()
 
             vkGetPhysicalDeviceProperties2KHR(gVk.physicalDevice, &props2);
             
-            logInfo("(init) GPU driver: %s - %s", gVk.deviceProps12.driverName, gVk.deviceProps12.driverInfo);
-            logInfo("(init) GPU driver conformance version: %d.%d.%d-%d", 
+            LOG_INFO("(init) GPU driver: %s - %s", gVk.deviceProps12.driverName, gVk.deviceProps12.driverInfo);
+            LOG_INFO("(init) GPU driver conformance version: %d.%d.%d-%d", 
                 gVk.deviceProps12.conformanceVersion.major,
                 gVk.deviceProps12.conformanceVersion.minor,
                 gVk.deviceProps12.conformanceVersion.subminor,
@@ -876,13 +876,13 @@ bool _private::gfxInitialize()
     vkEnumerateDeviceExtensionProperties(gVk.physicalDevice, nullptr, &numDevExtensions, nullptr);
     if (numDevExtensions > 0) {
         gVk.numDeviceExtensions = numDevExtensions;
-        gVk.deviceExtensions = memAllocTyped<VkExtensionProperties>(numDevExtensions, initHeap);
+        gVk.deviceExtensions = Mem::AllocTyped<VkExtensionProperties>(numDevExtensions, initHeap);
         vkEnumerateDeviceExtensionProperties(gVk.physicalDevice, nullptr, &numDevExtensions, gVk.deviceExtensions);
 
         if (settings.listExtensions) {
-            logVerbose("Device Extensions (%u):", gVk.numDeviceExtensions);
+            LOG_VERBOSE("Device Extensions (%u):", gVk.numDeviceExtensions);
             for (uint32 i = 0; i < numDevExtensions; i++) {
-                logVerbose("\t%s", gVk.deviceExtensions[i].extensionName);
+                LOG_VERBOSE("\t%s", gVk.deviceExtensions[i].extensionName);
             }
         }
     }
@@ -1009,18 +1009,18 @@ bool _private::gfxInitialize()
     }
 
     if (enabledDeviceExtensions.Count()) {
-        logVerbose("Enabled device extensions:");
+        LOG_VERBOSE("Enabled device extensions:");
         for (const char* ext : enabledDeviceExtensions) {
-            logVerbose("\t%s", ext);
+            LOG_VERBOSE("\t%s", ext);
         }
     }
 
     if (vkCreateDevice(gVk.physicalDevice, &devCreateInfo, &gVk.allocVk, &gVk.device) != VK_SUCCESS) {
-        logError("Gfx: vkCreateDevice failed");
+        LOG_ERROR("Gfx: vkCreateDevice failed");
         return false;
     }
 
-    logInfo("(init) Vulkan device created");
+    LOG_INFO("(init) Vulkan device created");
     volkLoadDevice(gVk.device);
 
     //------------------------------------------------------------------------------------------------------------------
@@ -1052,7 +1052,7 @@ bool _private::gfxInitialize()
         };
 
         if (vmaCreateAllocator(&vmaCreateInfo, &gVk.vma) != VK_SUCCESS) {
-            logError("Gfx: Creating VMA allocator failed");
+            LOG_ERROR("Gfx: Creating VMA allocator failed");
             return false;
         }
     }
@@ -1093,25 +1093,25 @@ bool _private::gfxInitialize()
         # if PLATFORM_ANDROID
             const VkSurfaceCapabilitiesKHR& swapchainCaps = gVk.swapchainSupport.caps;
             if (swapchainCaps.currentTransform & VK_SURFACE_TRANSFORM_ROTATE_90_BIT_KHR)
-                appAndroidSetFramebufferTransform(AppFramebufferTransform::Rotate90);
+                App::AndroidSetFramebufferTransform(AppFramebufferTransform::Rotate90);
             if (swapchainCaps.currentTransform & VK_SURFACE_TRANSFORM_ROTATE_180_BIT_KHR)
-                appAndroidSetFramebufferTransform(AppFramebufferTransform::Rotate180);
+                App::AndroidSetFramebufferTransform(AppFramebufferTransform::Rotate180);
             if (swapchainCaps.currentTransform & VK_SURFACE_TRANSFORM_ROTATE_270_BIT_KHR)
-                appAndroidSetFramebufferTransform(AppFramebufferTransform::Rotate270);
+                App::AndroidSetFramebufferTransform(AppFramebufferTransform::Rotate270);
         #endif
         
         vkGetPhysicalDeviceSurfaceFormatsKHR(gVk.physicalDevice, gVk.surface, &numFormats, nullptr);
         gVk.swapchainSupport.numFormats = numFormats;
-        gVk.swapchainSupport.formats = memAllocTyped<VkSurfaceFormatKHR>(numFormats, initHeap);
+        gVk.swapchainSupport.formats = Mem::AllocTyped<VkSurfaceFormatKHR>(numFormats, initHeap);
         vkGetPhysicalDeviceSurfaceFormatsKHR(gVk.physicalDevice, gVk.surface, &numFormats, gVk.swapchainSupport.formats);
 
         vkGetPhysicalDeviceSurfacePresentModesKHR(gVk.physicalDevice, gVk.surface, &numPresentModes, nullptr);
         gVk.swapchainSupport.numPresentModes = numPresentModes;
-        gVk.swapchainSupport.presentModes = memAllocTyped<VkPresentModeKHR>(numPresentModes, initHeap);
+        gVk.swapchainSupport.presentModes = Mem::AllocTyped<VkPresentModeKHR>(numPresentModes, initHeap);
         vkGetPhysicalDeviceSurfacePresentModesKHR(gVk.physicalDevice, gVk.surface, &numPresentModes, 
             gVk.swapchainSupport.presentModes);
 
-        gVk.swapchain = gfxCreateSwapchain(gVk.surface, appGetFramebufferWidth(), appGetFramebufferHeight(), nullptr, true);
+        gVk.swapchain = gfxCreateSwapchain(gVk.surface, App::GetFramebufferWidth(), App::GetFramebufferHeight(), nullptr, true);
     }
 
     //------------------------------------------------------------------------------------------------------------------
@@ -1127,12 +1127,12 @@ bool _private::gfxInitialize()
         if (VK_FAILED(vkCreateSemaphore(gVk.device, &semaphoreCreateInfo, &gVk.allocVk, &gVk.imageAvailSemaphores[i])) ||
             VK_FAILED(vkCreateSemaphore(gVk.device, &semaphoreCreateInfo, &gVk.allocVk, &gVk.renderFinishedSemaphores[i])))
         {
-            logError("Gfx: vkCreateSemaphore failed");
+            LOG_ERROR("Gfx: vkCreateSemaphore failed");
             return false;
         }
 
         if (VK_FAILED(vkCreateFence(gVk.device, &fenceCreateInfo, &gVk.allocVk, &gVk.inflightFences[i]))) {
-            logError("Gfx: vkCreateFence failed");
+            LOG_ERROR("Gfx: vkCreateFence failed");
             return false;
         }
     }
@@ -1179,7 +1179,7 @@ bool _private::gfxInitialize()
         };
         
         if (vkCreateDescriptorPool(gVk.device, &poolInfo, &gVk.allocVk, &gVk.descriptorPool) != VK_SUCCESS) {
-            logError("Gfx: Create descriptor pool failed");
+            LOG_ERROR("Gfx: Create descriptor pool failed");
             return false;
         }
     }    
@@ -1193,17 +1193,17 @@ bool _private::gfxInitialize()
     gVk.garbageMtx.Initialize();
     {
         size_t bufferSize = Array<GfxGarbage>::GetMemoryRequirement(_limits::kGfxMaxGarbage);
-        gVk.garbage.Reserve(_limits::kGfxMaxGarbage, memAlloc(bufferSize, initHeap), bufferSize);
+        gVk.garbage.Reserve(_limits::kGfxMaxGarbage, Mem::Alloc(bufferSize, initHeap), bufferSize);
     }
 
-    logInfo("(init) Gfx initialized");
+    LOG_INFO("(init) Gfx initialized");
 
     //------------------------------------------------------------------------------------------------------------------
     // Profiling
     #ifdef TRACY_ENABLE
         if (settings.enableGpuProfile) {
             if (!gfxInitializeProfiler()) {
-                logError("Initializing GPU profiler failed");
+                LOG_ERROR("Initializing GPU profiler failed");
                 return false;
             }
         }
@@ -1217,7 +1217,7 @@ bool _private::gfxInitialize()
         };
         for (uint32 i = 0; i < kMaxFramesInFlight; i++) {
             if (vkCreateQueryPool(gVk.device, &queryCreateInfo, &gVk.allocVk, &gVk.queryPool[i]) != VK_SUCCESS) {
-                logError("Gfx: Creating main query pool failed");
+                LOG_ERROR("Gfx: Creating main query pool failed");
                 return false;
             }
             vkResetQueryPoolEXT(gVk.device, gVk.queryPool[i], 0, 2);
@@ -1228,42 +1228,42 @@ bool _private::gfxInitialize()
     gfxGetPhysicalDeviceProperties();       // call once just to populate the struct
     gVk.initialized = true;
 
-    logVerbose("(init) Graphics initialized (%.1f ms)", stopwatch.ElapsedMS());
+    LOG_VERBOSE("(init) Graphics initialized (%.1f ms)", stopwatch.ElapsedMS());
     return true;
 }
 
 void GfxObjectPools::Initialize()
 {
-    Allocator* initHeap = engineGetInitHeap();
+    MemAllocator* initHeap = Engine::GetInitHeap();
 
     {
         size_t poolSize = HandlePool<GfxBuffer, GfxBufferData>::GetMemoryRequirement(_limits::kGfxMaxBuffers);
-        buffers.Reserve(_limits::kGfxMaxBuffers, memAlloc(poolSize, initHeap), poolSize);
+        buffers.Reserve(_limits::kGfxMaxBuffers, Mem::Alloc(poolSize, initHeap), poolSize);
     }
 
     {
         size_t poolSize = HandlePool<GfxImage, GfxImageData>::GetMemoryRequirement(_limits::kGfxMaxImages);
-        images.Reserve(_limits::kGfxMaxImages, memAlloc(poolSize, initHeap), poolSize);
+        images.Reserve(_limits::kGfxMaxImages, Mem::Alloc(poolSize, initHeap), poolSize);
     }
 
     {
         size_t poolSize = HandlePool<GfxDescriptorSet, GfxDescriptorSetData>::GetMemoryRequirement(_limits::kGfxMaxDescriptorSets);
-        descriptorSets.Reserve(_limits::kGfxMaxDescriptorSets, memAlloc(poolSize, initHeap), poolSize);
+        descriptorSets.Reserve(_limits::kGfxMaxDescriptorSets, Mem::Alloc(poolSize, initHeap), poolSize);
     }
 
     {
         size_t poolSize = HandlePool<GfxDescriptorSetLayout, GfxDescriptorSetLayoutData>::GetMemoryRequirement(_limits::kGfxMaxDescriptorSetLayouts);
-        descriptorSetLayouts.Reserve(_limits::kGfxMaxDescriptorSetLayouts, memAlloc(poolSize, initHeap), poolSize);
+        descriptorSetLayouts.Reserve(_limits::kGfxMaxDescriptorSetLayouts, Mem::Alloc(poolSize, initHeap), poolSize);
     }
 
     {
         size_t poolSize = HandlePool<GfxPipeline, GfxPipelineData>::GetMemoryRequirement(_limits::kGfxMaxPipelines);
-        pipelines.Reserve(_limits::kGfxMaxPipelines, memAlloc(poolSize, initHeap), poolSize);
+        pipelines.Reserve(_limits::kGfxMaxPipelines, Mem::Alloc(poolSize, initHeap), poolSize);
     }
 
     {
         size_t poolSize = HandlePool<GfxPipelineLayout, GfxPipelineLayoutData>::GetMemoryRequirement(_limits::kGfxMaxPipelineLayouts);
-        pipelineLayouts.Reserve(_limits::kGfxMaxPipelineLayouts, memAlloc(poolSize, initHeap), poolSize);
+        pipelineLayouts.Reserve(_limits::kGfxMaxPipelineLayouts, Mem::Alloc(poolSize, initHeap), poolSize);
     }
 }
 
@@ -1367,13 +1367,13 @@ INLINE const GfxShaderParameterInfo* gfxShaderGetParam(const GfxShader& info, co
 // https://android-developers.googleblog.com/2020/02/handling-device-orientation-efficiently.html
 static Pair<Int2, Int2> gfxTransformRectangleBasedOnOrientation(int x, int y, int w, int h, bool isSwapchain)
 {
-    int bufferWidth = appGetFramebufferWidth();
-    int bufferHeight = appGetFramebufferHeight();
+    int bufferWidth = App::GetFramebufferWidth();
+    int bufferHeight = App::GetFramebufferHeight();
 
     if (!isSwapchain)
         return Pair<Int2, Int2>(Int2(x, y), Int2(w, h));
 
-    switch (appGetFramebufferTransform()) {
+    switch (App::GetFramebufferTransform()) {
     case AppFramebufferTransform::None:     
         return Pair<Int2, Int2>(Int2(x, y), Int2(w, h));
     case AppFramebufferTransform::Rotate90:
@@ -1417,16 +1417,16 @@ static VKAPI_ATTR VkBool32 VKAPI_CALL gfxDebugUtilsMessageFn(
 
     switch (messageSeverity) {
     case VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT:
-        logVerbose("Gfx: %s%s", typeStr, callbackData->pMessage);
+        LOG_VERBOSE("Gfx: %s%s", typeStr, callbackData->pMessage);
         break;
     case VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT:
-        logInfo("Gfx: %s%s", typeStr, callbackData->pMessage);
+        LOG_INFO("Gfx: %s%s", typeStr, callbackData->pMessage);
         break;
     case VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT:
-        logWarning("Gfx: %s%s", typeStr, callbackData->pMessage);
+        LOG_WARNING("Gfx: %s%s", typeStr, callbackData->pMessage);
         break;
     case VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT:
-        logError("Gfx: %s%s", typeStr, callbackData->pMessage);
+        LOG_ERROR("Gfx: %s%s", typeStr, callbackData->pMessage);
         break;
     default:
         break;
@@ -1445,19 +1445,19 @@ static VkBool32 gfxDebugReportFn(VkDebugReportFlagsEXT flags, VkDebugReportObjec
     UNUSED(pUserData);
 
     if (flags & VK_DEBUG_REPORT_DEBUG_BIT_EXT) {
-        logDebug("Gfx: [%s] %s", pLayerPrefix, pMessage);
+        LOG_DEBUG("Gfx: [%s] %s", pLayerPrefix, pMessage);
     }
     else if (flags & VK_DEBUG_REPORT_INFORMATION_BIT_EXT) {
-        logInfo("Gfx: [%s] %s", pLayerPrefix, pMessage);
+        LOG_INFO("Gfx: [%s] %s", pLayerPrefix, pMessage);
     }
     else if (flags & VK_DEBUG_REPORT_WARNING_BIT_EXT) {
-        logWarning("Gfx: [%s] %s", pLayerPrefix, pMessage);
+        LOG_WARNING("Gfx: [%s] %s", pLayerPrefix, pMessage);
     }
     else if (flags & VK_DEBUG_REPORT_PERFORMANCE_WARNING_BIT_EXT) {
-        logWarning("Gfx: [%s] (PERFORMANCE) %s", pLayerPrefix, pMessage);
+        LOG_WARNING("Gfx: [%s] (PERFORMANCE) %s", pLayerPrefix, pMessage);
     }
     else if (flags & VK_DEBUG_REPORT_ERROR_BIT_EXT) {
-        logError("Gfx: [%s] %s", pLayerPrefix, pMessage);
+        LOG_ERROR("Gfx: [%s] %s", pLayerPrefix, pMessage);
     }
 
     return VK_FALSE;
@@ -1473,7 +1473,7 @@ static VkCommandBuffer gfxGetNewCommandBuffer()
 {
     PROFILE_ZONE(true);
 
-    uint32 frameIdx = atomicLoad32Explicit(&gVk.currentFrameIdx, AtomicMemoryOrder::Acquire);
+    uint32 frameIdx = Atomic::LoadExplicit(&gVk.currentFrameIdx, AtomicMemoryOrder::Acquire);
     
     if (!gCmdBufferThreadData.initialized) {
         VkCommandPoolCreateInfo poolCreateInfo {
@@ -1492,7 +1492,7 @@ static VkCommandBuffer gfxGetNewCommandBuffer()
             gCmdBufferThreadData.cmdBuffers[i].SetAllocator(&gVk.alloc);
         }
         
-        gCmdBufferThreadData.lastResetFrame = engineFrameIndex();
+        gCmdBufferThreadData.lastResetFrame = Engine::GetFrameIndex();
         
         gCmdBufferThreadData.initialized = true;
 
@@ -1504,7 +1504,7 @@ static VkCommandBuffer gfxGetNewCommandBuffer()
         PROFILE_ZONE_NAME("ResetCommandPool", true);
         // Check if we need to reset command-pools
         // We only reset the command-pools after new frame is started. 
-        uint64 engineFrame = engineFrameIndex();
+        uint64 engineFrame = Engine::GetFrameIndex();
         if (engineFrame > gCmdBufferThreadData.lastResetFrame) {
             gCmdBufferThreadData.lastResetFrame = engineFrame;
             vkResetCommandPool(gVk.device, gCmdBufferThreadData.commandPools[frameIdx], 0);
@@ -1601,7 +1601,7 @@ bool gfxBeginCommandBuffer()
     // Start query for frametime on the first command-buffer only
     if (gVk.deviceProps.limits.timestampComputeAndGraphics) {
         uint32 expectedValue = 0;
-        if (atomicCompareExchange32Weak(&gVk.queryFirstCall, &expectedValue, 1)) {
+        if (Atomic::CompareExchange_Weak(&gVk.queryFirstCall, &expectedValue, 1)) {
             if (gVk.hasHostQueryReset)
                 vkResetQueryPoolEXT(gVk.device, gVk.queryPool[gVk.currentFrameIdx], 0, 2);
 
@@ -1898,7 +1898,7 @@ void gfxCmdEndSwapchainRenderPass()
     if (gVk.deviceProps.limits.timestampComputeAndGraphics) {
         // Assume this is the final pass that is called in the frame, write the end-frame query
         vkCmdWriteTimestamp(cmdBufferVk, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, gVk.queryPool[gVk.currentFrameIdx], 1);
-        atomicStore32Explicit(&gVk.queryFirstCall, 0, AtomicMemoryOrder::Relaxed);
+        Atomic::StoreExplicit(&gVk.queryFirstCall, 0, AtomicMemoryOrder::Relaxed);
     }
 }
 
@@ -2057,7 +2057,7 @@ static VkSurfaceKHR gfxCreateWindowSurface(void* windowHandle)
     #if PLATFORM_WINDOWS
         VkWin32SurfaceCreateInfoKHR surfaceCreateInfo {
             .sType = VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR,
-            .hinstance = (HMODULE)appGetNativeAppHandle(),
+            .hinstance = (HMODULE)App::GetNativeAppHandle(),
             .hwnd = (HWND)windowHandle
         };
     
@@ -2155,7 +2155,7 @@ static VkRenderPass gfxCreateRenderPassVk(VkFormat format, VkFormat depthFormat 
     };
 
     if (vkCreateRenderPass(gVk.device, &renderPassInfo, &gVk.allocVk, &renderPass) != VK_SUCCESS) {
-        logError("Gfx: vkCreateRenderPass failed");
+        LOG_ERROR("Gfx: vkCreateRenderPass failed");
         return VK_NULL_HANDLE;
     }
 
@@ -2167,7 +2167,7 @@ static GfxSwapchain gfxCreateSwapchain(VkSurfaceKHR surface, uint16 width, uint1
     VkSurfaceFormatKHR format {};
     for (uint32 i = 0; i < gVk.swapchainSupport.numFormats; i++) {
         VkFormat fmt = gVk.swapchainSupport.formats[i].format;
-        if (settingsGet().graphics.surfaceSRGB) {
+        if (SettingsJunkyard::Get().graphics.surfaceSRGB) {
             if((fmt == VK_FORMAT_B8G8R8A8_SRGB || fmt == VK_FORMAT_R8G8B8A8_SRGB) &&
                gVk.swapchainSupport.formats[i].colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) 
             {
@@ -2184,7 +2184,7 @@ static GfxSwapchain gfxCreateSwapchain(VkSurfaceKHR surface, uint16 width, uint1
     }
     ASSERT_ALWAYS(format.format != VK_FORMAT_UNDEFINED, "Gfx: SwapChain PixelFormat is not supported");
 
-    VkPresentModeKHR presentMode = settingsGet().graphics.enableVsync ? VK_PRESENT_MODE_FIFO_KHR : VK_PRESENT_MODE_MAILBOX_KHR;
+    VkPresentModeKHR presentMode = SettingsJunkyard::Get().graphics.enableVsync ? VK_PRESENT_MODE_FIFO_KHR : VK_PRESENT_MODE_MAILBOX_KHR;
 
     // Verify that SwapChain has support for this present mode
     bool presentModeIsSupported = false;
@@ -2196,7 +2196,7 @@ static GfxSwapchain gfxCreateSwapchain(VkSurfaceKHR surface, uint16 width, uint1
     }
 
     if (!presentModeIsSupported) {
-        logWarning("Gfx: PresentMode: %u is not supported by device, choosing default: %u", presentMode, 
+        LOG_WARNING("Gfx: PresentMode: %u is not supported by device, choosing default: %u", presentMode, 
                    gVk.swapchainSupport.presentModes[0]);
         presentMode = gVk.swapchainSupport.presentModes[0];
     }
@@ -2212,8 +2212,8 @@ static GfxSwapchain gfxCreateSwapchain(VkSurfaceKHR surface, uint16 width, uint1
     };
 
     // https://android-developers.googleblog.com/2020/02/handling-device-orientation-efficiently.html
-    if (appGetFramebufferTransform() == AppFramebufferTransform::Rotate90 || 
-        appGetFramebufferTransform() == AppFramebufferTransform::Rotate270)
+    if (App::GetFramebufferTransform() == AppFramebufferTransform::Rotate90 || 
+        App::GetFramebufferTransform() == AppFramebufferTransform::Rotate270)
     {
        Swap(extent.width, extent.height);
     }
@@ -2254,7 +2254,7 @@ static GfxSwapchain gfxCreateSwapchain(VkSurfaceKHR surface, uint16 width, uint1
 
     VkSwapchainKHR swapchain;
     if (vkCreateSwapchainKHR(gVk.device, &createInfo, &gVk.allocVk, &swapchain) != VK_SUCCESS) {
-        logError("Gfx: CreateSwapchain failed");
+        LOG_ERROR("Gfx: CreateSwapchain failed");
         return GfxSwapchain{};
     }
 
@@ -2288,7 +2288,7 @@ static GfxSwapchain gfxCreateSwapchain(VkSurfaceKHR surface, uint16 width, uint1
         viewCreateInfo.subresourceRange.layerCount = 1;
 
         if (vkCreateImageView(gVk.device, &viewCreateInfo, &gVk.allocVk, &newSwapchain.imageViews[i]) != VK_SUCCESS) {
-            logError("Gfx: Creating Swapchain image views failed");
+            LOG_ERROR("Gfx: Creating Swapchain image views failed");
             gfxDestroySwapchain(&newSwapchain);
             return GfxSwapchain {};
         }
@@ -2304,7 +2304,7 @@ static GfxSwapchain gfxCreateSwapchain(VkSurfaceKHR surface, uint16 width, uint1
         });
 
         if (!depthImage.IsValid()) {
-            logError("Gfx: Creating Swapchain depth image failed");
+            LOG_ERROR("Gfx: Creating Swapchain depth image failed");
             gfxDestroySwapchain(&newSwapchain);
             return GfxSwapchain {};
         }
@@ -2355,7 +2355,7 @@ void gfxResizeSwapchain(uint16 width, uint16 height)
     uint32 oldHeight = gVk.swapchain.extent.height;
     
     gVk.swapchain = gfxCreateSwapchain(gVk.surface, width, height, nullptr, true);
-    logDebug("Swapchain resized from %ux%u to %ux%u", oldWidth, oldHeight, width, height);
+    LOG_DEBUG("Swapchain resized from %ux%u to %ux%u", oldWidth, oldHeight, width, height);
 
     if (gVk.device)
         vkDeviceWaitIdle(gVk.device);
@@ -2382,17 +2382,17 @@ void gfxRecreateSurfaceAndSwapchain()
     if (gVk.surface) 
         vkDestroySurfaceKHR(gVk.instance, gVk.surface, &gVk.allocVk);
     
-    gVk.surface = gfxCreateWindowSurface(appGetNativeWindowHandle());
+    gVk.surface = gfxCreateWindowSurface(App::GetNativeWindowHandle());
     ASSERT(gVk.surface);
 
     gfxDestroySwapchain(&gVk.swapchain);
-    gVk.swapchain = gfxCreateSwapchain(gVk.surface, appGetFramebufferWidth(), appGetFramebufferHeight(), nullptr, true);
+    gVk.swapchain = gfxCreateSwapchain(gVk.surface, App::GetFramebufferWidth(), App::GetFramebufferHeight(), nullptr, true);
 
     if (gVk.device)
         vkDeviceWaitIdle(gVk.device);
 
-    logDebug("Window surface (Handle = 0x%x) and swapchain (%ux%u) recreated.", 
-             appGetNativeWindowHandle(), appGetFramebufferWidth(), appGetFramebufferHeight());
+    LOG_DEBUG("Window surface (Handle = 0x%x) and swapchain (%ux%u) recreated.", 
+             App::GetNativeWindowHandle(), App::GetFramebufferWidth(), App::GetFramebufferHeight());
 }
 
 
@@ -2415,7 +2415,7 @@ static VkShaderModule gfxCreateShaderModuleVk(const char* name, const uint8* dat
         
     VkShaderModule shaderModule;
     if (VK_FAILED(vkCreateShaderModule(gVk.device, &createInfo, &gVk.allocVk, &shaderModule))) {
-        logError("Gfx: vkCreateShaderModule failed: %s", name);
+        LOG_ERROR("Gfx: vkCreateShaderModule failed: %s", name);
         return VK_NULL_HANDLE;
     }
     return shaderModule;
@@ -2502,7 +2502,7 @@ static GfxPipelineLayout gfxCreatePipelineLayout(const GfxShader& shader,
         };
         
         if (VK_FAILED(vkCreatePipelineLayout(gVk.device, &pipelineLayoutInfo, &gVk.allocVk, &pipelineLayoutVk))) {
-            logError("Gfx: Failed to create pipeline layout");
+            LOG_ERROR("Gfx: Failed to create pipeline layout");
             return GfxPipelineLayout();
         }
         
@@ -2519,8 +2519,8 @@ static GfxPipelineLayout gfxCreatePipelineLayout(const GfxShader& shader,
             pipLayoutData.descriptorSetLayouts[i] = descriptorSetLayouts[i];
 
         #if !CONFIG_FINAL_BUILD
-            if (settingsGet().graphics.trackResourceLeaks)
-                pipLayoutData.numStackframes = debugCaptureStacktrace(pipLayoutData.stackframes, (uint16)CountOf(pipLayoutData.stackframes), 2);
+            if (SettingsJunkyard::Get().graphics.trackResourceLeaks)
+                pipLayoutData.numStackframes = Debug::CaptureStacktrace(pipLayoutData.stackframes, (uint16)CountOf(pipLayoutData.stackframes), 2);
         #endif
 
         pipLayout = gVk.pools.pipelineLayouts.Add(pipLayoutData);
@@ -2628,7 +2628,7 @@ static void gfxSavePipelineBinaryProperties(const char* name, VkPipeline pip)
                     vkGetPipelineExecutableInternalRepresentationsKHR(gVk.device, &pipExecInfo, &numRepr, reprs);
                     for (uint32 ri = 0; ri < numRepr; ri++) {
                         const VkPipelineExecutableInternalRepresentationKHR& repr = reprs[ri];
-                        logDebug(repr.name);
+                        LOG_DEBUG(repr.name);
                     }
                 }
             }
@@ -2639,8 +2639,8 @@ static void gfxSavePipelineBinaryProperties(const char* name, VkPipeline pip)
         // TODO: use async write 
         Path filepath(name);
         filepath.Append(".txt");
-        vfsWriteFileAsync(filepath.CStr(), info, VfsFlags::AbsolutePath|VfsFlags::TextFile, 
-                          [](const char* path, size_t, const Blob&, void*) { logVerbose("Written shader information to file: %s", path); },
+        Vfs::WriteFileAsync(filepath.CStr(), info, VfsFlags::AbsolutePath|VfsFlags::TextFile, 
+                          [](const char* path, size_t, const Blob&, void*) { LOG_VERBOSE("Written shader information to file: %s", path); },
                           nullptr);
     }
 }
@@ -2779,7 +2779,7 @@ GfxPipeline gfxCreatePipeline(const GfxPipelineDesc& desc)
     const GfxShaderStageInfo* vsInfo = gfxShaderGetStage(*shaderInfo, GfxShaderStage::Vertex);
     const GfxShaderStageInfo* fsInfo = gfxShaderGetStage(*shaderInfo, GfxShaderStage::Fragment);
     if (!vsInfo || !fsInfo) {
-        logError("Gfx: Pipeline failed. Shader doesn't have vs/fs stages: %s", shaderInfo->name);
+        LOG_ERROR("Gfx: Pipeline failed. Shader doesn't have vs/fs stages: %s", shaderInfo->name);
         return GfxPipeline();
     }
 
@@ -2961,7 +2961,7 @@ GfxPipeline gfxCreatePipeline(const GfxPipelineDesc& desc)
 
     VkPipeline pipeline;
     if (VK_FAILED(vkCreateGraphicsPipelines(gVk.device, VK_NULL_HANDLE, 1, &pipelineInfo, &gVk.allocVk, &pipeline))) {
-        logError("Gfx: Creating graphics pipeline failed");
+        LOG_ERROR("Gfx: Creating graphics pipeline failed");
         return GfxPipeline();
     }
 
@@ -2979,8 +2979,8 @@ GfxPipeline gfxCreatePipeline(const GfxPipelineDesc& desc)
     };
 
     #if !CONFIG_FINAL_BUILD
-    if (settingsGet().graphics.trackResourceLeaks)
-        pipData.numStackframes = debugCaptureStacktrace(pipData.stackframes, (uint16)CountOf(pipData.stackframes), 2);
+    if (SettingsJunkyard::Get().graphics.trackResourceLeaks)
+        pipData.numStackframes = Debug::CaptureStacktrace(pipData.stackframes, (uint16)CountOf(pipData.stackframes), 2);
     #endif
     
     GfxPipeline pip;
@@ -3052,7 +3052,7 @@ void _private::gfxRecreatePipelinesWithNewShader(uint32 shaderHash, GfxShader* s
             for (uint32 i = 0; i < pipelineList.Count(); i++) {
                 const GfxPipelineData& srcData = gVk.pools.pipelines.Data(pipelineList[i]);
                 pipDatas[i] = srcData;
-                pipDatas[i].gfxCreateInfo = memAllocCopy<VkGraphicsPipelineCreateInfo>(srcData.gfxCreateInfo, 1, &tmpAlloc);
+                pipDatas[i].gfxCreateInfo = Mem::AllocCopy<VkGraphicsPipelineCreateInfo>(srcData.gfxCreateInfo, 1, &tmpAlloc);
             }
         }
         
@@ -3063,7 +3063,7 @@ void _private::gfxRecreatePipelinesWithNewShader(uint32 shaderHash, GfxShader* s
             const GfxShaderStageInfo* vsInfo = gfxShaderGetStage(*shader, GfxShaderStage::Vertex);
             const GfxShaderStageInfo* fsInfo = gfxShaderGetStage(*shader, GfxShaderStage::Fragment);
             if (!vsInfo || !fsInfo) {
-                logError("Gfx: Pipeline failed. Shader doesn't have vs/fs stages: %s", shader->name);
+                LOG_ERROR("Gfx: Pipeline failed. Shader doesn't have vs/fs stages: %s", shader->name);
                 return;
             }
 
@@ -3077,7 +3077,7 @@ void _private::gfxRecreatePipelinesWithNewShader(uint32 shaderHash, GfxShader* s
 
             VkPipeline pipeline;
             if (VK_FAILED(vkCreateGraphicsPipelines(gVk.device, VK_NULL_HANDLE, 1, pipData.gfxCreateInfo, &gVk.allocVk, &pipeline))) {
-                logError("Gfx: Creating graphics pipeline failed");
+                LOG_ERROR("Gfx: Creating graphics pipeline failed");
                 return;
             }
 
@@ -3085,7 +3085,7 @@ void _private::gfxRecreatePipelinesWithNewShader(uint32 shaderHash, GfxShader* s
                 MutexScope mtxGarbage(gVk.garbageMtx);
                 gVk.garbage.Push(GfxGarbage {
                     .type = GfxGarbage::Type::Pipeline,
-                    .frameIdx = engineFrameIndex(),
+                    .frameIdx = Engine::GetFrameIndex(),
                     .pipeline = pipData.pipeline
                 });
             }
@@ -3205,7 +3205,7 @@ GfxBuffer gfxCreateBuffer(const GfxBufferDesc& desc)
             MutexScope mtxGarbage(gVk.garbageMtx);
             gVk.garbage.Push(GfxGarbage {
                 .type = GfxGarbage::Type::Buffer,
-                .frameIdx = engineFrameIndex(),
+                .frameIdx = Engine::GetFrameIndex(),
                 .buffer = stagingBuffer,
                 .allocation = stagingAlloc
             });
@@ -3244,8 +3244,8 @@ GfxBuffer gfxCreateBuffer(const GfxBufferDesc& desc)
     }
 
     #if !CONFIG_FINAL_BUILD
-    if (settingsGet().graphics.trackResourceLeaks)
-        bufferData.numStackframes = debugCaptureStacktrace(bufferData.stackframes, (uint16)CountOf(bufferData.stackframes), 2);
+    if (SettingsJunkyard::Get().graphics.trackResourceLeaks)
+        bufferData.numStackframes = Debug::CaptureStacktrace(bufferData.stackframes, (uint16)CountOf(bufferData.stackframes), 2);
     #endif
 
     ReadWriteMutexWriteScope lk(gVk.pools.locks[GfxObjectPools::BUFFERS]);
@@ -3327,7 +3327,7 @@ static VkImageView gfxCreateImageViewVk(VkImage image, VkFormat format, VkImageA
 
     VkImageView view;
     if (vkCreateImageView(gVk.device, &viewInfo, &gVk.allocVk, &view) != VK_SUCCESS) {
-        logError("Gfx: CreateImageView failed");
+        LOG_ERROR("Gfx: CreateImageView failed");
         return VK_NULL_HANDLE;
     }
 
@@ -3358,7 +3358,7 @@ static VkSampler gfxCreateSamplerVk(VkFilter minMagFilter, VkSamplerMipmapMode m
 
     VkSampler sampler;
     if (vkCreateSampler(gVk.device, &samplerInfo, &gVk.allocVk, &sampler) != VK_SUCCESS) {
-        logError("Gfx: CreateSampler failed");
+        LOG_ERROR("Gfx: CreateSampler failed");
         return VK_NULL_HANDLE;
     }
 
@@ -3498,7 +3498,7 @@ GfxImage gfxCreateImage(const GfxImageDesc& desc)
             MutexScope mtxGarbage(gVk.garbageMtx);
             gVk.garbage.Push(GfxGarbage {
                 .type = GfxGarbage::Type::Buffer,
-                .frameIdx = engineFrameIndex(),
+                .frameIdx = Engine::GetFrameIndex(),
                 .buffer = stagingBuffer,
                 .allocation = stagingAlloc
             });
@@ -3566,8 +3566,8 @@ GfxImage gfxCreateImage(const GfxImageDesc& desc)
     gfxEndDeferredCommandBuffer();
 
 #if !CONFIG_FINAL_BUILD
-    if (settingsGet().graphics.trackResourceLeaks)
-        imageData.numStackframes = debugCaptureStacktrace(imageData.stackframes, (uint16)CountOf(imageData.stackframes), 2);
+    if (SettingsJunkyard::Get().graphics.trackResourceLeaks)
+        imageData.numStackframes = Debug::CaptureStacktrace(imageData.stackframes, (uint16)CountOf(imageData.stackframes), 2);
 #endif
 
     ReadWriteMutexWriteScope lk(gVk.pools.locks[GfxObjectPools::IMAGES]);
@@ -3672,7 +3672,7 @@ GfxDescriptorSetLayout gfxCreateDescriptorSetLayout(const GfxShader& shader, con
         
         VkDescriptorSetLayout dsLayout;
         if (vkCreateDescriptorSetLayout(gVk.device, &layoutCreateInfo, &gVk.allocVk, &dsLayout) != VK_SUCCESS) {
-            logError("Gfx: CreateDescriptorSetLayout failed");
+            LOG_ERROR("Gfx: CreateDescriptorSetLayout failed");
             return GfxDescriptorSetLayout();
         }
 
@@ -3682,27 +3682,27 @@ GfxDescriptorSetLayout gfxCreateDescriptorSetLayout(const GfxShader& shader, con
             .layout = dsLayout,
             .numBindings = numBindings,
             .refCount = 1,
-            .bindings = memAllocTyped<GfxDescriptorSetLayoutData::Binding>(numBindings, &gVk.alloc)
+            .bindings = Mem::AllocTyped<GfxDescriptorSetLayoutData::Binding>(numBindings, &gVk.alloc)
         };
 
         for (uint32 i = 0; i < numBindings; i++) {
             ASSERT(names[i]);
             dsLayoutData.bindings[i].name = names[i];
-            dsLayoutData.bindings[i].nameHash = hashFnv32Str(names[i]);
+            dsLayoutData.bindings[i].nameHash = Hash::Fnv32Str(names[i]);
             dsLayoutData.bindings[i].variableDescCount = bindings[i].arrayCount;
             memcpy(&dsLayoutData.bindings[i].vkBinding, &descriptorSetBindings[i], sizeof(VkDescriptorSetLayoutBinding));
         }
 
         #if !CONFIG_FINAL_BUILD
-        if (settingsGet().graphics.trackResourceLeaks)
-            dsLayoutData.numStackframes = debugCaptureStacktrace(dsLayoutData.stackframes, (uint16)CountOf(dsLayoutData.stackframes), 2);
+        if (SettingsJunkyard::Get().graphics.trackResourceLeaks)
+            dsLayoutData.numStackframes = Debug::CaptureStacktrace(dsLayoutData.stackframes, (uint16)CountOf(dsLayoutData.stackframes), 2);
         #endif
 
         ReadWriteMutexWriteScope mtx(gVk.pools.locks[GfxObjectPools::DESCRIPTOR_SET_LAYOUTS]);
         GfxDescriptorSetLayoutData prevLayout;
         layout = gVk.pools.descriptorSetLayouts.Add(dsLayoutData, &prevLayout);
 
-        memFree(prevLayout.bindings, &gVk.alloc);
+        Mem::Free(prevLayout.bindings, &gVk.alloc);
         return layout;
     }
 
@@ -3719,7 +3719,7 @@ void gfxDestroyDescriptorSetLayout(GfxDescriptorSetLayout layout)
         if (layoutData.layout)
             vkDestroyDescriptorSetLayout(gVk.device, layoutData.layout, &gVk.allocVk);
         if (layoutData.bindings)
-            memFree(layoutData.bindings, &gVk.alloc);
+            Mem::Free(layoutData.bindings, &gVk.alloc);
         memset(&layoutData, 0x0, sizeof(layoutData));
 
         ReadWriteMutexWriteScope lk(gVk.pools.locks[GfxObjectPools::DESCRIPTOR_SET_LAYOUTS]);
@@ -3775,13 +3775,13 @@ GfxDescriptorSet gfxCreateDescriptorSet(GfxDescriptorSetLayout layout)
 
     GfxDescriptorSetData descriptorSetData { .layout = layout };
     if (vkAllocateDescriptorSets(gVk.device, &allocInfo, &descriptorSetData.descriptorSet) != VK_SUCCESS) {
-        logError("Gfx: AllocateDescriptorSets failed");
+        LOG_ERROR("Gfx: AllocateDescriptorSets failed");
         return GfxDescriptorSet();
     }
 
     #if !CONFIG_FINAL_BUILD
-    if (settingsGet().graphics.trackResourceLeaks)
-        descriptorSetData.numStackframes = debugCaptureStacktrace(descriptorSetData.stackframes, (uint16)CountOf(descriptorSetData.stackframes), 2);
+    if (SettingsJunkyard::Get().graphics.trackResourceLeaks)
+        descriptorSetData.numStackframes = Debug::CaptureStacktrace(descriptorSetData.stackframes, (uint16)CountOf(descriptorSetData.stackframes), 2);
     #endif
 
     ReadWriteMutexWriteScope lk(gVk.pools.locks[GfxObjectPools::DESCRIPTOR_SETS]);
@@ -3861,7 +3861,7 @@ void gfxUpdateDescriptorSet(GfxDescriptorSet dset, uint32 numBindings, const Gfx
         const GfxDescriptorBindingDesc& binding = bindings[i];
             
         // TODO: match binding names. if they don't match, try to find it in the list
-        uint32 nameHash = hashFnv32Str(binding.name);
+        uint32 nameHash = Hash::Fnv32Str(binding.name);
         const GfxDescriptorSetLayoutData::Binding* layoutBinding;
         if (nameHash != layoutData.bindings[i].nameHash) {
             if (uint32 bindingIdx = findDescriptorBindingByNameHash(nameHash, layoutData.numBindings, layoutData.bindings);
@@ -3990,7 +3990,7 @@ void _private::gfxSetUpdateImageDescriptorCallback(_private::GfxUpdateImageDescr
 //     ╚═════╝  ╚═════╝
 static void gfxCollectGarbage(bool force)
 {
-    uint64 frameIdx = engineFrameIndex();
+    uint64 frameIdx = Engine::GetFrameIndex();
     const uint32 numFramesToWait = kMaxFramesInFlight;
 
     for (uint32 i = 0; i < gVk.garbage.Count();) {
@@ -4020,16 +4020,16 @@ void GfxObjectPools::DetectAndReleaseLeaks()
     auto PrintStacktrace = [](const char* resourceName, void* ptr, void* const* stackframes, uint16 numStackframes) 
     {
         DebugStacktraceEntry entries[8];
-        debugResolveStacktrace(numStackframes, stackframes, entries);
-        logDebug("\t%s: 0x%llx", resourceName, ptr);
+        Debug::ResolveStacktrace(numStackframes, stackframes, entries);
+        LOG_DEBUG("\t%s: 0x%llx", resourceName, ptr);
         for (uint16 si = 0; si < numStackframes; si++) 
-            logDebug("\t\t- %s(%u)", entries[si].filename, entries[si].line);
+            LOG_DEBUG("\t\t- %s(%u)", entries[si].filename, entries[si].line);
     };
 
-    [[maybe_unused]] bool trackResourceLeaks = settingsGet().graphics.trackResourceLeaks;
+    [[maybe_unused]] bool trackResourceLeaks = SettingsJunkyard::Get().graphics.trackResourceLeaks;
 
     if (gVk.pools.buffers.Count()) {
-        logWarning("Gfx: Total %u buffers are not released. cleaning up...", gVk.pools.buffers.Count());
+        LOG_WARNING("Gfx: Total %u buffers are not released. cleaning up...", gVk.pools.buffers.Count());
         for (uint32 i = 0; i < gVk.pools.buffers.Count(); i++) {
             GfxBuffer handle = gVk.pools.buffers.HandleAt(i);
             #if !CONFIG_FINAL_BUILD
@@ -4043,7 +4043,7 @@ void GfxObjectPools::DetectAndReleaseLeaks()
     }
 
     if (gVk.pools.images.Count()) {
-        logWarning("Gfx: Total %u images are not released. cleaning up...", gVk.pools.images.Count());
+        LOG_WARNING("Gfx: Total %u images are not released. cleaning up...", gVk.pools.images.Count());
         for (uint32 i = 0; i < gVk.pools.images.Count(); i++) {
             GfxImage handle = gVk.pools.images.HandleAt(i);
             #if !CONFIG_FINAL_BUILD
@@ -4058,7 +4058,7 @@ void GfxObjectPools::DetectAndReleaseLeaks()
     }
 
     if (gVk.pools.pipelineLayouts.Count()) {
-        logWarning("Gfx: Total %u pipeline layout are not released. cleaning up...", gVk.pools.pipelineLayouts.Count());
+        LOG_WARNING("Gfx: Total %u pipeline layout are not released. cleaning up...", gVk.pools.pipelineLayouts.Count());
         for (uint32 i = 0; i < gVk.pools.pipelineLayouts.Count(); i++) {
             GfxPipelineLayout handle = gVk.pools.pipelineLayouts.HandleAt(i);
             #if !CONFIG_FINAL_BUILD
@@ -4073,7 +4073,7 @@ void GfxObjectPools::DetectAndReleaseLeaks()
     }
 
     if (gVk.pools.pipelines.Count()) {
-        logWarning("Gfx: Total %u pipelines are not released. cleaning up...", gVk.pools.pipelines.Count());
+        LOG_WARNING("Gfx: Total %u pipelines are not released. cleaning up...", gVk.pools.pipelines.Count());
         for (uint32 i = 0; i < gVk.pools.pipelines.Count(); i++) {
             GfxPipeline handle = gVk.pools.pipelines.HandleAt(i);
             #if !CONFIG_FINAL_BUILD
@@ -4087,7 +4087,7 @@ void GfxObjectPools::DetectAndReleaseLeaks()
     }
 
     if (gVk.pools.descriptorSets.Count()) {
-        logWarning("Gfx: Total %u descriptor sets are not released. cleaning up...", gVk.pools.descriptorSets.Count());
+        LOG_WARNING("Gfx: Total %u descriptor sets are not released. cleaning up...", gVk.pools.descriptorSets.Count());
         for (uint32 i = 0; i < gVk.pools.descriptorSets.Count(); i++) {
             GfxDescriptorSet handle = gVk.pools.descriptorSets.HandleAt(i);
             #if !CONFIG_FINAL_BUILD
@@ -4102,7 +4102,7 @@ void GfxObjectPools::DetectAndReleaseLeaks()
     }
 
     if (gVk.pools.descriptorSetLayouts.Count()) {
-        logWarning("Gfx: Total %u descriptor sets layouts are not released. cleaning up...", gVk.pools.descriptorSetLayouts.Count());
+        LOG_WARNING("Gfx: Total %u descriptor sets layouts are not released. cleaning up...", gVk.pools.descriptorSetLayouts.Count());
         for (uint32 i = 0; i < gVk.pools.descriptorSetLayouts.Count(); i++) {
             GfxDescriptorSetLayout handle = gVk.pools.descriptorSetLayouts.HandleAt(i);
             #if !CONFIG_FINAL_BUILD
@@ -4204,7 +4204,7 @@ void _private::gfxRelease()
 void GfxObjectPools::Release()
 {
     for (GfxDescriptorSetLayoutData& layout : gVk.pools.descriptorSetLayouts) 
-        memFree(layout.bindings, &gVk.alloc);
+        Mem::Free(layout.bindings, &gVk.alloc);
 
     gVk.pools.buffers.Free();
     gVk.pools.images.Free();
@@ -4225,8 +4225,8 @@ void _private::gfxBeginFrame()
     PROFILE_ZONE(true);
 
     if (gVk.hasMemoryBudget) {
-        ASSERT(engineFrameIndex() < UINT32_MAX);
-        vmaSetCurrentFrameIndex(gVk.vma, uint32(engineFrameIndex()));
+        ASSERT(Engine::GetFrameIndex() < UINT32_MAX);
+        vmaSetCurrentFrameIndex(gVk.vma, uint32(Engine::GetFrameIndex()));
     }
 
     { PROFILE_ZONE_NAME("WaitForFence", true);
@@ -4261,8 +4261,8 @@ void _private::gfxBeginFrame()
                                                         gVk.imageAvailSemaphores[frameIdx],
                                                         VK_NULL_HANDLE, &imageIdx);
         if (nextImageResult == VK_ERROR_OUT_OF_DATE_KHR) {
-            logDebug("Out-of-date swapchain: Recreating");
-            gfxResizeSwapchain(appGetFramebufferWidth(), appGetFramebufferHeight());
+            LOG_DEBUG("Out-of-date swapchain: Recreating");
+            gfxResizeSwapchain(App::GetFramebufferWidth(), App::GetFramebufferHeight());
         }
         else if (nextImageResult != VK_SUCCESS && nextImageResult != VK_SUBOPTIMAL_KHR) {
             ASSERT_MSG(false, "Gfx: Acquire swapchain failed: %d", nextImageResult);
@@ -4296,13 +4296,13 @@ void _private::gfxEndFrame()
     // Flip the current index here for other threads (mainly loaders) to submit to next frame
     {   
         SpinLockMutexScope lock(gVk.pendingCmdBuffersLock);
-        cmdBuffersVk = memAllocCopy<VkCommandBuffer>(gVk.pendingCmdBuffers.Ptr(), gVk.pendingCmdBuffers.Count(), &tmpAlloc);
+        cmdBuffersVk = Mem::AllocCopy<VkCommandBuffer>(gVk.pendingCmdBuffers.Ptr(), gVk.pendingCmdBuffers.Count(), &tmpAlloc);
         numCmdBuffers = gVk.pendingCmdBuffers.Count();
         gVk.pendingCmdBuffers.Clear();
     }
 
     gVk.prevFrameIdx = frameIdx;
-    atomicStore32Explicit(&gVk.currentFrameIdx, (frameIdx + 1) % kMaxFramesInFlight, AtomicMemoryOrder::Release);
+    Atomic::StoreExplicit(&gVk.currentFrameIdx, (frameIdx + 1) % kMaxFramesInFlight, AtomicMemoryOrder::Release);
 
     //------------------------------------------------------------------------
     // Submit last command-buffers + draw to swpachain framebuffer
@@ -4347,8 +4347,8 @@ void _private::gfxEndFrame()
         
         // TODO: On mac we are getting VK_SUBOPTIMAL_KHR. Investigate why
         if (presentResult == VK_ERROR_OUT_OF_DATE_KHR/* || presentResult == VK_SUBOPTIMAL_KHR*/) {
-            logDebug("Resized/Invalidated swapchain: Recreate");
-            gfxResizeSwapchain(appGetFramebufferWidth(), appGetFramebufferHeight());
+            LOG_DEBUG("Resized/Invalidated swapchain: Recreate");
+            gfxResizeSwapchain(App::GetFramebufferWidth(), App::GetFramebufferHeight());
         }
         else if (presentResult != VK_SUCCESS && presentResult != VK_SUBOPTIMAL_KHR) {
             ASSERT_ALWAYS(false, "Gfx: Present swapchain failed");
@@ -4489,7 +4489,7 @@ void gfxGetBudgetStats(GfxBudgetStats* stats)
 
 Mat4 gfxGetClipspaceTransform()
 {
-    switch (appGetFramebufferTransform()) {
+    switch (App::GetFramebufferTransform()) {
     case AppFramebufferTransform::None:           return MAT4_IDENT;
     case AppFramebufferTransform::Rotate90:       return mat4RotateZ(M_HALFPI);
     case AppFramebufferTransform::Rotate180:      return mat4RotateZ(M_PI);
@@ -4698,7 +4698,7 @@ static void gfxProfileCalibrate(const GfxProfileQueryContext& ctx, int64* tCpu, 
 
     #if PLATFORM_WINDOWS
         *tGpu = ts[0];
-        *tCpu = _private::__tracy_get_time() * ctx.qpcToNs;
+        *tCpu = Tracy::_private::__tracy_get_time() * ctx.qpcToNs;
     #elif (PLATFORM_LINUX || PLATFORM_ANDROID) && defined CLOCK_MONOTONIC_RAW
         *tGpu = ts[0];
         *tCpu = ts[1];
@@ -4724,13 +4724,13 @@ static bool gfxInitializeProfileQueryContext(GfxProfileQueryContext* ctx, uint8 
     }
 
     if (queryPool == VK_NULL_HANDLE) {
-        logError("Gfx: Creating Query pool failed");
+        LOG_ERROR("Gfx: Creating Query pool failed");
         return false;
     }
 
     ctx->queryPool = queryPool;
     ctx->queryCount = queryCount;
-    ctx->res = memAllocZeroTyped<int64>(queryCount, memDefaultAlloc()); // TODO
+    ctx->res = Mem::AllocZeroTyped<int64>(queryCount, Mem::GetDefaultAlloc()); // TODO
     
     VkCommandBuffer vkCmdBuffer;
     VkCommandBufferAllocateInfo allocInfo {
@@ -4831,7 +4831,7 @@ static void gfxReleaseProfileQueryContext(GfxProfileQueryContext* ctx)
 {
     if (ctx->queryPool)
         vkDestroyQueryPool(gVk.device, ctx->queryPool, nullptr); // TODO: use allocator
-    memFree(ctx->res, memDefaultAlloc());
+    Mem::Free(ctx->res, Mem::GetDefaultAlloc());
 }
 
 static bool gfxInitializeProfiler()
@@ -4919,7 +4919,7 @@ static void gfxReleaseProfiler()
     }
 }
 
-void _private::gfxProfileZoneBegin(uint64 srcloc)
+void Tracy::_private::gfxProfileZoneBegin(uint64 srcloc)
 {
     if (!gGfxProfile.initialized)
         return;
@@ -4927,7 +4927,7 @@ void _private::gfxProfileZoneBegin(uint64 srcloc)
     VkCommandBuffer cmdBuffer = gCmdBufferThreadData.curCmdBuffer;
     ASSERT_MSG(cmdBuffer != VK_NULL_HANDLE, "GPU profile zone must be inside command-buffer recording");
 
-    uint32 frameIdx = atomicLoad32Explicit(&gVk.currentFrameIdx, AtomicMemoryOrder::Acquire);
+    uint32 frameIdx = Atomic::LoadExplicit(&gVk.currentFrameIdx, AtomicMemoryOrder::Acquire);
     GfxProfileQueryContext* ctx = &gGfxProfile.gfxQueries[frameIdx];
 
     uint16 queryId = gfxProfileGetNextQueryId(ctx);
@@ -4940,7 +4940,7 @@ void _private::gfxProfileZoneBegin(uint64 srcloc)
     });
 }
 
-void _private::gfxProfileZoneEnd()
+void Tracy::_private::gfxProfileZoneEnd()
 {
     if (!gGfxProfile.initialized)
         return;
@@ -4948,7 +4948,7 @@ void _private::gfxProfileZoneEnd()
     VkCommandBuffer cmdBuffer = gCmdBufferThreadData.curCmdBuffer;
     ASSERT_MSG(cmdBuffer != VK_NULL_HANDLE, "GPU profile zone must be inside command-buffer recording");
 
-    uint32 frameIdx = atomicLoad32Explicit(&gVk.currentFrameIdx, AtomicMemoryOrder::Acquire);
+    uint32 frameIdx = Atomic::LoadExplicit(&gVk.currentFrameIdx, AtomicMemoryOrder::Acquire);
     GfxProfileQueryContext* ctx = &gGfxProfile.gfxQueries[frameIdx];
 
     uint16 queryId = gfxProfileGetNextQueryId(ctx);
@@ -5028,11 +5028,11 @@ static void gfxProfileCollectSamples()
     if(gGfxProfile.timeDomain != VK_TIME_DOMAIN_DEVICE_EXT) {
         int64 tgpu, tcpu;
         gfxProfileCalibrate(*ctx, &tcpu, &tgpu);
-        const int64 refCpu = _private::__tracy_get_time();
+        const int64 refCpu = Tracy::_private::__tracy_get_time();
         const int64 delta = tcpu - ctx->prevCalibration;
         if(delta > 0) {
             ctx->prevCalibration = tcpu;
-            ___tracy_emit_gpu_calibrate_serial(_private::___tracy_gpu_calibrate_data {
+            ___tracy_emit_gpu_calibrate_serial(Tracy::_private::___tracy_gpu_calibrate_data {
                 .gpuTime = tgpu,
                 .cpuTime = refCpu,
                 .deltaTime = delta,

@@ -29,10 +29,10 @@ namespace _private
         uint8   padding[sizeof(void*)];
     };
 
-    API HandlePoolTable* handleCreatePoolTable(uint32 capacity, Allocator* alloc);
-    API void handleDestroyPoolTable(HandlePoolTable* tbl, Allocator* alloc);
-    API bool handleGrowPoolTable(HandlePoolTable** pTbl, Allocator* alloc);
-    API HandlePoolTable* handleClone(HandlePoolTable* tbl, Allocator* alloc);
+    API HandlePoolTable* handleCreatePoolTable(uint32 capacity, MemAllocator* alloc);
+    API void handleDestroyPoolTable(HandlePoolTable* tbl, MemAllocator* alloc);
+    API bool handleGrowPoolTable(HandlePoolTable** pTbl, MemAllocator* alloc);
+    API HandlePoolTable* handleClone(HandlePoolTable* tbl, MemAllocator* alloc);
 
     API uint32 handleNew(HandlePoolTable* tbl);
     API void   handleDel(HandlePoolTable* tbl, uint32 handle);
@@ -73,8 +73,8 @@ struct Handle
 template <typename _HandleType, typename _DataType>
 struct HandlePool
 {
-    HandlePool() : HandlePool(memDefaultAlloc()) {}
-    explicit HandlePool(Allocator* alloc) : mAlloc(alloc), mItems(alloc) {}
+    HandlePool() : HandlePool(Mem::GetDefaultAlloc()) {}
+    explicit HandlePool(MemAllocator* alloc) : mAlloc(alloc), mItems(alloc) {}
     explicit HandlePool(void* data, size_t size); 
 
     void CopyTo(HandlePool<_HandleType, _DataType>* otherPool) const;
@@ -91,7 +91,7 @@ struct HandlePool
     uint32 Capacity() const;
 
     void Reserve(uint32 capacity, void* buffer, size_t size);
-    void SetAllocator(Allocator* alloc);
+    void SetAllocator(MemAllocator* alloc);
     void Free();
 
     static size_t GetMemoryRequirement(uint32 capacity);
@@ -118,7 +118,7 @@ struct HandlePool
     Iterator end()      { return Iterator(this, mHandles ? mHandles->count : 0); }
 
 private:
-    Allocator* mAlloc = nullptr;
+    MemAllocator* mAlloc = nullptr;
     _private::HandlePoolTable* mHandles = nullptr;
     Array<_DataType>  mItems;
 };
@@ -135,11 +135,11 @@ private:
 template <typename _T, uint32 _Align = CONFIG_MACHINE_ALIGNMENT>
 struct FixedSizePool
 {
-    FixedSizePool() : FixedSizePool(memDefaultAlloc()) {}
-    explicit FixedSizePool(Allocator* alloc) : mAlloc(alloc) {}
+    FixedSizePool() : FixedSizePool(Mem::GetDefaultAlloc()) {}
+    explicit FixedSizePool(MemAllocator* alloc) : mAlloc(alloc) {}
     explicit FixedSizePool(void* buffer, size_t size);
     
-    void SetAllocator(Allocator* alloc);
+    void SetAllocator(MemAllocator* alloc);
     void Reserve(uint32 pageSize);
     void Reserve(void* buffer, size_t size, uint32 pageSize);
     void Free();
@@ -204,7 +204,7 @@ public:
     }
 
 private:
-    Allocator*  mAlloc = nullptr;
+    MemAllocator*  mAlloc = nullptr;
     uint32      mPageSize = 32;      // maximum number of items that a page can hold
     Page*       mPages = nullptr;
 };
@@ -237,7 +237,7 @@ void HandlePool<_HandleType, _DataType>::Reserve(uint32 capacity, void* buffer, 
 }
 
 template<typename _HandleType, typename _DataType>
-void HandlePool<_HandleType, _DataType>::SetAllocator(Allocator* alloc)
+void HandlePool<_HandleType, _DataType>::SetAllocator(MemAllocator* alloc)
 {
     ASSERT_MSG(mHandles == nullptr, "pool should be freed/uninitialized before setting allocator");
     mAlloc = alloc;
@@ -417,7 +417,7 @@ inline FixedSizePool<_T, _Align>::FixedSizePool(void* buffer, size_t size)
 }
 
 template <typename _T, uint32 _Align>
-inline void FixedSizePool<_T, _Align>::SetAllocator(Allocator* alloc)
+inline void FixedSizePool<_T, _Align>::SetAllocator(MemAllocator* alloc)
 {
     ASSERT_MSG(!mPages, "SetAllocator must be called before using/initializing the Blob");
     mAlloc = alloc;

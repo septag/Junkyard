@@ -4,7 +4,7 @@
 
 typedef struct ini_t ini_t;
 
-struct IniProperty
+struct INIFileProperty
 {
     void SetName(const char* name);
     void SetValue(const char* value);
@@ -21,14 +21,14 @@ struct IniProperty
     int id = -1;
 };
 
-struct IniSection
+struct INIFileSection
 {
     uint32 GetPropertyCount();
-    IniProperty GetProperty(uint32 index);
+    INIFileProperty GetProperty(uint32 index);
     const char* GetPropertyName(uint32 index);
 
-    IniProperty NewProperty(const char* name, const char* value);
-    IniProperty FindProperty(const char* name);
+    INIFileProperty NewProperty(const char* name, const char* value);
+    INIFileProperty FindProperty(const char* name);
 
     void SetName(const char* name);
     const char* GetName();
@@ -41,16 +41,16 @@ struct IniSection
     int id = -1;
 };
 
-struct IniContext
+struct INIFileContext
 {
     uint32 GetSectionCount() const;
-    IniSection GetSection(uint32 index) const;
+    INIFileSection GetSection(uint32 index) const;
     const char* GetSectionName(uint32 index) const;
 
-    IniSection GetRootSection() const;
+    INIFileSection GetRootSection() const;
 
-    IniSection NewSection(const char* name) const;
-    IniSection FindSection(const char* name) const;
+    INIFileSection NewSection(const char* name) const;
+    INIFileSection FindSection(const char* name) const;
 
     inline bool IsValid() const    { return ini != nullptr; }
 
@@ -59,8 +59,12 @@ struct IniContext
     ini_t* ini = nullptr;
 };
 
-API IniContext iniCreateContext(Allocator* alloc = memDefaultAlloc());
-API IniContext iniLoad(const char* filepath, Allocator* alloc = memDefaultAlloc());
-API IniContext iniLoadFromString(const char* data, Allocator* alloc = memDefaultAlloc());
-API bool iniSave(const IniContext& ini, const char* filepath);
-API Blob iniSaveToMem(const IniContext& ini, Allocator* alloc);
+namespace INIFile
+{
+    API INIFileContext Create(MemAllocator* alloc = Mem::GetDefaultAlloc());
+    API INIFileContext Load(const char* filepath, MemAllocator* alloc = Mem::GetDefaultAlloc());
+    API INIFileContext LoadFromString(const char* data, MemAllocator* alloc = Mem::GetDefaultAlloc());
+    API bool Save(const INIFileContext& ini, const char* filepath);
+    API Blob SaveToMem(const INIFileContext& ini, MemAllocator* alloc);
+}
+

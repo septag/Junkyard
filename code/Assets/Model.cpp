@@ -2,8 +2,8 @@
 #include "AssetManager.h"
 
 #define CGLTF_IMPLEMENTATION
-#define CGLTF_MALLOC(size) memAlloc(size);
-#define CGLTF_FREE(ptr) memFree(ptr)
+#define CGLTF_MALLOC(size) Mem::Alloc(size);
+#define CGLTF_FREE(ptr) Mem::Free(ptr)
 #if CONFIG_ENABLE_ASSERT
     #define CGLTF_VALIDATE_ENABLE_ASSERTS 1
 #endif
@@ -42,10 +42,10 @@ struct ModelLoadRequest
 
 struct ModelLoader final : AssetCallbacks 
 {
-    AssetResult Load(AssetHandle handle, const AssetLoadParams& params, uint32 cacheHash, Allocator* dependsAlloc) override;
+    AssetResult Load(AssetHandle handle, const AssetLoadParams& params, uint32 cacheHash, MemAllocator* dependsAlloc) override;
     void LoadRemote(AssetHandle handle, const AssetLoadParams& params, uint32 cacheHash, void* userData, AssetLoaderAsyncCallback loadCallback) override;
     bool InitializeSystemResources(void* obj, const AssetLoadParams& params) override;
-    void Release(void* data, Allocator* alloc) override;
+    void Release(void* data, MemAllocator* alloc) override;
     bool ReloadSync(AssetHandle handle, void* prevData) override;
 };
 
@@ -100,14 +100,14 @@ INLINE GfxSamplerWrapMode modelGltfGetWrap(GLTF_Wrap wrap)
 }
 
 // Returns the hash of the material data
-static ModelMaterial* modelCreateMaterial(uint32* outNumTextures, uint32* outHash, cgltf_material* gltfMtl, const char* fileDir, Allocator* alloc)
+static ModelMaterial* modelCreateMaterial(uint32* outNumTextures, uint32* outHash, cgltf_material* gltfMtl, const char* fileDir, MemAllocator* alloc)
 {
     ASSERT(gltfMtl);
 
     auto LoadTextureFromGltf = [alloc](cgltf_texture* gltfTexture, ModelMaterialTexture* tex, const char* fileDir, HashMurmur32Incremental& hasher)
     {
         ASSERT(gltfTexture);
-        char texturePath[kMaxPath];
+        char texturePath[PATH_CHARS_MAX];
         {
             char* dir = strCopy(texturePath, sizeof(texturePath), fileDir);
             if (*(dir - 1) != '/') {
@@ -127,7 +127,7 @@ static ModelMaterial* modelCreateMaterial(uint32* outNumTextures, uint32* outHas
         }
 
         uint32 texturePathLen = strLen(texturePath);
-        tex->texturePath = memAllocCopy<char>(texturePath, texturePathLen+1, alloc);
+        tex->texturePath = Mem::AllocCopy<char>(texturePath, texturePathLen+1, alloc);
         tex->params = tparams;
 
         hasher.Add(texturePath, texturePathLen);
@@ -142,7 +142,7 @@ static ModelMaterial* modelCreateMaterial(uint32* outNumTextures, uint32* outHas
     default:                           ASSERT(0); alphaMode = ModelMaterialAlphaMode::Opaque;   break;
     }
 
-    ModelMaterial* mtl = memAllocTyped<ModelMaterial>(1, alloc);
+    ModelMaterial* mtl = Mem::AllocTyped<ModelMaterial>(1, alloc);
     *mtl = ModelMaterial {
         .hasMetalRoughness = (bool)gltfMtl->has_pbr_metallic_roughness,
         .hasSpecularGlossiness = (bool)gltfMtl->has_pbr_specular_glossiness,
@@ -627,16 +627,16 @@ static const GfxVertexInputAttributeDesc* modelFindAttribute(const ModelGeometry
 }
 
 // Note: `alloc` shouldn't be temp allocator
-Span<Model> modelLoadGltf(const char* filepath, Allocator* alloc, const ModelLoadParams& params, char* errorDesc, uint32 errorDescSize)
+Span<Model> modelLoadGltf(const char* filepath, MemAllocator* alloc, const ModelLoadParams& params, char* errorDesc, uint32 errorDescSize)
 {
     PROFILE_ZONE(true);
 
     const ModelGeometryLayout& layout = params.layout.vertexBufferStrides[0] ? params.layout : gModelCtx.defaultLayout;
 
-    Path fileDir = Path(filepath).GetDirectory();
+    Path fileDir = Path(filepath).GetDirectory_CStr();
 
     MemTempAllocator tmpAlloc;
-    Blob blob = vfsReadFile(filepath, VfsFlags::None, &tmpAlloc);
+    Blob blob = Vfs::ReadFile(filepath, VfsFlags::None, &tmpAlloc);
     if (!blob.IsValid()) {
         strPrintFmt(errorDesc, errorDescSize, "Opening model failed: %s", filepath);
         return {};
@@ -679,7 +679,7 @@ Span<Model> modelLoadGltf(const char* filepath, Allocator* alloc, const ModelLoa
     ASSERT_ALWAYS(data->buffers_count, "Model '%s' does not contain any data buffers", filepath);
     for (uint32 i = 0; i < (uint32)data->buffers_count; i++) {
         Path bufferFilepath = Path::JoinUnix(fileDir, data->buffers[i].uri);
-        Blob bufferBlob = vfsReadFile(bufferFilepath.CStr(), VfsFlags::None, &tmpAlloc);
+        Blob bufferBlob = Vfs::ReadFile(bufferFilepath.CStr(), VfsFlags::None, &tmpAlloc);
         if (!bufferBlob.IsValid()) {
             strPrintFmt(errorDesc, errorDescSize, "Load model buffer failed: %s", bufferFilepath.CStr());
             return {};
@@ -745,7 +745,7 @@ Span<Model> modelLoadGltf(const char* filepath, Allocator* alloc, const ModelLoa
         if (mesh->name == nullptr) {
             char name[32];
             strPrintFmt(name, sizeof(name), "Mesh_%u", i);
-            mesh->name = memAllocCopy<char>(name, sizeof(name), &tmpAlloc);
+            mesh->name = Mem::AllocCopy<char>(name, sizeof(name), &tmpAlloc);
         }
 
         dstMesh->name = mesh->name;
@@ -798,7 +798,7 @@ Span<Model> modelLoadGltf(const char* filepath, Allocator* alloc, const ModelLoa
         model->materials = tmpAlloc.MallocZeroTyped<RelativePtr<ModelMaterial>>(materials.Count());
         for (uint32 i = 0; i < materials.Count(); i++) {
             const MaterialData& m = materials[i];
-            model->materials[i] = memAllocCopyRawBytes<ModelMaterial>(m.mtl, m.size, &tmpAlloc);
+            model->materials[i] = Mem::AllocCopyRawBytes<ModelMaterial>(m.mtl, m.size, &tmpAlloc);
         }
     }
 
@@ -814,13 +814,13 @@ Span<Model> modelLoadGltf(const char* filepath, Allocator* alloc, const ModelLoa
         if (srcNode->name == nullptr) {
             char name[32];
             strPrintFmt(name, sizeof(name), "Node_%u", i);
-            srcNode->name = memAllocCopy<char>(name, sizeof(name), &tmpAlloc);
+            srcNode->name = Mem::AllocCopy<char>(name, sizeof(name), &tmpAlloc);
         }
 
         dstNode->localTransform = TRANSFORM3D_IDENT;
         dstNode->name = srcNode->name;
         if (dstNode->name.Length() != strLen(srcNode->name)) {
-            logWarning("Model %s, Node: %s: name is too long (more than standard 31 characters), "
+            LOG_WARNING("Model %s, Node: %s: name is too long (more than standard 31 characters), "
                        "Node setup will likely have errors", filepath, srcNode->name);
         }
 
@@ -880,10 +880,10 @@ Span<Model> modelLoadGltf(const char* filepath, Allocator* alloc, const ModelLoa
 
     // Allocate one big chunk and copy the temp data over to it
     uint32 modelBufferSize = uint32(tmpAlloc.GetOffset() - tmpAlloc.GetPointerOffset(model));
-    return Span<Model>(memAllocCopyRawBytes<Model>(model, modelBufferSize, alloc), modelBufferSize);
+    return Span<Model>(Mem::AllocCopyRawBytes<Model>(model, modelBufferSize, alloc), modelBufferSize);
 }
 
-static void modelDestroy(Model* model, Allocator* alloc)
+static void modelDestroy(Model* model, MemAllocator* alloc)
 {
     ASSERT(model);
 
@@ -899,7 +899,7 @@ static void modelDestroy(Model* model, Allocator* alloc)
 
     modelUnloadTextures(model);
 
-    memFree(model, alloc);
+    Mem::Free(model, alloc);
 }
 
 static Pair<AssetDependency*, uint32> modelGatherDependencies(const Model* model, const AssetLoadParams& params, MemTempAllocator* alloc,
@@ -918,7 +918,7 @@ static Pair<AssetDependency*, uint32> modelGatherDependencies(const Model* model
                 .platform = params.platform,
             }
         };
-        dep->params.next = (uint8*)memAllocCopy<ImageLoadParams>(&tex.params, 1, alloc);
+        dep->params.next = (uint8*)Mem::AllocCopy<ImageLoadParams>(&tex.params, 1, alloc);
     };
 
     Array<AssetDependency> depends(alloc);
@@ -992,11 +992,11 @@ static void modelOptimizeModel(Model* model, const ModelLoadParams& modelParams)
         bakeModel.meshes[i] = bakeMesh;
     }
 
-    meshoptOptimizeModel(&bakeModel);
+    MeshOpt::Optimize(&bakeModel);
 }
 #endif // CONFIG_TOOLMODE
 
-AssetResult ModelLoader::Load(AssetHandle handle, const AssetLoadParams& params, uint32 cacheHash, Allocator* dependsAlloc)
+AssetResult ModelLoader::Load(AssetHandle handle, const AssetLoadParams& params, uint32 cacheHash, MemAllocator* dependsAlloc)
 {
     ASSERT(params.next);
     const ModelLoadParams& modelParams = *reinterpret_cast<ModelLoadParams*>(params.next.Get());
@@ -1011,7 +1011,7 @@ AssetResult ModelLoader::Load(AssetHandle handle, const AssetLoadParams& params,
         .loadParamsSize = sizeof(ModelLoadParams),
         .metaData = metaData,
         .numMeta = numMeta,
-        .lastModified = vfsGetLastModified(params.path)
+        .lastModified = Vfs::GetLastModified(params.path)
     });
 
     if (newCacheHash != cacheHash) {
@@ -1020,7 +1020,7 @@ AssetResult ModelLoader::Load(AssetHandle handle, const AssetLoadParams& params,
         Model* model = modelBuffer.Ptr();
         uint32 modelBufferSize = modelBuffer.Count();
         if (!model) {
-            logError(errorDesc);
+            LOG_ERROR(errorDesc);
             return AssetResult {};
         }
     
@@ -1033,7 +1033,7 @@ AssetResult ModelLoader::Load(AssetHandle handle, const AssetLoadParams& params,
             Pair<AssetDependency*, uint32> depends = modelGatherDependencies(model, params, &tmpAlloc, &dependsBufferSize);
             return AssetResult { 
                 .obj = model,  
-                .depends = memAllocCopyRawBytes<AssetDependency>(depends.first, dependsBufferSize, dependsAlloc),
+                .depends = Mem::AllocCopyRawBytes<AssetDependency>(depends.first, dependsBufferSize, dependsAlloc),
                 .numDepends = depends.second,
                 .dependsBufferSize = dependsBufferSize,
                 .objBufferSize = modelBufferSize,
@@ -1058,7 +1058,7 @@ static void modelLoadTask(uint32 groupIndex, void* userData)
     Blob outgoingBlob(&tmpAlloc);
     outgoingBlob.SetGrowPolicy(Blob::GrowPolicy::Multiply);
     
-    char filepath[kMaxPath];
+    char filepath[PATH_CHARS_MAX];
     char errorMsg[kRemoteErrorDescSize];
     AssetPlatform platform;
     ModelLoadParams loadModelParams;
@@ -1083,12 +1083,12 @@ static void modelLoadTask(uint32 groupIndex, void* userData)
         .loadParamsSize = sizeof(loadModelParams),
         .metaData = metaData,
         .numMeta = numMeta,
-        .lastModified = vfsGetLastModified(filepath)
+        .lastModified = Vfs::GetLastModified(filepath)
     });
 
     if (cacheHash != oldCacheHash) {
         TimerStopWatch timer;
-        Span<Model> result = modelLoadGltf(filepath, memDefaultAlloc(), loadModelParams, errorMsg, sizeof(errorMsg));
+        Span<Model> result = modelLoadGltf(filepath, Mem::GetDefaultAlloc(), loadModelParams, errorMsg, sizeof(errorMsg));
         Model* model = result.Ptr();
         uint32 modelBufferSize = result.Count();
     
@@ -1100,24 +1100,24 @@ static void modelLoadTask(uint32 groupIndex, void* userData)
             outgoingBlob.Write<uint32>(cacheHash);
             outgoingBlob.Write<uint32>(modelBufferSize);
             outgoingBlob.Write(model, modelBufferSize);
-            remoteSendResponse(RCMD_LOAD_MODEL, outgoingBlob, false, nullptr);
-            logVerbose("Model loaded: %s (%.1f ms)", filepath, timer.ElapsedMS());
-            memFree(model);
+            Remote::SendResponse(RCMD_LOAD_MODEL, outgoingBlob, false, nullptr);
+            LOG_VERBOSE("Model loaded: %s (%.1f ms)", filepath, timer.ElapsedMS());
+            Mem::Free(model);
         }
         else {
-            remoteSendResponse(RCMD_LOAD_MODEL, outgoingBlob, true, errorMsg);
-            logVerbose(errorMsg);
+            Remote::SendResponse(RCMD_LOAD_MODEL, outgoingBlob, true, errorMsg);
+            LOG_VERBOSE(errorMsg);
         }
     }
     else {
         outgoingBlob.Write<uint32>(cacheHash);
         outgoingBlob.Write<uint32>(0);  // nothing has loaded. it's safe to load from client's local cache
-        remoteSendResponse(RCMD_LOAD_MODEL, outgoingBlob, false, nullptr);
-        logVerbose("Model: %s [cached]", filepath);
+        Remote::SendResponse(RCMD_LOAD_MODEL, outgoingBlob, false, nullptr);
+        LOG_VERBOSE("Model: %s [cached]", filepath);
     }
 
     blob->Free();
-    memFree(blob);
+    Mem::Free(blob);
 }
 
 static bool modelHandlerServerFn([[maybe_unused]] uint32 cmd, const Blob& incomingData, Blob*, 
@@ -1127,9 +1127,9 @@ static bool modelHandlerServerFn([[maybe_unused]] uint32 cmd, const Blob& incomi
     UNUSED(outgoingErrorDesc);
     
     // spawn and pass the copy it over to a task
-    Blob* taskDataBlob = NEW(memDefaultAlloc(), Blob)();
+    Blob* taskDataBlob = NEW(Mem::GetDefaultAlloc(), Blob)();
     incomingData.CopyTo(taskDataBlob);
-    jobsDispatchAndForget(JobsType::LongTask, modelLoadTask, taskDataBlob, 1, JobsPriority::Low);
+    Jobs::DispatchAndForget(JobsType::LongTask, modelLoadTask, taskDataBlob, 1, JobsPriority::Low);
 
     return true;
 }
@@ -1164,7 +1164,7 @@ static void modelHandlerClientFn([[maybe_unused]] uint32 cmd, const Blob& incomi
         incomingData.Read<uint32>(&modelBufferSize);
         
         if (modelBufferSize) {
-            void* modelData = memAlloc(modelBufferSize, request.params.alloc);
+            void* modelData = Mem::Alloc(modelBufferSize, request.params.alloc);
             incomingData.Read(modelData, modelBufferSize);
 
             Model* model = reinterpret_cast<Model*>(modelData);
@@ -1196,7 +1196,7 @@ static void modelHandlerClientFn([[maybe_unused]] uint32 cmd, const Blob& incomi
         }
     }
     else {
-        logError(errorDesc);
+        LOG_ERROR(errorDesc);
         if (request.loadCallback)
             request.loadCallback(handle, AssetResult {}, request.loadCallbackUserData);
     }
@@ -1207,7 +1207,7 @@ void ModelLoader::LoadRemote(AssetHandle handle, const AssetLoadParams& params, 
 {
     ASSERT(params.next);
     ASSERT(loadCallback);
-    ASSERT(remoteIsConnected());
+    ASSERT(Remote::IsConnected());
 
     const ModelLoadParams* modelParams = reinterpret_cast<ModelLoadParams*>(params.next.Get());
 
@@ -1234,7 +1234,7 @@ void ModelLoader::LoadRemote(AssetHandle handle, const AssetLoadParams& params, 
     outgoingBlob.Write<uint32>(uint32(params.platform));
     outgoingBlob.Write<ModelLoadParams>(*modelParams);
 
-    remoteExecuteCommand(RCMD_LOAD_MODEL, outgoingBlob);
+    Remote::ExecuteCommand(RCMD_LOAD_MODEL, outgoingBlob);
     outgoingBlob.Free();
 }
 
@@ -1251,7 +1251,7 @@ bool ModelLoader::InitializeSystemResources(void* obj, const AssetLoadParams& pa
     return true;
 }
 
-void ModelLoader::Release(void* data, Allocator* alloc)
+void ModelLoader::Release(void* data, MemAllocator* alloc)
 {
     modelDestroy(reinterpret_cast<Model*>(data), alloc);
 }
@@ -1267,7 +1267,7 @@ AssetHandleModel assetLoadModel(const char* path, const ModelLoadParams& params,
 {
     AssetLoadParams assetParams {
         .path = path,
-        .alloc = memDefaultAlloc(),     // TODO: replace with a custom allocator
+        .alloc = Mem::GetDefaultAlloc(),     // TODO: replace with a custom allocator
         .typeId = MODEL_ASSET_TYPE,
         .barrier = barrier
     };
@@ -1293,8 +1293,8 @@ bool _private::assetInitializeModelManager()
     });
 
     gModelCtx.requestsMutex.Initialize();
-    gModelCtx.requests.SetAllocator(memDefaultAlloc());
-    remoteRegisterCommand(RemoteCommandDesc {
+    gModelCtx.requests.SetAllocator(Mem::GetDefaultAlloc());
+    Remote::RegisterCommand(RemoteCommandDesc {
         .cmdFourCC = RCMD_LOAD_MODEL,
         .serverFn = modelHandlerServerFn,
         .clientFn = modelHandlerClientFn,
@@ -1302,10 +1302,10 @@ bool _private::assetInitializeModelManager()
     });
 
     #if CONFIG_TOOLMODE
-    _private::meshoptInitialize();
+    MeshOpt::Initialize();
     #endif
 
-    logInfo("(init) Model asset manager");
+    LOG_INFO("(init) Model asset manager");
 
     return true;
 }

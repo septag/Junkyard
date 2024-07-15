@@ -4,14 +4,14 @@
 
 #if defined(__SSE2__) || (COMPILER_MSVC && (ARCH_64BIT || _M_IX86_FP >= 2))
     #include <xmmintrin.h>    // __m128
-#endif    //
+#endif
 
 #if defined(__SSE2__) || (COMPILER_MSVC && (ARCH_64BIT || _M_IX86_FP >= 2))
-    FORCE_INLINE float mathSqrt(float _a);
-    FORCE_INLINE float mathRsqrt(float _a);
+FORCE_INLINE float mathSqrt(float _a);
+FORCE_INLINE float mathRsqrt(float _a);
 #else
-    API  float       mathSqrt(float _a);
-    API  float       mathRsqrt(float _a);
+API  float       mathSqrt(float _a);
+API  float       mathRsqrt(float _a);
 #endif
 
 API  float mathCopySign(float _x, float _y);

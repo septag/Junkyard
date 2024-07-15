@@ -27,7 +27,7 @@ struct DebugDrawContext
 
 static DebugDrawContext gDebugDraw;
 
-void ddDrawGrid_XYAxis(const Camera& cam, float viewWidth, float viewHeight, const DebugDrawGridProperties& props)
+void DebugDraw::DrawGroundGrid(const Camera& cam, float viewWidth, float viewHeight, const DebugDrawGridProperties& props)
 {
     Color color = props.lineColor;
     Color boldColor = props.boldLineColor;
@@ -117,7 +117,7 @@ void ddDrawGrid_XYAxis(const Camera& cam, float viewWidth, float viewHeight, con
     gfxCmdDraw(numVerts, 1, 0, 0);
 }
 
-bool _private::ddInitialize()
+bool DebugDraw::Initialize()
 {
     gDebugDraw.vertexBuffer = gfxCreateBuffer(GfxBufferDesc {
         .size = sizeof(DebugDrawContext::Vertex)*kDebugDrawMaxVerts,
@@ -187,11 +187,11 @@ bool _private::ddInitialize()
             return false;
     }
 
-    logInfo("(init) DebugDraw initialized");
+    LOG_INFO("(init) DebugDraw initialized");
     return true;
 }
 
-void _private::ddRelease()
+void DebugDraw::Release()
 {
     gfxDestroyBuffer(gDebugDraw.vertexBuffer);
     gfxDestroyPipeline(gDebugDraw.pipeline);

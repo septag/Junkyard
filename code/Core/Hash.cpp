@@ -75,210 +75,190 @@ static const uint32 HASH_CRC_TABLE[256] = {
     DO4(buf);    \
     DO4(buf);
 
-uint32 hashCRC32(const void* data, size_t len, uint32 seed) 
+namespace Hash
 {
-    const uint8* buf = (const uint8*)data;
-    uint32 crc = seed ^ 0xffffffffL;
-    
-    while (len >= 8) {
-        DO8(buf);
-        len -= 8;
-    }
-    
-    while (len--) {
-        DO1(buf);
-    }
-    
-    crc ^= 0xffffffffL;
-    
-    return crc;
-}
-
-////////////////////////////////////////////////////////////////////////////////////////////
-// Murmur3
-// https://github.com/PeterScott/murmur3/blob/master/murmur3.c
-FORCE_INLINE uint32 rotl32(uint32 x, int8 r)
-{
-    return (x << r) | (x >> (32 - r));
-}
-
-FORCE_INLINE uint64 rotl64(uint64 x, int8 r)
-{
-    return (x << r) | (x >> (64 - r));
-}
-
-#define	ROTL32(x,y)	rotl32(x,y)
-#define ROTL64(x,y)	rotl64(x,y)
-#define BIG_CONSTANT(x) (x##LLU)
-#define HASH_M 0x5bd1e995
-#define HASH_R 24
-#define MMIX(h, k) { k *= HASH_M; k ^= k >> HASH_R; k *= HASH_M; h *= HASH_M; h ^= k; }
-
-//-----------------------------------------------------------------------------
-// Block read - if your platform needs to do endian-swapping or can only
-// handle aligned reads, do the conversion here
-#define getblock(p, i) (p[i])
-
-//-----------------------------------------------------------------------------
-// Finalization mix - force all bits of a hash block to avalanche
-
-FORCE_INLINE uint32 hashMurmurFmix32(uint32 h)
-{
-    h ^= h >> 16;
-    h *= 0x85ebca6b;
-    h ^= h >> 13;
-    h *= 0xc2b2ae35;
-    h ^= h >> 16;
-    
-    return h;
-}
-
-//----------
-
-FORCE_INLINE uint64 hashMurmurFmix64(uint64 k)
-{
-    k ^= k >> 33;
-    k *= BIG_CONSTANT(0xff51afd7ed558ccd);
-    k ^= k >> 33;
-    k *= BIG_CONSTANT(0xc4ceb9fe1a85ec53);
-    k ^= k >> 33;
-    
-    return k;
-}
-
-uint32 hashMurmur32(const void * key, uint32 len, uint32 seed)
-{
-    const uint8 * data = (const uint8*)key;
-    const int nblocks = static_cast<int>(len / 4);
-    int i;
-    
-    uint32 h1 = seed;
-    constexpr uint32 c1 = 0xcc9e2d51;
-    constexpr uint32 c2 = 0x1b873593;
-    
-    // body
-    auto blocks = reinterpret_cast<const uint32*>(data + nblocks*4);
-    
-    for(i = -nblocks; i; i++) {
-        uint32 k1 = getblock(blocks,i);
-        
-        k1 *= c1;
-        k1 = ROTL32(k1,15);
-        k1 *= c2;
-        
-        h1 ^= k1;
-        h1 = ROTL32(h1,13); 
-        h1 = h1*5+0xe6546b64;
-    }
-    
-    // tail
-    auto tail = reinterpret_cast<const uint8*>(data + nblocks*4);
-    uint32 k1 = 0;
-    
-    switch(len & 3) {
-    case 3: k1 ^= tail[2] << 16;
-    case 2: k1 ^= tail[1] << 8;
-    case 1: k1 ^= tail[0];
-        k1 *= c1; k1 = ROTL32(k1,15); k1 *= c2; h1 ^= k1;
-    }
-    
-    // finalization
-    h1 ^= len;    
-    return hashMurmurFmix32(h1);
-} 
-
-HashResult128 hashMurmur128(const void * key, size_t len, const uint32 seed)
-{
-    const uint8 * data = (const uint8*)key;
-    const size_t nblocks = len / 16;
-    size_t i;
-    
-    uint64 h1 = seed;
-    uint64 h2 = seed;
-    
-    uint64 c1 = BIG_CONSTANT(0x87c37b91114253d5);
-    uint64 c2 = BIG_CONSTANT(0x4cf5ad432745937f);
-    
-    // body
-    const uint64 * blocks = (const uint64 *)(data);
-    
-    for(i = 0; i < nblocks; i++)
+    uint32 CRC32(const void* data, size_t len, uint32 seed) 
     {
-        uint64 k1 = getblock(blocks,i*2+0);
-        uint64 k2 = getblock(blocks,i*2+1);
-        
-        k1 *= c1; k1  = ROTL64(k1,31); k1 *= c2; h1 ^= k1;
-        h1 = ROTL64(h1,27); h1 += h2; h1 = h1*5+0x52dce729;
-        k2 *= c2; k2  = ROTL64(k2,33); k2 *= c1; h2 ^= k2;
-        h2 = ROTL64(h2,31); h2 += h1; h2 = h2*5+0x38495ab5;
-    }
+        const uint8* buf = (const uint8*)data;
+        uint32 crc = seed ^ 0xffffffffL;
     
-    auto tail = reinterpret_cast<const uint8*>(data + nblocks*16);
-    
-    uint64 k1 = 0;
-    uint64 k2 = 0;
-    
-    switch(len & 15)
-    {
-    case 15: k2 ^= (uint64)(tail[14]) << 48;
-    case 14: k2 ^= (uint64)(tail[13]) << 40;
-    case 13: k2 ^= (uint64)(tail[12]) << 32;
-    case 12: k2 ^= (uint64)(tail[11]) << 24;
-    case 11: k2 ^= (uint64)(tail[10]) << 16;
-    case 10: k2 ^= (uint64)(tail[ 9]) << 8;
-    case  9: k2 ^= (uint64)(tail[ 8]) << 0;
-        k2 *= c2; k2  = ROTL64(k2,33); k2 *= c1; h2 ^= k2;
-        
-    case  8: k1 ^= (uint64)(tail[ 7]) << 56;
-    case  7: k1 ^= (uint64)(tail[ 6]) << 48;
-    case  6: k1 ^= (uint64)(tail[ 5]) << 40;
-    case  5: k1 ^= (uint64)(tail[ 4]) << 32;
-    case  4: k1 ^= (uint64)(tail[ 3]) << 24;
-    case  3: k1 ^= (uint64)(tail[ 2]) << 16;
-    case  2: k1 ^= (uint64)(tail[ 1]) << 8;
-    case  1: k1 ^= (uint64)(tail[ 0]) << 0;
-        k1 *= c1; k1  = ROTL64(k1,31); k1 *= c2; h1 ^= k1;
-    }
-    
-    // finalization
-    h1 ^= len; h2 ^= len;
-    
-    h1 += h2;
-    h2 += h1;
-    
-    h1 = hashMurmurFmix64(h1);
-    h2 = hashMurmurFmix64(h2);
-    
-    h1 += h2;
-    h2 += h1;
-    
-    return {
-        .h1 = h1,
-        .h2 = h2
-    };
-}
-
-static void hashMurmur32MixTail(HashMurmur32Incremental* ctx, const uint8** pData, uint32* pSize)
-{
-    uint32 size = *pSize;
-    const uint8* data = *pData;
-    
-    while (size && ((size<4) || ctx->mCount)) {
-        ctx->mTail |= (*data++) << (ctx->mCount * 8);
-        
-        ctx->mCount++;
-        size--;
-        
-        if (ctx->mCount == 4)	{
-            MMIX(ctx->mHash, ctx->mTail);
-            ctx->mTail = 0;
-            ctx->mCount = 0;
+        while (len >= 8) {
+            DO8(buf);
+            len -= 8;
         }
-    }
     
-    *pData = data;
-    *pSize = size;
-}
+        while (len--) {
+            DO1(buf);
+        }
+    
+        crc ^= 0xffffffffL;
+    
+        return crc;
+    }
+
+    ////////////////////////////////////////////////////////////////////////////////////////////
+    // Murmur3
+    // https://github.com/PeterScott/murmur3/blob/master/murmur3.c
+    FORCE_INLINE uint32 rotl32(uint32 x, int8 r)
+    {
+        return (x << r) | (x >> (32 - r));
+    }
+
+    FORCE_INLINE uint64 rotl64(uint64 x, int8 r)
+    {
+        return (x << r) | (x >> (64 - r));
+    }
+
+    #define	ROTL32(x,y)	rotl32(x,y)
+    #define ROTL64(x,y)	rotl64(x,y)
+    #define BIG_CONSTANT(x) (x##LLU)
+    #define HASH_M 0x5bd1e995
+    #define HASH_R 24
+    #define MMIX(h, k) { k *= HASH_M; k ^= k >> HASH_R; k *= HASH_M; h *= HASH_M; h ^= k; }
+
+    //-----------------------------------------------------------------------------
+    // Block read - if your platform needs to do endian-swapping or can only
+    // handle aligned reads, do the conversion here
+    #define getblock(p, i) (p[i])
+
+    //-----------------------------------------------------------------------------
+    // Finalization mix - force all bits of a hash block to avalanche
+
+    FORCE_INLINE uint32 MurmurFmix32(uint32 h)
+    {
+        h ^= h >> 16;
+        h *= 0x85ebca6b;
+        h ^= h >> 13;
+        h *= 0xc2b2ae35;
+        h ^= h >> 16;
+    
+        return h;
+    }
+
+    //----------
+    FORCE_INLINE uint64 MurmurFmix64(uint64 k)
+    {
+        k ^= k >> 33;
+        k *= BIG_CONSTANT(0xff51afd7ed558ccd);
+        k ^= k >> 33;
+        k *= BIG_CONSTANT(0xc4ceb9fe1a85ec53);
+        k ^= k >> 33;
+    
+        return k;
+    }
+
+    uint32 Murmur32(const void * key, uint32 len, uint32 seed)
+    {
+        const uint8 * data = (const uint8*)key;
+        const int nblocks = static_cast<int>(len / 4);
+        int i;
+    
+        uint32 h1 = seed;
+        constexpr uint32 c1 = 0xcc9e2d51;
+        constexpr uint32 c2 = 0x1b873593;
+    
+        // body
+        auto blocks = reinterpret_cast<const uint32*>(data + nblocks*4);
+    
+        for(i = -nblocks; i; i++) {
+            uint32 k1 = getblock(blocks,i);
+        
+            k1 *= c1;
+            k1 = ROTL32(k1,15);
+            k1 *= c2;
+        
+            h1 ^= k1;
+            h1 = ROTL32(h1,13); 
+            h1 = h1*5+0xe6546b64;
+        }
+    
+        // tail
+        auto tail = reinterpret_cast<const uint8*>(data + nblocks*4);
+        uint32 k1 = 0;
+    
+        switch(len & 3) {
+        case 3: k1 ^= tail[2] << 16;
+        case 2: k1 ^= tail[1] << 8;
+        case 1: k1 ^= tail[0];
+            k1 *= c1; k1 = ROTL32(k1,15); k1 *= c2; h1 ^= k1;
+        }
+    
+        // finalization
+        h1 ^= len;    
+        return MurmurFmix32(h1);
+    } 
+
+    HashResult128 Murmur128(const void * key, size_t len, const uint32 seed)
+    {
+        const uint8 * data = (const uint8*)key;
+        const size_t nblocks = len / 16;
+        size_t i;
+    
+        uint64 h1 = seed;
+        uint64 h2 = seed;
+    
+        uint64 c1 = BIG_CONSTANT(0x87c37b91114253d5);
+        uint64 c2 = BIG_CONSTANT(0x4cf5ad432745937f);
+    
+        // body
+        const uint64 * blocks = (const uint64 *)(data);
+    
+        for(i = 0; i < nblocks; i++)
+        {
+            uint64 k1 = getblock(blocks,i*2+0);
+            uint64 k2 = getblock(blocks,i*2+1);
+        
+            k1 *= c1; k1  = ROTL64(k1,31); k1 *= c2; h1 ^= k1;
+            h1 = ROTL64(h1,27); h1 += h2; h1 = h1*5+0x52dce729;
+            k2 *= c2; k2  = ROTL64(k2,33); k2 *= c1; h2 ^= k2;
+            h2 = ROTL64(h2,31); h2 += h1; h2 = h2*5+0x38495ab5;
+        }
+    
+        auto tail = reinterpret_cast<const uint8*>(data + nblocks*16);
+    
+        uint64 k1 = 0;
+        uint64 k2 = 0;
+    
+        switch(len & 15)
+        {
+        case 15: k2 ^= (uint64)(tail[14]) << 48;
+        case 14: k2 ^= (uint64)(tail[13]) << 40;
+        case 13: k2 ^= (uint64)(tail[12]) << 32;
+        case 12: k2 ^= (uint64)(tail[11]) << 24;
+        case 11: k2 ^= (uint64)(tail[10]) << 16;
+        case 10: k2 ^= (uint64)(tail[ 9]) << 8;
+        case  9: k2 ^= (uint64)(tail[ 8]) << 0;
+            k2 *= c2; k2  = ROTL64(k2,33); k2 *= c1; h2 ^= k2;
+        
+        case  8: k1 ^= (uint64)(tail[ 7]) << 56;
+        case  7: k1 ^= (uint64)(tail[ 6]) << 48;
+        case  6: k1 ^= (uint64)(tail[ 5]) << 40;
+        case  5: k1 ^= (uint64)(tail[ 4]) << 32;
+        case  4: k1 ^= (uint64)(tail[ 3]) << 24;
+        case  3: k1 ^= (uint64)(tail[ 2]) << 16;
+        case  2: k1 ^= (uint64)(tail[ 1]) << 8;
+        case  1: k1 ^= (uint64)(tail[ 0]) << 0;
+            k1 *= c1; k1  = ROTL64(k1,31); k1 *= c2; h1 ^= k1;
+        }
+    
+        // finalization
+        h1 ^= len; h2 ^= len;
+    
+        h1 += h2;
+        h2 += h1;
+    
+        h1 = MurmurFmix64(h1);
+        h2 = MurmurFmix64(h2);
+    
+        h1 += h2;
+        h2 += h1;
+    
+        return {
+            .h1 = h1,
+            .h2 = h2
+        };
+    }
+} // Hash
 
 HashMurmur32Incremental::HashMurmur32Incremental(uint32 seed) : 
     mHash(seed),
@@ -296,7 +276,7 @@ HashMurmur32Incremental& HashMurmur32Incremental::AddAny(const void* _data, uint
     const uint8* key = (const uint8*)_data;
     mSize += _size;
     
-    hashMurmur32MixTail(this, &key, &_size);
+    Murmur32MixTail(&key, &_size);
     
     while (_size >= 4)	{
         uint32 k = *((const uint32*)key);
@@ -307,7 +287,7 @@ HashMurmur32Incremental& HashMurmur32Incremental::AddAny(const void* _data, uint
         _size -= 4;
     }
     
-    hashMurmur32MixTail(this, &key, &_size);
+    Murmur32MixTail(&key, &_size);
     return *this;
 }
 
@@ -332,6 +312,28 @@ uint32 HashMurmur32Incremental::Hash()
     mHash ^= mHash >> 15;
     
     return mHash;
+}
+
+void HashMurmur32Incremental::Murmur32MixTail(const uint8** pData, uint32* pSize)
+{
+    uint32 size = *pSize;
+    const uint8* data = *pData;
+    
+    while (size && ((size<4) || mCount)) {
+        mTail |= (*data++) << (mCount * 8);
+        
+        mCount++;
+        size--;
+        
+        if (mCount == 4)	{
+            MMIX(mHash, mTail);
+            mTail = 0;
+            mCount = 0;
+        }
+    }
+    
+    *pData = data;
+    *pSize = size;
 }
 
 //    ██╗  ██╗ █████╗ ███████╗██╗  ██╗    ████████╗ █████╗ ██████╗ ██╗     ███████╗
@@ -374,7 +376,7 @@ FORCE_INLINE constexpr int hashTableNearestPow2(int n)
     return n;
 }
 
-_private::HashTableData* _private::hashtableCreate(uint32 capacity, uint32 valueStride, Allocator* alloc)
+_private::HashTableData* _private::hashtableCreate(uint32 capacity, uint32 valueStride, MemAllocator* alloc)
 {
     ASSERT(capacity > 0);
     
@@ -404,7 +406,7 @@ size_t _private::hashtableGetMemoryRequirement(uint32 capacity, uint32 valueStri
                      .GetMemoryRequirement();        
 }
 
-void _private::hashtableDestroy(HashTableData* tbl, Allocator* alloc)
+void _private::hashtableDestroy(HashTableData* tbl, MemAllocator* alloc)
 {
     ASSERT(tbl);
     tbl->count = tbl->capacity = 0;
@@ -412,7 +414,7 @@ void _private::hashtableDestroy(HashTableData* tbl, Allocator* alloc)
     MemSingleShotMalloc<HashTableData>::Free(tbl, alloc);
 }
 
-bool _private::hashtableGrow(HashTableData** pTbl, Allocator* alloc)
+bool _private::hashtableGrow(HashTableData** pTbl, MemAllocator* alloc)
 {
     HashTableData* tbl = *pTbl;
     // Create a new table (fl64 the size), repopulate it and replace previous one

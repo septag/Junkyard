@@ -15,13 +15,13 @@
 
 
 //------------------------------------------------------------------------
-static thread_local Allocator* gStbIAlloc = nullptr;
+static thread_local MemAllocator* gStbIAlloc = nullptr;
 
 #define STB_IMAGE_IMPLEMENTATION
 #define STB_IMAGE_STATIC
-#define STBI_MALLOC(sz)                     memAlloc(sz, gStbIAlloc)
-#define STBI_REALLOC(p, newsz)              memRealloc(p, newsz, gStbIAlloc)
-#define STBI_FREE(p)                        memFree(p, gStbIAlloc)
+#define STBI_MALLOC(sz)                     Mem::Alloc(sz, gStbIAlloc)
+#define STBI_REALLOC(p, newsz)              Mem::Realloc(p, newsz, gStbIAlloc)
+#define STBI_FREE(p)                        Mem::Free(p, gStbIAlloc)
 PRAGMA_DIAGNOSTIC_PUSH()
 PRAGMA_DIAGNOSTIC_IGNORED_CLANG_GCC("-Wshadow")
 PRAGMA_DIAGNOSTIC_IGNORED_CLANG_GCC("-Wunused-function")
@@ -34,8 +34,8 @@ PRAGMA_DIAGNOSTIC_POP()
 #if CONFIG_TOOLMODE
     #define STB_IMAGE_RESIZE_IMPLEMENTATION
     #define STB_IMAGE_RESIZE_STATIC
-    #define STBIR_MALLOC(size,c)                memAlloc(size, reinterpret_cast<Allocator*>(c));
-    #define STBIR_FREE(ptr,c)                   memFree(ptr, reinterpret_cast<Allocator*>(c));
+    #define STBIR_MALLOC(size,c)                Mem::Alloc(size, reinterpret_cast<MemAllocator*>(c));
+    #define STBIR_FREE(ptr,c)                   Mem::Free(ptr, reinterpret_cast<MemAllocator*>(c));
     PRAGMA_DIAGNOSTIC_PUSH()
     PRAGMA_DIAGNOSTIC_IGNORED_MSVC(4505)
     #include "../External/stb/stb_image_resize.h"
@@ -57,7 +57,7 @@ struct AssetDescriptorUpdateCacheItem
 struct AssetImageLoadRequest
 {
     AssetHandle handle;
-    Allocator* alloc;
+    MemAllocator* alloc;
     AssetLoaderAsyncCallback loadCallback;
     void* loadCallbackUserData;
     ImageLoadParams loadParams;
@@ -65,16 +65,16 @@ struct AssetImageLoadRequest
 
 struct AssetImageCallbacks final : AssetCallbacks
 {
-    AssetResult Load(AssetHandle handle, const AssetLoadParams& params, uint32 cacheHash, Allocator* dependsAlloc) override;
+    AssetResult Load(AssetHandle handle, const AssetLoadParams& params, uint32 cacheHash, MemAllocator* dependsAlloc) override;
     void LoadRemote(AssetHandle handle, const AssetLoadParams& params, uint32 cacheHash, void* userData, AssetLoaderAsyncCallback loadCallback) override;
     bool InitializeSystemResources(void* obj, const AssetLoadParams& params) override;
     bool ReloadSync(AssetHandle handle, void* prevData) override;
-    void Release(void* data, Allocator*) override;
+    void Release(void* data, MemAllocator*) override;
 };
 
 struct AssetImageManager
 {
-    Allocator* runtimeAlloc;
+    MemAllocator* runtimeAlloc;
     AssetImageCallbacks imageLoader;
     Array<AssetDescriptorUpdateCacheItem*> updateCache;
     Array<AssetImageLoadRequest> requests;
@@ -117,7 +117,7 @@ INLINE GfxFormat assetImageConvertFormatSRGB(GfxFormat fmt)
 
 // This function is the main loader/baker
 // Depending on the local meta-data, we either directly load the image from the disk or encode it with block compression
-static Pair<AssetImage*, uint32> assetBakeImage(const char* filepath, Allocator* alloc, const AssetMetaKeyValue* metaData, uint32 numMeta,
+static Pair<AssetImage*, uint32> assetBakeImage(const char* filepath, MemAllocator* alloc, const AssetMetaKeyValue* metaData, uint32 numMeta,
                                                 char* outErrorDesc, uint32 errorDescSize)    
 {
     PROFILE_ZONE(true);
@@ -131,7 +131,7 @@ static Pair<AssetImage*, uint32> assetBakeImage(const char* filepath, Allocator*
 
     MemTempAllocator tmpAlloc;
 
-    Blob blob = vfsReadFile(filepath, VfsFlags::None, &tmpAlloc);
+    Blob blob = Vfs::ReadFile(filepath, VfsFlags::None, &tmpAlloc);
     if (!blob.IsValid()) {
         strPrintFmt(outErrorDesc, errorDescSize, "Opening image failed: %s", filepath);
         return {};
@@ -164,7 +164,7 @@ static Pair<AssetImage*, uint32> assetBakeImage(const char* filepath, Allocator*
         // Mip generation
         if (generateMips && imgWidth > 1 && imgHeight > 1) {
             #if CONFIG_TOOLMODE
-                uint8* mipScratchBuffer = memAllocTyped<uint8>(imageSize, &tmpAlloc);
+                uint8* mipScratchBuffer = Mem::AllocTyped<uint8>(imageSize, &tmpAlloc);
 
                 contentBlob.Write(pixels, imageSize);
 
@@ -218,7 +218,7 @@ static Pair<AssetImage*, uint32> assetBakeImage(const char* filepath, Allocator*
         // Texture Compression
         if (!formatStr.IsEmpty()) {
             #if CONFIG_TOOLMODE
-                ImageEncoderCompression compression = imageEncoderCompressionGetEnum(formatStr.CStr());
+                ImageEncoderCompression::Enum compression = ImageEncoderCompression::FromString(formatStr.CStr());
                 if (compression == ImageEncoderCompression::_Count) {
                     strPrintFmt(outErrorDesc, errorDescSize, 
                         "Loading image '%s' failed. Image format not supported in meta-data '%s'", filepath, formatStr.CStr());
@@ -253,7 +253,7 @@ static Pair<AssetImage*, uint32> assetBakeImage(const char* filepath, Allocator*
                         .pixels = reinterpret_cast<const uint8*>(contentBlob.Data()) + mip.offset
                     };
 
-                    Blob compressedBlob = imageEncoderCompress(compression, ImageEncoderQuality::Fast, flags, surface, &tmpAlloc);
+                    Blob compressedBlob = ImageEncoder::Compress(compression, ImageEncoderQuality::Fast, flags, surface, &tmpAlloc);
                     if (compressedBlob.IsValid()) {
                         mip.offset = static_cast<uint32>(compressedContentBlob.Size());
                         compressedContentBlob.Write(compressedBlob.Data(), compressedBlob.Size());
@@ -293,10 +293,10 @@ static Pair<AssetImage*, uint32> assetBakeImage(const char* filepath, Allocator*
     for (uint32 i = 0; i < numMips; i++)
         header->mipOffsets[i] = mips[i].offset;
 
-    header->content = memAllocCopy<uint8>((uint8*)contentBlob.Data(), (uint32)contentBlob.Size(), &tmpAlloc);
+    header->content = Mem::AllocCopy<uint8>((uint8*)contentBlob.Data(), (uint32)contentBlob.Size(), &tmpAlloc);
 
     uint32 bufferSize = uint32(tmpAlloc.GetOffset() - tmpAlloc.GetPointerOffset(header));
-    return Pair<AssetImage*, uint32>(memAllocCopyRawBytes<AssetImage>(header, bufferSize, alloc), bufferSize);
+    return Pair<AssetImage*, uint32>(Mem::AllocCopyRawBytes<AssetImage>(header, bufferSize, alloc), bufferSize);
 }
 
 // MT: runs from a task thread (server-side)
@@ -309,7 +309,7 @@ static void assetLoadImageTask(uint32 groupIndex, void* userData)
     Blob outgoingBlob(&tmpAlloc);
     outgoingBlob.SetGrowPolicy(Blob::GrowPolicy::Multiply);
     
-    char filepath[kMaxPath];
+    char filepath[PATH_CHARS_MAX];
     AssetPlatform platform;
     ImageLoadParams loadImageParams;
     char errorMsg[kRemoteErrorDescSize];
@@ -334,12 +334,12 @@ static void assetLoadImageTask(uint32 groupIndex, void* userData)
         .loadParamsSize = sizeof(loadImageParams),
         .metaData = metaData,
         .numMeta = numMeta,
-        .lastModified = vfsGetLastModified(filepath)
+        .lastModified = Vfs::GetLastModified(filepath)
     });
     
     if (cacheHash != oldCacheHash) {
         TimerStopWatch timer;
-        Pair<AssetImage*, uint32> img = assetBakeImage(filepath, memDefaultAlloc(), metaData, numMeta, errorMsg, sizeof(errorMsg));
+        Pair<AssetImage*, uint32> img = assetBakeImage(filepath, Mem::GetDefaultAlloc(), metaData, numMeta, errorMsg, sizeof(errorMsg));
         AssetImage* header = img.first;
         if (header) {
             uint32 bufferSize = img.second;
@@ -347,25 +347,25 @@ static void assetLoadImageTask(uint32 groupIndex, void* userData)
             outgoingBlob.Write<uint32>(bufferSize);
             outgoingBlob.Write(header, bufferSize);
 
-            remoteSendResponse(RCMD_LOAD_IMAGE, outgoingBlob, false, nullptr);
-            logVerbose("Image loaded: %s (%.1f ms)", filepath, timer.ElapsedMS());
+            Remote::SendResponse(RCMD_LOAD_IMAGE, outgoingBlob, false, nullptr);
+            LOG_VERBOSE("Image loaded: %s (%.1f ms)", filepath, timer.ElapsedMS());
 
-            memFree(header, memDefaultAlloc());
+            Mem::Free(header, Mem::GetDefaultAlloc());
         }
         else {
-            remoteSendResponse(RCMD_LOAD_IMAGE, outgoingBlob, true, errorMsg);
-            logVerbose(errorMsg);
+            Remote::SendResponse(RCMD_LOAD_IMAGE, outgoingBlob, true, errorMsg);
+            LOG_VERBOSE(errorMsg);
         }
     }
     else {
         outgoingBlob.Write<uint32>(cacheHash);
         outgoingBlob.Write<uint32>(0);  // nothing has loaded. it's safe to load from client's local cache
-        remoteSendResponse(RCMD_LOAD_IMAGE, outgoingBlob, false, nullptr);
-        logVerbose("Image: %s [cached]", filepath);
+        Remote::SendResponse(RCMD_LOAD_IMAGE, outgoingBlob, false, nullptr);
+        LOG_VERBOSE("Image: %s [cached]", filepath);
     }
        
     blob->Free();
-    memFree(blob);
+    Mem::Free(blob);
 }
 
 // MT: runs from RemoteServices thread
@@ -376,9 +376,9 @@ static bool assetImageHandlerServerFn([[maybe_unused]] uint32 cmd, const Blob& i
     UNUSED(outgoingErrorDesc);
 
     // get a copy of incomingData pass it on to a task
-    Blob* taskDataBlob = NEW(memDefaultAlloc(), Blob)();
+    Blob* taskDataBlob = NEW(Mem::GetDefaultAlloc(), Blob)();
     incomingData.CopyTo(taskDataBlob);
-    jobsDispatchAndForget(JobsType::LongTask, assetLoadImageTask, taskDataBlob, 1, JobsPriority::Low);
+    Jobs::DispatchAndForget(JobsType::LongTask, assetLoadImageTask, taskDataBlob, 1, JobsPriority::Low);
 
     return true;
 }
@@ -416,7 +416,7 @@ static void assetImageHandlerClientFn([[maybe_unused]] uint32 cmd, const Blob& i
         incomingData.Read<uint32>(&bufferSize);
         
         if (bufferSize) {
-            imgData = memAlloc(bufferSize, request.alloc);
+            imgData = Mem::Alloc(bufferSize, request.alloc);
             incomingData.Read(imgData, bufferSize);
         }
 
@@ -426,7 +426,7 @@ static void assetImageHandlerClientFn([[maybe_unused]] uint32 cmd, const Blob& i
         }
     }
     else {
-        logError(errorDesc);
+        LOG_ERROR(errorDesc);
         if (request.loadCallback) 
             request.loadCallback(handle, AssetResult {}, request.loadCallbackUserData);
     }
@@ -472,7 +472,7 @@ AssetHandleImage assetLoadImage(const char* path, const ImageLoadParams& params,
 {
     AssetLoadParams loadParams {
         .path = path,
-        .alloc = memDefaultAlloc(), // TODO: should be able to use custom allocator
+        .alloc = Mem::GetDefaultAlloc(), // TODO: should be able to use custom allocator
         .typeId = kImageAssetType,
         .barrier = barrier
     };
@@ -487,13 +487,13 @@ GfxImage assetGetImage(AssetHandleImage imageHandle)
 
 bool _private::assetInitializeImageManager()
 {
-    gImageMgr.runtimeAlloc = memDefaultAlloc(); // TODO: maybe use a tlsf allocator or something
+    gImageMgr.runtimeAlloc = Mem::GetDefaultAlloc(); // TODO: maybe use a tlsf allocator or something
 
     // These parts should not be used in headless mode:
     // - placeholder images
     // - Asset loaders for the images
     // - Descriptor cache management for reloads
-    if (settingsGet().graphics.enable && !settingsGet().graphics.headless) {
+    if (SettingsJunkyard::Get().graphics.enable && !SettingsJunkyard::Get().graphics.headless) {
         const uint32 kWhitePixel = 0xffffffff;
         GfxImageDesc imageDesc = GfxImageDesc {
             .width = 1,
@@ -535,7 +535,7 @@ bool _private::assetInitializeImageManager()
     // - Remote loader/baker
     gImageMgr.requestsMtx.Initialize();
     gImageMgr.requests.SetAllocator(gImageMgr.runtimeAlloc);
-    remoteRegisterCommand(RemoteCommandDesc {
+    Remote::RegisterCommand(RemoteCommandDesc {
         .cmdFourCC = RCMD_LOAD_IMAGE,
         .serverFn = assetImageHandlerServerFn,
         .clientFn = assetImageHandlerClientFn,
@@ -544,7 +544,7 @@ bool _private::assetInitializeImageManager()
 
     _private::gfxSetUpdateImageDescriptorCallback(assetUpdateImageDescriptorSetCache);
 
-    logInfo("(init) Image asset manager");
+    LOG_INFO("(init) Image asset manager");
     return true;
 }
 
@@ -553,7 +553,7 @@ void _private::assetReleaseImageManager()
     gImageMgr.requests.Free();
     gImageMgr.requestsMtx.Release();
 
-    if (!settingsGet().graphics.headless) {
+    if (!SettingsJunkyard::Get().graphics.headless) {
         gfxDestroyImage(gImageMgr.imageWhite);
 
         MemSingleShotMalloc<AssetDescriptorUpdateCacheItem> mallocator;
@@ -567,7 +567,7 @@ void _private::assetReleaseImageManager()
 }
 
 // MT: runs from a task thread (AssetManager)
-AssetResult AssetImageCallbacks::Load(AssetHandle handle, const AssetLoadParams& params, uint32 cacheHash, Allocator*)
+AssetResult AssetImageCallbacks::Load(AssetHandle handle, const AssetLoadParams& params, uint32 cacheHash, MemAllocator*)
 {
     ASSERT(params.next);
 
@@ -583,7 +583,7 @@ AssetResult AssetImageCallbacks::Load(AssetHandle handle, const AssetLoadParams&
         .loadParamsSize = sizeof(ImageLoadParams),
         .metaData = metaData,
         .numMeta = numMeta,
-        .lastModified = vfsGetLastModified(params.path)
+        .lastModified = Vfs::GetLastModified(params.path)
     });
 
     if (newCacheHash != cacheHash) {
@@ -593,7 +593,7 @@ AssetResult AssetImageCallbacks::Load(AssetHandle handle, const AssetLoadParams&
             return AssetResult { .obj = img.first, .objBufferSize = img.second, .cacheHash = newCacheHash };
         }
         else {
-            logError(errorDesc);
+            LOG_ERROR(errorDesc);
             return AssetResult {};
         }
     }
@@ -608,7 +608,7 @@ void AssetImageCallbacks::LoadRemote(AssetHandle handle, const AssetLoadParams& 
 {
     ASSERT(params.next);
     ASSERT(loadCallback);
-    ASSERT(remoteIsConnected());
+    ASSERT(Remote::IsConnected());
 
     const ImageLoadParams* textureParams = reinterpret_cast<ImageLoadParams*>(params.next.Get());
 
@@ -633,7 +633,7 @@ void AssetImageCallbacks::LoadRemote(AssetHandle handle, const AssetLoadParams& 
     outgoingBlob.Write<uint32>(static_cast<uint32>(params.platform));
     outgoingBlob.Write(textureParams, sizeof(ImageLoadParams));
 
-    remoteExecuteCommand(RCMD_LOAD_IMAGE, outgoingBlob);
+    Remote::ExecuteCommand(RCMD_LOAD_IMAGE, outgoingBlob);
 
     outgoingBlob.Free();
 }
@@ -688,7 +688,7 @@ bool AssetImageCallbacks::ReloadSync(AssetHandle handle, void* prevData)
     return true;
 }
 
-void AssetImageCallbacks::Release(void* data, Allocator* alloc)
+void AssetImageCallbacks::Release(void* data, MemAllocator* alloc)
 {
     ASSERT(data);
 
@@ -705,7 +705,7 @@ void AssetImageCallbacks::Release(void* data, Allocator* alloc)
             if (item->bindings[k].type == GfxDescriptorType::SampledImage && item->bindings[k].image == handle) {
                 if (--item->refCount == 0) {
                     gImageMgr.updateCache.RemoveAndSwap(i);
-                    memFree(item);
+                    Mem::Free(item);
                     i--;
                     break;
                 }
@@ -713,6 +713,6 @@ void AssetImageCallbacks::Release(void* data, Allocator* alloc)
         } // foreach binding
     } // For each item in descriptor set update cache
 
-    memFree(image, alloc);
+    Mem::Free(image, alloc);
 }
 

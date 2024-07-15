@@ -5,7 +5,7 @@
 
 #include "Base.h"
 
-struct Allocator;
+struct MemAllocator;
 
 API char*   strCopy(char* RESTRICT dst, uint32 dstSize, const char* RESTRICT src);
 API char*   strCopyCount(char* RESTRICT dst, uint32 dstSize, const char* RESTRICT src, uint32 count);
@@ -14,8 +14,8 @@ API char*   strConcatCount(char* RESTRICT dst, uint32 dstSize, const char* RESTR
 NO_ASAN API uint32 strLen(const char* str);
 API uint32  strPrintFmt(char* str, uint32 size, const char* fmt, ...);
 API uint32  strPrintFmtArgs(char* str, uint32 size, const char* fmt, va_list args);
-API char*   strPrintFmtAlloc(Allocator* alloc, const char* fmt, ...);
-API char*   strPrintFmtAllocArgs(Allocator* alloc, const char* fmt, va_list args);
+API char*   strPrintFmtAlloc(MemAllocator* alloc, const char* fmt, ...);
+API char*   strPrintFmtAllocArgs(MemAllocator* alloc, const char* fmt, va_list args);
 API bool    strUt8ToWide(const char* src, wchar_t* dst, size_t dstNumBytes);
 API bool    strWideToUtf8(const wchar_t* src, char* dst, size_t dstNumBytes);
 API bool    strIsEqual(const char* s1, const char* s2);
@@ -50,8 +50,8 @@ NO_ASAN API const char* strFindCharRev(const char* str, char ch);
 NO_ASAN API const char* strFindStr(const char* RESTRICT str, const char* RESTRICT find);
 
 // Returns indexes to the input string with 
-API Span<char*> strSplit(const char* str, char ch, Allocator* alloc);
-API Span<char*> strSplitWhitespace(const char* str, Allocator* alloc);
+API Span<char*> strSplit(const char* str, char ch, MemAllocator* alloc);
+API Span<char*> strSplitWhitespace(const char* str, MemAllocator* alloc);
 
 template <uint32 _Size>
 struct String 

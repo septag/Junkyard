@@ -62,7 +62,7 @@ _Unwind_Reason_Code debugUnwindCallback(_Unwind_Context* context, void* arg)
     return _URC_NO_REASON;
 }
 
-NO_INLINE uint16 debugCaptureStacktrace(void** stackframes, uint16 maxStackframes, uint16 framesToSkip, uint32* pHash)
+NO_INLINE uint16 Debug::CaptureStacktrace(void** stackframes, uint16 maxStackframes, uint16 framesToSkip, uint32* pHash)
 {
     ASSERT(maxStackframes);
     DebugStacktraceState state {stackframes, stackframes + maxStackframes, framesToSkip};
@@ -70,12 +70,12 @@ NO_INLINE uint16 debugCaptureStacktrace(void** stackframes, uint16 maxStackframe
     uint32 numStacktrace = PtrToInt<uint16>((void*)(state.current - stackframes));
 
     if (pHash)
-        *pHash = hashMurmur32(stackframes, sizeof(void*)*numStacktrace, DEBUG_STACKTRACE_HASH_SEED);
+        *pHash = Hash::Murmur32(stackframes, sizeof(void*)*numStacktrace, DEBUG_STACKTRACE_HASH_SEED);
 
     return numStacktrace;
 }
 
-void debugResolveStacktrace(uint16 numStacktrace, void* const* stackframes, DebugStacktraceEntry* entries)
+void Debug::ResolveStacktrace(uint16 numStacktrace, void* const* stackframes, DebugStacktraceEntry* entries)
 {
     for (uint16 i = 0; i < numStacktrace; i++) {
         memset(&entries[i], 0x0, sizeof(entries[i]));
@@ -95,7 +95,7 @@ void debugResolveStacktrace(uint16 numStacktrace, void* const* stackframes, Debu
     }
 }
 
-void debugStacktraceSaveStopPoint(void* funcPtr)
+void Debug::StacktraceSaveStopPoint(void* funcPtr)
 {
     ASSERT(funcPtr);
     ASSERT_MSG(gDebugStopFuncs.FindIf([funcPtr](const void* fn)->bool { return funcPtr == fn; }) == UINT32_MAX, 

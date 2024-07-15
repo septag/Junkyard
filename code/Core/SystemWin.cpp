@@ -129,13 +129,13 @@ static AdvApi32 gAdvApi32;
 static void sysLoadAdvApi32()
 {
     if (gAdvApi32.dll == nullptr) {
-        gAdvApi32.dll = (HANDLE)sysLoadDLL("Advapi32.dll");
+        gAdvApi32.dll = (HANDLE)OS::LoadDLL("Advapi32.dll");
         ASSERT_ALWAYS(gAdvApi32.dll, "Could not load system DLL: Advapi32.dll");
 
-        gAdvApi32.RegGetValueA = (AdvApi32::RegGetValueAFn)sysSymbolAddress(gAdvApi32.dll, "RegGetValueA");
-        gAdvApi32.OpenProcessToken = (AdvApi32::OpenProcessTokenFn)sysSymbolAddress(gAdvApi32.dll, "OpenProcessToken");
-        gAdvApi32.AdjustTokenPrivileges = (AdvApi32::AdjustTokenPrivilegesFn)sysSymbolAddress(gAdvApi32.dll, "AdjustTokenPrivileges");
-        gAdvApi32.LookupPrivilegeValueA = (AdvApi32::LookupPrivilegeValueAFn)sysSymbolAddress(gAdvApi32.dll, "LookupPrivilegeValueA");
+        gAdvApi32.RegGetValueA = (AdvApi32::RegGetValueAFn)OS::GetSymbolAddress(gAdvApi32.dll, "RegGetValueA");
+        gAdvApi32.OpenProcessToken = (AdvApi32::OpenProcessTokenFn)OS::GetSymbolAddress(gAdvApi32.dll, "OpenProcessToken");
+        gAdvApi32.AdjustTokenPrivileges = (AdvApi32::AdjustTokenPrivilegesFn)OS::GetSymbolAddress(gAdvApi32.dll, "AdjustTokenPrivileges");
+        gAdvApi32.LookupPrivilegeValueA = (AdvApi32::LookupPrivilegeValueAFn)OS::GetSymbolAddress(gAdvApi32.dll, "LookupPrivilegeValueA");
 
         ASSERT_ALWAYS(gAdvApi32.RegGetValueA && gAdvApi32.OpenProcessToken && gAdvApi32.AdjustTokenPrivileges && gAdvApi32.LookupPrivilegeValueA,
                       "Loading AdvApi32 API failed");
@@ -149,13 +149,13 @@ static Ole32 gOle32;
 static void sysLoadOle32()
 {
     if (gOle32.dll == nullptr) {
-        gOle32.dll = (HANDLE)sysLoadDLL("Ole32.dll");
+        gOle32.dll = (HANDLE)OS::LoadDLL("Ole32.dll");
         ASSERT_ALWAYS(gOle32.dll, "Could not load system DLL: Ole32.dll");
 
-        gOle32.StringFromGUID2 = (Ole32::StringFromGUID2Fn)sysSymbolAddress(gOle32.dll, "StringFromGUID2");
-        gOle32.CoCreateGuid = (Ole32::CoCreateGuidFn)sysSymbolAddress(gOle32.dll, "CoCreateGuid");
-        gOle32.CoTaskMemFree = (Ole32::CoTaskMemFreeFn)sysSymbolAddress(gOle32.dll, "CoTaskMemFree");
-        gOle32.CLSIDFromString = (Ole32::CLSIDFromStringFn)sysSymbolAddress(gOle32.dll, "CLSIDFromString");
+        gOle32.StringFromGUID2 = (Ole32::StringFromGUID2Fn)OS::GetSymbolAddress(gOle32.dll, "StringFromGUID2");
+        gOle32.CoCreateGuid = (Ole32::CoCreateGuidFn)OS::GetSymbolAddress(gOle32.dll, "CoCreateGuid");
+        gOle32.CoTaskMemFree = (Ole32::CoTaskMemFreeFn)OS::GetSymbolAddress(gOle32.dll, "CoTaskMemFree");
+        gOle32.CLSIDFromString = (Ole32::CLSIDFromStringFn)OS::GetSymbolAddress(gOle32.dll, "CLSIDFromString");
 
         ASSERT_ALWAYS(gOle32.StringFromGUID2 && gOle32.CoCreateGuid && gOle32.CoTaskMemFree && gOle32.CLSIDFromString,
                       "Loading Ole32 API failed");
@@ -169,11 +169,11 @@ static Shell32 gShell32;
 static void sysLoadShell32()
 {
     if (gShell32.dll == nullptr) {
-        gShell32.dll = (HANDLE)sysLoadDLL("Shell32.dll");
+        gShell32.dll = (HANDLE)OS::LoadDLL("Shell32.dll");
         ASSERT_ALWAYS(gShell32.dll, "Could not load system DLL: Shell32.dll");
 
-        gShell32.ShellExecuteA = (Shell32::ShellExecuteAFn)sysSymbolAddress(gShell32.dll, "ShellExecuteA");
-        gShell32.SHGetKnownFolderPath = (Shell32::SHGetKnownFolderPathFn)sysSymbolAddress(gShell32.dll, "SHGetKnownFolderPath");
+        gShell32.ShellExecuteA = (Shell32::ShellExecuteAFn)OS::GetSymbolAddress(gShell32.dll, "ShellExecuteA");
+        gShell32.SHGetKnownFolderPath = (Shell32::SHGetKnownFolderPathFn)OS::GetSymbolAddress(gShell32.dll, "SHGetKnownFolderPath");
 
         ASSERT_ALWAYS(gShell32.ShellExecuteA && gShell32.SHGetKnownFolderPath, "Loading Shell32 API failed");
     }
@@ -195,7 +195,7 @@ struct ThreadImpl
     size_t stackSize;
     char name[32];
     DWORD tId;
-    atomicUint32 running;
+    AtomicUint32 running;
     bool init;
 };
 static_assert(sizeof(ThreadImpl) <= sizeof(Thread), "Thread size mismatch");
@@ -204,13 +204,13 @@ static DWORD WINAPI threadStubFn(LPVOID arg)
 {
     ThreadImpl* thrd = reinterpret_cast<ThreadImpl*>(arg);
     thrd->tId = GetCurrentThreadId();
-    threadSetCurrentThreadName(thrd->name);
+    Thread::SetCurrentThreadName(thrd->name);
 
     ASSERT(thrd->threadFn);
-    atomicStore32Explicit(&thrd->running, 1, AtomicMemoryOrder::Release);
+    Atomic::StoreExplicit(&thrd->running, 1, AtomicMemoryOrder::Release);
     thrd->sem.Post();
     DWORD r = static_cast<DWORD>(thrd->threadFn(thrd->userData));
-    atomicStore32Explicit(&thrd->running, 0, AtomicMemoryOrder::Release);
+    Atomic::StoreExplicit(&thrd->running, 0, AtomicMemoryOrder::Release);
 
     return r;
 }
@@ -236,7 +236,7 @@ bool Thread::Start(const ThreadDesc& desc)
     thrd->sem.Initialize();
     thrd->threadFn = desc.entryFn;
     thrd->userData = desc.userData;
-    thrd->stackSize = Max<size_t>(desc.stackSize, 64*kKB);
+    thrd->stackSize = Max<size_t>(desc.stackSize, 64*SIZE_KB);
     strCopy(thrd->name, sizeof(thrd->name), desc.name ? desc.name : "");
 
     thrd->handle = CreateThread(nullptr, thrd->stackSize, (LPTHREAD_START_ROUTINE)threadStubFn, thrd, 0, nullptr);
@@ -249,7 +249,7 @@ bool Thread::Start(const ThreadDesc& desc)
     thrd->sem.Wait();   // Ensure that thread callback is init
     thrd->init = true;
 
-    _private::sysCountersAddThread(thrd->stackSize);
+    _private::CountersAddThread(thrd->stackSize);
 
     return true;
 }
@@ -271,7 +271,7 @@ int Thread::Stop()
 
     thrd->init = false;
 
-    _private::sysCountersRemoveThread(thrd->stackSize);
+    _private::CountersRemoveThread(thrd->stackSize);
 
     return static_cast<int>(exitCode);
 }
@@ -279,7 +279,7 @@ int Thread::Stop()
 bool Thread::IsRunning()
 {
     ThreadImpl* thrd = reinterpret_cast<ThreadImpl*>(mData);
-    return atomicLoad32Explicit(&thrd->running, AtomicMemoryOrder::Acquire) == 1;
+    return Atomic::LoadExplicit(&thrd->running, AtomicMemoryOrder::Acquire) == 1;
 }
 
 void Thread::SetPriority(ThreadPriority prio)
@@ -299,22 +299,22 @@ void Thread::SetPriority(ThreadPriority prio)
     ASSERT(r);
 }
 
-void threadYield()
+void Thread::SwitchContext()
 {
     SwitchToThread();
 }
 
-uint32 threadGetCurrentId()
+uint32 Thread::GetCurrentId()
 {
     return GetCurrentThreadId();
 }
 
-void threadSleep(uint32 msecs)
+void Thread::Sleep(uint32 msecs)
 {
-    Sleep((DWORD)msecs);
+    ::Sleep((DWORD)msecs);
 }
 
-void threadSetCurrentThreadPriority(ThreadPriority prio)
+void Thread::SetCurrentThreadPriority(ThreadPriority prio)
 {
     int prioWin = 0;
     switch (prio) {
@@ -329,7 +329,7 @@ void threadSetCurrentThreadPriority(ThreadPriority prio)
     ASSERT(r);
 }
 
-void threadSetCurrentThreadName(const char* name)
+void Thread::SetCurrentThreadName(const char* name)
 {
     wchar_t namew[32];
     strUt8ToWide(name, namew, sizeof(namew));
@@ -340,7 +340,7 @@ void threadSetCurrentThreadName(const char* name)
     #endif
 }
 
-void threadGetCurrentThreadName(char* nameOut, uint32 nameSize)
+void Thread::GetCurrentThreadName(char* nameOut, uint32 nameSize)
 {
     PWSTR namew;
     if (SUCCEEDED(GetThreadDescription(GetCurrentThread(), &namew)))
@@ -368,7 +368,7 @@ void Mutex::Initialize(uint32 spinCount)
     [[maybe_unused]] BOOL r = InitializeCriticalSectionAndSpinCount(&_m->handle, spinCount);
     ASSERT_ALWAYS(r, "InitializeCriticalSection failed");
 
-    _private::sysCountersAddMutex();
+    _private::CountersAddMutex();
 }
 
 void Mutex::Release()
@@ -376,7 +376,7 @@ void Mutex::Release()
     MutexImpl* _m = reinterpret_cast<MutexImpl*>(mData);
     DeleteCriticalSection(&_m->handle);
 
-    _private::sysCountersRemoveMutex();
+    _private::CountersRemoveMutex();
 }
 
 void Mutex::Enter()
@@ -475,7 +475,7 @@ void Semaphore::Initialize()
     _sem->handle = CreateSemaphoreA(nullptr, 0, LONG_MAX, nullptr);
     ASSERT_ALWAYS(_sem->handle != INVALID_HANDLE_VALUE, "Failed to create semaphore");
 
-    _private::sysCountersAddSemaphore();
+    _private::CountersAddSemaphore();
 }
 
 void Semaphore::Release()
@@ -485,7 +485,7 @@ void Semaphore::Release()
         CloseHandle(_sem->handle);
         _sem->handle = INVALID_HANDLE_VALUE;
 
-        _private::sysCountersRemoveSemaphore();
+        _private::CountersRemoveSemaphore();
     }
 }
 
@@ -527,7 +527,7 @@ void Signal::Initialize()
     InitializeConditionVariable(&_sig->cond);
     _sig->value = 0;
 
-    _private::sysCountersAddSignal();
+    _private::CountersAddSignal();
 }
 
 void Signal::Release()
@@ -535,7 +535,7 @@ void Signal::Release()
     SignalImpl* _sig = reinterpret_cast<SignalImpl*>(mData);
     DeleteCriticalSection(&_sig->mutex);
 
-    _private::sysCountersRemoveSignal();
+    _private::CountersRemoveSignal();
 }
 
 void Signal::Raise()
@@ -636,7 +636,7 @@ FORCE_INLINE int64 timerInt64MulDiv(int64 value, int64 numer, int64 denom)
     return q * numer + r * numer / denom;
 }
 
-void _private::timerInitialize() 
+void _private::InitializeTimer() 
 {
     gTimer.init = true;
     
@@ -644,7 +644,7 @@ void _private::timerInitialize()
     QueryPerformanceCounter(&gTimer.start);
 }
 
-uint64 timerGetTicks() 
+uint64 Timer::GetTicks() 
 {
     ASSERT_MSG(gTimer.init, "Timer not initialized. call timerInitialize()");
     
@@ -663,14 +663,14 @@ struct UUIDImpl
 {
     GUID guid;
 };
-static_assert(sizeof(UUIDImpl) <= sizeof(SysUUID), "UUID size mismatch");
+static_assert(sizeof(UUIDImpl) <= sizeof(UniqueID), "UUID size mismatch");
 
-bool SysUUID::operator==(const SysUUID& uuid) const
+bool UniqueID::operator==(const UniqueID& uuid) const
 {
     return memcmp(data, uuid.data, sizeof(UUIDImpl)) == 0;
 }
 
-bool uuidGenerate(SysUUID* _uuid)
+bool uuidGenerate(UniqueID* _uuid)
 {
     sysLoadOle32();
 
@@ -681,7 +681,7 @@ bool uuidGenerate(SysUUID* _uuid)
     return true;
 }
 
-bool uuidToString(const SysUUID& _uuid, char* str, uint32 size)
+bool uuidToString(const UniqueID& _uuid, char* str, uint32 size)
 {
     sysLoadOle32();
 
@@ -703,7 +703,7 @@ bool uuidToString(const SysUUID& _uuid, char* str, uint32 size)
     return true;
 }
 
-bool uuidFromString(SysUUID* _uuid, const char* str)
+bool uuidFromString(UniqueID* _uuid, const char* str)
 {
     sysLoadOle32();
 
@@ -743,9 +743,9 @@ bool uuidFromString(SysUUID* _uuid, const char* str)
 //    ╚██████╔╝███████╗██║ ╚████║███████╗██║  ██║██║  ██║███████╗    ╚██████╔╝███████║
 //     ╚═════╝ ╚══════╝╚═╝  ╚═══╝╚══════╝╚═╝  ╚═╝╚═╝  ╚═╝╚══════╝     ╚═════╝ ╚══════╝
 
-DLLHandle sysLoadDLL(const char* filepath, char** pErrorMsg)
+SysDLL OS::LoadDLL(const char* filepath, char** pErrorMsg)
 {
-    DLLHandle dll = (DLLHandle)LoadLibraryA(filepath);
+    SysDLL dll = (SysDLL)LoadLibraryA(filepath);
     if (dll == nullptr && pErrorMsg) {
         static char errMsg[64];
         strPrintFmt(errMsg, sizeof(errMsg), "GetLastError: %u", GetLastError());
@@ -758,25 +758,25 @@ DLLHandle sysLoadDLL(const char* filepath, char** pErrorMsg)
     return dll;
 }
 
-void sysUnloadDLL(DLLHandle dll)
+void OS::UnloadDLL(SysDLL dll)
 {
     if (dll)
         FreeLibrary((HMODULE)dll);
 }
 
-void* sysSymbolAddress(DLLHandle dll, const char* symbolName)
+void* OS::GetSymbolAddress(SysDLL dll, const char* symbolName)
 {
     return (void*)GetProcAddress((HMODULE)dll, symbolName);
 }
 
-size_t sysGetPageSize()
+size_t OS::GetPageSize()
 {
     SYSTEM_INFO si;
     GetSystemInfo(&si);
     return (size_t)si.dwPageSize;
 }
 
-bool sysWin32GetRegisterLocalMachineString(const char* subkey, const char* value, char* dst, size_t dstSize)
+bool OS::Win32GetRegisterLocalMachineString(const char* subkey, const char* value, char* dst, size_t dstSize)
 {
     sysLoadAdvApi32();
 
@@ -795,7 +795,7 @@ static uint32 sysGetPhysicalCoresCount()
 	DWORD countCount = 0;
 	if (!GetLogicalProcessorInformation(buffer, &returnLen)) {
 		if (GetLastError() == ERROR_INSUFFICIENT_BUFFER)
-			buffer = (SYSTEM_LOGICAL_PROCESSOR_INFORMATION*)memAlloc(returnLen);
+			buffer = (SYSTEM_LOGICAL_PROCESSOR_INFORMATION*)Mem::Alloc(returnLen);
 	}
 
 	if (buffer != nullptr && GetLogicalProcessorInformation(buffer, &returnLen)) {
@@ -810,7 +810,7 @@ static uint32 sysGetPhysicalCoresCount()
 		}
 	}
 
-	memFree(buffer);
+	Mem::Free(buffer);
 
 	cachedCoreCount = Clamp<uint32>(countCount, 1, _limits::SYS_MAX_CORES);
     ASSERT_MSG(cachedCoreCount <= _limits::SYS_MAX_CORES, "CPU core count appears to be too high (%u). Consider increasing SYS_MAX_CORES", cachedCoreCount);
@@ -819,7 +819,7 @@ static uint32 sysGetPhysicalCoresCount()
 
 // https://en.wikipedia.org/wiki/CPUID
 // https://docs.microsoft.com/en-us/cpp/intrinsics/cpuid-cpuidex?redirectedfrom=MSDN&view=msvc-170
-void sysGetSysInfo(SysInfo* info)
+void OS::GetSysInfo(SysInfo* info)
 {
     struct i4 
     {
@@ -982,7 +982,7 @@ bool SysProcess::Run(const char* cmdline, SysProcessFlags flags, const char* cwd
     }
 
     MemTempAllocator tmpAlloc;
-    char* cmdLineCopy = memAllocCopy<char>(cmdline, strLen(cmdline)+1, &tmpAlloc);
+    char* cmdLineCopy = Mem::AllocCopy<char>(cmdline, strLen(cmdline)+1, &tmpAlloc);
     DWORD createProcessFlags = 0; // TODO
 
     if ((flags & SysProcessFlags::DontCreateConsole) == SysProcessFlags::DontCreateConsole) 
@@ -992,7 +992,7 @@ bool SysProcess::Run(const char* cmdline, SysProcessFlags flags, const char* cwd
 
     r = CreateProcessA(nullptr, cmdLineCopy, nullptr, nullptr, inheritHandles, createProcessFlags, NULL, cwd, &startInfo, &procInfo);
     if (!r) {
-        logError("Run process failed: %s", cmdline);
+        LOG_ERROR("Run process failed: %s", cmdline);
         return false;
     }
 
@@ -1035,7 +1035,7 @@ static void sysTerminateChildProcesses(DWORD parentProcessId)
                 if (pe.th32ParentProcessID == parentProcessId) {
                     HANDLE childProcess = OpenProcess(PROCESS_TERMINATE, TRUE, pe.th32ProcessID);
                     if (childProcess) {
-                        logDebug("Terminating child process: %u (%s)", pe.th32ProcessID, pe.szExeFile);
+                        LOG_DEBUG("Terminating child process: %u (%s)", pe.th32ProcessID, pe.szExeFile);
                         sysTerminateChildProcesses(pe.th32ProcessID);
 
                         TerminateProcess(childProcess, 1);
@@ -1059,7 +1059,7 @@ void SysProcess::Abort()
 
     BOOL r = TerminateProcess(mProcess, 1);
     if (!r) {
-        logError("Process failed to terminate: 0x%x (ErrorCode: %u)", mProcess, GetLastError());
+        LOG_ERROR("Process failed to terminate: 0x%x (ErrorCode: %u)", mProcess, GetLastError());
     }
     else {
         mProcess = INVALID_HANDLE_VALUE;
@@ -1093,11 +1093,11 @@ uint32 SysProcess::ReadStdErr(void* data, uint32 size) const
 }
 #endif  // PLATFORM_DESKTOP
 
-bool sysWin32IsProcessRunning(const char* execName)
+bool OS::Win32IsProcessRunning(const char* execName)
 {
     PROCESSENTRY32 entry { sizeof(PROCESSENTRY32) };
 
-    char execNameTrimmed[kMaxPath];
+    char execNameTrimmed[PATH_CHARS_MAX];
     strTrim(execNameTrimmed, sizeof(execNameTrimmed), execName, '\'');
     strTrim(execNameTrimmed, sizeof(execNameTrimmed), execNameTrimmed, '"');
 
@@ -1123,7 +1123,7 @@ bool sysWin32IsProcessRunning(const char* execName)
     return false;
 }
 
-SysWin32ShellExecuteResult sysWin32ShellExecute(const char* filepath, const char* args, 
+SysWin32ShellExecuteResult OS::Win32ShellExecute(const char* filepath, const char* args, 
                                                 const char* cwd, SysWin32ShowWindow showFlag, 
                                                 const char* operation,
                                                 void** pInstance)
@@ -1162,30 +1162,30 @@ SysWin32ShellExecuteResult sysWin32ShellExecute(const char* filepath, const char
 }
 
 
-bool sysSetEnvVar(const char* name, const char* value)
+bool OS::SetEnvVar(const char* name, const char* value)
 {
     return SetEnvironmentVariableA(name, value) == TRUE;
 }
 
-bool sysGetEnvVar(const char* name, char* outValue, uint32 valueSize)
+bool OS::GetEnvVar(const char* name, char* outValue, uint32 valueSize)
 {
     DWORD dwValueSize = GetEnvironmentVariableA(name, outValue, valueSize);
     return dwValueSize != 0 && dwValueSize < valueSize;
 }
 
-bool sysIsDebuggerPresent()
+bool OS::IsDebuggerPresent()
 {
-    return IsDebuggerPresent();
+    return ::IsDebuggerPresent();
 }
 
-void sysWin32PrintToDebugger(const char* text)
+void OS::Win32PrintToDebugger(const char* text)
 {
     OutputDebugStringA(text);
 }
 
 // https://learn.microsoft.com/en-us/windows/win32/memory/creating-a-file-mapping-using-large-pages
 // TODO: dynalically load functions from DLL to prevent linking with Advapi32.lib
-bool sysWin32SetPrivilege(const char* name, bool enable)
+bool OS::Win32SetPrivilege(const char* name, bool enable)
 {
     sysLoadAdvApi32();
 
@@ -1209,7 +1209,7 @@ bool sysWin32SetPrivilege(const char* name, bool enable)
     // So always check for the last error value.
     DWORD error = GetLastError();
     if (!status || error != ERROR_SUCCESS) {
-        logError("AdjustTokenPrivileges failed. Code: %u", error);
+        LOG_ERROR("AdjustTokenPrivileges failed. Code: %u", error);
     }
     
     CloseHandle(tokenHandle);
@@ -1223,31 +1223,31 @@ bool sysWin32SetPrivilege(const char* name, bool enable)
 //    ██║     ██║  ██║   ██║   ██║  ██║
 //    ╚═╝     ╚═╝  ╚═╝   ╚═╝   ╚═╝  ╚═╝
 
-char* pathGetMyPath(char* dst, size_t dstSize)
+char* Path::GetMyPath_CStr(char* dst, size_t dstSize)
 {
     GetModuleFileNameA(NULL, dst, (DWORD)dstSize);
     return dst;
 }
 
-char* pathAbsolute(const char* path, char* dst, size_t dstSize)
+char* Path::Absolute_CStr(const char* path, char* dst, size_t dstSize)
 {
     if (GetFullPathNameA(path, (DWORD)dstSize, dst, NULL) == 0)
         dst[0] = '\0';
     return dst;
 }
 
-char* pathGetCurrentDir(char* dst, size_t dstSize)
+char* Path::GetCurrentDir_CStr(char* dst, size_t dstSize)
 {
     GetCurrentDirectoryA((DWORD)dstSize, dst);
     return dst;
 }
 
-void pathSetCurrentDir(const char* path)
+void Path::SetCurrentDir_CStr(const char* path)
 {
     SetCurrentDirectoryA(path);
 }
 
-PathInfo pathStat(const char* path)
+PathInfo Path::Stat_CStr(const char* path)
 {
     WIN32_FILE_ATTRIBUTE_DATA fad;
     if (!GetFileAttributesExA(path, GetFileExInfoStandard, &fad)) {
@@ -1275,17 +1275,17 @@ PathInfo pathStat(const char* path)
     };
 }
 
-bool pathCreateDir(const char* path)
+bool Path::CreateDir_CStr(const char* path)
 {
     return bool(CreateDirectoryA(path, nullptr)); 
 }
 
-bool pathMove(const char* src, const char* dest)
+bool Path::Move_CStr(const char* src, const char* dest)
 {
     return bool(MoveFileExA(src, dest, MOVEFILE_REPLACE_EXISTING|MOVEFILE_COPY_ALLOWED));
 }
 
-char* pathGetHomeDir(char* dst, size_t dstSize)
+char* Path::GetHomeDir_CStr(char* dst, size_t dstSize)
 {
     sysLoadOle32();
     sysLoadShell32();
@@ -1302,7 +1302,7 @@ char* pathGetHomeDir(char* dst, size_t dstSize)
     }
 }
 
-char* pathGetCacheDir(char* dst, size_t dstSize, const char* appName)
+char* Path::GetCacheDir_CStr(char* dst, size_t dstSize, const char* appName)
 {
     sysLoadOle32();
     sysLoadShell32();
@@ -1312,7 +1312,7 @@ char* pathGetCacheDir(char* dst, size_t dstSize, const char* appName)
         char homeDirUtf8[CONFIG_MAX_PATH];
         strWideToUtf8(homeDir, homeDirUtf8, sizeof(homeDirUtf8));
         gOle32.CoTaskMemFree(homeDir);
-        pathJoin(dst, dstSize, homeDirUtf8, appName);
+        Path::Join_CStr(dst, dstSize, homeDirUtf8, appName);
         return dst;
     }
     else {
@@ -1321,20 +1321,20 @@ char* pathGetCacheDir(char* dst, size_t dstSize, const char* appName)
     }
 }
 
-bool pathMakeTemp(char* dst, [[maybe_unused]] size_t dstSize, const char* namePrefix, const char* dir)
+bool Path::MakeTemp_CStr(char* dst, [[maybe_unused]] size_t dstSize, const char* namePrefix, const char* dir)
 {
-    static char osTempPath[kMaxPath] = {};
+    static char osTempPath[PATH_CHARS_MAX] = {};
     if (dir == nullptr) {
         if (osTempPath[0] == '\0')
             GetTempPathA(sizeof(osTempPath), osTempPath);
         dir = osTempPath;
     }
 
-    ASSERT(dstSize >= kMaxPath);
+    ASSERT(dstSize >= PATH_CHARS_MAX);
     return GetTempFileNameA(dir, namePrefix, 0, dst) != 0;
 }
 
-char* pathWin32GetFolder(SysWin32Folder folder, char* dst, size_t dstSize)
+char* OS::Win32GetFolder(SysWin32Folder folder, char* dst, size_t dstSize)
 {
     sysLoadOle32();
     sysLoadShell32();
@@ -1372,59 +1372,59 @@ char* pathWin32GetFolder(SysWin32Folder folder, char* dst, size_t dstSize)
 //    ╚═╝     ╚═╝╚══════╝╚═╝     ╚═╝ ╚═════╝ ╚═╝  ╚═╝   ╚═╝   
 static MemVirtualStats gVMStats;
 
-void* memVirtualReserve(size_t size, MemVirtualFlags flags)
+void* Mem::VirtualReserve(size_t size, MemVirtualFlags flags)
 {
     DWORD extraFlags = (flags & MemVirtualFlags::Watch) == MemVirtualFlags::Watch ? MEM_WRITE_WATCH : 0;
     void* ptr = VirtualAlloc(NULL, size, MEM_RESERVE | extraFlags, PAGE_READWRITE);
     if (!ptr) {
-        MEMORY_FAIL();
+        MEM_FAIL();
     }
 
-    atomicFetchAdd64(&gVMStats.reservedBytes, size);
+    Atomic::FetchAdd(&gVMStats.reservedBytes, size);
     return ptr;
 }
 
-void* memVirtualCommit(void* ptr, size_t size)
+void* Mem::VirtualCommit(void* ptr, size_t size)
 {
     ASSERT(ptr);
     ptr = VirtualAlloc(ptr, size, MEM_COMMIT, PAGE_READWRITE);
     if (!ptr) {
-        MEMORY_FAIL();
+        MEM_FAIL();
     }
 
-    atomicFetchAdd64(&gVMStats.commitedBytes, size);
+    Atomic::FetchAdd(&gVMStats.commitedBytes, size);
     return ptr;
 }
 
-void memVirtualDecommit(void* ptr, size_t size)
+void Mem::VirtualDecommit(void* ptr, size_t size)
 {
     [[maybe_unused]] BOOL r = VirtualFree(ptr, size, MEM_DECOMMIT);
     ASSERT(r);
 
     ASSERT(size <= gVMStats.commitedBytes);
-    atomicFetchSub64(&gVMStats.commitedBytes, size);
+    Atomic::FetchSub(&gVMStats.commitedBytes, size);
 }
 
-void memVirtualRelease(void* ptr, size_t size)
+void Mem::VirtualRelease(void* ptr, size_t size)
 {
     [[maybe_unused]] BOOL r = VirtualFree(ptr, 0, MEM_RELEASE);
     ASSERT(r);
 
     ASSERT(size <= gVMStats.reservedBytes);
-    atomicFetchSub64(&gVMStats.reservedBytes, size);
+    Atomic::FetchSub(&gVMStats.reservedBytes, size);
 }
 
-MemVirtualStats memVirtualGetStats()
+MemVirtualStats Mem::VirtualGetStats()
 {
     return gVMStats;
 }
 
 // https://learn.microsoft.com/en-us/windows/win32/memory/large-page-support
 // Example: https://learn.microsoft.com/en-us/windows/win32/memory/creating-a-file-mapping-using-large-pages
-bool memVirtualEnableLargePages(size_t* largePageSize)
+bool Mem::VirtualEnableLargePages(size_t* largePageSize)
 {
     ASSERT(largePageSize);
-    if (!sysWin32SetPrivilege("SeLockMemoryPrivilege"))
+    if (!OS::Win32SetPrivilege("SeLockMemoryPrivilege"))
         return false;
 
     *largePageSize = GetLargePageMinimum();
@@ -1523,7 +1523,7 @@ size_t File::Read(void* dst, size_t size)
     if ((f->flags & FileOpenFlags::NoCache) == FileOpenFlags::NoCache) {
         static size_t pagesz = 0;
         if (pagesz == 0) {
-            pagesz = sysGetPageSize();
+            pagesz = OS::GetPageSize();
         }
         ASSERT_ALWAYS((uintptr_t)dst % pagesz == 0, "buffers must be aligned with NoCache flag");
     }
@@ -1603,7 +1603,7 @@ struct AsyncFileWin
     AsyncFile f;
     HANDLE hFile;
     OVERLAPPED overlapped;
-    Allocator* alloc;
+    MemAllocator* alloc;
     AsyncFileCallback readFn;
 };
 
@@ -1617,7 +1617,7 @@ static void asyncReadFileCallback(DWORD dwErrorCode, DWORD dwNumberOfBytesTransf
     file->readFn(&file->f, dwErrorCode != 0 && dwNumberOfBytesTransfered == file->f.size);
 }
 
-AsyncFile* asyncReadFile(const char* filepath, const AsyncFileRequest& request)
+AsyncFile* Async::ReadFile(const char* filepath, const AsyncFileRequest& request)
 {
     HANDLE hFile = CreateFileA(filepath, GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL|FILE_FLAG_OVERLAPPED, NULL);
     if (hFile == INVALID_HANDLE_VALUE)
@@ -1661,7 +1661,7 @@ AsyncFile* asyncReadFile(const char* filepath, const AsyncFileRequest& request)
         file->readFn = request.readFn;
         if (!BindIoCompletionCallback(file->hFile, asyncReadFileCallback, 0)) {
             CloseHandle(file->hFile);
-            memFree(file, file->alloc);
+            Mem::Free(file, file->alloc);
             return nullptr;
         }
     }
@@ -1669,7 +1669,7 @@ AsyncFile* asyncReadFile(const char* filepath, const AsyncFileRequest& request)
     if (!ReadFile(hFile, file->f.data, DWORD(file->f.size), nullptr, &file->overlapped)) {
         if (GetLastError() != ERROR_IO_PENDING) {
             CloseHandle(file->hFile);
-            memFree(file, file->alloc);
+            Mem::Free(file, file->alloc);
             return nullptr;
         }
     }
@@ -1677,7 +1677,7 @@ AsyncFile* asyncReadFile(const char* filepath, const AsyncFileRequest& request)
     return &file->f;
 }
 
-void asyncClose(AsyncFile* file)
+void Async::Close(AsyncFile* file)
 {
     if (!file)
         return;
@@ -1695,7 +1695,7 @@ void asyncClose(AsyncFile* file)
     }    
 }
 
-bool asyncWait(AsyncFile* file)
+bool Async::Wait(AsyncFile* file)
 {
     ASSERT(file);
     AsyncFileWin* fw = (AsyncFileWin*)file;
@@ -1706,7 +1706,7 @@ bool asyncWait(AsyncFile* file)
     return r && numBytesTransfered == fw->f.size;
 }
 
-bool asyncIsFinished(AsyncFile* file, bool* outError)
+bool Async::IsFinished(AsyncFile* file, bool* outError)
 {
     ASSERT(file);
     AsyncFileWin* fw = (AsyncFileWin*)file;
@@ -1732,7 +1732,7 @@ namespace _private
     static void socketInitializeWin32()
     {
         if (!gSocketInitialized) {
-            logDebug("SocketTCP: Initialize");
+            LOG_DEBUG("SocketTCP: Initialize");
             WSADATA wsaData;
             if (WSAStartup(MAKEWORD(1, 0), &wsaData) != 0) {
                 ASSERT_ALWAYS(false, "Windows sockets initialization failed");
@@ -1743,7 +1743,7 @@ namespace _private
         }
     }
 
-    static SocketErrorCode socketTranslatePlatformErrorCode()
+    static SocketErrorCode::Enum socketTranslatePlatformErrorCode()
     {
         int errorCode = WSAGetLastError();
         switch (errorCode) {
@@ -1799,7 +1799,7 @@ SocketTCP SocketTCP::CreateListener()
     sock.mSock = socket(AF_INET, SOCK_STREAM, 0);
     if (sock.mSock == SOCKET_INVALID) {
         sock.mErrCode = _private::socketTranslatePlatformErrorCode();
-        logError("SocketTCP: Opening the socket failed");
+        LOG_ERROR("SocketTCP: Opening the socket failed");
         return sock;
     }
     return sock;    
@@ -1816,11 +1816,11 @@ bool SocketTCP::Listen(uint16 port, uint32 maxConnections)
 
     if (bind(mSock, (struct sockaddr*)&addr, sizeof(addr)) < 0) {
         mErrCode = _private::socketTranslatePlatformErrorCode();
-        logError("SocketTCP: failed binding the socket to port: %d", port);
+        LOG_ERROR("SocketTCP: failed binding the socket to port: %d", port);
         return false;
     }
 
-    logVerbose("SocketTCP: Listening on port '%d' for incoming connections ...", port);
+    LOG_VERBOSE("SocketTCP: Listening on port '%d' for incoming connections ...", port);
     int _maxConnections = maxConnections > INT32_MAX ? INT32_MAX : static_cast<int>(maxConnections);
     bool success = listen(mSock, _maxConnections) >= 0;
     
@@ -1843,7 +1843,7 @@ SocketTCP SocketTCP::Accept(char* clientUrl, uint32 clientUrlSize)
     newSock.mSock = accept(mSock, (struct sockaddr*)&addr, &addrlen);
     if (mLive && newSock.mSock == SOCKET_INVALID) {
         newSock.mErrCode = _private::socketTranslatePlatformErrorCode();
-        logError("SocketTCP: failed to accept the new socket");
+        LOG_ERROR("SocketTCP: failed to accept the new socket");
         return newSock;
     }
 
@@ -1867,8 +1867,8 @@ SocketTCP SocketTCP::Connect(const char* url)
 
     char address[256];
     char port[16];
-    if (!_private::socketParseUrl(url, address, sizeof(address), port, sizeof(port))) {
-        logError("SocketTCP: failed parsing the url: %s", url);
+    if (!SocketTCP::ParseUrl(url, address, sizeof(address), port, sizeof(port))) {
+        LOG_ERROR("SocketTCP: failed parsing the url: %s", url);
         return sock;
     }
 
@@ -1881,21 +1881,21 @@ SocketTCP SocketTCP::Connect(const char* url)
 
     struct addrinfo* addri = nullptr;
     if (getaddrinfo(address, port, &hints, &addri) != 0) {
-        logError("SocketTCP: failed to resolve url: %s", url);
+        LOG_ERROR("SocketTCP: failed to resolve url: %s", url);
         return sock;
     }
 
     sock.mSock = socket(addri->ai_family, addri->ai_socktype, addri->ai_protocol);
     if (sock.mSock == SOCKET_INVALID) {
         freeaddrinfo(addri);
-        logError("SocketTCP: failed to create socket");
+        LOG_ERROR("SocketTCP: failed to create socket");
         return sock;
     }
 
     if (connect(sock.mSock, addri->ai_addr, (int)addri->ai_addrlen) == -1) {
         freeaddrinfo(addri);
         sock.mErrCode = _private::socketTranslatePlatformErrorCode();
-        logError("SocketTCP: failed to connect to url: %s", url);
+        LOG_ERROR("SocketTCP: failed to connect to url: %s", url);
         sock.Close();
         return sock;
     }
@@ -1922,7 +1922,7 @@ uint32 SocketTCP::Write(const void* src, uint32 size)
             if (mErrCode == SocketErrorCode::SocketShutdown ||
                 mErrCode == SocketErrorCode::NotConnected)
             {
-                logDebug("SocketTCP: socket connection closed forcefully by the peer");
+                LOG_DEBUG("SocketTCP: socket connection closed forcefully by the peer");
                 mLive = false;
             }
             return UINT32_MAX;
@@ -1946,7 +1946,7 @@ uint32 SocketTCP::Read(void* dst, uint32 dstSize)
         if (mErrCode == SocketErrorCode::SocketShutdown ||
             mErrCode == SocketErrorCode::NotConnected)
         {
-            logDebug("SocketTCP: socket connection closed forcefully by the peer");
+            LOG_DEBUG("SocketTCP: socket connection closed forcefully by the peer");
             mLive = false;
         }
         return UINT32_MAX;

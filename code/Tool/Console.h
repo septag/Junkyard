@@ -14,17 +14,18 @@ struct ConCommandDesc
     const char* shortcutKeys;
 };
 
-API bool conExecute(const char* cmd, char* outResponse = nullptr, uint32 responseSize = 0);
-API void conExecuteRemote(const char* cmd);
-
-// Used for sending response back to console for async responses
-API void conSendResponse(const char* response);
-
-API void conRegisterCommand(const ConCommandDesc& desc);
-API void conUnregisterCommand();
-
-namespace _private
+namespace Console
 {
-    bool conInitialize();
-    void conRelease();
+    API bool Execute(const char* cmd, char* outResponse = nullptr, uint32 responseSize = 0);
+    API void ExecuteRemote(const char* cmd);
+
+    // Used for sending response back to console for async responses
+    API void SendResponse(const char* response);
+
+    API void RegisterCommand(const ConCommandDesc& desc);
+    API void UnregisterCommand();
+
+    API bool Initialize();
+    API void Release();
 }
+

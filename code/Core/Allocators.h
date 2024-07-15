@@ -20,14 +20,11 @@
 template <typename _T> struct Array; // Fwd from Array.h
 using SpinLockFake = uint8[CACHE_LINE_SIZE];
 
-struct MemTransientAllocatorStats
+struct MemDebugPointer
 {
-    size_t curPeak;
-    size_t maxPeak;
-    uint32 threadId;
-    const char* threadName;
+    void* ptr;
+    uint32 align;
 };
-
 
 //    ████████╗███████╗███╗   ███╗██████╗      █████╗ ██╗     ██╗      ██████╗  ██████╗
 //    ╚══██╔══╝██╔════╝████╗ ████║██╔══██╗    ██╔══██╗██║     ██║     ██╔═══██╗██╔════╝
@@ -35,61 +32,54 @@ struct MemTransientAllocatorStats
 //       ██║   ██╔══╝  ██║╚██╔╝██║██╔═══╝     ██╔══██║██║     ██║     ██║   ██║██║     
 //       ██║   ███████╗██║ ╚═╝ ██║██║         ██║  ██║███████╗███████╗╚██████╔╝╚██████╗
 //       ╚═╝   ╚══════╝╚═╝     ╚═╝╚═╝         ╚═╝  ╚═╝╚══════╝╚══════╝ ╚═════╝  ╚═════╝
-using MemTempId = uint32;
-API [[nodiscard]] MemTempId memTempPushId();
-API void memTempPopId(MemTempId id);
-API void memTempSetDebugMode(bool enable);
-API void memTempSetCaptureStackTrace(bool capture);
-API void memTempGetStats(Allocator* alloc, MemTransientAllocatorStats** outStats, uint32* outCount);
-API void memTempReset(float dt, bool resetValidation = true);
-
-[[nodiscard]] void* memAllocTemp(MemTempId id, size_t size, uint32 align = CONFIG_MACHINE_ALIGNMENT);
-[[nodiscard]] void* memReallocTemp(MemTempId id, void* ptr, size_t size, uint32 align = CONFIG_MACHINE_ALIGNMENT);
-[[nodiscard]] void* memAllocTempZero(MemTempId id, size_t size, uint32 align = CONFIG_MACHINE_ALIGNMENT);
-template<typename _T> _T* memAllocTempTyped(MemTempId id, uint32 count = 1, uint32 align = CONFIG_MACHINE_ALIGNMENT);
-template<typename _T> _T* memAllocTempZeroTyped(MemTempId id, uint32 count = 1, uint32 align = CONFIG_MACHINE_ALIGNMENT);
-
-struct MemTempAllocator final : Allocator
+struct MemTempAllocator final : MemAllocator
 {
+    using ID = uint32;
+
+    struct Stats
+    {
+        size_t curPeak;
+        size_t maxPeak;
+        uint32 threadId;
+        const char* threadName;
+    };
+
     MemTempAllocator();
-    explicit MemTempAllocator(MemTempId id);
+    explicit MemTempAllocator(ID id);
     ~MemTempAllocator();
 
-    MemTempId GetId() const { return mId; }
+    ID GetId() const { return mId; }
 
     [[nodiscard]] void* Malloc(size_t size, uint32 align = CONFIG_MACHINE_ALIGNMENT) override;
     [[nodiscard]] void* Realloc(void* ptr, size_t size, uint32 align = CONFIG_MACHINE_ALIGNMENT) override;
+    [[nodiscard]] void* MallocZero(size_t size, uint32 align = CONFIG_MACHINE_ALIGNMENT);
     void Free(void* ptr, uint32 align = CONFIG_MACHINE_ALIGNMENT) override;
-    AllocatorType GetType() const override { return AllocatorType::Temp; }
 
+    template <typename _T>
+    [[nodiscard]] _T* MallocTyped(uint32 count = 1, uint32 align = CONFIG_MACHINE_ALIGNMENT) { return reinterpret_cast<_T*>(Malloc(count*sizeof(_T), align)); }
+   
+    template <typename _T>
+    [[nodiscard]] _T* MallocZeroTyped(uint32 count = 1, uint32 align = CONFIG_MACHINE_ALIGNMENT)  { return reinterpret_cast<_T*>(MallocZero(count*sizeof(_T), align)); }
+    
+    template <typename _T>
+    [[nodiscard]] _T* ReallocTyped(_T* ptr, uint32 count = 1, uint32 align = CONFIG_MACHINE_ALIGNMENT) { return reinterpret_cast<_T*>(Realloc(ptr, count*sizeof(_T), align)); }
+
+    MemAllocatorType GetType() const override { return MemAllocatorType::Temp; }
     size_t GetOffset() const;
     size_t GetPointerOffset(void* ptr) const;
 
-    template <typename _T>
-    [[nodiscard]] _T* MallocTyped(uint32 count = 1, uint32 align = CONFIG_MACHINE_ALIGNMENT) 
-        { return reinterpret_cast<_T*>(memAllocTemp(mId, count*sizeof(_T), align)); }
-    template <typename _T>
-    [[nodiscard]] _T* MallocZeroTyped(uint32 count = 1, uint32 align = CONFIG_MACHINE_ALIGNMENT) 
-        { return reinterpret_cast<_T*>(memAllocTempZero(mId, count*sizeof(_T), align)); }
-    template <typename _T>
-    [[nodiscard]] _T* ReallocTyped(_T* ptr, uint32 count = 1, uint32 align = CONFIG_MACHINE_ALIGNMENT)
-        { return reinterpret_cast<_T*>(memReallocTemp(mId, ptr, count*sizeof(_T), align)); }
+    API [[nodiscard]] static ID PushId();
+    API static void PopId(ID id);
+    API static void EnableDebugMode(bool enable);
+    API static void EnableCallstackCapture(bool capture);
+    API static void GetStats(MemAllocator* alloc, Stats** outStats, uint32* outCount);
+    API static void Reset(float dt, bool resetValidation = true);
 
 private:
-    MemTempId mId = 0;
+    ID mId = 0;
     uint16 mFiberProtectorId = 0;
     bool mOwnsId = false;
 };
-
-namespace _private
-{
-    struct MemDebugPointer
-    {
-        void* ptr;
-        uint32 align;
-    };
-}
-
 
 //    ██████╗ ██╗   ██╗███╗   ███╗██████╗      █████╗ ██╗     ██╗      ██████╗  ██████╗
 //    ██╔══██╗██║   ██║████╗ ████║██╔══██╗    ██╔══██╗██║     ██║     ██╔═══██╗██╔════╝
@@ -98,7 +88,7 @@ namespace _private
 //    ██████╔╝╚██████╔╝██║ ╚═╝ ██║██║         ██║  ██║███████╗███████╗╚██████╔╝╚██████╗
 //    ╚═════╝  ╚═════╝ ╚═╝     ╚═╝╚═╝         ╚═╝  ╚═╝╚══════╝╚══════╝ ╚═════╝  ╚═════╝
                                                                                      
-struct MemBumpAllocatorBase : Allocator
+struct MemBumpAllocatorBase : MemAllocator
 {
     void Initialize(size_t reserveSize, size_t pageSize, bool debugMode = false);
     void Release();
@@ -109,7 +99,7 @@ struct MemBumpAllocatorBase : Allocator
     [[nodiscard]] void* Malloc(size_t size, uint32 align = CONFIG_MACHINE_ALIGNMENT) override;
     [[nodiscard]] void* Realloc(void* ptr, size_t size, uint32 align = CONFIG_MACHINE_ALIGNMENT) override;
     void  Free(void* ptr, uint32 align = CONFIG_MACHINE_ALIGNMENT) override;
-    AllocatorType GetType() const override { return AllocatorType::Bump; }
+    MemAllocatorType GetType() const override { return MemAllocatorType::Bump; }
 
     size_t GetReservedSize() const { return mReserveSize; }
     size_t GetAllocatedSize() const { return mOffset; }
@@ -128,7 +118,7 @@ protected:
     size_t mPageSize = 0;
     size_t mReserveSize = 0;
     void* mLastAllocatedPtr = 0;
-    Array<_private::MemDebugPointer>* mDebugPointers = nullptr;
+    Array<MemDebugPointer>* mDebugPointers = nullptr;
     bool mDebugMode = false;
 };
 
@@ -141,20 +131,20 @@ private:
     void  BackendRelease(void* ptr, size_t size) override;
 };
 
-struct alignas(CACHE_LINE_SIZE) MemThreadSafeAllocator final : Allocator
+struct alignas(CACHE_LINE_SIZE) MemThreadSafeAllocator final : MemAllocator
 {
     MemThreadSafeAllocator() {}
-    explicit MemThreadSafeAllocator(Allocator* alloc);
-    void SetAllocator(Allocator* alloc);
+    explicit MemThreadSafeAllocator(MemAllocator* alloc);
+    void SetAllocator(MemAllocator* alloc);
 
     [[nodiscard]] void* Malloc(size_t size, uint32 align = CONFIG_MACHINE_ALIGNMENT) override;
     [[nodiscard]] void* Realloc(void* ptr, size_t size, uint32 align = CONFIG_MACHINE_ALIGNMENT) override;
     void Free(void* ptr, uint32 align = CONFIG_MACHINE_ALIGNMENT) override;
-    AllocatorType GetType() const override;
+    MemAllocatorType GetType() const override;
 
 private:
-    Allocator* mAlloc = nullptr;
-    [[maybe_unused]] uint8 _padding1[CACHE_LINE_SIZE - sizeof(Allocator) - sizeof(Allocator*)];
+    MemAllocator* mAlloc = nullptr;
+    [[maybe_unused]] uint8 _padding1[CACHE_LINE_SIZE - sizeof(MemAllocator) - sizeof(MemAllocator*)];
     SpinLockFake mLock;
 };
 
@@ -165,7 +155,7 @@ private:
 //       ██║   ██║     ╚════██║██╔══╝      ██╔══██║██║     ██║     ██║   ██║██║     
 //       ██║   ███████╗███████║██║         ██║  ██║███████╗███████╗╚██████╔╝╚██████╗
 //       ╚═╝   ╚══════╝╚══════╝╚═╝         ╚═╝  ╚═╝╚══════╝╚══════╝ ╚═════╝  ╚═════╝
-struct MemTlsfAllocator final : Allocator
+struct MemTlsfAllocator final : MemAllocator
 {
     static size_t GetMemoryRequirement(size_t poolSize);
 
@@ -175,7 +165,7 @@ struct MemTlsfAllocator final : Allocator
     [[nodiscard]] void* Malloc(size_t size, uint32 align = CONFIG_MACHINE_ALIGNMENT) override;
     [[nodiscard]] void* Realloc(void* ptr, size_t size, uint32 align = CONFIG_MACHINE_ALIGNMENT) override;
     void  Free(void* ptr, uint32 align = CONFIG_MACHINE_ALIGNMENT) override;
-    AllocatorType GetType() const override { return AllocatorType::Tlsf; }
+    MemAllocatorType GetType() const override { return MemAllocatorType::Tlsf; }
 
     size_t GetAllocatedSize() const { return mAllocatedSize; }
 
@@ -239,11 +229,11 @@ struct MemSingleShotMalloc
     template <typename _FieldType> MemSingleShotMalloc& AddExternalPointerField(_FieldType** pPtr, size_t arrayCount, 
                                                                                 uint32 align = CONFIG_MACHINE_ALIGNMENT);
 
-    _T* Calloc(Allocator* alloc = memDefaultAlloc());
+    _T* Calloc(MemAllocator* alloc = Mem::GetDefaultAlloc());
     _T* Calloc(void* buff, size_t size);
 
     // Free can be called as a static function, since it just calls malloc with alignof
-    static void Free(_T* p, Allocator* alloc = memDefaultAlloc());
+    static void Free(_T* p, MemAllocator* alloc = Mem::GetDefaultAlloc());
     
     size_t GetMemoryRequirement() const;
     size_t GetSize() const;
@@ -368,9 +358,9 @@ template <typename _FieldType> inline MemSingleShotMalloc<_T, _MaxFields>&
 }
 
 template <typename _T, uint32 _MaxFields>
-inline _T* MemSingleShotMalloc<_T, _MaxFields>::Calloc(Allocator* alloc)
+inline _T* MemSingleShotMalloc<_T, _MaxFields>::Calloc(MemAllocator* alloc)
 {
-    void* mem = memAllocAligned(mSize, alignof(_T), alloc);
+    void* mem = Mem::AllocAligned(mSize, alignof(_T), alloc);
     return Calloc(mem, mSize);
 }
 
@@ -381,11 +371,11 @@ inline size_t MemSingleShotMalloc<_T, _MaxFields>::GetMemoryRequirement() const
 }
 
 template <typename _T, uint32 _MaxFields>
-inline void MemSingleShotMalloc<_T, _MaxFields>::Free(_T* p, Allocator* alloc)
+inline void MemSingleShotMalloc<_T, _MaxFields>::Free(_T* p, MemAllocator* alloc)
 {
     ASSERT(alloc);
     if (p)
-        memFreeAligned(p, alignof(_T), alloc);
+        Mem::FreeAligned(p, alignof(_T), alloc);
 }
 
 template <typename _T, uint32 _MaxFields>

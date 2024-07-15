@@ -57,9 +57,8 @@
     <ClInclude Include="..\..\code\Core\StringUtil.h" />
     <ClInclude Include="..\..\code\Core\System.h" />
     <ClInclude Include="..\..\code\Core\TracyHelper.h" />
-    <ClInclude Include="..\..\code\DebugTools\BudgetViewer.h" />
     <ClInclude Include="..\..\code\DebugTools\DebugDraw.h" />
-    <ClInclude Include="..\..\code\DebugTools\FrameInfoHud.h" />
+    <ClInclude Include="..\..\code\DebugTools\DebugHud.h" />
     <ClInclude Include="..\..\code\Engine.h" />
     <ClInclude Include="..\..\code\External\dds-ktx\dds-ktx.h" />
     <ClInclude Include="..\..\code\External\imgui\imconfig.h" />
@@ -72,7 +71,7 @@
     <ClInclude Include="..\..\code\External\stb\stb_image_resize.h" />
     <ClInclude Include="..\..\code\External\vma\include\vk_mem_alloc.h" />
     <ClInclude Include="..\..\code\Graphics\Graphics.h" />
-    <ClInclude Include="..\..\code\ImGui\ImGuiWrapper.h" />
+    <ClInclude Include="..\..\code\ImGui\ImGuiMain.h" />
     <ClInclude Include="..\..\code\ImGui\ImGuizmo.h" />
     <ClInclude Include="..\..\code\Tool\Console.h" />
     <ClInclude Include="..\..\code\Tool\ImageEncoder.h" />
@@ -129,9 +128,8 @@
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\..\code\Core\TracyHelper.cpp" />
-    <ClCompile Include="..\..\code\DebugTools\BudgetViewer.cpp" />
     <ClCompile Include="..\..\code\DebugTools\DebugDraw.cpp" />
-    <ClCompile Include="..\..\code\DebugTools\FrameInfoHud.cpp" />
+    <ClCompile Include="..\..\code\DebugTools\DebugHud.cpp" />
     <ClCompile Include="..\..\code\Engine.cpp">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">false</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">false</ExcludedFromBuild>
@@ -147,7 +145,7 @@
     <ClCompile Include="..\..\code\External\imgui\imgui_tables.cpp" />
     <ClCompile Include="..\..\code\External\imgui\imgui_widgets.cpp" />
     <ClCompile Include="..\..\code\Graphics\Graphics.cpp" />
-    <ClCompile Include="..\..\code\ImGui\ImGuiWrapper.cpp" />
+    <ClCompile Include="..\..\code\ImGui\ImGuiMain.cpp" />
     <ClCompile Include="..\..\code\ImGui\ImGuizmo.cpp" />
     <ClCompile Include="..\..\code\Tests\AssetTest.cpp">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">true</ExcludedFromBuild>

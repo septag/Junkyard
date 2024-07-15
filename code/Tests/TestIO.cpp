@@ -21,7 +21,7 @@
 
 #include "../External/dirent/dirent.h"
 
-static RandomContext gRand = randomCreateContext(666);
+static RandomContext gRand = Random::CreateContext(666);
 static const char* kRootDir = "";
 
 #define WITH_HASHING 0
@@ -148,36 +148,36 @@ struct AppImpl final : AppCallbacks
     bool Initialize() override
     {
         // Mount file-systems before initializing engine
-        if (settingsGet().engine.connectToServer) {
-            vfsMountRemote("data", true);
-            vfsMountRemote("code", true);
+        if (SettingsJunkyard::Get().engine.connectToServer) {
+            Vfs::MountRemote("data", true);
+            Vfs::MountRemote("code", true);
         }
         else {        
-            vfsMountLocal("data", "data", true);
-            vfsMountLocal("code", "code", true);
+            Vfs::MountLocal("data", "data", true);
+            Vfs::MountLocal("code", "code", true);
         }
 
-        if (!engineInitialize())
+        if (!Engine::Initialize())
             return false;
 
-        engineRegisterShortcut("ESC", [](void*) { appQuit(); });
+        Engine::RegisterShortcut("ESC", [](void*) { App::Quit(); });
 
 
         Path rootDir = kRootDir[0] ? kRootDir : "data/images/TestIO";
         rootDir.ConvertToUnix();
         if (!rootDir.IsDir()) {
-            logError("Root directory '%s' does not exist. Run the python script generate-images.py and copy the generated folder", rootDir.CStr());
+            LOG_ERROR("Root directory '%s' does not exist. Run the python script generate-images.py and copy the generated folder", rootDir.CStr());
             return false;
         }
 
         // scan the directory and gather all the TGA files
-        logInfo("Scanning directory: %s", rootDir.CStr());
+        LOG_INFO("Scanning directory: %s", rootDir.CStr());
         dirent** entries;
         MemTempAllocator tmpAlloc;
         Path* paths = nullptr;
         int numFiles = scandir(rootDir.CStr(), &entries, 
                 [](const dirent* entry)->int { return strEndsWith(entry->d_name, ".tga") ? 1 : 0; },
-                [](const dirent** a, const dirent** b) { return randomNewIntInRange(&gRand, -1, 1); });
+                [](const dirent** a, const dirent** b) { return Random::Int(&gRand, -1, 1); });
         if (numFiles > 0) {
             paths = tmpAlloc.MallocZeroTyped<Path>(numFiles);
             for (int i = 0; i < numFiles; i++) {
@@ -185,34 +185,34 @@ struct AppImpl final : AppCallbacks
             }
         }
         else {
-            logError("No files found in '%s'", rootDir.CStr());
+            LOG_ERROR("No files found in '%s'", rootDir.CStr());
             return false;
         }
 
-        logInfo("Found %d files", numFiles);
-        logInfo("Ready.");
+        LOG_INFO("Found %d files", numFiles);
+        LOG_INFO("Ready.");
         
-        using BenchmarkCallback = void(*)(const Path* paths, int numFiles, size_t& totalSize, atomicUint64& hashTime);
+        using BenchmarkCallback = void(*)(const Path* paths, int numFiles, size_t& totalSize, AtomicUint64& hashTime);
         auto BenchmarkIO = [paths, numFiles](const char* name, BenchmarkCallback callback) {
-            logInfo("Cleaning file-system cache ...");
+            LOG_INFO("Cleaning file-system cache ...");
             if (!CleanFileSystemCache()) {
-                logWarning("Cleaning file-system cache failed. Results may not be accurate. Try running with admin priviliges");
+                LOG_WARNING("Cleaning file-system cache failed. Results may not be accurate. Try running with admin priviliges");
             }
 
             size_t totalSize = 0;
-            atomicUint64 hashTime = 0;
+            AtomicUint64 hashTime = 0;
 
-            logInfo("# %s:", name);
+            LOG_INFO("# %s:", name);
 
             TimerStopWatch stopWatch;
             callback(paths, numFiles, totalSize, hashTime);
 
             uint64 elapsed = stopWatch.Elapsed();
-            logInfo("  Took: %.2f s (%.0f ms)", timerToSec(elapsed), timerToMS(elapsed));
-            logInfo("  Total size: %_$llu", totalSize);
-            float bandwith = float(double(totalSize/kMB)/timerToSec(elapsed));
-            logInfo("  Bandwidth: %.0f MB/s (%.2f GB/s)", bandwith, bandwith/1024.0f);
-            logInfo("");
+            LOG_INFO("  Took: %.2f s (%.0f ms)", Timer::ToSec(elapsed), Timer::ToMS(elapsed));
+            LOG_INFO("  Total size: %_$llu", totalSize);
+            float bandwith = float(double(totalSize/SIZE_MB)/Timer::ToSec(elapsed));
+            LOG_INFO("  Bandwidth: %.0f MB/s (%.2f GB/s)", bandwith, bandwith/1024.0f);
+            LOG_INFO("");
         };
 
         BenchmarkIO("Blocking - Read files one by one", BruteforceBlockMethod);
@@ -223,22 +223,22 @@ struct AppImpl final : AppCallbacks
         // BenchmarkIO("Async - NoCache", NoCacheMethod);
         BenchmarkIO("Async - NoCache, CPIO", CPIO_Method);
 
-        logInfo("Done. Press ESC to quit");
+        LOG_INFO("Done. Press ESC to quit");
 
         return true;
     };
 
-    static void ProcessAndShowInfo(const char* filename, const void* data, uint32 size, atomicUint64* hashTime)
+    static void ProcessAndShowInfo(const char* filename, const void* data, uint32 size, AtomicUint64* hashTime)
     {
         #if WITH_HASHING
             TimerStopWatch watch;
-            uint32 hash = hashMurmur32(data, size, 666);
+            uint32 hash = Hash::Murmur32(data, size, 666);
             logDebug("File = %s, Hash = 0x%x", filename, hash);
-            atomicFetchAdd64(hashTime, watch.Elapsed());
+            Atomic::FetchAdd(hashTime, watch.Elapsed());
         #endif
     }
 
-    static void SignalTaskAsyncMethod(const Path* paths, int numFiles, size_t& totalSize, atomicUint64& hashTime)
+    static void SignalTaskAsyncMethod(const Path* paths, int numFiles, size_t& totalSize, AtomicUint64& hashTime)
     {
         struct IOTask
         {
@@ -247,16 +247,16 @@ struct AppImpl final : AppCallbacks
             uint64 totalSize;
             const Path* paths;
             JobsSignal* signals;
-            atomicUint64* hashTime;
+            AtomicUint64* hashTime;
         };
         IOTask task { .paths = paths, .hashTime = &hashTime };
 
         MemTempAllocator tmpAlloc;
         task.signals = tmpAlloc.MallocZeroTyped<JobsSignal>(numFiles);
-        task.vmAlloc.Initialize(kGB*8, kGB);
+        task.vmAlloc.Initialize(SIZE_GB*8, SIZE_GB);
         task.alloc.SetAllocator(&task.vmAlloc);
 
-        JobsHandle handle = jobsDispatch(JobsType::LongTask, [](uint32 groupIndex, void* userData) {
+        JobsHandle handle = Jobs::Dispatch(JobsType::LongTask, [](uint32 groupIndex, void* userData) {
             IOTask* task = (IOTask*)userData;
 
             auto ReadFileFinished = [](AsyncFile* file, bool failed) {
@@ -268,7 +268,7 @@ struct AppImpl final : AppCallbacks
 
             JobsSignal* signal = &task->signals[groupIndex];
 
-            AsyncFile* file = asyncReadFile(task->paths[groupIndex].CStr(), { 
+            AsyncFile* file = Async::ReadFile(task->paths[groupIndex].CStr(), { 
                 .alloc = &task->alloc, 
                 .readFn = ReadFileFinished, 
                 .userData = &task->signals[groupIndex] 
@@ -276,15 +276,15 @@ struct AppImpl final : AppCallbacks
             task->signals[groupIndex].Wait();
 
             ProcessAndShowInfo(file->filepath.CStr(), file->data, file->size, task->hashTime);
-            atomicFetchAdd64(&task->totalSize, file->size);
-            asyncClose(file);
-        }, &task, numFiles, JobsPriority::Normal, 64*kKB);
-        jobsWaitForCompletion(handle);
+            Atomic::FetchAdd(&task->totalSize, file->size);
+            Async::Close(file);
+        }, &task, numFiles, JobsPriority::Normal, JobsStackSize::Small);
+        Jobs::WaitForCompletion(handle);
         totalSize = task.totalSize;
         task.vmAlloc.Release();
     }
 
-    static void BruteforceTaskAsyncMethod(const Path* paths, int numFiles, size_t& totalSize, atomicUint64& hashTime)
+    static void BruteforceTaskAsyncMethod(const Path* paths, int numFiles, size_t& totalSize, AtomicUint64& hashTime)
     {
         struct IOTask
         {
@@ -292,32 +292,32 @@ struct AppImpl final : AppCallbacks
             MemThreadSafeAllocator alloc;
             uint64 totalSize;
             const Path* paths;
-            atomicUint64* hashTime;
+            AtomicUint64* hashTime;
         };
         IOTask task { .paths = paths, .hashTime = &hashTime };
-        task.vmAlloc.Initialize(kGB*8, kGB);
+        task.vmAlloc.Initialize(SIZE_GB*8, SIZE_GB);
         task.alloc.SetAllocator(&task.vmAlloc);
 
-        JobsHandle handle = jobsDispatch(JobsType::LongTask, [](uint32 groupIndex, void* userData) {
+        JobsHandle handle = Jobs::Dispatch(JobsType::LongTask, [](uint32 groupIndex, void* userData) {
             IOTask* task = (IOTask*)userData;
 
-            AsyncFile* file = asyncReadFile(task->paths[groupIndex].CStr(), { .alloc = &task->alloc });
+            AsyncFile* file = Async::ReadFile(task->paths[groupIndex].CStr(), { .alloc = &task->alloc });
             ASSERT(file);
-            if (asyncWait(file))
-                atomicFetchAdd64(&task->totalSize, file->size);
+            if (Async::Wait(file))
+                Atomic::FetchAdd(&task->totalSize, file->size);
             else
                 ASSERT(0);
 
             ProcessAndShowInfo(file->filepath.CStr(), file->data, file->size, task->hashTime);
-            asyncClose(file);
+            Async::Close(file);
 
         }, &task, numFiles);
-        jobsWaitForCompletion(handle);
+        Jobs::WaitForCompletion(handle);
         totalSize = task.totalSize;
         task.vmAlloc.Release();
     }
 
-    static void BruteforceBlockMethod(const Path* paths, int numFiles, size_t& totalSize, atomicUint64& hashTime)
+    static void BruteforceBlockMethod(const Path* paths, int numFiles, size_t& totalSize, AtomicUint64& hashTime)
     {
         for (int i = 0; i < numFiles; i++) {
             File f;
@@ -330,21 +330,21 @@ struct AppImpl final : AppCallbacks
 
             ProcessAndShowInfo(paths[i].CStr(), buffer, bytesRead, &hashTime);
             f.Close();
-            atomicFetchAdd64(&totalSize, bytesRead);
+            Atomic::FetchAdd(&totalSize, bytesRead);
         }
     }
 
-    static void BruteforceTaskBlockMethod(const Path* paths, int numFiles, size_t& totalSize, atomicUint64& hashTime)
+    static void BruteforceTaskBlockMethod(const Path* paths, int numFiles, size_t& totalSize, AtomicUint64& hashTime)
     {
         struct IOTask
         {
             uint64 totalSize;
             const Path* paths;
-            atomicUint64* hashTime;
+            AtomicUint64* hashTime;
         };
         IOTask task { .paths = paths, .hashTime = &hashTime };
 
-        JobsHandle handle = jobsDispatch(JobsType::LongTask, [](uint32 groupIndex, void* userData) {
+        JobsHandle handle = Jobs::Dispatch(JobsType::LongTask, [](uint32 groupIndex, void* userData) {
             IOTask* task = (IOTask*)userData;
             File f;
             bool r = f.Open(task->paths[groupIndex].CStr(), FileOpenFlags::Read|FileOpenFlags::SeqScan);
@@ -356,22 +356,22 @@ struct AppImpl final : AppCallbacks
 
             ProcessAndShowInfo(task->paths[groupIndex].CStr(), buffer, bytesRead, task->hashTime);
             f.Close();
-            atomicFetchAdd64(&task->totalSize, bytesRead);
+            Atomic::FetchAdd(&task->totalSize, bytesRead);
         }, &task, numFiles);
-        jobsWaitForCompletion(handle);
+        Jobs::WaitForCompletion(handle);
         totalSize = task.totalSize;
     }
 
-    static void BruteforceAsyncMethod(const Path* paths, int numFiles, size_t& totalSize, atomicUint64& hashTime)
+    static void BruteforceAsyncMethod(const Path* paths, int numFiles, size_t& totalSize, AtomicUint64& hashTime)
     {
         MemBumpAllocatorVM myalloc;
-        myalloc.Initialize(kGB*8, kGB);
+        myalloc.Initialize(SIZE_GB*8, SIZE_GB);
 
         MemTempAllocator tmpAlloc;
         AsyncFile** files = tmpAlloc.MallocTyped<AsyncFile*>(numFiles);
 
         for (int i = 0; i < numFiles; i++) {
-            files[i] = asyncReadFile(paths[i].CStr(), { .alloc = &myalloc });
+            files[i] = Async::ReadFile(paths[i].CStr(), { .alloc = &myalloc });
             ASSERT(files[i]);
         }
 
@@ -379,7 +379,7 @@ struct AppImpl final : AppCallbacks
             bool alldone = true;
             for (int i = 0; i < numFiles; i++) {
                 bool error = false;
-                if (files[i] && !asyncIsFinished(files[i], &error)) {
+                if (files[i] && !Async::IsFinished(files[i], &error)) {
                     ASSERT(!error);
                     alldone = false;
                     break;
@@ -387,14 +387,14 @@ struct AppImpl final : AppCallbacks
                 else if (files[i]) {
                     totalSize += files[i]->size;
                     ProcessAndShowInfo(paths[i].CStr(), files[i]->data, files[i]->size, &hashTime);
-                    asyncClose(files[i]);
+                    Async::Close(files[i]);
                     files[i] = nullptr;
                 }
             }
 
             if (alldone)
                 break;
-            sysPauseCpu();
+            OS::PauseCPU();
         }
 
         myalloc.Release();
@@ -439,10 +439,10 @@ struct AppImpl final : AppCallbacks
         return 0;
     }
 
-    static void CPIO_Method(const Path* paths, int numFiles, size_t& totalSize, atomicUint64& hashTime)
+    static void CPIO_Method(const Path* paths, int numFiles, size_t& totalSize, AtomicUint64& hashTime)
     {
         MemBumpAllocatorVM fileAlloc;
-        fileAlloc.Initialize(8*kGB, kGB);
+        fileAlloc.Initialize(8*SIZE_GB, SIZE_GB);
 
         MemTempAllocator tmpAlloc;
         FixedSizePool<CPIO_Request> reqPool(&tmpAlloc);
@@ -467,18 +467,18 @@ struct AppImpl final : AppCallbacks
             CPIO_Request* req = reqPool.New();
             req->fileHandle = CreateFileA(paths[i].CStr(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_FLAG_OVERLAPPED|FILE_FLAG_NO_BUFFERING, NULL);
             if (req->fileHandle == INVALID_HANDLE_VALUE) {
-                logError("Cannot open file: %s", paths[i].CStr());
+                LOG_ERROR("Cannot open file: %s", paths[i].CStr());
                 continue;
             }
 
             if (CreateIoCompletionPort(req->fileHandle, hCompletionPort, reinterpret_cast<ULONG_PTR>(req), 0) == nullptr) {
-                logError("Error associating file '%s' with completion port", paths[i].CStr());
+                LOG_ERROR("Error associating file '%s' with completion port", paths[i].CStr());
                 continue;
             }
             
             BY_HANDLE_FILE_INFORMATION fileInfo {};
             if (!GetFileInformationByHandle(req->fileHandle, &fileInfo)) {
-                logError("Error getting file size: %s", paths[i].CStr());
+                LOG_ERROR("Error getting file size: %s", paths[i].CStr());
                 continue;
             }
 
@@ -487,7 +487,7 @@ struct AppImpl final : AppCallbacks
             req->data = fileAlloc.Malloc(req->size, pageSize);
             if (!ReadFile(req->fileHandle, req->data, AlignValue((uint32)req->size, pageSize), nullptr, &req->overlapped)) {
                 if (GetLastError() != ERROR_IO_PENDING) {
-                    logError("Error reading file (%u): %s ", GetLastError(), paths[i].CStr());
+                    LOG_ERROR("Error reading file (%u): %s ", GetLastError(), paths[i].CStr());
                     continue;
                 }
             }
@@ -507,31 +507,31 @@ struct AppImpl final : AppCallbacks
         HANDLE fileHandle;
         void* data;
         Semaphore* semaphore;
-        atomicUint64* totalSize;
-        atomicUint32* numFiles;
+        AtomicUint64* totalSize;
+        AtomicUint32* numFiles;
     };
 
-    static void NoCacheMethod(const Path* paths, int numFiles, size_t& totalSize, atomicUint64& hashTime)
+    static void NoCacheMethod(const Path* paths, int numFiles, size_t& totalSize, AtomicUint64& hashTime)
     {
         MemBumpAllocatorVM fileAlloc;
-        fileAlloc.Initialize(8*kGB, kGB);
+        fileAlloc.Initialize(8*SIZE_GB, SIZE_GB);
 
         MemTempAllocator tmpAlloc;
         FixedSizePool<NoCacheRequest> reqPool(&tmpAlloc);
         reqPool.Reserve(numFiles);
 
-        uint32 pageSize = (uint32)sysGetPageSize();
+        uint32 pageSize = (uint32)OS::GetPageSize();
         Semaphore sem;
         sem.Initialize();
 
-        atomicUint64 atomicTotalSize = 0;
-        atomicUint32 atomicNumFiles = 0;
+        AtomicUint64 atomicTotalSize = 0;
+        AtomicUint32 atomicNumFiles = 0;
 
         auto CompletionCallback = [](DWORD dwErrorCode, DWORD dwNumberOfBytesTransfered, LPOVERLAPPED lpOverlapped)
         {
             NoCacheRequest* req = (NoCacheRequest*)lpOverlapped;
-            atomicFetchAdd32(req->numFiles, 1);
-            atomicFetchAdd64(req->totalSize, dwNumberOfBytesTransfered);
+            Atomic::FetchAdd(req->numFiles, 1);
+            Atomic::FetchAdd(req->totalSize, dwNumberOfBytesTransfered);
             req->semaphore->Post();
         };
 
@@ -540,7 +540,7 @@ struct AppImpl final : AppCallbacks
             req->fileHandle = CreateFileA(paths[i].CStr(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING,
                                           FILE_ATTRIBUTE_NORMAL|FILE_FLAG_OVERLAPPED|FILE_FLAG_NO_BUFFERING, NULL);
             if (req->fileHandle == INVALID_HANDLE_VALUE) {
-                logError("Cannot open file: %s", paths[i].CStr());
+                LOG_ERROR("Cannot open file: %s", paths[i].CStr());
                 continue;
             }
             req->semaphore = &sem;
@@ -549,7 +549,7 @@ struct AppImpl final : AppCallbacks
 
             BY_HANDLE_FILE_INFORMATION fileInfo {};
             if (!GetFileInformationByHandle(req->fileHandle, &fileInfo)) {
-                logError("Error getting file size: %s", paths[i].CStr());
+                LOG_ERROR("Error getting file size: %s", paths[i].CStr());
                 continue;
             }
 
@@ -560,13 +560,13 @@ struct AppImpl final : AppCallbacks
             BindIoCompletionCallback(req->fileHandle, CompletionCallback, 0);
             if (!ReadFile(req->fileHandle, req->data, AlignValue((uint32)fileSize, pageSize), nullptr, &req->overlapped)) {
                 if (GetLastError() != ERROR_IO_PENDING) {
-                    logError("Error reading file (%u): %s ", GetLastError(), paths[i].CStr());
+                    LOG_ERROR("Error reading file (%u): %s ", GetLastError(), paths[i].CStr());
                     continue;
                 }
             }
         }
 
-        while (atomicLoad32(&atomicNumFiles) < (uint32)numFiles) {
+        while (Atomic::Load(&atomicNumFiles) < (uint32)numFiles) {
             sem.Wait();
         }
         fileAlloc.Release();
@@ -577,12 +577,12 @@ struct AppImpl final : AppCallbacks
     
     void Cleanup() override
     {
-        engineRelease();
+        Engine::Release();
     };
     
     void Update(fl32) override
     {
-        threadSleep(16);
+        Thread::Sleep(16);
     }
     
     void OnEvent(const AppEvent&) override
@@ -592,7 +592,7 @@ struct AppImpl final : AppCallbacks
 
 int Main(int argc, char* argv[])
 {
-    settingsInitializeJunkyard(SettingsJunkyard {
+    SettingsJunkyard::Initialize(SettingsJunkyard {
         .engine = {
             .logLevel = SettingsEngine::LogLevel::Info
         },
@@ -605,7 +605,7 @@ int Main(int argc, char* argv[])
    
     static AppImpl impl;
 
-    appInitialize(AppDesc { 
+    App::Run(AppDesc { 
         .callbacks = &impl, 
         .windowTitle = "Junkyard - TestIO",
     });
