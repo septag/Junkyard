@@ -26,9 +26,9 @@ PRAGMA_DIAGNOSTIC_POP()
 //       ██║   ███████╗██║ ╚═╝ ██║██║         ██║  ██║███████╗███████╗╚██████╔╝╚██████╗
 //       ╚═╝   ╚══════╝╚═╝     ╚═╝╚═╝         ╚═╝  ╚═╝╚══════╝╚══════╝ ╚═════╝  ╚═════╝
 
-static constexpr size_t MEM_TEMP_MAX_BUFFER_SIZE = kGB;
+static constexpr size_t MEM_TEMP_MAX_BUFFER_SIZE = CONFIG_TEMP_ALLOC_MAX;
 static constexpr uint32 MEM_TEMP_FRAME_PEAKS_COUNT = 4;
-static constexpr uint32 MEM_TEMP_PAGE_SIZE = 256*kKB;
+static constexpr uint32 MEM_TEMP_PAGE_SIZE = CONFIG_TEMP_ALLOC_PAGE_SIZE;
 static constexpr float  MEM_TEMP_VALIDATE_RESET_TIME = 5.0f;
 static constexpr uint32 MEM_TEMP_MAX_STACK_FRAMES = 8;
 
@@ -38,15 +38,15 @@ struct MemTempStack
     size_t offset;
     void* lastAllocatedPtr;
     void* stacktrace[MEM_TEMP_MAX_STACK_FRAMES];
-    Array<_private::MemDebugPointer> debugPointers;
-    MemTempId id;
+    Array<MemDebugPointer> debugPointers;
+    MemTempAllocator::ID id;
     uint16 numStackframes;
 };
 
 struct alignas(CACHE_LINE_SIZE) MemTempContext
 {
-    atomicUint32 isInUse;  // This is atomic because we are accessing it in the memTempReset thread
-    uint8 _padding1[CACHE_LINE_SIZE - sizeof(atomicUint32)];
+    AtomicUint32 isInUse;  // This is atomic because we are accessing it in the memTempReset thread
+    uint8 _padding1[CACHE_LINE_SIZE - sizeof(AtomicUint32)];
 
     Array<MemTempStack> allocStack;
     uint32 generationIdx;   // Just a counter to make temp IDs unique
@@ -73,7 +73,7 @@ struct alignas(CACHE_LINE_SIZE) MemTempContext
 struct MemTempData
 {
     Mutex            tempMtx;
-    size_t           pageSize = sysGetPageSize();
+    size_t           pageSize = OS::GetPageSize();
     Array<MemTempContext*> tempCtxs; 
     bool             captureTempStackTrace;
 
@@ -82,24 +82,25 @@ struct MemTempData
 };
 
 static MemTempData gMemTemp;
+
 NO_INLINE static MemTempContext& MemGetTempContext() 
 { 
     static thread_local MemTempContext tempCtx;
     return tempCtx; 
 }
 
-void memTempSetDebugMode(bool enable)
+void MemTempAllocator::EnableDebugMode(bool enable)
 {
     ASSERT_MSG(MemGetTempContext().allocStack.Count() == 0, "MemTemp must be at it's initial state");
     MemGetTempContext().debugMode = enable;
 }
 
-void memTempSetCaptureStackTrace(bool capture)
+void MemTempAllocator::EnableCallstackCapture(bool capture)
 {
     gMemTemp.captureTempStackTrace = capture;
 }
 
-void memTempGetStats(Allocator* alloc, MemTransientAllocatorStats** outStats, uint32* outCount)
+void MemTempAllocator::GetStats(MemAllocator* alloc, Stats** outStats, uint32* outCount)
 {
     ASSERT(alloc);
     ASSERT(outStats);
@@ -107,7 +108,7 @@ void memTempGetStats(Allocator* alloc, MemTransientAllocatorStats** outStats, ui
 
     MutexScope mtx(gMemTemp.tempMtx);
     if (gMemTemp.tempCtxs.Count())
-        *outStats = memAllocTyped<MemTransientAllocatorStats>(gMemTemp.tempCtxs.Count(), alloc);
+        *outStats = Mem::AllocTyped<MemTempAllocator::Stats>(gMemTemp.tempCtxs.Count(), alloc);
     *outCount = gMemTemp.tempCtxs.Count();
 
     for (uint32 i = 0; i < *outCount; i++) {
@@ -118,22 +119,22 @@ void memTempGetStats(Allocator* alloc, MemTransientAllocatorStats** outStats, ui
     }
 }
 
-MemTempId memTempPushId()
+MemTempAllocator::ID MemTempAllocator::PushId()
 {
     MemTempContext& ctx = MemGetTempContext();
 
     // Note that we use an atomic var for syncing between threads and memTempReset caller thread
     // The reason is because while someone Pushed the mem temp stack. Reset might be called and mess things up
-    atomicExchange32Explicit(&ctx.isInUse, 1, AtomicMemoryOrder::Release);
+    Atomic::ExchangeExplicit(&ctx.isInUse, 1, AtomicMemoryOrder::Release);
 
     ++ctx.generationIdx;
     ASSERT_MSG(ctx.generationIdx <= UINT16_MAX, "Too many push temp allocator, generation overflowed");
 
     if (!ctx.init) {
         if (ctx.buffer == nullptr && !ctx.debugMode) {
-            ctx.buffer = (uint8*)memVirtualReserve(MEM_TEMP_MAX_BUFFER_SIZE);
+            ctx.buffer = (uint8*)Mem::VirtualReserve(MEM_TEMP_MAX_BUFFER_SIZE);
             ctx.bufferSize = MEM_TEMP_PAGE_SIZE;
-            memVirtualCommit(ctx.buffer, ctx.bufferSize); 
+            Mem::VirtualCommit(ctx.buffer, ctx.bufferSize); 
         }
         ctx.init = true;
     }
@@ -142,8 +143,8 @@ MemTempId memTempPushId()
         MutexScope mtx(gMemTemp.tempMtx);
         if (gMemTemp.tempCtxs.FindIf([ctx = &ctx](const MemTempContext* tmpCtx)->bool { return ctx == tmpCtx; }) == UINT32_MAX) {
             gMemTemp.tempCtxs.Push(&ctx);
-            ctx.threadId = threadGetCurrentId();
-            threadGetCurrentThreadName(ctx.threadName, sizeof(ctx.threadName));
+            ctx.threadId = Thread::GetCurrentId();
+            Thread::GetCurrentThreadName(ctx.threadName, sizeof(ctx.threadName));
         }
 
         ctx.used = true;
@@ -154,7 +155,7 @@ MemTempId memTempPushId()
 
     // Id: High bits is the index to the allocStack
     //     Low bits is the call generation
-    MemTempId id = (index << 16) | (ctx.generationIdx & 0xffff);
+    ID id = (index << 16) | (ctx.generationIdx & 0xffff);
     
     MemTempStack memStack { 
         .baseOffset = index > 0 ? (ctx.allocStack.Last().baseOffset + ctx.allocStack.Last().offset) : 0,
@@ -163,14 +164,14 @@ MemTempId memTempPushId()
 
     if constexpr(!CONFIG_FINAL_BUILD) {
         if (gMemTemp.captureTempStackTrace)
-            memStack.numStackframes = debugCaptureStacktrace(memStack.stacktrace, MEM_TEMP_MAX_STACK_FRAMES, 2);
+            memStack.numStackframes = Debug::CaptureStacktrace(memStack.stacktrace, MEM_TEMP_MAX_STACK_FRAMES, 2);
     }
 
     ctx.allocStack.Push(memStack);
     return id;
 }
 
-void memTempPopId(MemTempId id)
+void MemTempAllocator::PopId(ID id)
 {
     MemTempContext& ctx = MemGetTempContext();
 
@@ -183,15 +184,139 @@ void memTempPopId(MemTempId id)
 
     MemTempStack memStack = ctx.allocStack.PopLast();
     if (memStack.debugPointers.Count()) {
-        for (_private::MemDebugPointer p : memStack.debugPointers)
-            memDefaultAlloc()->Free(p.ptr, p.align);
+        for (MemDebugPointer p : memStack.debugPointers)
+            Mem::GetDefaultAlloc()->Free(p.ptr, p.align);
         memStack.debugPointers.Free();
     }
-    atomicExchange32Explicit(&ctx.isInUse, 0, AtomicMemoryOrder::Release);
+    Atomic::ExchangeExplicit(&ctx.isInUse, 0, AtomicMemoryOrder::Release);
 }
 
-void* memReallocTemp(MemTempId id, void* ptr, size_t size, uint32 align)
+MemTempContext::~MemTempContext()
 {
+    if (buffer) {
+        if (bufferSize)
+            Mem::VirtualDecommit(buffer, bufferSize);
+        Mem::VirtualRelease(buffer, bufferSize);
+    }
+
+    if (debugMode) {
+        for (MemTempStack& memStack : allocStack) {
+            for (MemDebugPointer p : memStack.debugPointers)
+                Mem::GetDefaultAlloc()->Free(p.ptr, p.align);
+            memStack.debugPointers.Free();
+        }
+    }
+    allocStack.Free();
+
+    used = false;
+    init = false;
+}
+
+void MemTempAllocator::Reset(float dt, bool resetValidation)
+{
+    MutexScope mtx(gMemTemp.tempMtx);
+    for (uint32 i = 0; i < gMemTemp.tempCtxs.Count(); i++) {
+        MemTempContext* ctx = gMemTemp.tempCtxs[i];
+
+        if (Atomic::LoadExplicit(&ctx->isInUse, AtomicMemoryOrder::Acquire)) 
+            continue;
+
+        if (ctx->used) {
+            // TODO: do some kind of heuristics to detect leaks if allocStack is not empty
+            if (ctx->allocStack.Count() == 0) {
+                ctx->generationIdx = 0;
+                ctx->framePeaks[ctx->resetCount] = ctx->curFramePeak;
+                ctx->resetCount = (ctx->resetCount + 1) % MEM_TEMP_FRAME_PEAKS_COUNT;
+                ctx->curFramePeak = 0;
+                ctx->noresetTime = 0;
+
+                if (!ctx->debugMode) {
+                    // resize buffer to the maximum of the last 4 frames peak allocations
+                    // So based on the last frames activity, we might grow or shrink the temp buffer
+                    size_t maxPeakSize = 0;
+                    for (uint32 k = 0; k < MEM_TEMP_FRAME_PEAKS_COUNT; k++) {
+                        if (ctx->framePeaks[k] > maxPeakSize) 
+                            maxPeakSize = ctx->framePeaks[k];
+                    }
+
+                    maxPeakSize = Max<size_t>(MEM_TEMP_PAGE_SIZE, maxPeakSize);
+                    maxPeakSize = AlignValue(maxPeakSize, gMemTemp.pageSize);
+                    if (maxPeakSize > MemGetTempContext().bufferSize) {
+                        size_t growSize = maxPeakSize - MemGetTempContext().bufferSize;
+                        Mem::VirtualCommit(MemGetTempContext().buffer + MemGetTempContext().bufferSize, growSize);
+                    }
+                    else if (maxPeakSize < MemGetTempContext().bufferSize) {
+                        size_t shrinkSize = MemGetTempContext().bufferSize - maxPeakSize;
+                        Mem::VirtualDecommit(MemGetTempContext().buffer + maxPeakSize, shrinkSize);
+                    }
+                    MemGetTempContext().bufferSize = maxPeakSize;
+                }
+
+                ctx->used = false;
+            }   // MemTempContext can reset (allocStack is empty)
+            else if (resetValidation) {
+                ctx->noresetTime += dt;
+                if (ctx->noresetTime >= MEM_TEMP_VALIDATE_RESET_TIME) {
+                    LOG_WARNING("Temp stack failed to pop during the frame after %.0f seconds", MEM_TEMP_VALIDATE_RESET_TIME);
+                    ctx->noresetTime = 0;
+
+                    if constexpr(!CONFIG_FINAL_BUILD) {
+                        if (gMemTemp.captureTempStackTrace) {
+                            DebugStacktraceEntry entries[MEM_TEMP_MAX_STACK_FRAMES];
+                            uint32 index = 0;
+                            LOG_DEBUG("Callstacks for each remaining MemTempPush:");
+                            for (const MemTempStack& memStack : ctx->allocStack) {
+                                Debug::ResolveStacktrace(memStack.numStackframes, memStack.stacktrace, entries);
+                                LOG_DEBUG("\t%u) Id=%u", ++index, memStack.id);
+                                for (uint16 s = 0; s < memStack.numStackframes; s++) {
+                                    LOG_DEBUG("\t\t%s(%u): %s", entries[s].filename, entries[s].line, entries[s].name);
+                                }
+                            }
+                        }
+                    } // CONFIG_FINAL_BUILD
+                }
+            }
+        } // MemTempContext->used
+    }
+}
+
+MemTempAllocator::MemTempAllocator() : 
+    mId(MemTempAllocator::PushId()), 
+    mFiberProtectorId(Debug::FiberScopeProtector_Push("TempAllocator")),
+    mOwnsId(true) 
+{ 
+}
+
+MemTempAllocator::MemTempAllocator(ID id) : 
+    mId(id), 
+    mFiberProtectorId(Debug::FiberScopeProtector_Push("TempAllocator")),
+    mOwnsId(false)
+{
+}
+
+MemTempAllocator::~MemTempAllocator() 
+{ 
+    Debug::FiberScopeProtector_Pop(mFiberProtectorId); 
+    if (mOwnsId) 
+        MemTempAllocator::PopId(mId); 
+}
+
+void* MemTempAllocator::Malloc(size_t size, uint32 align) 
+{
+    return Realloc(nullptr, size, align);
+}
+
+void* MemTempAllocator::MallocZero(size_t size, uint32 align) 
+{
+    void* ptr = Realloc(nullptr, size, align);
+    if (ptr)
+        memset(ptr, 0x0, size);
+    return ptr;
+}
+
+void* MemTempAllocator::Realloc(void* ptr, size_t size, uint32 align) 
+{
+    ID id = mId;
     MemTempContext& ctx = MemGetTempContext();
 
     ASSERT(id);
@@ -234,7 +359,7 @@ void* memReallocTemp(MemTempId id, void* ptr, size_t size, uint32 align)
         size_t endOffset = offset + addOffset;
 
         if (endOffset > MEM_TEMP_MAX_BUFFER_SIZE) {
-            MEMORY_FAIL();
+            MEM_FAIL();
             return nullptr;
         }
 
@@ -242,7 +367,7 @@ void* memReallocTemp(MemTempId id, void* ptr, size_t size, uint32 align)
             size_t newSize = Clamp(ctx.bufferSize << 1, endOffset, MEM_TEMP_MAX_BUFFER_SIZE);
 
             size_t growSize = AlignValue(newSize - ctx.bufferSize, gMemTemp.pageSize);
-            memVirtualCommit(ctx.buffer + ctx.bufferSize, growSize);
+            Mem::VirtualCommit(ctx.buffer + ctx.bufferSize, growSize);
             ctx.bufferSize += growSize;
         }
 
@@ -265,121 +390,38 @@ void* memReallocTemp(MemTempId id, void* ptr, size_t size, uint32 align)
     }
     else {
         if (ptr == nullptr)
-            ptr = memDefaultAlloc()->Malloc(size, align);
+            ptr = Mem::GetDefaultAlloc()->Malloc(size, align);
         else
-            ptr = memDefaultAlloc()->Realloc(ptr, size, align);
+            ptr = Mem::GetDefaultAlloc()->Realloc(ptr, size, align);
 
         if (ptr) {
             memStack.offset += size;
             size_t endOffset = memStack.baseOffset + memStack.offset;
 
             ctx.peakBytes = Max<size_t>(ctx.peakBytes, endOffset);
-            memStack.debugPointers.Push(_private::MemDebugPointer {ptr, align});
+            memStack.debugPointers.Push({ptr, align});
         }
         return ptr;
     }
 }
 
-MemTempContext::~MemTempContext()
+void MemTempAllocator::Free(void*, uint32) 
 {
-    if (buffer) {
-        if (bufferSize)
-            memVirtualDecommit(buffer, bufferSize);
-        memVirtualRelease(buffer, bufferSize);
-    }
-
-    if (debugMode) {
-        for (MemTempStack& memStack : allocStack) {
-            for (_private::MemDebugPointer p : memStack.debugPointers)
-                memDefaultAlloc()->Free(p.ptr, p.align);
-            memStack.debugPointers.Free();
-        }
-    }
-    allocStack.Free();
-
-    used = false;
-    init = false;
+    // No Free!
 }
 
-void* memAllocTemp(MemTempId id, size_t size, uint32 align)
+size_t MemTempAllocator::GetOffset() const
 {
-    return memReallocTemp(id, nullptr, size, align);
+    uint32 index = mId >> 16;
+    ASSERT_MSG(index == MemGetTempContext().allocStack.Count() - 1, "Invalid temp id, likely doesn't belong to current temp stack scope");
+
+    const MemTempStack& memStack = MemGetTempContext().allocStack[index];
+    return memStack.baseOffset + memStack.offset;
 }
 
-void* memAllocTempZero(MemTempId id, size_t size, uint32 align)
+size_t MemTempAllocator::GetPointerOffset(void* ptr) const
 {
-    void* ptr = memAllocTemp(id, size, align);
-    if (ptr)
-        memset(ptr, 0x0, size);
-    return ptr;
-}
-
-void memTempReset(float dt, bool resetValidation)
-{
-    MutexScope mtx(gMemTemp.tempMtx);
-    for (uint32 i = 0; i < gMemTemp.tempCtxs.Count(); i++) {
-        MemTempContext* ctx = gMemTemp.tempCtxs[i];
-
-        if (atomicLoad32Explicit(&ctx->isInUse, AtomicMemoryOrder::Acquire)) 
-            continue;
-
-        if (ctx->used) {
-            // TODO: do some kind of heuristics to detect leaks if allocStack is not empty
-            if (ctx->allocStack.Count() == 0) {
-                ctx->generationIdx = 0;
-                ctx->framePeaks[ctx->resetCount] = ctx->curFramePeak;
-                ctx->resetCount = (ctx->resetCount + 1) % MEM_TEMP_FRAME_PEAKS_COUNT;
-                ctx->curFramePeak = 0;
-                ctx->noresetTime = 0;
-
-                if (!ctx->debugMode) {
-                    // resize buffer to the maximum of the last 4 frames peak allocations
-                    // So based on the last frames activity, we might grow or shrink the temp buffer
-                    size_t maxPeakSize = 0;
-                    for (uint32 k = 0; k < MEM_TEMP_FRAME_PEAKS_COUNT; k++) {
-                        if (ctx->framePeaks[k] > maxPeakSize) 
-                            maxPeakSize = ctx->framePeaks[k];
-                    }
-
-                    maxPeakSize = Max<size_t>(MEM_TEMP_PAGE_SIZE, maxPeakSize);
-                    maxPeakSize = AlignValue(maxPeakSize, gMemTemp.pageSize);
-                    if (maxPeakSize > MemGetTempContext().bufferSize) {
-                        size_t growSize = maxPeakSize - MemGetTempContext().bufferSize;
-                        memVirtualCommit(MemGetTempContext().buffer + MemGetTempContext().bufferSize, growSize);
-                    }
-                    else if (maxPeakSize < MemGetTempContext().bufferSize) {
-                        size_t shrinkSize = MemGetTempContext().bufferSize - maxPeakSize;
-                        memVirtualDecommit(MemGetTempContext().buffer + maxPeakSize, shrinkSize);
-                    }
-                    MemGetTempContext().bufferSize = maxPeakSize;
-                }
-
-                ctx->used = false;
-            }   // MemTempContext can reset (allocStack is empty)
-            else if (resetValidation) {
-                ctx->noresetTime += dt;
-                if (ctx->noresetTime >= MEM_TEMP_VALIDATE_RESET_TIME) {
-                    logWarning("Temp stack failed to pop during the frame after %.0f seconds", MEM_TEMP_VALIDATE_RESET_TIME);
-                    ctx->noresetTime = 0;
-
-                    if constexpr(!CONFIG_FINAL_BUILD) {
-                        if (gMemTemp.captureTempStackTrace) {
-                            DebugStacktraceEntry entries[MEM_TEMP_MAX_STACK_FRAMES];
-                            uint32 index = 0;
-                            logDebug("Callstacks for each remaining MemTempPush:");
-                            for (const MemTempStack& memStack : ctx->allocStack) {
-                                debugResolveStacktrace(memStack.numStackframes, memStack.stacktrace, entries);
-                                logDebug("\t%u) Id=%u", ++index, memStack.id);
-                                for (uint16 s = 0; s < memStack.numStackframes; s++) {
-                                    logDebug("\t\t%s(%u): %s", entries[s].filename, entries[s].line, entries[s].name);
-                                }
-                            }
-                        }
-                    } // CONFIG_FINAL_BUILD
-                }
-            }
-        } // MemTempContext->used
-    }
+    return size_t((uint8*)ptr - MemGetTempContext().buffer);
 }
 
 //    ██████╗ ██╗   ██╗███╗   ███╗██████╗      █████╗ ██╗     ██╗      ██████╗  ██████╗
@@ -400,13 +442,13 @@ void MemBumpAllocatorBase::Initialize(size_t reserveSize, size_t pageSize, bool 
 
         mBuffer = (uint8*)BackendReserve(reserveSize);
         if (!mBuffer) 
-            MEMORY_FAIL();
+            MEM_FAIL();
 
         mPageSize = pageSize;
         mReserveSize = reserveSize;
     }
     else {
-        mDebugPointers = NEW(memDefaultAlloc(), Array<_private::MemDebugPointer>);
+        mDebugPointers = NEW(Mem::GetDefaultAlloc(), Array<MemDebugPointer>);
     }
 }
 
@@ -420,10 +462,10 @@ void MemBumpAllocatorBase::Release()
     }
     
     if (mDebugMode) {
-        for (_private::MemDebugPointer p : *mDebugPointers)
-            memDefaultAlloc()->Free(p.ptr, p.align);
+        for (MemDebugPointer p : *mDebugPointers)
+            Mem::GetDefaultAlloc()->Free(p.ptr, p.align);
         mDebugPointers->Free();
-        memFree(mDebugPointers, memDefaultAlloc());
+        Mem::Free(mDebugPointers, Mem::GetDefaultAlloc());
         mDebugPointers = nullptr;
     }
 }
@@ -481,7 +523,7 @@ void* MemBumpAllocatorBase::Realloc(void* ptr, size_t size, uint32 align)
         size_t endOffset = offset + addOffset;
 
         if (endOffset > mReserveSize) {
-            MEMORY_FAIL();
+            MEM_FAIL();
             return nullptr;
         }
 
@@ -513,12 +555,12 @@ void* MemBumpAllocatorBase::Realloc(void* ptr, size_t size, uint32 align)
     }
     else {
         if (ptr == nullptr)
-            ptr = memDefaultAlloc()->Malloc(size, align);
+            ptr = Mem::GetDefaultAlloc()->Malloc(size, align);
         else
-            ptr = memDefaultAlloc()->Realloc(ptr, size, align);
+            ptr = Mem::GetDefaultAlloc()->Realloc(ptr, size, align);
 
         if (ptr)
-            mDebugPointers->Push(_private::MemDebugPointer {ptr, align});
+            mDebugPointers->Push({ptr, align});
         return ptr;
     }
 }
@@ -541,8 +583,8 @@ void MemBumpAllocatorBase::Reset()
     else {
         mOffset = 0;
 
-        for (_private::MemDebugPointer& dbgPtr : *mDebugPointers) 
-            memDefaultAlloc()->Free(dbgPtr.ptr, dbgPtr.align);
+        for (MemDebugPointer& dbgPtr : *mDebugPointers) 
+            Mem::GetDefaultAlloc()->Free(dbgPtr.ptr, dbgPtr.align);
         mDebugPointers->Clear();
     }
 }
@@ -550,74 +592,22 @@ void MemBumpAllocatorBase::Reset()
 //----------------------------------------------------------------------------------------------------------------------
 void* MemBumpAllocatorVM::BackendReserve(size_t size)
 {
-    return memVirtualReserve(size);
+    return Mem::VirtualReserve(size);
 }
 
 void* MemBumpAllocatorVM::BackendCommit(void* ptr, size_t size)
 {
-    return memVirtualCommit(ptr, size);
+    return Mem::VirtualCommit(ptr, size);
 }
 
 void  MemBumpAllocatorVM::BackendDecommit(void* ptr, size_t size)
 {
-    return memVirtualDecommit(ptr, size);
+    return Mem::VirtualDecommit(ptr, size);
 }
 
 void  MemBumpAllocatorVM::BackendRelease(void* ptr, size_t size)
 {
-    return memVirtualRelease(ptr, size);
-}
-
-//----------------------------------------------------------------------------------------------------------------------
-// Temp Allocator Scoped
-MemTempAllocator::MemTempAllocator() : 
-    mId(memTempPushId()), 
-    mFiberProtectorId(debugFiberScopeProtector_Push("TempAllocator")),
-    mOwnsId(true) 
-{ 
-}
-
-MemTempAllocator::MemTempAllocator(MemTempId id) : 
-    mId(id), 
-    mFiberProtectorId(debugFiberScopeProtector_Push("TempAllocator")),
-    mOwnsId(false)
-{
-}
-
-MemTempAllocator::~MemTempAllocator() 
-{ 
-    debugFiberScopeProtector_Pop(mFiberProtectorId); 
-    if (mOwnsId) 
-        memTempPopId(mId); 
-}
-
-void* MemTempAllocator::Malloc(size_t size, uint32 align) 
-{
-    return memAllocTemp(mId, size, align);
-}
-
-void* MemTempAllocator::Realloc(void* ptr, size_t size, uint32 align) 
-{
-    return memReallocTemp(mId, ptr, size, align);
-}
-
-void MemTempAllocator::Free(void*, uint32) 
-{
-    // No Free!
-}
-
-size_t MemTempAllocator::GetOffset() const
-{
-    uint32 index = mId >> 16;
-    ASSERT_MSG(index == MemGetTempContext().allocStack.Count() - 1, "Invalid temp id, likely doesn't belong to current temp stack scope");
-
-    const MemTempStack& memStack = MemGetTempContext().allocStack[index];
-    return memStack.baseOffset + memStack.offset;
-}
-
-size_t MemTempAllocator::GetPointerOffset(void* ptr) const
-{
-    return size_t((uint8*)ptr - MemGetTempContext().buffer);
+    return Mem::VirtualRelease(ptr, size);
 }
 
 //    ████████╗██╗     ███████╗███████╗     █████╗ ██╗     ██╗      ██████╗  ██████╗
@@ -640,7 +630,7 @@ void MemTlsfAllocator::Initialize([[maybe_unused]] size_t poolSize, void* buffer
 
         mTlsf = tlsf_create_with_pool(buffer, size);
         if (mTlsf == nullptr) {
-            MEMORY_FAIL();
+            MEM_FAIL();
         }
         mTlsfSize = size;
     }
@@ -672,16 +662,16 @@ void* MemTlsfAllocator::Malloc(size_t size, uint32 align)
 
             TracyCAlloc(ptr, size);
 
-            memTrackMalloc(ptr, size);
+            Mem::TrackMalloc(ptr, size);
             return ptr;
         }
         else {
-            MEMORY_FAIL();
+            MEM_FAIL();
             return nullptr;
         }
     }
     else {
-        return memDefaultAlloc()->Malloc(size, align);
+        return Mem::GetDefaultAlloc()->Malloc(size, align);
     }
 }
 
@@ -699,16 +689,16 @@ void* MemTlsfAllocator::Realloc(void* ptr, size_t size, uint32 align)
             mAllocatedSize += tlsf_block_size(ptr);
             TracyCRealloc(freePtr, ptr, size);
 
-            memTrackRealloc(freePtr, ptr, size);
+            Mem::TrackRealloc(freePtr, ptr, size);
             return ptr;
         }
         else {
-            MEMORY_FAIL();
+            MEM_FAIL();
             return nullptr;
         }
     }
     else {
-        return memDefaultAlloc()->Realloc(ptr, size, align);
+        return Mem::GetDefaultAlloc()->Realloc(ptr, size, align);
     }
 }
 
@@ -721,11 +711,11 @@ void MemTlsfAllocator::Free(void* ptr, uint32 align)
             mAllocatedSize -= blockSize;
             tlsf_free(mTlsf, ptr);
             TracyCFree(ptr);
-            memTrackFree(ptr);
+            Mem::TrackFree(ptr);
         }
     }
     else {
-        return memDefaultAlloc()->Free(ptr, align);
+        return Mem::GetDefaultAlloc()->Free(ptr, align);
     }
 }
 
@@ -797,13 +787,13 @@ float MemTlsfAllocator::CalculateFragmentation()
 
 //----------------------------------------------------------------------------------------------------------------------
 // MemThreadSafeAllocator
-MemThreadSafeAllocator::MemThreadSafeAllocator(Allocator* alloc) : mAlloc(alloc)
+MemThreadSafeAllocator::MemThreadSafeAllocator(MemAllocator* alloc) : mAlloc(alloc)
 {
     SpinLockMutex* lock = (SpinLockMutex*)mLock;
     memset(lock, 0x0, sizeof(SpinLockMutex));
 }
 
-void MemThreadSafeAllocator::SetAllocator(Allocator* alloc)
+void MemThreadSafeAllocator::SetAllocator(MemAllocator* alloc)
 {
     mAlloc = alloc;
 }
@@ -832,7 +822,7 @@ void MemThreadSafeAllocator::Free(void* ptr, uint32 align)
     mAlloc->Free(ptr, align);
 }
 
-AllocatorType MemThreadSafeAllocator::GetType() const
+MemAllocatorType MemThreadSafeAllocator::GetType() const
 {
     ASSERT(mAlloc);
     return mAlloc->GetType();

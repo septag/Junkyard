@@ -39,7 +39,7 @@ INLINE const char* assetPlatformGetStr(AssetPlatform platform)
 struct AssetLoadParams  
 {
     const char* path;
-    Allocator* alloc;
+    MemAllocator* alloc;
     uint32 typeId;
     uint32 tags;
     AssetPlatform platform;
@@ -106,11 +106,11 @@ using AssetLoaderAsyncCallback = void(*)(AssetHandle handle, const AssetResult& 
 // See assetRegister/assetUnregister functions
 struct NO_VTABLE AssetCallbacks 
 {
-    virtual AssetResult Load(AssetHandle handle, const AssetLoadParams& params, uint32 cacheHash, Allocator* dependsAlloc) = 0;
+    virtual AssetResult Load(AssetHandle handle, const AssetLoadParams& params, uint32 cacheHash, MemAllocator* dependsAlloc) = 0;
     virtual void LoadRemote(AssetHandle handle, const AssetLoadParams& params, uint32 cacheHash, 
                             void* userData, AssetLoaderAsyncCallback loadCallback) = 0;
     virtual bool InitializeSystemResources(void* obj, const AssetLoadParams& params) = 0;
-    virtual void Release(void* obj, Allocator* alloc) = 0;
+    virtual void Release(void* obj, MemAllocator* alloc) = 0;
 
     // Return true if the asset can be reloaded, otherwise returning 'false' indicates that the asset could not get reloaded and old one stays in memory
     virtual bool ReloadSync(AssetHandle handle, void* prevData) = 0;
@@ -144,9 +144,9 @@ struct AssetCacheDesc
 //    ██╔══██║██╔═══╝ ██║
 //    ██║  ██║██║     ██║
 //    ╚═╝  ╚═╝╚═╝     ╚═╝
+
 API void assetRegisterType(const AssetTypeDesc& desc);
 API void assetUnregisterType(uint32 fourcc);
-
 API AssetHandle assetLoad(const AssetLoadParams& params, const void* extraParams);
 API void assetUnload(AssetHandle handle);
 API AssetInfo assetGetInfo(AssetHandle handle);
@@ -157,9 +157,9 @@ API AssetBarrier assetCreateBarrier();
 API void assetDestroyBarrier(AssetBarrier barrier);
 API bool assetWait(AssetBarrier barrier, uint32 msecs = UINT32_MAX);
 
-API bool assetLoadMetaData(const char* filepath, AssetPlatform platform, Allocator* alloc,
+API bool assetLoadMetaData(const char* filepath, AssetPlatform platform, MemAllocator* alloc,
                            AssetMetaKeyValue** outData, uint32* outKeyCount);
-API bool assetLoadMetaData(AssetHandle handle, Allocator* alloc, AssetMetaKeyValue** outData, uint32* outKeyCount);
+API bool assetLoadMetaData(AssetHandle handle, MemAllocator* alloc, AssetMetaKeyValue** outData, uint32* outKeyCount);
 API const char* assetGetMetaValue(const AssetMetaKeyValue* data, uint32 count, const char* key);
 template <typename _T> _T assetGetMetaValue(const AssetMetaKeyValue* data, uint32 count, const char* key, _T defaultValue);
 
@@ -225,7 +225,7 @@ struct AssetGroup
     void WaitForLoadFinish() const;
 
     void Unload() const;
-    Span<AssetHandle> GetAssetHandles(Allocator* alloc) const;
+    Span<AssetHandle> GetAssetHandles(MemAllocator* alloc) const;
 };
 
 API AssetGroup assetCreateGroup();

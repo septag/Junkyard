@@ -11,12 +11,15 @@
 #include "../Core/TracyHelper.h"
 #include "../Core/Blobs.h"
 
-struct ShaderCompiler
+struct ShaderCompilerContext
 {
     SlangSession* slang;
 };
 
-static ShaderCompiler gShaderCompiler;
+static ShaderCompilerContext gShaderCompiler;
+
+namespace ShaderCompiler
+{
 
 static inline GfxShaderStage shaderTranslateStage(SlangStage stage)
 {
@@ -86,8 +89,8 @@ static GfxFormat shaderTranslateVertexInputFormat([[maybe_unused]] uint32 rows, 
     return GfxFormat::Undefined;
 }
 
-Pair<GfxShader*, uint32> shaderCompile(const Blob& blob, const char* filepath, const ShaderCompileDesc& desc, 
-                                    char* errorDiag, uint32 errorDiagSize, Allocator* alloc)
+Pair<GfxShader*, uint32> Compile(const Blob& blob, const char* filepath, const ShaderCompileDesc& desc, 
+                                 char* errorDiag, uint32 errorDiagSize, MemAllocator* alloc)
 {
     ASSERT(gShaderCompiler.slang);
     PROFILE_ZONE(true);
@@ -105,7 +108,7 @@ Pair<GfxShader*, uint32> shaderCompile(const Blob& blob, const char* filepath, c
     
     if (desc.dumpIntermediates) {
         char filename[64];
-        pathFileName(filepath, filename, sizeof(filename));
+        Path::GetFilename_CStr(filepath, filename, sizeof(filename));
         spSetDumpIntermediates(req, true);
         spSetDumpIntermediatePrefix(req, filename);
     }
@@ -128,7 +131,7 @@ Pair<GfxShader*, uint32> shaderCompile(const Blob& blob, const char* filepath, c
         if (errorDiag)
             strCopy(errorDiag, errorDiagSize, diag);
         else 
-            logError(diag);
+            LOG_ERROR(diag);
         return {};
     }
 
@@ -159,7 +162,7 @@ Pair<GfxShader*, uint32> shaderCompile(const Blob& blob, const char* filepath, c
     if (numVertexAttributes)
         shader->vertexAttributes = tmpAlloc.MallocZeroTyped<GfxShaderVertexAttributeInfo>(numVertexAttributes);
 
-    pathFileName(filepath, shader->name, sizeof(shader->name));
+    Path::GetFilename_CStr(filepath, shader->name, sizeof(shader->name));
     shader->numStages = static_cast<uint32>(refl->getEntryPointCount());
     shader->numVertexAttributes = numVertexAttributes;
 
@@ -232,10 +235,10 @@ Pair<GfxShader*, uint32> shaderCompile(const Blob& blob, const char* filepath, c
     }
 
     uint32 shaderBufferSize = uint32(tmpAlloc.GetOffset() - tmpAlloc.GetPointerOffset(shader));
-    return Pair<GfxShader*, uint32>(memAllocCopyRawBytes<GfxShader>(shader, shaderBufferSize, alloc), shaderBufferSize);
+    return Pair<GfxShader*, uint32>(Mem::AllocCopyRawBytes<GfxShader>(shader, shaderBufferSize, alloc), shaderBufferSize);
 }
 
-bool _private::shaderInitializeCompiler()
+bool Initialize()
 {
     gShaderCompiler.slang = spCreateSession();
     if (!gShaderCompiler.slang)
@@ -243,10 +246,12 @@ bool _private::shaderInitializeCompiler()
     return true;
 }
 
-void _private::shaderReleaseCompiler()
+void Release()
 {
     if (gShaderCompiler.slang)
         spDestroySession(gShaderCompiler.slang);
 }
+
+} // ShaderCompiler
 
 #endif

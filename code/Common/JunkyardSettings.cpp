@@ -208,19 +208,19 @@ const char* SettingsJunkyardParser::GetCategory(uint32 id) const
     return kSettingCategoryNames[id];
 }
 
-const SettingsJunkyard& settingsGet()
+const SettingsJunkyard& SettingsJunkyard::Get()
 {
     return gSettingsJunkyard.settings;  
 }
 
-void settingsInitializeJunkyard(const SettingsJunkyard& initSettings)
+void SettingsJunkyard::Initialize(const SettingsJunkyard& initSettings)
 {
     gSettingsJunkyard.initialized = true;
     gSettingsJunkyard.settings = initSettings;
     settingsAddCustomCallbacks(&gSettingsJunkyard.parser);
 }
 
-bool settingsIsInitializedJunkyard()
+bool SettingsJunkyard::IsInitialized()
 {
     return gSettingsJunkyard.initialized;
 }

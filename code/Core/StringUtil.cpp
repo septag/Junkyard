@@ -36,7 +36,7 @@ uint32 strPrintFmtArgs(char* str, uint32 size, const char* fmt, va_list args)
     return (uint32)stbsp_vsnprintf(str, (int)size, fmt, args);
 }
 
-char* strPrintFmtAlloc(Allocator* alloc, const char* fmt, ...)
+char* strPrintFmtAlloc(MemAllocator* alloc, const char* fmt, ...)
 {
     va_list args;
     va_start(args, fmt);
@@ -45,11 +45,11 @@ char* strPrintFmtAlloc(Allocator* alloc, const char* fmt, ...)
     return str;
 }
 
-char* strPrintFmtAllocArgs(Allocator* alloc, const char* fmt, va_list args)
+char* strPrintFmtAllocArgs(MemAllocator* alloc, const char* fmt, va_list args)
 {
     struct strPrintfContext
     {
-        Allocator* alloc;
+        MemAllocator* alloc;
         char* buff;
         int len;
         char tmp[STB_SPRINTF_MIN];
@@ -59,7 +59,7 @@ char* strPrintFmtAllocArgs(Allocator* alloc, const char* fmt, va_list args)
     {
         strPrintfContext* ctx = reinterpret_cast<strPrintfContext*>(user);
         int len_ = len + 1;    // Reserve one character for null-termination
-        ctx->buff = memReallocTyped<char>(ctx->buff, len_, ctx->alloc);
+        ctx->buff = Mem::ReallocTyped<char>(ctx->buff, len_, ctx->alloc);
         memcpy(ctx->buff + ctx->len, ctx->tmp, len);
         ctx->len += len;
         return ctx->tmp;
@@ -635,7 +635,7 @@ const char* strSkipChar(const char* str, char ch)
     return str;
 }
 
-Span<char*> strSplit(const char* str, char ch, Allocator* alloc)
+Span<char*> strSplit(const char* str, char ch, MemAllocator* alloc)
 {
     Array<char*> splits(alloc);
 
@@ -644,7 +644,7 @@ Span<char*> strSplit(const char* str, char ch, Allocator* alloc)
     while (*s) {
         if (*s == ch) {
             uint32 len = PtrToInt<uint32>((void*)(s - start));
-            char* splitItem = memAllocCopy<char>(start, len + 1, alloc);
+            char* splitItem = Mem::AllocCopy<char>(start, len + 1, alloc);
             splitItem[len] = 0;
             splits.Push(splitItem);
 
@@ -657,14 +657,14 @@ Span<char*> strSplit(const char* str, char ch, Allocator* alloc)
 
     if (start < s) {
         uint32 len = PtrToInt<uint32>((void*)(s - start));
-        char* splitItem = memAllocCopy<char>(start, len + 1, alloc);
+        char* splitItem = Mem::AllocCopy<char>(start, len + 1, alloc);
         splits.Push(splitItem);
     }
 
     return splits.Detach();
 }
 
-Span<char*> strSplitWhitespace(const char* str, Allocator* alloc)
+Span<char*> strSplitWhitespace(const char* str, MemAllocator* alloc)
 {
     Array<char*> splits(alloc);
 
@@ -674,7 +674,7 @@ Span<char*> strSplitWhitespace(const char* str, Allocator* alloc)
         if (strIsWhitespace(*s)) {
             if (start != s) {
                 uint32 len = PtrToInt<uint32>((void*)(s - start));
-                char* splitItem = memAllocCopy<char>(start, len + 1, alloc);
+                char* splitItem = Mem::AllocCopy<char>(start, len + 1, alloc);
                 splitItem[len] = 0;
                 splits.Push(splitItem);
             }
@@ -696,7 +696,7 @@ Span<char*> strSplitWhitespace(const char* str, Allocator* alloc)
 
     if (start != s) {
         uint32 len = PtrToInt<uint32>((void*)(s - start));
-        char* splitItem = memAllocCopy<char>(start, len + 1, alloc);
+        char* splitItem = Mem::AllocCopy<char>(start, len + 1, alloc);
         splits.Push(splitItem);
     }
 

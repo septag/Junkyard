@@ -8,12 +8,12 @@
 
 struct ImageEncoderInfo
 {
-    ImageEncoderCompression compression;
+    ImageEncoderCompression::Enum compression;
     int blockDim;
     int blockSizeBytes;
 };
 
-static ImageEncoderInfo kImageEncoderCompressInfo[static_cast<uint32>(ImageEncoderCompression::_Count)] = {
+static ImageEncoderInfo IMAGE_ENCODER_COMPRESS_INFO[static_cast<uint32>(ImageEncoderCompression::_Count)] = {
     {ImageEncoderCompression::BC1,      4, 8},
     {ImageEncoderCompression::BC3,      4, 8},
     {ImageEncoderCompression::BC4,      4, 8},
@@ -26,22 +26,14 @@ static ImageEncoderInfo kImageEncoderCompressInfo[static_cast<uint32>(ImageEncod
     {ImageEncoderCompression::ASTC_8x8, 8, 16},
 };
 
-INLINE bool imageEncoderIsASTC(ImageEncoderCompression compression)
-{
-    return compression == ImageEncoderCompression::ASTC_4x4 ||
-           compression == ImageEncoderCompression::ASTC_5x5 || 
-           compression == ImageEncoderCompression::ASTC_6x6 || 
-           compression == ImageEncoderCompression::ASTC_8x8;
-}
-
-Blob imageEncoderCompress(ImageEncoderCompression compression, ImageEncoderQuality quality, 
-    ImageEncoderFlags flags, const ImageEncoderSurface& surface, Allocator* alloc)
+Blob ImageEncoder::Compress(ImageEncoderCompression::Enum compression, ImageEncoderQuality quality, 
+    ImageEncoderFlags flags, const ImageEncoderSurface& surface, MemAllocator* alloc)
 {
     ASSERT_MSG(compression != ImageEncoderCompression::BC6H, "Floating point compression is not supported yet");
 
     int width = static_cast<int>(surface.width);
     int height = static_cast<int>(surface.height);
-    const ImageEncoderInfo& info = kImageEncoderCompressInfo[static_cast<uint32>(compression)];
+    const ImageEncoderInfo& info = IMAGE_ENCODER_COMPRESS_INFO[static_cast<uint32>(compression)];
     bc7_enc_settings bc7Settings;
     astc_enc_settings astcSettings;
 
@@ -63,7 +55,7 @@ Blob imageEncoderCompress(ImageEncoderCompression compression, ImageEncoderQuali
             }
         }
     }
-    else if (imageEncoderIsASTC(compression)) {
+    else if (ImageEncoderCompression::IsASTC(compression)) {
         if ((flags & ImageEncoderFlags::HasAlpha) == ImageEncoderFlags::HasAlpha) {
             if (quality == ImageEncoderQuality::Best)   GetProfile_astc_alpha_slow(&astcSettings, info.blockDim, info.blockDim);
             else                                        GetProfile_astc_alpha_fast(&astcSettings, info.blockDim, info.blockDim);
@@ -80,7 +72,7 @@ Blob imageEncoderCompress(ImageEncoderCompression compression, ImageEncoderQuali
     int alignedHeight = numBlocksY * info.blockDim;
 
     int bufferSize = numBlocksX*numBlocksY*info.blockSizeBytes;
-    uint8* compressed = (uint8*)memAlloc(static_cast<uint32>(bufferSize), alloc);
+    uint8* compressed = (uint8*)Mem::Alloc(static_cast<uint32>(bufferSize), alloc);
     
     MemTempAllocator tmpAlloc;
     rgba_surface srcSurface {
@@ -92,7 +84,7 @@ Blob imageEncoderCompress(ImageEncoderCompression compression, ImageEncoderQuali
     
     if (alignedWidth != width || alignedHeight != height) {
         rgba_surface borderSurface {
-            .ptr = (uint8*)memAlloc(alignedWidth*alignedHeight*4, &tmpAlloc),
+            .ptr = (uint8*)Mem::Alloc(alignedWidth*alignedHeight*4, &tmpAlloc),
             .width = alignedWidth,
             .height = alignedHeight,
             .stride = alignedWidth * 4
@@ -121,7 +113,15 @@ Blob imageEncoderCompress(ImageEncoderCompression compression, ImageEncoderQuali
     return blob;
 }
 
-ImageEncoderCompression imageEncoderCompressionGetEnum(const char* estr)
+bool ImageEncoderCompression::IsASTC(ImageEncoderCompression::Enum compression)
+{
+    return compression == ImageEncoderCompression::ASTC_4x4 ||
+           compression == ImageEncoderCompression::ASTC_5x5 || 
+           compression == ImageEncoderCompression::ASTC_6x6 || 
+           compression == ImageEncoderCompression::ASTC_8x8;
+}
+
+ImageEncoderCompression::Enum ImageEncoderCompression::FromString(const char* estr)
 {
     String32 str(estr);
 

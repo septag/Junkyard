@@ -172,7 +172,7 @@
     <ClCompile Include="..\..\code\Core\Allocators.cpp">
       <Filter>Core</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\code\ImGui\ImGuiWrapper.cpp">
+    <ClCompile Include="..\..\code\ImGui\ImGuiMain.cpp">
       <Filter>ImGui</Filter>
     </ClCompile>
     <ClCompile Include="..\..\code\Assets\AssetManager.cpp">
@@ -193,10 +193,7 @@
     <ClCompile Include="..\..\code\ImGui\ImGuizmo.cpp">
       <Filter>ImGui</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\code\DebugTools\BudgetViewer.cpp">
-      <Filter>DebugTools</Filter>
-    </ClCompile>
-    <ClCompile Include="..\..\code\DebugTools\FrameInfoHud.cpp">
+    <ClCompile Include="..\..\code\DebugTools\DebugHud.cpp">
       <Filter>DebugTools</Filter>
     </ClCompile>
     <ClCompile Include="..\..\code\Common\Application.cpp">
@@ -379,7 +376,7 @@
     <ClInclude Include="..\..\code\Core\Allocators.h">
       <Filter>Core</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\code\ImGui\ImGuiWrapper.h">
+    <ClInclude Include="..\..\code\ImGui\ImGuiMain.h">
       <Filter>ImGui</Filter>
     </ClInclude>
     <ClInclude Include="..\..\code\Assets\AssetManager.h">
@@ -400,10 +397,7 @@
     <ClInclude Include="..\..\code\ImGui\ImGuizmo.h">
       <Filter>ImGui</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\code\DebugTools\BudgetViewer.h">
-      <Filter>DebugTools</Filter>
-    </ClInclude>
-    <ClInclude Include="..\..\code\DebugTools\FrameInfoHud.h">
+    <ClInclude Include="..\..\code\DebugTools\DebugHud.h">
       <Filter>DebugTools</Filter>
     </ClInclude>
     <ClInclude Include="..\..\code\Common\Application.h">

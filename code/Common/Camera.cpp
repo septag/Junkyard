@@ -192,17 +192,17 @@ void CameraFPS::Strafe(float strafe)
 
 void CameraFPS::HandleMovementKeyboard(float dt, float moveSpeed, float slowMoveSpeed)
 {
-    if (appIsKeyDown(InputKeycode::LeftShift) || appIsKeyDown(InputKeycode::RightShift))
+    if (App::IsKeyDown(InputKeycode::LeftShift) || App::IsKeyDown(InputKeycode::RightShift))
         moveSpeed = slowMoveSpeed;
 
     Float3 targetPos = mPos;
-    if (appIsKeyDown(InputKeycode::A) || appIsKeyDown(InputKeycode::Left)) 
+    if (App::IsKeyDown(InputKeycode::A) || App::IsKeyDown(InputKeycode::Left)) 
         targetPos = mPos - mRight*(moveSpeed*dt);
-    if (appIsKeyDown(InputKeycode::D) || appIsKeyDown(InputKeycode::Right))
+    if (App::IsKeyDown(InputKeycode::D) || App::IsKeyDown(InputKeycode::Right))
         targetPos = mPos + mRight*(moveSpeed*dt);
-    if (appIsKeyDown(InputKeycode::W) || appIsKeyDown(InputKeycode::Up))
+    if (App::IsKeyDown(InputKeycode::W) || App::IsKeyDown(InputKeycode::Up))
         targetPos = mPos + mForward*(moveSpeed*dt);
-    if (appIsKeyDown(InputKeycode::S) || appIsKeyDown(InputKeycode::Down))
+    if (App::IsKeyDown(InputKeycode::S) || App::IsKeyDown(InputKeycode::Down))
         targetPos = mPos - mForward*(moveSpeed*dt);
 
     float h = -0.1f/mathLog2(0.01f);
@@ -226,14 +226,14 @@ void CameraFPS::HandleRotationMouse(const AppEvent& ev, float rotateSpeed, float
     case AppEventType::MouseDown:
         if (ev.mouseButton == activeButton) {
             if (!mMouseDown)
-                appCaptureMouse();
+                App::CaptureMouse();
             mMouseDown = true;
             mLastMouse = Float2(ev.mouseX, ev.mouseY);
         }
         break;
     case AppEventType::MouseUp:
         if (mMouseDown)
-            appReleaseMouse();
+             App::ReleaseMouse();
     case AppEventType::MouseLeave:
         mMouseDown = false;
         break;
@@ -252,7 +252,7 @@ void CameraFPS::HandleRotationMouse(const AppEvent& ev, float rotateSpeed, float
         break;
 
     case AppEventType::KeyUp:
-        if (mKeyDown && !appIsAnyKeysDown(moveKeys, CountOf(moveKeys)))
+        if (mKeyDown && !App::IsAnyKeysDown(moveKeys, CountOf(moveKeys)))
             mKeyDown = false;
         break;
     default:
@@ -309,14 +309,14 @@ void CameraOrbit::HandleRotationMouse(const AppEvent& ev, float rotateSpeed, flo
     case AppEventType::MouseDown:
         if (ev.mouseButton == activeButton) {
             if (!mMouseDown)
-                appCaptureMouse();
+                App::CaptureMouse();
             mMouseDown = true;
             mLastMouse = Float2(ev.mouseX, ev.mouseY);
         }
         break;
     case AppEventType::MouseUp:
         if (mMouseDown)
-            appReleaseMouse();
+             App::ReleaseMouse();
     case AppEventType::MouseLeave:
         mMouseDown = false;
         break;

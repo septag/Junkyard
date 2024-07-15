@@ -50,16 +50,19 @@ private:
     void* GetPointerRaw();
 };
 
-struct Allocator;
+struct MemAllocator;
 
-API bool clipboardInitialize(MemBumpAllocatorBase* alloc, bool debugAllocators = false);
-API void clipboardRelease();
+namespace Clipboard
+{
+    API bool Initialize(MemBumpAllocatorBase* alloc, bool debugAllocators = false);
+    API void Release();
 
-API ClipboardVarHandle clipboardAdd(const char* name, const ClipboardVar* var = nullptr);
-API ClipboardVar& clipboardGet(ClipboardVarHandle handle);
-API ClipboardVar& clipboardGet(const char* name);
+    API ClipboardVarHandle Add(const char* name, const ClipboardVar* var = nullptr);
+    API ClipboardVar& Get(ClipboardVarHandle handle);
+    API ClipboardVar& Get(const char* name);
 
-API ClipboardVarHandle clipboardFind(const char* name);
+    API ClipboardVarHandle Find(const char* name);
+};
 
 //----------------------------------------------------------------------------------------------------------------------
 //

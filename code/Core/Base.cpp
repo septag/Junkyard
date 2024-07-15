@@ -5,7 +5,7 @@
 #if MEMPRO_ENABLED
     #define OVERRIDE_NEW_DELETE
     #define WAIT_FOR_CONNECT true
-    #define MEMPRO_BACKTRACE(_stackframes, _maxStackframes, _hashPtr) debugCaptureStacktrace(_stackframes, _maxStackframes, 3, _hashPtr)
+    #define MEMPRO_BACKTRACE(_stackframes, _maxStackframes, _hashPtr) Debug::CaptureStacktrace(_stackframes, _maxStackframes, 3, _hashPtr)
     #include "External/mempro/MemPro.cpp"
     #define MEMPRO_TRACK_REALLOC(oldPtr, ptr, size) do { if (oldPtr)  { MEMPRO_TRACK_FREE(oldPtr); } MEMPRO_TRACK_ALLOC(ptr, size);} while(0)
 #else
@@ -61,7 +61,7 @@ struct RandomContextCtor
 
     RandomContextCtor() 
     {
-        ctx = randomCreateContext();
+        ctx = Random::CreateContext();
     }
 };
 
@@ -94,25 +94,25 @@ INLINE uint64 randomAvalanche64(uint64 h)
     return h;
 }
 
-uint32 randomGenSeed()
+uint32 Random::Seed()
 {
     return static_cast<uint32>(time(nullptr));
 }
 
-RandomContext randomCreateContext(uint32 seed)
+RandomContext Random::CreateContext(uint32 seed)
 {
     RandomContext ctx = {{0, 0}};
     uint64 value = (((uint64)seed) << 1ull) | 1ull;    // make it odd
     value = randomAvalanche64(value);
     ctx.state[0] = 0ull;
     ctx.state[1] = (value << 1ull) | 1ull;
-    randomNewUint(&ctx);
+    Random::Int(&ctx);
     ctx.state[0] += randomAvalanche64(value);
-    randomNewUint(&ctx);
+    Random::Int(&ctx);
     return ctx;
 }
 
-uint32 randomNewUint(RandomContext* ctx)
+uint32 Random::Int(RandomContext* ctx)
 {
     uint64 oldstate = ctx->state[0];
     ctx->state[0] = oldstate * 0x5851f42d4c957f2dull + ctx->state[1];
@@ -121,45 +121,45 @@ uint32 randomNewUint(RandomContext* ctx)
     return (xorshifted >> rot) | (xorshifted << ((-(int)rot) & 31));
 }
 
-float randomNewFloat(RandomContext* ctx)
+float Random::Float(RandomContext* ctx)
 {
-    return randomFloatNormalized(randomNewUint(ctx));
+    return randomFloatNormalized(Random::Int(ctx));
 }
 
-float randomNewFloatInRange(RandomContext* ctx, float _min, float _max)
+float Random::Float(RandomContext* ctx, float _min, float _max)
 {
     ASSERT(_min <= _max);
     
-    float r = randomNewFloat(ctx);
+    float r = Random::Float(ctx);
     return _min + r*(_max - _min);
 }
 
-int randomNewIntInRange(RandomContext* ctx, int _min, int _max)
+int Random::Int(RandomContext* ctx, int _min, int _max)
 {
     ASSERT(_min <= _max);
     
     uint32 range = static_cast<uint32>(_max - _min) + 1;
-    return _min + static_cast<int>(randomNewUint(ctx) % range);
+    return _min + static_cast<int>(Random::Int(ctx) % range);
 }
 
-uint32 randomNewUint()
+uint32 Random::Int()
 {
-    return randomNewUint(&RandomCtx().ctx);
+    return Random::Int(&RandomCtx().ctx);
 }
 
-float randomNewFloat()
+float Random::Float()
 {
-    return randomNewFloat(&RandomCtx().ctx);
+    return Random::Float(&RandomCtx().ctx);
 }
 
-float randomNewFloatInRange(float _min, float _max)
+float Random::Float(float _min, float _max)
 {
-    return randomNewFloatInRange(&RandomCtx().ctx, _min, _max);
+    return Random::Float(&RandomCtx().ctx, _min, _max);
 }
 
-int randomNewIntInRange(int _min, int _max)
+int Random::Int(int _min, int _max)
 {
-    return randomNewIntInRange(&RandomCtx().ctx, _min, _max);
+    return Random::Int(&RandomCtx().ctx, _min, _max);
 }
 
 //     █████╗ ███████╗███████╗███████╗██████╗ ████████╗
@@ -171,7 +171,7 @@ int randomNewIntInRange(int _min, int _max)
 static AssertFailCallback gAssertFailCallback;
 static void* gAssertFailUserData;
 
-void assertDebugMessage(const char* fmt, ...)
+void Assert::DebugMessage(const char* fmt, ...)
 {
     char msgFmt[4972];
     char msg[4972];
@@ -194,13 +194,13 @@ void assertDebugMessage(const char* fmt, ...)
     #endif
 }
 
-void assertSetFailCallback(AssertFailCallback callback, void* userdata)
+void Assert::SetFailCallback(AssertFailCallback callback, void* userdata)
 {
     gAssertFailCallback = callback;
     gAssertFailUserData = userdata;
 }
 
-void assertRunFailCallback()
+void Assert::RunFailCallback()
 {
     if (gAssertFailCallback)
         gAssertFailCallback(gAssertFailUserData);
@@ -212,19 +212,19 @@ void assertRunFailCallback()
 //    ██╔══██║██║     ██║     ██║   ██║██║     ██╔══██║   ██║   ██║██║   ██║██║╚██╗██║
 //    ██║  ██║███████╗███████╗╚██████╔╝╚██████╗██║  ██║   ██║   ██║╚██████╔╝██║ ╚████║
 //    ╚═╝  ╚═╝╚══════╝╚══════╝ ╚═════╝  ╚═════╝╚═╝  ╚═╝   ╚═╝   ╚═╝ ╚═════╝ ╚═╝  ╚═══╝
-struct MemHeapAllocator final : Allocator 
+struct MemHeapAllocator final : MemAllocator 
 {
     void* Malloc(size_t size, uint32 align) override;
     void* Realloc(void* ptr, size_t size, uint32 align) override;
     void  Free(void* ptr, uint32 align) override;
-    AllocatorType GetType() const override { return AllocatorType::Heap; }
+    MemAllocatorType GetType() const override { return MemAllocatorType::Heap; }
 };
 
 struct MemBaseContext
 {
     MemFailCallback  memFailFn;
     void* 			 memFailUserdata;
-    Allocator*		 defaultAlloc = &heapAlloc;
+    MemAllocator*		 defaultAlloc = &heapAlloc;
     MemHeapAllocator heapAlloc;
     bool             enableMemPro;
 };
@@ -241,20 +241,20 @@ static MemBaseContext gMemBase;
     INLINE void  aligned_free(void* ptr);
 #endif
 
-void memSetFailCallback(MemFailCallback callback, void* userdata)
+void Mem::SetFailCallback(MemFailCallback callback, void* userdata)
 {
     gMemBase.memFailFn = callback;
     gMemBase.memFailUserdata = userdata;
 }
 
-void memRunFailCallback()
+void Mem::RunFailCallback()
 {
     if (gMemBase.memFailFn) {
         gMemBase.memFailFn(gMemBase.memFailUserdata);
     }
 }
 
-void* memAlignPointer(void* ptr, size_t extra, uint32 align)
+void* Mem::AlignPointer(void* ptr, size_t extra, uint32 align)
 {
     union {
         void* ptr;
@@ -267,17 +267,17 @@ void* memAlignPointer(void* ptr, size_t extra, uint32 align)
     return un.ptr;
 }
 
-Allocator* memDefaultAlloc()
+MemAllocator* Mem::GetDefaultAlloc()
 {
-    return static_cast<Allocator*>(&gMemBase.heapAlloc);
+    return static_cast<MemAllocator*>(&gMemBase.heapAlloc);
 }
 
-void memSetDefaultAlloc(Allocator* alloc)
+void Mem::SetDefaultAlloc(MemAllocator* alloc)
 {
     gMemBase.defaultAlloc = alloc != nullptr ? alloc : &gMemBase.heapAlloc;
 }
 
-void memEnableMemPro(bool enable)
+void Mem::EnableMemPro(bool enable)
 {
     #if MEMPRO_ENABLED
     gMemBase.enableMemPro = enable;
@@ -286,7 +286,7 @@ void memEnableMemPro(bool enable)
     #endif
 }
 
-bool memIsMemProEnabled()
+bool Mem::IsMemProEnabled()
 {
     #if MEMPRO_ENABLED
     return gMemBase.enableMemPro;
@@ -295,7 +295,7 @@ bool memIsMemProEnabled()
     #endif
 }
 
-void memTrackMalloc([[maybe_unused]] void* ptr, [[maybe_unused]] size_t size)
+void Mem::TrackMalloc([[maybe_unused]] void* ptr, [[maybe_unused]] size_t size)
 {
     if constexpr (MEMPRO_ENABLED) {
         if (gMemBase.enableMemPro)
@@ -303,7 +303,7 @@ void memTrackMalloc([[maybe_unused]] void* ptr, [[maybe_unused]] size_t size)
     }    
 }
 
-void memTrackFree([[maybe_unused]] void* ptr)
+void Mem::TrackFree([[maybe_unused]] void* ptr)
 {
     if constexpr (MEMPRO_ENABLED) {
         if (gMemBase.enableMemPro)
@@ -311,7 +311,7 @@ void memTrackFree([[maybe_unused]] void* ptr)
     }
 }
 
-void memTrackRealloc([[maybe_unused]] void* oldPtr, [[maybe_unused]] void* ptr, [[maybe_unused]] size_t size)
+void Mem::TrackRealloc([[maybe_unused]] void* oldPtr, [[maybe_unused]] void* ptr, [[maybe_unused]] size_t size)
 {
     if constexpr (MEMPRO_ENABLED) {
         if (gMemBase.enableMemPro)
@@ -331,13 +331,13 @@ inline void* MemHeapAllocator::Malloc(size_t size, uint32 align)
         ptr = aligned_malloc(align, size);
     }
     if (!ptr) {
-        MEMORY_FAIL();
+        MEM_FAIL();
         return nullptr;
     }
 
     TracyCAlloc(ptr, size);        
 
-    memTrackMalloc(ptr, size);
+    Mem::TrackMalloc(ptr, size);
     return ptr;
 }
     
@@ -354,12 +354,12 @@ inline void* MemHeapAllocator::Realloc(void* ptr, size_t size, uint32 align)
     }
     
     if (!ptr) {
-        MEMORY_FAIL();
+        MEM_FAIL();
         return nullptr;
     }
     
     TracyCRealloc(freePtr, ptr, size);
-    memTrackRealloc(freePtr, ptr, size);
+    Mem::TrackRealloc(freePtr, ptr, size);
     return ptr;
 }
     
@@ -374,7 +374,7 @@ inline void MemHeapAllocator::Free(void* ptr, uint32 align)
         }
     
         TracyCFree(ptr);
-        memTrackFree(ptr);
+        Mem::TrackFree(ptr);
 
         if constexpr (MEMPRO_ENABLED) {
             if (gMemBase.enableMemPro) 
@@ -394,7 +394,7 @@ INLINE void* aligned_malloc(uint32 align, size_t size)
     uint8* ptr = (uint8*)malloc(total);
     if (!ptr)
         return nullptr;
-    uint8* aligned = (uint8*)memAlignPointer(ptr, sizeof(uint32), align);
+    uint8* aligned = (uint8*)Mem::AlignPointer(ptr, sizeof(uint32), align);
     uint32* header = (uint32*)aligned - 1;
     *header = PtrToInt<uint32>((void*)(aligned - ptr));  // Save the offset needed to move back from aligned pointer
     return aligned;
@@ -413,7 +413,7 @@ INLINE void* aligned_realloc(void* ptr, uint32 align, size_t size)
         ptr = realloc(ptr, total);
         if (!ptr)
             return nullptr;
-        uint8* newAligned = (uint8*)memAlignPointer(ptr, sizeof(uint32), align);
+        uint8* newAligned = (uint8*)Mem::AlignPointer(ptr, sizeof(uint32), align);
         if (newAligned == aligned)
             return aligned;
 

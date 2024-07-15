@@ -3,7 +3,7 @@
 #include "../Core/Pools.h"
 
 // Memory
-struct Allocator;
+struct MemAllocator;
 
 // Graphics
 DEFINE_HANDLE(GfxBuffer);

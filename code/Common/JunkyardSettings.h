@@ -67,8 +67,8 @@ struct SettingsEngine
     uint32 jobsNumShortTaskThreads = 0;         // Number of threads to spawn for short task jobs
     uint32 jobsNumLongTaskThreads = 0;          // Number of threads to spawn for long task jobs
     bool debugAllocations = false;              // Use heap allocator instead for major allocators, like temp/budget/etc.
-    bool breakOnErrors = false;                 // Break when logError happens
-    bool treatWarningsAsErrors = false;         // Break when logWarning happens
+    bool breakOnErrors = false;                 // Break when LOG_ERROR happens
+    bool treatWarningsAsErrors = false;         // Break when LOG_WARNING happens
     bool enableMemPro = false;                  // Enables MemPro instrumentation (https://www.puredevsoftware.com/mempro/index.htm)
     bool useCacheOnly = DEFAULT_CACHE_USAGE;    // This option only uses cache to load assets and bypasses Remote or Local disk assets
 };
@@ -86,8 +86,9 @@ struct SettingsJunkyard
     SettingsGraphics graphics;
     SettingsTooling tooling;
     SettingsDebug debug;
+
+    API static bool IsInitialized();
+    API static void Initialize(const SettingsJunkyard& initSettings);
+    API static const SettingsJunkyard& Get();
 };
 
-API bool settingsIsInitializedJunkyard();
-API void settingsInitializeJunkyard(const SettingsJunkyard& initSettings);
-API const SettingsJunkyard& settingsGet();

@@ -17,7 +17,7 @@ PRAGMA_DIAGNOSTIC_POP()
 #include "Blobs.h"
 
 static thread_local JNIEnv* gJniEnv = nullptr;
-static atomicUint32 gJniAttachedThreadCount;
+static AtomicUint32 gJniAttachedThreadCount;
 
 #if CONFIG_ENABLE_ASSERT
 static constexpr uint32 kJniMaxAttachedThreadCount = 5;
@@ -25,10 +25,10 @@ static constexpr uint32 kJniMaxAttachedThreadCount = 5;
 
 // https://en.wikipedia.org/wiki/CPUID
 // https://docs.microsoft.com/en-us/cpp/intrinsics/cpuid-cpuidex?redirectedfrom=MSDN&view=msvc-170
-void sysGetSysInfo(SysInfo* info)
+void OS::GetSysInfo(SysInfo* info)
 {
     info->coreCount = android_getCpuCount();
-    info->pageSize = sysGetPageSize();
+    info->pageSize = OS::GetPageSize();
 
     switch (android_getCpuFamily()) {
     case ANDROID_CPU_FAMILY_ARM:        info->cpuFamily = SysCpuFamily::ARM;    break;
@@ -89,10 +89,10 @@ void sysGetSysInfo(SysInfo* info)
                    memTotalLine++;
                }
                memText[memTextSize] = '\0';
-               info->physicalMemorySize = strToUint64(memText)*kKB;
+               info->physicalMemorySize = strToUint64(memText)*SIZE_KB;
             }
 
-            memFree(text);
+            Mem::Free(text);
         }
     }
 
@@ -127,7 +127,7 @@ void sysGetSysInfo(SysInfo* info)
                 }
             }
 
-            memFree(text);
+            Mem::Free(text);
 
         }
     }
@@ -150,7 +150,7 @@ char* pathGetCurrentDir(char*, size_t)
     return nullptr;
 }
 
-void sysAndroidPrintToLog(SysAndroidLogType logType, const char* tag, const char* text)
+void OS::AndroidPrintToLog(SysAndroidLogType logType, const char* tag, const char* text)
 {
     static_assert(SysAndroidLogType::Unknown == static_cast<SysAndroidLogType>(ANDROID_LOG_UNKNOWN));
     static_assert(SysAndroidLogType::Default == static_cast<SysAndroidLogType>(ANDROID_LOG_DEFAULT));
@@ -165,7 +165,7 @@ void sysAndroidPrintToLog(SysAndroidLogType logType, const char* tag, const char
     __android_log_write(static_cast<int>(logType), tag, text);
 }
 
-JNIEnv* sysAndroidAcquireJniEnv(ANativeActivity* activity)
+JNIEnv* OS::AndroidAcquireJniEnv(ANativeActivity* activity)
 {
     if (gJniEnv)
         return gJniEnv;
@@ -173,19 +173,19 @@ JNIEnv* sysAndroidAcquireJniEnv(ANativeActivity* activity)
 
     [[maybe_unused]] jint ret = activity->vm->AttachCurrentThread(&gJniEnv, nullptr);	// required to call JNIEnv functions on this thread
     ASSERT(ret == JNI_OK);
-    [[maybe_unused]] uint32 activeThreadCount = atomicFetchAdd32(&gJniAttachedThreadCount, 1);
+    [[maybe_unused]] uint32 activeThreadCount = Atomic::FetchAdd(&gJniAttachedThreadCount, 1);
     ASSERT_MSG(activeThreadCount <= kJniMaxAttachedThreadCount, "Too many AcquireJniEnv in several threads");
     return gJniEnv;
 }
 
-void sysAndroidReleaseJniEnv(ANativeActivity* activity)
+void OS::AndroidReleaseJniEnv(ANativeActivity* activity)
 {
     ASSERT(activity);
     activity->vm->DetachCurrentThread();		// jni cleanup
-    atomicFetchSub32(&gJniAttachedThreadCount, 1);
+    Atomic::FetchSub(&gJniAttachedThreadCount, 1);
 }
 
-JNIEnv* sysAndroidGetJniEnv()
+JNIEnv* OS::AndroidGetJniEnv()
 {
     // If this assert fires, the current thread doesn't have access to the JniEnvironment.
     // This can be achieved via AcquirerJni / ReleaseJni
@@ -200,7 +200,7 @@ JNIEnv* sysAndroidGetJniEnv()
 // https://developer.android.com/reference/android/os/Debug
 bool sysIsDebuggerPresent()
 {
-    JNIEnv* jniEnv = sysAndroidGetJniEnv();
+    JNIEnv* jniEnv = OS::AndroidGetJniEnv();
     jclass clz = jniEnv->FindClass("android/os/Debug");
     ASSERT(clz);
     jmethodID funcId = jniEnv->GetStaticMethodID(clz, "isDebuggerConnected", "()Z");
@@ -211,9 +211,9 @@ bool sysIsDebuggerPresent()
     return isConnected;
 }
 
-Path sysAndroidGetCacheDirectory(ANativeActivity* activity)
+Path OS::AndroidGetCacheDirectory(ANativeActivity* activity)
 {
-    JNIEnv* jniEnv = sysAndroidGetJniEnv();
+    JNIEnv* jniEnv = OS::AndroidGetJniEnv();
 
     jobject context = activity->clazz;
     jclass contextClass = jniEnv->GetObjectClass(context);

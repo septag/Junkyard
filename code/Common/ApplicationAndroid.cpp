@@ -119,7 +119,7 @@ static bool appAndroidIsOnForeground()
     return gApp.focused && !gApp.paused;
 }
 
-bool appSetClipboardString(const char* str)
+bool App::SetClipboardString(const char* str)
 {
 
     return false;
@@ -325,7 +325,7 @@ static void appAndroidFreeSavedState()
 {
     pthread_mutex_lock(&gApp.mutex);
     if (gApp.savedState != nullptr) {
-        memFree(gApp.savedState);
+        Mem::Free(gApp.savedState);
         gApp.savedState = nullptr;
         gApp.savedStateSize = 0;
     }
@@ -335,7 +335,7 @@ static void appAndroidFreeSavedState()
 static void appAndroidWriteCmd(AppAndroidCmd event)
 {
     if (write(gApp.eventWriteFd, &event, sizeof(event)) != sizeof(event)) {
-        sysAndroidPrintToLog(SysAndroidLogType::Fatal, gApp.name, "Android: Writing event to nessage pipe failed");
+        OS::AndroidPrintToLog(SysAndroidLogType::Fatal, gApp.name, "Android: Writing event to nessage pipe failed");
     }
 }
 
@@ -347,7 +347,7 @@ static AppAndroidCmd appAndroidReadCmd()
             appAndroidFreeSavedState();
         return cmd;
     } else {
-        sysAndroidPrintToLog(SysAndroidLogType::Fatal, gApp.name, "Android: No data in command pipe");
+        OS::AndroidPrintToLog(SysAndroidLogType::Fatal, gApp.name, "Android: No data in command pipe");
     }
     return ANDROID_CMD_INVALID;
 }
@@ -359,8 +359,8 @@ static void appAndroidCleanup()
             gApp.desc.callbacks->Cleanup();
         }
 
-        _private::remoteRelease();
-        _private::vfsRelease();
+        Remote::Release();
+        Vfs::Release();
 
         gApp.cleanupCalled = true;
     }
@@ -368,7 +368,7 @@ static void appAndroidCleanup()
 
 int appAndroidGetCharcodeFromKeycode(int eventType, int keyCode, int metaState)
 {
-    JNIEnv* jniEnv = sysAndroidGetJniEnv();
+    JNIEnv* jniEnv = OS::AndroidGetJniEnv();
     jclass class_key_event = jniEnv->FindClass("android/view/KeyEvent");
     int unicodeKey = 0;
     if (metaState == 0) {
@@ -443,7 +443,7 @@ static int appAndroidInputEventsFn(int fd, int events, void* data)
             if (eventType != AppEventType::Invalid) {
                 int index = actionIdx >> AMOTION_EVENT_ACTION_POINTER_INDEX_SHIFT;
                 appAndroidInitEvent(eventType);
-                gApp.ev.numTouches = Min<uint32>(AMotionEvent_getPointerCount(event), kInputMaxTouchPoints);
+                gApp.ev.numTouches = Min<uint32>(AMotionEvent_getPointerCount(event), INPUT_MAX_TOUCH_POINTS);
 
                 for (uint32 i = 0; i < gApp.ev.numTouches; i++) {
                     InputTouchPoint* tp = &gApp.ev.touches[i];
@@ -685,7 +685,7 @@ static int appAndroidMainEventsFn(int fd, int events, void* data)
     return 1;
 }
 
-bool appInitialize(const AppDesc& desc)
+bool App::Run(const AppDesc& desc)
 {
     gApp.desc = desc;
 
@@ -701,7 +701,7 @@ bool appInitialize(const AppDesc& desc)
     gApp.clipboardEnabled = desc.enableClipboard;
 
     if (desc.enableClipboard)
-        gApp.clipboard = memAllocZeroTyped<char>((uint32)gApp.desc.clipboardSizeBytes);
+        gApp.clipboard = Mem::AllocZeroTyped<char>((uint32)gApp.desc.clipboardSizeBytes);
 
     if (desc.windowTitle)   strCopy(gApp.windowTitle, sizeof(gApp.windowTitle), desc.windowTitle);
     else                    strCopy(gApp.windowTitle, sizeof(gApp.windowTitle), "Junkyard");
@@ -712,25 +712,25 @@ bool appInitialize(const AppDesc& desc)
 
     // Initialize settings if not initialied before
     // Since this is not a recommended way, we also throw an assert
-    if (!settingsIsInitializedJunkyard()) {
+    if (!SettingsJunkyard::IsInitialized()) {
         ASSERT_MSG(0, "Settings must be initialized before this call. See settingsInitialize() function");
-        settingsInitializeJunkyard({}); // initialize with default settings
+        SettingsJunkyard::Initialize({}); // initialize with default settings
     }
 
     // Set some initial settings
-    memEnableMemPro(settingsGet().engine.enableMemPro);
-    memTempSetCaptureStackTrace(settingsGet().debug.captureStacktraceForTempAllocator);
-    debugSetCaptureStacktraceForFiberProtector(settingsGet().debug.captureStacktraceForFiberProtector);
-    logSetSettings(static_cast<LogLevel>(settingsGet().engine.logLevel), settingsGet().engine.breakOnErrors, settingsGet().engine.treatWarningsAsErrors);
+    Mem::EnableMemPro(SettingsJunkyard::Get().engine.enableMemPro);
+    MemTempAllocator::EnableCallstackCapture(SettingsJunkyard::Get().debug.captureStacktraceForTempAllocator);
+    Debug::SetCaptureStacktraceForFiberProtector(SettingsJunkyard::Get().debug.captureStacktraceForFiberProtector);
+    Log::SetSettings(static_cast<LogLevel>(SettingsJunkyard::Get().engine.logLevel), SettingsJunkyard::Get().engine.breakOnErrors, SettingsJunkyard::Get().engine.treatWarningsAsErrors);
 
     // RemoteServices
-    if (!_private::remoteInitialize()) {
+    if (!Remote::Initialize()) {
         ASSERT_MSG(0, "Initializing Server failed");
         return false;
     }
 
     // VirutalFS -> Depends on RemoteServices for some functionality
-    if (!_private::vfsInitialize()) {
+    if (!Vfs::Initialize()) {
         ASSERT_MSG(0, "Initializing VirtualFS failed");
         return false;
     }
@@ -782,7 +782,7 @@ static bool appAndroidFrame(fl32 dt)
         gApp.firstFrame = false;
         if (gApp.desc.callbacks) {
             if (!gApp.desc.callbacks->Initialize()) {
-                appQuit();
+                App::Quit();
                 return false;
             }
         }
@@ -796,41 +796,41 @@ static bool appAndroidFrame(fl32 dt)
     return true;
 }
 
-void appShowMouse(bool visible)
+void App::ShowMouse(bool visible)
 {
 }
 
-bool appIsMouseShown()
+bool App::IsMouseShown()
 {
     return false;
 }
 
-const char* appGetClipboardString()
+const char* App::GetClipboardString()
 {
     return nullptr;
 }
 
-void appQuit()
+void App::Quit()
 {
     gApp.quitRequested = true;
 }
 
-uint16 appGetWindowWidth()
+uint16 App::GetWindowWidth()
 {
     return gApp.windowWidth;
 }
 
-uint16 appGetWindowHeight()
+uint16 App::GetWindowHeight()
 {
     return gApp.windowHeight;
 }
 
-uint16 appGetFramebufferWidth()
+uint16 App::GetFramebufferWidth()
 {
     return gApp.framebufferWidth;
 }
 
-uint16 appGetFramebufferHeight()
+uint16 App::GetFramebufferHeight()
 {
     return gApp.framebufferHeight;
 }
@@ -840,7 +840,7 @@ float appGetDpiScale()
     return gApp.dpiScale;
 }
 
-void appRegisterEventsCallback(appOnEventCallback callback, void* userData)
+void App::RegisterEventsCallback(appOnEventCallback callback, void* userData)
 {
     bool alreadyExist = false;
     for (uint32 i = 0; i < gApp.eventCallbacks.Count(); i++) {
@@ -856,7 +856,7 @@ void appRegisterEventsCallback(appOnEventCallback callback, void* userData)
     }    
 }
 
-void appUnregisterEventsCallback(appOnEventCallback callback)
+void App::UnregisterEventsCallback(appOnEventCallback callback)
 {
     if (uint32 index = gApp.eventCallbacks.FindIf([callback](const AppEventCallbackPair& p)->bool {
         return p.callback == callback;});
@@ -866,17 +866,17 @@ void appUnregisterEventsCallback(appOnEventCallback callback)
     }
 }
 
-const char* appGetName()
+const char* App::GetName()
 {
     return gApp.name;
 }
 
-void appSetCursor(AppMouseCursor cursor)
+void App::SetCursor(AppMouseCursor cursor)
 {
     UNUSED(cursor);
 }
 
-void* appGetNativeWindowHandle()
+void* App::GetNativeWindowHandle()
 {
     return gApp.window;
 }
@@ -885,7 +885,7 @@ static void* appAndroidMainThreadFn(void* userData)
 {
     UNUSED(userData);
 
-    sysAndroidAcquireJniEnv(gApp.activity);
+    OS::AndroidAcquireJniEnv(gApp.activity);
 
     // Just call the main function "AndroidMain" which is implemented by the user just like the usual "main"
     // `AndroidMain` basically implements callbacks, calls `appInitialize` or whatever initialization and returns
@@ -897,8 +897,8 @@ static void* appAndroidMainThreadFn(void* userData)
 
         while (!gApp.quitRequested) {
             if (appAndroidIsOnForeground()) {
-                uint64 tmNow = timerGetTicks();
-                appAndroidFrame(!gApp.firstFrame ? static_cast<fl32>(timerToSec(timerDiff(tmNow, tmPrev))) : 0);
+                uint64 tmNow = Timer::GetTicks();
+                appAndroidFrame(!gApp.firstFrame ? static_cast<fl32>(Timer::ToSec(Timer::Diff(tmNow, tmPrev))) : 0);
                 tmPrev = tmNow;
             }
             
@@ -921,7 +921,7 @@ static void* appAndroidMainThreadFn(void* userData)
     }
 
 
-    sysAndroidReleaseJniEnv(gApp.activity);
+    OS::AndroidReleaseJniEnv(gApp.activity);
     return (void*)static_cast<uintptr_t>(r);
 }
 
@@ -1035,13 +1035,13 @@ extern "C" JNIEXPORT void ANativeActivity_onCreate(ANativeActivity * activity, v
     
     if (savedState != nullptr) {
         ASSERT(savedStateSize > 0);
-        gApp.savedState = memAllocCopy<uint8>((uint8*)savedState, (uint32)savedStateSize);
+        gApp.savedState = Mem::AllocCopy<uint8>((uint8*)savedState, (uint32)savedStateSize);
         gApp.savedStateSize = savedStateSize;
     }
     
     int msgPipe[2];
     if (pipe(msgPipe)) {
-        sysAndroidPrintToLog(SysAndroidLogType::Fatal, gApp.name, "Android: Writing event to message pipe failed");
+        OS::AndroidPrintToLog(SysAndroidLogType::Fatal, gApp.name, "Android: Writing event to message pipe failed");
         return;
     }
     gApp.eventReadFd = msgPipe[0];
@@ -1061,22 +1061,22 @@ extern "C" JNIEXPORT void ANativeActivity_onCreate(ANativeActivity * activity, v
     pthread_mutex_unlock(&gApp.mutex);
 }
 
-void* appGetNativeAppHandle()
+void* App::GetNativeAppHandle()
 {
     return gApp.activity;
 }
 
-AAssetManager* appAndroidGetAssetManager()
+AAssetManager* App::AndroidGetAssetManager()
 {
     return gApp.activity->assetManager;
 }
 
-ANativeActivity* appAndroidGetActivity()
+ANativeActivity* App::AndroidGetActivity()
 {
     return gApp.activity;
 }
 
-AppDisplayInfo appGetDisplayInfo()
+AppDisplayInfo App::GetDisplayInfo()
 {
     // TODO
     return AppDisplayInfo {
@@ -1087,12 +1087,12 @@ AppDisplayInfo appGetDisplayInfo()
     };
 }
 
-bool appIsKeyDown(InputKeycode keycode)
+bool App::IsKeyDown(InputKeycode keycode)
 {
     return gApp.keysDown[uint32(keycode)];
 }
 
-bool appIsAnyKeysDown(const InputKeycode* keycodes, uint32 numKeycodes)
+bool App::IsAnyKeysDown(const InputKeycode* keycodes, uint32 numKeycodes)
 {
     bool down = false;
     for (uint32 i = 0; i < numKeycodes; i++) {
@@ -1101,26 +1101,26 @@ bool appIsAnyKeysDown(const InputKeycode* keycodes, uint32 numKeycodes)
     return down;
 }
 
-InputKeyModifiers appGetKeyMods()
+InputKeyModifiers App::GetKeyMods()
 {
     return gApp.keyMods;
 }
 
-void appAndroidSetFramebufferTransform(AppFramebufferTransform transform)
+void App::AndroidSetFramebufferTransform(AppFramebufferTransform transform)
 {
     gApp.framebufferTransform = transform;
 }
 
-AppFramebufferTransform appGetFramebufferTransform()
+AppFramebufferTransform App::GetFramebufferTransform()
 {
     return gApp.framebufferTransform;
 }
 
-void appCaptureMouse()
+void App::CaptureMouse()
 {
 }
 
-void appReleaseMouse()
+void  App::ReleaseMouse()
 {
 }
 

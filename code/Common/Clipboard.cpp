@@ -6,8 +6,8 @@
 
 namespace _limits
 {
-    static constexpr uint32 kMaxClipboardVars = 512;
-    static constexpr uint32 kMaxClipboardScrapBufferSize = kMB;
+    static constexpr uint32 CLIPBOARD_MAX_VARS = 512;
+    static constexpr uint32 CLIPBOARD_SCRAP_BUFFER_SIZE = SIZE_MB;
 }
 
 struct ClipboardContext
@@ -24,23 +24,23 @@ struct ClipboardContext
 
 static ClipboardContext gClipboard;
 
-bool clipboardInitialize(MemBumpAllocatorBase* alloc, bool debugAllocations)
+bool Clipboard::Initialize(MemBumpAllocatorBase* alloc, bool debugAllocations)
 {
     gClipboard.initHeapStart = alloc->GetOffset();
 
     {
-        size_t bufferSize = HashTable<ClipboardVarHandle>::GetMemoryRequirement(_limits::kMaxClipboardVars);
-        gClipboard.nameToHandle.Reserve(_limits::kMaxClipboardVars, memAlloc(bufferSize, alloc), bufferSize);
+        size_t bufferSize = HashTable<ClipboardVarHandle>::GetMemoryRequirement(_limits::CLIPBOARD_MAX_VARS);
+        gClipboard.nameToHandle.Reserve(_limits::CLIPBOARD_MAX_VARS, Mem::Alloc(bufferSize, alloc), bufferSize);
     }
 
     {
-        size_t bufferSize = HandlePool<ClipboardVarHandle, ClipboardVar>::GetMemoryRequirement(_limits::kMaxClipboardVars);
-        gClipboard.vars.Reserve(_limits::kMaxClipboardVars, memAlloc(bufferSize, alloc), bufferSize);
+        size_t bufferSize = HandlePool<ClipboardVarHandle, ClipboardVar>::GetMemoryRequirement(_limits::CLIPBOARD_MAX_VARS);
+        gClipboard.vars.Reserve(_limits::CLIPBOARD_MAX_VARS, Mem::Alloc(bufferSize, alloc), bufferSize);
     }
 
     {
-        size_t bufferSize = MemTlsfAllocator::GetMemoryRequirement(_limits::kMaxClipboardScrapBufferSize);
-        gClipboard.tlsfAlloc.Initialize(_limits::kMaxClipboardScrapBufferSize, memAlloc(bufferSize, alloc), bufferSize, debugAllocations);
+        size_t bufferSize = MemTlsfAllocator::GetMemoryRequirement(_limits::CLIPBOARD_SCRAP_BUFFER_SIZE);
+        gClipboard.tlsfAlloc.Initialize(_limits::CLIPBOARD_SCRAP_BUFFER_SIZE, Mem::Alloc(bufferSize, alloc), bufferSize, debugAllocations);
         gClipboard.scrapAlloc.SetAllocator(&gClipboard.tlsfAlloc);
     }
 
@@ -49,11 +49,11 @@ bool clipboardInitialize(MemBumpAllocatorBase* alloc, bool debugAllocations)
     return true;
 }
 
-void clipboardRelease()
+void Clipboard::Release()
 {
 }
 
-ClipboardVar& clipboardGet(ClipboardVarHandle handle)
+ClipboardVar& Clipboard::Get(ClipboardVarHandle handle)
 {
     ASSERT(handle.IsValid());
     SpinLockMutexScope lock(gClipboard.lock);
@@ -61,11 +61,11 @@ ClipboardVar& clipboardGet(ClipboardVarHandle handle)
     return gClipboard.vars.Data(handle);
 }
 
-ClipboardVar& clipboardGet(const char* name)
+ClipboardVar& Clipboard::Get(const char* name)
 {
     SpinLockMutexScope lock(gClipboard.lock);
     
-    uint32 index = gClipboard.nameToHandle.Find(hashFnv32Str(name));
+    uint32 index = gClipboard.nameToHandle.Find(Hash::Fnv32Str(name));
     if (index != INVALID_INDEX) {
         ClipboardVarHandle handle = gClipboard.nameToHandle.Get(index);
         ASSERT(gClipboard.vars.IsValid(handle));
@@ -78,7 +78,7 @@ ClipboardVar& clipboardGet(const char* name)
     }
 }
 
-ClipboardVarHandle clipboardAdd(const char* name, const ClipboardVar* var)
+ClipboardVarHandle Clipboard::Add(const char* name, const ClipboardVar* var)
 {
     SpinLockMutexScope lock(gClipboard.lock);
 
@@ -86,15 +86,15 @@ ClipboardVarHandle clipboardAdd(const char* name, const ClipboardVar* var)
     static ClipboardVar DummyVar {};
     ClipboardVarHandle handle = gClipboard.vars.Add(var ? *var : DummyVar, &prevValue);
     if (prevValue.type == ClipboardVarType::Buffer || prevValue.type == ClipboardVarType::String)
-        memFree(prevValue.valuePointer, &gClipboard.scrapAlloc);
-    gClipboard.nameToHandle.Add(hashFnv32Str(name), handle);
+        Mem::Free(prevValue.valuePointer, &gClipboard.scrapAlloc);
+    gClipboard.nameToHandle.Add(Hash::Fnv32Str(name), handle);
     return handle;
 }
 
-ClipboardVarHandle clipboardFind(const char* name)
+ClipboardVarHandle Clipboard::Find(const char* name)
 {
     SpinLockMutexScope lock(gClipboard.lock);
-    return gClipboard.nameToHandle.FindAndFetch(hashFnv32Str(name), ClipboardVarHandle());
+    return gClipboard.nameToHandle.FindAndFetch(Hash::Fnv32Str(name), ClipboardVarHandle());
 }
 
 void ClipboardVar::SetBool(bool value)
@@ -126,8 +126,8 @@ void ClipboardVar::SetString(const char* str, uint32 len)
     if (len == 0)
         len = strLen(str);
     char* oldString = valueString;
-    valueString = memAllocCopy<char>(str, len + 1, &gClipboard.scrapAlloc);
-    memFree(oldString, &gClipboard.scrapAlloc);
+    valueString = Mem::AllocCopy<char>(str, len + 1, &gClipboard.scrapAlloc);
+    Mem::Free(oldString, &gClipboard.scrapAlloc);
 }
 
 void ClipboardVar::SetBuffer(const void* data, uint32 size)
@@ -137,8 +137,8 @@ void ClipboardVar::SetBuffer(const void* data, uint32 size)
     ASSERT(data);
     type = ClipboardVarType::Buffer;
     void* oldBuffer = valuePointer;
-    valuePointer = memAllocCopyRawBytes(data, size, &gClipboard.scrapAlloc);
-    memFree(oldBuffer, &gClipboard.scrapAlloc);
+    valuePointer = Mem::AllocCopyRawBytes(data, size, &gClipboard.scrapAlloc);
+    Mem::Free(oldBuffer, &gClipboard.scrapAlloc);
 }
 
 void ClipboardVar::SetPointer(void* ptr)

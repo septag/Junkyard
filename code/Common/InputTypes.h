@@ -1,6 +1,6 @@
 #pragma once
 
-inline constexpr uint32 kInputMaxTouchPoints = 8;
+#define INPUT_MAX_TOUCH_POINTS 8
 
 enum class InputKeycode : uint32
 {

@@ -48,7 +48,7 @@ void Semaphore::Initialize()
     sem->handle = dispatch_semaphore_create(0);
     ASSERT_MSG(sem->handle != NULL, "dispatch_semaphore_create failed");
 
-    _private::sysCountersAddSemaphore();
+    _private::CountersAddSemaphore();
 }
 
 void Semaphore::Release()
@@ -59,7 +59,7 @@ void Semaphore::Release()
         // dispatch_release(sem->handle);
         sem->handle = NULL;
 
-        _private::sysCountersRemoveSemaphore();
+        _private::CountersRemoveSemaphore();
     }
 }
 
@@ -88,33 +88,33 @@ static inline int64_t timerInt64MulDiv(int64_t value, int64_t numer, int64_t den
     return q * numer + r * numer / denom;
 }
 
-void _private::timerInitialize() 
+void _private::InitializeTimer() 
 {
     gTimer.init = true;
     mach_timebase_info(&gTimer.timebase);
     gTimer.start = mach_absolute_time();
 }
 
-uint64 timerGetTicks() 
+uint64 Timer::GetTicks() 
 {
     ASSERT_MSG(gTimer.init, "Timer not initialized. call timerInit()");
     const uint64 machNow = mach_absolute_time() - gTimer.start;
     return timerInt64MulDiv(machNow, gTimer.timebase.numer, gTimer.timebase.denom);
 }
 
-char* pathGetMyPath(char* dst, size_t dstSize)
+char* Path::GetMyPath_CStr(char* dst, size_t dstSize)
 {
     uint32 size32 = (uint32)dstSize;
     _NSGetExecutablePath(dst, (uint32_t*)&size32);
     return dst;
 }
 
-char* pathGetCurrentDir(char* dst, size_t dstSize)
+char* Path::GetCurrentDir_CStr(char* dst, size_t dstSize)
 {
     return getcwd(dst, dstSize);
 }
 
-void pathSetCurrentDir(const char* path)
+void Path::SetCurrentDir_CStr(const char* path)
 {
     chdir(path);
 }
@@ -137,7 +137,7 @@ void sysGetSysInfo(SysInfo* info)
             info->physicalMemorySize = physMem;
     }
         
-    info->pageSize = sysGetPageSize();
+    info->pageSize = OS::GetPageSize();
     
     // TODO
 }
@@ -213,7 +213,7 @@ bool SysProcess::Run(const char* cmdline, SysProcessFlags flags, const char* cwd
     MemTempAllocator tmpAlloc;
     Array<char*> argsArr(&tmpAlloc);
 
-    char* cmdlineCopy = memAllocCopy<char>(cmdline, strLen(cmdline)+1, &tmpAlloc);
+    char* cmdlineCopy = Mem::AllocCopy<char>(cmdline, strLen(cmdline)+1, &tmpAlloc);
     char* str = const_cast<char*>(strSkipWhitespace(cmdlineCopy));
     while (*str) {
         // Find the next whitespace, or end of string
@@ -238,7 +238,7 @@ bool SysProcess::Run(const char* cmdline, SysProcessFlags flags, const char* cwd
     }
     
     if (posix_spawn(&pid, argsArr[0], &fileActions, nullptr, args, nullptr) != 0) {
-        logError("Running process failed: %s", cmdline);
+        LOG_ERROR("Running process failed: %s", cmdline);
         posix_spawn_file_actions_destroy(&fileActions);
         if (stdoutPipes[0] != -1)
             close(stdoutPipes[0]);
@@ -336,7 +336,7 @@ void sysApplePrintToLog(const char* text)
     puts(text);
 }
 
-char* pathGetHomeDir(char* dst, size_t dstSize)
+char* Path::GetHomeDir_CStr(char* dst, size_t dstSize)
 {
     #if PLATFORM_OSX
         const char* homeDir = getenv("HOME");
@@ -349,7 +349,7 @@ char* pathGetHomeDir(char* dst, size_t dstSize)
     #endif
 }
 
-char* pathGetCacheDir(char* dst, size_t dstSize, const char* appName)
+char* Path::GetCacheDir_CStr(char* dst, size_t dstSize, const char* appName)
 {
     #if PLATFORM_OSX
         const char* homeDir = getenv("HOME");

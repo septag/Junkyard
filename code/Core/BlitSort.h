@@ -179,7 +179,7 @@ namespace _private
     
         div = nmemb / sqrt;
     
-        pta = array + randomNewUint() % sqrt;
+        pta = array + Random::Int() % sqrt;
         pts = swap;
     
         for (cnt = 0 ; cnt < sqrt ; cnt++)

@@ -35,16 +35,16 @@ struct Blob
         Multiply
     };
 
-    inline Blob() : Blob(memDefaultAlloc()) { SetGrowPolicy(GrowPolicy::Linear); }
-    inline explicit Blob(Allocator* alloc) : mAlloc(alloc) { SetGrowPolicy(GrowPolicy::Linear); }
+    inline Blob() : Blob(Mem::GetDefaultAlloc()) { SetGrowPolicy(GrowPolicy::Linear); }
+    inline explicit Blob(MemAllocator* alloc) : mAlloc(alloc) { SetGrowPolicy(GrowPolicy::Linear); }
     inline explicit Blob(void* buffer, size_t size);
     inline Blob& operator=(const Blob&) = default;
     inline Blob(const Blob&) = default;
 
-    inline void Attach(void* data, size_t size, Allocator* alloc);
+    inline void Attach(void* data, size_t size, MemAllocator* alloc);
     inline void Detach(void** outData, size_t* outSize);
 
-    inline void SetAllocator(Allocator* alloc);
+    inline void SetAllocator(MemAllocator* alloc);
     inline void SetGrowPolicy(GrowPolicy policy, uint32 growSize = 4096);
     inline void SetAlignment(uint8 align);
     inline void SetSize(size_t size);
@@ -73,7 +73,7 @@ struct Blob
     inline bool IsValid() const;
 
 private:
-    Allocator* mAlloc = nullptr;
+    MemAllocator* mAlloc = nullptr;
     void*      mBuffer = nullptr;
     size_t     mSize = 0;
     size_t     mOffset = 0;
@@ -92,11 +92,11 @@ private:
 //    ╚═╝  ╚═╝╚═╝╚═╝  ╚═══╝ ╚═════╝ ╚═════╝ ╚══════╝ ╚═════╝ ╚═════╝ 
 struct RingBlob
 {
-    RingBlob() : RingBlob(memDefaultAlloc()) {}
-    explicit RingBlob(Allocator* alloc) : mAlloc(alloc) {}
+    RingBlob() : RingBlob(Mem::GetDefaultAlloc()) {}
+    explicit RingBlob(MemAllocator* alloc) : mAlloc(alloc) {}
     explicit RingBlob(void* buffer, size_t size);
     
-    void SetAllocator(Allocator* alloc);
+    void SetAllocator(MemAllocator* alloc);
     void Reserve(size_t capacity);
     void Reserve(void* buffer, size_t size);
     void Free();
@@ -114,7 +114,7 @@ struct RingBlob
     size_t Capacity() const;
 
 private:
-    Allocator* mAlloc = nullptr;
+    MemAllocator* mAlloc = nullptr;
     uint8* mBuffer = nullptr;
     size_t mCapacity = 0;
     size_t mSize = 0;
@@ -140,7 +140,7 @@ inline RingBlob::RingBlob(void* buffer, size_t size)
     mBuffer = reinterpret_cast<uint8*>(buffer);
 }
 
-inline void RingBlob::SetAllocator(Allocator* alloc)
+inline void RingBlob::SetAllocator(MemAllocator* alloc)
 {
     ASSERT_MSG(mBuffer == nullptr, "buffer should be freed/uninitialized before setting allocator");
     mAlloc = alloc;
@@ -150,7 +150,7 @@ inline void RingBlob::Reserve(size_t capacity)
 {
     ASSERT(mAlloc);
     mCapacity = Max(capacity, mCapacity);
-    mBuffer = reinterpret_cast<uint8*>(memRealloc(mBuffer, mCapacity, mAlloc));
+    mBuffer = reinterpret_cast<uint8*>(Mem::Realloc(mBuffer, mCapacity, mAlloc));
     ASSERT(mBuffer);
 }
 
@@ -167,7 +167,7 @@ inline void RingBlob::Reserve(void* buffer, size_t size)
 inline void RingBlob::Free()
 {
     if (mAlloc) {
-        memFree(mBuffer, mAlloc);
+        Mem::Free(mBuffer, mAlloc);
         mCapacity = mSize = mStart = mEnd = 0;
         mBuffer = nullptr;
     }
@@ -276,7 +276,7 @@ inline Blob::Blob(void* buffer, size_t size)
     mCapacity = size;
 }
 
-inline void Blob::Attach(void* data, size_t size, Allocator* alloc)
+inline void Blob::Attach(void* data, size_t size, MemAllocator* alloc)
 {
     ASSERT(data);
     ASSERT_MSG(!mBuffer, "buffer should be freed before attach");
@@ -302,7 +302,7 @@ inline void Blob::Detach(void** outData, size_t* outSize)
     mCapacity = 0;
 }
 
-inline void Blob::SetAllocator(Allocator* alloc)
+inline void Blob::SetAllocator(MemAllocator* alloc)
 {
     ASSERT_MSG(!mBuffer, "SetAllocator must be called before using/initializing the Blob");
     mAlloc = alloc;
@@ -319,7 +319,7 @@ inline void Blob::Reserve(size_t capacity)
     ASSERT_MSG(mAlloc, "Allocator must be set for dynamic Reserve");
     ASSERT(capacity > mSize);
 
-    mBuffer = memReallocAligned(mBuffer, capacity, mAlign, mAlloc);
+    mBuffer = Mem::ReallocAligned(mBuffer, capacity, mAlign, mAlloc);
     mCapacity = capacity;
 }
 
@@ -337,7 +337,7 @@ inline void Blob::Reserve(void* buffer, size_t size)
 inline void Blob::Free()
 {
     if (mAlloc)
-    memFreeAligned(mBuffer, mAlign, mAlloc);
+    Mem::FreeAligned(mBuffer, mAlign, mAlloc);
     mBuffer = nullptr;
     mSize = 0;
     mCapacity = 0;
@@ -384,7 +384,7 @@ inline size_t Blob::Write(const void* src, size_t size)
             targetCapacity = targetCapacity ? (targetCapacity << 1) : mGrowSize;
 
         mCapacity = (requiredCapacity > targetCapacity) ? AlignValue(requiredCapacity, size_t(mGrowSize)) : targetCapacity;        
-        mBuffer = memReallocAligned(mBuffer, mCapacity, mAlign, mAlloc);
+        mBuffer = Mem::ReallocAligned(mBuffer, mCapacity, mAlign, mAlloc);
     }
     else {
         writeBytes = Min(mCapacity - mSize, size);  

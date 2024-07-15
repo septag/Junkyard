@@ -1,4 +1,4 @@
-#include "ImGuiWrapper.h"
+#include "ImGuiMain.h"
 
 #include <stdarg.h>
 
@@ -31,7 +31,7 @@ namespace _limits
 {
     static constexpr uint32 kImGuiMaxVertices = 30000;
     static constexpr uint32 kImGuiMaxIndices =  kImGuiMaxVertices*3; 
-    static constexpr size_t kImGuiRuntimeHeapSize = 2*kMB;
+    static constexpr size_t kImGuiRuntimeHeapSize = 2*SIZE_MB;
 }
 
 struct ImGuiUbo
@@ -77,27 +77,29 @@ struct ImGuiState
     float*       alphaControl;      // alpha value that will be modified by mouse-wheel + ALT
 
     HashTable<const char*> settingsCacheTable;
-    IniContext settingsIni;
+    INIFileContext settingsIni;
 };
 
 ImGuiState gImGui;
 
-[[maybe_unused]] INLINE ImVec4 imguiVec4(Float4 v)
+namespace ImGui
+{
+[[maybe_unused]] INLINE ImVec4 ToImVec4(Float4 v)
 {
     return ImVec4 { v.x, v.y, v.z, v.w };
 }
 
-[[maybe_unused]] INLINE ImVec2 imguiVec2(Float2 v)
+[[maybe_unused]] INLINE ImVec2 ToImVec2(Float2 v)
 {
     return ImVec2 { v.x, v.y };
 }
 
-[[maybe_unused]] INLINE Float2 imguiFloat2(ImVec2 v)
+[[maybe_unused]] INLINE Float2 ToFloat2(ImVec2 v)
 {
     return Float2(v.x, v.y);
 }
 
-static void imguiInitializeSettings()
+static void InitializeSettings()
 {
     gImGui.settingsCacheTable.SetAllocator(&gImGui.runtimeHeap);
     gImGui.settingsCacheTable.Reserve(256);
@@ -106,50 +108,50 @@ static void imguiInitializeSettings()
     {
         MemTempAllocator tmpAlloc;
         char iniFilename[64];
-        strPrintFmt(iniFilename, sizeof(iniFilename), "%s_imgui_controls.ini", appGetName());
-        Blob data = vfsReadFile(iniFilename, VfsFlags::TextFile|VfsFlags::AbsolutePath, &tmpAlloc);
+        strPrintFmt(iniFilename, sizeof(iniFilename), "%s_imgui_controls.ini", App::GetName());
+        Blob data = Vfs::ReadFile(iniFilename, VfsFlags::TextFile|VfsFlags::AbsolutePath, &tmpAlloc);
         if (data.IsValid())
-            gImGui.settingsIni = iniLoadFromString((const char*)data.Data());
+            gImGui.settingsIni = INIFile::LoadFromString((const char*)data.Data());
     }
 
     // populate the settings cache
     if (gImGui.settingsIni.IsValid()) {
-        const IniContext& ini = gImGui.settingsIni;
+        const INIFileContext& ini = gImGui.settingsIni;
         for (uint32 s = 0; s < ini.GetSectionCount(); s++) {
-            IniSection section = ini.GetSection(s);
+            INIFileSection section = ini.GetSection(s);
 
             String64 keyParent(section.GetName());
             for (uint32 p = 0; p < section.GetPropertyCount(); p++) {
-                IniProperty prop = section.GetProperty(p);
+                INIFileProperty prop = section.GetProperty(p);
                 String64 key(keyParent);
                 key.Append(".");
                 key.Append(prop.GetName());
 
-                gImGui.settingsCacheTable.Add(hashFnv32Str(key.CStr()), prop.GetValue());
+                gImGui.settingsCacheTable.Add(Hash::Fnv32Str(key.CStr()), prop.GetValue());
             }
         }
     }
     else {
-        gImGui.settingsIni = iniCreateContext();
+        gImGui.settingsIni = INIFile::Create();
     }
 }
 
-static void imguiReleaseSettings()
+static void ReleaseSettings()
 {
     if (gImGui.settingsIni.IsValid()) {
         char iniFilename[64];
-        strPrintFmt(iniFilename, sizeof(iniFilename), "%s_imgui_controls.ini", appGetName());
-        iniSave(gImGui.settingsIni, iniFilename);
+        strPrintFmt(iniFilename, sizeof(iniFilename), "%s_imgui_controls.ini", App::GetName());
+        INIFile::Save(gImGui.settingsIni, iniFilename);
         gImGui.settingsIni.Destroy();
     }
 
     gImGui.settingsCacheTable.Free();
 }
 
-static void imguiSetTheme()
+static void SetColorTheme()
 {
-    ImGuiStyle& style = ImGui::GetStyle();
-    ImGui::StyleColorsDark(&style);
+    ImGuiStyle& style = GetStyle();
+    StyleColorsDark(&style);
     
     style.WindowTitleAlign = ImVec2(0.5f, 0.5f);
     
@@ -222,7 +224,7 @@ static void imguiSetTheme()
     style.Colors[ImGuiCol_ModalWindowDimBg]       = ImVec4(0.80f, 0.80f, 0.80f, 0.35f);
 }
 
-static void imguiUpdateCursor()
+static void UpdateCursor()
 {
     static_assert(ImGuiMouseCursor_None == static_cast<ImGuiMouseCursor>(AppMouseCursor::None));
     static_assert(ImGuiMouseCursor_Arrow == static_cast<ImGuiMouseCursor>(AppMouseCursor::Arrow));
@@ -235,20 +237,20 @@ static void imguiUpdateCursor()
     static_assert(ImGuiMouseCursor_Hand == static_cast<ImGuiMouseCursor>(AppMouseCursor::Hand));
     static_assert(ImGuiMouseCursor_NotAllowed == static_cast<ImGuiMouseCursor>(AppMouseCursor::NotAllowed));
     
-    ImGuiIO& io = ImGui::GetIO();
+    ImGuiIO& io = GetIO();
     if (io.ConfigFlags & ImGuiConfigFlags_NoMouseCursorChange)
         return;
     
-    ImGuiMouseCursor imCursor = ImGui::GetMouseCursor();
+    ImGuiMouseCursor imCursor = GetMouseCursor();
     if (io.MouseDrawCursor)
-        appSetCursor(AppMouseCursor::None);
+        App::SetCursor(AppMouseCursor::None);
     else
-        appSetCursor(static_cast<AppMouseCursor>(imCursor));
+        App::SetCursor(static_cast<AppMouseCursor>(imCursor));
 }
 
-static void imguiOnEvent(const AppEvent& ev, [[maybe_unused]] void* userData)
+static void OnEventCallback(const AppEvent& ev, [[maybe_unused]] void* userData)
 {
-    ImGuiIO& io = ImGui::GetIO();
+    ImGuiIO& io = GetIO();
     
     switch (ev.type) {
     case AppEventType::MouseDown: {
@@ -282,7 +284,7 @@ static void imguiOnEvent(const AppEvent& ev, [[maybe_unused]] void* userData)
     case AppEventType::MouseScroll:
         gImGui.mouseWheelH = ev.scrollX;
         gImGui.mouseWheel += ev.scrollY;
-        if (gImGui.alphaControl && appGetKeyMods() == InputKeyModifiers::Ctrl)
+        if (gImGui.alphaControl && App::GetKeyMods() == InputKeyModifiers::Ctrl)
             *gImGui.alphaControl = Clamp(*gImGui.alphaControl + mathSign(ev.scrollY)*0.2f, 0.1f, 1.0f);
             
         break;
@@ -316,12 +318,12 @@ static void imguiOnEvent(const AppEvent& ev, [[maybe_unused]] void* userData)
         break;
         
     case AppEventType::UpdateCursor:
-        imguiUpdateCursor();
+        UpdateCursor();
         break;
         
     case AppEventType::Resized: {
             io.DisplaySize = ImVec2(ev.framebufferWidth, ev.framebufferHeight);
-            float frameBufferScale = appGetDisplayInfo().dpiScale;
+            float frameBufferScale = App::GetDisplayInfo().dpiScale;
             io.DisplayFramebufferScale = ImVec2(frameBufferScale, frameBufferScale);
         }
         break;
@@ -331,35 +333,35 @@ static void imguiOnEvent(const AppEvent& ev, [[maybe_unused]] void* userData)
     }
 }
 
-bool _private::imguiInitialize()
+bool Initialize()
 {
-    MemBumpAllocatorBase* initHeap = engineGetInitHeap();
+    MemBumpAllocatorBase* initHeap = Engine::GetInitHeap();
     gImGui.initHeapStart = initHeap->GetOffset();
 
     {
         size_t poolSize = MemTlsfAllocator::GetMemoryRequirement(_limits::kImGuiRuntimeHeapSize);
-        gImGui.runtimeHeap.Initialize(_limits::kImGuiRuntimeHeapSize, memAlloc(poolSize, initHeap), poolSize,
-                                      settingsGet().engine.debugAllocations);
+        gImGui.runtimeHeap.Initialize(_limits::kImGuiRuntimeHeapSize, Mem::Alloc(poolSize, initHeap), poolSize,
+                                      SettingsJunkyard::Get().engine.debugAllocations);
     }
     
-    ImGui::SetAllocatorFunctions(
-        [](size_t size, void*)->void* { return memAlloc(size, &gImGui.runtimeHeap); },
-        [](void* ptr, void*) { memFree(ptr, &gImGui.runtimeHeap); });
+    SetAllocatorFunctions(
+        [](size_t size, void*)->void* { return Mem::Alloc(size, &gImGui.runtimeHeap); },
+        [](void* ptr, void*) { Mem::Free(ptr, &gImGui.runtimeHeap); });
     
     gImGui.lastCursor = ImGuiMouseCursor_COUNT;
-    gImGui.ctx = ImGui::CreateContext();
+    gImGui.ctx = CreateContext();
     if (!gImGui.ctx) {
-        logError("ImGui: CreateContext failed");
+        LOG_ERROR("ImGui: CreateContext failed");
         return false;
     }
 
-    ImGuiIO& conf = ImGui::GetIO();
+    ImGuiIO& conf = GetIO();
 
     static char iniFilename[64];
-    strPrintFmt(iniFilename, sizeof(iniFilename), "%s_imgui.ini", appGetName());
+    strPrintFmt(iniFilename, sizeof(iniFilename), "%s_imgui.ini", App::GetName());
     conf.IniFilename = iniFilename;
 
-    float frameBufferScale = appGetDisplayInfo().dpiScale;
+    float frameBufferScale = App::GetDisplayInfo().dpiScale;
     conf.DisplayFramebufferScale = ImVec2(frameBufferScale, frameBufferScale);
 
     conf.KeyMap[ImGuiKey_Tab]           = static_cast<int>(InputKeycode::Tab);
@@ -385,8 +387,8 @@ bool _private::imguiInitialize()
     conf.KeyMap[ImGuiKey_Y]             = static_cast<int>(InputKeycode::Y);
     conf.KeyMap[ImGuiKey_Z]             = static_cast<int>(InputKeycode::Z);
 
-    gImGui.vertices = memAllocTyped<ImDrawVert>(_limits::kImGuiMaxVertices, initHeap);
-    gImGui.indices = memAllocTyped<uint16>(_limits::kImGuiMaxIndices, initHeap);
+    gImGui.vertices = Mem::AllocTyped<ImDrawVert>(_limits::kImGuiMaxVertices, initHeap);
+    gImGui.indices = Mem::AllocTyped<uint16>(_limits::kImGuiMaxIndices, initHeap);
 
     gImGui.vertexBuffer = gfxCreateBuffer({
         .size = _limits::kImGuiMaxVertices*sizeof(ImDrawVert),
@@ -401,12 +403,12 @@ bool _private::imguiInitialize()
     });
 
     if (!gImGui.vertexBuffer.IsValid() || !gImGui.indexBuffer.IsValid()) {
-        logError("ImGui: Creating gpu buffers failed");
+        LOG_ERROR("ImGui: Creating gpu buffers failed");
         return false;
     }
     
     // Application events
-    appRegisterEventsCallback(imguiOnEvent);
+    App::RegisterEventsCallback(OnEventCallback);
     
     // Graphics Objects
     const GfxDescriptorSetLayoutBinding dsetBindings[] = {
@@ -568,22 +570,22 @@ bool _private::imguiInitialize()
                                CountOf(descriptorBindings), descriptorBindings);
     }
 
-    imguiSetTheme();
-    imguiInitializeSettings();
+    SetColorTheme();
+    InitializeSettings();
 
     gImGui.initHeapSize = initHeap->GetOffset() - gImGui.initHeapStart;
     
     return true;
 }
 
-void _private::imguiBeginFrame(float dt)
+void BeginFrame(float dt)
 {
     if (gImGui.ctx == nullptr)
         return;
 
-    ImGuiIO& io = ImGui::GetIO();
-    io.DisplaySize = ImVec2(float(appGetFramebufferWidth()), float(appGetFramebufferHeight()));
-    io.FontGlobalScale = appGetDisplayInfo().dpiScale;
+    ImGuiIO& io = GetIO();
+    io.DisplaySize = ImVec2(float(App::GetFramebufferWidth()), float(App::GetFramebufferHeight()));
+    io.FontGlobalScale = App::GetDisplayInfo().dpiScale;
     io.DeltaTime = dt;
     if (io.DeltaTime == 0) 
         io.DeltaTime = 0.033f;
@@ -612,24 +614,32 @@ void _private::imguiBeginFrame(float dt)
 
 
     // Update OS mouse cursor with the cursor requested by imgui
-    ImGuiMouseCursor mouseCursor =  io.MouseDrawCursor ? ImGuiMouseCursor_None : ImGui::GetMouseCursor();
+    ImGuiMouseCursor mouseCursor =  io.MouseDrawCursor ? ImGuiMouseCursor_None : GetMouseCursor();
     if (gImGui.lastCursor != mouseCursor) {
         gImGui.lastCursor = mouseCursor;
-        imguiUpdateCursor();
+        UpdateCursor();
     }
     
-    ImGui::NewFrame();
+    NewFrame();
     ImGuizmo::BeginFrame();
     ImGuizmo::SetRect(0, 0, io.DisplaySize.x, io.DisplaySize.y);
 }
 
-static void imguiDrawFrame()
+bool DrawFrame()
 {
-    ImDrawData* drawData = ImGui::GetDrawData();
+    if (gImGui.ctx == nullptr) 
+        return false;
+
+    PROFILE_ZONE(true);
+    Render();
+
+    ImDrawData* drawData = GetDrawData();
+    if (drawData->CmdListsCount == 0)
+        return false;
 
     ASSERT_MSG(drawData->CmdListsCount, "Must call imguiRender and check if something is actually being rendered");
     if (drawData->CmdListsCount == 0)
-        return;
+        return false;
 
     // Fill the buffers
     uint32 numVerts = 0;
@@ -643,13 +653,13 @@ static void imguiDrawFrame()
         const uint32 dlistNumIndices = static_cast<uint32>(dlist->IdxBuffer.size());
         
         if ((numVerts + dlistNumVerts) > _limits::kImGuiMaxVertices) {
-            logWarning("ImGui: maximum vertex count of '%u' exceeded", _limits::kImGuiMaxVertices);
+            LOG_WARNING("ImGui: maximum vertex count of '%u' exceeded", _limits::kImGuiMaxVertices);
             numVerts = _limits::kImGuiMaxVertices - dlistNumVerts;
             ASSERT(0);
         }
 
         if ((numIndices + dlistNumIndices) > _limits::kImGuiMaxIndices) {
-            logWarning("ImGui: maximum index count of '%u' exceeded", _limits::kImGuiMaxIndices);
+            LOG_WARNING("ImGui: maximum index count of '%u' exceeded", _limits::kImGuiMaxIndices);
             numIndices = _limits::kImGuiMaxIndices - dlistNumIndices;
             ASSERT(0);
         }
@@ -725,25 +735,11 @@ static void imguiDrawFrame()
             baseElem += drawCmd->ElemCount;
         }
     }
+
+    return true;
 }
 
-bool imguiRender()
-{
-    if (gImGui.ctx == nullptr) 
-        return false;
-
-    PROFILE_ZONE(true);
-    ImGui::Render();
-    if (ImGui::GetDrawData()->CmdListsCount > 0) {
-        imguiDrawFrame();
-        return true;
-    }
-    else {
-        return false;
-    }
-}
-
-void _private::imguiRelease()
+void Release()
 {
     if (gImGui.ctx) {
         gfxWaitForIdle();   // TODO: remove this
@@ -759,80 +755,23 @@ void _private::imguiRelease()
         gfxDestroyPipeline(gImGui.pipeline);
         gfxDestroyDescriptorSetLayout(gImGui.dsLayout);
         gfxDestroyImage(gImGui.fontImage);
-        appUnregisterEventsCallback(imguiOnEvent);
-        ImGui::DestroyContext(gImGui.ctx);
+        App::UnregisterEventsCallback(OnEventCallback);
+        DestroyContext(gImGui.ctx);
         gImGui.ctx = nullptr;
     }
 
-    imguiReleaseSettings();
+    ReleaseSettings();
     gImGui.runtimeHeap.Release();
 }
 
-bool imguiIsEnabled()
+bool IsEnabled()
 {
     return gImGui.ctx != nullptr;
 }
 
-static void imguiLabelInternal(ImVec4 nameColor, ImVec4 textColor, float offset, float spacing, const char* name, 
-                               const char* fmt, va_list args)
+const char* GetSetting(const char* key)
 {
-    char formatted[512];
-    char nameWithColon[128];
-    strConcat(strCopy(nameWithColon, sizeof(nameWithColon), name), sizeof(nameWithColon), ":");
-    strPrintFmtArgs(formatted, sizeof(formatted), fmt, args);
-
-    ImGui::TextColored(nameColor, "%s", nameWithColon);
-    ImGui::SameLine(offset, spacing);
-    ImGui::TextColored(textColor, "%s", formatted);
-}
-
-void imguiLabel(const char* name, const char* fmt, ...)
-{
-    const ImVec4& textColor = ImGui::GetStyleColorVec4(ImGuiCol_Text);
-    const ImVec4& nameColor = ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled);
-
-    va_list args;
-    va_start(args, fmt);
-    imguiLabelInternal(nameColor, textColor, 0, -1.0f, name, fmt, args);
-    va_end(args);
-}
-
-void imguiLabel(Color nameColor, Color textColor, const char* name, const char* fmt, ...)
-{
-    ImVec4 nameColor4f = imguiVec4(colorToFloat4(nameColor));
-    ImVec4 textColor4f = imguiVec4(colorToFloat4(textColor));
-
-    va_list args;
-    va_start(args, fmt);
-    imguiLabelInternal(nameColor4f, textColor4f, 0, -1.0f, name, fmt, args);
-    va_end(args);
-}
-
-void imguiLabel(float offset, float spacing, const char* name, const char* fmt, ...)
-{
-    const ImVec4& textColor = ImGui::GetStyleColorVec4(ImGuiCol_Text);
-    const ImVec4& nameColor = ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled);
-
-    va_list args;
-    va_start(args, fmt);
-    imguiLabelInternal(nameColor, textColor, offset, spacing, name, fmt, args);
-    va_end(args);
-}
-
-void imguiLabel(Color nameColor, Color textColor, float offset, float spacing, const char* name, const char* fmt, ...)
-{
-    ImVec4 nameColor4f = imguiVec4(colorToFloat4(nameColor));
-    ImVec4 textColor4f = imguiVec4(colorToFloat4(textColor));
-
-    va_list args;
-    va_start(args, fmt);
-    imguiLabelInternal(nameColor4f, textColor4f, offset, spacing, name, fmt, args);
-    va_end(args);
-}
-
-const char* imguiGetSetting(const char* key)
-{
-    return gImGui.settingsCacheTable.FindAndFetch(hashFnv32Str(key), "");
+    return gImGui.settingsCacheTable.FindAndFetch(Hash::Fnv32Str(key), "");
 }
 
 static void imguiSettingSetInternal(const char* key, const char* value)
@@ -846,33 +785,33 @@ static void imguiSettingSetInternal(const char* key, const char* value)
     strCopyCount(sectionName, sizeof(sectionName), key, PtrToInt<uint32>((void*)(dot - key)));
     strCopy(propertyName, sizeof(propertyName), dot + 1);
 
-    IniSection section = gImGui.settingsIni.FindSection(sectionName);
+    INIFileSection section = gImGui.settingsIni.FindSection(sectionName);
     if (!section.IsValid())
         section = gImGui.settingsIni.NewSection(sectionName);
 
-    IniProperty property = section.FindProperty(propertyName);
+    INIFileProperty property = section.FindProperty(propertyName);
     if (!property.IsValid())
         property = section.NewProperty(propertyName, value);
     else
         property.SetValue(value);
     
-    uint32 hash = hashFnv32Str(key);
+    uint32 hash = Hash::Fnv32Str(key);
     gImGui.settingsCacheTable.AddIfNotFound(hash, property.GetValue());
 }
 
-void imguiSetSetting(const char* key, bool b)
+void SetSetting(const char* key, bool b)
 {
     imguiSettingSetInternal(key, b ? "1" : "0");
 }
 
-void imguiSetSetting(const char* key, int i)
+void SetSetting(const char* key, int i)
 {
     char istr[32];
     strPrintFmt(istr, sizeof(istr), "%d", i);
     imguiSettingSetInternal(key, istr);
 }
 
-void imguiGetBudgetStats(ImGuiBudgetStats* stats)
+void GetBudgetStats(ImGuiBudgetStats* stats)
 {
     stats->initHeapStart = gImGui.initHeapStart;
     stats->initHeapSize = gImGui.initHeapSize;
@@ -885,7 +824,9 @@ void imguiGetBudgetStats(ImGuiBudgetStats* stats)
     stats->runtimeHeap = &gImGui.runtimeHeap;
 }
 
-void _private::imguiControlAlphaWithScroll(float* alpha)
+void ControlAlphaWithScroll(float* alpha)
 {
     gImGui.alphaControl = alpha;
 }
+
+} // ImGui

@@ -2,7 +2,7 @@
 
 DEFINE_HANDLE(HandleDummy);
 
-_private::HandlePoolTable* _private::handleCreatePoolTable(uint32 capacity, Allocator* alloc)
+_private::HandlePoolTable* _private::handleCreatePoolTable(uint32 capacity, MemAllocator* alloc)
 {
     // Align count to 16, for a better aligned internal memory
     uint32 maxSize = AlignValue(capacity, 16u);
@@ -17,12 +17,12 @@ _private::HandlePoolTable* _private::handleCreatePoolTable(uint32 capacity, Allo
     return tbl;
 }
 
-void _private::handleDestroyPoolTable(HandlePoolTable* tbl, Allocator* alloc)
+void _private::handleDestroyPoolTable(HandlePoolTable* tbl, MemAllocator* alloc)
 {
     MemSingleShotMalloc<HandlePoolTable>::Free(tbl, alloc);
 }
 
-bool _private::handleGrowPoolTable(HandlePoolTable** pTbl, Allocator* alloc)
+bool _private::handleGrowPoolTable(HandlePoolTable** pTbl, MemAllocator* alloc)
 {
     HandlePoolTable* tbl = *pTbl;
     uint32 newCapacity = tbl->capacity << 1;
@@ -39,7 +39,7 @@ bool _private::handleGrowPoolTable(HandlePoolTable** pTbl, Allocator* alloc)
     return true;
 }
 
-_private::HandlePoolTable* _private::handleClone(HandlePoolTable* tbl, Allocator* alloc)
+_private::HandlePoolTable* _private::handleClone(HandlePoolTable* tbl, MemAllocator* alloc)
 {
     ASSERT(tbl->capacity);
     HandlePoolTable* newTable = handleCreatePoolTable(tbl->capacity, alloc);

@@ -5,20 +5,25 @@
 struct SysInfo;
 struct MemBumpAllocatorBase;
 
-API bool engineInitialize();
-API void engineRelease();
-
-API void engineBeginFrame(float dt);
-API void engineEndFrame(float dt);
-
-API uint64 engineFrameIndex();
-API const SysInfo& engineGetSysInfo();
-API float engineGetCpuFrameTimeMS();
-
-API MemBumpAllocatorBase* engineGetInitHeap();
-
-// Shortcut string is a combination of keys joined by + sign
-//  Example: "K+SHIFT+CTRL"
 using EngineShortcutCallback = void(*)(void* userData);
-API void engineRegisterShortcut(const char* shortcut, EngineShortcutCallback callback, void* userData = nullptr);
+
+namespace Engine
+{
+    API bool Initialize();
+    API void Release();
+
+    API void BeginFrame(float dt);
+    API void EndFrame(float dt);
+
+    API uint64 GetFrameIndex();
+    API const SysInfo& GetSysInfo();
+    API float GetEngineTimeMS();
+
+    API MemBumpAllocatorBase* GetInitHeap();
+
+    // Shortcut string is a combination of keys joined by + sign
+    //  Example: "K+SHIFT+CTRL"
+    API void RegisterShortcut(const char* shortcut, EngineShortcutCallback callback, void* userData = nullptr);
+}
+
 

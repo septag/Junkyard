@@ -16,10 +16,9 @@
 #include "../Assets/AssetManager.h"
 
 #include "../DebugTools/DebugDraw.h"
-#include "../DebugTools/FrameInfoHud.h"
-#include "../DebugTools/BudgetViewer.h"
+#include "../DebugTools/DebugHud.h"
 
-#include "../ImGui/ImGuiWrapper.h"
+#include "../ImGui/ImGuiMain.h"
 #include "../ImGui/ImGuizmo.h"
 
 #include "../Assets/Model.h"
@@ -60,18 +59,18 @@ struct AppImpl final : AppCallbacks
 
     bool Initialize() override
     {
-        memTempSetCaptureStackTrace(true);
+        MemTempAllocator::EnableCallstackCapture(true);
         // Mount file-systems before initializing engine
-        if (settingsGet().engine.connectToServer) {
-            vfsMountRemote("data", true);
-            vfsMountRemote("code", true);
+        if (SettingsJunkyard::Get().engine.connectToServer) {
+            Vfs::MountRemote("data", true);
+            Vfs::MountRemote("code", true);
         }
         else {        
-            vfsMountLocal("data", "data", true);
-            vfsMountLocal("code", "code", true);
+            Vfs::MountLocal("data", "data", true);
+            Vfs::MountLocal("code", "code", true);
         }
 
-        if (!engineInitialize())
+        if (!Engine::Initialize())
             return false;
 
         if (!CreateGraphicsObjects())
@@ -81,7 +80,7 @@ struct AppImpl final : AppCallbacks
         orbitCam.SetLookAt(Float3(0, -2.0f, 3.0f), FLOAT3_ZERO);
         cam = &orbitCam;
 
-        engineRegisterShortcut("TAB", [](void* userData) {
+        Engine::RegisterShortcut("TAB", [](void* userData) {
            AppImpl* app = reinterpret_cast<AppImpl*>(userData);
            if (app->cam == &app->orbitCam) {
                app->fpsCam.SetViewMat(app->cam->GetViewMat());
@@ -92,7 +91,7 @@ struct AppImpl final : AppCallbacks
            }
         }, this);
 
-        logInfo("Use right mouse button to rotate camera. And [TAB] to switch between Orbital and FPS (WASD) camera");
+        LOG_INFO("Use right mouse button to rotate camera. And [TAB] to switch between Orbital and FPS (WASD) camera");
 
         return true;
     };
@@ -104,32 +103,33 @@ struct AppImpl final : AppCallbacks
         assetUnload(modelAsset);
         assetUnload(modelShaderAsset);
 
-        engineRelease();
+        Engine::Release();
+
     };
     
     static void ChildTask(uint32 groupIndex, void*)
     {
         PROFILE_ZONE(true);
         
-        threadSleep(5);
+        Thread::Sleep(5);
     }
 
     static void MainTaskSub()
     {
         PROFILE_ZONE(true);
-        threadSleep(3);
+        Thread::Sleep(3);
         JobsHandle handle;
-        handle = jobsDispatch(JobsType::LongTask, ChildTask, nullptr, 1);
-        jobsWaitForCompletion(handle);
-        threadSleep(1);
+        handle = Jobs::Dispatch(JobsType::LongTask, ChildTask, nullptr, 1);
+        Jobs::WaitForCompletion(handle);
+        Thread::Sleep(1);
     }
 
     static void MainTask(uint32 groupIndex, void*)
     {
         PROFILE_ZONE(true);
-        threadSleep(1);
+        Thread::Sleep(1);
         MainTaskSub();
-        threadSleep(7);
+        Thread::Sleep(7);
     }
 
     void Update(fl32 dt) override
@@ -138,13 +138,12 @@ struct AppImpl final : AppCallbacks
 
         cam->HandleMovementKeyboard(dt, 100.0f, 5.0f);
 
-        engineBeginFrame(dt);
+        Engine::BeginFrame(dt);
         
         gfxBeginCommandBuffer();
-        
 
-        float width = (float)appGetFramebufferWidth();
-        float height = (float)appGetFramebufferHeight();
+        float width = (float)App::GetFramebufferWidth();
+        float height = (float)App::GetFramebufferHeight();
 
         static Mat4 modelMat = MAT4_IDENT;
 
@@ -177,7 +176,7 @@ struct AppImpl final : AppCallbacks
 
             gfxCmdSetViewports(0, 1, &viewport, true);
 
-            Recti scissor(0, 0, appGetFramebufferWidth(), appGetFramebufferHeight());
+            Recti scissor(0, 0, App::GetFramebufferWidth(), App::GetFramebufferHeight());
             gfxCmdSetScissors(0, 1, &scissor, true);
 
             Model* model = assetGetModel(modelAsset);
@@ -201,7 +200,7 @@ struct AppImpl final : AppCallbacks
                         const ModelSubmesh& submesh = mesh.submeshes[smi];
                         const ModelMaterial* mtl = model->materials[IdToIndex(submesh.materialId)].Get();
                         
-                        GfxDescriptorSet dset = materialToDset.FindAndFetch(hashMurmur32(mtl, sizeof(*mtl), 0));
+                        GfxDescriptorSet dset = materialToDset.FindAndFetch(Hash::Murmur32(mtl, sizeof(*mtl), 0));
                         gfxCmdBindDescriptorSets(pipeline, 1, &dset);
                         gfxCmdDrawIndexed(mesh.numIndices, 1, 0, 0, 0);
                     }
@@ -211,16 +210,17 @@ struct AppImpl final : AppCallbacks
         }
 
         {
-            ddDrawGrid_XYAxis(*cam, width, height, DebugDrawGridProperties { 
+            DebugDraw::DrawGroundGrid(*cam, width, height, DebugDrawGridProperties { 
                 .lineColor = Color(0x565656), 
                 .boldLineColor = Color(0xd6d6d6) 
             });
         }
 
-        if (imguiIsEnabled()) { // imgui test
+        if (ImGui::IsEnabled()) { // imgui test
             PROFILE_GPU_ZONE_NAME("ImGuiRender", true);
-            budgetViewerRender(dt);
-            frameInfoRender(dt);
+            DebugHud::DrawQuickFrameInfo(dt);
+            DebugHud::DrawStatusBar(dt);
+            DebugHud::DrawMemBudgets(dt);
 
             #if 0
                 Mat4 view = fpsCam.GetViewMat();
@@ -228,7 +228,7 @@ struct AppImpl final : AppCallbacks
                 fpsCam.SetViewMat(view);
             #endif
 
-            imguiRender();
+            ImGui::DrawFrame();
         }
 
         // jobsWaitForCompletion(handle);
@@ -236,7 +236,7 @@ struct AppImpl final : AppCallbacks
         gfxCmdEndSwapchainRenderPass();
         gfxEndCommandBuffer();        
 
-        engineEndFrame(dt);
+        Engine::EndFrame(dt);
     }
     
     void OnEvent(const AppEvent& ev) override
@@ -387,7 +387,7 @@ struct AppImpl final : AppCallbacks
 
                 gfxUpdateDescriptorSet(dset, CountOf(descBindings), descBindings);
 
-                materialToDset.Add(hashMurmur32(material, sizeof(*material), 0), dset);
+                materialToDset.Add(Hash::Murmur32(material, sizeof(*material), 0), dset);
                 descriptorSets.Push(dset);
             }
         }
@@ -410,16 +410,16 @@ struct AppImpl final : AppCallbacks
 
 int Main(int argc, char* argv[])
 {
-    settingsInitializeJunkyard({});
+    SettingsJunkyard::Initialize({});
 
     #if PLATFORM_ANDROID
-        settingsInitializeFromAndroidAsset(appAndroidGetAssetManager(), "Settings.ini");
+        settingsInitializeFromAndroidAsset(App::AndroidGetAssetManager(), "Settings.ini");
     #else
         settingsInitializeFromCommandLine(argc, argv);
     #endif
    
     static AppImpl impl;
-    appInitialize(AppDesc { 
+    App::Run(AppDesc { 
         .callbacks = &impl, 
         .windowTitle = "Junkyard"
     });

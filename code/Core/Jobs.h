@@ -86,30 +86,34 @@ private:
 
 struct JobsInitParams
 {
-    Allocator* alloc = memDefaultAlloc();
+    MemAllocator* alloc = Mem::GetDefaultAlloc();
     uint32 numShortTaskThreads = 0; // Default: total number of cores - 1
     uint32 numLongTaskThreads = 0;  // Default: total number of cores - 1
-    uint32 defaultShortTaskStackSize = kMB;
-    uint32 defaultLongTaskStackSize = kMB;
+    uint32 defaultShortTaskStackSize = SIZE_MB;
+    uint32 defaultLongTaskStackSize = SIZE_MB;
     bool debugAllocations = false;
 };
 
-API void jobsInitialize(const JobsInitParams& initParams);
-API void jobsRelease();
+namespace Jobs
+{
+    API void Initialize(const JobsInitParams& initParams);
+    API void Release();
 
-// Dispatches the job and returns the handle. Handle _must_ be waited on later, with a call to `jobsWaitForCompletion`
-API [[nodiscard]] JobsHandle jobsDispatch(JobsType type, JobsCallback callback, void* userData = nullptr, 
+    // Dispatches the job and returns the handle. Handle _must_ be waited on later, with a call to `jobsWaitForCompletion`
+    API [[nodiscard]] JobsHandle Dispatch(JobsType type, JobsCallback callback, void* userData = nullptr, 
                                           uint32 groupSize = 1, JobsPriority prio = JobsPriority::Normal, 
                                           JobsStackSize stackSize = JobsStackSize::Medium);
-// Might yield the current running job as well. Also deletes the JobHandle after it's finished
-API void jobsWaitForCompletion(JobsHandle handle);
-API bool jobsIsRunning(JobsHandle handle);
+    // Might yield the current running job as well. Also deletes the JobHandle after it's finished
+    API void WaitForCompletion(JobsHandle handle);
+    API bool IsRunning(JobsHandle handle);
 
-// In this version, we don't care about waiting on the handle. Handle will be automatically delete itself after job is finished
-API void jobsDispatchAndForget(JobsType type, JobsCallback callback, void* userData = nullptr, 
+    // In this version, we don't care about waiting on the handle. Handle will be automatically delete itself after job is finished
+    API void DispatchAndForget(JobsType type, JobsCallback callback, void* userData = nullptr, 
                                uint32 groupSize = 1, JobsPriority prio = JobsPriority::Normal, 
                                JobsStackSize stackSize = JobsStackSize::Medium);
 
-API void jobsGetBudgetStats(JobsBudgetStats* stats);
-API void jobsResetBudgetStats();
-API uint32 jobsGetWorkerThreadsCount(JobsType type);
+    API void GetBudgetStats(JobsBudgetStats* stats);
+    API void ResetBudgetStats();
+    API uint32 GetWorkerThreadsCount(JobsType type);
+}
+

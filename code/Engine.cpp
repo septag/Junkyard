@@ -15,21 +15,18 @@
 #include "Graphics/Graphics.h"
 
 #include "DebugTools/DebugDraw.h"
-#include "DebugTools/FrameInfoHud.h"
+#include "DebugTools/DebugHud.h"
 
 #include "Assets/AssetManager.h"
 
-#include "ImGui/ImGuiWrapper.h"
+#include "ImGui/ImGuiMain.h"
 
 #include "Tool/Console.h"
 
-static constexpr float  kReconnectInterval = 5.0f;
-static constexpr uint32 kReconnectRetries = 3;
-static constexpr float  kRefreshStatsInterval = 0.2f;
-
-//------------------------------------------------------------------------
-// Memory Budgets
-static constexpr size_t kHeapInitBudget = 2*kGB;
+static constexpr float  ENGINE_REMOTE_RECONNECT_INTERVAL = 5.0f;
+static constexpr uint32 ENGINE_REMOTE_CONNECT_RETRIES = 3;
+static constexpr float  ENGINE_JOBS_REFRESH_STATS_INTERVAL = 0.2f;
+static constexpr size_t ENGINE_INIT_HEAP_MAX = 2*SIZE_GB;
 
 struct EngineShortcutKeys
 {
@@ -48,7 +45,7 @@ struct EngineContext
     uint32     remoteRetryCount = false;
     
     double elapsedTime = 0.0;
-    atomicUint64 frameIndex = 0;
+    AtomicUint64 frameIndex = 0;
     uint64 rawFrameStartTime;
     uint64 rawFrameTime;        
 
@@ -62,7 +59,10 @@ struct EngineContext
 
 static EngineContext gEng;
 
-static void engineRemoteDisconnected(const char* url, bool onPurpose, SocketErrorCode errCode)
+namespace Engine
+{
+
+static void RemoteDisconnected(const char* url, bool onPurpose, SocketErrorCode::Enum errCode)
 {
     if (onPurpose)
         return;
@@ -70,8 +70,8 @@ static void engineRemoteDisconnected(const char* url, bool onPurpose, SocketErro
     if (errCode == SocketErrorCode::Timeout || errCode == SocketErrorCode::ConnectionReset || 
         errCode == SocketErrorCode::None /* invalid packet */)
     {
-        if (gEng.remoteRetryCount <= kReconnectRetries) {
-            logInfo("Disconnected from '%s', reconnecting in %.0f seconds ...", url, kReconnectInterval);
+        if (gEng.remoteRetryCount <= ENGINE_REMOTE_CONNECT_RETRIES) {
+            LOG_INFO("Disconnected from '%s', reconnecting in %.0f seconds ...", url, ENGINE_REMOTE_RECONNECT_INTERVAL);
             gEng.remoteReconnect = true;
         }
     }
@@ -80,7 +80,7 @@ static void engineRemoteDisconnected(const char* url, bool onPurpose, SocketErro
     }
 }
 
-static void engineOnEvent(const AppEvent& ev, [[maybe_unused]] void* userData)
+static void OnEvent(const AppEvent& ev, [[maybe_unused]] void* userData)
 {
     if (ev.type == AppEventType::KeyDown) {
         // Trigger shortcuts
@@ -89,8 +89,8 @@ static void engineOnEvent(const AppEvent& ev, [[maybe_unused]] void* userData)
             InputKeycode key1 = shortcut.keys[0];
             InputKeycode key2 = shortcut.keys[1];
             InputKeyModifiers mods = shortcut.mods;
-            if (appIsKeyDown(key1) && 
-                (key2 == InputKeycode::Invalid || appIsKeyDown(key2)) && 
+            if (App::IsKeyDown(key1) && 
+                (key2 == InputKeycode::Invalid || App::IsKeyDown(key2)) && 
                 (mods == InputKeyModifiers::None || (mods & ev.keyMods) == mods)) 
             {
                 shortcut.callback(gEng.shortcuts[i].userData);
@@ -106,25 +106,24 @@ static void engineOnEvent(const AppEvent& ev, [[maybe_unused]] void* userData)
 #endif
 }
 
-bool engineInitialize()
+bool Initialize()
 {
     PROFILE_ZONE(true);
 
     // Set main thread as `realtime` priority
-    threadSetCurrentThreadPriority(ThreadPriority::Realtime);
-    threadSetCurrentThreadName("Main");
+    Thread::SetCurrentThreadPriority(ThreadPriority::Realtime);
+    Thread::SetCurrentThreadName("Main");
 
     // Initialize heaps
     // TODO: make all heaps commit all memory upfront in RELEASE builds
-    gEng.shortcuts.SetAllocator(memDefaultAlloc());
-    gEng.initHeap.Initialize(kHeapInitBudget, kMB, settingsGet().engine.debugAllocations);
+    gEng.shortcuts.SetAllocator(Mem::GetDefaultAlloc());
+    gEng.initHeap.Initialize(ENGINE_INIT_HEAP_MAX, SIZE_MB, SettingsJunkyard::Get().engine.debugAllocations);
 
-    if (settingsGet().engine.debugAllocations) {
-        memTempSetDebugMode(true);
-    }
+    if (SettingsJunkyard::Get().engine.debugAllocations)
+        MemTempAllocator::EnableDebugMode(true);
 
     {   // Cpu/Memory info
-        sysGetSysInfo(&gEng.sysInfo);
+        OS::GetSysInfo(&gEng.sysInfo);
 
         char cpuCaps[128] = {0};
         if (gEng.sysInfo.cpuCapsSSE)
@@ -146,85 +145,85 @@ bool engineInitialize()
         if (gEng.sysInfo.cpuCapsNeon)
             strConcat(cpuCaps, sizeof(cpuCaps), "Neon ");
         
-        logInfo("(init) Compiler: %s", COMPILER_NAME);
-        logInfo("(init) CPU: %s", gEng.sysInfo.cpuModel);
-        logInfo("(init) CPU Cores: %u", gEng.sysInfo.coreCount); 
-        logInfo("(init) CPU Caps: %s", cpuCaps);
-        logInfo("(init) System memory: %_$$$llu", gEng.sysInfo.physicalMemorySize);
+        LOG_INFO("(init) Compiler: %s", COMPILER_NAME);
+        LOG_INFO("(init) CPU: %s", gEng.sysInfo.cpuModel);
+        LOG_INFO("(init) CPU Cores: %u", gEng.sysInfo.coreCount); 
+        LOG_INFO("(init) CPU Caps: %s", cpuCaps);
+        LOG_INFO("(init) System memory: %_$$$llu", gEng.sysInfo.physicalMemorySize);
     }
 
-    _private::conInitialize();
-    jobsInitialize(JobsInitParams { 
+    Console::Initialize();
+    Jobs::Initialize(JobsInitParams { 
                    .alloc = &gEng.initHeap, 
-                   .numShortTaskThreads = settingsGet().engine.jobsNumShortTaskThreads,
-                   .numLongTaskThreads = settingsGet().engine.jobsNumLongTaskThreads,
-                   .debugAllocations = settingsGet().engine.debugAllocations });
+                   .numShortTaskThreads = SettingsJunkyard::Get().engine.jobsNumShortTaskThreads,
+                   .numLongTaskThreads = SettingsJunkyard::Get().engine.jobsNumLongTaskThreads,
+                   .debugAllocations = SettingsJunkyard::Get().engine.debugAllocations });
 
-    if (settingsGet().engine.connectToServer) {
-        if (!_private::remoteConnect(settingsGet().engine.remoteServicesUrl.CStr(), engineRemoteDisconnected)) {
+    if (SettingsJunkyard::Get().engine.connectToServer) {
+        if (!Remote::Connect(SettingsJunkyard::Get().engine.remoteServicesUrl.CStr(), RemoteDisconnected)) {
             return false;
         }
 
         // We have the connection, open up some tools on the host, based on the platform
         // TODO: com.junkyard.example is hardcoded, should be named after the actual package name
         if constexpr (PLATFORM_ANDROID) {
-            conExecuteRemote("exec scripts\\Android\\android-close-logcats.bat com.junkyard.example && scripts\\Android\\android-logcat.bat");
-            conExecuteRemote("exec-once {ScrCpy}");
+            Console::ExecuteRemote("exec scripts\\Android\\android-close-logcats.bat com.junkyard.example && scripts\\Android\\android-logcat.bat");
+            Console::ExecuteRemote("exec-once {ScrCpy}");
         }
     }
 
     // Graphics
-    const SettingsGraphics& gfxSettings = settingsGet().graphics;
+    const SettingsGraphics& gfxSettings = SettingsJunkyard::Get().graphics;
     if (gfxSettings.enable) {
         if (!gfxSettings.headless) {
-            AppDisplayInfo dinfo = appGetDisplayInfo();
-            logInfo("(init) Logical Window Size: %ux%u", appGetWindowWidth(), appGetWindowHeight());
-            logInfo("(init) Framebuffer Size: %ux%u", appGetFramebufferWidth(), appGetFramebufferHeight());
-            logInfo("(init) Display (%ux%u), DPI scale: %.2f, RefreshRate: %uhz", dinfo.width, dinfo.height, dinfo.dpiScale, dinfo.refreshRate);
+            AppDisplayInfo dinfo = App::GetDisplayInfo();
+            LOG_INFO("(init) Logical Window Size: %ux%u", App::GetWindowWidth(), App::GetWindowHeight());
+            LOG_INFO("(init) Framebuffer Size: %ux%u", App::GetFramebufferWidth(), App::GetFramebufferHeight());
+            LOG_INFO("(init) Display (%ux%u), DPI scale: %.2f, RefreshRate: %uhz", dinfo.width, dinfo.height, dinfo.dpiScale, dinfo.refreshRate);
         }
 
         if (!_private::gfxInitialize()) {
-            logError("Initializing Graphics failed");
+            LOG_ERROR("Initializing Graphics failed");
             return false;
         }
     }
 
     // Asset manager
     if (!_private::assetInitialize()) {
-        logError("Initializing AssetManager failed");
+        LOG_ERROR("Initializing AssetManager failed");
         return false;
     }
 
     if (gfxSettings.enable) {
         if (!gfxSettings.headless) {
             if (gfxSettings.enableImGui) {
-                if (!_private::imguiInitialize()) {
-                    logError("Initializing ImGui failed");
+                if (!ImGui::Initialize()) {
+                    LOG_ERROR("Initializing ImGui failed");
                     return false;
                 }
                 
-                frameInfoInitialize();
+                DebugHud::Initialize();
             }
 
-            if (!_private::ddInitialize()) {
-                logError("Initializing DebugDraw failed");
+            if (!DebugDraw::Initialize()) {
+                LOG_ERROR("Initializing DebugDraw failed");
                 return false;
             }
         }
     }
 
-    appRegisterEventsCallback(engineOnEvent);
+    App::RegisterEventsCallback(OnEvent);
 
     gEng.initialized = true;
-    logInfo("(init) Engine initialized (%.1f ms)", timerToMS(timerGetTicks()));
+    LOG_INFO("(init) Engine initialized (%.1f ms)", Timer::ToMS(Timer::GetTicks()));
     
     auto GetVMemStats = [](int, const char**, char* outResponse, uint32 responseSize, void*)->bool {
-        MemVirtualStats stats = memVirtualGetStats();
+        MemVirtualStats stats = Mem::VirtualGetStats();
         strPrintFmt(outResponse, responseSize, "Reserverd: %_$$$llu, Commited: %_$$$llu", stats.reservedBytes, stats.commitedBytes);
         return true;
     };
 
-    conRegisterCommand(ConCommandDesc {
+    Console::RegisterCommand(ConCommandDesc {
         .name = "vmem",
         .help = "Get VMem stats",
         .callback = GetVMemStats
@@ -232,19 +231,18 @@ bool engineInitialize()
     return true;
 }
 
-void engineRelease()
+void Release()
 {
-    const SettingsGraphics& gfxSettings = settingsGet().graphics;
-    logInfo("Releasing engine sub systems ...");
+    const SettingsGraphics& gfxSettings = SettingsJunkyard::Get().graphics;
+    LOG_INFO("Releasing engine sub systems ...");
     gEng.initialized = false;
 
     if (gfxSettings.enable && !gfxSettings.headless) {
         if (gfxSettings.enableImGui) {
-            frameInfoRelease();
-
-            _private::imguiRelease();
+            DebugHud::Release();
+            ImGui::Release();
         }
-        _private::ddRelease();
+        DebugDraw::Release();
     } 
 
     _private::assetRelease();
@@ -252,43 +250,43 @@ void engineRelease()
     if (gfxSettings.enable)
         _private::gfxRelease();
 
-    if (settingsGet().engine.connectToServer)
-        _private::remoteDisconnect();
+    if (SettingsJunkyard::Get().engine.connectToServer)
+        Remote::Disconnect();
 
-    jobsRelease();
-    _private::conRelease();
+    Jobs::Release();
+    Console::Release();
 
     gEng.shortcuts.Free();
     gEng.initHeap.Release();
 
-    logInfo("Engine released");
+    LOG_INFO("Engine released");
 }
 
-void engineBeginFrame(float dt)
+void BeginFrame(float dt)
 {
     ASSERT(gEng.initialized);
 
-    TracyCPlot("frameTime", dt);
+    TracyCPlot("FrameTime", dt);
 
     gEng.elapsedTime += dt;
 
-    const SettingsEngine& engineSettings = settingsGet().engine;
+    const SettingsEngine& engineSettings = SettingsJunkyard::Get().engine;
 
     // Reconnect to remote server if it's disconnected
     if (engineSettings.connectToServer && gEng.remoteReconnect) {
         gEng.remoteDisconnectTime += dt;
-        if (gEng.remoteDisconnectTime >= kReconnectInterval) {
+        if (gEng.remoteDisconnectTime >= ENGINE_REMOTE_RECONNECT_INTERVAL) {
             gEng.remoteDisconnectTime = 0;
             gEng.remoteReconnect = false;
-            if (++gEng.remoteRetryCount <= kReconnectRetries) {
-                if (_private::remoteConnect(engineSettings.remoteServicesUrl.CStr(), engineRemoteDisconnected))
+            if (++gEng.remoteRetryCount <= ENGINE_REMOTE_CONNECT_RETRIES) {
+                if (Remote::Connect(engineSettings.remoteServicesUrl.CStr(), RemoteDisconnected))
                     gEng.remoteRetryCount = 0;
                 else
-                    engineRemoteDisconnected(engineSettings.remoteServicesUrl.CStr(), false, SocketErrorCode::None);
+                    RemoteDisconnected(engineSettings.remoteServicesUrl.CStr(), false, SocketErrorCode::None);
             }
             else {
-                logWarning("Failed to connect to server '%s' after %u retries", engineSettings.remoteServicesUrl.CStr(), 
-                    kReconnectRetries);
+                LOG_WARNING("Failed to connect to server '%s' after %u retries", engineSettings.remoteServicesUrl.CStr(), 
+                    ENGINE_REMOTE_CONNECT_RETRIES);
             }
         }
     }
@@ -296,62 +294,62 @@ void engineBeginFrame(float dt)
     // Reset jobs budget stats every `kRefreshStatsInterval`
     {
         gEng.refreshStatsTime += dt;
-        if (gEng.refreshStatsTime > kRefreshStatsInterval) {
-            jobsResetBudgetStats();
+        if (gEng.refreshStatsTime > ENGINE_JOBS_REFRESH_STATS_INTERVAL) {
+            Jobs::ResetBudgetStats();
             gEng.refreshStatsTime = 0;
         }
     }
 
     // Begin graphics
-    if (!settingsGet().graphics.headless) {
-        _private::imguiBeginFrame(dt);
+    if (!SettingsJunkyard::Get().graphics.headless) {
+        ImGui::BeginFrame(dt);
         _private::gfxBeginFrame();
     }
 
-    gEng.rawFrameStartTime = timerGetTicks();
+    gEng.rawFrameStartTime = Timer::GetTicks();
 }
 
-void engineEndFrame(float dt)
+void EndFrame(float dt)
 {
     ASSERT(gEng.initialized);
 
-    gEng.rawFrameTime = timerDiff(timerGetTicks(), gEng.rawFrameStartTime);
+    gEng.rawFrameTime = Timer::Diff(Timer::GetTicks(), gEng.rawFrameStartTime);
 
-    if (!settingsGet().graphics.headless) {
+    if (!SettingsJunkyard::Get().graphics.headless) {
         _private::gfxEndFrame();
         _private::assetCollectGarbage();
     }
 
     _private::assetUpdateCache(dt);
 
-    memTempReset(dt);
+    MemTempAllocator::Reset(dt);
 
     TracyCFrameMark;
 
-    atomicFetchAdd64Explicit(&gEng.frameIndex, 1, AtomicMemoryOrder::Relaxed);
+    Atomic::FetchAddExplicit(&gEng.frameIndex, 1, AtomicMemoryOrder::Relaxed);
 }
 
-uint64 engineFrameIndex()
+uint64 GetFrameIndex()
 {
-    return atomicLoad64Explicit(&gEng.frameIndex, AtomicMemoryOrder::Relaxed);
+    return Atomic::LoadExplicit(&gEng.frameIndex, AtomicMemoryOrder::Relaxed);
 }
 
-const SysInfo& engineGetSysInfo()
+const SysInfo& GetSysInfo()
 {
     return gEng.sysInfo;
 }
 
-MemBumpAllocatorBase* engineGetInitHeap()
+MemBumpAllocatorBase* GetInitHeap()
 {
     return &gEng.initHeap;
 }
 
-float engineGetCpuFrameTimeMS()
+float GetEngineTimeMS()
 {
-    return (float)timerToMS(gEng.rawFrameTime);
+    return (float)Timer::ToMS(gEng.rawFrameTime);
 }
 
-void engineRegisterShortcut(const char* shortcut, EngineShortcutCallback callback, void* userData)
+void RegisterShortcut(const char* shortcut, EngineShortcutCallback callback, void* userData)
 {
     ASSERT(callback);
     ASSERT(shortcut);
@@ -437,3 +435,5 @@ void engineRegisterShortcut(const char* shortcut, EngineShortcutCallback callbac
         });
     }
 }
+
+} // Engine

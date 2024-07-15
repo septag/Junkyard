@@ -26,23 +26,27 @@ struct LogEntry
 
 // NOTE: custom callbacks should take care of thread-safety for their data
 using LogCallback = void(*)(const LogEntry& entry, void* userData);
-API void logRegisterCallback(LogCallback callback, void* userData);
-API void logUnregisterCallback(LogCallback callback);
-API void logSetSettings(LogLevel logLevel, bool breakOnErrors, bool treatWarningsAsErrors);
 
-namespace _private
+namespace Log
 {
-    API void logPrintInfo(uint32 channels, const char* source_file, uint32 line, const char* fmt, ...);
-    API void logPrintDebug(uint32 channels, const char* source_file, uint32 line, const char* fmt, ...);
-    API void logPrintVerbose(uint32 channels, const char* source_file, uint32 line, const char* fmt, ...);
-    API void logPrintWarning(uint32 channels, const char* source_file, uint32 line, const char* fmt, ...);
-    API void logPrintError(uint32 channels, const char* source_file, uint32 line, const char* fmt, ...);
-}
+    API void RegisterCallback(LogCallback callback, void* userData);
+    API void UnregisterCallback(LogCallback callback);
+    API void SetSettings(LogLevel logLevel, bool breakOnErrors, bool treatWarningsAsErrors);
+
+    namespace _private
+    {
+        API void PrintInfo(uint32 channels, const char* source_file, uint32 line, const char* fmt, ...);
+        API void PrintDebug(uint32 channels, const char* source_file, uint32 line, const char* fmt, ...);
+        API void PrintVerbose(uint32 channels, const char* source_file, uint32 line, const char* fmt, ...);
+        API void PrintWarning(uint32 channels, const char* source_file, uint32 line, const char* fmt, ...);
+        API void PrintError(uint32 channels, const char* source_file, uint32 line, const char* fmt, ...);
+    }
+};
 
 // Use macros to include source location automatically
-#define logInfo(_text, ...)      _private::logPrintInfo(0, __FILE__, __LINE__, _text, ##__VA_ARGS__)
-#define logDebug(_text, ...)     _private::logPrintDebug(0, __FILE__, __LINE__, _text, ##__VA_ARGS__)
-#define logVerbose(_text, ...)   _private::logPrintVerbose(0, __FILE__, __LINE__, _text, ##__VA_ARGS__)
-#define logWarning(_text, ...)   _private::logPrintWarning(0, __FILE__, __LINE__, _text, ##__VA_ARGS__)
-#define logError(_text, ...)     _private::logPrintError(0, __FILE__, __LINE__, _text, ##__VA_ARGS__)
+#define LOG_INFO(_text, ...)      Log::_private::PrintInfo(0, __FILE__, __LINE__, _text, ##__VA_ARGS__)
+#define LOG_DEBUG(_text, ...)     Log::_private::PrintDebug(0, __FILE__, __LINE__, _text, ##__VA_ARGS__)
+#define LOG_VERBOSE(_text, ...)   Log::_private::PrintVerbose(0, __FILE__, __LINE__, _text, ##__VA_ARGS__)
+#define LOG_WARNING(_text, ...)   Log::_private::PrintWarning(0, __FILE__, __LINE__, _text, ##__VA_ARGS__)
+#define LOG_ERROR(_text, ...)     Log::_private::PrintError(0, __FILE__, __LINE__, _text, ##__VA_ARGS__)
 

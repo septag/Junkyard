@@ -20,18 +20,18 @@ static constexpr uint32 RCMD_COMPILE_SHADER = MakeFourCC('C', 'S', 'H', 'D');
 struct ShaderLoadRequest
 {
     AssetHandle handle;
-    Allocator* alloc;
+    MemAllocator* alloc;
     AssetLoaderAsyncCallback loadCallback;
     void* loadCallbackUserData;
 };
 
 struct ShaderLoader final : AssetCallbacks
 {
-    AssetResult Load(AssetHandle handle, const AssetLoadParams& params, uint32 cacheHash, Allocator* dependsAlloc) override;
+    AssetResult Load(AssetHandle handle, const AssetLoadParams& params, uint32 cacheHash, MemAllocator* dependsAlloc) override;
     void LoadRemote(AssetHandle handle, const AssetLoadParams& params, uint32 cacheHash, void* userData, AssetLoaderAsyncCallback loadCallback) override;
     bool InitializeSystemResources(void*, const AssetLoadParams&) override { return true; }
     bool ReloadSync(AssetHandle handle, void* prevData) override;
-    void Release(void* data, Allocator*) override;
+    void Release(void* data, MemAllocator*) override;
 
     Array<ShaderLoadRequest> requests;
     uint8 _padding[32];
@@ -51,7 +51,7 @@ static void shaderCompileLoadTask(uint32 groupIndex, void* userData)
     Blob outgoingBlob(&tmpAlloc);
     outgoingBlob.SetGrowPolicy(Blob::GrowPolicy::Multiply);
 
-    char filepath[kMaxPath];
+    char filepath[PATH_CHARS_MAX];
     ShaderCompileDesc compileDesc;
     AssetPlatform platform;
 
@@ -78,13 +78,13 @@ static void shaderCompileLoadTask(uint32 groupIndex, void* userData)
         .loadParamsSize = sizeof(ShaderCompileDesc),
         .metaData = metaData,
         .numMeta = numMeta,
-        .lastModified = vfsGetLastModified(filepath)
+        .lastModified = Vfs::GetLastModified(filepath)
     });
     
     if (cacheHash != oldCacheHash) {
         TimerStopWatch timer;
         Path shaderAbsolutePath;
-        Blob fileBlob = vfsReadFile(filepath, VfsFlags::None, &tmpAlloc, &shaderAbsolutePath);
+        Blob fileBlob = Vfs::ReadFile(filepath, VfsFlags::None, &tmpAlloc, &shaderAbsolutePath);
         if (fileBlob.IsValid()) {
             #if PLATFORM_WINDOWS
             shaderAbsolutePath.ConvertToWin();
@@ -92,8 +92,8 @@ static void shaderCompileLoadTask(uint32 groupIndex, void* userData)
 
             // Compilation
             char compileErrorDesc[512];
-            Pair<GfxShader*, uint32> shaderCompileResult = shaderCompile(fileBlob, shaderAbsolutePath.CStr(), compileDesc, 
-                                                                         compileErrorDesc, sizeof(compileErrorDesc), memDefaultAlloc());
+            Pair<GfxShader*, uint32> shaderCompileResult = ShaderCompiler::Compile(fileBlob, shaderAbsolutePath.CStr(), compileDesc, 
+                                                                         compileErrorDesc, sizeof(compileErrorDesc), Mem::GetDefaultAlloc());
             GfxShader* shader = shaderCompileResult.first;
             uint32 shaderDataSize = shaderCompileResult.second;
 
@@ -101,33 +101,33 @@ static void shaderCompileLoadTask(uint32 groupIndex, void* userData)
                 outgoingBlob.Write<uint32>(cacheHash);
                 outgoingBlob.Write<uint32>(shaderDataSize);
                 outgoingBlob.Write(shader, shaderDataSize);
-                remoteSendResponse(RCMD_COMPILE_SHADER, outgoingBlob, false, nullptr);
-                logVerbose("Shader loaded: %s (%.1f ms)", filepath, timer.ElapsedMS());
+                Remote::SendResponse(RCMD_COMPILE_SHADER, outgoingBlob, false, nullptr);
+                LOG_VERBOSE("Shader loaded: %s (%.1f ms)", filepath, timer.ElapsedMS());
             }
             else {
                 char errorMsg[kRemoteErrorDescSize];
                 strPrintFmt(errorMsg, sizeof(errorMsg), "Compiling shader '%s' failed: %s", filepath, compileErrorDesc);
-                remoteSendResponse(RCMD_COMPILE_SHADER, outgoingBlob, true, errorMsg);
-                logVerbose(errorMsg);
+                Remote::SendResponse(RCMD_COMPILE_SHADER, outgoingBlob, true, errorMsg);
+                LOG_VERBOSE(errorMsg);
             }
-            memFree(shader);
+            Mem::Free(shader);
         }
         else {
             char errorMsg[kRemoteErrorDescSize];
             strPrintFmt(errorMsg, sizeof(errorMsg), "Opening shader file failed: %s", filepath);
-            remoteSendResponse(RCMD_COMPILE_SHADER, outgoingBlob, true, errorMsg);
-            logVerbose(errorMsg);
+            Remote::SendResponse(RCMD_COMPILE_SHADER, outgoingBlob, true, errorMsg);
+            LOG_VERBOSE(errorMsg);
         }
     }
     else {
         outgoingBlob.Write<uint32>(cacheHash);
         outgoingBlob.Write<uint32>(0);  // nothing has loaded. it's safe to load from client's local cache
-        remoteSendResponse(RCMD_COMPILE_SHADER, outgoingBlob, false, nullptr);
-        logVerbose("Shader: %s [cached]", filepath);
+        Remote::SendResponse(RCMD_COMPILE_SHADER, outgoingBlob, false, nullptr);
+        LOG_VERBOSE("Shader: %s [cached]", filepath);
     }
 
     blob->Free();
-    memFree(blob);
+    Mem::Free(blob);
 }
 #else
 static void shaderCompileLoadTask(uint32, void*)
@@ -143,9 +143,9 @@ static bool shaderCompileShaderHandlerServerFn([[maybe_unused]] uint32 cmd, cons
     UNUSED(outgoingErrorDesc);
     
     // Get a copy of incomingData and pass it on to a task
-    Blob* taskDataBlob = NEW(memDefaultAlloc(), Blob)();
+    Blob* taskDataBlob = NEW(Mem::GetDefaultAlloc(), Blob)();
     incomingData.CopyTo(taskDataBlob);
-    jobsDispatchAndForget(JobsType::LongTask, shaderCompileLoadTask, taskDataBlob, 1, JobsPriority::Low);
+    Jobs::DispatchAndForget(JobsType::LongTask, shaderCompileLoadTask, taskDataBlob, 1, JobsPriority::Low);
     
     return true;
 }
@@ -160,7 +160,7 @@ static void shaderCompileShaderHandlerClientFn([[maybe_unused]] uint32 cmd, cons
     incomingData.Read<uint32>(&handle.mId);
     ASSERT(handle.IsValid());
 
-    Allocator* alloc = nullptr;
+    MemAllocator* alloc = nullptr;
     AssetLoaderAsyncCallback loadCallback = nullptr;
     void* loadCallbackUserData = nullptr;
 
@@ -174,7 +174,7 @@ static void shaderCompileShaderHandlerClientFn([[maybe_unused]] uint32 cmd, cons
             gShaderLoader.requests.RemoveAndSwap(reqIndex);
         }
         else {
-            alloc = memDefaultAlloc();
+            alloc = Mem::GetDefaultAlloc();
             ASSERT(0);
         }
     }
@@ -187,7 +187,7 @@ static void shaderCompileShaderHandlerClientFn([[maybe_unused]] uint32 cmd, cons
         incomingData.Read<uint32>(&shaderBufferSize);
 
         if (shaderBufferSize) {
-            shaderData = memAlloc(shaderBufferSize, alloc);
+            shaderData = Mem::Alloc(shaderBufferSize, alloc);
             incomingData.Read(shaderData, shaderBufferSize);
             ((GfxShader*)shaderData)->hash = uint32(handle);
         }
@@ -198,7 +198,7 @@ static void shaderCompileShaderHandlerClientFn([[maybe_unused]] uint32 cmd, cons
         }
     }
     else {
-        logError(errorDesc);
+        LOG_ERROR(errorDesc);
         if (loadCallback)
             loadCallback(handle, AssetResult {}, loadCallbackUserData);
     }
@@ -207,7 +207,7 @@ static void shaderCompileShaderHandlerClientFn([[maybe_unused]] uint32 cmd, cons
 bool _private::assetInitializeShaderManager()
 {
     #if CONFIG_TOOLMODE
-        if (!shaderInitializeCompiler())
+        if (!ShaderCompiler::Initialize())
             return false;
     #endif
 
@@ -222,7 +222,7 @@ bool _private::assetInitializeShaderManager()
         .asyncObj = nullptr
     });
 
-    remoteRegisterCommand(RemoteCommandDesc {
+    Remote::RegisterCommand(RemoteCommandDesc {
         .cmdFourCC = RCMD_COMPILE_SHADER,
         .serverFn = shaderCompileShaderHandlerServerFn,
         .clientFn = shaderCompileShaderHandlerClientFn,
@@ -230,7 +230,7 @@ bool _private::assetInitializeShaderManager()
     });
     gShaderLoader.requestsMtx.Initialize();
 
-    logInfo("(init) Shader asset manager");
+    LOG_INFO("(init) Shader asset manager");
 
     return true;
 }
@@ -238,7 +238,7 @@ bool _private::assetInitializeShaderManager()
 void _private::assetReleaseShaderManager()
 {
     #if CONFIG_TOOLMODE
-        shaderReleaseCompiler();
+        ShaderCompiler::Release();
     #endif
     assetUnregisterType(SHADER_ASSET_TYPE);
     gShaderLoader.requestsMtx.Release();
@@ -249,7 +249,7 @@ AssetHandleShader assetLoadShader(const char* path, const ShaderLoadParams& desc
 {
     AssetLoadParams loadParams {
         .path = path,
-        .alloc = memDefaultAlloc(), // TODO: should be able to use custom allocator
+        .alloc = Mem::GetDefaultAlloc(), // TODO: should be able to use custom allocator
         .typeId = SHADER_ASSET_TYPE,
         .barrier = barrier
     };
@@ -263,7 +263,7 @@ GfxShader* assetGetShader(AssetHandleShader shaderHandle)
 }
 
 // MT: Runs from a task thread (AssetManager) for local loads
-AssetResult ShaderLoader::Load(AssetHandle handle, const AssetLoadParams& params, uint32 cacheHash, Allocator*)
+AssetResult ShaderLoader::Load(AssetHandle handle, const AssetLoadParams& params, uint32 cacheHash, MemAllocator*)
 {
     #if CONFIG_TOOLMODE
         ASSERT(params.next);
@@ -272,7 +272,7 @@ AssetResult ShaderLoader::Load(AssetHandle handle, const AssetLoadParams& params
 
         AssetMetaKeyValue* metaData;
         uint32 numMeta;
-        const SettingsGraphics& graphicsSettings = settingsGet().graphics;
+        const SettingsGraphics& graphicsSettings = SettingsJunkyard::Get().graphics;
         if (assetLoadMetaData(handle, &tmpAlloc, &metaData, &numMeta)) {
             compileDesc.dumpIntermediates |= assetGetMetaValue(metaData, numMeta, "dumpIntermediates", false);
             compileDesc.debug |= assetGetMetaValue(metaData, numMeta, "debug", false);
@@ -287,14 +287,14 @@ AssetResult ShaderLoader::Load(AssetHandle handle, const AssetLoadParams& params
             .loadParamsSize = sizeof(ShaderCompileDesc),
             .metaData = metaData,
             .numMeta = numMeta,
-            .lastModified = vfsGetLastModified(params.path)
+            .lastModified = Vfs::GetLastModified(params.path)
         });
 
         if (newCacheHash != cacheHash) {
             Path shaderAbsolutePath;
-            Blob blob = vfsReadFile(params.path, VfsFlags::None, &tmpAlloc, &shaderAbsolutePath);
+            Blob blob = Vfs::ReadFile(params.path, VfsFlags::None, &tmpAlloc, &shaderAbsolutePath);
             if (!blob.IsValid()) {
-                logError("Opening shader file failed: %s", params.path);
+                LOG_ERROR("Opening shader file failed: %s", params.path);
                 return AssetResult {};
             }
 
@@ -303,11 +303,11 @@ AssetResult ShaderLoader::Load(AssetHandle handle, const AssetLoadParams& params
             #endif
 
             char errorDiag[1024];
-            Pair<GfxShader*, uint32> shader = shaderCompile(blob, shaderAbsolutePath.CStr(), compileDesc, errorDiag, sizeof(errorDiag), params.alloc);
+            Pair<GfxShader*, uint32> shader = ShaderCompiler::Compile(blob, shaderAbsolutePath.CStr(), compileDesc, errorDiag, sizeof(errorDiag), params.alloc);
             if (shader.first)
                 shader.first->hash = uint32(handle);
             else 
-                logError("Compiling shader '%s' failed: %s", params.path, errorDiag);
+                LOG_ERROR("Compiling shader '%s' failed: %s", params.path, errorDiag);
             return AssetResult { .obj = shader.first, .objBufferSize = shader.second, .cacheHash = newCacheHash };
         }
         else {
@@ -327,7 +327,7 @@ void ShaderLoader::LoadRemote(AssetHandle handle, const AssetLoadParams& params,
 {
     ASSERT(params.next);
     ASSERT(loadCallback);
-    ASSERT(remoteIsConnected());
+    ASSERT(Remote::IsConnected());
 
     ShaderCompileDesc compileDesc = *reinterpret_cast<ShaderCompileDesc*>(params.next.Get());
 
@@ -341,7 +341,7 @@ void ShaderLoader::LoadRemote(AssetHandle handle, const AssetLoadParams& params,
         });
     }
 
-    const SettingsGraphics& graphicsSettings = settingsGet().graphics;
+    const SettingsGraphics& graphicsSettings = SettingsJunkyard::Get().graphics;
     compileDesc.debug |= graphicsSettings.shaderDebug;
     compileDesc.dumpIntermediates |= graphicsSettings.shaderDumpIntermediates;
 
@@ -355,7 +355,7 @@ void ShaderLoader::LoadRemote(AssetHandle handle, const AssetLoadParams& params,
     outgoingBlob.Write<uint32>(static_cast<uint32>(params.platform));
     outgoingBlob.Write(&compileDesc, sizeof(compileDesc));
 
-    remoteExecuteCommand(RCMD_COMPILE_SHADER, outgoingBlob);
+    Remote::ExecuteCommand(RCMD_COMPILE_SHADER, outgoingBlob);
 
     outgoingBlob.Free();
 }
@@ -398,9 +398,9 @@ bool ShaderLoader::ReloadSync(AssetHandle handle, void* prevData)
     return true;
 }
 
-void ShaderLoader::Release(void* data, Allocator* alloc)
+void ShaderLoader::Release(void* data, MemAllocator* alloc)
 {
-    memFree(data, alloc);
+    Mem::Free(data, alloc);
 }
 
 

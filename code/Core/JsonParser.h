@@ -11,8 +11,11 @@ struct JsonErrorLocation
     uint32 col;
 };
 
-API JsonContext* jsonParse(const char* json5, uint32 json5Len, JsonErrorLocation* outErrLoc, Allocator* alloc = memDefaultAlloc());
-API void jsonDestroy(JsonContext* ctx);
+namespace Json
+{
+    API JsonContext* Parse(const char* json5, uint32 json5Len, JsonErrorLocation* outErrLoc, MemAllocator* alloc = Mem::GetDefaultAlloc());
+    API void Destroy(JsonContext* ctx);
+}
 
 struct JsonNode
 {

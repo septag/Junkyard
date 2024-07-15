@@ -14,10 +14,10 @@ struct DebugDrawGridProperties
     Color boldLineColor = COLOR_WHITE;
 };
 
-API void ddDrawGrid_XYAxis(const Camera& cam, float viewWidth, float viewHeight, const DebugDrawGridProperties& props);
-
-namespace _private
+namespace DebugDraw
 {
-    bool ddInitialize();
-    void ddRelease();
+    bool Initialize();
+    void Release();
+
+    API void DrawGroundGrid(const Camera& cam, float viewWidth, float viewHeight, const DebugDrawGridProperties& props);
 }

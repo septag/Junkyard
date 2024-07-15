@@ -16,10 +16,9 @@
 #include "../Assets/Shader.h"
 
 #include "../DebugTools/DebugDraw.h"
-#include "../DebugTools/FrameInfoHud.h"
-#include "../DebugTools/BudgetViewer.h"
+#include "../DebugTools/DebugHud.h"
 
-#include "../ImGui/ImGuiWrapper.h"
+#include "../ImGui/ImGuiMain.h"
 #include "../ImGui/ImGuizmo.h"
 
 #include "../UnityBuild.inl"
@@ -63,16 +62,16 @@ struct AppImpl : AppCallbacks
     bool Initialize() override
     {
         // Mount file-systems before initializing engine
-        if (settingsGet().engine.connectToServer) {
-            vfsMountRemote("data", true);
-            vfsMountRemote("code", true);
+        if (SettingsJunkyard::Get().engine.connectToServer) {
+            Vfs::MountRemote("data", true);
+            Vfs::MountRemote("code", true);
         }
         else {        
-            vfsMountLocal("data", "data", true);
-            vfsMountLocal("code", "code", true);
+            Vfs::MountLocal("data", "data", true);
+            Vfs::MountLocal("code", "code", true);
         }
 
-        if (!engineInitialize())
+        if (!Engine::Initialize())
             return false;
 
         if (!CreateGraphicsObjects())
@@ -82,7 +81,7 @@ struct AppImpl : AppCallbacks
         orbitCam.SetLookAt(Float3(0, -2.0f, 3.0f), FLOAT3_ZERO);
         cam = &orbitCam;
 
-        engineRegisterShortcut("TAB", [](void* userData) {
+        Engine::RegisterShortcut("TAB", [](void* userData) {
            AppImpl* app = reinterpret_cast<AppImpl*>(userData);
            if (app->cam == &app->orbitCam) {
                app->fpsCam.SetViewMat(app->cam->GetViewMat());
@@ -93,7 +92,7 @@ struct AppImpl : AppCallbacks
            }
         }, this);
 
-        logInfo("Use right mouse button to rotate camera. And [TAB] to switch between Orbital and FPS (WASD) camera");
+        LOG_INFO("Use right mouse button to rotate camera. And [TAB] to switch between Orbital and FPS (WASD) camera");
 
         return true;
     };
@@ -107,7 +106,7 @@ struct AppImpl : AppCallbacks
         assetUnload(modelAsset);
         assetUnload(modelShaderAsset);
 
-        engineRelease();
+        Engine::Release();
     };
 
     void Update(fl32 dt) override
@@ -116,14 +115,14 @@ struct AppImpl : AppCallbacks
 
         cam->HandleMovementKeyboard(dt, 10.0f, 5.0f);
 
-        engineBeginFrame(dt);
+        Engine::BeginFrame(dt);
         
         gfxBeginCommandBuffer();
         
         gfxCmdBeginSwapchainRenderPass(Color(100, 100, 100));
 
-        float width = (float)appGetFramebufferWidth();
-        float height = (float)appGetFramebufferHeight();
+        float width = (float)App::GetFramebufferWidth();
+        float height = (float)App::GetFramebufferHeight();
 
         { // draw something
             PROFILE_ZONE_NAME("DrawSomething", true);
@@ -147,7 +146,7 @@ struct AppImpl : AppCallbacks
 
             gfxCmdSetViewports(0, 1, &viewport, true);
 
-            Recti scissor(0, 0, appGetFramebufferWidth(), appGetFramebufferHeight());
+            Recti scissor(0, 0, App::GetFramebufferWidth(), App::GetFramebufferHeight());
             gfxCmdSetScissors(0, 1, &scissor, true);
 
             Model* model = assetGetModel(modelAsset);
@@ -186,16 +185,16 @@ struct AppImpl : AppCallbacks
         }
 
         {
-            ddDrawGrid_XYAxis(*cam, width, height, DebugDrawGridProperties { 
+            DebugDraw::DrawGroundGrid(*cam, width, height, DebugDrawGridProperties { 
                 .lineColor = Color(0x565656), 
                 .boldLineColor = Color(0xd6d6d6) 
             });
         }
 
-        if (imguiIsEnabled()) { // imgui test
+        if (ImGui::IsEnabled()) { // imgui test
             PROFILE_GPU_ZONE_NAME("ImGuiRender", true);
-            budgetViewerRender(dt);
-            frameInfoRender(dt);
+            BudgetViewer::Render(dt);
+            DebugHud::DrawQuickFrameInfo(dt);
 
             #if 0
             Mat4 view = fpsCam.GetViewMat();
@@ -203,13 +202,13 @@ struct AppImpl : AppCallbacks
             fpsCam.SetViewMat(view);
             #endif
 
-            imguiRender();
+            ImGui::DrawFrame();
         }
 
         gfxCmdEndSwapchainRenderPass();
         gfxEndCommandBuffer();        
 
-        engineEndFrame(dt);
+        Engine::EndFrame(dt);
     }
     
     void OnEvent(const AppEvent& ev) override
@@ -380,18 +379,18 @@ struct AppImpl : AppCallbacks
 
 int Main(int argc, char* argv[])
 {
-    settingsInitializeJunkyard({});
+    SettingsJunkyard::Initialize({});
 
     #if PLATFORM_ANDROID
-        settingsInitializeFromAndroidAsset(appAndroidGetAssetManager(), "Settings.ini");
+        settingsInitializeFromAndroidAsset(App::AndroidGetAssetManager(), "Settings.ini");
     #else
         settingsInitializeFromCommandLine(argc, argv);
     #endif
 
-    logDebug("Initializing engine.");
+    LOG_DEBUG("Initializing engine.");
     
     static AppImpl impl;
-    appInitialize(AppDesc { 
+    App::Run(AppDesc { 
         .callbacks = &impl, 
         .windowTitle = "Junkyard: Asset Loading test",
     });
