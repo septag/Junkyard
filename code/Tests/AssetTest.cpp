@@ -382,9 +382,9 @@ int Main(int argc, char* argv[])
     SettingsJunkyard::Initialize({});
 
     #if PLATFORM_ANDROID
-        settingsInitializeFromAndroidAsset(App::AndroidGetAssetManager(), "Settings.ini");
+        Settings::InitializeFromAndroidAsset(App::AndroidGetAssetManager(), "Settings.ini");
     #else
-        settingsInitializeFromCommandLine(argc, argv);
+        Settings::InitializeFromCommandLine(argc, argv);
     #endif
 
     LOG_DEBUG("Initializing engine.");
@@ -395,6 +395,6 @@ int Main(int argc, char* argv[])
         .windowTitle = "Junkyard: Asset Loading test",
     });
 
-    settingsRelease();
+    Settings::Release();
     return 0;
 }

@@ -65,6 +65,9 @@ struct RandomContextCtor
     }
 };
 
+namespace Random
+{
+
 NO_INLINE static RandomContextCtor& RandomCtx() 
 { 
     static thread_local RandomContextCtor randomCtx;
@@ -74,7 +77,7 @@ NO_INLINE static RandomContextCtor& RandomCtx()
 // Convert a randomized uint32_t value to a float value x in the range 0.0f <= x < 1.0f. Contributed by Jonatan Hedborg
 PRAGMA_DIAGNOSTIC_PUSH()
 PRAGMA_DIAGNOSTIC_IGNORED_CLANG_GCC("-Wstrict-aliasing")
-static inline float randomFloatNormalized(uint32 value)
+static inline float FloatNormalized(uint32 value)
 {
     uint32 exponent = 127;
     uint32 mantissa = value >> 9;
@@ -84,7 +87,7 @@ static inline float randomFloatNormalized(uint32 value)
 }
 PRAGMA_DIAGNOSTIC_POP()
 
-INLINE uint64 randomAvalanche64(uint64 h)
+INLINE uint64 Avalanche64(uint64 h)
 {
     h ^= h >> 33;
     h *= 0xff51afd7ed558ccd;
@@ -94,25 +97,25 @@ INLINE uint64 randomAvalanche64(uint64 h)
     return h;
 }
 
-uint32 Random::Seed()
+uint32 Seed()
 {
     return static_cast<uint32>(time(nullptr));
 }
 
-RandomContext Random::CreateContext(uint32 seed)
+RandomContext CreateContext(uint32 seed)
 {
     RandomContext ctx = {{0, 0}};
     uint64 value = (((uint64)seed) << 1ull) | 1ull;    // make it odd
-    value = randomAvalanche64(value);
+    value = Avalanche64(value);
     ctx.state[0] = 0ull;
     ctx.state[1] = (value << 1ull) | 1ull;
-    Random::Int(&ctx);
-    ctx.state[0] += randomAvalanche64(value);
-    Random::Int(&ctx);
+    Int(&ctx);
+    ctx.state[0] += Avalanche64(value);
+    Int(&ctx);
     return ctx;
 }
 
-uint32 Random::Int(RandomContext* ctx)
+uint32 Int(RandomContext* ctx)
 {
     uint64 oldstate = ctx->state[0];
     ctx->state[0] = oldstate * 0x5851f42d4c957f2dull + ctx->state[1];
@@ -121,46 +124,47 @@ uint32 Random::Int(RandomContext* ctx)
     return (xorshifted >> rot) | (xorshifted << ((-(int)rot) & 31));
 }
 
-float Random::Float(RandomContext* ctx)
+float Float(RandomContext* ctx)
 {
-    return randomFloatNormalized(Random::Int(ctx));
+    return FloatNormalized(Int(ctx));
 }
 
-float Random::Float(RandomContext* ctx, float _min, float _max)
+float Float(RandomContext* ctx, float _min, float _max)
 {
     ASSERT(_min <= _max);
     
-    float r = Random::Float(ctx);
+    float r = Float(ctx);
     return _min + r*(_max - _min);
 }
 
-int Random::Int(RandomContext* ctx, int _min, int _max)
+int Int(RandomContext* ctx, int _min, int _max)
 {
     ASSERT(_min <= _max);
     
     uint32 range = static_cast<uint32>(_max - _min) + 1;
-    return _min + static_cast<int>(Random::Int(ctx) % range);
+    return _min + static_cast<int>(Int(ctx) % range);
 }
 
-uint32 Random::Int()
+uint32 Int()
 {
-    return Random::Int(&RandomCtx().ctx);
+    return Int(&RandomCtx().ctx);
 }
 
-float Random::Float()
+float Float()
 {
-    return Random::Float(&RandomCtx().ctx);
+    return Float(&RandomCtx().ctx);
 }
 
-float Random::Float(float _min, float _max)
+float Float(float _min, float _max)
 {
-    return Random::Float(&RandomCtx().ctx, _min, _max);
+    return Float(&RandomCtx().ctx, _min, _max);
 }
 
-int Random::Int(int _min, int _max)
+int Int(int _min, int _max)
 {
-    return Random::Int(&RandomCtx().ctx, _min, _max);
+    return Int(&RandomCtx().ctx, _min, _max);
 }
+} // Random
 
 //     █████╗ ███████╗███████╗███████╗██████╗ ████████╗
 //    ██╔══██╗██╔════╝██╔════╝██╔════╝██╔══██╗╚══██╔══╝

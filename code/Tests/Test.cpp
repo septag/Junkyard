@@ -413,9 +413,9 @@ int Main(int argc, char* argv[])
     SettingsJunkyard::Initialize({});
 
     #if PLATFORM_ANDROID
-        settingsInitializeFromAndroidAsset(App::AndroidGetAssetManager(), "Settings.ini");
+        Settings::InitializeFromAndroidAsset(App::AndroidGetAssetManager(), "Settings.ini");
     #else
-        settingsInitializeFromCommandLine(argc, argv);
+        Settings::InitializeFromCommandLine(argc, argv);
     #endif
    
     static AppImpl impl;
@@ -424,6 +424,6 @@ int Main(int argc, char* argv[])
         .windowTitle = "Junkyard"
     });
 
-    settingsRelease();
+    Settings::Release();
     return 0;
 }

@@ -217,7 +217,7 @@ void SettingsJunkyard::Initialize(const SettingsJunkyard& initSettings)
 {
     gSettingsJunkyard.initialized = true;
     gSettingsJunkyard.settings = initSettings;
-    settingsAddCustomCallbacks(&gSettingsJunkyard.parser);
+    Settings::AddCustomCallbacks(&gSettingsJunkyard.parser);
 }
 
 bool SettingsJunkyard::IsInitialized()

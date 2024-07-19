@@ -47,19 +47,24 @@ struct NO_VTABLE SettingsCustomCallbacks
     virtual void SaveCategory(uint32 categoryId, Array<SettingsKeyValue>& items) = 0;   
 };
 
-API void settingsAddCustomCallbacks(SettingsCustomCallbacks* callbacks);
-API void settingsRemoveCustomCallbacks(SettingsCustomCallbacks* callbacks);
+namespace Settings
+{
+    API void AddCustomCallbacks(SettingsCustomCallbacks* callbacks);
+    API void RemoveCustomCallbacks(SettingsCustomCallbacks* callbacks);
 
-API bool settingsInitializeFromINI(const char* iniFilepath);
-API bool settingsInitializeFromCommandLine(int argc, char* argv[]);
-#if PLATFORM_ANDROID
-typedef struct AAssetManager AAssetManager; 
-API bool settingsInitializeFromAndroidAsset(AAssetManager* assetMgr, const char* iniFilepath);
-#endif
+    API bool InitializeFromINI(const char* iniFilepath);
+    API bool InitializeFromCommandLine(int argc, char* argv[]);
 
-API void settingsSaveToINI(const char* iniFilepath);
-API void settingsRelease();
+    #if PLATFORM_ANDROID
+    typedef struct AAssetManager AAssetManager; 
+    API bool InitializeFromAndroidAsset(AAssetManager* assetMgr, const char* iniFilepath);
+    #endif
 
-// Custom key/values
-API void settingsSetValue(const char* key, const char* value);
-API const char* settingsGetValue(const char* key, const char* defaultValue = "");
+    API void SaveToINI(const char* iniFilepath);
+    API void Release();
+
+    // Custom key/values
+    API void SetValue(const char* key, const char* value);
+    API const char* GetValue(const char* key, const char* defaultValue = "");
+}
+
