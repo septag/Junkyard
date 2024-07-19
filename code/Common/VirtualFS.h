@@ -46,6 +46,7 @@ namespace Vfs
 
     API VfsMountType GetMountType(const char* path);
     API uint64 GetLastModified(const char* path);
+    API Path ResolveFilepath(const char* path);
     API bool StripMountPath(char* outPath, uint32 outPathSize, const char* path);
 
     API void RegisterFileChangeCallback(VfsFileChangeCallback callback);

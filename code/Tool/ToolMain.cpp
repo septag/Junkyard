@@ -68,7 +68,7 @@ int main(int argc, char* argv[])
         }
     });
 
-    settingsInitializeFromCommandLine(argc, argv);
+    Settings::InitializeFromCommandLine(argc, argv);
 
     static AppImpl impl;
     App::Run(AppDesc { 
@@ -76,6 +76,6 @@ int main(int argc, char* argv[])
         .windowTitle = "JunkyardTool" 
     });
 
-    settingsRelease();
+    Settings::Release();
     return 0;
 }

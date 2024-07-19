@@ -412,11 +412,11 @@ private:
 // TODO: (experimental) Currently, not implemented in platforms other than windows
 struct AsyncFile
 {
-    Path filepath;
     void* data;
-    uint64 lastModifiedTime;
     void* userData;
+    uint64 lastModifiedTime;
     uint32 size;
+    Path filepath;
 };
 
 // Callback to receive IO Read/Write completion
@@ -838,7 +838,7 @@ inline Path Path::GetDirectory_CStr()
 
 inline Path& Path::Join(const Path& path)
 {
-    pathJoin(mStr, sizeof(mStr), mStr, path.mStr);
+    Join_CStr(mStr, sizeof(mStr), mStr, path.mStr);
     mLen = strLen(mStr);
     return *this;
 }

@@ -34,7 +34,10 @@ struct SettingsContext
 
 static SettingsContext gSettings;
 
-void settingsAddCustomCallbacks(SettingsCustomCallbacks* callbacks)
+namespace Settings
+{
+
+void AddCustomCallbacks(SettingsCustomCallbacks* callbacks)
 {
     ASSERT(callbacks);
 
@@ -43,7 +46,7 @@ void settingsAddCustomCallbacks(SettingsCustomCallbacks* callbacks)
         gSettings.customCallbacks.Add(callbacks);
 }
 
-void settingsRemoveCustomCallbacks(SettingsCustomCallbacks* callbacks)
+void RemoveCustomCallbacks(SettingsCustomCallbacks* callbacks)
 {
     ASSERT(callbacks);
 
@@ -88,7 +91,7 @@ static bool settingsLoadFromINIInternal(const Blob& blob)
 
                 // if doesn't exist in the predefined settings, add to the general settings
                 if (!predefined)
-                    settingsSetValue(keyTrimmed, valueTrimmed);
+                    SetValue(keyTrimmed, valueTrimmed);
 
                 char msg[256];
                 strPrintFmt(msg, sizeof(msg), "\t%u) %s%s = %s\n", ++count, keyTrimmed, !predefined ? "(*)" : "", valueTrimmed);
@@ -101,7 +104,7 @@ static bool settingsLoadFromINIInternal(const Blob& blob)
     int sectionId = ini_find_section(ini, SETTINGS_NONE_PREDEFINED, strLen(SETTINGS_NONE_PREDEFINED));
     if (sectionId != -1) {
         for (int i = 0; i < ini_property_count(ini, sectionId); i++) {
-            settingsSetValue(ini_property_name(ini, sectionId, i), ini_property_value(ini, sectionId, i));
+            SetValue(ini_property_name(ini, sectionId, i), ini_property_value(ini, sectionId, i));
         }
     }
 
@@ -110,7 +113,7 @@ static bool settingsLoadFromINIInternal(const Blob& blob)
 }
 
 #if PLATFORM_ANDROID
-bool settingsInitializeFromAndroidAsset(AAssetManager* assetMgr, const char* iniFilepath)
+bool InitializeFromAndroidAsset(AAssetManager* assetMgr, const char* iniFilepath)
 {
     char msg[256];
     strPrintFmt(msg, sizeof(msg), "Loading settings from assets: %s\n", iniFilepath);
@@ -148,7 +151,7 @@ bool settingsInitializeFromAndroidAsset(AAssetManager* assetMgr, const char* ini
 }
 #endif  // PLATFORM_ANDROID
 
-bool settingsInitializeFromINI(const char* iniFilepath)
+bool InitializeFromINI(const char* iniFilepath)
 {
     char msg[256];
     strPrintFmt(msg, sizeof(msg), "Loading settings from file: %s", iniFilepath);
@@ -183,7 +186,7 @@ bool settingsInitializeFromINI(const char* iniFilepath)
     return r;
 }
 
-void settingsSaveToINI(const char* iniFilepath)
+void SaveToINI(const char* iniFilepath)
 {
     char msg[256];
     strPrintFmt(msg, sizeof(msg), "Saving settings to file: %s", iniFilepath);
@@ -234,7 +237,7 @@ void settingsSaveToINI(const char* iniFilepath)
     ini_destroy(ini);
 }
 
-bool settingsInitializeFromCommandLine(int argc, char* argv[])
+bool InitializeFromCommandLine(int argc, char* argv[])
 {
     sargs_state* args = sargs_create(sargs_desc {
         .argc = argc,
@@ -276,7 +279,7 @@ bool settingsInitializeFromCommandLine(int argc, char* argv[])
 
             // if doesn't exist in the predefined settings, add to the general settings
             if (!predefined)
-                settingsSetValue(key, value);
+                SetValue(key, value);
 
             char msg[256];
             strPrintFmt(msg, sizeof(msg), "\t%d) %s%s = %s", i+1, key, !predefined ? "(*)" : "", value);
@@ -292,7 +295,7 @@ bool settingsInitializeFromCommandLine(int argc, char* argv[])
     return true;
 }
 
-void settingsSetValue(const char* key, const char* value)
+void SetValue(const char* key, const char* value)
 {
     if (value[0] == 0)
         return;
@@ -307,7 +310,7 @@ void settingsSetValue(const char* key, const char* value)
         gSettings.keyValuePairs.Push(SettingsKeyValue {.key = key, .value = value});
 }
 
-const char* settingsGetValue(const char* key, const char* defaultValue)
+const char* GetValue(const char* key, const char* defaultValue)
 {
     uint32 index = gSettings.keyValuePairs.FindIf([key](const SettingsKeyValue& keyval) {
         return keyval.key.IsEqual(key);
@@ -316,8 +319,9 @@ const char* settingsGetValue(const char* key, const char* defaultValue)
     return index != UINT32_MAX ? gSettings.keyValuePairs[index].value.CStr() : defaultValue;
 }
 
-void settingsRelease()
+void Release()
 {
     gSettings.keyValuePairs.Free();
 }
 
+} // Settings
