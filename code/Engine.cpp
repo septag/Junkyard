@@ -62,7 +62,7 @@ static EngineContext gEng;
 namespace Engine
 {
 
-static void RemoteDisconnected(const char* url, bool onPurpose, SocketErrorCode::Enum errCode)
+static void _RemoteDisconnected(const char* url, bool onPurpose, SocketErrorCode::Enum errCode)
 {
     if (onPurpose)
         return;
@@ -80,7 +80,7 @@ static void RemoteDisconnected(const char* url, bool onPurpose, SocketErrorCode:
     }
 }
 
-static void OnEvent(const AppEvent& ev, [[maybe_unused]] void* userData)
+static void _OnEvent(const AppEvent& ev, [[maybe_unused]] void* userData)
 {
     if (ev.type == AppEventType::KeyDown) {
         // Trigger shortcuts
@@ -160,7 +160,7 @@ bool Initialize()
                    .debugAllocations = SettingsJunkyard::Get().engine.debugAllocations });
 
     if (SettingsJunkyard::Get().engine.connectToServer) {
-        if (!Remote::Connect(SettingsJunkyard::Get().engine.remoteServicesUrl.CStr(), RemoteDisconnected)) {
+        if (!Remote::Connect(SettingsJunkyard::Get().engine.remoteServicesUrl.CStr(), _RemoteDisconnected)) {
             return false;
         }
 
@@ -212,7 +212,7 @@ bool Initialize()
         }
     }
 
-    App::RegisterEventsCallback(OnEvent);
+    App::RegisterEventsCallback(_OnEvent);
 
     gEng.initialized = true;
     LOG_INFO("(init) Engine initialized (%.1f ms)", Timer::ToMS(Timer::GetTicks()));
@@ -279,10 +279,10 @@ void BeginFrame(float dt)
             gEng.remoteDisconnectTime = 0;
             gEng.remoteReconnect = false;
             if (++gEng.remoteRetryCount <= ENGINE_REMOTE_CONNECT_RETRIES) {
-                if (Remote::Connect(engineSettings.remoteServicesUrl.CStr(), RemoteDisconnected))
+                if (Remote::Connect(engineSettings.remoteServicesUrl.CStr(), _RemoteDisconnected))
                     gEng.remoteRetryCount = 0;
                 else
-                    RemoteDisconnected(engineSettings.remoteServicesUrl.CStr(), false, SocketErrorCode::None);
+                    _RemoteDisconnected(engineSettings.remoteServicesUrl.CStr(), false, SocketErrorCode::None);
             }
             else {
                 LOG_WARNING("Failed to connect to server '%s' after %u retries", engineSettings.remoteServicesUrl.CStr(), 

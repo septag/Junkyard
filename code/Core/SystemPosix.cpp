@@ -74,7 +74,7 @@ struct ThreadImpl
 };
 static_assert(sizeof(ThreadImpl) <= sizeof(Thread), "Thread size mismatch");
 
-static void* threadStubFn(void* arg)
+static void* _ThreadStubFn(void* arg)
 {
     ThreadImpl* thrd = reinterpret_cast<ThreadImpl*>(arg);
 
@@ -124,7 +124,7 @@ bool Thread::Start(const ThreadDesc& desc)
         ASSERT_MSG(r == 0, "pthread_attr_setdetachstate failed");
     }
 
-    r = pthread_create(&thrd->handle, &attr, threadStubFn, thrd);
+    r = pthread_create(&thrd->handle, &attr, _ThreadStubFn, thrd);
     if (r != 0) {
         ASSERT_ALWAYS(r == 0, "pthread_create failed");
         thrd->sem.Release();

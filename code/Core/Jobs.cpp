@@ -245,9 +245,11 @@ struct JobsContext
 static JobsContext gJobs;
 static thread_local bool gIsInFiber = false;
 
+namespace Jobs
+{
 //----------------------------------------------------------------------------------------------------------------------
 // Use no_inline function to return our TL var. To avoid compiler confusion with thread-locals when switching fibers
-NO_INLINE static JobsThreadData* jobsGetThreadData() 
+NO_INLINE static JobsThreadData* _GetThreadData() 
 { 
     static thread_local JobsThreadData* data = nullptr;
     if (!data) {
@@ -259,7 +261,7 @@ NO_INLINE static JobsThreadData* jobsGetThreadData()
     return data; 
 }
 
-static void jobsEntryFn(mco_coro* co)
+static void _EntryFn(mco_coro* co)
 {
     ASSERT(co);
     JobsFiber* fiber = reinterpret_cast<JobsFiber*>(co->storage);
@@ -270,7 +272,7 @@ static void jobsEntryFn(mco_coro* co)
     }
 }
 
-static JobsFiber* jobsCreateFiber(JobsFiberProperties* props)
+static JobsFiber* _CreateFiber(JobsFiberProperties* props)
 {
     auto McoMallocFn = [](size_t size, void*)->void*
     {
@@ -301,7 +303,7 @@ static JobsFiber* jobsCreateFiber(JobsFiberProperties* props)
     };    
 
     ASSERT(props->stackSize != JobsStackSize::_Count);
-    mco_desc desc = mco_desc_init(jobsEntryFn, JOBS_STACK_SIZES[uint32(props->stackSize)]);
+    mco_desc desc = mco_desc_init(_EntryFn, JOBS_STACK_SIZES[uint32(props->stackSize)]);
     desc.alloc_cb = McoMallocFn;
     desc.dealloc_cb = McoFreeFn;
 
@@ -327,7 +329,7 @@ static JobsFiber* jobsCreateFiber(JobsFiberProperties* props)
     return reinterpret_cast<JobsFiber*>(co->storage);
 }
 
-NO_INLINE static void jobsDestroyFiber(JobsFiber* fiber)
+NO_INLINE static void _DestroyFiber(JobsFiber* fiber)
 {
     ASSERT(fiber->props);
     ASSERT(fiber->props->next == nullptr && fiber->props->prev == nullptr);
@@ -340,13 +342,13 @@ NO_INLINE static void jobsDestroyFiber(JobsFiber* fiber)
     Atomic::FetchSubExplicit(&gJobs.numActiveFibers, 1, AtomicMemoryOrder::Relaxed);
 }
 
-static void jobsSetFiberToCurrentThread(JobsFiber* fiber)
+static void _SetFiberToCurrentThread(JobsFiber* fiber)
 {
     ASSERT(fiber);
-    ASSERT(jobsGetThreadData());
-    ASSERT(jobsGetThreadData()->curFiber == nullptr);
+    ASSERT(_GetThreadData());
+    ASSERT(_GetThreadData()->curFiber == nullptr);
 
-    JobsThreadData* tdata = jobsGetThreadData();
+    JobsThreadData* tdata = _GetThreadData();
     JobsType type = tdata->type;
     fiber->ownerTid = 0;
     tdata->curFiber = fiber;
@@ -422,7 +424,7 @@ static void jobsSetFiberToCurrentThread(JobsFiber* fiber)
             }
         }
 
-        jobsDestroyFiber(fiber);
+        _DestroyFiber(fiber);
     }
     else {
         // Yielding, Coming back from WaitForCompletion
@@ -440,10 +442,10 @@ static void jobsSetFiberToCurrentThread(JobsFiber* fiber)
     }
 }
 
-static int jobsWorkerThread(void* userData)
+static int _WorkerThread(void* userData)
 {
     // Allocate and initialize thread-data for worker threads
-    JobsThreadData* tdata = jobsGetThreadData();
+    JobsThreadData* tdata = _GetThreadData();
     uint64 param = PtrToInt<uint64>(userData);
     tdata->threadIndex = (param >> 32) & 0xffffffff;
     tdata->type = static_cast<JobsType>(uint32(param & 0xffffffff));
@@ -481,7 +483,7 @@ static int jobsWorkerThread(void* userData)
                         (tmpFiber->signal == nullptr || Atomic::CompareExchange_Strong(&tmpFiber->signal->signaled, &one, 0))))
                     {
                         if (tmpFiber == nullptr)
-                            props->fiber = jobsCreateFiber(props);
+                            props->fiber = _CreateFiber(props);
 
                         fiber = props->fiber;
                         fiber->childCounter = nullptr;
@@ -497,7 +499,7 @@ static int jobsWorkerThread(void* userData)
         }
 
         if (fiber) {
-            jobsSetFiberToCurrentThread(fiber);
+            _SetFiberToCurrentThread(fiber);
         }
         else if (waitingListIsLive) {
             // Try picking another fiber cuz there are still workers in the waiting list but we couldn't pick them up
@@ -511,12 +513,12 @@ static int jobsWorkerThread(void* userData)
         }
     }
 
-    Mem::Free(jobsGetThreadData());
+    Mem::Free(_GetThreadData());
     return 0;
 }
 
-static JobsInstance* jobsDispatchInternal(bool isAutoDelete, JobsType type, JobsCallback callback, void* userData, 
-                                          uint32 groupSize, JobsPriority prio, JobsStackSize stackSize)
+static JobsInstance* _DispatchInternal(bool isAutoDelete, JobsType type, JobsCallback callback, void* userData, 
+                                       uint32 groupSize, JobsPriority prio, JobsStackSize stackSize)
 {
     ASSERT(groupSize);
 
@@ -537,7 +539,7 @@ static JobsInstance* jobsDispatchInternal(bool isAutoDelete, JobsType type, Jobs
     // Set the running fiber as a parent to the new ones, unless we are using AutoDelete fibers, which don't have any dependencies
     JobsFiber* parent = nullptr;
     if (gIsInFiber && !isAutoDelete) {
-        JobsThreadData* tdata = jobsGetThreadData();
+        JobsThreadData* tdata = _GetThreadData();
         ASSERT(tdata->curFiber);
         parent = tdata->curFiber;
     }
@@ -565,7 +567,7 @@ static JobsInstance* jobsDispatchInternal(bool isAutoDelete, JobsType type, Jobs
     return instance;
 }
 
-void Jobs::WaitForCompletion(JobsHandle instance)
+void WaitForCompletion(JobsHandle instance)
 {
     ASSERT(!instance->isAutoDelete);
 
@@ -573,7 +575,7 @@ void Jobs::WaitForCompletion(JobsHandle instance)
     while (Atomic::LoadExplicit(&instance->counter, AtomicMemoryOrder::Acquire)) {
         // If current thread has a fiber assigned and running, put it in waiting list and jump out of it 
         // so one of the threads can continue picking up more workers
-        JobsThreadData* tdata = jobsGetThreadData();
+        JobsThreadData* tdata = _GetThreadData();
         if (tdata) {
             ASSERT_MSG(tdata->curFiber, "Worker threads should always have a fiber assigned when 'Wait' is called");
 
@@ -620,23 +622,23 @@ void Jobs::WaitForCompletion(JobsHandle instance)
     Atomic::FetchSubExplicit(&gJobs.numInstances, 1, AtomicMemoryOrder::Relaxed);
 }
 
-bool Jobs::IsRunning(JobsHandle handle)
+bool IsRunning(JobsHandle handle)
 {
     ASSERT(!handle->isAutoDelete);    // Can't query for AutoDelete jobs
     return Atomic::LoadExplicit(&handle->counter, AtomicMemoryOrder::Acquire);
 }
 
-JobsHandle Jobs::Dispatch(JobsType type, JobsCallback callback, void* userData, uint32 groupSize, JobsPriority prio, JobsStackSize stackSize)
+JobsHandle Dispatch(JobsType type, JobsCallback callback, void* userData, uint32 groupSize, JobsPriority prio, JobsStackSize stackSize)
 {
-    return jobsDispatchInternal(false, type, callback, userData, groupSize, prio, stackSize);
+    return _DispatchInternal(false, type, callback, userData, groupSize, prio, stackSize);
 }
 
-void Jobs::DispatchAndForget(JobsType type, JobsCallback callback, void* userData, uint32 groupSize, JobsPriority prio, JobsStackSize stackSize)
+void DispatchAndForget(JobsType type, JobsCallback callback, void* userData, uint32 groupSize, JobsPriority prio, JobsStackSize stackSize)
 {
-    jobsDispatchInternal(true, type, callback, userData, groupSize, prio, stackSize);
+    _DispatchInternal(true, type, callback, userData, groupSize, prio, stackSize);
 }
 
-void Jobs::GetBudgetStats(JobsBudgetStats* stats)
+void GetBudgetStats(JobsBudgetStats* stats)
 {
     JobsContext::MaxValues m = gJobs.maxValues[1];
 
@@ -660,14 +662,14 @@ void Jobs::GetBudgetStats(JobsBudgetStats* stats)
     stats->fibersMemoryPoolSize = fibersAllocSize;
 }
 
-void Jobs::ResetBudgetStats()
+void ResetBudgetStats()
 {
     JobsContext::MaxValues* m = &gJobs.maxValues[0];
     gJobs.maxValues[1] = *m;
     memset(m, 0x0, sizeof(*m));    
 }
 
-uint32 Jobs::GetWorkerThreadsCount(JobsType type)
+uint32 GetWorkerThreadsCount(JobsType type)
 {
     ASSERT(type != JobsType::_Count);
     return gJobs.numThreads[uint32(type)];
@@ -680,7 +682,7 @@ uint32 Jobs::GetWorkerThreadsCount(JobsType type)
 //    ██║██║╚██╗██║██║   ██║ ██╔╝  ██║  ██║██╔══╝  ██║██║╚██╗██║██║   ██║   
 //    ██║██║ ╚████║██║   ██║██╔╝   ██████╔╝███████╗██║██║ ╚████║██║   ██║   
 //    ╚═╝╚═╝  ╚═══╝╚═╝   ╚═╝╚═╝    ╚═════╝ ╚══════╝╚═╝╚═╝  ╚═══╝╚═╝   ╚═╝   
-void Jobs::Initialize(const JobsInitParams& initParams)
+void Initialize(const JobsInitParams& initParams)
 {
     ASSERT(initParams.alloc);
 
@@ -703,7 +705,7 @@ void Jobs::Initialize(const JobsInitParams& initParams)
     //          3 - performance cores
     //          4 - efficiency cores
     if constexpr (PLATFORM_ANDROID)
-        Debug::StacktraceSaveStopPoint((void*)jobsEntryFn);   // workaround for stacktrace crash bug. see `debugStacktraceSaveStopPoint`
+        Debug::StacktraceSaveStopPoint((void*)_EntryFn);   // workaround for stacktrace crash bug. see `debugStacktraceSaveStopPoint`
 
     #ifdef JOBS_USE_ANDERSON_LOCK
     uint32 numTotalThreads = gJobs.numThreads[0] + gJobs.numThreads[1] + 1;
@@ -733,7 +735,7 @@ void Jobs::Initialize(const JobsInitParams& initParams)
         char name[32];
         strPrintFmt(name, sizeof(name), "LongTask_%u", i+1);
         gJobs.threads[uint32(JobsType::LongTask)][i].Start(ThreadDesc {
-            .entryFn = jobsWorkerThread, 
+            .entryFn = _WorkerThread, 
             .userData = IntToPtr<uint64>((static_cast<uint64>(i+1) << 32) | uint32(JobsType::LongTask)), 
             .name = name, 
             .stackSize = 64*SIZE_KB,
@@ -752,7 +754,7 @@ void Jobs::Initialize(const JobsInitParams& initParams)
         char name[32];
         strPrintFmt(name, sizeof(name), "ShortTask_%u", i+1);
         gJobs.threads[uint32(JobsType::ShortTask)][i].Start(ThreadDesc {
-            .entryFn = jobsWorkerThread, 
+            .entryFn = _WorkerThread, 
             .userData = IntToPtr<uint64>((static_cast<uint64>(i+1) << 32) | uint32(JobsType::ShortTask)), 
             .name = name, 
             .stackSize = 64*SIZE_KB,
@@ -772,7 +774,7 @@ void Jobs::Initialize(const JobsInitParams& initParams)
     {
         ASSERT(ctx);
         if (gIsInFiber) {
-            JobsThreadData* tdata = jobsGetThreadData();
+            JobsThreadData* tdata = _GetThreadData();
             ASSERT(tdata->curFiber);
 
             ASSERT_MSG(!tdata->curFiber->tracyZonesStack.IsFull(), "Profile sampling stack is too deep. Either remove samples or increase the kJobsMaxTracyStackDepth");
@@ -783,7 +785,7 @@ void Jobs::Initialize(const JobsInitParams& initParams)
     auto TracyExitZone = [](TracyCZoneCtx* ctx)->bool
     {
         if (gIsInFiber) {
-            JobsThreadData* tdata = jobsGetThreadData();
+            JobsThreadData* tdata = _GetThreadData();
             ASSERT(tdata->curFiber);
             JobsFiber* fiber = tdata->curFiber;
             if (fiber->tracyZonesStack.Count()) {
@@ -809,7 +811,7 @@ void Jobs::Initialize(const JobsInitParams& initParams)
             gJobs.numThreads[uint32(JobsType::LongTask)]);
 }
 
-void Jobs::Release()
+void Release()
 {
     Atomic::StoreExplicit(&gJobs.quit, 1, AtomicMemoryOrder::Release);
 
@@ -841,6 +843,9 @@ void Jobs::Release()
         Mem::FreeAligned(p.first, p.second, gJobs.initParams.alloc);
 }
 
+} // Jobs
+
+
 //    ███████╗██╗ ██████╗ ███╗   ██╗ █████╗ ██╗     
 //    ██╔════╝██║██╔════╝ ████╗  ██║██╔══██╗██║     
 //    ███████╗██║██║  ███╗██╔██╗ ██║███████║██║     
@@ -871,11 +876,12 @@ void JobsSignal::WaitOnCondition(bool(*condFn)(int value, int reference), int re
 
     uint32 spinCount = !PLATFORM_MOBILE;
     while (condFn(Atomic::LoadExplicit(&self->value, AtomicMemoryOrder::Acquire), reference)) {
-        if (jobsGetThreadData()) {
-            ASSERT_MSG(jobsGetThreadData()->curFiber, "'Wait' should only be called during running job tasks");
+        JobsThreadData* tdata = Jobs::_GetThreadData();
+        if (tdata) {
+            JobsFiber* curFiber = tdata->curFiber;
+            ASSERT_MSG(curFiber, "'Wait' should only be called during running job tasks");
 
-            JobsFiber* curFiber = jobsGetThreadData()->curFiber;
-            curFiber->ownerTid = jobsGetThreadData()->threadId;    // save ownerTid as a hint so we can pick this up again on the same thread context
+            curFiber->ownerTid = tdata->threadId;    // save ownerTid as a hint so we can pick this up again on the same thread context
             curFiber->signal = self;
 
             // Jump out of the fiber

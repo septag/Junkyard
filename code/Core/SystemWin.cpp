@@ -126,7 +126,7 @@ struct Shell32
 // AdvApi32
 static AdvApi32 gAdvApi32;
 
-static void sysLoadAdvApi32()
+static void _LoadAdvApi32()
 {
     if (gAdvApi32.dll == nullptr) {
         gAdvApi32.dll = (HANDLE)OS::LoadDLL("Advapi32.dll");
@@ -146,7 +146,7 @@ static void sysLoadAdvApi32()
 // Ole32
 static Ole32 gOle32;
 
-static void sysLoadOle32()
+static void _LoadOle32()
 {
     if (gOle32.dll == nullptr) {
         gOle32.dll = (HANDLE)OS::LoadDLL("Ole32.dll");
@@ -166,7 +166,7 @@ static void sysLoadOle32()
 // Shell32
 static Shell32 gShell32;
 
-static void sysLoadShell32()
+static void _LoadShell32()
 {
     if (gShell32.dll == nullptr) {
         gShell32.dll = (HANDLE)OS::LoadDLL("Shell32.dll");
@@ -200,7 +200,7 @@ struct ThreadImpl
 };
 static_assert(sizeof(ThreadImpl) <= sizeof(Thread), "Thread size mismatch");
 
-static DWORD WINAPI threadStubFn(LPVOID arg)
+static DWORD WINAPI _ThreadStubFn(LPVOID arg)
 {
     ThreadImpl* thrd = reinterpret_cast<ThreadImpl*>(arg);
     thrd->tId = GetCurrentThreadId();
@@ -239,7 +239,7 @@ bool Thread::Start(const ThreadDesc& desc)
     thrd->stackSize = Max<size_t>(desc.stackSize, 64*SIZE_KB);
     strCopy(thrd->name, sizeof(thrd->name), desc.name ? desc.name : "");
 
-    thrd->handle = CreateThread(nullptr, thrd->stackSize, (LPTHREAD_START_ROUTINE)threadStubFn, thrd, 0, nullptr);
+    thrd->handle = CreateThread(nullptr, thrd->stackSize, (LPTHREAD_START_ROUTINE)_ThreadStubFn, thrd, 0, nullptr);
     if (thrd->handle == nullptr) {
         thrd->sem.Release();
         return false;
@@ -672,7 +672,7 @@ bool UniqueID::operator==(const UniqueID& uuid) const
 
 bool uuidGenerate(UniqueID* _uuid)
 {
-    sysLoadOle32();
+    _LoadOle32();
 
     UUIDImpl* uuid = reinterpret_cast<UUIDImpl*>(_uuid);
     if (gOle32.CoCreateGuid(&uuid->guid) != S_OK)
@@ -683,7 +683,7 @@ bool uuidGenerate(UniqueID* _uuid)
 
 bool uuidToString(const UniqueID& _uuid, char* str, uint32 size)
 {
-    sysLoadOle32();
+    _LoadOle32();
 
     const UUIDImpl& uuid = reinterpret_cast<const UUIDImpl&>(_uuid);
     wchar_t guidStr[39];
@@ -705,7 +705,7 @@ bool uuidToString(const UniqueID& _uuid, char* str, uint32 size)
 
 bool uuidFromString(UniqueID* _uuid, const char* str)
 {
-    sysLoadOle32();
+    _LoadOle32();
 
     ASSERT(str);
 
@@ -778,13 +778,13 @@ size_t OS::GetPageSize()
 
 bool OS::Win32GetRegisterLocalMachineString(const char* subkey, const char* value, char* dst, size_t dstSize)
 {
-    sysLoadAdvApi32();
+    _LoadAdvApi32();
 
     DWORD dataSize = (DWORD)dstSize;
     return gAdvApi32.RegGetValueA(HKEY_LOCAL_MACHINE, subkey, value, RRF_RT_REG_SZ|RRF_RT_REG_EXPAND_SZ, nullptr, dst, &dataSize) == ERROR_SUCCESS;
 }
 
-static uint32 sysGetPhysicalCoresCount()
+static uint32 _GetPhysicalCoresCount()
 {
 	static uint32 cachedCoreCount = UINT32_MAX;
 	if (cachedCoreCount != UINT32_MAX)
@@ -915,7 +915,7 @@ void OS::GetSysInfo(SysInfo* info)
     
     info->pageSize = sysinfo.dwPageSize;
     // info->coreCount = sysinfo.dwNumberOfProcessors;
-    info->coreCount = sysGetPhysicalCoresCount();
+    info->coreCount = _GetPhysicalCoresCount();
 
     ULONGLONG memSizeKb;
     if (GetPhysicallyInstalledSystemMemory(&memSizeKb)) 
@@ -1024,7 +1024,7 @@ bool SysProcess::IsValid() const
     return mProcess != INVALID_HANDLE_VALUE;
 }
 
-static void sysTerminateChildProcesses(DWORD parentProcessId) 
+static void _TerminateChildProcesses(DWORD parentProcessId) 
 {
     HANDLE hSnapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
     if (hSnapshot != INVALID_HANDLE_VALUE) {
@@ -1036,7 +1036,7 @@ static void sysTerminateChildProcesses(DWORD parentProcessId)
                     HANDLE childProcess = OpenProcess(PROCESS_TERMINATE, TRUE, pe.th32ProcessID);
                     if (childProcess) {
                         LOG_DEBUG("Terminating child process: %u (%s)", pe.th32ProcessID, pe.szExeFile);
-                        sysTerminateChildProcesses(pe.th32ProcessID);
+                        _TerminateChildProcesses(pe.th32ProcessID);
 
                         TerminateProcess(childProcess, 1);
                         CloseHandle(childProcess);
@@ -1055,7 +1055,7 @@ void SysProcess::Abort()
 
     // Start by terminating all child processes recursively
     DWORD processId = GetProcessId(mProcess);
-    sysTerminateChildProcesses(processId);
+    _TerminateChildProcesses(processId);
 
     BOOL r = TerminateProcess(mProcess, 1);
     if (!r) {
@@ -1128,7 +1128,7 @@ SysWin32ShellExecuteResult OS::Win32ShellExecute(const char* filepath, const cha
                                                 const char* operation,
                                                 void** pInstance)
 {
-    sysLoadShell32();
+    _LoadShell32();
 
     HINSTANCE hInst = gShell32.ShellExecuteA(nullptr, operation, filepath, args, cwd, (INT)showFlag);
 
@@ -1187,7 +1187,7 @@ void OS::Win32PrintToDebugger(const char* text)
 // TODO: dynalically load functions from DLL to prevent linking with Advapi32.lib
 bool OS::Win32SetPrivilege(const char* name, bool enable)
 {
-    sysLoadAdvApi32();
+    _LoadAdvApi32();
 
     HANDLE tokenHandle;
     TOKEN_PRIVILEGES tp;
@@ -1287,8 +1287,8 @@ bool Path::Move_CStr(const char* src, const char* dest)
 
 char* Path::GetHomeDir_CStr(char* dst, size_t dstSize)
 {
-    sysLoadOle32();
-    sysLoadShell32();
+    _LoadOle32();
+    _LoadShell32();
 
     PWSTR homeDir = nullptr;
     if (SUCCEEDED(gShell32.SHGetKnownFolderPath(FOLDERID_Profile, 0, nullptr, &homeDir))) {
@@ -1304,8 +1304,8 @@ char* Path::GetHomeDir_CStr(char* dst, size_t dstSize)
 
 char* Path::GetCacheDir_CStr(char* dst, size_t dstSize, const char* appName)
 {
-    sysLoadOle32();
-    sysLoadShell32();
+    _LoadOle32();
+    _LoadShell32();
 
     PWSTR homeDir = nullptr;
     if (SUCCEEDED(gShell32.SHGetKnownFolderPath(FOLDERID_LocalAppData, 0, nullptr, &homeDir))) {
@@ -1336,8 +1336,8 @@ bool Path::MakeTemp_CStr(char* dst, [[maybe_unused]] size_t dstSize, const char*
 
 char* OS::Win32GetFolder(SysWin32Folder folder, char* dst, size_t dstSize)
 {
-    sysLoadOle32();
-    sysLoadShell32();
+    _LoadOle32();
+    _LoadShell32();
 
     static const KNOWNFOLDERID folderIds[] = {
         FOLDERID_Documents,
@@ -1446,7 +1446,7 @@ struct FileWin
 };
 static_assert(sizeof(FileWin) <= sizeof(File));
 
-static inline bool fileGetInfo(HANDLE hFile, uint64* outFileSize, uint64* outModifiedTime)
+static inline bool _GetFileInfo(HANDLE hFile, uint64* outFileSize, uint64* outModifiedTime)
 {
     BY_HANDLE_FILE_INFORMATION fileInfo {};
     if (!GetFileInformationByHandle(hFile, &fileInfo)) 
@@ -1502,7 +1502,7 @@ bool File::Open(const char* filepath, FileOpenFlags flags)
     f->handle = hfile;
     f->flags = flags;
     
-    return fileGetInfo(hfile, &f->size, &f->lastModifiedTime);
+    return _GetFileInfo(hfile, &f->size, &f->lastModifiedTime);
 }
 
 void File::Close()
@@ -1600,15 +1600,25 @@ bool File::IsOpen() const
 // AsyncFile
 struct AsyncFileWin
 {
+    OVERLAPPED overlapped;
     AsyncFile f;
     HANDLE hFile;
-    OVERLAPPED overlapped;
     MemAllocator* alloc;
     AsyncFileCallback readFn;
 };
 
+struct AsyncContext
+{
+    HANDLE completionPort;
+    Thread* threads;
+    uint32 numThreads;
+    AtomicUint32 quit;
+};
+
+static AsyncContext gAsyncCtx;
+
 // Win32 callback (Called from one of kernel's IO threads)
-static void asyncReadFileCallback(DWORD dwErrorCode, DWORD dwNumberOfBytesTransfered, LPOVERLAPPED lpOverlapped)
+static void _ReadFileCallbackAsync(DWORD dwErrorCode, DWORD dwNumberOfBytesTransfered, LPOVERLAPPED lpOverlapped)
 {
     size_t overlappedOffset = offsetof(AsyncFileWin, overlapped);
     AsyncFileWin* file = (AsyncFileWin*)((uint8*)lpOverlapped - overlappedOffset);
@@ -1617,17 +1627,82 @@ static void asyncReadFileCallback(DWORD dwErrorCode, DWORD dwNumberOfBytesTransf
     file->readFn(&file->f, dwErrorCode != 0 && dwNumberOfBytesTransfered == file->f.size);
 }
 
+static int _AsyncIOThreadCallback(void* userData)
+{
+    HANDLE completionPort = (HANDLE)userData;
+
+    while (!Atomic::Load(&gAsyncCtx.quit)) {
+        DWORD dwNumberOfBytesTransfered;
+        ULONG_PTR completionKey;
+        AsyncFileWin* file;
+        if (!GetQueuedCompletionStatus(completionPort, &dwNumberOfBytesTransfered, &completionKey, (LPOVERLAPPED*)&file, INFINITE))
+            continue;
+
+        file->readFn(&file->f, dwNumberOfBytesTransfered != file->f.size);
+    }
+
+    return 0;
+}
+
+bool Async::Initialize()
+{
+    gAsyncCtx.completionPort = CreateIoCompletionPort(INVALID_HANDLE_VALUE, nullptr, 0, 0);
+    if (!gAsyncCtx.completionPort) {
+        LOG_ERROR("Creating async completion port failed");
+        return false;
+    }
+
+    
+    SysInfo info {};
+    OS::GetSysInfo(&info);
+    ASSERT(info.coreCount);
+    
+    // Create the thread pool for Async IO
+    gAsyncCtx.threads = NEW_ARRAY(Mem::GetDefaultAlloc(), Thread, info.coreCount);
+    gAsyncCtx.numThreads = info.coreCount;
+
+    for (uint32 i = 0; i < gAsyncCtx.numThreads; i++) {
+        String<32> name = String<32>::Format("IO_%u", i+1);
+        ThreadDesc tdesc {
+            .entryFn = _AsyncIOThreadCallback,
+            .userData = gAsyncCtx.completionPort,
+            .name = name.CStr(),
+            .stackSize = 512*SIZE_KB
+        };
+        
+        gAsyncCtx.threads[i].Start(tdesc);
+    }
+
+    return true;
+}
+
+void Async::Release()
+{
+    Atomic::Store(&gAsyncCtx.quit, 1);
+    if (gAsyncCtx.completionPort) {
+        CloseHandle(gAsyncCtx.completionPort);
+        gAsyncCtx.completionPort = nullptr;
+    }
+
+    for (uint32 i = 0; i < gAsyncCtx.numThreads; i++)
+        gAsyncCtx.threads[i].Stop();
+    Mem::Free(gAsyncCtx.threads);
+
+}
+
 AsyncFile* Async::ReadFile(const char* filepath, const AsyncFileRequest& request)
 {
     HANDLE hFile = CreateFileA(filepath, GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL|FILE_FLAG_OVERLAPPED, NULL);
     if (hFile == INVALID_HANDLE_VALUE)
         return nullptr;
     
-    uint64 fileSize;
-    uint64 fileModificationTime;
-    if (!fileGetInfo(hFile, &fileSize, &fileModificationTime) || fileSize == 0) {
-        CloseHandle(hFile);
-        return nullptr;
+    uint64 fileSize = request.sizeHint;
+    uint64 fileModificationTime = 0;
+    if (!fileSize) {
+        if (!_GetFileInfo(hFile, &fileSize, &fileModificationTime) || fileSize == 0) {
+            CloseHandle(hFile);
+            return nullptr;
+        }
     }
     ASSERT_MSG(fileSize < UINT32_MAX, "Large file sizes are not supported by win32 overlapped API");
     ASSERT_MSG(!request.userDataAllocateSize || (request.userData && request.userDataAllocateSize), 
@@ -1656,15 +1731,20 @@ AsyncFile* Async::ReadFile(const char* filepath, const AsyncFileRequest& request
 
     file->hFile = hFile;
     file->alloc = request.alloc;
+    file->readFn = request.readFn;
 
+    /*
     if (request.readFn) {
         file->readFn = request.readFn;
-        if (!BindIoCompletionCallback(file->hFile, asyncReadFileCallback, 0)) {
+        if (!BindIoCompletionCallback(file->hFile, _ReadFileCallbackAsync, 0)) {
             CloseHandle(file->hFile);
             Mem::Free(file, file->alloc);
             return nullptr;
         }
     }
+    */
+
+    CreateIoCompletionPort(file->hFile, gAsyncCtx.completionPort, 0, 0);
 
     if (!ReadFile(hFile, file->f.data, DWORD(file->f.size), nullptr, &file->overlapped)) {
         if (GetLastError() != ERROR_IO_PENDING) {

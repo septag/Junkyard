@@ -61,15 +61,7 @@ struct AppImpl : AppCallbacks
 
     bool Initialize() override
     {
-        // Mount file-systems before initializing engine
-        if (SettingsJunkyard::Get().engine.connectToServer) {
-            Vfs::MountRemote("data", true);
-            Vfs::MountRemote("code", true);
-        }
-        else {        
-            Vfs::MountLocal("data", "data", true);
-            Vfs::MountLocal("code", "code", true);
-        }
+        Vfs::HelperMountDataAndShaders(SettingsJunkyard::Get().engine.connectToServer);
 
         if (!Engine::Initialize())
             return false;
@@ -266,7 +258,7 @@ struct AppImpl : AppCallbacks
             };
 
             modelAsset = assetLoadModel("/data/models/HighPolyBox/HighPolyBox.gltf", loadParams, b.Barrier());
-            modelShaderAsset = assetLoadShader("/code/shaders/Unlit.hlsl", ShaderLoadParams {}, b.Barrier());
+            modelShaderAsset = assetLoadShader("/shaders/Unlit.hlsl", ShaderLoadParams {}, b.Barrier());
             for (uint32 i = 0; i < kNumCubes; i++) {
                 char imagePath[128];
                 strPrintFmt(imagePath, sizeof(imagePath), "/data/images/gen/%u.png", i+1);
