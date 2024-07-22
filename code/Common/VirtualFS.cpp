@@ -1097,5 +1097,18 @@ void Release()
     gVfs.initialized = false;
 }
 
+void HelperMountDataAndShaders(bool remote)
+{
+    // Assume that we are in the root directory of the project with "data" and "code" folders under it
+    if (remote) {
+        Vfs::MountRemote("data", true);
+        Vfs::MountRemote("shaders", true);
+    }
+    else {        
+        Vfs::MountLocal("data", "data", true);
+        Vfs::MountLocal("code/Shaders", "shaders", true);
+    }
+}
+
 
 } // Vfs

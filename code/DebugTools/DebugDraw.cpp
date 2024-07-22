@@ -151,7 +151,7 @@ bool DebugDraw::Initialize()
 
         {
             AssetBarrierScope b;
-            gDebugDraw.shaderAsset = assetLoadShader("/code/shaders/DebugDraw.hlsl", ShaderLoadParams {}, b.Barrier());            
+            gDebugDraw.shaderAsset = assetLoadShader("/shaders/DebugDraw.hlsl", ShaderLoadParams {}, b.Barrier());            
         }
 
         if (!assetIsAlive(gDebugDraw.shaderAsset))

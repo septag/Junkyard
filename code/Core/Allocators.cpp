@@ -83,7 +83,7 @@ struct MemTempData
 
 static MemTempData gMemTemp;
 
-NO_INLINE static MemTempContext& MemGetTempContext() 
+NO_INLINE static MemTempContext& _GetMemTempContext() 
 { 
     static thread_local MemTempContext tempCtx;
     return tempCtx; 
@@ -91,8 +91,8 @@ NO_INLINE static MemTempContext& MemGetTempContext()
 
 void MemTempAllocator::EnableDebugMode(bool enable)
 {
-    ASSERT_MSG(MemGetTempContext().allocStack.Count() == 0, "MemTemp must be at it's initial state");
-    MemGetTempContext().debugMode = enable;
+    ASSERT_MSG(_GetMemTempContext().allocStack.Count() == 0, "MemTemp must be at it's initial state");
+    _GetMemTempContext().debugMode = enable;
 }
 
 void MemTempAllocator::EnableCallstackCapture(bool capture)
@@ -121,7 +121,7 @@ void MemTempAllocator::GetStats(MemAllocator* alloc, Stats** outStats, uint32* o
 
 MemTempAllocator::ID MemTempAllocator::PushId()
 {
-    MemTempContext& ctx = MemGetTempContext();
+    MemTempContext& ctx = _GetMemTempContext();
 
     // Note that we use an atomic var for syncing between threads and memTempReset caller thread
     // The reason is because while someone Pushed the mem temp stack. Reset might be called and mess things up
@@ -173,7 +173,7 @@ MemTempAllocator::ID MemTempAllocator::PushId()
 
 void MemTempAllocator::PopId(ID id)
 {
-    MemTempContext& ctx = MemGetTempContext();
+    MemTempContext& ctx = _GetMemTempContext();
 
     ASSERT(id);
     ASSERT(ctx.used);
@@ -241,15 +241,15 @@ void MemTempAllocator::Reset(float dt, bool resetValidation)
 
                     maxPeakSize = Max<size_t>(MEM_TEMP_PAGE_SIZE, maxPeakSize);
                     maxPeakSize = AlignValue(maxPeakSize, gMemTemp.pageSize);
-                    if (maxPeakSize > MemGetTempContext().bufferSize) {
-                        size_t growSize = maxPeakSize - MemGetTempContext().bufferSize;
-                        Mem::VirtualCommit(MemGetTempContext().buffer + MemGetTempContext().bufferSize, growSize);
+                    if (maxPeakSize > _GetMemTempContext().bufferSize) {
+                        size_t growSize = maxPeakSize - _GetMemTempContext().bufferSize;
+                        Mem::VirtualCommit(_GetMemTempContext().buffer + _GetMemTempContext().bufferSize, growSize);
                     }
-                    else if (maxPeakSize < MemGetTempContext().bufferSize) {
-                        size_t shrinkSize = MemGetTempContext().bufferSize - maxPeakSize;
-                        Mem::VirtualDecommit(MemGetTempContext().buffer + maxPeakSize, shrinkSize);
+                    else if (maxPeakSize < _GetMemTempContext().bufferSize) {
+                        size_t shrinkSize = _GetMemTempContext().bufferSize - maxPeakSize;
+                        Mem::VirtualDecommit(_GetMemTempContext().buffer + maxPeakSize, shrinkSize);
                     }
-                    MemGetTempContext().bufferSize = maxPeakSize;
+                    _GetMemTempContext().bufferSize = maxPeakSize;
                 }
 
                 ctx->used = false;
@@ -317,7 +317,7 @@ void* MemTempAllocator::MallocZero(size_t size, uint32 align)
 void* MemTempAllocator::Realloc(void* ptr, size_t size, uint32 align) 
 {
     ID id = mId;
-    MemTempContext& ctx = MemGetTempContext();
+    MemTempContext& ctx = _GetMemTempContext();
 
     ASSERT(id);
     ASSERT(ctx.used);
@@ -413,15 +413,15 @@ void MemTempAllocator::Free(void*, uint32)
 size_t MemTempAllocator::GetOffset() const
 {
     uint32 index = mId >> 16;
-    ASSERT_MSG(index == MemGetTempContext().allocStack.Count() - 1, "Invalid temp id, likely doesn't belong to current temp stack scope");
+    ASSERT_MSG(index == _GetMemTempContext().allocStack.Count() - 1, "Invalid temp id, likely doesn't belong to current temp stack scope");
 
-    const MemTempStack& memStack = MemGetTempContext().allocStack[index];
+    const MemTempStack& memStack = _GetMemTempContext().allocStack[index];
     return memStack.baseOffset + memStack.offset;
 }
 
 size_t MemTempAllocator::GetPointerOffset(void* ptr) const
 {
-    return size_t((uint8*)ptr - MemGetTempContext().buffer);
+    return size_t((uint8*)ptr - _GetMemTempContext().buffer);
 }
 
 //    ██████╗ ██╗   ██╗███╗   ███╗██████╗      █████╗ ██╗     ██╗      ██████╗  ██████╗

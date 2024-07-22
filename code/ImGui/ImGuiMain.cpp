@@ -29,15 +29,10 @@
 
 namespace _limits 
 {
-    static constexpr uint32 kImGuiMaxVertices = 30000;
-    static constexpr uint32 kImGuiMaxIndices =  kImGuiMaxVertices*3; 
-    static constexpr size_t kImGuiRuntimeHeapSize = 2*SIZE_MB;
+    static constexpr uint32 IMGUI_MAX_VERTICES = 30000;
+    static constexpr uint32 IMGUI_MAX_INDICES =  IMGUI_MAX_VERTICES*3; 
+    static constexpr size_t IMGUI_RUNTIME_HEAP_SIZE = 2*SIZE_MB;
 }
-
-struct ImGuiUbo
-{
-    Mat4 projMat;
-};
 
 enum ImGuiDescriptorSet : uint32
 {
@@ -67,8 +62,7 @@ struct ImGuiState
     GfxDescriptorSetLayout dsLayout;
     GfxPipeline  pipeline;
     GfxImage     fontImage;
-    GfxDescriptorSet  descriptorSets[_IMGUI_DESCRIPTORSET_COUNT];
-    GfxBuffer         uniformBuffer;
+    GfxDescriptorSet  descriptorSet;
     AssetHandleShader imguiShader;
     size_t       initHeapStart;
     size_t       initHeapSize;
@@ -99,7 +93,7 @@ namespace ImGui
     return Float2(v.x, v.y);
 }
 
-static void InitializeSettings()
+static void _InitializeSettings()
 {
     gImGui.settingsCacheTable.SetAllocator(&gImGui.runtimeHeap);
     gImGui.settingsCacheTable.Reserve(256);
@@ -136,7 +130,7 @@ static void InitializeSettings()
     }
 }
 
-static void ReleaseSettings()
+static void _ReleaseSettings()
 {
     if (gImGui.settingsIni.IsValid()) {
         char iniFilename[64];
@@ -148,7 +142,7 @@ static void ReleaseSettings()
     gImGui.settingsCacheTable.Free();
 }
 
-static void SetColorTheme()
+static void _SetColorTheme()
 {
     ImGuiStyle& style = GetStyle();
     StyleColorsDark(&style);
@@ -224,7 +218,7 @@ static void SetColorTheme()
     style.Colors[ImGuiCol_ModalWindowDimBg]       = ImVec4(0.80f, 0.80f, 0.80f, 0.35f);
 }
 
-static void UpdateCursor()
+static void _UpdateCursor()
 {
     static_assert(ImGuiMouseCursor_None == static_cast<ImGuiMouseCursor>(AppMouseCursor::None));
     static_assert(ImGuiMouseCursor_Arrow == static_cast<ImGuiMouseCursor>(AppMouseCursor::Arrow));
@@ -248,7 +242,7 @@ static void UpdateCursor()
         App::SetCursor(static_cast<AppMouseCursor>(imCursor));
 }
 
-static void OnEventCallback(const AppEvent& ev, [[maybe_unused]] void* userData)
+static void _OnEventCallback(const AppEvent& ev, [[maybe_unused]] void* userData)
 {
     ImGuiIO& io = GetIO();
     
@@ -318,7 +312,7 @@ static void OnEventCallback(const AppEvent& ev, [[maybe_unused]] void* userData)
         break;
         
     case AppEventType::UpdateCursor:
-        UpdateCursor();
+        _UpdateCursor();
         break;
         
     case AppEventType::Resized: {
@@ -339,8 +333,8 @@ bool Initialize()
     gImGui.initHeapStart = initHeap->GetOffset();
 
     {
-        size_t poolSize = MemTlsfAllocator::GetMemoryRequirement(_limits::kImGuiRuntimeHeapSize);
-        gImGui.runtimeHeap.Initialize(_limits::kImGuiRuntimeHeapSize, Mem::Alloc(poolSize, initHeap), poolSize,
+        size_t poolSize = MemTlsfAllocator::GetMemoryRequirement(_limits::IMGUI_RUNTIME_HEAP_SIZE);
+        gImGui.runtimeHeap.Initialize(_limits::IMGUI_RUNTIME_HEAP_SIZE, Mem::Alloc(poolSize, initHeap), poolSize,
                                       SettingsJunkyard::Get().engine.debugAllocations);
     }
     
@@ -387,17 +381,17 @@ bool Initialize()
     conf.KeyMap[ImGuiKey_Y]             = static_cast<int>(InputKeycode::Y);
     conf.KeyMap[ImGuiKey_Z]             = static_cast<int>(InputKeycode::Z);
 
-    gImGui.vertices = Mem::AllocTyped<ImDrawVert>(_limits::kImGuiMaxVertices, initHeap);
-    gImGui.indices = Mem::AllocTyped<uint16>(_limits::kImGuiMaxIndices, initHeap);
+    gImGui.vertices = Mem::AllocTyped<ImDrawVert>(_limits::IMGUI_MAX_VERTICES, initHeap);
+    gImGui.indices = Mem::AllocTyped<uint16>(_limits::IMGUI_MAX_INDICES, initHeap);
 
     gImGui.vertexBuffer = gfxCreateBuffer({
-        .size = _limits::kImGuiMaxVertices*sizeof(ImDrawVert),
+        .size = _limits::IMGUI_MAX_VERTICES*sizeof(ImDrawVert),
         .type = GfxBufferType::Vertex,
         .usage = GfxBufferUsage::Stream,
     });
 
     gImGui.indexBuffer = gfxCreateBuffer({
-        .size = _limits::kImGuiMaxIndices*sizeof(uint16),
+        .size = _limits::IMGUI_MAX_INDICES*sizeof(uint16),
         .type = GfxBufferType::Index,
         .usage = GfxBufferUsage::Stream
     });
@@ -408,25 +402,21 @@ bool Initialize()
     }
     
     // Application events
-    App::RegisterEventsCallback(OnEventCallback);
+    App::RegisterEventsCallback(_OnEventCallback);
     
     // Graphics Objects
     const GfxDescriptorSetLayoutBinding dsetBindings[] = {
         {
-            .name = "TransformUbo",
-            .type = GfxDescriptorType::UniformBuffer,
-            .stages = GfxShaderStage::Vertex
-        },
-        {
-            .name = "Sampler0",
-            .type = GfxDescriptorType::Sampler,
-            .stages = GfxShaderStage::Fragment
-        },
-        {
-            .name = "Texture0",
-            .type = GfxDescriptorType::SampledImage,
+            .name = "MainTexture",
+            .type = GfxDescriptorType::CombinedImageSampler,
             .stages = GfxShaderStage::Fragment
         }
+    };
+
+    GfxPushConstantDesc pushConstant = {
+        .name = "Transform",
+        .stages = GfxShaderStage::Vertex,
+        .range = {0, sizeof(Mat4)}
     };
 
     GfxVertexBufferBindingDesc vertexBufferBindingDesc {
@@ -458,7 +448,7 @@ bool Initialize()
     
     {
         AssetBarrierScope b;
-        gImGui.imguiShader = assetLoadShader("/code/Shaders/ImGui.hlsl", ShaderLoadParams {}, b.Barrier());
+        gImGui.imguiShader = assetLoadShader("/shaders/ImGui.hlsl", ShaderLoadParams {}, b.Barrier());
     }
 
     if (!assetIsAlive(gImGui.imguiShader)) {
@@ -473,6 +463,8 @@ bool Initialize()
         .inputAssemblyTopology = GfxPrimitiveTopology::TriangleList,
         .numDescriptorSetLayouts = 1,
         .descriptorSetLayouts = &gImGui.dsLayout,
+        .numPushConstants = 1,
+        .pushConstants = &pushConstant,
         .numVertexInputAttributes = CountOf(vertexInputAttDescs),
         .vertexInputAttributes = vertexInputAttDescs,
         .numVertexBufferBindings = 1,
@@ -513,65 +505,19 @@ bool Initialize()
         conf.Fonts->SetTexID( reinterpret_cast<ImTextureID>((uintptr_t)uint32(gImGui.fontImage)));
     }
 
-    for (uint32 i = 0; i < _IMGUI_DESCRIPTORSET_COUNT; i++)
-        gImGui.descriptorSets[i] = gfxCreateDescriptorSet(gImGui.dsLayout);
+    gImGui.descriptorSet = gfxCreateDescriptorSet(gImGui.dsLayout);
 
-    gImGui.uniformBuffer = gfxCreateBuffer(GfxBufferDesc {
-        .size = sizeof(ImGuiUbo),
-        .type = GfxBufferType::Uniform,
-        .usage = GfxBufferUsage::Stream
-    });
-
-    {   // shader descriptor bindings
-        GfxDescriptorBindingDesc descriptorBindings[] = {
-            {
-                .name = "TransformUbo",
-                .type = GfxDescriptorType::UniformBuffer,
-                .buffer = { 
-                    .buffer = gImGui.uniformBuffer 
-                }
-            },
-            {
-                .name = "Sampler0",
-                .type = GfxDescriptorType::Sampler,
-                .image = gImGui.fontImage
-            },
-            {
-                .name = "Texture0",
-                .type = GfxDescriptorType::SampledImage,
-                .image = gImGui.fontImage
-            }
-        };
-        gfxUpdateDescriptorSet(gImGui.descriptorSets[IMGUI_DESCRIPTORSET_FONT_IMAGE], 
-                               CountOf(descriptorBindings), descriptorBindings);
-    }
-
-    {
-        GfxDescriptorBindingDesc descriptorBindings[] = {
+    GfxDescriptorBindingDesc descriptorBindings[] = {
         {
-            .name = "TransformUbo",
-            .type = GfxDescriptorType::UniformBuffer,
-            .buffer = {
-                .buffer = gImGui.uniformBuffer
-            }
-        },
-        {
-            .name = "Sampler0",
-            .type = GfxDescriptorType::Sampler,
-            .image = assetGetWhiteImage1x1()
-        },
-        {
-            .name = "Texture0",
-            .type = GfxDescriptorType::SampledImage,
-            .image = assetGetWhiteImage1x1()
+            .name = "MainTexture",
+            .type = GfxDescriptorType::CombinedImageSampler,
+            .image = gImGui.fontImage
         }
-        };
-        gfxUpdateDescriptorSet(gImGui.descriptorSets[IMGUI_DESCRIPTORSET_NO_IMAGE], 
-                               CountOf(descriptorBindings), descriptorBindings);
-    }
+    };
+    gfxUpdateDescriptorSet(gImGui.descriptorSet, CountOf(descriptorBindings), descriptorBindings);
 
-    SetColorTheme();
-    InitializeSettings();
+    _SetColorTheme();
+    _InitializeSettings();
 
     gImGui.initHeapSize = initHeap->GetOffset() - gImGui.initHeapStart;
     
@@ -617,7 +563,7 @@ void BeginFrame(float dt)
     ImGuiMouseCursor mouseCursor =  io.MouseDrawCursor ? ImGuiMouseCursor_None : GetMouseCursor();
     if (gImGui.lastCursor != mouseCursor) {
         gImGui.lastCursor = mouseCursor;
-        UpdateCursor();
+        _UpdateCursor();
     }
     
     NewFrame();
@@ -652,15 +598,15 @@ bool DrawFrame()
         const uint32 dlistNumVerts = static_cast<uint32>(dlist->VtxBuffer.size());
         const uint32 dlistNumIndices = static_cast<uint32>(dlist->IdxBuffer.size());
         
-        if ((numVerts + dlistNumVerts) > _limits::kImGuiMaxVertices) {
-            LOG_WARNING("ImGui: maximum vertex count of '%u' exceeded", _limits::kImGuiMaxVertices);
-            numVerts = _limits::kImGuiMaxVertices - dlistNumVerts;
+        if ((numVerts + dlistNumVerts) > _limits::IMGUI_MAX_VERTICES) {
+            LOG_WARNING("ImGui: maximum vertex count of '%u' exceeded", _limits::IMGUI_MAX_VERTICES);
+            numVerts = _limits::IMGUI_MAX_VERTICES - dlistNumVerts;
             ASSERT(0);
         }
 
-        if ((numIndices + dlistNumIndices) > _limits::kImGuiMaxIndices) {
-            LOG_WARNING("ImGui: maximum index count of '%u' exceeded", _limits::kImGuiMaxIndices);
-            numIndices = _limits::kImGuiMaxIndices - dlistNumIndices;
+        if ((numIndices + dlistNumIndices) > _limits::IMGUI_MAX_INDICES) {
+            LOG_WARNING("ImGui: maximum index count of '%u' exceeded", _limits::IMGUI_MAX_INDICES);
+            numIndices = _limits::IMGUI_MAX_INDICES - dlistNumIndices;
             ASSERT(0);
         }
 
@@ -674,6 +620,7 @@ bool DrawFrame()
         numVerts += dlistNumVerts;
     }
 
+
     gfxCmdUpdateBuffer(gImGui.vertexBuffer, vertices, numVerts * sizeof(ImDrawVert));
     gfxCmdUpdateBuffer(gImGui.indexBuffer, indices, numIndices * sizeof(uint16));
     gImGui.lastFrameVertices = numVerts;
@@ -682,25 +629,25 @@ bool DrawFrame()
     // Draw
     Float2 fbPos = Float2(drawData->DisplayPos.x, drawData->DisplayPos.y);
     Float2 displaySize = Float2(drawData->DisplaySize.x, drawData->DisplaySize.y);
-
-    ImGuiUbo ubo {
-        .projMat = gfxGetClipspaceTransform() * mat4OrthoOffCenter(fbPos.x, 
-                                                                   fbPos.y + displaySize.y, 
-                                                                   fbPos.x + displaySize.x, 
-                                                                   fbPos.y,
-                                                                   -1.0f, 1.0f)
-    };
-    gfxCmdUpdateBuffer(gImGui.uniformBuffer, &ubo, sizeof(ubo));
-
-    gfxCmdBindPipeline(gImGui.pipeline);
-
     GfxViewport viewport {
         .x = fbPos.x,
         .y = fbPos.y,
         .width = displaySize.x,
         .height = displaySize.y
     };
+
+    Mat4 projMat = gfxGetClipspaceTransform() * mat4OrthoOffCenter(fbPos.x, fbPos.y + displaySize.y, 
+                                                                   fbPos.x + displaySize.x, fbPos.y,
+                                                                   -1.0f, 1.0f);
+    
+
+    uint64 offsets[] = {0};
+    gfxCmdBindVertexBuffers(0, 1, &gImGui.vertexBuffer, offsets);
+    gfxCmdBindIndexBuffer(gImGui.indexBuffer, 0, GfxIndexType::Uint16);
+
+    gfxCmdBindPipeline(gImGui.pipeline);
     gfxCmdSetViewports(0, 1, &viewport, true);
+    gfxCmdPushConstants(gImGui.pipeline, GfxShaderStage::Vertex, &projMat, sizeof(projMat));
 
     uint32 baseElem = 0;
     for (int drawListIdx = 0; drawListIdx < drawData->CmdListsCount; drawListIdx++) {
@@ -713,6 +660,8 @@ bool DrawFrame()
                 continue;
             }
 
+            ASSERT_MSG(drawCmd->UserCallback != ImDrawCallback_ResetRenderState, "Not implemented");
+
             Float4 clipRect((drawCmd->ClipRect.x - fbPos.x), (drawCmd->ClipRect.y - fbPos.y),
                             (drawCmd->ClipRect.z - fbPos.x), (drawCmd->ClipRect.w - fbPos.y));
             if (clipRect.x < displaySize.x && clipRect.y < displaySize.y && clipRect.z >= 0.0f && clipRect.w >= 0.0f) {
@@ -720,15 +669,8 @@ bool DrawFrame()
                 GfxImage img(PtrToInt<uint32>(drawCmd->TextureId));
                 ASSERT_MSG(!img.IsValid() || img == gImGui.fontImage, "Doesn't support multiple images yet");
 
-                gfxCmdBindDescriptorSets(gImGui.pipeline, 1, img == gImGui.fontImage ? 
-                                         &gImGui.descriptorSets[IMGUI_DESCRIPTORSET_FONT_IMAGE] : 
-                                         &gImGui.descriptorSets[IMGUI_DESCRIPTORSET_NO_IMAGE]);
-                
-                uint64 offsets[] = {0};
-                gfxCmdBindVertexBuffers(0, 1, &gImGui.vertexBuffer, offsets);
-                gfxCmdBindIndexBuffer(gImGui.indexBuffer, 0, GfxIndexType::Uint16);
-                
                 gfxCmdSetScissors(0, 1, &scissor, true);
+                gfxCmdBindDescriptorSets(gImGui.pipeline, 1, &gImGui.descriptorSet);
                 gfxCmdDrawIndexed(drawCmd->ElemCount, 1, baseElem, 0, 0);
             }
 
@@ -746,21 +688,18 @@ void Release()
 
         assetUnload(gImGui.imguiShader);
 
-        for (uint32 i = 0; i < _IMGUI_DESCRIPTORSET_COUNT; i++) 
-            gfxDestroyDescriptorSet(gImGui.descriptorSets[i]);
-
+        gfxDestroyDescriptorSet(gImGui.descriptorSet);
         gfxDestroyBuffer(gImGui.vertexBuffer);
         gfxDestroyBuffer(gImGui.indexBuffer);
-        gfxDestroyBuffer(gImGui.uniformBuffer);
         gfxDestroyPipeline(gImGui.pipeline);
         gfxDestroyDescriptorSetLayout(gImGui.dsLayout);
         gfxDestroyImage(gImGui.fontImage);
-        App::UnregisterEventsCallback(OnEventCallback);
+        App::UnregisterEventsCallback(_OnEventCallback);
         DestroyContext(gImGui.ctx);
         gImGui.ctx = nullptr;
     }
 
-    ReleaseSettings();
+    _ReleaseSettings();
     gImGui.runtimeHeap.Release();
 }
 
@@ -816,9 +755,9 @@ void GetBudgetStats(ImGuiBudgetStats* stats)
     stats->initHeapStart = gImGui.initHeapStart;
     stats->initHeapSize = gImGui.initHeapSize;
     stats->runtimeHeapSize = gImGui.runtimeHeap.GetAllocatedSize();
-    stats->runtimeHeapMax = _limits::kImGuiRuntimeHeapSize;
-    stats->maxVertices = _limits::kImGuiMaxVertices;
-    stats->maxIndices = _limits::kImGuiMaxIndices;
+    stats->runtimeHeapMax = _limits::IMGUI_RUNTIME_HEAP_SIZE;
+    stats->maxVertices = _limits::IMGUI_MAX_VERTICES;
+    stats->maxIndices = _limits::IMGUI_MAX_INDICES;
     stats->lastFrameVertices = gImGui.lastFrameVertices;
     stats->lastFrameIndices = gImGui.lastFrameIndices;
     stats->runtimeHeap = &gImGui.runtimeHeap;

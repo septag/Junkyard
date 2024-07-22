@@ -53,6 +53,8 @@ namespace Vfs
 
     API bool Initialize();
     API void Release();
+
+    API void HelperMountDataAndShaders(bool remote);
 }
 
 

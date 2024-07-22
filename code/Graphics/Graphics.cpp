@@ -4294,7 +4294,7 @@ void _private::gfxEndFrame()
     MemTempAllocator tmpAlloc;
 
     // Flip the current index here for other threads (mainly loaders) to submit to next frame
-    {   
+    if (!gVk.pendingCmdBuffers.IsEmpty()) {
         SpinLockMutexScope lock(gVk.pendingCmdBuffersLock);
         cmdBuffersVk = Mem::AllocCopy<VkCommandBuffer>(gVk.pendingCmdBuffers.Ptr(), gVk.pendingCmdBuffers.Count(), &tmpAlloc);
         numCmdBuffers = gVk.pendingCmdBuffers.Count();

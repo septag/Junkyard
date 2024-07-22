@@ -60,15 +60,8 @@ struct AppImpl final : AppCallbacks
     bool Initialize() override
     {
         MemTempAllocator::EnableCallstackCapture(true);
-        // Mount file-systems before initializing engine
-        if (SettingsJunkyard::Get().engine.connectToServer) {
-            Vfs::MountRemote("data", true);
-            Vfs::MountRemote("code", true);
-        }
-        else {        
-            Vfs::MountLocal("data", "data", true);
-            Vfs::MountLocal("code", "code", true);
-        }
+
+        Vfs::HelperMountDataAndShaders(SettingsJunkyard::Get().engine.connectToServer);
 
         if (!Engine::Initialize())
             return false;
@@ -321,7 +314,7 @@ struct AppImpl final : AppCallbacks
             };
 
             modelAsset = assetLoadModel("/data/models/Duck/Duck.gltf", loadParams, b.Barrier());
-            modelShaderAsset = assetLoadShader("/code/shaders/Model.hlsl", ShaderLoadParams {}, b.Barrier());
+            modelShaderAsset = assetLoadShader("/shaders/Model.hlsl", ShaderLoadParams {}, b.Barrier());
         }
         if (!assetIsAlive(modelAsset) || !assetIsAlive(modelShaderAsset))
             return false;

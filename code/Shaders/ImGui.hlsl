@@ -12,10 +12,13 @@ struct PS_INPUT
     float2 uv  : TEXCOORD0;
 };
 
-cbuffer TransformUbo
+[[vk_push_constant]]
+cbuffer Transform
 {
     float4x4 ProjMat; 
 };
+
+Sampler2D MainTexture;
 
 [shader("vertex")]
 PS_INPUT VsMain(VS_INPUT input)
@@ -27,11 +30,8 @@ PS_INPUT VsMain(VS_INPUT input)
     return output;
 }
 
-SamplerState Sampler0;
-Texture2D Texture0;
-
 [shader("fragment")]
 float4 PsMain(PS_INPUT input) : SV_Target
 {
-    return input.col * Texture0.Sample(Sampler0, input.uv); 
+    return input.col * MainTexture.Sample(input.uv); 
 }
