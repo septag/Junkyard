@@ -119,7 +119,7 @@ void Path::SetCurrentDir_CStr(const char* path)
     chdir(path);
 }
 
-void sysGetSysInfo(SysInfo* info)
+void OS::GetSysInfo(SysInfo* info)
 {
     memset(info, 0x0, sizeof(*info));
     
@@ -309,7 +309,7 @@ void SysProcess::Abort()
         kill(pid, 1);
 }
 
-bool sysIsDebuggerPresent()
+bool OS::IsDebuggerPresent()
 {
     int mib[4];
     struct kinfo_proc info;
@@ -329,11 +329,6 @@ bool sysIsDebuggerPresent()
 
     // Check if the P_TRACED flag is set, indicating a debugger is attached
     return (info.kp_proc.p_flag & P_TRACED) != 0;
-}
-
-void sysApplePrintToLog(const char* text)
-{
-    puts(text);
 }
 
 char* Path::GetHomeDir_CStr(char* dst, size_t dstSize)

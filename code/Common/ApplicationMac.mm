@@ -16,20 +16,20 @@
 #include "VirtualFS.h"
 #include "RemoteServices.h"
 
-inline constexpr uint32 kMaxKeycodes = 512;
+inline constexpr uint32 APP_MAX_KEY_CODES = 512;
 
 #define APP_ABS(a) (((a)<0.0f)?-(a):(a))
 
-@interface appMacDelegate : NSObject<NSApplicationDelegate>
+@interface AppMacDelegate : NSObject<NSApplicationDelegate>
 @end
 
-@interface appWindowDelegate : NSObject<NSWindowDelegate>
+@interface AppWindowDelegate : NSObject<NSWindowDelegate>
 @end
 
-@interface appMacMetalViewDelegate : NSObject<MTKViewDelegate>
+@interface AppMacMetalViewDelegate : NSObject<MTKViewDelegate>
 @end
 
-@interface appMacMetalView : MTKView
+@interface AppMacMetalView : MTKView
 {
     NSTrackingArea* trackingArea;
 }
@@ -37,18 +37,18 @@ inline constexpr uint32 kMaxKeycodes = 512;
 
 struct AppEventCallbackPair
 {
-    appOnEventCallback callback;
-    void*              userData;
+    AppEventCallback callback;
+    void* userData;
 };
 
 struct AppMacState
 {
     NSApplication* app;
     NSWindow* window;
-    appWindowDelegate* windowDelegate;
-    appMacDelegate* appDelegate;
-    appMacMetalView* view;
-    appMacMetalViewDelegate* viewDelegate;
+    AppWindowDelegate* windowDelegate;
+    AppMacDelegate* appDelegate;
+    AppMacMetalView* view;
+    AppMacMetalViewDelegate* viewDelegate;
     id<MTLDevice> metalDevice;
     uint32 flagsChanged;
     
@@ -62,13 +62,12 @@ struct AppMacState
     uint16 framebufferHeight;
     fl32 dpiScale;
     char windowTitle[128];
-    uint64 frameCount;
     fl32 mouseX;
     fl32 mouseY;
     bool mouseTracked;
     AppEvent ev;
     AppDesc desc;
-    InputKeycode keycodes[kMaxKeycodes];
+    InputKeycode keycodes[APP_MAX_KEY_CODES];
     size_t clipboardSize;
     char* clipboard;
     Array<AppEventCallbackPair> eventCallbacks;
@@ -76,12 +75,10 @@ struct AppMacState
     fl32 contentScale;
     fl32 mouseScale;
     InputKeyModifiers keyMods;
-    bool keysPressed[kMaxKeycodes];
+    bool keysPressed[APP_MAX_KEY_CODES];
     bool firstFrame;
     bool initCalled;
     bool cleanupCalled;
-    bool quitRequested;
-    bool quitOrdered;
     bool eventConsumed;
     bool clipboardEnabled;
     bool iconified;
@@ -90,7 +87,9 @@ struct AppMacState
 
 static AppMacState gApp;
 
-static void appMacInitKeyTable() {
+namespace App
+{
+static void _InitKeyTable() {
     gApp.keycodes[0x1D] = InputKeycode::NUM0;
     gApp.keycodes[0x12] = InputKeycode::NUM1;
     gApp.keycodes[0x13] = InputKeycode::NUM2;
@@ -204,63 +203,63 @@ static void appMacInitKeyTable() {
     gApp.keycodes[0x4E] = InputKeycode::KPSubtract;
 }
 
-bool appInitialize(const AppDesc& desc)
+bool Run(const AppDesc& desc)
 {
     gApp.desc = desc;
-    gApp.desc.width = desc.width;
-    gApp.desc.height = desc.height;
+    gApp.desc.initWidth = desc.initWidth;
+    gApp.desc.initHeight = desc.initHeight;
     gApp.desc.clipboardSizeBytes = desc.clipboardSizeBytes;
     
     // TODO: currently, I don't quite understand how highDPI works on Mac
     //       So forcefully disable highDPI for now
     gApp.desc.highDPI = false;
-
+    
     gApp.firstFrame = true;
-    gApp.windowWidth = gApp.desc.width;
-    gApp.windowHeight = gApp.desc.height;
-    gApp.framebufferWidth = gApp.desc.width;
-    gApp.framebufferHeight = gApp.desc.height;
+    gApp.windowWidth = gApp.desc.initWidth;
+    gApp.windowHeight = gApp.desc.initHeight;
+    gApp.framebufferWidth = gApp.desc.initWidth;
+    gApp.framebufferHeight = gApp.desc.initHeight;
     gApp.dpiScale = 1.0f;
     gApp.clipboardEnabled = desc.enableClipboard;
     if (desc.enableClipboard)
-        gApp.clipboard = (char*)memAllocZero(gApp.desc.clipboardSizeBytes);
-
+        gApp.clipboard = (char*)Mem::Alloc(gApp.desc.clipboardSizeBytes);
+    
     if (desc.windowTitle)
         strCopy(gApp.windowTitle, sizeof(gApp.windowTitle), desc.windowTitle);
     else
         strCopy(gApp.windowTitle, sizeof(gApp.windowTitle), "Junkyard");
     
-    appMacInitKeyTable();
+    _InitKeyTable();
     
     // Initialize settings if not initialied before
     // Since this is not a recommended way, we also throw an assert
-    if (!settingsIsInitializedJunkyard()) {
+    if (!SettingsJunkyard::IsInitialized()) {
         ASSERT_MSG(0, "Settings must be initialized before this call. See settingsInitialize() function");
-        settingsInitializeJunkyard({}); // initialize with default settings
+        SettingsJunkyard::Initialize({});
     }
     
     // Set some initial settings
-    memEnableMemPro(settingsGet().engine.enableMemPro);
-    memTempSetCaptureStackTrace(settingsGet().debug.captureStacktraceForTempAllocator);
-    debugSetCaptureStacktraceForFiberProtector(settingsGet().debug.captureStacktraceForFiberProtector);
-    logSetSettings(static_cast<LogLevel>(settingsGet().engine.logLevel), settingsGet().engine.breakOnErrors, settingsGet().engine.treatWarningsAsErrors);
+    const SettingsJunkyard& settings = SettingsJunkyard::Get();
+    Mem::EnableMemPro(settings.engine.enableMemPro);
+    MemTempAllocator::EnableCallstackCapture(settings.debug.captureStacktraceForTempAllocator);
+    Debug::SetCaptureStacktraceForFiberProtector(settings.debug.captureStacktraceForTempAllocator);
+    Log::SetSettings((const LogLevel)settings.engine.logLevel, settings.engine.breakOnErrors, settings.engine.treatWarningsAsErrors);
     
     // RemoteServices
-    if (!_private::remoteInitialize()) {
+    if (!Remote::Initialize()) {
         ASSERT_MSG(0, "Initializing Server failed");
         return false;
     }
     
     // VirutalFS -> Depends on RemoteServices for some functionality
-    if (!_private::vfsInitialize()) {
+    if (!Vfs::Initialize()) {
         ASSERT_MSG(0, "Initializing VirtualFS failed");
         return false;
     }
-
-    gApp.app = [NSApplication sharedApplication];
     
+    gApp.app = [NSApplication sharedApplication];
     NSApp.activationPolicy = NSApplicationActivationPolicyRegular;
-    gApp.appDelegate = [[appMacDelegate alloc] init];
+    gApp.appDelegate = [[AppMacDelegate alloc] init];
     NSApp.delegate = gApp.appDelegate;
     [NSApp activateIgnoringOtherApps:YES];
     [NSApp run];
@@ -268,12 +267,12 @@ bool appInitialize(const AppDesc& desc)
     return true;
 }
 
-static void appMacUpdateDimensions()
+static void _UpdateDimensions()
 {
     const CGSize fbSize = [gApp.view drawableSize];
     gApp.framebufferWidth = fbSize.width;
     gApp.framebufferHeight = fbSize.height;
-
+    
     const NSRect bounds = [gApp.view bounds];
     gApp.windowWidth = bounds.size.width;
     gApp.windowHeight = bounds.size.height;
@@ -281,44 +280,298 @@ static void appMacUpdateDimensions()
     gApp.dpiScale = (float)gApp.framebufferWidth / (float)gApp.windowWidth;
 }
 
-static bool appMacFrameUpdate(fl32 dt)
-{
-    if (gApp.firstFrame) {
-        gApp.firstFrame = false;
-        if (gApp.desc.callbacks) {
-            if (!gApp.desc.callbacks->Initialize()) {
-                return false;
-            }
-        }
-        gApp.initCalled = true;
-    }
-    
-    if (gApp.desc.callbacks)
-        gApp.desc.callbacks->Update(dt);
-
-    gApp.frameCount++;
-    return true;
-}
-
-static void appMacFrame()
+static void _UpdateFrame()
 {
     static uint64 tmPrev = 0;
     const NSPoint mousePos = [gApp.window mouseLocationOutsideOfEventStream];
     gApp.mouseX = mousePos.x * gApp.dpiScale;
     gApp.mouseY = gApp.framebufferHeight - (mousePos.y * gApp.dpiScale) - 1;
     
-    uint64 tmNow = timerGetTicks();
-    if (!appMacFrameUpdate(!gApp.firstFrame ? (fl32)timerToSec(timerDiff(timerGetTicks(), tmPrev)) : 0)) {
-        appQuit();
-    }
-    tmPrev = tmNow;
+    uint64 tmNow = Timer::GetTicks();
+    double dt = Timer::ToSec(Timer::Diff(Timer::GetTicks(), tmPrev));
 
-    if (gApp.quitRequested || gApp.quitOrdered) {
-        [gApp.window performClose:nil];
+    if (gApp.firstFrame) {
+        gApp.firstFrame = false;
+        if (gApp.desc.callbacks) {
+            if (!gApp.desc.callbacks->Initialize()) {
+                App::Quit();
+                return;
+            }
+        }
+    
+        dt = 0;
+        gApp.initCalled = true;
+    }
+    
+    if (gApp.desc.callbacks)
+        gApp.desc.callbacks->Update(dt);
+    
+    tmPrev = tmNow;
+}
+
+static InputKeyModifiers _GetKeyMods(NSEventModifierFlags f)
+{
+    InputKeyModifiers m = InputKeyModifiers::None;
+    if (f & NSEventModifierFlagShift)
+        m |= InputKeyModifiers::Shift;
+    if (f & NSEventModifierFlagControl)
+        m |= InputKeyModifiers::Ctrl;
+    if (f & NSEventModifierFlagOption)
+        m |= InputKeyModifiers::Alt;
+    if (f & NSEventModifierFlagCommand)
+        m |= InputKeyModifiers::Super;
+    return m;
+}
+
+static inline bool _EventsEnabled()
+{
+    // only send events when an event callback is set, and the init function was called
+    return gApp.desc.callbacks && gApp.initCalled;
+}
+
+static void _InitEvent(AppEventType type)
+{
+    memset(&gApp.ev, 0, sizeof(gApp.ev));
+    gApp.ev.type = type;
+    gApp.ev.mouseButton = InputMouseButton::Invalid;
+    gApp.ev.windowWidth = gApp.windowWidth;
+    gApp.ev.windowHeight = gApp.windowHeight;
+    gApp.ev.framebufferWidth = gApp.framebufferWidth;
+    gApp.ev.framebufferHeight = gApp.framebufferHeight;
+}
+
+static bool _CallEvent(const AppEvent& ev)
+{
+    if (!gApp.cleanupCalled) {
+        if (gApp.desc.callbacks)
+            gApp.desc.callbacks->OnEvent(ev);
+        
+        // Call extra registered event callbacks
+        for (auto c : gApp.eventCallbacks)
+            c.callback(ev, c.userData);
+    }
+    
+    if (gApp.eventConsumed) {
+        gApp.eventConsumed = false;
+        return true;
+    }
+    else {
+        return false;
     }
 }
 
-@implementation appMacDelegate
+static void _DispatchMouseEvent(AppEventType type, InputMouseButton btn, InputKeyModifiers mod)
+{
+    if (App::_EventsEnabled()) {
+        _InitEvent(type);
+        gApp.ev.mouseButton = btn;
+        gApp.ev.keyMods = mod;
+        gApp.ev.mouseX = gApp.mouseX;
+        gApp.ev.mouseY = gApp.mouseY;
+        _CallEvent(gApp.ev);
+    }
+}
+
+static void _DispatchKeyEvent(AppEventType type, InputKeycode key, bool repeat, InputKeyModifiers mod)
+{
+    if (App::_EventsEnabled()) {
+        _InitEvent(type);
+        gApp.ev.keycode = key;
+        gApp.ev.keyRepeat = repeat;
+        gApp.ev.keyMods = mod;
+        _CallEvent(gApp.ev);
+    }
+}
+
+static void _DispatchAppEvent(AppEventType type)
+{
+    if (App::_EventsEnabled()) {
+        _InitEvent(type);
+        _CallEvent(gApp.ev);
+    }
+}
+
+static InputKeycode _TranslateKey(int scanCode)
+{
+    if ((scanCode >= 0) && (scanCode <APP_MAX_KEY_CODES))
+        return gApp.keycodes[scanCode];
+    else
+        return InputKeycode::Invalid;
+}
+
+bool SetClipboardString(const char* str)
+{
+    if (!gApp.clipboardEnabled) {
+        return false;
+    }
+    
+    @autoreleasepool
+    {
+        NSPasteboard* pasteboard = [NSPasteboard generalPasteboard];
+        [pasteboard declareTypes:@[NSPasteboardTypeString] owner:nil];
+        [pasteboard setString:@(str) forType:NSPasteboardTypeString];
+    }
+    
+    strCopy(gApp.clipboard, (uint32)gApp.clipboardSize, str);
+    return true;
+}
+
+void ShowMouse(bool visible)
+{
+    if (visible) {
+        [NSCursor unhide];
+    }
+    else {
+        [NSCursor hide];
+    }
+}
+
+const char* GetClipboardString(void)
+{
+    if (!gApp.clipboardEnabled)
+        return "";
+    
+    ASSERT(gApp.clipboard);
+    @autoreleasepool
+    {
+        gApp.clipboard[0] = 0;
+        NSPasteboard* pasteboard = [NSPasteboard generalPasteboard];
+        if (![[pasteboard types] containsObject:NSPasteboardTypeString]) {
+            return gApp.clipboard;
+        }
+        NSString* str = [pasteboard stringForType:NSPasteboardTypeString];
+        if (!str) {
+            return gApp.clipboard;
+        }
+        strCopy(gApp.clipboard, (uint32)gApp.clipboardSize, [str UTF8String]);
+    }
+    return gApp.clipboard;
+}
+
+void Quit(void)
+{
+    [gApp.window performClose:nil];
+}
+
+uint16 GetWindowWidth(void)
+{
+    return gApp.windowWidth;
+}
+
+uint16 GetWindowHeight(void)
+{
+    return gApp.windowHeight;
+}
+
+bool IsMouseShown(void)
+{
+    return false;       // TODO: Not implemented yet
+}
+
+void* GetNativeWindowHandle(void)
+{
+#if PLATFORM_OSX
+    void* obj = (__bridge void*) gApp.window.contentView.layer;
+    ASSERT(obj);
+    return obj;
+#else
+    return 0;
+#endif
+}
+
+uint16 GetFramebufferWidth()
+{
+    return gApp.framebufferWidth;
+}
+
+uint16 GetFramebufferHeight()
+{
+    return gApp.framebufferHeight;
+}
+
+AppFramebufferTransform GetFramebufferTransform()
+{
+    return AppFramebufferTransform::None;
+}
+
+// TODO
+void CaptureMouse()
+{
+}
+
+void ReleaseMouse()
+{
+}
+
+void* GetNativeAppHandle()
+{
+    return (__bridge void*) gApp.app;
+}
+
+void RegisterEventsCallback(AppEventCallback callback, void* userData)
+{
+    bool alreadyExist = false;
+    for (uint32 i = 0; i < gApp.eventCallbacks.Count(); i++) {
+        if (callback == gApp.eventCallbacks[i].callback) {
+            alreadyExist = true;
+            break;
+        }
+    }
+    
+    ASSERT_MSG(!alreadyExist, "Callback function already exists in event callbacks");
+    if (!alreadyExist)
+        gApp.eventCallbacks.Push({callback, userData});
+}
+
+void UnregisterEventsCallback(AppEventCallback callback)
+{
+    uint32 index = gApp.eventCallbacks.FindIf([callback](const AppEventCallbackPair& p)->bool { return p.callback == callback; });
+    if (index != -1)
+        gApp.eventCallbacks.RemoveAndSwap(index);
+}
+
+void SetCursor(AppMouseCursor cursor)
+{
+    UNUSED(cursor);
+}
+
+AppDisplayInfo GetDisplayInfo()
+{
+    return AppDisplayInfo {
+        .width = gApp.displayWidth,
+        .height = gApp.displayHeight,
+        .refreshRate = gApp.displayRefreshRate,
+        .dpiScale = gApp.dpiScale
+    };
+}
+
+bool IsKeyDown(InputKeycode keycode)
+{
+    return gApp.keysPressed[uint32(keycode)];
+}
+
+bool IsAnyKeysDown(const InputKeycode* keycodes, uint32 numKeycodes)
+{
+    bool down = false;
+    for (uint32 i = 0; i < numKeycodes; i++)
+        down |= gApp.keysPressed[uint32(keycodes[i])];
+    return down;
+}
+
+InputKeyModifiers GetKeyMods()
+{
+    return gApp.keyMods;
+}
+
+const char* GetName()
+{
+    return CONFIG_APP_NAME;
+}
+
+} // App
+
+//----------------------------------------------------------------------------------------------------------------------
+@implementation AppMacDelegate
     - (void)applicationDidFinishLaunching:(NSNotification*)aNotification
     {
         NSScreen* screen = NSScreen.mainScreen;
@@ -364,11 +617,11 @@ static void appMacFrame()
         gApp.window.title = [NSString stringWithUTF8String:gApp.windowTitle];
         gApp.window.acceptsMouseMovedEvents = YES;
         gApp.window.restorable = YES;
-        gApp.windowDelegate = [[appWindowDelegate alloc] init];
+        gApp.windowDelegate = [[AppWindowDelegate alloc] init];
         gApp.window.delegate = gApp.windowDelegate;
         gApp.metalDevice = MTLCreateSystemDefaultDevice();
-        gApp.viewDelegate = [[appMacMetalViewDelegate alloc] init];
-        gApp.view = [[appMacMetalView alloc] init];
+        gApp.viewDelegate = [[AppMacMetalViewDelegate alloc] init];
+        gApp.view = [[AppMacMetalView alloc] init];
         [gApp.view updateTrackingAreas];
         gApp.view.delegate = gApp.viewDelegate;
         gApp.view.device = gApp.metalDevice;
@@ -378,7 +631,7 @@ static void appMacFrame()
         [gApp.window makeFirstResponder:gApp.view];
         CGSize drawableSize = { (CGFloat) gApp.framebufferWidth, (CGFloat) gApp.framebufferHeight };
         gApp.view.drawableSize = drawableSize;
-        appMacUpdateDimensions();
+        App::_UpdateDimensions();
         // gApp.view.layer.magnificationFilter = kCAFilterNearest;
         gApp.valid = true;
         if (gApp.desc.fullscreen) {
@@ -404,148 +657,49 @@ static void appMacFrame()
         
         if (gApp.clipboardEnabled) {
             ASSERT(gApp.clipboard);
-            memFree(gApp.clipboard);
+            Mem::Free(gApp.clipboard);
         }
         
         gApp.eventCallbacks.Free();
         memset(&gApp, 0x0, sizeof(AppMacState));
     }
-@end // appMacDelegate
+@end // AppMacDelegate
 
-static InputKeyModifiers appMacKeyMods(NSEventModifierFlags f)
-{
-    InputKeyModifiers m = InputKeyModifiers::None;
-    if (f & NSEventModifierFlagShift)
-        m |= InputKeyModifiers::Shift;
-    if (f & NSEventModifierFlagControl)
-        m |= InputKeyModifiers::Ctrl;
-    if (f & NSEventModifierFlagOption)
-        m |= InputKeyModifiers::Alt;
-    if (f & NSEventModifierFlagCommand)
-        m |= InputKeyModifiers::Super;
-    return m;
-}
-
-static inline bool appMacEventsEnabled(void)
-{
-    // only send events when an event callback is set, and the init function was called
-    return gApp.desc.callbacks && gApp.initCalled;
-}
-
-static void appMacInitEvent(AppEventType type)
-{
-    memset(&gApp.ev, 0, sizeof(gApp.ev));
-    gApp.ev.type = type;
-    gApp.ev.mouseButton = InputMouseButton::Invalid;
-    gApp.ev.windowWidth = gApp.windowWidth;
-    gApp.ev.windowHeight = gApp.windowHeight;
-    gApp.ev.framebufferWidth = gApp.framebufferWidth;
-    gApp.ev.framebufferHeight = gApp.framebufferHeight;
-}
-
-static bool appMacCallEvent(const AppEvent& ev)
-{
-    if (!gApp.cleanupCalled) {
-        if (gApp.desc.callbacks)
-            gApp.desc.callbacks->OnEvent(ev);
-
-        // Call extra registered event callbacks
-        for (auto c : gApp.eventCallbacks)
-            c.callback(ev, c.userData);
-    }
-    
-    if (gApp.eventConsumed) {
-        gApp.eventConsumed = false;
-        return true;
-    }
-    else {
-        return false;
-    }
-}
-
-static void appMacDispatchMouseEvent(AppEventType type, InputMouseButton btn, InputKeyModifiers mod)
-{
-    if (appMacEventsEnabled()) {
-        appMacInitEvent(type);
-        gApp.ev.mouseButton = btn;
-        gApp.ev.keyMods = mod;
-        gApp.ev.mouseX = gApp.mouseX;
-        gApp.ev.mouseY = gApp.mouseY;
-        appMacCallEvent(gApp.ev);
-    }
-}
-
-static void appMacDispatchKeyEvent(AppEventType type, InputKeycode key, bool repeat, InputKeyModifiers mod)
-{
-    if (appMacEventsEnabled()) {
-        appMacInitEvent(type);
-        gApp.ev.keycode = key;
-        gApp.ev.keyRepeat = repeat;
-        gApp.ev.keyMods = mod;
-        appMacCallEvent(gApp.ev);
-    }
-}
-
-static void appMacDispatchAppEvent(AppEventType type)
-{
-    if (appMacEventsEnabled()) {
-        appMacInitEvent(type);
-        appMacCallEvent(gApp.ev);
-    }
-}
-
-static InputKeycode appTranslateKey(int scanCode)
-{
-    if ((scanCode >= 0) && (scanCode <kMaxKeycodes))
-        return gApp.keycodes[scanCode];
-    else
-        return InputKeycode::Invalid;
-}
-
-@implementation appWindowDelegate
+//----------------------------------------------------------------------------------------------------------------------
+@implementation AppWindowDelegate
     - (BOOL)windowShouldClose:(id)sender
     {
-        // only give user-code a chance to intervene when sapp_quit() wasn't already called
-        if (!gApp.quitOrdered) {
-            // if window should be closed and event handling is enabled, give user code
-            // a chance to intervene via sapp_cancel_quit()
-            gApp.quitRequested = true;
-            // user code hasn't intervened, quit the app
-            if (gApp.quitRequested) {
-                gApp.quitOrdered = true;
-            }
-        }
-        
-        return gApp.quitOrdered ? YES : NO;
+        return YES;
     }
 
     - (void)windowDidResize:(NSNotification*)notification
     {
         if (!gApp.mouseDown) {
-            appMacUpdateDimensions();
-            appMacDispatchAppEvent(AppEventType::Resized);
+            App::_UpdateDimensions();
+            App::_DispatchAppEvent(AppEventType::Resized);
         }
     }
 
     - (void)windowDidMiniaturize:(NSNotification*)notification
     {
-        appMacDispatchAppEvent(AppEventType::Iconified);
+        App::_DispatchAppEvent(AppEventType::Iconified);
         gApp.iconified = true;
     }
 
     - (void)windowDidDeminiaturize:(NSNotification*)notification
     {
-        appMacDispatchAppEvent(AppEventType::Restored);
+        App::_DispatchAppEvent(AppEventType::Restored);
         gApp.iconified = false;
     }
-@end // appWindowDelegate
+@end // AppWindowDelegate
 
-@implementation appMacMetalViewDelegate
+//----------------------------------------------------------------------------------------------------------------------
+@implementation AppMacMetalViewDelegate
     - (void)drawInMTKView:(MTKView*)view
     {
         @autoreleasepool
         {
-            appMacFrame();
+            App::_UpdateFrame();
         }
     }
 
@@ -553,9 +707,10 @@ static InputKeycode appTranslateKey(int scanCode)
     {
         // this is required by the protocol, but we can't do anything useful here
     }
-@end // appMacMetalViewDelegate
+@end // AppMacMetalViewDelegate
 
-@implementation appMacMetalView
+//----------------------------------------------------------------------------------------------------------------------
+@implementation AppMacMetalView
     - (BOOL)isOpaque
     {
         return YES;
@@ -590,68 +745,68 @@ static InputKeycode appTranslateKey(int scanCode)
 
     - (void)mouseEntered:(NSEvent*)event
     {
-        appMacDispatchMouseEvent(AppEventType::MouseEnter, InputMouseButton::Invalid, appMacKeyMods(event.modifierFlags));
+        App::_DispatchMouseEvent(AppEventType::MouseEnter, InputMouseButton::Invalid, App::_GetKeyMods(event.modifierFlags));
     }
 
     - (void)mouseExited:(NSEvent*)event
     {
-        appMacDispatchMouseEvent(AppEventType::MouseLeave, InputMouseButton::Invalid, appMacKeyMods(event.modifierFlags));
+        App::_DispatchMouseEvent(AppEventType::MouseLeave, InputMouseButton::Invalid, App::_GetKeyMods(event.modifierFlags));
     }
 
     - (void)mouseDown:(NSEvent*)event
     {
         gApp.mouseDown = true;
-        appMacDispatchMouseEvent(AppEventType::MouseDown, InputMouseButton::Left, appMacKeyMods(event.modifierFlags));
+        App::_DispatchMouseEvent(AppEventType::MouseDown, InputMouseButton::Left, App::_GetKeyMods(event.modifierFlags));
     }
 
     - (void)mouseUp:(NSEvent*)event
     {
         gApp.mouseDown = false;
-        appMacDispatchMouseEvent(AppEventType::MouseUp, InputMouseButton::Left, appMacKeyMods(event.modifierFlags));
+        App::_DispatchMouseEvent(AppEventType::MouseUp, InputMouseButton::Left, App::_GetKeyMods(event.modifierFlags));
     }
 
     - (void)rightMouseDown:(NSEvent*)event
     {
-        appMacDispatchMouseEvent(AppEventType::MouseDown, InputMouseButton::Right, appMacKeyMods(event.modifierFlags));
+        App::_DispatchMouseEvent(AppEventType::MouseDown, InputMouseButton::Right, App::_GetKeyMods(event.modifierFlags));
     }
 
     - (void)rightMouseUp:(NSEvent*)event
     {
-        appMacDispatchMouseEvent(AppEventType::MouseUp, InputMouseButton::Right, appMacKeyMods(event.modifierFlags));
+        App::_DispatchMouseEvent(AppEventType::MouseUp, InputMouseButton::Right, App::_GetKeyMods(event.modifierFlags));
     }
 
     - (void)otherMouseDown:(NSEvent*)event
     {
         if (2 == event.buttonNumber) {
-            appMacDispatchMouseEvent(AppEventType::MouseDown, InputMouseButton::Middle, appMacKeyMods(event.modifierFlags));
+            App::_DispatchMouseEvent(AppEventType::MouseDown, InputMouseButton::Middle, App::_GetKeyMods(event.modifierFlags));
         }
     }
 
     - (void)otherMouseUp:(NSEvent*)event
     {
         if (2 == event.buttonNumber) {
-            appMacDispatchMouseEvent(AppEventType::MouseUp, InputMouseButton::Middle, appMacKeyMods(event.modifierFlags));
+            App::_DispatchMouseEvent(AppEventType::MouseUp, InputMouseButton::Middle, App::_GetKeyMods(event.modifierFlags));
         }
     }
 
     - (void)mouseMoved:(NSEvent*)event
     {
-        appMacDispatchMouseEvent(AppEventType::MouseMove, InputMouseButton::Invalid , appMacKeyMods(event.modifierFlags));
+        App::_DispatchMouseEvent(AppEventType::MouseMove, InputMouseButton::Invalid , App::_GetKeyMods(event.modifierFlags));
     }
 
     - (void)mouseDragged:(NSEvent*)event
     {
-        appMacDispatchMouseEvent(AppEventType::MouseMove, InputMouseButton::Invalid , appMacKeyMods(event.modifierFlags));
+        App::_DispatchMouseEvent(AppEventType::MouseMove, InputMouseButton::Invalid , App::_GetKeyMods(event.modifierFlags));
     }
 
     - (void)rightMouseDragged:(NSEvent*)event
     {
-        appMacDispatchMouseEvent(AppEventType::MouseMove, InputMouseButton::Invalid, appMacKeyMods(event.modifierFlags));
+        App::_DispatchMouseEvent(AppEventType::MouseMove, InputMouseButton::Invalid, App::_GetKeyMods(event.modifierFlags));
     }
 
     - (void)scrollWheel:(NSEvent*)event
     {
-        if (appMacEventsEnabled()) {
+        if (App::_EventsEnabled()) {
             float dx = (float) event.scrollingDeltaX;
             float dy = (float) event.scrollingDeltaY;
             if (event.hasPreciseScrollingDeltas) {
@@ -659,38 +814,38 @@ static InputKeycode appTranslateKey(int scanCode)
                 dy *= 0.1;
             }
             if ((APP_ABS(dx) > 0.0f) || (APP_ABS(dy) > 0.0f)) {
-                appMacInitEvent(AppEventType::MouseScroll);
-                gApp.ev.keyMods = appMacKeyMods(event.modifierFlags);
+                App::_InitEvent(AppEventType::MouseScroll);
+                gApp.ev.keyMods = App::_GetKeyMods(event.modifierFlags);
                 gApp.ev.mouseX = gApp.mouseX;
                 gApp.ev.mouseY = gApp.mouseY;
                 gApp.ev.scrollX = dx;
                 gApp.ev.scrollY = dy;
-                appMacCallEvent(gApp.ev);
+                App::_CallEvent(gApp.ev);
             }
         }
     }
 
     - (void)keyDown:(NSEvent*)event
     {
-        if (appMacEventsEnabled()) {
-            InputKeyModifiers mods = appMacKeyMods(event.modifierFlags);
-            InputKeycode keyCode = appTranslateKey(event.keyCode);
+        if (App::_EventsEnabled()) {
+            InputKeyModifiers mods = App::_GetKeyMods(event.modifierFlags);
+            InputKeycode keyCode = App::_TranslateKey(event.keyCode);
             gApp.keyMods |= mods;
             gApp.keysPressed[uint32(keyCode)] = true;
             
-            appMacDispatchKeyEvent(AppEventType::KeyDown, keyCode, event.isARepeat, mods);
+            App::_DispatchKeyEvent(AppEventType::KeyDown, keyCode, event.isARepeat, mods);
 
             // NOTE: macOS doesn't send keyUp events while the Cmd key is pressed,
             //       as a workaround, to prevent key presses from sticking we'll send
             //       a keyup event following right after the keydown if SUPER is also pressed
             if ((mods & InputKeyModifiers::Super) == InputKeyModifiers::Super) {
-                appMacDispatchKeyEvent(AppEventType::KeyUp, keyCode, event.isARepeat, mods);
+                App::_DispatchKeyEvent(AppEventType::KeyUp, keyCode, event.isARepeat, mods);
             }
             
             const NSString* chars = event.characters;
             const NSUInteger len = chars.length;
             if (len > 0) {
-                appMacInitEvent(AppEventType::Char);
+                App::_InitEvent(AppEventType::Char);
                 gApp.ev.keyMods = mods;
                 for (NSUInteger i = 0; i < len; i++) {
                     const unichar codepoint = [chars characterAtIndex:i];
@@ -699,29 +854,26 @@ static InputKeycode appTranslateKey(int scanCode)
                     }
                     gApp.ev.charcode = codepoint;
                     gApp.ev.keyRepeat = event.isARepeat;
-                    appMacCallEvent(gApp.ev);
+                    App::_CallEvent(gApp.ev);
                 }
             }
             
             // if this is a Cmd+V (paste), also send a CLIPBOARD_PASTE event
             if (gApp.clipboard && (mods == InputKeyModifiers::Super) && (keyCode == InputKeycode::V)) {
-                appMacInitEvent(AppEventType::ClipboardPasted);
-                appMacCallEvent(gApp.ev);
+                App::_InitEvent(AppEventType::ClipboardPasted);
+                App::_CallEvent(gApp.ev);
             }
         }
     }
 
     - (void)keyUp:(NSEvent*)event
     {
-        InputKeyModifiers mods = appMacKeyMods(event.modifierFlags);
-        InputKeycode keyCode = appTranslateKey(event.keyCode);
+        InputKeyModifiers mods = App::_GetKeyMods(event.modifierFlags);
+        InputKeycode keyCode = App::_TranslateKey(event.keyCode);
         gApp.keysPressed[uint32(keyCode)] = false;
         gApp.keyMods &= ~mods;
 
-        appMacDispatchKeyEvent(AppEventType::KeyUp,
-            keyCode,
-            event.isARepeat,
-            appMacKeyMods(event.modifierFlags));
+        App::_DispatchKeyEvent(AppEventType::KeyUp, keyCode, event.isARepeat, App::_GetKeyMods(event.modifierFlags));
     }
 
     - (void)flagsChanged:(NSEvent*)event
@@ -747,204 +899,18 @@ static InputKeycode appTranslateKey(int scanCode)
             key_code = InputKeycode::LeftSuper;
             down = 0 != (new_f & NSEventModifierFlagCommand);
         }
-        if (key_code != InputKeycode::Invalid) {
-            appMacDispatchKeyEvent(down ? AppEventType::KeyDown : AppEventType::KeyUp,
-                key_code,
-                false,
-                appMacKeyMods(event.modifierFlags));
-        }
+        if (key_code != InputKeycode::Invalid)
+            App::_DispatchKeyEvent(down ? AppEventType::KeyDown : AppEventType::KeyUp, key_code, false, App::_GetKeyMods(event.modifierFlags));
     }
 
     - (void)cursorUpdate:(NSEvent*)event
     {
         if (gApp.desc.userCursor)
-            appMacDispatchAppEvent(AppEventType::UpdateCursor);
+            App::_DispatchAppEvent(AppEventType::UpdateCursor);
     }
-@end // appMacMetalView
+@end // AppMacMetalView
 
-bool appSetClipboardString(const char* str)
-{
-    if (!gApp.clipboardEnabled) {
-        return false;
-    }
 
-    @autoreleasepool
-    {
-        NSPasteboard* pasteboard = [NSPasteboard generalPasteboard];
-        [pasteboard declareTypes:@[NSPasteboardTypeString] owner:nil];
-        [pasteboard setString:@(str) forType:NSPasteboardTypeString];
-    }
-    
-    strCopy(gApp.clipboard, (uint32)gApp.clipboardSize, str);
-    return true;
-}
-
-void appShowMouse(bool visible)
-{
-    if (visible) {
-        [NSCursor unhide];
-    }
-    else {
-        [NSCursor hide];
-    }
-}
-
-const char* appGetClipboardString(void)
-{
-    if (!gApp.clipboardEnabled) {
-        return "";
-    }
-
-    ASSERT(gApp.clipboard);
-    @autoreleasepool
-    {
-        gApp.clipboard[0] = 0;
-        NSPasteboard* pasteboard = [NSPasteboard generalPasteboard];
-        if (![[pasteboard types] containsObject:NSPasteboardTypeString]) {
-            return gApp.clipboard;
-        }
-        NSString* str = [pasteboard stringForType:NSPasteboardTypeString];
-        if (!str) {
-            return gApp.clipboard;
-        }
-        strCopy(gApp.clipboard, (uint32)gApp.clipboardSize, [str UTF8String]);
-    }
-    return gApp.clipboard;
-}
-
-void appRequestQuit(void)
-{
-    gApp.quitRequested = true;
-}
-
-void appCancelQuit(void)
-{
-    gApp.quitRequested = false;
-}
-
-void appQuit(void)
-{
-    gApp.quitOrdered = true;
-}
-
-uint16 appGetWindowWidth(void)
-{
-    return gApp.windowWidth;
-}
-
-uint16 appGetWindowHeight(void)
-{
-    return gApp.windowHeight;
-}
-
-bool appIsMouseShown(void)
-{
-    return false;       // TODO: Not implemented yet
-}
-
-void* appGetNativeWindowHandle(void)
-{
-    #if PLATFORM_OSX
-        void* obj = (__bridge void*) gApp.window.contentView.layer;
-        ASSERT(obj);
-        return obj;
-    #else
-        return 0;
-    #endif
-}
-
-uint16 appGetFramebufferWidth()
-{
-    return gApp.framebufferWidth;
-}
-
-uint16 appGetFramebufferHeight()
-{
-    return gApp.framebufferHeight;
-}
-
-AppFramebufferTransform appGetFramebufferTransform()
-{
-    return AppFramebufferTransform::None;
-}
-
-// TODO
-void appCaptureMouse()
-{
-}
-
-void appReleaseMouse()
-{
-}
-
-void*  appGetNativeAppHandle()
-{
-    return (__bridge void*) gApp.app;
-}
-
-void appRegisterEventsCallback(appOnEventCallback callback, void* userData)
-{
-    bool alreadyExist = false;
-    for (uint32 i = 0; i < gApp.eventCallbacks.Count(); i++) {
-        if (callback == gApp.eventCallbacks[i].callback) {
-            alreadyExist = true;
-            break;
-        }
-    }
-    
-    ASSERT_MSG(!alreadyExist, "Callback function already exists in event callbacks");
-    if (!alreadyExist) {
-        gApp.eventCallbacks.Push({callback, userData});
-    }
-}
-
-void appUnregisterEventsCallback(appOnEventCallback callback)
-{
-    if (uint32 index = gApp.eventCallbacks.FindIf([callback](const AppEventCallbackPair& p)->bool
-                                                  {return p.callback == callback;});
-        index != UINT32_MAX)
-    {
-        gApp.eventCallbacks.RemoveAndSwap(index);
-    }
-}
-
-void appSetCursor(AppMouseCursor cursor)
-{
-    UNUSED(cursor);
-}
-
-AppDisplayInfo appGetDisplayInfo()
-{
-    return AppDisplayInfo {
-        .width = gApp.displayWidth,
-        .height = gApp.displayHeight,
-        .refreshRate = gApp.displayRefreshRate,
-        .dpiScale = gApp.dpiScale
-    };
-}
-
-bool appIsKeyDown(InputKeycode keycode)
-{
-    return gApp.keysPressed[uint32(keycode)];
-}
-
-bool appIsAnyKeysDown(const InputKeycode* keycodes, uint32 numKeycodes)
-{
-    bool down = false;
-    for (uint32 i = 0; i < numKeycodes; i++)
-        down |= gApp.keysPressed[uint32(keycodes[i])];
-    return down;
-}
-
-InputKeyModifiers appGetKeyMods()
-{
-    return gApp.keyMods;
-}
-
-const char* appGetName()
-{
-    return "";
-}
 
 #endif // PLATFORM_APPLE
 
