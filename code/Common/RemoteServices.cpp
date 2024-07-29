@@ -40,8 +40,11 @@ struct RemoteServicesContext
 
 static RemoteServicesContext gRemoteServices;
 
+namespace Remote
+{
+
 // MT: This function is thread-safe, but be aware of too many calls at the same time, because it locks the thread
-void Remote::SendResponse(uint32 cmdCode, const Blob& data, bool error, const char* errorDesc)
+void SendResponse(uint32 cmdCode, const Blob& data, bool error, const char* errorDesc)
 {
     uint32 cmdIdx = gRemoteServices.commands.FindIf([cmdCode](const RemoteCommandDesc& cmd) { return cmd.cmdFourCC == cmdCode; });
     if (cmdIdx != INVALID_INDEX) {
@@ -50,22 +53,22 @@ void Remote::SendResponse(uint32 cmdCode, const Blob& data, bool error, const ch
         if (sock->IsValid() && sock->IsConnected()) {
             uint32 dataSize = static_cast<uint32>(data.Size());
             const uint32 cmdHeader[] = {kCmdFlag, cmdCode, !error ? kResultOk : kResultError, dataSize};
-
+            
             MemTempAllocator tmp;
             Blob dataOut(&tmp);
             dataOut.SetGrowPolicy(Blob::GrowPolicy::Multiply);
             dataOut.Reserve(dataSize + sizeof(cmdHeader) + (error ? kRemoteErrorDescSize : 0));
-
+            
             dataOut.Write(cmdHeader, sizeof(cmdHeader));
             if (dataSize)
                 dataOut.Write(data.Data(), dataSize);
-
+            
             // Append error message to the end
             if (error) {
                 ASSERT(errorDesc);
                 dataOut.WriteStringBinary(errorDesc, strLen(errorDesc));
             }
-
+            
             sock->Write(dataOut.Data(), static_cast<uint32>(dataOut.Size()));
             dataOut.Free();
         }
@@ -76,14 +79,14 @@ void Remote::SendResponse(uint32 cmdCode, const Blob& data, bool error, const ch
     }
 }
 
-static int serverPeerThreadFn(void* userData)
+static int _PeerThreadFn(void* userData)
 {
     uint8 tmpBuffer[4096];
     SocketTCP* sock = reinterpret_cast<SocketTCP*>(userData);
-
+    
     bool saidHello = false;
     bool quit = false;
-
+    
     while (!gRemoteServices.serverQuit && !quit) {
         uint32 packet[3] = {0, 0, 0};       // {kCmdFlag, CmdCode, DataSize}
         uint32 bytesRead = sock->Read(packet, sizeof(packet));
@@ -97,7 +100,7 @@ static int serverPeerThreadFn(void* userData)
             }
             break;
         }
-
+        
         // Drop packets that does not have the header
         if (packet[0] != kCmdFlag) {
             LOG_DEBUG("RemoteServices: Invalid packet");
@@ -118,7 +121,7 @@ static int serverPeerThreadFn(void* userData)
                 sock->Write(bye, sizeof(bye));
                 saidHello = false;
                 quit = true;
-            }   
+            }
             else {
                 // Read custom command and execute it's callbacks if found
                 // Custom commands have an extra size+data section ([header] + [cmd] + [size] = 3*uint32)
@@ -126,9 +129,9 @@ static int serverPeerThreadFn(void* userData)
                 if (cmdIdx != INVALID_INDEX && bytesRead >= sizeof(uint32)*3) {
                     const RemoteCommandDesc& cmd = gRemoteServices.commands[cmdIdx];
                     ASSERT(cmd.serverFn);
-
+                    
                     uint32 dataSize = packet[2];
-
+                    
                     MemTempAllocator tmpAlloc;
                     Blob dataBlob(&tmpAlloc);
                     if (dataSize > 0) {
@@ -148,29 +151,29 @@ static int serverPeerThreadFn(void* userData)
                                 quit = true;
                                 break;
                             }
-
+                            
                             dataBlob.Write(tmpBuffer, bytesRead);
                             dataSize -= bytesRead;
                         }
                     }
-
+                    
                     
                     Blob outgoingDataBlob(&tmpAlloc);
                     outgoingDataBlob.SetGrowPolicy(Blob::GrowPolicy::Multiply);
-
+                    
                     char errorDesc[kRemoteErrorDescSize];   errorDesc[0] = '\0';
                     bool r = cmd.serverFn(cmd.cmdFourCC, dataBlob, &outgoingDataBlob, cmd.serverUserData, errorDesc);
-
+                    
                     // send the reply back to the client only if the callback is not async
                     if (!cmd.async || !r)
-                        Remote::SendResponse(cmdCode, outgoingDataBlob, !r, errorDesc);
-
+                        SendResponse(cmdCode, outgoingDataBlob, !r, errorDesc);
+                    
                     outgoingDataBlob.Free();
                     dataBlob.Free();
                 }
-                else { 
-                    LOG_DEBUG("RemoteServices: Invalid incoming command: 0x%x (%c%c%c%c)", cmdCode, 
-                        cmdCode&0xff, (cmdCode>>8)&0xff, (cmdCode>>16)&0xff, cmdCode>>24);
+                else {
+                    LOG_DEBUG("RemoteServices: Invalid incoming command: 0x%x (%c%c%c%c)", cmdCode,
+                              cmdCode&0xff, (cmdCode>>8)&0xff, (cmdCode>>16)&0xff, cmdCode>>24);
                 }
             }
         }
@@ -184,7 +187,7 @@ static int serverPeerThreadFn(void* userData)
     return 0;
 }
 
-static int serverThreadFn(void*)
+static int _ThreadFn(void*)
 {
     gRemoteServices.serverSock = SocketTCP::CreateListener();
     
@@ -196,10 +199,10 @@ static int serverThreadFn(void*)
             if (gRemoteServices.serverPeerSock.IsValid()) {
                 LOG_INFO("RemoteServices: Incoming connection: %s", peerUrl);
                 gRemoteServices.peerUrl = peerUrl;
-
+                
                 Thread thrd;
                 thrd.Start(ThreadDesc {
-                    .entryFn = serverPeerThreadFn,
+                    .entryFn = _PeerThreadFn,
                     .userData = &gRemoteServices.serverPeerSock,
                     .name = "ServerClientPipe"
                 });
@@ -208,30 +211,30 @@ static int serverThreadFn(void*)
             }
         }
     }
-
+    
     gRemoteServices.serverSock.Close();
     return 0;
 }
 
 
-bool Remote::Initialize()
+bool Initialize()
 {
     gRemoteServices.serverPeerMtx.Initialize();
     gRemoteServices.clientMtx.Initialize();
-
+    
     if (SettingsJunkyard::Get().tooling.enableServer) {
         LOG_INFO("(init) RemoteServices: Starting RemoteServices server in port %u...", SettingsJunkyard::Get().tooling.serverPort);
         gRemoteServices.serverThread.Start(ThreadDesc {
-            .entryFn = serverThreadFn, 
+            .entryFn = _ThreadFn,
             .name = "RemoteServicesServer"
         });
-
+        
         gRemoteServices.serverThread.SetPriority(ThreadPriority::Low);
     }
     return true;
 }
 
-void Remote::Release()
+void Release()
 {
     gRemoteServices.serverQuit = true;
     if (gRemoteServices.serverPeerSock.IsValid())
@@ -239,9 +242,9 @@ void Remote::Release()
     if (gRemoteServices.serverSock.IsValid())
         gRemoteServices.serverSock.Close();
     gRemoteServices.serverThread.Stop();
-
+    
     gRemoteServices.clientQuit = true;
-    if (gRemoteServices.clientSock.IsValid()) 
+    if (gRemoteServices.clientSock.IsValid())
         gRemoteServices.clientSock.Close();
     gRemoteServices.clientThread.Stop();
     
@@ -250,12 +253,12 @@ void Remote::Release()
     gRemoteServices.commands.Free();
 }
 
-static int remoteClientThreadFn(void*)
+static int _ClientThreadFn(void*)
 {
     uint8 tmpBuffer[4096];
     SocketTCP* sock = &gRemoteServices.clientSock;
     ASSERT(sock->IsValid());
-
+    
     bool quit = false;
     while (!gRemoteServices.clientQuit && !quit) {
         uint32 packet[4] = {0, 0, 0, 0};       // {kCmdFlag, CmdCode, ErrorIndicator, DataSize}
@@ -264,13 +267,13 @@ static int remoteClientThreadFn(void*)
             LOG_DEBUG("RemoteServices: Socket Error: %s", SocketErrorCode::ToStr(sock->GetErrorCode()));
             break;
         }
-
+        
         // Drop packets that does not have the header
         if (packet[0] != kCmdFlag) {
             LOG_DEBUG("RemoteServices: Invalid packet");
             break;
         }
-
+        
         uint32 cmdCode = packet[1];
         if (cmdCode == kCmdBye) {
             // bye back and close
@@ -283,7 +286,7 @@ static int remoteClientThreadFn(void*)
             if (cmdIdx != INVALID_INDEX) {
                 const RemoteCommandDesc& cmd = gRemoteServices.commands[cmdIdx];
                 ASSERT(cmd.clientFn);
-
+                
                 uint32 dataSize = packet[3];
                 
                 MemTempAllocator tmpAlloc;
@@ -291,7 +294,7 @@ static int remoteClientThreadFn(void*)
                 if (dataSize > 0) {
                     incomingDataBlob.SetGrowPolicy(Blob::GrowPolicy::Multiply);
                     incomingDataBlob.Reserve(dataSize);
-                        
+                    
                     while (dataSize) {
                         bytesRead = sock->Read(tmpBuffer, Min<uint32>(dataSize, sizeof(tmpBuffer)));
                         if (bytesRead == UINT32_MAX) {
@@ -303,11 +306,11 @@ static int remoteClientThreadFn(void*)
                         dataSize -= bytesRead;
                     }
                 }
-
+                
                 // Check for errors
-                char errorDesc[kRemoteErrorDescSize];   
+                char errorDesc[kRemoteErrorDescSize];
                 memset(errorDesc, 0x0, sizeof(errorDesc));
-
+                
                 if (packet[2] == kResultError) {
                     uint32 errorLen;
                     sock->Read(&errorLen, sizeof(errorLen));
@@ -317,19 +320,19 @@ static int remoteClientThreadFn(void*)
                 else {
                     ASSERT(packet[2] == kResultOk);
                 }
-
+                
                 cmd.clientFn(cmdCode, incomingDataBlob, cmd.clientUserData, packet[2] == kResultError, errorDesc);
             }
             else {
-                LOG_DEBUG("RemoteServices: Invalid response command from server: 0x%x (%c%c%c%c)", cmdCode, 
-                    cmdCode&0xff, (cmdCode>>8)&0xff, (cmdCode>>16)&0xff, cmdCode>>24);
+                LOG_DEBUG("RemoteServices: Invalid response command from server: 0x%x (%c%c%c%c)", cmdCode,
+                          cmdCode&0xff, (cmdCode>>8)&0xff, (cmdCode>>16)&0xff, cmdCode>>24);
             }
         }
     }   // while not quit
-
+    
     SocketErrorCode::Enum errCode = sock->GetErrorCode();
     sock->Close();
-
+    
     if (gRemoteServices.disconnectFn)
         gRemoteServices.disconnectFn(gRemoteServices.peerUrl.CStr(), gRemoteServices.clientQuit, errCode);
     gRemoteServices.clientIsConnected = false;
@@ -337,7 +340,7 @@ static int remoteClientThreadFn(void*)
 }
 
 
-bool Remote::Connect(const char* url, RemoteDisconnectCallback disconnectFn)
+bool Connect(const char* url, RemoteDisconnectCallback disconnectFn)
 {
     ASSERT_MSG(!gRemoteServices.clientIsConnected, "Client is already connected");
     
@@ -347,25 +350,25 @@ bool Remote::Connect(const char* url, RemoteDisconnectCallback disconnectFn)
         ASSERT(gRemoteServices.clientSock.IsConnected());
         return true;
     }
-
+    
     gRemoteServices.clientThread.Stop();
     LOG_INFO("(init) RemoteServices: Connecting to remote server: %s ...", url);
-
+    
     gRemoteServices.clientSock = SocketTCP::Connect(url);
     SocketTCP* sock = &gRemoteServices.clientSock;
     if (!sock->IsValid() || !sock->IsConnected()) {
         LOG_ERROR("RemoteServices: Connecting to remote url '%s' failed", url);
         return false;
     }
-
+    
     // Say hello
     const uint32 hello[] = {kCmdFlag, kCmdHello, 0};
     if (sock->Write(hello, sizeof(hello)) != sizeof(hello)) {
         LOG_ERROR("RemoteServices: Connecting to remote url '%s' failed", url);
         sock->Close();
-        return false;        
+        return false;
     }
-
+    
     // Receive hello and complete the handshake
     uint32 response[3];
     if (sock->Read(response, sizeof(response)) != sizeof(response) ||
@@ -377,11 +380,11 @@ bool Remote::Connect(const char* url, RemoteDisconnectCallback disconnectFn)
     }
     
     gRemoteServices.clientThread.Start(ThreadDesc {
-        .entryFn = remoteClientThreadFn, 
+        .entryFn = _ClientThreadFn,
         .name = "RemoteServicesClient"
     });
     gRemoteServices.clientThread.SetPriority(ThreadPriority::Low);
-
+    
     LOG_INFO("(init) RemoteServices: Connected to remote server: %s", url);
     gRemoteServices.disconnectFn = disconnectFn;
     gRemoteServices.peerUrl = url;
@@ -389,10 +392,10 @@ bool Remote::Connect(const char* url, RemoteDisconnectCallback disconnectFn)
     return true;
 }
 
-void Remote::Disconnect()
+void Disconnect()
 {
     gRemoteServices.clientQuit = true;
-    if (gRemoteServices.clientSock.IsValid()) 
+    if (gRemoteServices.clientSock.IsValid())
         gRemoteServices.clientSock.Close();
     gRemoteServices.clientThread.Stop();
     gRemoteServices.clientQuit = false;
@@ -400,14 +403,14 @@ void Remote::Disconnect()
     gRemoteServices.peerUrl = "";
 }
 
-bool Remote::IsConnected()
+bool IsConnected()
 {
     MutexScope mtx(gRemoteServices.clientMtx);
     return gRemoteServices.clientIsConnected && gRemoteServices.clientSock.IsConnected();
 }
 
 // MT: This function is thread-safe, multiple calls to remoteExecuteCommand from several threads locks it
-void Remote::ExecuteCommand(uint32 cmdCode, const Blob& data)
+void ExecuteCommand(uint32 cmdCode, const Blob& data)
 {
     uint32 cmdIdx = gRemoteServices.commands.FindIf([cmdCode](const RemoteCommandDesc& cmd) { return cmd.cmdFourCC == cmdCode; });
     if (cmdIdx != INVALID_INDEX) {
@@ -416,7 +419,7 @@ void Remote::ExecuteCommand(uint32 cmdCode, const Blob& data)
         if (sock->IsValid() && sock->IsConnected()) {
             uint32 dataSize = static_cast<uint32>(data.Size());
             const uint32 cmdHeader[] = {kCmdFlag, cmdCode, dataSize};
-
+            
             Blob outgoing;      // TODO: use temp allocator
             outgoing.Reserve(sizeof(cmdHeader) + dataSize);
             outgoing.Write(cmdHeader, sizeof(cmdHeader));
@@ -427,23 +430,24 @@ void Remote::ExecuteCommand(uint32 cmdCode, const Blob& data)
         }
     }
     else {
-        LOG_DEBUG("RemoteServices: Invalid command: 0x%x (%c%c%c%c)", cmdCode, 
-            cmdCode&0xff, (cmdCode>>8)&0xff, (cmdCode>>16)&0xff, cmdCode>>24);
+        LOG_DEBUG("RemoteServices: Invalid command: 0x%x (%c%c%c%c)", cmdCode,
+                  cmdCode&0xff, (cmdCode>>8)&0xff, (cmdCode>>16)&0xff, cmdCode>>24);
         ASSERT(0);
     }
 }
 
-void Remote::RegisterCommand(const RemoteCommandDesc& desc)
+void RegisterCommand(const RemoteCommandDesc& desc)
 {
-    if (gRemoteServices.commands.FindIf([fourCC = desc.cmdFourCC](const RemoteCommandDesc& cmd) 
-                                        { return cmd.cmdFourCC == fourCC; }) != INVALID_INDEX) 
+    if (gRemoteServices.commands.FindIf([fourCC = desc.cmdFourCC](const RemoteCommandDesc& cmd)
+                                        { return cmd.cmdFourCC == fourCC; }) != INVALID_INDEX)
     {
-        LOG_ERROR("Remote command with FourCC 0x%x (%c%c%c%c) is already registered", desc.cmdFourCC, 
-            desc.cmdFourCC&0xff, (desc.cmdFourCC>>8)&0xff, (desc.cmdFourCC>>16)&0xff, desc.cmdFourCC>>24);
+        LOG_ERROR("Remote command with FourCC 0x%x (%c%c%c%c) is already registered", desc.cmdFourCC,
+                  desc.cmdFourCC&0xff, (desc.cmdFourCC>>8)&0xff, (desc.cmdFourCC>>16)&0xff, desc.cmdFourCC>>24);
         ASSERT(0);
         return;
     }
-
+    
     gRemoteServices.commands.Push(desc);
 }
 
+} // Remote

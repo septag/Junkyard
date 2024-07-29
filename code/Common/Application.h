@@ -79,7 +79,7 @@ struct AppEvent
     uint16 framebufferHeight;
 };
 
-using appOnEventCallback = void(*)(const AppEvent& ev, void* userData);
+using AppEventCallback = void(*)(const AppEvent& ev, void* userData);
 
 struct NO_VTABLE AppCallbacks
 {
@@ -130,8 +130,8 @@ namespace App
     API void ReleaseMouse();
     API void* GetNativeWindowHandle();
     API void* GetNativeAppHandle();
-    API void RegisterEventsCallback(appOnEventCallback callback, void* userData = nullptr);
-    API void UnregisterEventsCallback(appOnEventCallback callback);
+    API void RegisterEventsCallback(AppEventCallback callback, void* userData = nullptr);
+    API void UnregisterEventsCallback(AppEventCallback callback);
     API void SetCursor(AppMouseCursor cursor);
     API AppDisplayInfo GetDisplayInfo();
     API bool IsKeyDown(InputKeycode keycode);
