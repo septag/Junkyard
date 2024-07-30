@@ -27,6 +27,7 @@
 #include "StringUtil.h"
 
 template <typename _T> struct Array;
+typedef struct AAssetManager AAssetManager;
 
 struct SettingsKeyValue
 {
@@ -56,7 +57,6 @@ namespace Settings
     API bool InitializeFromCommandLine(int argc, char* argv[]);
 
     #if PLATFORM_ANDROID
-    typedef struct AAssetManager AAssetManager; 
     API bool InitializeFromAndroidAsset(AAssetManager* assetMgr, const char* iniFilepath);
     #endif
 

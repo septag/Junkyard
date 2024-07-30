@@ -77,9 +77,6 @@
 #include <stdbool.h>    // bool
 #include <stddef.h>     // NULL, size_t, offsetof
 #include <memory.h>		// memset, memcpy
-#if PLATFORM_APPLE
-#include <string.h>
-#endif
 
 #include "Config.h"
 

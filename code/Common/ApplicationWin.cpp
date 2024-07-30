@@ -49,8 +49,8 @@
 
 struct AppEventCallbackPair
 {
-    appOnEventCallback callback;
-    void*              userData;
+    AppEventCallback callback;
+    void*            userData;
 };
 
 struct AppWindowsState
@@ -1007,7 +1007,7 @@ namespace App
         };
     }
 
-    void RegisterEventsCallback(appOnEventCallback callback, void* userData)
+    void RegisterEventsCallback(AppEventCallback callback, void* userData)
     {
         bool alreadyExist = false;
         for (uint32 i = 0; i < gApp.eventCallbacks.Count(); i++) {
@@ -1023,7 +1023,7 @@ namespace App
         }    
     }
 
-    void UnregisterEventsCallback(appOnEventCallback callback)
+    void UnregisterEventsCallback(AppEventCallback callback)
     {
         if (uint32 index = gApp.eventCallbacks.FindIf([callback](const AppEventCallbackPair& p)->bool 
             {return p.callback == callback;});

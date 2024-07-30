@@ -31,7 +31,7 @@ int AndroidMain(int argc, char* argv[]);
 
 struct AppEventCallbackPair
 {
-    appOnEventCallback  callback;
+    AppEventCallback  callback;
     void*               userData;
 };
 
@@ -840,7 +840,7 @@ float appGetDpiScale()
     return gApp.dpiScale;
 }
 
-void App::RegisterEventsCallback(appOnEventCallback callback, void* userData)
+void App::RegisterEventsCallback(AppEventCallback callback, void* userData)
 {
     bool alreadyExist = false;
     for (uint32 i = 0; i < gApp.eventCallbacks.Count(); i++) {
@@ -856,7 +856,7 @@ void App::RegisterEventsCallback(appOnEventCallback callback, void* userData)
     }    
 }
 
-void App::UnregisterEventsCallback(appOnEventCallback callback)
+void App::UnregisterEventsCallback(AppEventCallback callback)
 {
     if (uint32 index = gApp.eventCallbacks.FindIf([callback](const AppEventCallbackPair& p)->bool {
         return p.callback == callback;});
