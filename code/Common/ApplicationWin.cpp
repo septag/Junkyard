@@ -88,6 +88,7 @@ struct AppWindowsState
     float contentScale;
     float mouseScale;
 
+    bool quitFromConsole;
     bool windowModified;
     bool mouseTracked;
     bool dpiAware;
@@ -860,7 +861,7 @@ namespace App
         uint64 tmNow = Timer::GetTicks();
         uint64 tmPrev = tmNow;
         bool quit = false;
-        while (!quit) {
+        while (!quit && !gApp.quitFromConsole) {
             if (!headless) {
                 MSG msg;
 
@@ -975,6 +976,7 @@ namespace App
     void Quit()
     {
         PostQuitMessage(0);
+        gApp.quitFromConsole = true;
     }
 
     uint16 GetWindowWidth()
