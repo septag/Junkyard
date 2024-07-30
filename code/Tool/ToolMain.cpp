@@ -19,15 +19,7 @@ struct AppImpl final : AppCallbacks
 {
     bool Initialize() override
     {
-        // Mount file-systems before initializing engine
-        if (SettingsJunkyard::Get().engine.connectToServer) {
-            Vfs::MountRemote("data", true);
-            Vfs::MountRemote("code", true);
-        }
-        else {        
-            Vfs::MountLocal("data", "data", true);
-            Vfs::MountLocal("code", "code", true);
-        }
+        Vfs::HelperMountDataAndShaders(SettingsJunkyard::Get().engine.connectToServer);
 
         if (!Engine::Initialize())
             return false;
