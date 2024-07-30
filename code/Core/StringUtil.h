@@ -22,12 +22,14 @@ API bool    strIsEqual(const char* s1, const char* s2);
 API bool    strIsEqualNoCase(const char* s1, const char* s2);
 API bool    strIsEqualCount(const char* s1, const char* s2, uint32 count);
 API bool    strIsEqualNoCaseCount(const char* s1, const char* s2, uint32 count);
+API uint32  strCountMatchingFirstChars(const char* s1, const char* s2);
 API bool    strEndsWith(const char* str, const char* endsWith);
 API char*   strTrim(char* dst, uint32 dstSize, const char* src);
 API char*   strTrim(char* dst, uint32 dstSize, const char* src, char ch);
 API char*   strRemoveWhitespace(char* dst, uint32 dstSize, const char* src);
 API char*   strRemoveChar(char* dst, uint32 dstSize, const char* src, char ch);
 API char*   strReplaceChar(char* dst, uint32 dstSize, char ch, char replaceWith);
+API char*   strSubStr(char* dst, uint32 dstSize, const char* str, uint32 startIdx, uint32 endIdx = 0);
 API bool    strToBool(const char* str);
 API int     strToInt(const char* str);
 API uint32  strToUint(const char* str);
@@ -99,7 +101,7 @@ struct String
     String<_Size>& Trim();
     String<_Size>& Trim(char ch);
 
-    String<_Size> SubStr(uint32 start, uint32 end = UINT32_MAX);
+    String<_Size> SubStr(uint32 start, uint32 end = 0);
 
 protected:
     char mStr[_Size];
@@ -357,7 +359,7 @@ inline String<_Size>& String<_Size>::Trim(char ch)
 template <uint32 _Size>
 inline String<_Size> String<_Size>::SubStr(uint32 start, uint32 end)
 {
-    end = end == UINT32_MAX ? mLen : end;
+    end = (end == 0) ? mLen : end;
 
     String<_Size> r;
     strCopyCount(r.mStr, _Size, mStr + start, end - start);

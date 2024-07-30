@@ -211,9 +211,8 @@ char* strCopyCount(char* RESTRICT dst, uint32 dstSize, const char* RESTRICT src,
     const uint32 len = strLenCount(src, count);
     const uint32 max = dstSize ? dstSize - 1 : 0;
     const uint32 num = (len < max ? len : max);
-    if (num > 0) {
+    if (num > 0) 
         memcpy(dst, src, num);
-    }
     dst[num] = '\0';
 
     return &dst[num];
@@ -295,6 +294,18 @@ bool strIsEqualNoCaseCount(const char* a, const char* b, uint32 count)
             return false;
     }
     return true;
+}
+
+uint32 strCountMatchingFirstChars(const char* s1, const char* s2)
+{
+    uint32 count = 0;
+    while (true) {
+        if (s1[count] == 0 || s2[count] == 0 || s1[count] != s2[count])
+            return count;
+        count++;
+    }
+    
+    return count;
 }
 
 bool strEndsWith(const char* str, const char* endsWith)
@@ -610,6 +621,20 @@ char* strReplaceChar(char* dst, uint32 dstSize, char ch, char replaceWith)
             *s = replaceWith;
         ++s;
     }
+    return dst;
+}
+
+char* strSubStr(char* dst, uint32 dstSize, const char* str, uint32 startIdx, uint32 endIdx)
+{
+    if (endIdx == 0)
+        endIdx = strLen(str);
+
+    ASSERT(startIdx < endIdx);
+
+    uint32 srcCopyLen = Min(endIdx - startIdx, dstSize - 1);
+    memcpy(dst, str + startIdx, srcCopyLen);
+    dst[srcCopyLen] = '\0';
+
     return dst;
 }
 
