@@ -185,7 +185,7 @@ struct AppImpl : AppCallbacks
 
         if (ImGui::IsEnabled()) { // imgui test
             PROFILE_GPU_ZONE_NAME("ImGuiRender", true);
-            BudgetViewer::Render(dt);
+            DebugHud::DrawMemBudgets(dt);
             DebugHud::DrawQuickFrameInfo(dt);
 
             #if 0

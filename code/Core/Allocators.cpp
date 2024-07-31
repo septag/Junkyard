@@ -488,6 +488,7 @@ void* MemBumpAllocatorBase::Malloc(size_t size, uint32 align)
 
 void* MemBumpAllocatorBase::Realloc(void* ptr, size_t size, uint32 align)
 {
+    PROFILE_ZONE(true);
     ASSERT(size);
 
     if (!mDebugMode) {
@@ -608,6 +609,37 @@ void  MemBumpAllocatorVM::BackendDecommit(void* ptr, size_t size)
 void  MemBumpAllocatorVM::BackendRelease(void* ptr, size_t size)
 {
     return Mem::VirtualRelease(ptr, size);
+}
+
+void MemBumpAllocatorVM::WarmUp()
+{
+    PROFILE_ZONE(true);
+
+    size_t hwPageSize = OS::GetPageSize();
+    size_t pageOffset = AlignValue(mOffset, mPageSize);
+    BackendCommit(mBuffer + pageOffset, mReserveSize - pageOffset);
+    for (size_t offset = pageOffset; offset < mReserveSize; offset += hwPageSize)
+        memset(mBuffer + offset, 0xfe, CONFIG_MACHINE_ALIGNMENT);
+}
+
+//----------------------------------------------------------------------------------------------------------------------
+void* MemBumpAllocatorHeap::BackendReserve(size_t size)
+{
+    return Mem::GetDefaultAlloc()->Malloc(size);
+}
+
+void* MemBumpAllocatorHeap::BackendCommit(void* ptr, size_t)
+{
+    return ptr;
+}
+
+void MemBumpAllocatorHeap::BackendDecommit(void*, size_t)
+{
+}
+
+void MemBumpAllocatorHeap::BackendRelease(void* ptr, size_t size)
+{
+    Mem::GetDefaultAlloc()->Free(ptr);
 }
 
 //    ████████╗██╗     ███████╗███████╗     █████╗ ██╗     ██╗      ██████╗  ██████╗
