@@ -3,6 +3,7 @@
 #include "../Core/Log.h"
 #include "../Core/System.h"
 #include "../Core/Atomic.h"
+#include "../Core/Jobs.h"
 
 #include "../Common/Application.h"
 #include "../Common/JunkyardSettings.h"
@@ -20,8 +21,8 @@ struct ReadFileData
 {
     AppImpl* app;
     uint64 startTime;
+    const char* filepath;
 };
-
 
 struct AppImpl final : AppCallbacks
 {
@@ -29,11 +30,12 @@ struct AppImpl final : AppCallbacks
     Path* mFilePaths = nullptr;
     AtomicUint64 mTotalBytesRead = 0;
     AtomicUint32 mTotalFilesRead = 0;
-    TimerStopWatch mStopWatch;
-    double mElapsedReadTime;
+    uint64 mStartTime = 0;
+    uint64 mDuration = 0;
     uint64 mAccumReadTime = 0;
-    MemThreadSafeAllocator mFileAlloc;
-    MemBumpAllocatorVM mFileAllocBackend;
+    MemBumpAllocatorVM mFileAlloc;
+    ReadFileData* mFileDatas = nullptr;
+    bool mReadFinished = false;
 
     bool Initialize() override
     {
@@ -48,7 +50,7 @@ struct AppImpl final : AppCallbacks
             return false;
         }
 
-        Span<char*> filePaths = strSplit((const char*)fileListBlob.Data(), '\n', &tempAlloc);
+        Span<char*> filePaths = strSplitWhitespace((const char*)fileListBlob.Data(), &tempAlloc);
         mNumFilePaths = filePaths.Count();
         mFilePaths = Mem::AllocZeroTyped<Path>(mNumFilePaths);
         for (uint32 i = 0; i < filePaths.Count(); i++) {
@@ -56,8 +58,8 @@ struct AppImpl final : AppCallbacks
         }
         LOG_INFO("Ready. Total %u files", mNumFilePaths);
 
-        mFileAllocBackend.Initialize(10*SIZE_GB, SIZE_MB*64);
-        mFileAlloc.SetAllocator(&mFileAllocBackend);
+        mFileAlloc.Initialize(2*SIZE_GB, SIZE_MB*64);
+        mFileAlloc.WarmUp();
 
         Async::Initialize();
 
@@ -67,7 +69,7 @@ struct AppImpl final : AppCallbacks
     void Cleanup() override
     {
         Async::Release();
-        mFileAllocBackend.Release();
+        mFileAlloc.Release();
         Mem::Free(mFilePaths);
         Engine::Release();
     };
@@ -89,13 +91,15 @@ struct AppImpl final : AppCallbacks
             }
         };
 
-        mFileAllocBackend.Reset();
+        mFileAlloc.Reset();
         mTotalFilesRead = 0;
         mTotalBytesRead = 0;
         mAccumReadTime = 0;
-        mStopWatch.Reset();   
+        mDuration = 0;
+        mReadFinished = false;
+        mStartTime = Timer::GetTicks();
 
-        TimerStopWatch watch;        
+        PROFILE_ZONE(true);
         for (uint32 i = 0; i < mNumFilePaths; i++) {
             Path absPath = Vfs::ResolveFilepath(mFilePaths[i].CStr());
             ReadFileData data {
@@ -103,7 +107,7 @@ struct AppImpl final : AppCallbacks
                 .startTime = Timer::GetTicks()
             };
             AsyncFileRequest req {
-                .alloc = &mFileAllocBackend,
+                .alloc = &mFileAlloc,
                 .readFn = FileReadCallback,
                 .userData = &data,
                 .userDataAllocateSize = sizeof(data)
@@ -111,7 +115,47 @@ struct AppImpl final : AppCallbacks
 
             Async::ReadFile(absPath.CStr(), req);
         }
-        LOG_INFO("ReadFile(s) took: %.1f ms", watch.ElapsedMS());
+    }
+
+    void StartSynchronous()
+    {
+        mFileAlloc.Reset();
+        mTotalFilesRead = 0;
+        mTotalBytesRead = 0;
+        mAccumReadTime = 0;
+        mDuration = 0;
+        mReadFinished = false;
+        mStartTime = Timer::GetTicks();
+
+        auto FileReadCallback = [](uint32 groupIdx, void* userData)
+        {
+            const ReadFileData* fileDatas = (const ReadFileData*)userData;
+            const ReadFileData& data = fileDatas[groupIdx];
+            Blob fileData = Vfs::ReadFile(data.filepath, VfsFlags::None, &data.app->mFileAlloc);
+            if (fileData.IsValid()) {
+                LOG_DEBUG("File: %s", data.filepath);
+                Atomic::FetchAdd(&data.app->mTotalBytesRead, fileData.Size());
+                Atomic::FetchAdd(&data.app->mTotalFilesRead, 1);
+            }
+            else {
+                LOG_ERROR("Reading file '%s' failed", data.filepath);
+            }
+            fileData.Free();
+        };
+
+        mFileDatas = Mem::ReallocTyped<ReadFileData>(mFileDatas, mNumFilePaths);
+
+        PROFILE_ZONE(true);
+        for (uint32 i = 0; i < mNumFilePaths; i++) {
+            Path absPath = Vfs::ResolveFilepath(mFilePaths[i].CStr());
+            mFileDatas[i] = {
+                .app = this,
+                .startTime = Timer::GetTicks(),
+                .filepath = mFilePaths[i].CStr()
+            };
+        }
+
+        Jobs::DispatchAndForget(JobsType::LongTask, FileReadCallback, mFileDatas, mNumFilePaths);
     }
     
     void Update(float dt) override
@@ -120,8 +164,10 @@ struct AppImpl final : AppCallbacks
 
         uint32 totalFilesRead = Atomic::Load(&mTotalFilesRead);
         uint64 totalBytesRead = Atomic::Load(&mTotalBytesRead);
-        if (totalFilesRead < mNumFilePaths)
-            mElapsedReadTime = mStopWatch.ElapsedSec();
+        if (totalFilesRead == mNumFilePaths && !mReadFinished) {
+            mDuration = Timer::Diff(Timer::GetTicks(), mStartTime);
+            mReadFinished = true;
+        }
 
         gfxBeginCommandBuffer();
         gfxCmdBeginSwapchainRenderPass();
@@ -131,12 +177,20 @@ struct AppImpl final : AppCallbacks
                 Start();
             }
 
+            ImGui::SameLine();
+            if (ImGui::Button("Start Synchronous")) {
+                StartSynchronous();
+            }
+
             ImGui::ProgressBar(float(totalFilesRead)/float(mNumFilePaths));
             double totalMegsRead = double(totalBytesRead)/double(SIZE_MB);
             ImGui::Text("Count: %u", totalFilesRead);
             ImGui::Text("Read: %$llu", mTotalBytesRead);
-            ImGui::Text("Bandwidth: %.1f MB/s", (totalMegsRead / mElapsedReadTime));
-            ImGui::Text("Time: %.1f ms, AccumTime: %.1f ms", mElapsedReadTime*1000.0f, Timer::ToMS(mAccumReadTime));
+
+            if (mReadFinished) {
+                ImGui::Text("Bandwidth: %.1f MB/s", (totalMegsRead / Timer::ToSec(mDuration)));
+                ImGui::Text("Time: %.1f ms, AccumTime: %.1f ms", Timer::ToMS(mDuration), Timer::ToMS(mAccumReadTime));
+            }
         }
         ImGui::End();
 
@@ -157,7 +211,7 @@ int Main(int argc, char* argv[])
 {
     SettingsJunkyard::Initialize(SettingsJunkyard {
         .engine = {
-            .logLevel = SettingsEngine::LogLevel::Debug
+            .logLevel = SettingsEngine::LogLevel::Debug  
         }
     });
 

@@ -124,6 +124,17 @@ protected:
 
 struct MemBumpAllocatorVM final : MemBumpAllocatorBase
 {
+    void WarmUp();
+
+private:
+    void* BackendReserve(size_t size) override;
+    void* BackendCommit(void* ptr, size_t size) override;
+    void  BackendDecommit(void* ptr, size_t size) override;
+    void  BackendRelease(void* ptr, size_t size) override;
+};
+
+struct MemBumpAllocatorHeap final : MemBumpAllocatorBase
+{
 private:
     void* BackendReserve(size_t size) override;
     void* BackendCommit(void* ptr, size_t size) override;
@@ -231,6 +242,9 @@ struct MemSingleShotMalloc
 
     _T* Calloc(MemAllocator* alloc = Mem::GetDefaultAlloc());
     _T* Calloc(void* buff, size_t size);
+
+    _T* Malloc(MemAllocator* alloc = Mem::GetDefaultAlloc());
+    _T* Malloc(void* buff, size_t size);
 
     // Free can be called as a static function, since it just calls malloc with alignof
     static void Free(_T* p, MemAllocator* alloc = Mem::GetDefaultAlloc());
@@ -358,13 +372,6 @@ template <typename _FieldType> inline MemSingleShotMalloc<_T, _MaxFields>&
 }
 
 template <typename _T, uint32 _MaxFields>
-inline _T* MemSingleShotMalloc<_T, _MaxFields>::Calloc(MemAllocator* alloc)
-{
-    void* mem = Mem::AllocAligned(mSize, alignof(_T), alloc);
-    return Calloc(mem, mSize);
-}
-
-template <typename _T, uint32 _MaxFields>
 inline size_t MemSingleShotMalloc<_T, _MaxFields>::GetMemoryRequirement() const
 {
     return mSize;
@@ -385,13 +392,36 @@ inline size_t MemSingleShotMalloc<_T, _MaxFields>::GetSize() const
 }
 
 template <typename _T, uint32 _MaxFields>
+inline _T* MemSingleShotMalloc<_T, _MaxFields>::Calloc(MemAllocator* alloc)
+{
+    void* mem = Mem::AllocAligned(mSize, alignof(_T), alloc);
+    return Calloc(mem, mSize);
+}
+
+template <typename _T, uint32 _MaxFields>
 inline _T*  MemSingleShotMalloc<_T, _MaxFields>::Calloc(void* buff, [[maybe_unused]] size_t size)
 {
     ASSERT(buff);
     ASSERT(size == 0 || size >= GetMemoryRequirement());
 
     memset(buff, 0x0, mSize);
-    
+
+    return Malloc(buff, size);
+}
+
+template <typename _T, uint32 _MaxFields>
+inline _T* MemSingleShotMalloc<_T, _MaxFields>::Malloc(MemAllocator* alloc)
+{
+    void* mem = Mem::AllocAligned(mSize, alignof(_T), alloc);
+    return Malloc(mem, mSize);
+}
+
+template <typename _T, uint32 _MaxFields>
+inline _T*  MemSingleShotMalloc<_T, _MaxFields>::Malloc(void* buff, [[maybe_unused]] size_t size)
+{
+    ASSERT(buff);
+    ASSERT(size == 0 || size >= GetMemoryRequirement());
+
     uint8* tmp = (uint8*)buff;
     
     // Assign buffer pointers

@@ -1617,16 +1617,6 @@ struct AsyncContext
 
 static AsyncContext gAsyncCtx;
 
-// Win32 callback (Called from one of kernel's IO threads)
-static void _ReadFileCallbackAsync(DWORD dwErrorCode, DWORD dwNumberOfBytesTransfered, LPOVERLAPPED lpOverlapped)
-{
-    size_t overlappedOffset = offsetof(AsyncFileWin, overlapped);
-    AsyncFileWin* file = (AsyncFileWin*)((uint8*)lpOverlapped - overlappedOffset);
-    ASSERT(file->readFn);
-
-    file->readFn(&file->f, dwErrorCode != 0 && dwNumberOfBytesTransfered == file->f.size);
-}
-
 static int _AsyncIOThreadCallback(void* userData)
 {
     HANDLE completionPort = (HANDLE)userData;
@@ -1635,10 +1625,9 @@ static int _AsyncIOThreadCallback(void* userData)
         DWORD dwNumberOfBytesTransfered;
         ULONG_PTR completionKey;
         AsyncFileWin* file;
-        if (!GetQueuedCompletionStatus(completionPort, &dwNumberOfBytesTransfered, &completionKey, (LPOVERLAPPED*)&file, INFINITE))
-            continue;
-
-        file->readFn(&file->f, dwNumberOfBytesTransfered != file->f.size);
+        if (GetQueuedCompletionStatus(completionPort, &dwNumberOfBytesTransfered, &completionKey, (LPOVERLAPPED*)&file, INFINITE)) {
+            file->readFn(&file->f, dwNumberOfBytesTransfered != file->f.size);
+        }
     }
 
     return 0;
@@ -1651,7 +1640,6 @@ bool Async::Initialize()
         LOG_ERROR("Creating async completion port failed");
         return false;
     }
-
     
     SysInfo info {};
     OS::GetSysInfo(&info);
@@ -1673,6 +1661,8 @@ bool Async::Initialize()
         gAsyncCtx.threads[i].Start(tdesc);
     }
 
+    LOG_INFO("(init) Initialized %u Async IO Threads", gAsyncCtx.numThreads);
+
     return true;
 }
 
@@ -1687,12 +1677,15 @@ void Async::Release()
     for (uint32 i = 0; i < gAsyncCtx.numThreads; i++)
         gAsyncCtx.threads[i].Stop();
     Mem::Free(gAsyncCtx.threads);
-
 }
 
 AsyncFile* Async::ReadFile(const char* filepath, const AsyncFileRequest& request)
 {
-    HANDLE hFile = CreateFileA(filepath, GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL|FILE_FLAG_OVERLAPPED, NULL);
+    PROFILE_ZONE(true);
+
+    ASSERT(request.readFn);
+
+    HANDLE hFile = CreateFileA(filepath, GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL|FILE_FLAG_SEQUENTIAL_SCAN|FILE_FLAG_OVERLAPPED, NULL);
     if (hFile == INVALID_HANDLE_VALUE)
         return nullptr;
     
@@ -1706,7 +1699,7 @@ AsyncFile* Async::ReadFile(const char* filepath, const AsyncFileRequest& request
     }
     ASSERT_MSG(fileSize < UINT32_MAX, "Large file sizes are not supported by win32 overlapped API");
     ASSERT_MSG(!request.userDataAllocateSize || (request.userData && request.userDataAllocateSize), 
-            "`userDataAllocatedSize` should be accompanied with a valid `userData` pointer");
+               "`userDataAllocatedSize` should be accompanied with a valid `userData` pointer");
 
     MemSingleShotMalloc<AsyncFileWin> mallocator;
     uint8* data;
@@ -1714,7 +1707,9 @@ AsyncFile* Async::ReadFile(const char* filepath, const AsyncFileRequest& request
     if (request.userDataAllocateSize) 
         mallocator.AddExternalPointerField<uint8>(&userData, request.userDataAllocateSize);
     mallocator.AddExternalPointerField<uint8>(&data, fileSize);
-    AsyncFileWin* file = mallocator.Calloc(request.alloc);
+    
+    AsyncFileWin* file = mallocator.Malloc(request.alloc);
+    memset(file, 0x0, sizeof(*file));
     file->f.filepath = filepath;
     file->f.data = data;
     file->f.size = uint32(fileSize);
@@ -1733,25 +1728,22 @@ AsyncFile* Async::ReadFile(const char* filepath, const AsyncFileRequest& request
     file->alloc = request.alloc;
     file->readFn = request.readFn;
 
-    /*
-    if (request.readFn) {
-        file->readFn = request.readFn;
-        if (!BindIoCompletionCallback(file->hFile, _ReadFileCallbackAsync, 0)) {
-            CloseHandle(file->hFile);
-            Mem::Free(file, file->alloc);
-            return nullptr;
-        }
-    }
-    */
+    HANDLE completionPort = CreateIoCompletionPort(file->hFile, gAsyncCtx.completionPort, 0, 0);
+    ASSERT(completionPort == gAsyncCtx.completionPort);
 
-    CreateIoCompletionPort(file->hFile, gAsyncCtx.completionPort, 0, 0);
-
-    if (!ReadFile(hFile, file->f.data, DWORD(file->f.size), nullptr, &file->overlapped)) {
+    PROFILE_ZONE_NAME("ReadFile(Win32)", true);
+    DWORD dwNumberOfBytesTransfered = 0;
+    BOOL r = ReadFile(hFile, file->f.data, DWORD(file->f.size), nullptr, &file->overlapped);
+    if (!r) {
         if (GetLastError() != ERROR_IO_PENDING) {
             CloseHandle(file->hFile);
             Mem::Free(file, file->alloc);
             return nullptr;
         }
+    }
+    else {
+        // Huh! finished reading the file early (synchronously)
+        file->readFn(&file->f, dwNumberOfBytesTransfered != file->f.size);
     }
 
     return &file->f;

@@ -431,7 +431,7 @@ struct AsyncFileRequest
     AsyncFileCallback readFn = nullptr;  // Callback to receive async results. see 'AsyncFileCallback'. If this value is null, then you should use Wait and IsFinished to poll for data
     void* userData = nullptr;            // user-data. Can be allocated by async functions internally as well. See 'userDataAllocatedSize'
     uint32 userDataAllocateSize = 0;     // allocate user-data for this request and copy over the provdided userData instead of using userData pointer directly
-    uint32 sizeHint = 0;
+    uint32 sizeHint = 0;                 // If you provide a size hint, then file info will not be queried and AsyncRead will allocate this size instead
 };
 
 namespace Async
