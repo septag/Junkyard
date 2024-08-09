@@ -4,6 +4,7 @@
 #include "Allocators.h"
 #include "Log.h"
 #include "Arrays.h"
+#include "Atomic.h"
 
 #include <mach/mach_time.h>
 #include <mach-o/dyld.h>        // _NSGetExecutablePath
@@ -358,5 +359,264 @@ char* Path::GetCacheDir_CStr(char* dst, size_t dstSize, const char* appName)
         return nullptr;
     #endif
 }
+
+//----------------------------------------------------------------------------------------------------------------------
+#define USE_AIO 0
+#define USE_LIBDISPATCH 0
+#if USE_AIO
+#include <aio.h>
+#include <errno.h>
+
+struct AsyncContext
+{
+};
+
+struct AsyncFileMac
+{
+    aiocb cb;
+    AsyncFile f;
+    MemAllocator* alloc;
+    int fd;
+    AsyncFileCallback readFn;
+};
+
+static AsyncContext gAsyncCtx;
+
+bool Async::Initialize()
+{
+    return true;
+}
+
+void Async::Release()
+{
+}
+
+namespace Async
+{
+    static void _AIOCompletionHandler(sigval val)
+    {
+        AsyncFileMac* file = (AsyncFileMac*)val.sival_ptr;
+        ASSERT(file->readFn);
+        file->readFn(&file->f, aio_error(&file->cb) != 0);
+    }
+
+    static inline AsyncFileMac* _GetInternalFilePtr(AsyncFile* f)
+    {
+        return (AsyncFileMac*)((uint8*)f - offsetof(AsyncFileMac, f));
+    }
+}
+
+AsyncFile* Async::ReadFile(const char* filepath, const AsyncFileRequest& request)
+{
+    int fd = open(filepath, O_RDONLY, 0);
+    if (fd == -1)
+        return nullptr;
+    
+    uint64 fileSize = request.sizeHint;
+    uint64 fileModificationTime = 0;
+    
+    if (!fileSize) {
+        PathInfo info = Path::Stat_CStr(filepath);
+        if (info.type != PathType::File) {
+            close(fd);
+            return nullptr;
+        }
+        
+        fileSize = info.size;
+        fileModificationTime = info.lastModified;
+    }
+    
+    MemSingleShotMalloc<AsyncFileMac> mallocator;
+    uint8* data;
+    uint8* userData = nullptr;
+    if (request.userDataAllocateSize)
+        mallocator.AddExternalPointerField<uint8>(&userData, request.userDataAllocateSize);
+    mallocator.AddExternalPointerField<uint8>(&data, fileSize);
+    
+    AsyncFileMac* file = mallocator.Malloc(request.alloc);
+    memset(file, 0x0, sizeof(*file));
+    
+    file->cb.aio_fildes = fd;
+    file->cb.aio_buf = data;
+    file->cb.aio_nbytes = fileSize;
+    file->cb.aio_offset = 0;
+    file->cb.aio_sigevent.sigev_notify = SIGEV_THREAD;
+    file->cb.aio_sigevent.sigev_notify_function = Async::_AIOCompletionHandler;
+    file->cb.aio_sigevent.sigev_value.sival_ptr = &file;
+    
+    file->f.filepath = filepath;
+    file->f.data = data;
+    file->f.size = uint32(fileSize);
+    file->f.lastModifiedTime = fileModificationTime;
+    if (request.userData) {
+        if (request.userDataAllocateSize) {
+            memcpy(userData, request.userData, request.userDataAllocateSize);
+            file->f.userData = userData;
+        }
+        else {
+            file->f.userData = request.userData;
+        }
+    }
+
+    file->fd = fd;
+    file->alloc = request.alloc;
+    file->readFn = request.readFn;
+
+    if (aio_read(&file->cb) == -1) {
+        LOG_ERROR("AIO failed reading file (Code: %u)", errno);
+        close(fd);
+        MemSingleShotMalloc<AsyncFileMac>::Free(file, request.alloc);
+        return nullptr;
+        if (aio_error(&file->cb) != EINPROGRESS) {
+        }
+    }
+
+    return &file->f;
+}
+
+void Async::Close(AsyncFile* file)
+{
+    AsyncFileMac* fm = _GetInternalFilePtr(file);
+    if (fm->fd)
+        close(fm->fd);
+    MemSingleShotMalloc<AsyncFileMac>::Free(fm, fm->alloc);
+}
+
+bool Async::Wait(AsyncFile* file)
+{
+    ASSERT_MSG(0, "Not implemented");
+    return false;
+}
+
+bool Async::IsFinished(AsyncFile* file, bool* outError)
+{
+    ASSERT_MSG(0, "Not implemented");
+    return false;
+}
+
+#elif USE_LIBDISPATCH
+struct AsyncContext
+{
+    dispatch_queue_t queue;
+};
+
+struct AsyncFileMac
+{
+    AsyncFile f;
+    MemAllocator* alloc;
+    dispatch_io_t io;
+    AsyncFileCallback readFn;
+    AtomicUint32 done;
+};
+
+bool Async::Initialize()
+{
+    gAsyncCtx.queue = dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0);
+    if (!gAsyncCtx.queue)
+        return false;
+    
+    return true;
+}
+
+void Async::Release()
+{
+}
+
+AsyncFile* Async::ReadFile(const char* filepath, const AsyncFileRequest& request)
+{
+    // TODO: do a ASIO (posix) implementation as well and compare it with this
+    PathInfo info = Path::Stat_CStr(filepath);
+    if (info.type != PathType::File)
+        return nullptr;
+    
+    dispatch_io_t io = dispatch_io_create_with_path(DISPATCH_IO_STREAM, filepath, O_RDONLY, 0, gAsyncCtx.queue, ^(int error) {
+        ASSERT_MSG(error == 0, "Unexpected open file: %s (error: %u)", filepath, error);
+    });
+    
+    ASSERT(io);
+    ASSERT(request.readFn);
+
+    uint64 fileSize = request.sizeHint;
+    if (!fileSize)
+        fileSize = info.size;
+    
+    ASSERT_MSG(fileSize < UINT32_MAX, "Large file sizes are not supported by win32 overlapped API");
+    ASSERT_MSG(!request.userDataAllocateSize || (request.userData && request.userDataAllocateSize),
+               "`userDataAllocatedSize` should be accompanied with a valid `userData` pointer");
+    
+    MemSingleShotMalloc<AsyncFileMac> mallocator;
+    uint8* data;
+    uint8* userData = nullptr;
+    if (request.userDataAllocateSize)
+        mallocator.AddExternalPointerField<uint8>(&userData, request.userDataAllocateSize);
+    mallocator.AddExternalPointerField<uint8>(&data, fileSize);
+    
+    AsyncFileMac* file = mallocator.Malloc(request.alloc);
+    memset(file, 0x0, sizeof(*file));
+    file->f.filepath = filepath;
+    file->f.data = data;
+    file->f.size = uint32(fileSize);
+    file->f.lastModifiedTime = info.lastModified;
+    if (request.userData) {
+        if (request.userDataAllocateSize) {
+            memcpy(userData, request.userData, request.userDataAllocateSize);
+            file->f.userData = userData;
+        }
+        else {
+            file->f.userData = request.userData;
+        }
+    }
+
+    file->io = io;
+    file->alloc = request.alloc;
+    file->readFn = request.readFn;
+    
+    dispatch_io_read(io, 0, fileSize, gAsyncCtx.queue, ^(bool done, dispatch_data_t data, int error) {
+        if (done) {
+            if (error == 0) {
+                const void* buffer;
+                size_t size;
+                dispatch_data_t newData = dispatch_data_create_map(data, &buffer, &size);
+                ASSERT(buffer);
+                memcpy(file->f.data, buffer, size);
+                dispatch_release(newData);
+            }
+            
+            file->readFn(&file->f, error == 0);
+            dispatch_release(data);
+            
+            Atomic::StoreExplicit(&file->done, 1, AtomicMemoryOrder::Release);
+        }
+    });
+
+    return &file->f;
+}
+
+void Async::Close(AsyncFile* file)
+{
+    ASSERT(file);
+    AsyncFileMac* f = (AsyncFileMac*)file;
+    if (f->io)
+        dispatch_release(f->io);
+    if (f->alloc)
+        Mem::Free(f, f->alloc);
+}
+
+bool Async::Wait(AsyncFile* file)
+{
+    ASSERT_MSG(0, "Not implemented");
+    return false;
+}
+
+bool Async::IsFinished(AsyncFile* file, bool* outError)
+{
+    ASSERT(file);
+    AsyncFileMac* f = (AsyncFileMac*)file;
+    return Atomic::LoadExplicit(&f->done, AtomicMemoryOrder::Acquire);
+}
+#endif
+
 #endif // PLATFORM_APPLE
+
+
 

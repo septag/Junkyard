@@ -3,6 +3,10 @@
 #include "StringUtil.h" // strLen
 #include "Allocators.h"
 
+#if CPU_X86
+#include <intrin.h>     // _mm_crc32_u64
+#endif
+
 //
 //    ██╗  ██╗ █████╗ ███████╗██╗  ██╗    ███████╗██╗   ██╗███╗   ██╗ ██████╗
 //    ██║  ██║██╔══██╗██╔════╝██║  ██║    ██╔════╝██║   ██║████╗  ██║██╔════╝
@@ -75,27 +79,43 @@ static const uint32 HASH_CRC_TABLE[256] = {
     DO4(buf);    \
     DO4(buf);
 
-namespace Hash
+uint32 Hash::CRC32(const void* data, size_t len, uint32 seed)
 {
-    uint32 CRC32(const void* data, size_t len, uint32 seed) 
-    {
-        const uint8* buf = (const uint8*)data;
-        uint32 crc = seed ^ 0xffffffffL;
-    
-        while (len >= 8) {
-            DO8(buf);
-            len -= 8;
-        }
-    
-        while (len--) {
-            DO1(buf);
-        }
-    
-        crc ^= 0xffffffffL;
-    
-        return crc;
+    const uint8* buf = (const uint8*)data;
+    uint32 crc = seed ^ 0xffffffffL;
+
+    while (len >= 8) {
+        DO8(buf);
+        len -= 8;
     }
 
+    while (len--) {
+        DO1(buf);
+    }
+
+    crc ^= 0xffffffffL;
+
+    return crc;
+}
+
+#if CPU_X86
+// https://github.com/komrad36/CRC/blob/master/CRC/hardware_methods.cpp
+uint32 Hash::CRC32_x86_Aligned(const void* data, size_t len)
+{
+    ASSERT_MSG(len % 8 == 0, "Data must be aligned to 8 bytes");
+    
+    const uint64* M64 = (const uint64*)data;
+    uint64 hash = 0;
+    len >>= 3;
+    for (uint32 i = 0; i < len; ++i)
+        hash = _mm_crc32_u64(hash, M64[i]);
+    
+    return (uint32)hash;
+}
+#endif
+
+namespace Hash
+{
     ////////////////////////////////////////////////////////////////////////////////////////////
     // Murmur3
     // https://github.com/PeterScott/murmur3/blob/master/murmur3.c
@@ -146,119 +166,119 @@ namespace Hash
     
         return k;
     }
-
-    uint32 Murmur32(const void * key, uint32 len, uint32 seed)
-    {
-        const uint8 * data = (const uint8*)key;
-        const int nblocks = static_cast<int>(len / 4);
-        int i;
-    
-        uint32 h1 = seed;
-        constexpr uint32 c1 = 0xcc9e2d51;
-        constexpr uint32 c2 = 0x1b873593;
-    
-        // body
-        auto blocks = reinterpret_cast<const uint32*>(data + nblocks*4);
-    
-        for(i = -nblocks; i; i++) {
-            uint32 k1 = getblock(blocks,i);
-        
-            k1 *= c1;
-            k1 = ROTL32(k1,15);
-            k1 *= c2;
-        
-            h1 ^= k1;
-            h1 = ROTL32(h1,13); 
-            h1 = h1*5+0xe6546b64;
-        }
-    
-        // tail
-        auto tail = reinterpret_cast<const uint8*>(data + nblocks*4);
-        uint32 k1 = 0;
-    
-        switch(len & 3) {
-        case 3: k1 ^= tail[2] << 16;
-        case 2: k1 ^= tail[1] << 8;
-        case 1: k1 ^= tail[0];
-            k1 *= c1; k1 = ROTL32(k1,15); k1 *= c2; h1 ^= k1;
-        }
-    
-        // finalization
-        h1 ^= len;    
-        return MurmurFmix32(h1);
-    } 
-
-    HashResult128 Murmur128(const void * key, size_t len, const uint32 seed)
-    {
-        const uint8 * data = (const uint8*)key;
-        const size_t nblocks = len / 16;
-        size_t i;
-    
-        uint64 h1 = seed;
-        uint64 h2 = seed;
-    
-        uint64 c1 = BIG_CONSTANT(0x87c37b91114253d5);
-        uint64 c2 = BIG_CONSTANT(0x4cf5ad432745937f);
-    
-        // body
-        const uint64 * blocks = (const uint64 *)(data);
-    
-        for(i = 0; i < nblocks; i++)
-        {
-            uint64 k1 = getblock(blocks,i*2+0);
-            uint64 k2 = getblock(blocks,i*2+1);
-        
-            k1 *= c1; k1  = ROTL64(k1,31); k1 *= c2; h1 ^= k1;
-            h1 = ROTL64(h1,27); h1 += h2; h1 = h1*5+0x52dce729;
-            k2 *= c2; k2  = ROTL64(k2,33); k2 *= c1; h2 ^= k2;
-            h2 = ROTL64(h2,31); h2 += h1; h2 = h2*5+0x38495ab5;
-        }
-    
-        auto tail = reinterpret_cast<const uint8*>(data + nblocks*16);
-    
-        uint64 k1 = 0;
-        uint64 k2 = 0;
-    
-        switch(len & 15)
-        {
-        case 15: k2 ^= (uint64)(tail[14]) << 48;
-        case 14: k2 ^= (uint64)(tail[13]) << 40;
-        case 13: k2 ^= (uint64)(tail[12]) << 32;
-        case 12: k2 ^= (uint64)(tail[11]) << 24;
-        case 11: k2 ^= (uint64)(tail[10]) << 16;
-        case 10: k2 ^= (uint64)(tail[ 9]) << 8;
-        case  9: k2 ^= (uint64)(tail[ 8]) << 0;
-            k2 *= c2; k2  = ROTL64(k2,33); k2 *= c1; h2 ^= k2;
-        
-        case  8: k1 ^= (uint64)(tail[ 7]) << 56;
-        case  7: k1 ^= (uint64)(tail[ 6]) << 48;
-        case  6: k1 ^= (uint64)(tail[ 5]) << 40;
-        case  5: k1 ^= (uint64)(tail[ 4]) << 32;
-        case  4: k1 ^= (uint64)(tail[ 3]) << 24;
-        case  3: k1 ^= (uint64)(tail[ 2]) << 16;
-        case  2: k1 ^= (uint64)(tail[ 1]) << 8;
-        case  1: k1 ^= (uint64)(tail[ 0]) << 0;
-            k1 *= c1; k1  = ROTL64(k1,31); k1 *= c2; h1 ^= k1;
-        }
-    
-        // finalization
-        h1 ^= len; h2 ^= len;
-    
-        h1 += h2;
-        h2 += h1;
-    
-        h1 = MurmurFmix64(h1);
-        h2 = MurmurFmix64(h2);
-    
-        h1 += h2;
-        h2 += h1;
-    
-        return {
-            .h1 = h1,
-            .h2 = h2
-        };
-    }
 } // Hash
+
+uint32 Hash::Murmur32(const void * key, uint32 len, uint32 seed)
+{
+    const uint8 * data = (const uint8*)key;
+    const int nblocks = static_cast<int>(len / 4);
+    int i;
+
+    uint32 h1 = seed;
+    constexpr uint32 c1 = 0xcc9e2d51;
+    constexpr uint32 c2 = 0x1b873593;
+
+    // body
+    auto blocks = reinterpret_cast<const uint32*>(data + nblocks*4);
+
+    for(i = -nblocks; i; i++) {
+        uint32 k1 = getblock(blocks,i);
+    
+        k1 *= c1;
+        k1 = ROTL32(k1,15);
+        k1 *= c2;
+    
+        h1 ^= k1;
+        h1 = ROTL32(h1,13);
+        h1 = h1*5+0xe6546b64;
+    }
+
+    // tail
+    auto tail = reinterpret_cast<const uint8*>(data + nblocks*4);
+    uint32 k1 = 0;
+
+    switch(len & 3) {
+    case 3: k1 ^= tail[2] << 16;
+    case 2: k1 ^= tail[1] << 8;
+    case 1: k1 ^= tail[0];
+        k1 *= c1; k1 = ROTL32(k1,15); k1 *= c2; h1 ^= k1;
+    }
+
+    // finalization
+    h1 ^= len;
+    return MurmurFmix32(h1);
+}
+
+HashResult128 Hash::Murmur128(const void * key, size_t len, const uint32 seed)
+{
+    const uint8 * data = (const uint8*)key;
+    const size_t nblocks = len / 16;
+    size_t i;
+
+    uint64 h1 = seed;
+    uint64 h2 = seed;
+
+    uint64 c1 = BIG_CONSTANT(0x87c37b91114253d5);
+    uint64 c2 = BIG_CONSTANT(0x4cf5ad432745937f);
+
+    // body
+    const uint64 * blocks = (const uint64 *)(data);
+
+    for(i = 0; i < nblocks; i++)
+    {
+        uint64 k1 = getblock(blocks,i*2+0);
+        uint64 k2 = getblock(blocks,i*2+1);
+    
+        k1 *= c1; k1  = ROTL64(k1,31); k1 *= c2; h1 ^= k1;
+        h1 = ROTL64(h1,27); h1 += h2; h1 = h1*5+0x52dce729;
+        k2 *= c2; k2  = ROTL64(k2,33); k2 *= c1; h2 ^= k2;
+        h2 = ROTL64(h2,31); h2 += h1; h2 = h2*5+0x38495ab5;
+    }
+
+    const uint8* tail = reinterpret_cast<const uint8*>(data + nblocks*16);
+
+    uint64 k1 = 0;
+    uint64 k2 = 0;
+
+    switch(len & 15)
+    {
+    case 15: k2 ^= (uint64)(tail[14]) << 48;
+    case 14: k2 ^= (uint64)(tail[13]) << 40;
+    case 13: k2 ^= (uint64)(tail[12]) << 32;
+    case 12: k2 ^= (uint64)(tail[11]) << 24;
+    case 11: k2 ^= (uint64)(tail[10]) << 16;
+    case 10: k2 ^= (uint64)(tail[ 9]) << 8;
+    case  9: k2 ^= (uint64)(tail[ 8]) << 0;
+        k2 *= c2; k2  = ROTL64(k2,33); k2 *= c1; h2 ^= k2;
+    
+    case  8: k1 ^= (uint64)(tail[ 7]) << 56;
+    case  7: k1 ^= (uint64)(tail[ 6]) << 48;
+    case  6: k1 ^= (uint64)(tail[ 5]) << 40;
+    case  5: k1 ^= (uint64)(tail[ 4]) << 32;
+    case  4: k1 ^= (uint64)(tail[ 3]) << 24;
+    case  3: k1 ^= (uint64)(tail[ 2]) << 16;
+    case  2: k1 ^= (uint64)(tail[ 1]) << 8;
+    case  1: k1 ^= (uint64)(tail[ 0]) << 0;
+        k1 *= c1; k1  = ROTL64(k1,31); k1 *= c2; h1 ^= k1;
+    }
+
+    // finalization
+    h1 ^= len; h2 ^= len;
+
+    h1 += h2;
+    h2 += h1;
+
+    h1 = MurmurFmix64(h1);
+    h2 = MurmurFmix64(h2);
+
+    h1 += h2;
+    h2 += h1;
+
+    return {
+        .h1 = h1,
+        .h2 = h2
+    };
+}
 
 HashMurmur32Incremental::HashMurmur32Incremental(uint32 seed) : 
     mHash(seed),
@@ -383,8 +403,8 @@ _private::HashTableData* _private::hashtableCreate(uint32 capacity, uint32 value
     capacity = hashTableNearestPow2(capacity);   
     
     MemSingleShotMalloc<HashTableData> mallocator;
-    mallocator.AddMemberField<uint32>(offsetof(HashTableData, keys), capacity)
-              .AddMemberField<uint8>(offsetof(HashTableData, values), valueStride*capacity);
+    mallocator.AddMemberArray<uint32>(offsetof(HashTableData, keys), capacity)
+              .AddMemberArray<uint8>(offsetof(HashTableData, values), valueStride*capacity);
     HashTableData* tbl = mallocator.Calloc(alloc);
     
     tbl->bitshift = hashTableCalcBitShift(capacity);
@@ -401,8 +421,8 @@ size_t _private::hashtableGetMemoryRequirement(uint32 capacity, uint32 valueStri
     
     capacity = hashTableNearestPow2(capacity);
     MemSingleShotMalloc<HashTableData> mallocator;
-    return mallocator.AddMemberField<uint32>(offsetof(HashTableData, keys), capacity)
-                     .AddMemberField<uint8>(offsetof(HashTableData, values), valueStride*capacity)
+    return mallocator.AddMemberArray<uint32>(offsetof(HashTableData, keys), capacity)
+                     .AddMemberArray<uint8>(offsetof(HashTableData, values), valueStride*capacity)
                      .GetMemoryRequirement();        
 }
 
@@ -422,7 +442,7 @@ bool _private::hashtableGrow(HashTableData** pTbl, MemAllocator* alloc)
     if (!newTable)
         return false;
     
-    for (int i = 0, c = tbl->capacity; i < c; i++) {
+    for (uint32 i = 0, c = tbl->capacity; i < c; i++) {
         if (tbl->keys[i] > 0) {
             hashtableAdd(newTable, tbl->keys[i], tbl->values + i * tbl->valueStride);
         }
@@ -435,18 +455,8 @@ bool _private::hashtableGrow(HashTableData** pTbl, MemAllocator* alloc)
 
 uint32 _private::hashtableAdd(HashTableData* tbl, uint32 key, const void* value)
 {
-    ASSERT(tbl->count < tbl->capacity);
-    
-    uint32 h = hashTableFibHash(key, tbl->bitshift);
-    uint32 cnt = (uint32)tbl->capacity;
-    while (tbl->keys[h] != 0) {
-        h = (h + 1) % cnt;
-    }
-    
-    ASSERT(tbl->keys[h] == 0);    // something went wrong!
-    tbl->keys[h] = key;
+    uint32 h = _private::hashtableAddKey(tbl, key);
     memcpy(tbl->values + tbl->valueStride * h, value, tbl->valueStride);
-    ++tbl->count;
     return h;
 }
 
@@ -456,8 +466,16 @@ uint32 _private::hashtableAddKey(HashTableData* tbl, uint32 key)
     
     uint32 h = hashTableFibHash(key, tbl->bitshift);
     uint32 cnt = (uint32)tbl->capacity;
-    while (tbl->keys[h] != 0) {
-        h = (h + 1) % cnt;
+
+    // If the slot is occupied, do a simple linear search
+    if (tbl->keys[h]) {
+        for (uint32 i = 1; i < cnt; i++) {
+            uint32 index = (h + i) % cnt;
+            if (tbl->keys[index] == 0) {
+                h = index;
+                break;
+            }
+        }
     }
     
     ASSERT_MSG(tbl->keys[h] == 0, "No free slot found in the hash-table");
@@ -473,13 +491,11 @@ uint32 _private::hashtableFind(const HashTableData* tbl, uint32 key)
     if (tbl->keys[h] == key) {
         return h;
     } else {
-        // probe lineary in the keys array
+        // Do a simple linear search in the keys array
         for (uint32 i = 1; i < cnt; i++) {
-            int idx = (h + i) % cnt;
-            if (tbl->keys[idx] == key)
-                return idx;
-            else if (tbl->keys[idx] == 0) 
-                break;
+            uint32 index = (h + i) % cnt;
+            if (tbl->keys[index] == key)
+                return index;
         }
         
         return INVALID_INDEX;    // Worst case: Not found!
@@ -499,8 +515,8 @@ _private::HashTableData* _private::hashtableCreateWithBuffer(uint32 capacity, ui
     capacity = hashTableNearestPow2(capacity);   
     
     MemSingleShotMalloc<HashTableData> hashTableBuff;
-    hashTableBuff.AddMemberField<uint32>(offsetof(HashTableData, keys), capacity)
-                 .AddMemberField<uint8>(offsetof(HashTableData, values), valueStride*capacity);
+    hashTableBuff.AddMemberArray<uint32>(offsetof(HashTableData, keys), capacity)
+                 .AddMemberArray<uint8>(offsetof(HashTableData, values), valueStride*capacity);
     HashTableData* tbl = hashTableBuff.Calloc(buff, size);
     
     tbl->bitshift = hashTableCalcBitShift(capacity);
@@ -519,7 +535,7 @@ bool _private::hashtableGrowWithBuffer(HashTableData** pTbl, void* buff, size_t 
     if (!newTable)
         return false;
     
-    for (int i = 0, c = tbl->capacity; i < c; i++) {
+    for (uint32 i = 0, c = tbl->capacity; i < c; i++) {
         if (tbl->keys[i] > 0) {
             hashtableAdd(newTable, tbl->keys[i], tbl->values + i * tbl->valueStride);
         }

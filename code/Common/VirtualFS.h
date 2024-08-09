@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../Core/Blobs.h"
+#include "../Core/System.h"
 
 struct Path;
 
@@ -46,6 +47,9 @@ namespace Vfs
 
     API VfsMountType GetMountType(const char* path);
     API uint64 GetLastModified(const char* path);
+    API uint64 GetFileSize(const char* path);
+    API PathInfo GetFileInfo(const char* path);
+    API bool FileExists(const char* path);
     API Path ResolveFilepath(const char* path);
     API bool StripMountPath(char* outPath, uint32 outPathSize, const char* path);
 
@@ -54,7 +58,7 @@ namespace Vfs
     API bool Initialize();
     API void Release();
 
-    API void HelperMountDataAndShaders(bool remote);
+    API void HelperMountDataAndShaders(bool remote, const char* dataDir = "data");
 }
 
 

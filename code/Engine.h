@@ -21,6 +21,8 @@ namespace Engine
 
     API MemBumpAllocatorBase* GetInitHeap();
 
+    API bool IsMainThread();
+
     // Shortcut string is a combination of keys joined by + sign
     //  Example: "K+SHIFT+CTRL"
     API void RegisterShortcut(const char* shortcut, EngineShortcutCallback callback, void* userData = nullptr);

@@ -317,11 +317,11 @@ struct Path : String<PATH_CHARS_MAX>
     Path& ConvertToWin();
     Path& ConvertToAbsolute();
 
-    Path GetAbsolute();
-    Path GetFileExtension_CStr();
-    Path GetFileNameAndExt();
-    Path GetFileName();
-    Path GetDirectory_CStr();
+    Path GetAbsolute() const;
+    Path GetFileExtension() const;
+    Path GetFileNameAndExt() const;
+    Path GetFileName() const;
+    Path GetDirectory() const;
 
     inline PathInfo Stat() const;
     inline bool Exists() const;
@@ -800,7 +800,7 @@ inline Path& Path::ConvertToAbsolute()
     return *this = abspath;
 }
 
-inline Path Path::GetAbsolute()
+inline Path Path::GetAbsolute() const 
 {
     Path p;
     Path::Absolute_CStr(mStr, p.mStr, sizeof(p.mStr));
@@ -808,7 +808,7 @@ inline Path Path::GetAbsolute()
     return p;
 }
 
-inline Path Path::GetFileExtension_CStr()
+inline Path Path::GetFileExtension() const
 {
     Path p;
     Path::GetFileExtension_CStr(mStr, p.mStr, sizeof(p.mStr));
@@ -816,7 +816,7 @@ inline Path Path::GetFileExtension_CStr()
     return p;
 }
 
-inline Path Path::GetFileNameAndExt()
+inline Path Path::GetFileNameAndExt() const
 {
     Path p;
     Path::GetFilenameAndExtension_CStr(mStr, p.mStr, sizeof(p.mStr));
@@ -824,7 +824,7 @@ inline Path Path::GetFileNameAndExt()
     return p;
 }
 
-inline Path Path::GetFileName()
+inline Path Path::GetFileName() const
 {
     Path p;
     Path::GetFilename_CStr(mStr, p.mStr, sizeof(p.mStr));
@@ -832,7 +832,7 @@ inline Path Path::GetFileName()
     return p;
 }
 
-inline Path Path::GetDirectory_CStr()
+inline Path Path::GetDirectory() const
 {
     Path p;
     Path::GetDirectory_CStr(mStr, p.mStr, sizeof(p.mStr));

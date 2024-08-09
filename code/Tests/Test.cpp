@@ -325,7 +325,7 @@ struct AppImpl final : AppCallbacks
                                         .usage = GfxBufferUsage::Stream
         });
 
-        dsLayout = gfxCreateDescriptorSetLayout(*assetGetShader(modelShaderAsset), bindingLayout, CountOf(bindingLayout));
+        dsLayout = gfxCreateDescriptorSetLayout(*assetGetShader(modelShaderAsset), bindingLayout, CountOf(bindingLayout), false);
 
         Model* model = assetGetModel(modelAsset);
 

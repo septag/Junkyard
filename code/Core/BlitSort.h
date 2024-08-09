@@ -1,6 +1,10 @@
 #pragma once
 
 // This file is a C++ port of BlitSort code: https://github.com/scandum/blitsort
+// TODO: unfortunately, the original code also uses a hacky version of templates, 
+//       where you define compare function and include the code. So with every type, it generates a new code
+//       Both template version and the C version is pretty bad because they generate a ton of code
+//       Ideally, I should move to an implementation where implementation is done with arbitary types/buffers and just wrap those C-style funcs with templates
 
 /*
     Copyright (C) 2014-2022 Igor van den Hoven ivdhoven@gmail.com

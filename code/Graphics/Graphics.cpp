@@ -239,6 +239,8 @@ struct GfxPipelineData
     GfxPipelineLayout pipelineLayout;
     VkGraphicsPipelineCreateInfo* gfxCreateInfo;    // Keep this to be able recreate pipelines anytime
     uint32 shaderHash;
+    uint32 numShaderParams;
+    GfxShaderParameterInfo* shaderParams;
 
 #if !CONFIG_FINAL_BUILD
     void*          stackframes[8];
@@ -417,6 +419,7 @@ struct GfxContext
     bool hasHostQueryReset;
     bool hasFloat16Support;
     bool hasDescriptorIndexing;
+    bool hasPushDescriptor;
     bool hasNonSemanticInfo;
     bool initialized;
 };
@@ -930,6 +933,7 @@ bool _private::gfxInitialize()
 
     gVk.hasNonSemanticInfo = gfxHasDeviceExtension("VK_KHR_shader_non_semantic_info");
     gVk.hasDescriptorIndexing = gfxHasDeviceExtension("VK_EXT_descriptor_indexing");
+    gVk.hasPushDescriptor = gfxHasDeviceExtension("VK_KHR_push_descriptor");
 
     StaticArray<const char*, 32> enabledDeviceExtensions;
     if (!settings.headless) {
@@ -964,6 +968,8 @@ bool _private::gfxInitialize()
         enabledDeviceExtensions.Add("VK_KHR_shader_non_semantic_info");
     if (gVk.hasDescriptorIndexing)
         enabledDeviceExtensions.Add("VK_EXT_descriptor_indexing");
+    if (gVk.hasPushDescriptor)
+        enabledDeviceExtensions.Add("VK_KHR_push_descriptor");
 
     // Enabled layers
     VkDeviceCreateInfo devCreateInfo {
@@ -1471,7 +1477,7 @@ static VkBool32 gfxDebugReportFn(VkDebugReportFlagsEXT flags, VkDebugReportObjec
 //     ╚═════╝╚═╝     ╚═╝╚═════╝     ╚═════╝  ╚═════╝ ╚═╝     ╚═╝     ╚══════╝╚═╝  ╚═╝
 static VkCommandBuffer gfxGetNewCommandBuffer()
 {
-    PROFILE_ZONE(true);
+    PROFILE_ZONE();
 
     uint32 frameIdx = Atomic::LoadExplicit(&gVk.currentFrameIdx, AtomicMemoryOrder::Acquire);
     
@@ -1501,7 +1507,7 @@ static VkCommandBuffer gfxGetNewCommandBuffer()
         gVk.initializedThreadData.Add(&gCmdBufferThreadData);
     }
     else {
-        PROFILE_ZONE_NAME("ResetCommandPool", true);
+        PROFILE_ZONE_NAME("ResetCommandPool");
         // Check if we need to reset command-pools
         // We only reset the command-pools after new frame is started. 
         uint64 engineFrame = Engine::GetFrameIndex();
@@ -1582,7 +1588,7 @@ bool gfxBeginCommandBuffer()
 {
     ASSERT(gCmdBufferThreadData.curCmdBuffer == VK_NULL_HANDLE);
     ASSERT(!gCmdBufferThreadData.deferredCmdBuffer);
-    PROFILE_ZONE(true);
+    PROFILE_ZONE();
 
     gCmdBufferThreadData.curCmdBuffer = gfxGetNewCommandBuffer();
     if (gCmdBufferThreadData.curCmdBuffer == VK_NULL_HANDLE)
@@ -1639,7 +1645,7 @@ void gfxEndCommandBuffer()
 static void gfxCmdCopyBufferToImage(VkBuffer buffer, VkImage image, uint32 width, uint32 height, uint32 numMips, 
                                     const uint32* mipOffsets)
 {
-    VkBufferImageCopy regions[kGfxMaxMips];
+    VkBufferImageCopy regions[GFX_MAX_MIPS];
     
     for (uint32 i = 0; i < numMips; i++) {
         regions[i] = VkBufferImageCopy {
@@ -1680,7 +1686,7 @@ static void gfxCmdCopyBufferToImage(VkBuffer buffer, VkImage image, uint32 width
                 uint32 width;
                 uint32 height;
                 uint32 numMips;
-                VkBufferImageCopy regions[kGfxMaxMips];
+                VkBufferImageCopy regions[GFX_MAX_MIPS];
                 paramsBlob.Read<VkBuffer>(&buffer);
                 paramsBlob.Read<VkImage>(&image);
                 paramsBlob.Read<uint32>(&width);
@@ -1858,7 +1864,7 @@ void gfxCmdBeginSwapchainRenderPass(Color bgColor)
 {
     ASSERT_MSG(gVk.swapchain.imageIdx != UINT32_MAX, "This function must be called within during frame rendering");
 
-    PROFILE_ZONE(true);
+    PROFILE_ZONE();
 
     VkCommandBuffer cmdBufferVk = gCmdBufferThreadData.curCmdBuffer;
     ASSERT_MSG(cmdBufferVk, "CmdXXX functions must come between Begin/End CommandBuffer calls");
@@ -2443,6 +2449,7 @@ static GfxPipelineLayout gfxCreatePipelineLayout(const GfxShader& shader,
     ASSERT_MSG(numDescriptorSetLayouts <= kMaxDescriptorSetLayoutPerPipeline, "Too many descriptor set layouts per-pipeline");
 
     // hash the layout bindings and look in cache
+    // TODO: cleanup the data for pipeline layout. maybe we can also remove the bindings (?)
     HashMurmur32Incremental hasher(0x5eed1);
     uint32 hash = hasher.Add<GfxDescriptorSetLayout>(descriptorSetLayouts, numDescriptorSetLayouts)
                         .Add<GfxPushConstantDesc>(pushConstants, numPushConstants)
@@ -2519,8 +2526,8 @@ static GfxPipelineLayout gfxCreatePipelineLayout(const GfxShader& shader,
             pipLayoutData.descriptorSetLayouts[i] = descriptorSetLayouts[i];
 
         #if !CONFIG_FINAL_BUILD
-            if (SettingsJunkyard::Get().graphics.trackResourceLeaks)
-                pipLayoutData.numStackframes = Debug::CaptureStacktrace(pipLayoutData.stackframes, (uint16)CountOf(pipLayoutData.stackframes), 2);
+        if (SettingsJunkyard::Get().graphics.trackResourceLeaks)
+            pipLayoutData.numStackframes = Debug::CaptureStacktrace(pipLayoutData.stackframes, (uint16)CountOf(pipLayoutData.stackframes), 2);
         #endif
 
         pipLayout = gVk.pools.pipelineLayouts.Add(pipLayoutData);
@@ -2649,63 +2656,54 @@ static VkGraphicsPipelineCreateInfo* gfxDuplicateGraphicsPipelineCreateInfo(cons
 {
     // Child POD members with arrays inside
     MemSingleShotMalloc<VkPipelineVertexInputStateCreateInfo> pallocVertexInputInfo;
-    pallocVertexInputInfo.AddMemberField<VkVertexInputBindingDescription>(
+    pallocVertexInputInfo.AddMemberArray<VkVertexInputBindingDescription>(
         offsetof(VkPipelineVertexInputStateCreateInfo, pVertexBindingDescriptions), 
         pipelineInfo.pVertexInputState->vertexBindingDescriptionCount);
-    pallocVertexInputInfo.AddMemberField<VkVertexInputAttributeDescription>(
+    pallocVertexInputInfo.AddMemberArray<VkVertexInputAttributeDescription>(
         offsetof(VkPipelineVertexInputStateCreateInfo, pVertexAttributeDescriptions), 
         pipelineInfo.pVertexInputState->vertexAttributeDescriptionCount);
 
     MemSingleShotMalloc<VkPipelineColorBlendStateCreateInfo> pallocColorBlendState;
-    pallocColorBlendState.AddMemberField<VkPipelineColorBlendAttachmentState>(
+    pallocColorBlendState.AddMemberArray<VkPipelineColorBlendAttachmentState>(
         offsetof(VkPipelineColorBlendStateCreateInfo, pAttachments),
         pipelineInfo.pColorBlendState->attachmentCount);
 
     MemSingleShotMalloc<VkPipelineDynamicStateCreateInfo> pallocDynamicState;
-    pallocDynamicState.AddMemberField<VkDynamicState>(
+    pallocDynamicState.AddMemberArray<VkDynamicState>(
         offsetof(VkPipelineDynamicStateCreateInfo, pDynamicStates),
         pipelineInfo.pDynamicState->dynamicStateCount);
 
     // Main fields
     MemSingleShotMalloc<VkGraphicsPipelineCreateInfo, 12> mallocator;
 
-    mallocator.AddMemberField<VkPipelineShaderStageCreateInfo>(
+    mallocator.AddMemberArray<VkPipelineShaderStageCreateInfo>(
         offsetof(VkGraphicsPipelineCreateInfo, pStages),
         pipelineInfo.stageCount);
         
-    mallocator.AddMemberChildPODField<MemSingleShotMalloc<VkPipelineVertexInputStateCreateInfo>>(
-        pallocVertexInputInfo, offsetof(VkGraphicsPipelineCreateInfo, pVertexInputState), 1);
+    mallocator.AddChildStructSingleShot(pallocVertexInputInfo, offsetof(VkGraphicsPipelineCreateInfo, pVertexInputState), 1);
 
-    mallocator.AddMemberField<VkPipelineInputAssemblyStateCreateInfo>(
+    mallocator.AddMemberArray<VkPipelineInputAssemblyStateCreateInfo>(
         offsetof(VkGraphicsPipelineCreateInfo, pInputAssemblyState), 1);
 
     // skip pTessellationState
 
-    mallocator.AddMemberField<VkPipelineViewportStateCreateInfo>(
+    mallocator.AddMemberArray<VkPipelineViewportStateCreateInfo>(
         offsetof(VkGraphicsPipelineCreateInfo, pViewportState), 1);
         
-    mallocator.AddMemberField<VkPipelineRasterizationStateCreateInfo>(
+    mallocator.AddMemberArray<VkPipelineRasterizationStateCreateInfo>(
         offsetof(VkGraphicsPipelineCreateInfo, pRasterizationState), 1);
 
-    mallocator.AddMemberField<VkPipelineMultisampleStateCreateInfo>(
+    mallocator.AddMemberArray<VkPipelineMultisampleStateCreateInfo>(
         offsetof(VkGraphicsPipelineCreateInfo, pMultisampleState), 1);
 
-    mallocator.AddMemberField<VkPipelineDepthStencilStateCreateInfo>(
+    mallocator.AddMemberArray<VkPipelineDepthStencilStateCreateInfo>(
         offsetof(VkGraphicsPipelineCreateInfo, pDepthStencilState), 1);
 
-    mallocator.AddMemberChildPODField<MemSingleShotMalloc<VkPipelineColorBlendStateCreateInfo>>(
-        pallocColorBlendState, offsetof(VkGraphicsPipelineCreateInfo, pColorBlendState), 1);
-
-    mallocator.AddMemberChildPODField<MemSingleShotMalloc<VkPipelineDynamicStateCreateInfo>>(
-        pallocDynamicState, offsetof(VkGraphicsPipelineCreateInfo, pDynamicState), 1);
+    mallocator.AddChildStructSingleShot(pallocColorBlendState, offsetof(VkGraphicsPipelineCreateInfo, pColorBlendState), 1);
+    mallocator.AddChildStructSingleShot(pallocDynamicState, offsetof(VkGraphicsPipelineCreateInfo, pDynamicState), 1);
 
     VkGraphicsPipelineCreateInfo* pipInfoNew = mallocator.Calloc(&gVk.alloc);
 
-    // TODO: see if we can improve this part of the api
-    pallocVertexInputInfo.Calloc((void*)pipInfoNew->pVertexInputState, 0);
-    pallocColorBlendState.Calloc((void*)pipInfoNew->pColorBlendState, 0);
-    pallocDynamicState.Calloc((void*)pipInfoNew->pDynamicState, 0);
-        
     pipInfoNew->sType = pipelineInfo.sType;
     pipInfoNew->pNext = pipelineInfo.pNext;
     pipInfoNew->flags = pipelineInfo.flags;
@@ -2775,7 +2773,7 @@ GfxPipeline gfxCreatePipeline(const GfxPipelineDesc& desc)
     // Shaders
     GfxShader* shaderInfo = desc.shader;
     ASSERT(shaderInfo);
-    
+
     const GfxShaderStageInfo* vsInfo = gfxShaderGetStage(*shaderInfo, GfxShaderStage::Vertex);
     const GfxShaderStageInfo* fsInfo = gfxShaderGetStage(*shaderInfo, GfxShaderStage::Fragment);
     if (!vsInfo || !fsInfo) {
@@ -2975,7 +2973,9 @@ GfxPipeline gfxCreatePipeline(const GfxPipelineDesc& desc)
         .pipeline = pipeline,
         .pipelineLayout = pipelineLayout,
         .gfxCreateInfo = gfxDuplicateGraphicsPipelineCreateInfo(pipelineInfo),
-        .shaderHash = shaderInfo->hash
+        .shaderHash = shaderInfo->hash,
+        .numShaderParams = shaderInfo->numParams,
+        .shaderParams = Mem::AllocCopy<GfxShaderParameterInfo>(shaderInfo->params.Get(), shaderInfo->numParams, &gVk.alloc)
     };
 
     #if !CONFIG_FINAL_BUILD
@@ -3028,6 +3028,9 @@ void gfxDestroyPipeline(GfxPipeline pipeline)
 
     MemSingleShotMalloc<VkGraphicsPipelineCreateInfo, 12> mallocator;
     mallocator.Free(pipData.gfxCreateInfo, &gVk.alloc);
+
+    Mem::Free(pipData.shaderParams, &gVk.alloc);
+
     if (pipData.pipelineLayout.IsValid()) 
         gfxDestroyPipelineLayout(pipData.pipelineLayout);
     if (pipData.pipeline)
@@ -3602,7 +3605,8 @@ void gfxDestroyImage(GfxImage image)
 //    ██║  ██║██╔══╝  ╚════██║██║     ██╔══██╗██║██╔═══╝    ██║   ██║   ██║██╔══██╗    ╚════██║██╔══╝     ██║   
 //    ██████╔╝███████╗███████║╚██████╗██║  ██║██║██║        ██║   ╚██████╔╝██║  ██║    ███████║███████╗   ██║   
 //    ╚═════╝ ╚══════╝╚══════╝ ╚═════╝╚═╝  ╚═╝╚═╝╚═╝        ╚═╝    ╚═════╝ ╚═╝  ╚═╝    ╚══════╝╚══════╝   ╚═╝   
-GfxDescriptorSetLayout gfxCreateDescriptorSetLayout(const GfxShader& shader, const GfxDescriptorSetLayoutBinding* bindings, uint32 numBindings)
+GfxDescriptorSetLayout gfxCreateDescriptorSetLayout(const GfxShader& shader, const GfxDescriptorSetLayoutBinding* bindings, 
+                                                    uint32 numBindings, bool isPushDescriptor)
 {
     ASSERT(numBindings);
     ASSERT(bindings);
@@ -3613,7 +3617,6 @@ GfxDescriptorSetLayout gfxCreateDescriptorSetLayout(const GfxShader& shader, con
     VkDescriptorSetLayoutBinding* descriptorSetBindings = tmpAlloc.MallocTyped<VkDescriptorSetLayoutBinding>(numBindings);
     const char** names = tmpAlloc.MallocTyped<const char*>(numBindings);
     
-    bool hasArrays = false;
     for (uint32 i = 0; i < numBindings; i++) {
         const GfxDescriptorSetLayoutBinding& dsLayoutBinding = bindings[i];
         ASSERT(dsLayoutBinding.arrayCount > 0);
@@ -3629,8 +3632,6 @@ GfxDescriptorSetLayout gfxCreateDescriptorSetLayout(const GfxShader& shader, con
             .descriptorCount = dsLayoutBinding.arrayCount,
             .stageFlags = static_cast<VkShaderStageFlags>(dsLayoutBinding.stages)
         };
-
-        hasArrays = dsLayoutBinding.arrayCount > 1;
     }
 
     // Search in existing descriptor set layouts and try to find a match. 
@@ -3651,8 +3652,11 @@ GfxDescriptorSetLayout gfxCreateDescriptorSetLayout(const GfxShader& shader, con
     else {
         gVk.pools.locks[GfxObjectPools::DESCRIPTOR_SET_LAYOUTS].ExitRead();
 
+        ASSERT_ALWAYS((isPushDescriptor && gVk.hasPushDescriptor) || !isPushDescriptor, "VK_KHR_push_descriptor extension is not supported");
+
         VkDescriptorSetLayoutCreateInfo layoutCreateInfo {
             .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+            .flags = isPushDescriptor ? VK_DESCRIPTOR_SET_LAYOUT_CREATE_PUSH_DESCRIPTOR_BIT_KHR : 0u,
             .bindingCount = numBindings,
             .pBindings = descriptorSetBindings
         };
@@ -3660,12 +3664,13 @@ GfxDescriptorSetLayout gfxCreateDescriptorSetLayout(const GfxShader& shader, con
         // VK_EXT_descriptor_indexing
         VkDescriptorSetLayoutBindingFlagsCreateInfoEXT layoutBindingFlags {
             .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO_EXT,
-            .bindingCount = numBindings
+            .bindingCount = numBindings,
         };
-        if (hasArrays && gVk.hasDescriptorIndexing) {
+        if (gVk.hasDescriptorIndexing) {
             VkDescriptorBindingFlagsEXT* bindingFlags = tmpAlloc.MallocTyped<VkDescriptorBindingFlagsEXT>(numBindings);
-            for (uint32 i = 0; i < numBindings; i++)
-                bindingFlags[i] = bindings[i].arrayCount > 1 ? VK_DESCRIPTOR_BINDING_VARIABLE_DESCRIPTOR_COUNT_BIT_EXT : 0;
+            for (uint32 i = 0; i < numBindings; i++) {
+                bindingFlags[i] = (bindings[i].arrayCount > 1) ? VK_DESCRIPTOR_BINDING_VARIABLE_DESCRIPTOR_COUNT_BIT_EXT : 0;
+            }
             layoutBindingFlags.pBindingFlags = bindingFlags;
             layoutCreateInfo.pNext = &layoutBindingFlags;
         }
@@ -3826,6 +3831,144 @@ void gfxDestroyDescriptorSet(GfxDescriptorSet dset)
     gVk.pools.descriptorSets.Remove(dset);
 }
 
+void gfxCmdPushDescriptorSet(GfxPipeline pipeline, GfxPipelineBindPoint bindPoint, uint32 setIndex, uint32 numDescriptorBindings, const GfxDescriptorBindingDesc* descriptorBindings)
+{
+    ASSERT_ALWAYS(gVk.hasPushDescriptor, "VK_KHR_push_descriptor extension is not supported for this function");
+    ASSERT(numDescriptorBindings);
+    ASSERT(descriptorBindings);
+    ASSERT(pipeline.IsValid());
+
+    VkCommandBuffer cmdBufferVk = gCmdBufferThreadData.curCmdBuffer;
+    ASSERT_MSG(cmdBufferVk, "CmdXXX functions must come between Begin/End CommandBuffer calls");
+
+    const GfxPipelineData* pipData = nullptr;
+    VkPipelineLayout pipLayout = nullptr;
+    
+    {   
+        ReadWriteMutexReadScope lk1(gVk.pools.locks[GfxObjectPools::PIPELINES]);
+        pipData = &gVk.pools.pipelines.Data(pipeline);
+    }
+    ASSERT(pipData);
+
+    MemTempAllocator tempAlloc;
+
+    {
+        ReadWriteMutexReadScope lk2(gVk.pools.locks[GfxObjectPools::PIPELINE_LAYOUTS]);
+        pipLayout = gVk.pools.pipelineLayouts.Data(pipData->pipelineLayout).layout;
+    }
+    ASSERT(pipLayout);
+
+    bool hasImage = false;
+
+    VkWriteDescriptorSet* dsWrites = tempAlloc.MallocTyped<VkWriteDescriptorSet>(numDescriptorBindings);
+    VkDescriptorBufferInfo* bufferInfos = tempAlloc.MallocTyped<VkDescriptorBufferInfo>(numDescriptorBindings);
+    VkDescriptorImageInfo* imageInfos = tempAlloc.MallocTyped<VkDescriptorImageInfo>(numDescriptorBindings);
+
+    auto FindBindingIndex = [&pipData](const char* name)->uint32
+    {
+        for (uint32 i = 0; i < pipData->numShaderParams; i++) {
+            if (strIsEqual(pipData->shaderParams[i].name, name))
+                return pipData->shaderParams[i].bindingIdx;
+        }
+        return uint32(-1);
+    };
+
+    for (uint32 i = 0; i < numDescriptorBindings; i++) {
+        const GfxDescriptorBindingDesc& binding = descriptorBindings[i];
+
+        uint32 bindingIdx = FindBindingIndex(binding.name);
+        if (bindingIdx == -1) {
+            ASSERT_ALWAYS(0, "Descriptor layout binding '%s' not found", binding.name);
+        }
+            
+        VkDescriptorBufferInfo* pBufferInfo = nullptr;
+        VkDescriptorImageInfo* pImageInfo = nullptr;
+        uint32 descriptorCount = 1;
+
+        switch (binding.type) {
+        case GfxDescriptorType::UniformBuffer: 
+        case GfxDescriptorType::UniformBufferDynamic:
+        {
+            GFX_LOCK_POOL_TEMP(BUFFERS);
+            const GfxBufferData& bufferData = gVk.pools.buffers.Data(binding.buffer.buffer);
+            bufferInfos[i] = {
+                .buffer = bufferData.buffer,
+                .offset = binding.buffer.offset,
+                .range = binding.buffer.size == 0 ? VK_WHOLE_SIZE : binding.buffer.size
+            };
+            pBufferInfo = &bufferInfos[i];
+            break;
+        } 
+        case GfxDescriptorType::Sampler:
+        {
+            GFX_LOCK_POOL_TEMP(IMAGES);
+            imageInfos[i] = {
+                .sampler = binding.image.IsValid() ? gVk.pools.images.Data(binding.image).sampler : VK_NULL_HANDLE,
+                .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+            };
+            pImageInfo = &imageInfos[i];
+            break;
+        }
+        case GfxDescriptorType::CombinedImageSampler:
+        {
+            GFX_LOCK_POOL_TEMP(IMAGES);
+            if (!binding.imageArrayCount) {
+                const GfxImageData* imageData = binding.image.IsValid() ? &gVk.pools.images.Data(binding.image) : nullptr;
+                imageInfos[i] = VkDescriptorImageInfo {
+                    .sampler = imageData ? imageData->sampler : VK_NULL_HANDLE,
+                    .imageView = imageData ? imageData->view : VK_NULL_HANDLE,
+                    .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+                };
+                pImageInfo = &imageInfos[i];
+            }
+            else {
+                // VK_EXT_descriptor_indexing
+                // TODO: (DescriptorIndexing) do the same for SampledImages ? need to see how Samplers end up like
+                descriptorCount = binding.imageArrayCount;
+                pImageInfo = tempAlloc.MallocTyped<VkDescriptorImageInfo>(binding.imageArrayCount);
+                for (uint32 img = 0; img < binding.imageArrayCount; img++) {
+                    const GfxImageData* imageData = binding.imageArray[img].IsValid() ? &gVk.pools.images.Data(binding.imageArray[img]) : nullptr;
+                    pImageInfo[img] = VkDescriptorImageInfo {
+                        .sampler = imageData ? imageData->sampler : VK_NULL_HANDLE,
+                        .imageView = imageData ? imageData->view : VK_NULL_HANDLE,
+                        .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+                    };
+                }
+            }
+            hasImage = true;
+            break;
+        }
+        case GfxDescriptorType::SampledImage:
+        {
+            GFX_LOCK_POOL_TEMP(IMAGES);
+            imageInfos[i] = {
+                .imageView = binding.image.IsValid() ? gVk.pools.images.Data(binding.image).view : VK_NULL_HANDLE,
+                .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+            };
+            pImageInfo = &imageInfos[i];
+            hasImage = true;
+            break;
+        }
+        default:
+            ASSERT_MSG(0, "Descriptor type is not implemented");
+            break;
+        }
+
+        dsWrites[i] = {
+            .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+            .dstBinding = bindingIdx,
+            .dstArrayElement = 0,
+            .descriptorCount = descriptorCount,
+            .descriptorType = VkDescriptorType(binding.type),
+            .pImageInfo = pImageInfo,
+            .pBufferInfo = pBufferInfo,
+            .pTexelBufferView = nullptr
+        };
+    } // foreach descriptor binding
+
+    vkCmdPushDescriptorSetKHR(cmdBufferVk, VkPipelineBindPoint(bindPoint), pipLayout, setIndex, numDescriptorBindings, dsWrites);
+}
+
 void gfxUpdateDescriptorSet(GfxDescriptorSet dset, uint32 numBindings, const GfxDescriptorBindingDesc* bindings)
 {
     auto findDescriptorBindingByNameHash = 
@@ -3967,7 +4110,7 @@ void gfxUpdateDescriptorSet(GfxDescriptorSet dset, uint32 numBindings, const Gfx
             .pBufferInfo = pBufferInfo,
             .pTexelBufferView = nullptr
         };
-    }
+    } // foreach descriptor binding
 
     vkUpdateDescriptorSets(gVk.device, layoutData.numBindings, dsWrites, 0, nullptr);
 
@@ -4222,14 +4365,14 @@ void GfxObjectPools::Release()
 //    ╚═╝     ╚═╝  ╚═╝╚═╝  ╚═╝╚═╝     ╚═╝╚══════╝    ╚══════╝   ╚═╝   ╚═╝  ╚═══╝ ╚═════╝
 void _private::gfxBeginFrame()
 {
-    PROFILE_ZONE(true);
+    PROFILE_ZONE();
 
     if (gVk.hasMemoryBudget) {
         ASSERT(Engine::GetFrameIndex() < UINT32_MAX);
         vmaSetCurrentFrameIndex(gVk.vma, uint32(Engine::GetFrameIndex()));
     }
 
-    { PROFILE_ZONE_NAME("WaitForFence", true);
+    { PROFILE_ZONE_NAME("WaitForFence");
         vkWaitForFences(gVk.device, 1, &gVk.inflightFences[gVk.currentFrameIdx], VK_TRUE, UINT64_MAX);
     }
 
@@ -4256,7 +4399,7 @@ void _private::gfxBeginFrame()
     uint32 frameIdx = gVk.currentFrameIdx;
     uint32 imageIdx;
 
-    { PROFILE_ZONE_NAME("AcquireNextImage", true);
+    { PROFILE_ZONE_NAME("AcquireNextImage");
         VkResult nextImageResult = vkAcquireNextImageKHR(gVk.device, gVk.swapchain.swapchain, UINT64_MAX,
                                                         gVk.imageAvailSemaphores[frameIdx],
                                                         VK_NULL_HANDLE, &imageIdx);
@@ -4277,7 +4420,7 @@ void _private::gfxEndFrame()
 {
     ASSERT_MSG(gVk.swapchain.imageIdx != UINT32_MAX, "gfxBeginFrame is not called");
     ASSERT_MSG(gCmdBufferThreadData.curCmdBuffer == VK_NULL_HANDLE, "Graphics should not be in recording state");
-    PROFILE_ZONE(true);
+    PROFILE_ZONE();
 
     #ifdef TRACY_ENABLE
     if (gfxHasProfileSamples()) {
@@ -4306,7 +4449,7 @@ void _private::gfxEndFrame()
 
     //------------------------------------------------------------------------
     // Submit last command-buffers + draw to swpachain framebuffer
-    { PROFILE_ZONE_NAME("SubmitLast", true); 
+    { PROFILE_ZONE_NAME("SubmitLast"); 
         VkPipelineStageFlags waitStage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
     
         VkSubmitInfo submitInfo {
@@ -4334,7 +4477,7 @@ void _private::gfxEndFrame()
     //------------------------------------------------------------------------
     // Present Swapchain
     ASSERT_MSG(gVk.swapchain.imageIdx != UINT32_MAX, "gfxBeginFrame is not called");
-    { PROFILE_ZONE_NAME("Present", true);
+    { PROFILE_ZONE_NAME("Present");
         VkPresentInfoKHR presentInfo {
             .sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
             .waitSemaphoreCount = 1,
@@ -4984,7 +5127,7 @@ static void gfxProfileCollectSamples()
     GfxProfileQueryContext* ctx = &gGfxProfile.gfxQueries[gVk.prevFrameIdx];
 
     bool isVoid = ctx->tail == ctx->head;
-    PROFILE_ZONE_COLOR(0xff0000, !isVoid);
+    PROFILE_ZONE_COLOR_OPT(0xff0000, !isVoid);
 
     if (isVoid) 
         return;

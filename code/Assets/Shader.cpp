@@ -53,7 +53,7 @@ static void shaderCompileLoadTask(uint32 groupIndex, void* userData)
 
     char filepath[PATH_CHARS_MAX];
     ShaderCompileDesc compileDesc;
-    AssetPlatform platform;
+    AssetPlatform::Enum platform;
 
     uint32 handle;
     uint32 oldCacheHash;

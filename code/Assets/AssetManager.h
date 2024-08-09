@@ -20,21 +20,24 @@ struct AssetMetaData
     AssetMetaKeyValue keyValues;
 };
 
-enum class AssetPlatform : uint32
+struct AssetPlatform 
 {
-    Auto = 0,
-    PC,
-    Android 
+    enum Enum {
+        Auto = 0,
+        PC,
+        Mobile 
+    };
+
+    static const char* ToStr(Enum platform)
+    {
+        switch (platform) {
+        case AssetPlatform::PC:        return "pc";
+        case AssetPlatform::Mobile:    return "mobile";
+        default:                       return "unknown";
+        }
+    }
 };
 
-INLINE const char* assetPlatformGetStr(AssetPlatform platform)
-{
-    switch (platform) {
-    case AssetPlatform::PC:         return "pc";
-    case AssetPlatform::Android:    return "android";
-    default:                        return "unknown";
-    }
-}
 
 struct AssetLoadParams  
 {
@@ -42,7 +45,7 @@ struct AssetLoadParams
     MemAllocator* alloc;
     uint32 typeId;
     uint32 tags;
-    AssetPlatform platform;
+    AssetPlatform::Enum platform;
     AssetBarrier barrier;       // Barriers are a way to sync and group multiple assets. With barriers, you can wait on a group of assets to get loaded
     RelativePtr<uint8> next;    // pointer to the next arbitary struct. the type of 'next' depends on user-defined asset-loader 
     bool dontCreateResources;   // Skip creating GPU/External resources (LoadResources function is not called)
@@ -116,11 +119,14 @@ struct NO_VTABLE AssetCallbacks
     virtual bool ReloadSync(AssetHandle handle, void* prevData) = 0;
 };
 
+struct AssetTypeImplBase;
+
 struct AssetTypeDesc
 {
     uint32 fourcc;
     const char* name;
     AssetCallbacks* callbacks;
+    AssetTypeImplBase* impl;
     const char* extraParamTypeName;
     uint32 extraParamTypeSize;          // Note: be careful that in order for asset caching to work properly. this size must exactly match the real underlying struct size with no extra padding
     void* failedObj;
@@ -157,7 +163,7 @@ API AssetBarrier assetCreateBarrier();
 API void assetDestroyBarrier(AssetBarrier barrier);
 API bool assetWait(AssetBarrier barrier, uint32 msecs = UINT32_MAX);
 
-API bool assetLoadMetaData(const char* filepath, AssetPlatform platform, MemAllocator* alloc,
+API bool assetLoadMetaData(const char* filepath, AssetPlatform::Enum platform, MemAllocator* alloc,
                            AssetMetaKeyValue** outData, uint32* outKeyCount);
 API bool assetLoadMetaData(AssetHandle handle, MemAllocator* alloc, AssetMetaKeyValue** outData, uint32* outKeyCount);
 API const char* assetGetMetaValue(const AssetMetaKeyValue* data, uint32 count, const char* key);
@@ -167,6 +173,17 @@ API uint32 assetMakeCacheHash(const AssetCacheDesc& desc);
 
 API void assetGetBudgetStats(AssetBudgetStats* stats);
 
+namespace _private
+{
+    void assetUpdateCache(float dt);
+    void assetCollectGarbage();
+    void* assetGetData(AssetHandle handle);
+
+    bool assetInitialize();
+    void assetRelease();
+}
+
+//----------------------------------------------------------------------------------------------------------------------
 // Scope RAII classes are only recommended for use within a single function scope only
 struct AssetBarrierScope
 {
@@ -184,66 +201,83 @@ private:
     bool _ownsBarrier;
 };
 
-namespace _private
-{
-    bool assetInitialize();
-    void assetRelease();
-
-    // This is the type-unsafe and generic version to get asset data
-    // We wrap this function inside whatever asset implementation is out there
-    // See Graphics.h:assetGetImage for an example
-    void* assetGetData(AssetHandle handle);
-
-    void assetUpdateCache(float dt);
-
-    void assetCollectGarbage();
-
-    void assetInitialize2();
-    void assetRelease2();
-}
-
 DEFINE_HANDLE(AssetGroupHandle);
 DEFINE_HANDLE(AssetHandle);
 
 struct AssetParams
 {
-    Path path;
     uint32 typeId;
-    AssetPlatform platform;
-    RelativePtr<uint8> typeSpecificParams;
+    Path path;
+    AssetPlatform::Enum platform;
+    void* typeSpecificParams;
+};
+
+enum AssetGroupState : uint32
+{
+    Idle = 0,
+    Loading,
+    Loaded,
+    Unloading
 };
 
 struct AssetGroup
 {
     AssetGroupHandle mHandle;
 
-    void AddToLoadQueue(const AssetParams** params, uint32 numAssets, AssetHandle* outHandles = nullptr) const;
-    void AddToLoadQueue(const AssetParams* params, AssetHandle* outHandle = nullptr) const;
-    void Load() const;
+    void AddToLoadQueue(const AssetParams* paramsArray, uint32 numAssets, AssetHandle* outHandles = nullptr) const;
+    AssetHandle AddToLoadQueue(const AssetParams& params) const;
+
+    void Load();
+    void Unload();
 
     bool IsLoadFinished() const;
-    void WaitForLoadFinish() const;
+    bool IsIdle() const;
+    AssetGroupState GetState() const;
 
-    void Unload() const;
     Span<AssetHandle> GetAssetHandles(MemAllocator* alloc) const;
 };
 
-API AssetGroup assetCreateGroup();
-API void assetDestroyGroup(AssetGroup group);
+struct AssetDataInternal;
+struct GfxImageDesc;
+struct GfxBufferDesc;
 
 struct AssetData
 {
-    AssetParams* params;
-    AssetParams* depends;
-    uint32 numDepends;
-    uint32 typeId;
-    AssetState state;
-    uint32 refCount;
-    AssetMetaKeyValue* metadata;
-    uint32 numMetadata;
-    void* cpuData;
-    void* gpuData;
+    void AddDependency(AssetHandle* bindToHandle, const AssetParams& params);
+    void AddGpuTextureObject(GfxImage* bindToImage, const GfxImageDesc& desc);
+    void AddGpuBufferObject(GfxBuffer* bindToBuffer, const GfxBufferDesc& desc);
+    void SetObjData(const void* data, uint32 dataSize);
+
+    const char* GetMetaValue(const char* key, const char* defaultValue) const;
+    inline uint32 GetMetaValue(const char* key, uint32 defaultValue) const;
+    inline float GetMetaValue(const char* key, float defaultValue) const;
+    inline bool GetMetaValue(const char* key, bool defaultValue) const;
+
+    MemAllocator* mAlloc;
+    AssetDataInternal* mData;
+    void* mLastDependencyPtr;
+    void* mLastGpuObjectPtr;
+    const void* mOrigObjPtr;      // original pointer that has passed to SetObjData. We use it later for calculating handle pointer offsets
 };
+
+struct NO_VTABLE AssetTypeImplBase
+{
+    virtual bool Bake(const AssetParams& params, AssetData* data, const Span<uint8>& srcData, String<256>* outErrorDesc) = 0;
+};
+
+namespace Asset
+{
+    bool Initialize();
+    void Release();
+
+    API AssetGroup CreateGroup();
+    API void DestroyGroup(AssetGroup& group);
+
+    API void Update();
+
+    void* GetObjData(AssetHandle handle);
+    const AssetParams* GetParams(AssetHandle handle);
+}
 
 
 //    ██╗███╗   ██╗██╗     ██╗███╗   ██╗███████╗███████╗
@@ -274,4 +308,22 @@ template <> inline String32 assetGetMetaValue(const AssetMetaKeyValue* data, uin
 {
     const char* value = assetGetMetaValue(data, count, key);
     return value ? String32(value) : defaultValue;
+}
+
+inline uint32 AssetData::GetMetaValue(const char* key, uint32 defaultValue) const
+{
+    const char* value = GetMetaValue(key, "");
+    return value ? strToUint(value) : defaultValue;
+}
+
+inline float AssetData::GetMetaValue(const char* key, float defaultValue) const
+{
+    const char* value = GetMetaValue(key, "");
+    return value ? static_cast<float>(strToDouble(value)) : defaultValue;
+}
+
+inline bool AssetData::GetMetaValue(const char* key, bool defaultValue) const
+{
+    const char* value = GetMetaValue(key, "");
+    return value ? strToBool(value) : defaultValue;
 }

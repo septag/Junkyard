@@ -73,7 +73,7 @@ struct MemTempAllocator final : MemAllocator
     API static void EnableDebugMode(bool enable);
     API static void EnableCallstackCapture(bool capture);
     API static void GetStats(MemAllocator* alloc, Stats** outStats, uint32* outCount);
-    API static void Reset(float dt, bool resetValidation = true);
+    API static void Reset();
 
 private:
     ID mId = 0;
@@ -105,6 +105,7 @@ struct MemBumpAllocatorBase : MemAllocator
     size_t GetAllocatedSize() const { return mOffset; }
     size_t GetCommitedSize() const { return mCommitSize; }
     size_t GetOffset() const { return mOffset; }
+    void SetOffset(size_t offset);      // Only accepts lesser values than current offset. potentially harmful. Use with care!
 
 protected:
     virtual void* BackendReserve(size_t size) = 0;
@@ -170,6 +171,7 @@ struct MemTlsfAllocator final : MemAllocator
 {
     static size_t GetMemoryRequirement(size_t poolSize);
 
+    void Initialize(MemAllocator* alloc, size_t poolSize, bool debugMode = false);
     void Initialize(size_t poolSize, void* buffer, size_t size, bool debugMode = false);
     void Release();
 
@@ -185,6 +187,8 @@ struct MemTlsfAllocator final : MemAllocator
     bool IsDebugMode() const { return mDebugMode; }
 
 protected:
+    MemAllocator* mAlloc = nullptr;
+    size_t mPoolSize = 0;
     size_t mAllocatedSize = 0;
     void*  mTlsf = nullptr;
     size_t mTlsfSize = 0;
@@ -225,18 +229,24 @@ protected:
 //          // For free, it's recommended to use the allocator, or you can call `memFreeAligned` with alignof(SomeStruct)
 //          mallocator.Free(s);
 //
+struct NO_VTABLE MemSingleshotMallocBase
+{
+    virtual void* MallocInternal(void* buff, size_t size) = 0;
+    virtual size_t GetMemoryRequirement() const = 0;
+};
+
 template <typename _T, uint32 _MaxFields = 8>
-struct MemSingleShotMalloc
+struct MemSingleShotMalloc final : MemSingleshotMallocBase
 {
     MemSingleShotMalloc();
 
-    template <typename _FieldType> MemSingleShotMalloc& AddMemberField(uint32 offsetInStruct, size_t arrayCount, 
+    template <typename _FieldType> MemSingleShotMalloc& AddMemberArray(uint32 offsetInStruct, size_t arrayCount, 
                                                                        bool relativePtr = false,
                                                                        uint32 align = CONFIG_MACHINE_ALIGNMENT);
-    template <typename _PodAllocType> MemSingleShotMalloc& AddMemberChildPODField(const _PodAllocType& podAlloc, 
-                                                                                  uint32 offsetInStruct, size_t arrayCount, 
-                                                                                  bool relativePtr = false,
-                                                                                  uint32 align = CONFIG_MACHINE_ALIGNMENT);
+    MemSingleShotMalloc& AddChildStructSingleShot(MemSingleshotMallocBase& childSingleShot, 
+                                                  uint32 offsetInStruct, size_t arrayCount, 
+                                                  bool relativePtr = false,
+                                                  uint32 align = CONFIG_MACHINE_ALIGNMENT);
     template <typename _FieldType> MemSingleShotMalloc& AddExternalPointerField(_FieldType** pPtr, size_t arrayCount, 
                                                                                 uint32 align = CONFIG_MACHINE_ALIGNMENT);
 
@@ -246,16 +256,18 @@ struct MemSingleShotMalloc
     _T* Malloc(MemAllocator* alloc = Mem::GetDefaultAlloc());
     _T* Malloc(void* buff, size_t size);
 
+    void* MallocInternal(void* buff, size_t size) override;
+    size_t GetMemoryRequirement() const override;
+
     // Free can be called as a static function, since it just calls malloc with alignof
     static void Free(_T* p, MemAllocator* alloc = Mem::GetDefaultAlloc());
-    
-    size_t GetMemoryRequirement() const;
     size_t GetSize() const;
 
 private:
     struct Field
     {
         void** pPtr;
+        MemSingleshotMallocBase* childStruct;
         size_t offset;
         uint32 offsetInStruct;
         bool   relativePtr;
@@ -279,14 +291,15 @@ inline MemSingleShotMalloc<_T, _MaxFields>::MemSingleShotMalloc()
     mSize = sizeof(_T);
 
     mFields[0].pPtr = nullptr;
+    mFields[0].childStruct = nullptr;
     mFields[0].offset = 0;
-    mFields[0].offsetInStruct = UINT32_MAX;
+    mFields[0].offsetInStruct = uint32(-1);
     mNumFields = 1;
 }
 
 template <typename _T, uint32 _MaxFields>
 template <typename _FieldType> inline MemSingleShotMalloc<_T, _MaxFields>& 
-    MemSingleShotMalloc<_T, _MaxFields>::AddMemberField(uint32 offsetInStruct, size_t arrayCount, bool relativePtr, uint32 align)
+    MemSingleShotMalloc<_T, _MaxFields>::AddMemberArray(uint32 offsetInStruct, size_t arrayCount, bool relativePtr, uint32 align)
 {
     uint32 index = mNumFields;
     ASSERT_MSG(index < _MaxFields, "Cannot add more fields, increase the _MaxFields");
@@ -301,6 +314,7 @@ template <typename _FieldType> inline MemSingleShotMalloc<_T, _MaxFields>&
 
     Field& buff = mFields[index];
     buff.pPtr = nullptr;
+    buff.childStruct = nullptr;
     buff.offset = offset;
     buff.offsetInStruct = offsetInStruct;
     buff.relativePtr = relativePtr;
@@ -312,15 +326,15 @@ template <typename _FieldType> inline MemSingleShotMalloc<_T, _MaxFields>&
 }
 
 template <typename _T, uint32 _MaxFields>
-template <typename _PodAllocType> inline MemSingleShotMalloc<_T, _MaxFields>& 
-MemSingleShotMalloc<_T, _MaxFields>::AddMemberChildPODField(const _PodAllocType& podAlloc, uint32 offsetInStruct, 
-                                                            size_t arrayCount, bool relativePtr, uint32 align)
+inline MemSingleShotMalloc<_T, _MaxFields>& 
+    MemSingleShotMalloc<_T, _MaxFields>::AddChildStructSingleShot(MemSingleshotMallocBase& childSingleShot, uint32 offsetInStruct, 
+                                                                  size_t arrayCount, bool relativePtr, uint32 align)
 {
     uint32 index = mNumFields;
     ASSERT_MSG(index < _MaxFields, "Cannot add more fields, increase the _MaxFields");
     
     align = Max(CONFIG_MACHINE_ALIGNMENT, align);
-    size_t size = podAlloc.GetMemoryRequirement() * arrayCount;
+    size_t size = childSingleShot.GetMemoryRequirement() * arrayCount;
     size = AlignValue<size_t>(size, align);
 
     size_t offset = mSize;
@@ -330,6 +344,7 @@ MemSingleShotMalloc<_T, _MaxFields>::AddMemberChildPODField(const _PodAllocType&
 
     Field& buff = mFields[index];
     buff.pPtr = nullptr;
+    buff.childStruct = &childSingleShot;
     buff.offset = offset;
     buff.offsetInStruct = offsetInStruct;
     buff.relativePtr = relativePtr;
@@ -362,7 +377,7 @@ template <typename _FieldType> inline MemSingleShotMalloc<_T, _MaxFields>&
     Field& buff = mFields[index];
     buff.pPtr = (void**)pPtr;
     buff.offset = offset;
-    buff.offsetInStruct = UINT32_MAX;
+    buff.offsetInStruct = uint32(-1);
     buff.relativePtr = false;
     
     mSize += size;
@@ -413,11 +428,17 @@ template <typename _T, uint32 _MaxFields>
 inline _T* MemSingleShotMalloc<_T, _MaxFields>::Malloc(MemAllocator* alloc)
 {
     void* mem = Mem::AllocAligned(mSize, alignof(_T), alloc);
-    return Malloc(mem, mSize);
+    return (_T*)MallocInternal(mem, mSize);
 }
 
 template <typename _T, uint32 _MaxFields>
-inline _T*  MemSingleShotMalloc<_T, _MaxFields>::Malloc(void* buff, [[maybe_unused]] size_t size)
+inline _T*  MemSingleShotMalloc<_T, _MaxFields>::Malloc(void* buff, size_t size)
+{
+    return (_T*)MallocInternal(buff, size);
+}
+
+template <typename _T, uint32 _MaxFields>
+inline void* MemSingleShotMalloc<_T, _MaxFields>::MallocInternal(void* buff, [[maybe_unused]] size_t size)
 {
     ASSERT(buff);
     ASSERT(size == 0 || size >= GetMemoryRequirement());
@@ -426,17 +447,22 @@ inline _T*  MemSingleShotMalloc<_T, _MaxFields>::Malloc(void* buff, [[maybe_unus
     
     // Assign buffer pointers
     for (int i = 1, c = mNumFields; i < c; i++) {
-        if (mFields[i].offsetInStruct != UINT32_MAX) {
-            ASSERT(mFields[i].pPtr == NULL);
-            if (!mFields[i].relativePtr) 
-                *((void**)(tmp + mFields[i].offsetInStruct)) = tmp + mFields[i].offset;
+        if (mFields[i].offsetInStruct != -1) {
+            ASSERT(mFields[i].pPtr == nullptr);
+            void* ptr = tmp + mFields[i].offset;
+            void* srcPtr = tmp + mFields[i].offsetInStruct;
+            if (!mFields[i].relativePtr)
+                *((void**)srcPtr) = ptr;
             else
-                *((uint32*)(tmp + mFields[i].offsetInStruct)) = (uint32)mFields[i].offset - mFields[i].offsetInStruct;
+                *((int*)srcPtr) = (int)mFields[i].offset - (int)mFields[i].offsetInStruct;
+
+            if (mFields[i].childStruct)
+                mFields[i].childStruct->MallocInternal(ptr, 0);
         } else {
             ASSERT(mFields[i].offsetInStruct == -1);
             *mFields[i].pPtr = tmp + mFields[i].offset;
         }
     }
 
-    return (_T*)buff;
+    return buff;
 }

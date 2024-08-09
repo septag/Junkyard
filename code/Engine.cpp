@@ -40,19 +40,20 @@ struct EngineContext
 {
     SysInfo    sysInfo = {};
 
-    bool       remoteReconnect = false;
-    float      remoteDisconnectTime = false;
-    uint32     remoteRetryCount = false;
+    bool       remoteReconnect;
+    float      remoteDisconnectTime;
+    uint32     remoteRetryCount;
     
-    double elapsedTime = 0.0;
-    AtomicUint64 frameIndex = 0;
+    double elapsedTime;
+    AtomicUint64 frameIndex;
     uint64 rawFrameStartTime;
     uint64 rawFrameTime;        
 
     MemBumpAllocatorVM initHeap;
 
-    bool initialized = false;
-    float refreshStatsTime = 0;
+    bool initialized;
+    float refreshStatsTime;
+    uint32 mainThreadId;
 
     Array<EngineShortcutKeys> shortcuts;
 };
@@ -106,13 +107,19 @@ static void _OnEvent(const AppEvent& ev, [[maybe_unused]] void* userData)
 #endif
 }
 
+bool IsMainThread()
+{
+    return Thread::GetCurrentId() == gEng.mainThreadId;
+}
+
 bool Initialize()
 {
-    PROFILE_ZONE(true);
+    PROFILE_ZONE();
 
     // Set main thread as `realtime` priority
     Thread::SetCurrentThreadPriority(ThreadPriority::Realtime);
     Thread::SetCurrentThreadName("Main");
+    gEng.mainThreadId = Thread::GetCurrentId();
 
     // Initialize heaps
     // TODO: make all heaps commit all memory upfront in RELEASE builds
@@ -158,6 +165,7 @@ bool Initialize()
                    .numShortTaskThreads = SettingsJunkyard::Get().engine.jobsNumShortTaskThreads,
                    .numLongTaskThreads = SettingsJunkyard::Get().engine.jobsNumLongTaskThreads,
                    .debugAllocations = SettingsJunkyard::Get().engine.debugAllocations });
+    Async::Initialize();
 
     if (SettingsJunkyard::Get().engine.connectToServer) {
         if (!Remote::Connect(SettingsJunkyard::Get().engine.remoteServicesUrl.CStr(), _RemoteDisconnected)) {
@@ -189,7 +197,7 @@ bool Initialize()
     }
 
     // Asset manager
-    if (!_private::assetInitialize()) {
+    if (!_private::assetInitialize() || !Asset::Initialize()) {
         LOG_ERROR("Initializing AssetManager failed");
         return false;
     }
@@ -246,6 +254,7 @@ void Release()
     } 
 
     _private::assetRelease();
+    Asset::Release();
 
     if (gfxSettings.enable)
         _private::gfxRelease();
@@ -253,6 +262,7 @@ void Release()
     if (SettingsJunkyard::Get().engine.connectToServer)
         Remote::Disconnect();
 
+    Async::Release();
     Jobs::Release();
     Console::Release();
 
@@ -266,7 +276,7 @@ void BeginFrame(float dt)
 {
     ASSERT(gEng.initialized);
 
-    TracyCPlot("FrameTime", dt);
+    TracyCPlot("FrameTime", dt*1000.0f);
 
     gEng.elapsedTime += dt;
 
@@ -313,6 +323,8 @@ void EndFrame(float dt)
 {
     ASSERT(gEng.initialized);
 
+    Asset::Update();
+
     gEng.rawFrameTime = Timer::Diff(Timer::GetTicks(), gEng.rawFrameStartTime);
 
     if (!SettingsJunkyard::Get().graphics.headless) {
@@ -322,7 +334,7 @@ void EndFrame(float dt)
 
     _private::assetUpdateCache(dt);
 
-    MemTempAllocator::Reset(dt);
+    MemTempAllocator::Reset();
 
     TracyCFrameMark;
 

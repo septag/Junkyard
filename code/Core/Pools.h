@@ -467,8 +467,8 @@ template <typename _T, uint32 _Align>
 inline size_t FixedSizePool<_T, _Align>::GetMemoryRequirement(uint32 pageSize)
 {
     MemSingleShotMalloc<Page> pageBuffer;
-    pageBuffer.template AddMemberField<_T*>(offsetof(Page, ptrs), pageSize);
-    pageBuffer.template AddMemberField<_T>(offsetof(Page, data), pageSize, false, _Align);
+    pageBuffer.template AddMemberArray<_T*>(offsetof(Page, ptrs), pageSize);
+    pageBuffer.template AddMemberArray<_T>(offsetof(Page, data), pageSize, false, _Align);
     return pageBuffer.GetMemoryRequirement();
 }
 
@@ -539,8 +539,8 @@ inline typename FixedSizePool<_T, _Align>::Page* FixedSizePool<_T, _Align>::Crea
     ASSERT(mPageSize);
 
     MemSingleShotMalloc<Page> mallocator;
-    mallocator.template AddMemberField<_T*>(offsetof(Page, ptrs), mPageSize);
-    mallocator.template AddMemberField<_T>(offsetof(Page, data), mPageSize, false, _Align); // Only align data buffer
+    mallocator.template AddMemberArray<_T*>(offsetof(Page, ptrs), mPageSize);
+    mallocator.template AddMemberArray<_T>(offsetof(Page, data), mPageSize, false, _Align); // Only align data buffer
 
     Page* page = (buffer && size) ? mallocator.Calloc(buffer, size) : page = mallocator.Calloc(mAlloc);
     page->index = mPageSize;

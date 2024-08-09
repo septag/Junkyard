@@ -44,6 +44,8 @@ FORCE_INLINE float  mathLerp(float _a, float _b, float _t);
 FORCE_INLINE float  mathSmoothLerp(float _a, float _b, float _dt, float h);
 FORCE_INLINE float  mathSign(float _a);
 FORCE_INLINE float  mathAbs(float _a);
+FORCE_INLINE int    mathAbs(int _a);
+FORCE_INLINE int64  mathAbs(int64 _a);
 FORCE_INLINE float  mathTan(float _a);
 FORCE_INLINE float  mathSinH(float _a);
 FORCE_INLINE float  mathCosH(float _a);
@@ -245,6 +247,18 @@ FORCE_INLINE float mathAbs(float _a)
     } u = { _a };
     u.ui &= 0x7FFFFFFF;
     return u.f;
+}
+
+FORCE_INLINE int mathAbs(int _a)
+{
+    int mask = _a >> 31;
+    return (mask^_a) - mask;
+}
+
+FORCE_INLINE int64 mathAbs(int64 _a)
+{
+    int64 mask = _a >> 63;
+    return (mask^_a) - mask;
 }
 
 FORCE_INLINE float mathTan(float _a)
