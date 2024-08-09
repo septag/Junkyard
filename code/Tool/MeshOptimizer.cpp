@@ -19,8 +19,6 @@ void MeshOpt::Initialize()
 
 void MeshOpt::Optimize(MeshOptModel* model)
 {
-    PROFILE_ZONE(true);
-
     MemTempAllocator tmpAlloc;
     gMeshOptAlloc = &tmpAlloc;
 

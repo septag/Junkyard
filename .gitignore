@@ -40,10 +40,9 @@ xcuserdata
 *.tmp
 /*.ini
 scripts/symbols
-data/images/gen/**
-data/models/gen/**
 .cache
 .vscode
+test/**
 
 # Dependency downloads
 code/External/slang/**

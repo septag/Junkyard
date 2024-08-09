@@ -259,6 +259,7 @@
     <ClInclude Include="..\..\code\Common\CommonTypes.h" />
     <ClInclude Include="..\..\code\Common\InputTypes.h" />
     <ClInclude Include="..\..\code\Common\JunkyardSettings.h" />
+    <ClInclude Include="..\..\code\Common\Profiler.h" />
     <ClInclude Include="..\..\code\Common\RemoteServices.h" />
     <ClInclude Include="..\..\code\Common\VirtualFS.h" />
     <ClInclude Include="..\..\code\Core\Allocators.h" />

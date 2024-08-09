@@ -5,6 +5,7 @@
 #include "CousineFont.h"
 
 #include "../External/imgui/imgui.h"
+#include "../External/imgui/imgui_internal.h"
 
 #include "../Core/StringUtil.h"
 #include "../Core/Hash.h"
@@ -62,7 +63,6 @@ struct ImGuiState
     GfxDescriptorSetLayout dsLayout;
     GfxPipeline  pipeline;
     GfxImage     fontImage;
-    GfxDescriptorSet  descriptorSet;
     AssetHandleShader imguiShader;
     size_t       initHeapStart;
     size_t       initHeapSize;
@@ -456,7 +456,7 @@ bool Initialize()
         return false;
     }
 
-    gImGui.dsLayout = gfxCreateDescriptorSetLayout(*assetGetShader(gImGui.imguiShader), dsetBindings, CountOf(dsetBindings));
+    gImGui.dsLayout = gfxCreateDescriptorSetLayout(*assetGetShader(gImGui.imguiShader), dsetBindings, CountOf(dsetBindings), true);
 
     gImGui.pipeline = gfxCreatePipeline(GfxPipelineDesc {
         .shader = assetGetShader(gImGui.imguiShader),
@@ -504,17 +504,6 @@ bool Initialize()
         });
         conf.Fonts->SetTexID( reinterpret_cast<ImTextureID>((uintptr_t)uint32(gImGui.fontImage)));
     }
-
-    gImGui.descriptorSet = gfxCreateDescriptorSet(gImGui.dsLayout);
-
-    GfxDescriptorBindingDesc descriptorBindings[] = {
-        {
-            .name = "MainTexture",
-            .type = GfxDescriptorType::CombinedImageSampler,
-            .image = gImGui.fontImage
-        }
-    };
-    gfxUpdateDescriptorSet(gImGui.descriptorSet, CountOf(descriptorBindings), descriptorBindings);
 
     _SetColorTheme();
     _InitializeSettings();
@@ -576,7 +565,7 @@ bool DrawFrame()
     if (gImGui.ctx == nullptr) 
         return false;
 
-    PROFILE_ZONE(true);
+    PROFILE_ZONE();
     Render();
 
     ImDrawData* drawData = GetDrawData();
@@ -649,10 +638,11 @@ bool DrawFrame()
     gfxCmdSetViewports(0, 1, &viewport, true);
     gfxCmdPushConstants(gImGui.pipeline, GfxShaderStage::Vertex, &projMat, sizeof(projMat));
 
+    GfxImage prevImg {};
     uint32 baseElem = 0;
     for (int drawListIdx = 0; drawListIdx < drawData->CmdListsCount; drawListIdx++) {
         const ImDrawList* dlist = drawData->CmdLists[drawListIdx];
-        for (auto drawCmd = (const ImDrawCmd*)dlist->CmdBuffer.Data;
+        for (const ImDrawCmd* drawCmd = (const ImDrawCmd*)dlist->CmdBuffer.Data;
              drawCmd != (const ImDrawCmd*)dlist->CmdBuffer.Data + dlist->CmdBuffer.Size; ++drawCmd)
         {
             if (drawCmd->UserCallback) {
@@ -667,10 +657,22 @@ bool DrawFrame()
             if (clipRect.x < displaySize.x && clipRect.y < displaySize.y && clipRect.z >= 0.0f && clipRect.w >= 0.0f) {
                 Recti scissor(int(clipRect.x), int(clipRect.y), int(clipRect.z), int(clipRect.w));
                 GfxImage img(PtrToInt<uint32>(drawCmd->TextureId));
-                ASSERT_MSG(!img.IsValid() || img == gImGui.fontImage, "Doesn't support multiple images yet");
+                if (prevImg != img) {
+                    GfxDescriptorBindingDesc descriptorBindings[] = {
+                        {
+                            .name = "MainTexture",
+                            .type = GfxDescriptorType::CombinedImageSampler,
+                            .image = img
+                        }
+                    };
+                    // gfxUpdateDescriptorSet(gImGui.descriptorSet, CountOf(descriptorBindings), descriptorBindings);
+                    gfxCmdPushDescriptorSet(gImGui.pipeline, GfxPipelineBindPoint::Graphics, 0, CountOf(descriptorBindings), descriptorBindings);
+
+                    prevImg = img;
+                }
+                // ASSERT_MSG(!img.IsValid() || img == gImGui.fontImage, "Doesn't support multiple images yet");
 
                 gfxCmdSetScissors(0, 1, &scissor, true);
-                gfxCmdBindDescriptorSets(gImGui.pipeline, 1, &gImGui.descriptorSet);
                 gfxCmdDrawIndexed(drawCmd->ElemCount, 1, baseElem, 0, 0);
             }
 
@@ -688,7 +690,6 @@ void Release()
 
         assetUnload(gImGui.imguiShader);
 
-        gfxDestroyDescriptorSet(gImGui.descriptorSet);
         gfxDestroyBuffer(gImGui.vertexBuffer);
         gfxDestroyBuffer(gImGui.indexBuffer);
         gfxDestroyPipeline(gImGui.pipeline);
@@ -766,6 +767,11 @@ void GetBudgetStats(ImGuiBudgetStats* stats)
 void ControlAlphaWithScroll(float* alpha)
 {
     gImGui.alphaControl = alpha;
+}
+
+void SeparatorVertical(float)
+{
+    SeparatorEx(ImGuiSeparatorFlags_Vertical);
 }
 
 } // ImGui

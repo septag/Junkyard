@@ -4,6 +4,8 @@
 #include "../Core/System.h"
 #include "../Core/Atomic.h"
 #include "../Core/Jobs.h"
+#include "../Core/TracyHelper.h"
+#include "../Core/MathAll.h"
 
 #include "../Common/Application.h"
 #include "../Common/JunkyardSettings.h"
@@ -13,8 +15,13 @@
 
 #include "../Graphics/Graphics.h"
 
+#include "../Assets/AssetManager.h"
+#include "../Assets/Image.h"
+
 #include "../UnityBuild.inl"
 #include "../Engine.h"
+
+inline constexpr uint32 CELL_SIZE = 50*SIZE_MB;
 
 struct AppImpl;
 struct ReadFileData
@@ -22,6 +29,25 @@ struct ReadFileData
     AppImpl* app;
     uint64 startTime;
     const char* filepath;
+};
+
+struct Cell
+{
+    String<32> name;
+    uint32 row;
+    uint32 col;
+    Array<uint32> files;
+    AssetHandle* handles;   // count = files.Count
+    uint32 selectedFile = uint32(-1);
+    AssetGroup assetGroup;
+};
+
+struct Grid
+{
+    Cell* cells;
+    uint32 numCells;
+    uint32 dim;
+    uint32 selectedCell = uint32(-1);
 };
 
 struct AppImpl final : AppCallbacks
@@ -36,18 +62,71 @@ struct AppImpl final : AppCallbacks
     MemBumpAllocatorVM mFileAlloc;
     ReadFileData* mFileDatas = nullptr;
     bool mReadFinished = false;
+    AssetHandle mTexture;
+
+    Grid mGrid;
+
+    void CreateGrid()
+    {
+        ASSERT(mNumFilePaths);
+
+        MemTempAllocator tempAlloc;
+        Array<Cell> cells(&tempAlloc);
+
+        // Calculate the total size of our assets and divide it up to cells
+        uint64 totalAssetSize = 0;
+        uint64 cellAssetSize = 0;
+        Cell* curCell = cells.Push();
+
+        for (uint32 i = 0; i < mNumFilePaths; i++) {
+            uint64 fileSize = Vfs::GetFileSize(mFilePaths[i].CStr());
+            cellAssetSize += fileSize;
+            totalAssetSize += fileSize;
+
+            curCell->files.Push(i);
+
+            if (cellAssetSize >= CELL_SIZE) {
+                curCell = cells.Push();
+                cellAssetSize = 0;
+            }
+        }
+
+        uint32 dimSize = (uint32)mathCeil(mathSqrt(float(cells.Count())));
+        for (uint32 i = 0; i < cells.Count(); i++) {
+            cells[i].col = i % dimSize;    
+            cells[i].row = i / dimSize;    
+            cells[i].name = String32::Format("%02u,%02u", cells[i].row, cells[i].col);  // row, col
+            cells[i].assetGroup = Asset::CreateGroup();
+            if (!cells[i].files.IsEmpty())
+                cells[i].handles = Mem::AllocZeroTyped<AssetHandle>(cells[i].files.Count());
+        }
+
+        cells.Detach(&mGrid.cells, &mGrid.numCells);
+        mGrid.dim = dimSize;
+
+        LOG_INFO("Total asset size: %$llu", totalAssetSize);        
+        LOG_INFO("Total cells: %d", mGrid.numCells);
+    }
+
+    void DestroyGrid()
+    {
+        for (uint32 i = 0; i < mGrid.numCells; i++) {
+            mGrid.cells[i].assetGroup.Unload();
+        }
+    }
+
 
     bool Initialize() override
     {
-        Vfs::HelperMountDataAndShaders(SettingsJunkyard::Get().engine.connectToServer);
+        Vfs::HelperMountDataAndShaders(SettingsJunkyard::Get().engine.connectToServer, "test");
         Engine::Initialize();
 
         LOG_INFO("Reading file list ...");
         MemTempAllocator tempAlloc;
-        Blob fileListBlob = Vfs::ReadFile("/data/file_list.txt", VfsFlags::TextFile, &tempAlloc);
+        Blob fileListBlob = Vfs::ReadFile("./test/file_list.txt", VfsFlags::TextFile|VfsFlags::AbsolutePath, &tempAlloc);
         if (!fileListBlob.IsValid()) {
             LOG_ERROR("Could not load file_list.txt");
-            return false;
+            return true;
         }
 
         Span<char*> filePaths = strSplitWhitespace((const char*)fileListBlob.Data(), &tempAlloc);
@@ -58,21 +137,47 @@ struct AppImpl final : AppCallbacks
         }
         LOG_INFO("Ready. Total %u files", mNumFilePaths);
 
-        mFileAlloc.Initialize(2*SIZE_GB, SIZE_MB*64);
-        mFileAlloc.WarmUp();
+        mFileAlloc.Initialize(5*SIZE_GB, SIZE_MB*64);
+        // mFileAlloc.WarmUp(); // Makes a big difference
 
-        Async::Initialize();
+        CreateGrid();
 
         return true;
     };
 
     void Cleanup() override
     {
-        Async::Release();
+        DestroyGrid();
         mFileAlloc.Release();
         Mem::Free(mFilePaths);
         Engine::Release();
     };
+
+    void LoadTextures()
+    {
+        AssetGroup group = Asset::CreateGroup();
+
+        
+        for (uint32 i = 0; i < 1; i++) {
+            Path fileExt = mFilePaths[i].GetFileExtension();
+            if (fileExt != ".tga")
+                continue;
+
+            ImageLoadParams imageParams {};
+            AssetParams params {
+                .typeId = kImageAssetType,
+                .path = mFilePaths[i].CStr(),
+                .typeSpecificParams = &imageParams
+            };
+            mTexture = group.AddToLoadQueue(params);
+        }
+
+        group.Load();
+        group.Unload();
+//        group.WaitForLoadFinish();
+//        
+//        Asset::DestroyGroup(group);
+    }
 
     void Start()
     {
@@ -89,6 +194,8 @@ struct AppImpl final : AppCallbacks
             else {
                 LOG_ERROR("Reading file '%s' failed", file->filepath.CStr());
             }
+            
+            Async::Close(file);
         };
 
         mFileAlloc.Reset();
@@ -99,7 +206,7 @@ struct AppImpl final : AppCallbacks
         mReadFinished = false;
         mStartTime = Timer::GetTicks();
 
-        PROFILE_ZONE(true);
+        PROFILE_ZONE();
         for (uint32 i = 0; i < mNumFilePaths; i++) {
             Path absPath = Vfs::ResolveFilepath(mFilePaths[i].CStr());
             ReadFileData data {
@@ -145,9 +252,8 @@ struct AppImpl final : AppCallbacks
 
         mFileDatas = Mem::ReallocTyped<ReadFileData>(mFileDatas, mNumFilePaths);
 
-        PROFILE_ZONE(true);
+        PROFILE_ZONE();
         for (uint32 i = 0; i < mNumFilePaths; i++) {
-            Path absPath = Vfs::ResolveFilepath(mFilePaths[i].CStr());
             mFileDatas[i] = {
                 .app = this,
                 .startTime = Timer::GetTicks(),
@@ -191,12 +297,113 @@ struct AppImpl final : AppCallbacks
                 ImGui::Text("Bandwidth: %.1f MB/s", (totalMegsRead / Timer::ToSec(mDuration)));
                 ImGui::Text("Time: %.1f ms, AccumTime: %.1f ms", Timer::ToMS(mDuration), Timer::ToMS(mAccumReadTime));
             }
+
+            ImGui::Separator();
+
+            if (ImGui::Button("LoadTextures")) {
+                LoadTextures();
+            }
+
+            if (mTexture.IsValid()) {
+                AssetImage* image = (AssetImage*)Asset::GetObjData(mTexture);
+                if (image && image->handle.IsValid()) {
+                    ImGui::Image((ImTextureID)IntToPtr(image->handle.mId), ImVec2(256, 256));
+                }
+            }
+        }
+        ImGui::End();
+
+        auto GetCellStateColor = [](AssetGroupState state)->ImU32
+        {
+            switch (state) {
+            //case AssetGroupState::Idle: return ImColor(200, 200, 0, 255);
+            case AssetGroupState::Loading: return ImColor(200, 0, 0, 255);
+            case AssetGroupState::Loaded: return ImColor(0, 200, 0, 255);
+            default: return ImColor(ImGui::GetStyleColorVec4(ImGuiCol_Button));
+            }
+        };
+
+        //ImGui::SetNextWindowSizeConstraints(ImVec2(400, 400), ImVec2(2048, 2048));
+        if (ImGui::Begin("Cells")) {
+            if (ImGui::BeginTable("GridTable", mGrid.dim)) {
+                for (uint32 row = 0; row < mGrid.dim; row++) {
+                    ImGui::TableNextRow();
+
+                    for (uint32 col = 0; col < mGrid.dim; col++) {
+                        ImGui::TableSetColumnIndex(col);
+
+                        uint32 index = col + row*mGrid.dim;
+                        if (index < mGrid.numCells) {
+                            Cell& cell = mGrid.cells[index];
+                            AssetGroupState state = cell.assetGroup.GetState();
+                            ImGui::PushStyleColor(ImGuiCol_Button, GetCellStateColor(state));
+                            ImGui::SetItemAllowOverlap();
+                            if (ImGui::Selectable(String32::Format("##%s", cell.name.CStr()).CStr(), mGrid.selectedCell == index, ImGuiSelectableFlags_None)) 
+                                mGrid.selectedCell = index;
+
+                            if (ImGui::IsItemClicked(ImGuiMouseButton_Left)) {
+                                if (state == AssetGroupState::Idle) {
+                                    MemTempAllocator paramsAlloc;
+                                    ImageLoadParams imageParams {};
+                                    AssetParams* params = paramsAlloc.MallocTyped<AssetParams>(cell.files.Count());
+                                    for (uint32 i = 0; i < cell.files.Count(); i++) {
+                                        params[i].typeId = kImageAssetType;
+                                        params[i].path = mFilePaths[cell.files[i]];
+                                        params[i].typeSpecificParams = &imageParams;
+                                    }   
+                                    cell.assetGroup.AddToLoadQueue(params, cell.files.Count(), cell.handles);
+                                    cell.assetGroup.Load();
+                                }
+                            }
+                            else if (ImGui::IsItemClicked(ImGuiMouseButton_Right)) {
+                                cell.assetGroup.Unload();
+                            }
+
+                            ImGui::SameLine();
+                            ImGui::SmallButton(cell.name.CStr());
+                            ImGui::PopStyleColor();
+                        }
+                    }
+                }
+
+                ImGui::EndTable();
+            }
+
+            ImGui::Separator();
+            ImGui::BeginChild("CellDetails");
+            if (mGrid.selectedCell != -1) {
+                if (ImGui::BeginTable("CellViewTable", 2)) {
+                    ImGui::TableNextRow();
+                    ImGui::TableSetColumnIndex(0);
+                    Cell& cell = mGrid.cells[mGrid.selectedCell];
+                    for (uint32 i = 0; i < cell.files.Count(); i++) {
+                        if (ImGui::Selectable(mFilePaths[cell.files[i]].CStr(), i == cell.selectedFile)) {
+                            cell.selectedFile = i;
+                        }
+                    }
+
+                    ImGui::SeparatorVertical();
+                    ImGui::TableSetColumnIndex(1);
+
+                    if (cell.selectedFile != -1) {
+                        if (cell.handles[cell.selectedFile].IsValid()) {
+                            AssetImage* image = (AssetImage*)Asset::GetObjData(cell.handles[cell.selectedFile]);
+                            if (image && image->handle.IsValid()) 
+                                ImGui::Image((ImTextureID)IntToPtr(image->handle.mId), ImVec2(256, 256));
+                        }
+                    }
+
+                    ImGui::EndTable();
+                }
+            }
+            ImGui::EndChild();
         }
         ImGui::End();
 
         ImGui::DrawFrame();
 
         gfxCmdEndSwapchainRenderPass();
+
         gfxEndCommandBuffer();
 
         Engine::EndFrame(dt);

@@ -308,6 +308,16 @@ uint32 strCountMatchingFirstChars(const char* s1, const char* s2)
     return count;
 }
 
+bool strStartsWith(const char* str, const char* startsWith)
+{
+    uint32 len = strLen(str);
+    uint32 startsWithLen = strLen(startsWith);
+    if (startsWithLen > len)
+        return false;
+
+    return strIsEqualCount(str, startsWith, startsWithLen);
+}
+
 bool strEndsWith(const char* str, const char* endsWith)
 {
     uint32 len = strLen(str);

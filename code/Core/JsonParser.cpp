@@ -46,8 +46,8 @@ JsonContext* Json::Parse(const char* json5, uint32 json5Len, JsonErrorLocation* 
 
         // TODO: the API and usage is a bit inconvenient. look for better solutions for cj5 API
         MemSingleShotMalloc<JsonContext> mallocator;
-        mallocator.AddMemberField<cj5_token>(offsetof(JsonContext, tokens), tokens.Count());
-        JsonContext* ctx = mallocator.Calloc(alloc);
+        mallocator.AddMemberArray<cj5_token>(offsetof(JsonContext, tokens), tokens.Count());
+        JsonContext* ctx = mallocator.Malloc(alloc);
 
         ctx->numTokens = tokens.Count();
         memcpy(ctx->tokens, r.tokens, tokens.Count());

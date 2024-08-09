@@ -42,6 +42,11 @@
 		14E748C82C4FBD3B00F5644B /* DebugHud.h in Headers */ = {isa = PBXBuildFile; fileRef = 14E748C62C4FBD3B00F5644B /* DebugHud.h */; };
 		14E748CB2C4FBD5800F5644B /* ImGuiMain.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 14E748C92C4FBD5800F5644B /* ImGuiMain.cpp */; };
 		14E748CC2C4FBD5800F5644B /* ImGuiMain.h in Headers */ = {isa = PBXBuildFile; fileRef = 14E748CA2C4FBD5800F5644B /* ImGuiMain.h */; };
+		14E748D32C76360100F5644B /* Metal.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = ABF104E62A644D9000D853CC /* Metal.framework */; };
+		14E748D42C76360100F5644B /* MetalKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = ABF104A52A6447A800D853CC /* MetalKit.framework */; };
+		14E748D52C76360100F5644B /* AppKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = ABF104A72A6447B000D853CC /* AppKit.framework */; platformFilters = (macos, ); };
+		14E748D62C76360100F5644B /* Engine.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = ABF103E02A6428C400D853CC /* Engine.framework */; };
+		14E748DF2C7636FC00F5644B /* TestIO.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 14E748DD2C7636FC00F5644B /* TestIO.cpp */; };
 		14FDA9462A6D3A2500589F52 /* imgui_demo.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 14FDA93F2A6D3A2500589F52 /* imgui_demo.cpp */; };
 		14FDA9472A6D3A2500589F52 /* imgui_draw.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 14FDA9402A6D3A2500589F52 /* imgui_draw.cpp */; };
 		14FDA9482A6D3A2500589F52 /* imgui_tables.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 14FDA9412A6D3A2500589F52 /* imgui_tables.cpp */; };
@@ -113,6 +118,13 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
+		14E748CF2C76360100F5644B /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 14B7EA912731921500CC6204 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = ABF103DF2A6428C400D853CC;
+			remoteInfo = Engine;
+		};
 		ABF104022A642B6200D853CC /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = 14B7EA912731921500CC6204 /* Project object */;
@@ -153,11 +165,14 @@
 		1481D7AC2B77EFCA00D60379 /* Clipboard.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = Clipboard.cpp; path = ../../code/Common/Clipboard.cpp; sourceTree = "<group>"; };
 		1481D7AD2B77EFCA00D60379 /* VirtualFS.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = VirtualFS.cpp; path = ../../code/Common/VirtualFS.cpp; sourceTree = "<group>"; };
 		1481D7AE2B77EFCA00D60379 /* VirtualFS.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = VirtualFS.h; path = ../../code/Common/VirtualFS.h; sourceTree = "<group>"; };
-		1481D7C12B790F3900D60379 /* SystemMac.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = SystemMac.cpp; path = ../../code/Core/SystemMac.cpp; sourceTree = "<group>"; };
+		1481D7C12B790F3900D60379 /* SystemMac.cpp */ = {isa = PBXFileReference; explicitFileType = sourcecode.cpp.cpp; fileEncoding = 4; name = SystemMac.cpp; path = ../../code/Core/SystemMac.cpp; sourceTree = "<group>"; };
 		14E748C52C4FBD3B00F5644B /* DebugHud.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = DebugHud.cpp; path = ../../code/DebugTools/DebugHud.cpp; sourceTree = "<group>"; };
 		14E748C62C4FBD3B00F5644B /* DebugHud.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = DebugHud.h; path = ../../code/DebugTools/DebugHud.h; sourceTree = "<group>"; };
 		14E748C92C4FBD5800F5644B /* ImGuiMain.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = ImGuiMain.cpp; path = ../../code/ImGui/ImGuiMain.cpp; sourceTree = "<group>"; };
 		14E748CA2C4FBD5800F5644B /* ImGuiMain.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = ImGuiMain.h; path = ../../code/ImGui/ImGuiMain.h; sourceTree = "<group>"; };
+		14E748DB2C76360100F5644B /* TestIO.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = TestIO.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		14E748DC2C76360100F5644B /* Test1 copy-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; name = "Test1 copy-Info.plist"; path = "/Users/sepul/Projects/Junkyard/projects/MacOS/Test1 copy-Info.plist"; sourceTree = "<absolute>"; };
+		14E748DD2C7636FC00F5644B /* TestIO.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = TestIO.cpp; path = ../../code/Tests/TestIO.cpp; sourceTree = "<group>"; };
 		14FDA93F2A6D3A2500589F52 /* imgui_demo.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = imgui_demo.cpp; path = ../../code/External/imgui/imgui_demo.cpp; sourceTree = "<group>"; };
 		14FDA9402A6D3A2500589F52 /* imgui_draw.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = imgui_draw.cpp; path = ../../code/External/imgui/imgui_draw.cpp; sourceTree = "<group>"; };
 		14FDA9412A6D3A2500589F52 /* imgui_tables.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = imgui_tables.cpp; path = ../../code/External/imgui/imgui_tables.cpp; sourceTree = "<group>"; };
@@ -239,6 +254,17 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
+		14E748D22C76360100F5644B /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				14E748D32C76360100F5644B /* Metal.framework in Frameworks */,
+				14E748D42C76360100F5644B /* MetalKit.framework in Frameworks */,
+				14E748D52C76360100F5644B /* AppKit.framework in Frameworks */,
+				14E748D62C76360100F5644B /* Engine.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		ABF103DD2A6428C400D853CC /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -342,6 +368,7 @@
 				ABF103AE2A64265B00D853CC /* Junkyard.entitlements */,
 				14B7EA9A2731921500CC6204 /* Products */,
 				14D768522733CA5600A21A65 /* Frameworks */,
+				14E748DC2C76360100F5644B /* Test1 copy-Info.plist */,
 			);
 			sourceTree = "<group>";
 			usesTabs = 0;
@@ -351,6 +378,7 @@
 			children = (
 				ABF103E02A6428C400D853CC /* Engine.framework */,
 				ABF103EE2A642B2300D853CC /* Test1.app */,
+				14E748DB2C76360100F5644B /* TestIO.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -440,6 +468,7 @@
 		ABF103E72A642A9E00D853CC /* Tests */ = {
 			isa = PBXGroup;
 			children = (
+				14E748DD2C7636FC00F5644B /* TestIO.cpp */,
 				ABF103E82A642AB400D853CC /* Test.cpp */,
 			);
 			name = Tests;
@@ -544,6 +573,24 @@
 /* End PBXHeadersBuildPhase section */
 
 /* Begin PBXNativeTarget section */
+		14E748CD2C76360100F5644B /* TestIO */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 14E748D82C76360100F5644B /* Build configuration list for PBXNativeTarget "TestIO" */;
+			buildPhases = (
+				14E748D02C76360100F5644B /* Sources */,
+				14E748D22C76360100F5644B /* Frameworks */,
+				14E748D72C76360100F5644B /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				14E748CE2C76360100F5644B /* PBXTargetDependency */,
+			);
+			name = TestIO;
+			productName = Test1;
+			productReference = 14E748DB2C76360100F5644B /* TestIO.app */;
+			productType = "com.apple.product-type.application";
+		};
 		ABF103DF2A6428C400D853CC /* Engine */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = ABF103E42A6428C400D853CC /* Build configuration list for PBXNativeTarget "Engine" */;
@@ -612,11 +659,19 @@
 			targets = (
 				ABF103DF2A6428C400D853CC /* Engine */,
 				ABF103ED2A642B2300D853CC /* Test1 */,
+				14E748CD2C76360100F5644B /* TestIO */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
+		14E748D72C76360100F5644B /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		ABF103DE2A6428C400D853CC /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -636,6 +691,14 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		14E748D02C76360100F5644B /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				14E748DF2C7636FC00F5644B /* TestIO.cpp in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		ABF103DC2A6428C400D853CC /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -703,6 +766,11 @@
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
+		14E748CE2C76360100F5644B /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = ABF103DF2A6428C400D853CC /* Engine */;
+			targetProxy = 14E748CF2C76360100F5644B /* PBXContainerItemProxy */;
+		};
 		ABF104032A642B6200D853CC /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			target = ABF103DF2A6428C400D853CC /* Engine */;
@@ -833,6 +901,60 @@
 				SDKROOT = macosx;
 				SYSTEM_HEADER_SEARCH_PATHS = "$(PROJECT_DIR)/../../code/External/MoltenVK/include";
 				USE_HEADERMAP = NO;
+			};
+			name = Release;
+		};
+		14E748D92C76360100F5644B /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CODE_SIGN_ENTITLEMENTS = Junkyard.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "Test1 copy-Info.plist";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				INFOPLIST_KEY_NSMainStoryboardFile = Main;
+				INFOPLIST_KEY_NSPrincipalClass = NSApplication;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = "$(RECOMMENDED_MACOSX_DEPLOYMENT_TARGET)";
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.junkyard.TestIO;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+			};
+			name = Debug;
+		};
+		14E748DA2C76360100F5644B /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CODE_SIGN_ENTITLEMENTS = Junkyard.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "Test1 copy-Info.plist";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				INFOPLIST_KEY_NSMainStoryboardFile = Main;
+				INFOPLIST_KEY_NSPrincipalClass = NSApplication;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = "$(RECOMMENDED_MACOSX_DEPLOYMENT_TARGET)";
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.junkyard.TestIO;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
 			};
 			name = Release;
 		};
@@ -996,6 +1118,15 @@
 			buildConfigurations = (
 				14B7EA9E2731921500CC6204 /* Debug */,
 				14B7EA9F2731921500CC6204 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		14E748D82C76360100F5644B /* Build configuration list for PBXNativeTarget "TestIO" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				14E748D92C76360100F5644B /* Debug */,
+				14E748DA2C76360100F5644B /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

@@ -362,7 +362,7 @@ enum class GfxSamplerBorderColor: uint32
     OpaqueWhite
 };
 
-inline constexpr uint32 kGfxMaxMips = 16;
+inline constexpr uint32 GFX_MAX_MIPS = 16;
 
 struct GfxImageDesc
 {
@@ -602,6 +602,14 @@ enum class GfxColorComponentFlags: uint32
     All = 0xf
 };
 ENABLE_BITMASK(GfxColorComponentFlags);
+
+// 1-1 Vulkan
+enum class GfxPipelineBindPoint : uint32
+{
+    Graphics = 0,
+    Compute = 1,
+    RayTracing = 1000165000, // Provided by VK_KHR_ray_tracing_pipeline
+};
 
 // Blending: pseudo code
 // if (blendEnable) {
@@ -1037,7 +1045,8 @@ API GfxRenderPass gfxCreateRenderPass(const GfxRenderPassDesc& desc);
 API void gfxDestroyRenderPass(GfxRenderPass renderPass);
 
 API GfxDescriptorSetLayout gfxCreateDescriptorSetLayout(const GfxShader& shader, 
-                                                        const GfxDescriptorSetLayoutBinding* bindings, uint32 numBindings);
+                                                        const GfxDescriptorSetLayoutBinding* bindings, uint32 numBindings,
+                                                        bool isPushDescriptor);
 API void gfxDestroyDescriptorSetLayout(GfxDescriptorSetLayout layout);
 
 API GfxDescriptorSet gfxCreateDescriptorSet(GfxDescriptorSetLayout layout);
@@ -1062,6 +1071,8 @@ API void gfxCmdDraw(uint32 vertexCount, uint32 instanceCount, uint32 firstVertex
 API void gfxCmdDrawIndexed(uint32 indexCount, uint32 instanceCount, uint32 firstIndex, uint32 vertexOffset, uint32 firstInstance);
 API void gfxCmdSetScissors(uint32 firstScissors, uint32 numScissors, const Recti* scissors, bool isSwapchain = false);
 API void gfxCmdSetViewports(uint32 firstViewport, uint32 numViewports, const GfxViewport* viewports, bool isSwapchain = false);
+API void gfxCmdPushDescriptorSet(GfxPipeline pipline, GfxPipelineBindPoint bindPoint, uint32 setIndex, 
+                                 uint32 numDescriptorBindings, const GfxDescriptorBindingDesc* descriptorBindings);
 
 //----------------------------------------------------------------------------------------------------------------------
 // Update descriptor sets

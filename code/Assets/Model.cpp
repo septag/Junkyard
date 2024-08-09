@@ -131,7 +131,7 @@ static ModelMaterial* modelCreateMaterial(uint32* outNumTextures, uint32* outHas
         tex->params = tparams;
 
         hasher.Add(texturePath, texturePathLen);
-        hasher.Add<ImageLoadParams>(&tparams);
+        hasher.Add<ImageLoadParams>(tparams);
     };
 
     ModelMaterialAlphaMode alphaMode;
@@ -187,7 +187,7 @@ static ModelMaterial* modelCreateMaterial(uint32* outNumTextures, uint32* outHas
     };
 
     HashMurmur32Incremental hasher(0x669);
-    hasher.Add<ModelMaterial>(mtl);
+    hasher.Add<ModelMaterial>(*mtl);
 
     uint32 numTextures = 0;
     if (gltfMtl->has_pbr_metallic_roughness) {
@@ -629,11 +629,9 @@ static const GfxVertexInputAttributeDesc* modelFindAttribute(const ModelGeometry
 // Note: `alloc` shouldn't be temp allocator
 Span<Model> modelLoadGltf(const char* filepath, MemAllocator* alloc, const ModelLoadParams& params, char* errorDesc, uint32 errorDescSize)
 {
-    PROFILE_ZONE(true);
-
     const ModelGeometryLayout& layout = params.layout.vertexBufferStrides[0] ? params.layout : gModelCtx.defaultLayout;
 
-    Path fileDir = Path(filepath).GetDirectory_CStr();
+    Path fileDir = Path(filepath).GetDirectory();
 
     MemTempAllocator tmpAlloc;
     Blob blob = Vfs::ReadFile(filepath, VfsFlags::None, &tmpAlloc);
@@ -959,9 +957,9 @@ static void modelOptimizeModel(Model* model, const ModelLoadParams& modelParams)
     for (uint32 i = 0; i < model->numMeshes; i++) {
         ModelMesh& srcMesh = model->meshes[i];
         MemSingleShotMalloc<MeshOptMesh> mallocMesh;
-        mallocMesh.AddMemberField<void*>(offsetof(MeshOptMesh, vertexBuffers), srcMesh.numVertexBuffers);
-        mallocMesh.AddMemberField<uint32>(offsetof(MeshOptMesh, indexBuffer), srcMesh.numIndices);
-        mallocMesh.AddMemberField<uint32>(offsetof(MeshOptMesh, vertexStrides), srcMesh.numVertexBuffers);
+        mallocMesh.AddMemberArray<void*>(offsetof(MeshOptMesh, vertexBuffers), srcMesh.numVertexBuffers);
+        mallocMesh.AddMemberArray<uint32>(offsetof(MeshOptMesh, indexBuffer), srcMesh.numIndices);
+        mallocMesh.AddMemberArray<uint32>(offsetof(MeshOptMesh, vertexStrides), srcMesh.numVertexBuffers);
         MeshOptMesh* bakeMesh = mallocMesh.Calloc(&tmpAlloc);
 
         for (uint32 k = 0; k < srcMesh.numVertexBuffers; k++) {
@@ -1060,7 +1058,7 @@ static void modelLoadTask(uint32 groupIndex, void* userData)
     
     char filepath[PATH_CHARS_MAX];
     char errorMsg[kRemoteErrorDescSize];
-    AssetPlatform platform;
+    AssetPlatform::Enum platform;
     ModelLoadParams loadModelParams;
 
     uint32 handle;

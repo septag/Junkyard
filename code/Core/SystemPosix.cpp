@@ -23,6 +23,7 @@
 #include <netdb.h>              // getaddrinfo, freeaddrinfo
 #include <netinet/in.h>         // sockaddr_in
 #include <arpa/inet.h>          // inet_ntop
+#include <poll.h>               // async file poll
 
 #if !PLATFORM_ANDROID
     #include <uuid/uuid.h>
@@ -35,6 +36,7 @@
 #include "Atomic.h"
 #include "Allocators.h"
 #include "Log.h"
+#include "Arrays.h"
 
 static inline void timespecAdd(struct timespec* _ts, int32_t _msecs)
 {
@@ -1275,6 +1277,193 @@ uint32 SocketTCP::Read(void* dst, uint32 dstSize)
 bool SocketTCP::IsValid() const
 {
     return mSock != SOCKET_INVALID;
+}
+
+//   █████╗ ███████╗██╗   ██╗███╗   ██╗ ██████╗
+//  ██╔══██╗██╔════╝╚██╗ ██╔╝████╗  ██║██╔════╝
+//  ███████║███████╗ ╚████╔╝ ██╔██╗ ██║██║
+//  ██╔══██║╚════██║  ╚██╔╝  ██║╚██╗██║██║
+//  ██║  ██║███████║   ██║   ██║ ╚████║╚██████╗
+//  ╚═╝  ╚═╝╚══════╝   ╚═╝   ╚═╝  ╚═══╝ ╚═════╝
+
+struct AsyncFilePosix
+{
+    AsyncFile f;
+    MemAllocator* alloc;
+    AsyncFileCallback readFn;
+    int fd;
+    AtomicUint32 done;
+};
+
+struct AsyncContext
+{
+    Mutex mutex;
+    Thread* threads;
+    Array<AsyncFilePosix*> queue;
+    uint32 queueIndex;
+    uint32 numThreads;
+    Semaphore sem;
+    AtomicUint32 quit;
+};
+
+static AsyncContext gAsyncCtx;
+
+namespace Async
+{
+    static int _IOThreadCallback(void* userData)
+    {
+        while (!Atomic::Load(&gAsyncCtx.quit)) {
+            gAsyncCtx.sem.Wait();
+            
+            AsyncFilePosix* file = nullptr;
+            {
+                MutexScope lock(gAsyncCtx.mutex);
+                if (gAsyncCtx.queue.IsEmpty())
+                    continue;
+                uint32 index = gAsyncCtx.queueIndex++;
+                file = gAsyncCtx.queue[index];
+                gAsyncCtx.queue.RemoveAndSwap(index);
+                if (gAsyncCtx.queueIndex >= gAsyncCtx.queue.Count())
+                    gAsyncCtx.queueIndex = 0;
+            }
+            
+            ASSERT(file->fd != -1);
+            pollfd p {};
+            p.fd = file->fd;
+            p.events = POLLIN;
+            [[maybe_unused]] int r = poll(&p, 1, -1);
+            ASSERT(r != -1);
+            ssize_t bytesRead = read(file->fd, file->f.data, file->f.size);
+            ASSERT(bytesRead <= UINT32_MAX);
+            
+            bool hadError = bytesRead != file->f.size;
+            Atomic::StoreExplicit(&file->done, hadError ? 1 : -1, AtomicMemoryOrder::Release);
+            file->readFn(&file->f, hadError);
+        }
+        
+        return 0;
+    }
+} // Async
+
+bool Async::Initialize()
+{
+    SysInfo info {};
+    OS::GetSysInfo(&info);
+    ASSERT(info.coreCount);
+    
+    gAsyncCtx.mutex.Initialize();
+    gAsyncCtx.sem.Initialize();
+    
+    // Create the thread pool for Async IO
+    gAsyncCtx.threads = NEW_ARRAY(Mem::GetDefaultAlloc(), Thread, info.coreCount);
+    gAsyncCtx.numThreads = info.coreCount;
+
+    for (uint32 i = 0; i < gAsyncCtx.numThreads; i++) {
+        String<32> name = String<32>::Format("IO_%u", i+1);
+        ThreadDesc tdesc {
+            .entryFn = Async::_IOThreadCallback,
+            .name = name.CStr(),
+            .stackSize = 512*SIZE_KB
+        };
+        
+        gAsyncCtx.threads[i].Start(tdesc);
+    }
+
+    LOG_INFO("(init) Initialized %u Async IO Threads", gAsyncCtx.numThreads);
+
+    return true;
+}
+
+void Async::Release()
+{
+    Atomic::Store(&gAsyncCtx.quit, 1);
+    gAsyncCtx.sem.Post(gAsyncCtx.numThreads);
+    for (uint32 i = 0; i < gAsyncCtx.numThreads; i++)
+        gAsyncCtx.threads[i].Stop();
+    Mem::Free(gAsyncCtx.threads);
+    gAsyncCtx.sem.Release();
+    gAsyncCtx.mutex.Release();
+}
+
+AsyncFile* Async::ReadFile(const char* filepath, const AsyncFileRequest& request)
+{
+    int fd = open(filepath, O_RDONLY|O_NONBLOCK, 0);
+    if (fd == -1)
+        return nullptr;
+    
+    uint64 fileSize = request.sizeHint;
+    uint64 fileModificationTime = 0;
+    
+    if (!fileSize) {
+        PathInfo info = Path::Stat_CStr(filepath);
+        if (info.type != PathType::File) {
+            close(fd);
+            return nullptr;
+        }
+        
+        fileSize = info.size;
+        fileModificationTime = info.lastModified;
+    }
+    
+    MemSingleShotMalloc<AsyncFilePosix> mallocator;
+    uint8* data;
+    uint8* userData = nullptr;
+    if (request.userDataAllocateSize)
+        mallocator.AddExternalPointerField<uint8>(&userData, request.userDataAllocateSize);
+    mallocator.AddExternalPointerField<uint8>(&data, fileSize);
+    
+    AsyncFilePosix* file = mallocator.Malloc(request.alloc);
+    memset(file, 0x0, sizeof(*file));
+    
+    file->f.filepath = filepath;
+    file->f.data = data;
+    file->f.size = uint32(fileSize);
+    file->f.lastModifiedTime = fileModificationTime;
+    if (request.userData) {
+        if (request.userDataAllocateSize) {
+            memcpy(userData, request.userData, request.userDataAllocateSize);
+            file->f.userData = userData;
+        }
+        else {
+            file->f.userData = request.userData;
+        }
+    }
+
+    file->fd = fd;
+    file->alloc = request.alloc;
+    file->readFn = request.readFn;
+    
+    {
+        MutexScope lock(gAsyncCtx.mutex);
+        gAsyncCtx.queue.Push(file);
+        gAsyncCtx.sem.Post();
+    }
+
+    return &file->f;
+}
+
+void Async::Close(AsyncFile* file)
+{
+    AsyncFilePosix* fm = (AsyncFilePosix*)file;
+    if (fm->fd)
+        close(fm->fd);
+    MemSingleShotMalloc<AsyncFilePosix>::Free(fm, fm->alloc);
+}
+
+bool Wait(AsyncFile* file)
+{
+    ASSERT_MSG(0, "Wait not implemented for generic impl");
+    return false;
+}
+
+bool IsFinished(AsyncFile* file, bool* outError)
+{
+    ASSERT(file);
+    AsyncFilePosix* f = (AsyncFilePosix*)file;
+    uint32 r = Atomic::LoadExplicit(&f->done, AtomicMemoryOrder::Acquire);
+    if (outError)
+        *outError = (r == -1);
+    return r != 0;
 }
 
 #endif // PLATFORM_POSIX

@@ -48,22 +48,29 @@ namespace Hash
     // Reference: https://gist.github.com/badboy/6267743
     INLINE constexpr uint32 Uint32(uint32 key);
     INLINE constexpr uint64 Uint64(uint64 key);
-    INLINE constexpr uint32 int64To32(uint64 key);
+    INLINE constexpr uint32 Int64To32(uint64 key);
 
     // CRC32: Pretty standard hash, mainly used for files
     API uint32 CRC32(const void* data, size_t len, uint32 seed = 0);
 
+    #if CPU_X86
+    API uint32 CRC32_x86_Aligned(const void* data, size_t len);
+    #endif
+
     // Murmur3
     API uint32 Murmur32(const void* key, uint32 len, uint32 seed = 0);
-    API HashResult128 Murmur128(const void* key, uint32 len, uint32 seed = 0);
+    API HashResult128 Murmur128(const void* key, size_t len, uint32 seed = 0);
 }
 
 struct HashMurmur32Incremental
 {
-    HashMurmur32Incremental(uint32 seed = Random::Seed());
+    HashMurmur32Incremental(uint32 seed = 0);
+
+    template <typename _T> 
+    HashMurmur32Incremental& Add(const _T& data) { return AddAny(&data, sizeof(_T)); }
     
     template <typename _T> 
-    HashMurmur32Incremental& Add(const _T* data, uint32 count = 1) { return AddAny(data, sizeof(_T)*count); }
+    HashMurmur32Incremental& Add(const _T* data, uint32 count) { return AddAny(data, sizeof(_T)*count); }
 
     uint32 Hash();
     HashMurmur32Incremental& AddAny(const void* data, uint32 size);
@@ -236,7 +243,7 @@ uint64 Hash::Uint64(uint64 key)
 }
 
 INLINE constexpr 
-uint32 Hash::int64To32(uint64 key)
+uint32 Hash::Int64To32(uint64 key)
 {
     key = (~key) + (key << 18);
     key = key ^ (key >> 31);
@@ -380,9 +387,7 @@ inline uint32 HashTable<_T>::Add(uint32 key, const _T& value)
     }
 
     uint32 h = _private::hashtableAddKey(mHashTable, key);
-
-    // do memcpy with template types, so it leaves some hints for the compiler to optimize
-    memcpy((_T*)mHashTable->values + h, &value, sizeof(_T));
+    ((_T*)mHashTable->values)[h] = value;
     return h;
 }
 

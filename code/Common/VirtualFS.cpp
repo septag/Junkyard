@@ -301,8 +301,6 @@ static uint32 _ResolveDiskPath(char* dstPath, uint32 dstPathSize, const char* pa
 
 static Blob _DiskReadFile(const char* path, VfsFlags flags, MemAllocator* alloc, Path* outResolvedPath = nullptr)
 {
-    PROFILE_ZONE_WITH_TEXT(path, strLen(path), true);
-
     auto LoadFromDisk = [](const char* path, VfsFlags flags, MemAllocator* alloc)->Blob {
         File f;
         if (f.Open(path, FileOpenFlags::Read | FileOpenFlags::SeqScan)) {
@@ -347,8 +345,6 @@ static Blob _DiskReadFile(const char* path, VfsFlags flags, MemAllocator* alloc,
 
 static size_t _DiskWriteFile(const char* path, VfsFlags flags, const Blob& blob)
 {
-    PROFILE_ZONE_WITH_TEXT(path, strLen(path), true);
-
     auto SaveToDisk = [](const char* path, VfsFlags, const Blob& blob)->size_t 
     {
         File f;
@@ -383,7 +379,7 @@ static size_t _DiskWriteFile(const char* path, VfsFlags flags, const Blob& blob)
     };
 
     auto CheckAndCreateDirsRecursive = [](const char* resolvedPath, const char* mountRootDir) {
-        Path dirname = Path(resolvedPath).GetDirectory_CStr();
+        Path dirname = Path(resolvedPath).GetDirectory();
         if (!dirname.IsDir()) {
             uint32 mountRootDirLen = mountRootDir ? strLen(mountRootDir) : 0;
             uint32 slashIdx = mountRootDirLen;
@@ -522,6 +518,28 @@ uint64 GetLastModified(const char* path)
         return Path::Stat_CStr(path).lastModified;
 }
 
+uint64 GetFileSize(const char* path)
+{
+    ASSERT_MSG(GetMountType(path) != VfsMountType::Remote, "Remote mounts cannot read files in blocking mode");
+
+    char resolvedPath[PATH_CHARS_MAX];
+    if (_ResolveDiskPath(resolvedPath, sizeof(resolvedPath), path, VfsFlags::None) != UINT32_MAX)
+        return Path::Stat_CStr(resolvedPath).size;
+    else
+        return Path::Stat_CStr(path).size;
+}
+
+PathInfo GetFileInfo(const char* path)
+{
+    ASSERT_MSG(GetMountType(path) != VfsMountType::Remote, "Remote mounts cannot read files in blocking mode");
+
+    char resolvedPath[PATH_CHARS_MAX];
+    if (_ResolveDiskPath(resolvedPath, sizeof(resolvedPath), path, VfsFlags::None) != UINT32_MAX)
+        return Path::Stat_CStr(resolvedPath);
+    else
+        return Path::Stat_CStr(path);
+}
+
 Path ResolveFilepath(const char* path)
 {
     ASSERT_MSG(GetMountType(path) != VfsMountType::Remote, "Remote mounts cannot read files in blocking mode");
@@ -531,6 +549,17 @@ Path ResolveFilepath(const char* path)
         return Path(resolvedPath);
     else
         return Path(path);
+}
+
+bool FileExists(const char* path)
+{
+    ASSERT_MSG(GetMountType(path) != VfsMountType::Remote, "Remote mounts cannot read files in blocking mode");
+
+    char resolvedPath[PATH_CHARS_MAX];
+    if (_ResolveDiskPath(resolvedPath, sizeof(resolvedPath), path, VfsFlags::None) != UINT32_MAX)
+        return Path::Exists_CStr(resolvedPath);
+    else
+        return Path::Exists_CStr(path);
 }
 
 //    ██╗  ██╗ ██████╗ ████████╗    ██████╗ ███████╗██╗      ██████╗  █████╗ ██████╗ 
@@ -1097,15 +1126,15 @@ void Release()
     gVfs.initialized = false;
 }
 
-void HelperMountDataAndShaders(bool remote)
+void HelperMountDataAndShaders(bool remote, const char* dataDir)
 {
     // Assume that we are in the root directory of the project with "data" and "code" folders under it
     if (remote) {
-        Vfs::MountRemote("data", true);
+        Vfs::MountRemote(dataDir, true);
         Vfs::MountRemote("shaders", true);
     }
     else {        
-        Vfs::MountLocal("data", "data", true);
+        Vfs::MountLocal(dataDir, "data", true);
         Vfs::MountLocal("code/Shaders", "shaders", true);
     }
 }

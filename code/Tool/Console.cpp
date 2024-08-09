@@ -186,7 +186,7 @@ static bool conRunExternalCommand(int argc, const char* argv[])
         ASSERT(argc > 1);
     
         const char* prefixCmd = nullptr;
-        Path ext = Path(argv[1]).GetFileExtension_CStr();
+        Path ext = Path(argv[1]).GetFileExtension();
         SysProcessFlags flags = SysProcessFlags::None;
         if (ext.IsEqualNoCase(".bat") || ext.IsEqualNoCase(".cmd")) {
             prefixCmd = "cmd /k";

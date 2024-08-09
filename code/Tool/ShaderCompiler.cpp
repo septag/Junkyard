@@ -93,7 +93,6 @@ Pair<GfxShader*, uint32> Compile(const Blob& blob, const char* filepath, const S
                                  char* errorDiag, uint32 errorDiagSize, MemAllocator* alloc)
 {
     ASSERT(gShaderCompiler.slang);
-    PROFILE_ZONE(true);
 
     SlangCompileRequest* req = spCreateCompileRequest(gShaderCompiler.slang);
 

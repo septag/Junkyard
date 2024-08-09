@@ -23,6 +23,7 @@ API bool    strIsEqualNoCase(const char* s1, const char* s2);
 API bool    strIsEqualCount(const char* s1, const char* s2, uint32 count);
 API bool    strIsEqualNoCaseCount(const char* s1, const char* s2, uint32 count);
 API uint32  strCountMatchingFirstChars(const char* s1, const char* s2);
+API bool    strStartsWith(const char* str, const char* startsWith);
 API bool    strEndsWith(const char* str, const char* endsWith);
 API char*   strTrim(char* dst, uint32 dstSize, const char* src);
 API char*   strTrim(char* dst, uint32 dstSize, const char* src, char ch);
@@ -68,6 +69,7 @@ struct String
 
     bool operator==(const char* str) const;
     bool operator==(const String<_Size>& str) const;
+    bool operator!=(const char* str) const;
     bool operator!=(const String<_Size>& str) const;
 
     bool IsEmpty() const;
@@ -91,6 +93,8 @@ struct String
     uint32 FindChar(char ch, uint32 startIndex = 0) const;
     uint32 FindCharRev(char ch) const;
     uint32 FindString(const char* cstr) const;
+    bool StartsWith(char ch) const;
+    bool StartsWith(const char* cstr) const;
     bool EndsWith(char ch) const;
     bool EndsWith(const char* cstr) const;
 
@@ -172,6 +176,12 @@ template <uint32 _Size>
 inline bool String<_Size>::operator==(const String<_Size>& str) const
 {
     return mLen == str.mLen && memcmp(mStr, str.mStr, mLen) == 0;
+}
+
+template <uint32 _Size> 
+inline bool String<_Size>::operator!=(const char* str) const
+{
+    return !strIsEqual(mStr, str);
 }
 
 template <uint32 _Size> 
@@ -299,6 +309,19 @@ inline uint32 String<_Size>::FindString(const char* cstr) const
         return PtrToInt<uint32>(r - mStr);
     else
         return UINT32_MAX;
+}
+
+template <uint32 _Size> 
+bool String<_Size>::StartsWith(char ch) const
+{
+    return mLen > 0 && mStr[0] == ch;
+}
+
+template <uint32 _Size> 
+bool String<_Size>::StartsWith(const char* cstr) const
+{
+    uint32 cstrLen = strLen(cstr);
+    return mLen >= cstrLen && strIsEqualCount(mStr, cstr, cstrLen);
 }
 
 template <uint32 _Size> 

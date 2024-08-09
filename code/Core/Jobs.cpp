@@ -249,15 +249,18 @@ namespace Jobs
 {
 //----------------------------------------------------------------------------------------------------------------------
 // Use no_inline function to return our TL var. To avoid compiler confusion with thread-locals when switching fibers
-NO_INLINE static JobsThreadData* _GetThreadData() 
+NO_INLINE static JobsThreadData* _GetThreadData(bool allocateNew = false) 
 { 
     static thread_local JobsThreadData* data = nullptr;
-    if (!data) {
+
+    if (allocateNew) {
+        ASSERT(data == nullptr);
         data = Mem::AllocZeroTyped<JobsThreadData>();
     }
-    else {
+    else if (data) {
         ASSERT(data->init);
     }
+
     return data; 
 }
 
@@ -445,7 +448,7 @@ static void _SetFiberToCurrentThread(JobsFiber* fiber)
 static int _WorkerThread(void* userData)
 {
     // Allocate and initialize thread-data for worker threads
-    JobsThreadData* tdata = _GetThreadData();
+    JobsThreadData* tdata = _GetThreadData(true);
     uint64 param = PtrToInt<uint64>(userData);
     tdata->threadIndex = (param >> 32) & 0xffffffff;
     tdata->type = static_cast<JobsType>(uint32(param & 0xffffffff));
@@ -575,6 +578,7 @@ void WaitForCompletion(JobsHandle instance)
     while (Atomic::LoadExplicit(&instance->counter, AtomicMemoryOrder::Acquire)) {
         // If current thread has a fiber assigned and running, put it in waiting list and jump out of it 
         // so one of the threads can continue picking up more workers
+        // Otherwise, it just blocks the thread (Like waiting for tasks on main thread)
         JobsThreadData* tdata = _GetThreadData();
         if (tdata) {
             ASSERT_MSG(tdata->curFiber, "Worker threads should always have a fiber assigned when 'Wait' is called");
@@ -624,6 +628,7 @@ void WaitForCompletion(JobsHandle instance)
 
 bool IsRunning(JobsHandle handle)
 {
+    ASSERT(handle);
     ASSERT(!handle->isAutoDelete);    // Can't query for AutoDelete jobs
     return Atomic::LoadExplicit(&handle->counter, AtomicMemoryOrder::Acquire);
 }
@@ -952,8 +957,8 @@ JobsAtomicPool<_T, _MaxCount>* JobsAtomicPool<_T, _MaxCount>::Create(MemAllocato
 {
     MemSingleShotMalloc<JobsAtomicPool<_T, _MaxCount>> mallocator;
     using PoolT = JobsAtomicPool<_T, _MaxCount>;
-    mallocator.template AddMemberField<_T*>(offsetof(PoolT, mPtrs), _MaxCount);
-    mallocator.template AddMemberField<_T>(offsetof(PoolT, mProps), _MaxCount, false, alignof(_T));
+    mallocator.template AddMemberArray<_T*>(offsetof(PoolT, mPtrs), _MaxCount);
+    mallocator.template AddMemberArray<_T>(offsetof(PoolT, mProps), _MaxCount, false, alignof(_T));
     JobsAtomicPool<_T, _MaxCount>* p = mallocator.Calloc(alloc);
 
     p->mIndex = _MaxCount;

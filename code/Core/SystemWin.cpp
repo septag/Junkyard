@@ -9,7 +9,6 @@
 #include "Arrays.h"
 #include "Allocators.h"
 
-#include <limits.h>     // LONG_MAX
 #include <synchapi.h>   // InitializeCriticalSectionAndSpinCount, InitializeCriticalSection, ...
 #include <sysinfoapi.h> // GetPhysicallyInstalledSystemMemory
 #include <intrin.h>     // __cpuid
@@ -1598,13 +1597,14 @@ bool File::IsOpen() const
 
 //----------------------------------------------------------------------------------------------------------------------
 // AsyncFile
-struct AsyncFileWin
+struct alignas(4096) AsyncFileWin
 {
     OVERLAPPED overlapped;
     AsyncFile f;
     HANDLE hFile;
     MemAllocator* alloc;
     AsyncFileCallback readFn;
+    uint8 _reserved[4096 - 352];
 };
 
 struct AsyncContext
@@ -1617,21 +1617,30 @@ struct AsyncContext
 
 static AsyncContext gAsyncCtx;
 
-static int _AsyncIOThreadCallback(void* userData)
+namespace Async
 {
-    HANDLE completionPort = (HANDLE)userData;
+    static int _IOThreadCallback(void* userData)
+    {
+        HANDLE completionPort = (HANDLE)userData;
 
-    while (!Atomic::Load(&gAsyncCtx.quit)) {
-        DWORD dwNumberOfBytesTransfered;
-        ULONG_PTR completionKey;
-        AsyncFileWin* file;
-        if (GetQueuedCompletionStatus(completionPort, &dwNumberOfBytesTransfered, &completionKey, (LPOVERLAPPED*)&file, INFINITE)) {
-            file->readFn(&file->f, dwNumberOfBytesTransfered != file->f.size);
+        while (!Atomic::Load(&gAsyncCtx.quit)) {
+            DWORD dwNumberOfBytesTransfered;
+            ULONG_PTR completionKey;
+            AsyncFileWin* file;
+            if (GetQueuedCompletionStatus(completionPort, &dwNumberOfBytesTransfered, &completionKey, (LPOVERLAPPED*)&file, INFINITE)) {
+                ASSERT(file->readFn);
+                file->readFn(&file->f, dwNumberOfBytesTransfered != file->f.size);
+            }
         }
+
+        return 0;
     }
 
-    return 0;
-}
+    FORCE_INLINE AsyncFileWin* _GetInternalFilePtr(AsyncFile* file)
+    {
+        return (AsyncFileWin*)((uint8*)file - offsetof(AsyncFileWin, f));
+    }
+} // Async
 
 bool Async::Initialize()
 {
@@ -1652,7 +1661,7 @@ bool Async::Initialize()
     for (uint32 i = 0; i < gAsyncCtx.numThreads; i++) {
         String<32> name = String<32>::Format("IO_%u", i+1);
         ThreadDesc tdesc {
-            .entryFn = _AsyncIOThreadCallback,
+            .entryFn = Async::_IOThreadCallback,
             .userData = gAsyncCtx.completionPort,
             .name = name.CStr(),
             .stackSize = 512*SIZE_KB
@@ -1676,13 +1685,12 @@ void Async::Release()
 
     for (uint32 i = 0; i < gAsyncCtx.numThreads; i++)
         gAsyncCtx.threads[i].Stop();
-    Mem::Free(gAsyncCtx.threads);
+    Mem::Free(gAsyncCtx.threads, Mem::GetDefaultAlloc());
+    gAsyncCtx.threads = nullptr;
 }
 
 AsyncFile* Async::ReadFile(const char* filepath, const AsyncFileRequest& request)
 {
-    PROFILE_ZONE(true);
-
     ASSERT(request.readFn);
 
     HANDLE hFile = CreateFileA(filepath, GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL|FILE_FLAG_SEQUENTIAL_SCAN|FILE_FLAG_OVERLAPPED, NULL);
@@ -1704,9 +1712,10 @@ AsyncFile* Async::ReadFile(const char* filepath, const AsyncFileRequest& request
     MemSingleShotMalloc<AsyncFileWin> mallocator;
     uint8* data;
     uint8* userData = nullptr;
+    // TODO: opt, if userDataAllocateSize is less than _reserved, then use that space instead
     if (request.userDataAllocateSize) 
         mallocator.AddExternalPointerField<uint8>(&userData, request.userDataAllocateSize);
-    mallocator.AddExternalPointerField<uint8>(&data, fileSize);
+    mallocator.AddExternalPointerField<uint8>(&data, fileSize, 4096);
     
     AsyncFileWin* file = mallocator.Malloc(request.alloc);
     memset(file, 0x0, sizeof(*file));
@@ -1731,13 +1740,13 @@ AsyncFile* Async::ReadFile(const char* filepath, const AsyncFileRequest& request
     HANDLE completionPort = CreateIoCompletionPort(file->hFile, gAsyncCtx.completionPort, 0, 0);
     ASSERT(completionPort == gAsyncCtx.completionPort);
 
-    PROFILE_ZONE_NAME("ReadFile(Win32)", true);
+    ASSERT(uintptr_t(file->f.data) % 4096 == 0);
     DWORD dwNumberOfBytesTransfered = 0;
-    BOOL r = ReadFile(hFile, file->f.data, DWORD(file->f.size), nullptr, &file->overlapped);
+    BOOL r = ReadFile(hFile, file->f.data, DWORD(AlignValue(file->f.size, 4096u)), nullptr, &file->overlapped);
     if (!r) {
         if (GetLastError() != ERROR_IO_PENDING) {
             CloseHandle(file->hFile);
-            Mem::Free(file, file->alloc);
+            MemSingleShotMalloc<AsyncFileWin>::Free(file, file->alloc);
             return nullptr;
         }
     }
@@ -1754,7 +1763,8 @@ void Async::Close(AsyncFile* file)
     if (!file)
         return;
 
-    AsyncFileWin* fw = (AsyncFileWin*)file;
+    // TODO: fix this because we are recasting incorrectly
+    AsyncFileWin* fw = Async::_GetInternalFilePtr(file);
     if (fw->hFile != INVALID_HANDLE_VALUE) {
         DWORD numBytesTransfered;
         if (!GetOverlappedResult(fw->hFile, &fw->overlapped, &numBytesTransfered, FALSE) && GetLastError() == ERROR_IO_PENDING)
@@ -1770,7 +1780,7 @@ void Async::Close(AsyncFile* file)
 bool Async::Wait(AsyncFile* file)
 {
     ASSERT(file);
-    AsyncFileWin* fw = (AsyncFileWin*)file;
+    AsyncFileWin* fw = Async::_GetInternalFilePtr(file);
     ASSERT(fw->hFile != INVALID_HANDLE_VALUE);
 
     DWORD numBytesTransfered;
@@ -1781,7 +1791,7 @@ bool Async::Wait(AsyncFile* file)
 bool Async::IsFinished(AsyncFile* file, bool* outError)
 {
     ASSERT(file);
-    AsyncFileWin* fw = (AsyncFileWin*)file;
+    AsyncFileWin* fw = Async::_GetInternalFilePtr(file);
     ASSERT(fw->hFile != INVALID_HANDLE_VALUE);
 
     DWORD numBytesTransfered;

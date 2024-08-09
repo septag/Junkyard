@@ -77,6 +77,7 @@
 #include <stdbool.h>    // bool
 #include <stddef.h>     // NULL, size_t, offsetof
 #include <memory.h>		// memset, memcpy
+#include <limits.h>     // LONG_MAX, INT_MAX, etc.
 
 #include "Config.h"
 
@@ -718,19 +719,25 @@ struct RelativePtr
 
     inline void Set(const _T* ptr)
     { 
-        ASSERT(ptr != nullptr);
-        ASSERT(uintptr_t(ptr) > uintptr_t(this));
-        mOffset = uint32((uint8*)ptr - (uint8*)this);
+        if (ptr == nullptr) {
+            mOffset = 0;
+        }
+        else {
+            intptr_t offset = intptr_t(ptr) - intptr_t(this);
+            ASSERT(offset <= INT_MAX && offset >= INT_MIN);
+            mOffset = int(offset);
+        }
     }
 
     inline _T* Get() const 
     { 
-        ASSERT(mOffset);
+        if (mOffset == 0)
+            return nullptr;
         return (_T*)((uint8*)this + mOffset); 
     }
 
 private:
-    uint32 mOffset;
+    int mOffset;
 };
 
 

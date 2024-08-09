@@ -72,29 +72,23 @@ struct AssetImageCallbacks final : AssetCallbacks
     void Release(void* data, MemAllocator*) override;
 };
 
+struct AssetImageImpl final : AssetTypeImplBase
+{
+    bool Bake(const AssetParams& params, AssetData* data, const Span<uint8>& srcData, String<256>* outErrorDesc) override;
+};
+
 struct AssetImageManager
 {
+    Mutex updateCacheMtx;
+    Mutex requestsMtx;
+
     MemAllocator* runtimeAlloc;
     AssetImageCallbacks imageLoader;
+    AssetImageImpl imageImpl;
     Array<AssetDescriptorUpdateCacheItem*> updateCache;
     Array<AssetImageLoadRequest> requests;
 
-    Mutex updateCacheMtx;
-    Mutex requestsMtx;
     GfxImage imageWhite;
-};
-
-struct AssetImage
-{
-    GfxImage handle;
-    uint32 width;
-    uint32 height;
-    uint32 depth;
-    uint32 numMips;
-    GfxFormat format;
-    uint32 contentSize;
-    uint32 mipOffsets[kGfxMaxMips];
-    RelativePtr<uint8> content;
 };
 
 static AssetImageManager gImageMgr;
@@ -120,8 +114,6 @@ INLINE GfxFormat assetImageConvertFormatSRGB(GfxFormat fmt)
 static Pair<AssetImage*, uint32> assetBakeImage(const char* filepath, MemAllocator* alloc, const AssetMetaKeyValue* metaData, uint32 numMeta,
                                                 char* outErrorDesc, uint32 errorDescSize)    
 {
-    PROFILE_ZONE(true);
-
     struct MipSurface
     {
         uint32 width;
@@ -150,7 +142,7 @@ static Pair<AssetImage*, uint32> assetBakeImage(const char* filepath, MemAllocat
     uint32 imageSize = imgWidth * imgHeight * 4;
     uint32 numMips = 1;
 
-    MipSurface mips[kGfxMaxMips];
+    MipSurface mips[GFX_MAX_MIPS];
     mips[0] = MipSurface { .width = static_cast<uint32>(imgWidth), .height = static_cast<uint32>(imgHeight) };
 
     Blob contentBlob(&tmpAlloc);
@@ -186,7 +178,7 @@ static Pair<AssetImage*, uint32> assetBakeImage(const char* filepath, MemAllocat
                         STBIR_EDGE_CLAMP, STBIR_FILTER_MITCHELL, colorspace, 
                         &tmpAlloc))
                     {
-                        ASSERT(numMips < kGfxMaxMips);
+                        ASSERT(numMips < GFX_MAX_MIPS);
                         mips[numMips++] = MipSurface { 
                             .width = mipWidth, 
                             .height = mipHeight, 
@@ -310,7 +302,7 @@ static void assetLoadImageTask(uint32 groupIndex, void* userData)
     outgoingBlob.SetGrowPolicy(Blob::GrowPolicy::Multiply);
     
     char filepath[PATH_CHARS_MAX];
-    AssetPlatform platform;
+    AssetPlatform::Enum platform;
     ImageLoadParams loadImageParams;
     char errorMsg[kRemoteErrorDescSize];
 
@@ -435,7 +427,7 @@ static void assetImageHandlerClientFn([[maybe_unused]] uint32 cmd, const Blob& i
 static void assetUpdateImageDescriptorSetCache(GfxDescriptorSet dset, uint32 numBindings, const GfxDescriptorBindingDesc* bindings)
 {
     HashMurmur32Incremental hasher(0x1e1e);
-    uint32 hash = hasher.Add<GfxDescriptorSet>(&dset)
+    uint32 hash = hasher.Add<GfxDescriptorSet>(dset)
                         .Add<GfxDescriptorBindingDesc>(bindings, numBindings)
                         .Hash();
 
@@ -447,7 +439,7 @@ static void assetUpdateImageDescriptorSetCache(GfxDescriptorSet dset, uint32 num
     }
     else {
         MemSingleShotMalloc<AssetDescriptorUpdateCacheItem> mallocator;
-        mallocator.AddMemberField<GfxDescriptorBindingDesc>(offsetof(AssetDescriptorUpdateCacheItem, bindings), numBindings);
+        mallocator.AddMemberArray<GfxDescriptorBindingDesc>(offsetof(AssetDescriptorUpdateCacheItem, bindings), numBindings);
         item = mallocator.Calloc(gImageMgr.runtimeAlloc);
         item->dset = dset;
         item->numBindings = numBindings;
@@ -521,6 +513,7 @@ bool _private::assetInitializeImageManager()
             .fourcc = kImageAssetType,
             .name = "Image",
             .callbacks = &gImageMgr.imageLoader,
+            .impl = &gImageMgr.imageImpl,
             .extraParamTypeName = "ImageLoadParams",
             .extraParamTypeSize = sizeof(ImageLoadParams),
             .failedObj = &whiteImage,
@@ -714,5 +707,199 @@ void AssetImageCallbacks::Release(void* data, MemAllocator* alloc)
     } // For each item in descriptor set update cache
 
     Mem::Free(image, alloc);
+}
+
+bool AssetImageImpl::Bake(const AssetParams& params, AssetData* data, const Span<uint8>& srcData, String<256>* outErrorDesc)
+{
+    struct MipSurface
+    {
+        uint32 width;
+        uint32 height;
+        uint32 offset;
+    };
+
+    const ImageLoadParams* imageParams = (const ImageLoadParams*)params.typeSpecificParams;
+    MemTempAllocator tmpAlloc;
+    gStbIAlloc = &tmpAlloc;
+
+    int imgWidth, imgHeight, imgChannels;
+    stbi_uc* pixels = stbi_load_from_memory(srcData.Ptr(), (int)srcData.Count(), &imgWidth, &imgHeight, &imgChannels, STBI_rgb_alpha);
+    if (!pixels) {
+        *outErrorDesc = "Loading source image failed";
+        return false;
+    }
+    
+    GfxFormat imageFormat = GfxFormat::R8G8B8A8_UNORM;
+    uint32 imageSize = imgWidth * imgHeight * 4;
+    uint32 numMips = 1;
+
+    MipSurface mips[GFX_MAX_MIPS];
+    mips[0] = MipSurface { .width = static_cast<uint32>(imgWidth), .height = static_cast<uint32>(imgHeight) };
+
+    Blob contentBlob(&tmpAlloc);
+    contentBlob.SetGrowPolicy(Blob::GrowPolicy::Multiply);
+
+    String32 formatStr = String32(data->GetMetaValue("format", ""));
+    bool sRGB = data->GetMetaValue("sRGB", false);
+    bool generateMips = data->GetMetaValue("generateMips", false);
+
+    // Mip generation
+    // TODO: Count in imageParams->firstMip
+    if (generateMips && imgWidth > 1 && imgHeight > 1) {
+        #if CONFIG_TOOLMODE
+            uint8* mipScratchBuffer = Mem::AllocTyped<uint8>(imageSize, &tmpAlloc);
+
+            contentBlob.Write(pixels, imageSize);
+
+            uint32 mipWidth = Max(static_cast<uint32>(imgWidth) >> 1, 1u);
+            uint32 mipHeight = Max(static_cast<uint32>(imgHeight) >> 1, 1u);
+            while (mipWidth && mipHeight) {
+                uint32 mipSize = mipWidth * mipHeight * 4;
+                const MipSurface& lastMip = mips[numMips - 1];
+
+                int alphaChannel = imgChannels == 4 ? 3 : STBIR_ALPHA_CHANNEL_NONE;
+                stbir_colorspace colorspace = sRGB ? STBIR_COLORSPACE_SRGB : STBIR_COLORSPACE_LINEAR;
+
+                if (stbir_resize_uint8_generic(
+                    reinterpret_cast<const uint8*>(contentBlob.Data()) + lastMip.offset, 
+                    static_cast<int>(lastMip.width), static_cast<int>(lastMip.height), 0,
+                    mipScratchBuffer,
+                    static_cast<int>(mipWidth), static_cast<int>(mipHeight), 0,
+                    4, alphaChannel, 0,
+                    STBIR_EDGE_CLAMP, STBIR_FILTER_MITCHELL, colorspace, 
+                    &tmpAlloc))
+                {
+                    ASSERT(numMips < GFX_MAX_MIPS);
+                    mips[numMips++] = MipSurface { 
+                        .width = mipWidth, 
+                        .height = mipHeight, 
+                        .offset = static_cast<uint32>(contentBlob.Size())
+                    };
+                    contentBlob.Write(mipScratchBuffer, mipSize);
+                }
+                else {
+                    ASSERT(0);
+                    break;
+                }
+                    
+                uint32 nextWidth = Max(mipWidth >> 1, 1u);
+                uint32 nextHeight = Max(mipHeight >> 1, 1u);
+                if (nextWidth == mipWidth && nextHeight == mipHeight)
+                    break;
+                mipWidth = nextWidth;
+                mipHeight = nextHeight;
+            }
+        #else
+            ASSERT_MSG(0, "Generate mips is not supported in non-tool builds");
+            return false;
+        #endif
+    }
+    else {
+        contentBlob.Attach(pixels, imageSize, &tmpAlloc);
+    }
+        
+    // Texture Compression
+    if (!formatStr.IsEmpty()) {
+        #if CONFIG_TOOLMODE
+            ImageEncoderCompression::Enum compression = ImageEncoderCompression::FromString(formatStr.CStr());
+            if (compression == ImageEncoderCompression::_Count) {
+                *outErrorDesc = String<256>::Format("Image format not supported in MetaData '%s'", formatStr.CStr());
+                return false;
+            }
+
+            switch (compression) {
+            case ImageEncoderCompression::BC1:      imageFormat = GfxFormat::BC1_RGB_UNORM_BLOCK;  break;
+            case ImageEncoderCompression::BC3:      imageFormat = GfxFormat::BC3_UNORM_BLOCK; break;
+            case ImageEncoderCompression::BC4:      imageFormat = GfxFormat::BC4_UNORM_BLOCK; break;
+            case ImageEncoderCompression::BC5:      imageFormat = GfxFormat::BC5_UNORM_BLOCK; break;
+            case ImageEncoderCompression::BC6H:     imageFormat = GfxFormat::BC6H_UFLOAT_BLOCK; break;
+            case ImageEncoderCompression::BC7:      imageFormat = GfxFormat::BC7_UNORM_BLOCK; break;
+            case ImageEncoderCompression::ASTC_4x4: imageFormat = GfxFormat::ASTC_4x4_UNORM_BLOCK; break;
+            case ImageEncoderCompression::ASTC_5x5: imageFormat = GfxFormat::ASTC_5x5_UNORM_BLOCK; break;
+            case ImageEncoderCompression::ASTC_6x6: imageFormat = GfxFormat::ASTC_6x6_UNORM_BLOCK; break;
+            case ImageEncoderCompression::ASTC_8x8: imageFormat = GfxFormat::ASTC_8x8_UNORM_BLOCK; break;
+            }
+
+            Blob compressedContentBlob(&tmpAlloc);
+            compressedContentBlob.Reserve(contentBlob.Size());
+
+            ImageEncoderFlags flags = ImageEncoderFlags::None;
+            if (imgChannels == 4) 
+                flags |= ImageEncoderFlags::HasAlpha;
+
+            for (uint32 i = 0; i < numMips; i++) {
+                MipSurface& mip = mips[i];
+
+                ImageEncoderSurface surface {
+                    .width = mip.width,
+                    .height = mip.height,
+                    .pixels = reinterpret_cast<const uint8*>(contentBlob.Data()) + mip.offset
+                };
+
+                Blob compressedBlob = ImageEncoder::Compress(compression, ImageEncoderQuality::Fast, flags, surface, &tmpAlloc);
+                if (compressedBlob.IsValid()) {
+                    mip.offset = static_cast<uint32>(compressedContentBlob.Size());
+                    compressedContentBlob.Write(compressedBlob.Data(), compressedBlob.Size());
+                }
+                else {
+                    *outErrorDesc = String<256>::Format("Encoding image to format '%s' failed", formatStr.CStr());
+                    return false;
+                }
+            } // foreach mip
+
+            contentBlob = compressedContentBlob;
+        #else
+            ASSERT_MSG(0, "Image compression baking is not supported in non-tool builds");
+            return false;
+        #endif // CONFIG_TOOLMODE
+    }
+
+    if (sRGB)
+        imageFormat = assetImageConvertFormatSRGB(imageFormat);
+
+    if (!contentBlob.IsValid())
+        contentBlob.Attach(pixels, imageSize, &tmpAlloc);
+
+    // Create image header and serialize memory. So header comes first, then re-copy the final contents at the end
+    // We have to do this because there is also a lot of scratch work in between image buffers creation
+    AssetImage* header = Mem::AllocZeroTyped<AssetImage>(1, &tmpAlloc);
+    *header = AssetImage {
+        .width = uint32(imgWidth),
+        .height = uint32(imgHeight),
+        .depth = 1, // TODO
+        .numMips = numMips, 
+        .format = imageFormat,
+        .contentSize = uint32(contentBlob.Size()),
+    };
+
+    // for (uint32 i = 0; i < numMips; i++)
+    //    header->mipOffsets[i] = mips[i].offset;
+
+    uint32* mipOffsets = Mem::AllocTyped<uint32>(numMips, &tmpAlloc);
+    for (uint32 i = 0; i < numMips; i++)
+        mipOffsets[i] = mips[i].offset;
+
+    // header->content = Mem::AllocCopy<uint8>((uint8*)contentBlob.Data(), (uint32)contentBlob.Size(), &tmpAlloc);
+
+    size_t headerTotalSize = tmpAlloc.GetOffset() - tmpAlloc.GetPointerOffset(header);
+    ASSERT(headerTotalSize <= UINT32_MAX);
+    data->SetObjData(header, uint32(headerTotalSize));
+
+    GfxImageDesc imageDesc {
+        .width = header->width,
+        .height = header->height,
+        .numMips = header->numMips,
+        .format = header->format,
+        .samplerFilter = imageParams->samplerFilter,
+        .samplerWrap = imageParams->samplerWrap,
+        .sampled = true,
+        .size = contentBlob.Size(),
+        .content = contentBlob.Data(),
+        .mipOffsets =mipOffsets
+    };
+
+    data->AddGpuTextureObject(&header->handle, imageDesc);
+
+    return true;
 }
 

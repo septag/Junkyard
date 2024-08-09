@@ -37,6 +37,8 @@ struct Array
 
     [[nodiscard]] _T* Push();
     _T* Push(const _T& item);
+    _T* PushBatch(const _T* items, uint32 numItems);
+
     void RemoveAndSwap(uint32 index);
     void RemoveAndShift(uint32 index);
     void RemoveRangeAndShift(uint32 index, uint32 endIndex = INVALID_INDEX);
@@ -173,16 +175,51 @@ inline _T* Array<_T>::Push()
         }
     }
     
-    return &mBuffer[mCount++];
+    return PLACEMENT_NEW(&mBuffer[mCount++], _T) {};
 }
 
 template <typename _T>
 inline _T* Array<_T>::Push(const _T& item)
 {
-    _T* newItem = Push();
-    if (newItem)
-        *newItem = item;
-    return newItem;
+    if (mCount >= mCapacity) {
+        if (mAlloc) {
+            Reserve(mCapacity ? (mCapacity << 1) : 8);
+        } 
+        else {
+            ASSERT(mBuffer);
+            ASSERT_MSG(mCount < mCapacity, "Array overflow, capacity=%u", mCapacity);
+            return nullptr;
+        }
+    }
+    
+    _T* dest = &mBuffer[mCount++];
+    *dest = item;
+    return dest;
+}
+
+template <typename _T>
+inline _T* Array<_T>::PushBatch(const _T* items, uint32 numItems)
+{
+    ASSERT(items);
+    ASSERT(numItems);
+
+    uint32 targetCount = mCount + numItems;
+    if (targetCount > mCapacity) {
+        if (mAlloc) {
+            Reserve(AlignValue(targetCount, 8u));
+        }
+        else {
+            ASSERT(mBuffer);
+            ASSERT_MSG(mCount < mCapacity, "Array overflow, capacity=%u", mCapacity);
+            return nullptr;
+        }
+    }
+
+    _T* dest = &mBuffer[mCount];
+    memcpy(dest, items, sizeof(_T)*numItems);
+    mCount += numItems;
+
+    return dest;
 }
 
 template <typename _T>
@@ -247,9 +284,11 @@ template <typename _T>
 inline void Array<_T>::Reserve(uint32 capacity)
 {
     ASSERT(mAlloc);
-    mCapacity = Max(capacity, mCapacity);
-    mBuffer = Mem::ReallocTyped<_T>(mBuffer, mCapacity, mAlloc);
-    ASSERT(mBuffer);
+    if (capacity > mCapacity) {
+        mCapacity = capacity;
+        mBuffer = Mem::ReallocTyped<_T>(mBuffer, mCapacity, mAlloc);
+        ASSERT(mBuffer);
+    }
 }
 
 template <typename _T>
@@ -349,12 +388,12 @@ inline void Array<_T>::CopyTo(Array<_T>* otherArray) const
 {
     ASSERT(otherArray);
 
-    if (this->mCapacity)
-    otherArray->Reserve(this->mCapacity);
+    if (mCapacity)
+        otherArray->Reserve(mCapacity);
 
-    if (this->mCount) {
-        otherArray->mCount = this->mCount;
-        memcpy(otherArray->mBuffer, this->mBuffer, sizeof(_T)*this->mCount);
+    if (mCount) {
+        otherArray->mCount = mCount;
+        memcpy(otherArray->mBuffer, mBuffer, sizeof(_T)*mCount);
     }
 }
 
