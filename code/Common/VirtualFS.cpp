@@ -705,7 +705,8 @@ static int AsyncWorkerThread(void*)
                 ASSERT(req.callbacks.writeFn);
                 size_t bytesWritten = _DiskWriteFile(req.path.CStr(), req.flags, req.blob);
                 req.callbacks.writeFn(req.path.CStr(), bytesWritten, req.blob, req.user);
-                req.blob.Free();
+                if ((req.flags & VfsFlags::NoCopyWriteBlob) != VfsFlags::NoCopyWriteBlob)
+                    req.blob.Free();
                 break; 
             }
             }
@@ -780,6 +781,7 @@ void WriteFileAsync(const char* path, const Blob& blob, VfsFlags flags, VfsWrite
     uint32 idx = _FindMount(path);
     if (idx != UINT32_MAX && gVfs.mounts[idx].type == VfsMountType::Remote) {
         if (Remote::IsConnected()) {
+            // TODO: see if can add NoCopyWriteBlob flag here as well
             req.mountType = VfsMountType::Remote;
 
             {
@@ -812,9 +814,15 @@ void WriteFileAsync(const char* path, const Blob& blob, VfsFlags flags, VfsWrite
 
         VfsAsyncManager* diskMgr = &gVfs.asyncMgr;
         MutexScope mtx(diskMgr->requestsMtx);
-        req.blob.SetAllocator(gVfs.alloc);
 
-        blob.CopyTo(&req.blob);
+        if ((flags & VfsFlags::NoCopyWriteBlob) != VfsFlags::NoCopyWriteBlob) {
+            req.blob.SetAllocator(gVfs.alloc);
+            blob.CopyTo(&req.blob);
+        }
+        else {
+            req.blob = blob;
+        }
+
         diskMgr->requests.Push(req);
         diskMgr->semaphore.Post();
     }
@@ -850,7 +858,7 @@ static void _RemoteReadFileComplete(const char* path, const Blob& blob, void*)
     }
 }
 
-static void _RemoteWriteFileComplete(const char* path, size_t bytesWritten, const Blob&, void*)
+static void _RemoteWriteFileComplete(const char* path, size_t bytesWritten, Blob&, void*)
 {
     bool error = bytesWritten == 0;
     char errorDesc[kRemoteErrorDescSize];   errorDesc[0] = '\0';
@@ -1000,7 +1008,8 @@ static void _WriteFileHandlerClientFn([[maybe_unused]] uint32 cmd, const Blob& i
         VfsRequest req;
         if (PopRequest(filepath, &req)) {
             ASSERT(req.callbacks.writeFn);
-            req.callbacks.writeFn(filepath, bytesWritten, Blob(), req.user);
+            Blob emptyBlob;
+            req.callbacks.writeFn(filepath, bytesWritten, emptyBlob, req.user);
         }
     }
     else {
@@ -1009,7 +1018,8 @@ static void _WriteFileHandlerClientFn([[maybe_unused]] uint32 cmd, const Blob& i
         VfsRequest req;
         if (PopRequest(filepath, &req)) {
             ASSERT(req.callbacks.writeFn);
-            req.callbacks.writeFn(filepath, 0, Blob(), req.user);
+            Blob emptyBlob;
+            req.callbacks.writeFn(filepath, 0, emptyBlob, req.user);
         }
     }
 }

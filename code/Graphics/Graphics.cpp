@@ -117,13 +117,13 @@ static constexpr const char* kVulkanAllocName = "Vulkan";
 
 namespace _limits
 {
-    static constexpr uint32 kGfxMaxBuffers = 1024;
-    static constexpr uint32 kGfxMaxImages = 1024;
+    static constexpr uint32 kGfxMaxBuffers = 2048;
+    static constexpr uint32 kGfxMaxImages = 2048;
     static constexpr uint32 kGfxMaxDescriptorSets = 256;
     static constexpr uint32 kGfxMaxDescriptorSetLayouts = 256;
     static constexpr uint32 kGfxMaxPipelines = 256;
     static constexpr uint32 kGfxMaxPipelineLayouts = 256;
-    static constexpr uint32 kGfxMaxGarbage = 512;
+    static constexpr uint32 kGfxMaxGarbage = 4096;
     static constexpr size_t kGfxRuntimeSize = 32*SIZE_MB;
 }
 
@@ -2647,7 +2647,7 @@ static void gfxSavePipelineBinaryProperties(const char* name, VkPipeline pip)
         Path filepath(name);
         filepath.Append(".txt");
         Vfs::WriteFileAsync(filepath.CStr(), info, VfsFlags::AbsolutePath|VfsFlags::TextFile, 
-                          [](const char* path, size_t, const Blob&, void*) { LOG_VERBOSE("Written shader information to file: %s", path); },
+                          [](const char* path, size_t, Blob&, void*) { LOG_VERBOSE("Written shader information to file: %s", path); },
                           nullptr);
     }
 }
