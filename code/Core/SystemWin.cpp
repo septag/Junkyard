@@ -1445,6 +1445,7 @@ struct FileWin
 };
 static_assert(sizeof(FileWin) <= sizeof(File));
 
+// TODO: maybe use NtQueryInformationFile instead of GetFileInformationByHandle, because the higher-level one makes 2 calls to kernel funcs
 static inline bool _GetFileInfo(HANDLE hFile, uint64* outFileSize, uint64* outModifiedTime)
 {
     BY_HANDLE_FILE_INFORMATION fileInfo {};
@@ -1609,8 +1610,12 @@ struct alignas(4096) AsyncFileWin
 
 struct AsyncContext
 {
+    Semaphore submitSem;
+    Mutex requestsMtx;
     HANDLE completionPort;
     Thread* threads;
+    Thread* submitThreads;
+    Array<AsyncFileWin*> requests;
     uint32 numThreads;
     AtomicUint32 quit;
 };
@@ -1636,6 +1641,42 @@ namespace Async
         return 0;
     }
 
+    static int _IOSubmitCallback(void*)
+    {
+        while (!Atomic::Load(&gAsyncCtx.quit)) {
+            gAsyncCtx.submitSem.Wait();
+            
+            AsyncFileWin* file = nullptr;
+            {
+                MutexScope lock(gAsyncCtx.requestsMtx);
+                if (!gAsyncCtx.requests.IsEmpty())
+                    file = gAsyncCtx.requests.PopLast();
+            }
+
+            if (file) {
+                HANDLE completionPort = CreateIoCompletionPort(file->hFile, gAsyncCtx.completionPort, 0, 0);
+                ASSERT(completionPort == gAsyncCtx.completionPort);
+
+                ASSERT(uintptr_t(file->f.data) % 4096 == 0);
+                DWORD dwNumberOfBytesTransfered = 0;
+                BOOL r = ReadFile(file->hFile, file->f.data, DWORD(AlignValue(file->f.size, 4096u)), nullptr, &file->overlapped);
+                if (!r) {
+                    if (GetLastError() != ERROR_IO_PENDING) {
+                        CloseHandle(file->hFile);
+                        MemSingleShotMalloc<AsyncFileWin>::Free(file, file->alloc);
+                        ASSERT_MSG(0, "Unexpected ReadFile error with file: %s", file->f.filepath.CStr());
+                    }
+                }
+                else {
+                    // Huh! finished reading the file early (synchronously)
+                    file->readFn(&file->f, dwNumberOfBytesTransfered != file->f.size);
+                }
+            }
+        }
+
+        return 0;
+    }
+
     FORCE_INLINE AsyncFileWin* _GetInternalFilePtr(AsyncFile* file)
     {
         return (AsyncFileWin*)((uint8*)file - offsetof(AsyncFileWin, f));
@@ -1653,9 +1694,13 @@ bool Async::Initialize()
     SysInfo info {};
     OS::GetSysInfo(&info);
     ASSERT(info.coreCount);
+
+    gAsyncCtx.submitSem.Initialize();
+    gAsyncCtx.requestsMtx.Initialize();
     
     // Create the thread pool for Async IO
     gAsyncCtx.threads = NEW_ARRAY(Mem::GetDefaultAlloc(), Thread, info.coreCount);
+    gAsyncCtx.submitThreads = NEW_ARRAY(Mem::GetDefaultAlloc(), Thread, info.coreCount);
     gAsyncCtx.numThreads = info.coreCount;
 
     for (uint32 i = 0; i < gAsyncCtx.numThreads; i++) {
@@ -1664,10 +1709,21 @@ bool Async::Initialize()
             .entryFn = Async::_IOThreadCallback,
             .userData = gAsyncCtx.completionPort,
             .name = name.CStr(),
-            .stackSize = 512*SIZE_KB
+            .stackSize = 64*SIZE_KB
         };
         
         gAsyncCtx.threads[i].Start(tdesc);
+    }
+
+    for (uint32 i = 0; i < gAsyncCtx.numThreads; i++) {
+        String<32> name = String<32>::Format("IOSubmit_%u", i+1);
+        ThreadDesc tdesc {
+            .entryFn = Async::_IOSubmitCallback,
+            .name = name.CStr(),
+            .stackSize = 64*SIZE_KB
+        };
+        
+        gAsyncCtx.submitThreads[i].Start(tdesc);
     }
 
     LOG_INFO("(init) Initialized %u Async IO Threads", gAsyncCtx.numThreads);
@@ -1682,11 +1738,20 @@ void Async::Release()
         CloseHandle(gAsyncCtx.completionPort);
         gAsyncCtx.completionPort = nullptr;
     }
+    gAsyncCtx.submitSem.Post(gAsyncCtx.numThreads);
 
-    for (uint32 i = 0; i < gAsyncCtx.numThreads; i++)
+    for (uint32 i = 0; i < gAsyncCtx.numThreads; i++) {
         gAsyncCtx.threads[i].Stop();
+        gAsyncCtx.submitThreads[i].Stop();
+    }
     Mem::Free(gAsyncCtx.threads, Mem::GetDefaultAlloc());
+    Mem::Free(gAsyncCtx.submitThreads, Mem::GetDefaultAlloc());
+
+    gAsyncCtx.requestsMtx.Release();
+    gAsyncCtx.submitSem.Release();
+
     gAsyncCtx.threads = nullptr;
+    gAsyncCtx.submitThreads = nullptr;
 }
 
 AsyncFile* Async::ReadFile(const char* filepath, const AsyncFileRequest& request)
@@ -1737,23 +1802,9 @@ AsyncFile* Async::ReadFile(const char* filepath, const AsyncFileRequest& request
     file->alloc = request.alloc;
     file->readFn = request.readFn;
 
-    HANDLE completionPort = CreateIoCompletionPort(file->hFile, gAsyncCtx.completionPort, 0, 0);
-    ASSERT(completionPort == gAsyncCtx.completionPort);
-
-    ASSERT(uintptr_t(file->f.data) % 4096 == 0);
-    DWORD dwNumberOfBytesTransfered = 0;
-    BOOL r = ReadFile(hFile, file->f.data, DWORD(AlignValue(file->f.size, 4096u)), nullptr, &file->overlapped);
-    if (!r) {
-        if (GetLastError() != ERROR_IO_PENDING) {
-            CloseHandle(file->hFile);
-            MemSingleShotMalloc<AsyncFileWin>::Free(file, file->alloc);
-            return nullptr;
-        }
-    }
-    else {
-        // Huh! finished reading the file early (synchronously)
-        file->readFn(&file->f, dwNumberOfBytesTransfered != file->f.size);
-    }
+    MutexScope lock(gAsyncCtx.requestsMtx);
+    gAsyncCtx.requests.Push(file);
+    gAsyncCtx.submitSem.Post(1);
 
     return &file->f;
 }

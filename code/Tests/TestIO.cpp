@@ -157,8 +157,7 @@ struct AppImpl final : AppCallbacks
     {
         AssetGroup group = Asset::CreateGroup();
 
-        
-        for (uint32 i = 0; i < 1; i++) {
+        for (uint32 i = 0; i < mNumFilePaths; i++) {
             Path fileExt = mFilePaths[i].GetFileExtension();
             if (fileExt != ".tga")
                 continue;
@@ -173,7 +172,7 @@ struct AppImpl final : AppCallbacks
         }
 
         group.Load();
-        group.Unload();
+//        group.Unload();
 //        group.WaitForLoadFinish();
 //        
 //        Asset::DestroyGroup(group);
@@ -300,7 +299,7 @@ struct AppImpl final : AppCallbacks
 
             ImGui::Separator();
 
-            if (ImGui::Button("LoadTextures")) {
+            if (ImGui::Button("LoadAllTextures")) {
                 LoadTextures();
             }
 

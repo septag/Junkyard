@@ -11,7 +11,8 @@ enum class VfsFlags : uint32
     AbsolutePath = 0x1,
     TextFile = 0x2,
     Append = 0x4,
-    CreateDirs = 0x8
+    CreateDirs = 0x8,
+    NoCopyWriteBlob = 0x10 // The original blob we passed to WriteFileAsync is not copied
 };
 ENABLE_BITMASK(VfsFlags);
 
@@ -26,7 +27,7 @@ enum class VfsMountType
 // Note: these callbacks are called from a VirtualFS worker thread
 //       So, care must be taken when implementing these callbacks. Make sure global data access is thread-safe
 using VfsReadAsyncCallback = void(*)(const char* path, const Blob& blob, void* user);
-using VfsWriteAsyncCallback = void(*)(const char* path, size_t bytesWritten, const Blob& originalBlob, void* user);
+using VfsWriteAsyncCallback = void(*)(const char* path, size_t bytesWritten, Blob& originalBlob, void* user);
 using VfsFileChangeCallback = void(*)(const char* path);
 
 namespace Vfs

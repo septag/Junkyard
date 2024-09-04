@@ -213,7 +213,7 @@ static void assetSaveToCache(const AssetTypeManager& typeMgr, const AssetLoadPar
     uint64 userData = (uint64(assetHash) << 32) | result.cacheHash;
     
     Vfs::WriteFileAsync(cachePath.CStr(), cache, VfsFlags::CreateDirs, 
-                      [](const char* path, size_t, const Blob&, void* user) 
+                      [](const char* path, size_t, Blob&, void* user) 
     {
         LOG_VERBOSE("(save) AssetCache: %s", path);
         
@@ -294,7 +294,7 @@ static void assetSaveCacheHashDatabase()
     blob.Write("]\n", 2);
     
     Vfs::WriteFileAsync(kAssetCacheDatabasePath, blob, VfsFlags::TextFile, 
-                      [](const char* path, size_t, const Blob&, void*) { LOG_VERBOSE("Asset cache database saved to: %s", path); }, nullptr);
+                      [](const char* path, size_t, Blob&, void*) { LOG_VERBOSE("Asset cache database saved to: %s", path); }, nullptr);
 
 }
 
@@ -1273,6 +1273,15 @@ struct AssetGroupInternal
     AtomicUint32 state; // AssetGroupState
 };
 
+struct AssetQueuedItem
+{
+    uint32 indexInLoadList;
+    uint32 dataSize;
+    AssetDataInternal* data;
+    Path bakedFilepath;
+    bool saveBaked;
+};
+
 using AssetJobItem = Pair<JobsHandle, AssetGroupHandle>;
 
 struct AssetMan
@@ -1303,6 +1312,8 @@ struct AssetMan
 
 static AssetMan gAssetMan;
 
+#define ASSET_ASYNC_EXPERIMENT 0
+
 //----------------------------------------------------------------------------------------------------------------------
 // These functions should be exported for per asset type loading
 using DataChunk = Pair<void*, uint32>;
@@ -1314,12 +1325,46 @@ namespace Asset
     static AssetHandleResult _CreateOrFetchHandle(const AssetParams& params);
     static void _LoadAssetTask(uint32 groupIdx, void* userData);
     static void _CreateGpuObjectTask(uint32 groupIdx, void* userData);
+    static void _SaveBakedTask(uint32 groupIdx, void* userData);
     template <typename _T> _T* _TranslatePointer(_T* ptr, const void* origPtr, void* newPtr);
     static void _LoadGroupTask(uint32, void* userData);
     static void _UnloadGroupTask(uint32, void* userData);
     static void _DataCopyTask(uint32, void* userData);
     static bool _MakeCacheFilepath(Path* outPath, const AssetDataHeader* header, uint32 overrideAssetHash = 0);
 } // Asset
+
+static void Asset::_SaveBakedTask(uint32 groupIdx, void* userData)
+{
+    PROFILE_ZONE_COLOR(PROFILE_COLOR_ASSET3);
+
+    AssetQueuedItem* qa = ((AssetQueuedItem**)userData)[groupIdx];
+
+    // MemTempAllocator tempAlloc;
+    Blob cache;
+    cache.Reserve(32 + qa->dataSize);
+    cache.SetGrowPolicy(Blob::GrowPolicy::Linear);
+    cache.Write<uint32>(kAssetCacheFileId);
+    cache.Write<uint32>(kAssetCacheVersion);
+    cache.Write<uint32>(qa->dataSize);
+    cache.Write(qa->data, qa->dataSize);
+
+    uint64 writeFileData = 0;//(uint64(assetHash) << 32) | result.cacheHash;
+    // Vfs::WriteFile(qa->bakedFilepath.CStr(), cache, VfsFlags::CreateDirs);
+    auto SaveFileCallback = [](const char* path, size_t bytesWritten, Blob&, void*)
+    {
+        if (bytesWritten)
+            LOG_VERBOSE("(save) Baked: %s", path);
+        
+        /*
+            uint64 writeFileData = PtrToInt<uint64>(user);
+            uint32 hash = uint32((writeFileData >> 32)&0xffffffff);
+            uint32 cacheHash = uint32(writeFileData&0xffffffff);
+        */
+    };
+
+    Vfs::WriteFileAsync(qa->bakedFilepath.CStr(), cache, VfsFlags::CreateDirs|VfsFlags::NoCopyWriteBlob, 
+                        SaveFileCallback, IntToPtr(writeFileData));
+}
 
 static bool Asset::_MakeCacheFilepath(Path* outPath, const AssetDataHeader* header, uint32 overrideAssetHash)
 {
@@ -1552,6 +1597,10 @@ static void Asset::_LoadAssetTask(uint32 groupIdx, void* userData)
 
     MemBumpAllocatorVM* alloc = _GetOrCreateScratchAllocator(gAssetMan.memArena);
 
+    #if !ASSET_ASYNC_EXPERIMENT
+    MemTempAllocator tempAlloc;
+    #endif
+
     if (taskData.inputs.type == AssetLoadTaskInputType::Source) {
         size_t startOffset = alloc->GetOffset();
         AssetData assetData {
@@ -1564,15 +1613,25 @@ static void Asset::_LoadAssetTask(uint32 groupIdx, void* userData)
         assetData.mData->metaData = metaData.Ptr();
         assetData.mData->numMetaData = metaData.Count();
 
+        #if ASSET_ASYNC_EXPERIMENT
         taskData.inputs.fileReadSignal.Wait();
-        if (!taskData.inputs.fileData) {
+        const void* fileData = taskData.inputs.fileData;
+        uint32 fileSize = taskData.inputs.fileSize;
+        #else
+        Blob fileBlob = Vfs::ReadFile(taskData.inputs.header->params->path.CStr(), VfsFlags::None, &tempAlloc);
+        const void* fileData = fileBlob.Data();
+        ASSERT(fileBlob.Size() <= UINT32_MAX);
+        uint32 fileSize = uint32(fileBlob.Size());
+        #endif
+
+        if (!fileData) {
             taskData.outputs.errorDesc = "Failed opening source file";
             alloc->SetOffset(startOffset);
             return;
         }
-        Span<uint8> srcData((uint8*)const_cast<void*>(taskData.inputs.fileData), taskData.inputs.fileSize);
 
         // Parse/Bake
+        Span<uint8> srcData((uint8*)const_cast<void*>(fileData), fileSize);
         if (!typeMan.impl->Bake(params, &assetData, srcData, &taskData.outputs.errorDesc)) {
             taskData.outputs.errorDesc = "Bake failed";
             alloc->SetOffset(startOffset);
@@ -1583,14 +1642,24 @@ static void Asset::_LoadAssetTask(uint32 groupIdx, void* userData)
         taskData.outputs.data = assetData.mData;
     }
     else if (taskData.inputs.type == AssetLoadTaskInputType::Baked) {
+        #if ASSET_ASYNC_EXPERIMENT
         taskData.inputs.fileReadSignal.Wait();
-        if (!taskData.inputs.fileData) {
+        const void* fileData = taskData.inputs.fileData;
+        uint32 fileSize = taskData.inputs.fileSize;
+        #else
+        Blob fileBlob = Vfs::ReadFile(taskData.inputs.bakedFilepath.CStr(), VfsFlags::None, &tempAlloc);
+        const void* fileData = fileBlob.Data();
+        ASSERT(fileBlob.Size() <= UINT32_MAX);
+        uint32 fileSize = uint32(fileBlob.Size());
+        #endif
+
+        if (!fileData) {
             taskData.outputs.errorDesc = "Failed opening baked file";
             return;
         }
 
-        Blob cache(const_cast<void*>(taskData.inputs.fileData), taskData.inputs.fileSize);
-        cache.SetSize(taskData.inputs.fileSize);
+        Blob cache(const_cast<void*>(fileData), fileSize);
+        cache.SetSize(fileSize);
 
         uint32 fileId = 0;
         uint32 cacheVersion = 0;
@@ -1678,7 +1747,9 @@ static void Asset::_CreateGpuObjectTask(uint32 groupIdx, void* userData)
 static void Asset::_LoadGroupTask(uint32, void* userData)
 {
     PROFILE_ZONE_COLOR(PROFILE_COLOR_ASSET1);
+    TimerStopWatch timer;
 
+    #if ASSET_ASYNC_EXPERIMENT
     auto ReadAssetFileFinished = [](AsyncFile* file, bool failed)
     {
         AssetLoadTaskData* taskData = (AssetLoadTaskData*)file->userData;
@@ -1687,15 +1758,7 @@ static void Asset::_LoadGroupTask(uint32, void* userData)
         taskData->inputs.fileReadSignal.Set();
         taskData->inputs.fileReadSignal.Raise();
     };
-
-    struct QueuedAsset
-    {
-        uint32 indexInLoadList;
-        uint32 dataSize;
-        AssetDataInternal* data;
-        Path bakedFilepath;
-        bool saveBaked;
-    };
+    #endif
 
     // Fetch load list (pointers in the loadList are persistant through the lifetime of the group)
     AssetGroupHandle groupHandle(PtrToInt<uint32>(userData));
@@ -1709,15 +1772,18 @@ static void Asset::_LoadGroupTask(uint32, void* userData)
         group.loadList.Clear();
     }
 
-    uint32 numThreads = Jobs::GetWorkerThreadsCount(JobsType::LongTask);
+    // Pick a batch size 
+    // This is the amount of tasks that are submitted to the task manager at a time
+    uint32 batchCount = Min(512u, loadList.Count());//Jobs::GetWorkerThreadsCount(JobsType::LongTask);
+    uint32 allCount = loadList.Count();
 
     // We cannot use the actual temp allocators here. Because we are dispatching jobs and might end up in a different thread
     MemBumpAllocatorVM* tempAlloc = &gAssetMan.tempAlloc;
-    Array<QueuedAsset> queuedAssets;
+    Array<AssetQueuedItem> queuedAssets;
     queuedAssets.Reserve(loadList.Count());
 
-    for (uint32 i = 0; i < loadList.Count(); i += numThreads) {
-        uint32 sliceCount = Min(numThreads, loadList.Count() - i);
+    for (uint32 i = 0; i < loadList.Count(); i += batchCount) {
+        uint32 sliceCount = Min(batchCount, loadList.Count() - i);
 
         AssetLoadTaskData* taskDatas = nullptr;
         taskDatas = Mem::AllocZeroTyped<AssetLoadTaskData>(sliceCount, tempAlloc);
@@ -1738,6 +1804,7 @@ static void Asset::_LoadGroupTask(uint32, void* userData)
 
         JobsHandle batchJob = Jobs::Dispatch(JobsType::LongTask, _LoadAssetTask, taskDatas, sliceCount, JobsPriority::High);
 
+        #if ASSET_ASYNC_EXPERIMENT
         // TODO: Currently ReadFile seems weird on Windows API at least
         //       It takes roughly 18ms for 11 files (11 threads)
         //       Either windows file system is lame or something wrong with my implementation
@@ -1764,9 +1831,11 @@ static void Asset::_LoadGroupTask(uint32, void* userData)
             Path absFilepath = Vfs::ResolveFilepath(assetFilepath);
             Async::ReadFile(absFilepath.CStr(), req);
         }
+        #endif
 
         Jobs::WaitForCompletion(batchJob);
 
+        PROFILE_ZONE_NAME("Deps");
         for (uint32 k = 0; k < sliceCount; k++) {
             AssetLoadTaskInputs& in = taskDatas[k].inputs;
             AssetLoadTaskOutputs& out = taskDatas[k].outputs;
@@ -1775,7 +1844,7 @@ static void Asset::_LoadGroupTask(uint32, void* userData)
                 continue;
             }
 
-            QueuedAsset qa {
+            AssetQueuedItem qa {
                 .indexInLoadList = i + k,
                 .dataSize = out.dataSize,
                 .data = out.data,
@@ -1808,47 +1877,36 @@ static void Asset::_LoadGroupTask(uint32, void* userData)
     }
 
     // Save to cache
-    for (QueuedAsset& qa : queuedAssets) {
-        if (qa.saveBaked) {
-            MemTempAllocator stackAlloc;
-            Blob cache(&stackAlloc);
-            cache.SetGrowPolicy(Blob::GrowPolicy::Multiply);
+    {
+        PROFILE_ZONE_NAME("Save");
+    Array<AssetQueuedItem*> saveItems(tempAlloc);
+    for (uint32 i = 0; i < queuedAssets.Count(); i += batchCount) {
+        uint32 sliceCount = Min(batchCount, loadList.Count() - i);
 
-            cache.Write<uint32>(kAssetCacheFileId);
-            cache.Write<uint32>(kAssetCacheVersion);
-            cache.Write<uint32>(qa.dataSize);
-            cache.Write(qa.data, qa.dataSize);
-
-            uint64 writeFileData = 0;//(uint64(assetHash) << 32) | result.cacheHash;
-    
-            Vfs::WriteFileAsync(qa.bakedFilepath.CStr(), cache, VfsFlags::CreateDirs, 
-                            [](const char* path, size_t, const Blob&, void*) 
-            {
-                LOG_VERBOSE("(save) Baked: %s", path);
-        
-                /*
-                uint64 writeFileData = PtrToInt<uint64>(user);
-                uint32 hash = uint32((writeFileData >> 32)&0xffffffff);
-                uint32 cacheHash = uint32(writeFileData&0xffffffff);
-
-                ReadWriteMutexWriteScope mtx(gAssetMgr.hashLookupMtx);
-                if (uint32 index = gAssetMgr.hashLookup.Find(hash); index != UINT32_MAX) 
-                    gAssetMgr.hashLookup.Set(index, cacheHash); // TODO: get delete the old file
-                else
-                    gAssetMgr.hashLookup.Add(hash, cacheHash);
-                */                         
-            }, IntToPtr(writeFileData));
+        for (uint32 k = 0; k < sliceCount; k++) {
+            AssetQueuedItem& qa = queuedAssets[i + k];
+            if (!qa.saveBaked)
+                continue;
+            saveItems.Push(&qa);
         }
+        
+        if (!saveItems.IsEmpty()) {
+            JobsHandle batchJob = Jobs::Dispatch(JobsType::LongTask, _SaveBakedTask, saveItems.Ptr(), saveItems.Count());
+            Jobs::WaitForCompletion(batchJob);
+            saveItems.Clear();
+        }
+    }
+    tempAlloc->Reset();
     }
 
     // Create GPU objects
 
-    for (uint32 i = 0; i < queuedAssets.Count(); i += numThreads) {
-        uint32 sliceCount = Min(numThreads, loadList.Count() - i);
+    for (uint32 i = 0; i < queuedAssets.Count(); i += batchCount) {
+        uint32 sliceCount = Min(batchCount, loadList.Count() - i);
 
         Array<AssetDataInternal::GpuObject*> gpuObjs(tempAlloc);
         for (uint32 k = 0; k < sliceCount; k++) {
-            QueuedAsset& qa = queuedAssets[i + k];
+            AssetQueuedItem& qa = queuedAssets[i + k];
             AssetDataInternal* data = qa.data;            
             AssetDataInternal::GpuObject* gpuObj = data->gpuObjects.Get();
             while (gpuObj) {
@@ -1867,13 +1925,13 @@ static void Asset::_LoadGroupTask(uint32, void* userData)
     // Note: 'AssetDataAlloc' doesn't need any thread protection, because it is guaranteed that only one thread uses it at a time 
     // Use the magic number 4 for now. Because it's a good balance with quad-channel RAM (seems to be)
     // TODO: maybe skipe smaller memcpys because they don't worth creating a task for ? (profile)
-    uint32 numCopyDispatches = Min(4u, numThreads);
+    uint32 numCopyDispatches = Min(4u, batchCount);
     for (uint32 i = 0; i < queuedAssets.Count(); i += numCopyDispatches) {
         uint32 sliceCount = Min(numCopyDispatches, loadList.Count() - i);
         AssetDataCopyTaskData* dataCopyItems = Mem::AllocTyped<AssetDataCopyTaskData>(sliceCount, tempAlloc);
 
         for (uint32 k = 0; k < sliceCount; k++) {
-            const QueuedAsset& qa = queuedAssets[i + k];
+            const AssetQueuedItem& qa = queuedAssets[i + k];
             dataCopyItems[k].header = loadList[qa.indexInLoadList];
             dataCopyItems[k].destData = (AssetDataInternal*)Mem::Alloc(qa.dataSize, &gAssetMan.assetDataAlloc);
             dataCopyItems[k].sourceData = qa.data;
@@ -1900,6 +1958,8 @@ static void Asset::_LoadGroupTask(uint32, void* userData)
         AssetGroupInternal& group = gAssetMan.groups.Data(groupHandle);
         Atomic::StoreExplicit(&group.state, uint32(AssetGroupState::Loaded), AtomicMemoryOrder::Release);
     }
+
+    LOG_INFO("LoadGroup with %u assets finished (%.1f ms)", allCount, timer.ElapsedMS());
 };
 
 static void Asset::_UnloadGroupTask(uint32, void* userData)
