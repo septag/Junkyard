@@ -70,6 +70,7 @@ struct AppWindowsState
     InputKeycode keycodes[APP_MAX_KEY_CODES];
     char* clipboard;
     Array<AppEventCallbackPair> eventCallbacks;
+    Pair<AppUpdateOverrideCallback, void*> overrideUpdateCallback;
     AppMouseCursor mouseCursor;
 
     HWND hwnd;
@@ -898,7 +899,12 @@ namespace App
             }
 
             tmNow = Timer::GetTicks();
-            desc.callbacks->Update(float(Timer::ToSec(tmNow - tmPrev)));
+            float dt = float(Timer::ToSec(tmNow - tmPrev));
+            if (!gApp.overrideUpdateCallback.first)
+                desc.callbacks->Update(dt);
+            else
+                gApp.overrideUpdateCallback.first(dt, gApp.overrideUpdateCallback.second);
+
             tmPrev = tmNow;
         }
     
@@ -1094,6 +1100,12 @@ namespace App
     {
         SetCursor(AppMouseCursor::Arrow);
         ReleaseCapture();
+    }
+
+    void OverrideUpdateCallback(AppUpdateOverrideCallback callback, void* userData)
+    {
+        gApp.overrideUpdateCallback.first = callback;
+        gApp.overrideUpdateCallback.second = userData;
     }
 } // App
 

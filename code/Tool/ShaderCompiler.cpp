@@ -9,7 +9,6 @@
 
 #include "../Core/Log.h"
 #include "../Core/TracyHelper.h"
-#include "../Core/Blobs.h"
 
 struct ShaderCompilerContext
 {
@@ -89,7 +88,7 @@ static GfxFormat shaderTranslateVertexInputFormat([[maybe_unused]] uint32 rows, 
     return GfxFormat::Undefined;
 }
 
-Pair<GfxShader*, uint32> Compile(const Blob& blob, const char* filepath, const ShaderCompileDesc& desc, 
+Pair<GfxShader*, uint32> Compile(const Span<uint8>& sourceCode, const char* filepath, const ShaderCompileDesc& desc, 
                                  char* errorDiag, uint32 errorDiagSize, MemAllocator* alloc)
 {
     ASSERT(gShaderCompiler.slang);
@@ -119,9 +118,7 @@ Pair<GfxShader*, uint32> Compile(const Blob& blob, const char* filepath, const S
         spAddPreprocessorDefine(req, desc.defines[i].define.CStr(), desc.defines[i].value.CStr());
         
     int translationUnitIdx = spAddTranslationUnit(req, SLANG_SOURCE_LANGUAGE_SLANG, "");
-    spAddTranslationUnitSourceStringSpan(req, translationUnitIdx, filepath, 
-        reinterpret_cast<const char*>(blob.Data()),
-        reinterpret_cast<const char*>(blob.Data()) + blob.Size());
+    spAddTranslationUnitSourceStringSpan(req, translationUnitIdx, filepath, (const char*)sourceCode.Ptr(), (const char*)sourceCode.Ptr() + sourceCode.Count());
     
     int result = spCompile(req);
     
@@ -153,14 +150,14 @@ Pair<GfxShader*, uint32> Compile(const Blob& blob, const char* filepath, const S
         }
     }
 
-    MemTempAllocator tmpAlloc;
+    MemTempAllocator tmpAlloc(alloc->GetType() == MemAllocatorType::Temp ? ((MemTempAllocator*)alloc)->GetId() : 0);
     GfxShader* shader = tmpAlloc.MallocZeroTyped<GfxShader>();
 
-    shader->stages = tmpAlloc.MallocZeroTyped<GfxShaderStageInfo>((uint32)refl->getEntryPointCount());
-    shader->params = tmpAlloc.MallocZeroTyped<GfxShaderParameterInfo>((uint32)refl->getParameterCount());
+    shader->stages = tmpAlloc.MallocTyped<GfxShaderStageInfo>((uint32)refl->getEntryPointCount());
+    shader->params = tmpAlloc.MallocTyped<GfxShaderParameterInfo>((uint32)refl->getParameterCount());
     if (numVertexAttributes)
         shader->vertexAttributes = tmpAlloc.MallocZeroTyped<GfxShaderVertexAttributeInfo>(numVertexAttributes);
-
+    
     Path::GetFilename_CStr(filepath, shader->name, sizeof(shader->name));
     shader->numStages = static_cast<uint32>(refl->getEntryPointCount());
     shader->numVertexAttributes = numVertexAttributes;
@@ -234,7 +231,10 @@ Pair<GfxShader*, uint32> Compile(const Blob& blob, const char* filepath, const S
     }
 
     uint32 shaderBufferSize = uint32(tmpAlloc.GetOffset() - tmpAlloc.GetPointerOffset(shader));
-    return Pair<GfxShader*, uint32>(Mem::AllocCopyRawBytes<GfxShader>(shader, shaderBufferSize, alloc), shaderBufferSize);
+    if (tmpAlloc.OwnsId())
+        return Pair<GfxShader*, uint32>(Mem::AllocCopyRawBytes<GfxShader>(shader, shaderBufferSize, alloc), shaderBufferSize);
+    else
+        return Pair<GfxShader*, uint32>(shader, shaderBufferSize);
 }
 
 bool Initialize()

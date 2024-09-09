@@ -71,6 +71,8 @@ struct Blob
     inline size_t ReadOffset() const;
     inline const void* Data() const;
     inline bool IsValid() const;
+    inline const Span<uint8> Slice() const;
+
 
 private:
     MemAllocator* mAlloc = nullptr;
@@ -337,7 +339,7 @@ inline void Blob::Reserve(void* buffer, size_t size)
 inline void Blob::Free()
 {
     if (mAlloc)
-    Mem::FreeAligned(mBuffer, mAlign, mAlloc);
+        Mem::FreeAligned(mBuffer, mAlign, mAlloc);
     mBuffer = nullptr;
     mSize = 0;
     mCapacity = 0;
@@ -456,6 +458,12 @@ inline const void* Blob::Data() const
 inline bool Blob::IsValid() const
 {
     return mBuffer && mSize;
+}
+
+inline const Span<uint8> Blob::Slice() const
+{
+    ASSERT(mSize <= UINT32_MAX);
+    return Span<uint8>((uint8*)mBuffer, uint32(mSize));
 }
 
 inline void Blob::CopyTo(Blob* otherBlob) const

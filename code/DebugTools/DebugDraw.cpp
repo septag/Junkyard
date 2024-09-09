@@ -2,6 +2,7 @@
 
 #include "../Graphics/Graphics.h"
 
+#include "../Engine.h"
 #include "../Assets/Shader.h"
 #include "../Assets/AssetManager.h"
 
@@ -26,6 +27,62 @@ struct DebugDrawContext
 };
 
 static DebugDrawContext gDebugDraw;
+
+namespace DebugDraw
+{
+    static void _InitializeGraphicsResources(void*)
+    {
+        // Wireframe 
+        GfxVertexBufferBindingDesc vertexBufferBindingDesc = {
+            .binding = 0,
+            .stride = sizeof(DebugDrawContext::Vertex),
+            .inputRate = GfxVertexInputRate::Vertex
+        };
+
+        GfxVertexInputAttributeDesc vertexInputAttDescs[] = {
+            {
+                .semantic = "POSITION",
+                .binding = 0,
+                .format  = GfxFormat::R32G32B32_SFLOAT,
+                .offset = offsetof(DebugDrawContext::Vertex, pos)
+            },
+            {
+                .semantic = "COLOR",
+                .binding = 0,
+                .format = GfxFormat::R8G8B8A8_UNORM,
+                .offset = offsetof(DebugDrawContext::Vertex, color)
+            }
+        };
+
+        GfxPushConstantDesc pushConstant = GfxPushConstantDesc {
+            .name = "Transform",
+            .stages = GfxShaderStage::Vertex,
+            .range = { 0, sizeof(Mat4) }
+        };
+
+        gDebugDraw.pipeline = gfxCreatePipeline(GfxPipelineDesc {
+            .shader = Asset::GetShader(gDebugDraw.shaderAsset),
+            .inputAssemblyTopology = GfxPrimitiveTopology::LineList,
+            .numPushConstants = 1,
+            .pushConstants = &pushConstant,
+            .numVertexInputAttributes = CountOf(vertexInputAttDescs),
+            .vertexInputAttributes = vertexInputAttDescs,
+            .numVertexBufferBindings = 1,
+            .vertexBufferBindings = &vertexBufferBindingDesc,
+            .blend = {
+                .numAttachments = 1,
+                .attachments = GfxBlendAttachmentDesc::GetDefault()
+            },
+            .depthStencil = GfxDepthStencilDesc {
+                .depthTestEnable = true,
+                .depthWriteEnable = false,
+                .depthCompareOp = GfxCompareOp::Less
+            }
+        });
+
+        ASSERT(gDebugDraw.pipeline.IsValid());
+    }
+} // DebugDraw
 
 void DebugDraw::DrawGroundGrid(const Camera& cam, float viewWidth, float viewHeight, const DebugDrawGridProperties& props)
 {
@@ -127,65 +184,8 @@ bool DebugDraw::Initialize()
     if (!gDebugDraw.vertexBuffer.IsValid())
         return false;
 
-    {   // Wireframe 
-        GfxVertexBufferBindingDesc vertexBufferBindingDesc = {
-            .binding = 0,
-            .stride = sizeof(DebugDrawContext::Vertex),
-            .inputRate = GfxVertexInputRate::Vertex
-        };
-
-        GfxVertexInputAttributeDesc vertexInputAttDescs[] = {
-            {
-                .semantic = "POSITION",
-                .binding = 0,
-                .format  = GfxFormat::R32G32B32_SFLOAT,
-                .offset = offsetof(DebugDrawContext::Vertex, pos)
-            },
-            {
-                .semantic = "COLOR",
-                .binding = 0,
-                .format = GfxFormat::R8G8B8A8_UNORM,
-                .offset = offsetof(DebugDrawContext::Vertex, color)
-            }
-        };
-
-        {
-            AssetBarrierScope b;
-            gDebugDraw.shaderAsset = assetLoadShader("/shaders/DebugDraw.hlsl", ShaderLoadParams {}, b.Barrier());            
-        }
-
-        if (!assetIsAlive(gDebugDraw.shaderAsset))
-            return false;
-
-        GfxPushConstantDesc pushConstant = GfxPushConstantDesc {
-            .name = "Transform",
-            .stages = GfxShaderStage::Vertex,
-            .range = { 0, sizeof(Mat4) }
-        };
-
-        gDebugDraw.pipeline = gfxCreatePipeline(GfxPipelineDesc {
-            .shader = assetGetShader(gDebugDraw.shaderAsset),
-            .inputAssemblyTopology = GfxPrimitiveTopology::LineList,
-            .numPushConstants = 1,
-            .pushConstants = &pushConstant,
-            .numVertexInputAttributes = CountOf(vertexInputAttDescs),
-            .vertexInputAttributes = vertexInputAttDescs,
-            .numVertexBufferBindings = 1,
-            .vertexBufferBindings = &vertexBufferBindingDesc,
-            .blend = {
-                .numAttachments = 1,
-                .attachments = GfxBlendAttachmentDesc::GetDefault()
-            },
-            .depthStencil = GfxDepthStencilDesc {
-                .depthTestEnable = true,
-                .depthWriteEnable = false,
-                .depthCompareOp = GfxCompareOp::Less
-            }
-        });
-
-        if (!gDebugDraw.pipeline.IsValid())
-            return false;
-    }
+    gDebugDraw.shaderAsset = Asset::LoadShader("/shaders/DebugDraw.hlsl", ShaderLoadParams(),
+                                               Engine::RegisterInitializeResources(_InitializeGraphicsResources));
 
     LOG_INFO("(init) DebugDraw initialized");
     return true;
@@ -195,6 +195,5 @@ void DebugDraw::Release()
 {
     gfxDestroyBuffer(gDebugDraw.vertexBuffer);
     gfxDestroyPipeline(gDebugDraw.pipeline);
-    assetUnload(gDebugDraw.shaderAsset);
 }
 

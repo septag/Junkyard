@@ -80,11 +80,12 @@ struct AppEvent
 };
 
 using AppEventCallback = void(*)(const AppEvent& ev, void* userData);
+using AppUpdateOverrideCallback = void(*)(float dt, void* userData);
 
 struct NO_VTABLE AppCallbacks
 {
     virtual bool Initialize() = 0;
-    virtual void Update(fl32 dt) = 0;
+    virtual void Update(float dt) = 0;
     virtual void Cleanup() = 0;
     virtual void OnEvent(const AppEvent& ev) = 0;
 };
@@ -132,6 +133,7 @@ namespace App
     API void* GetNativeAppHandle();
     API void RegisterEventsCallback(AppEventCallback callback, void* userData = nullptr);
     API void UnregisterEventsCallback(AppEventCallback callback);
+    API void OverrideUpdateCallback(AppUpdateOverrideCallback callback, void* userData = nullptr);
     API void SetCursor(AppMouseCursor cursor);
     API AppDisplayInfo GetDisplayInfo();
     API bool IsKeyDown(InputKeycode keycode);

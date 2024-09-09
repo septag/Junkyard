@@ -8,6 +8,7 @@
 #include "../Tool/ShaderCompiler.h" // ShaderCompileDesc
 
 struct GfxShader;
+struct AssetGroup;
 
 struct ShaderLoadParams
 {
@@ -21,6 +22,12 @@ namespace _private
 {
     bool assetInitializeShaderManager();
     void assetReleaseShaderManager();
+}
+
+namespace Asset
+{
+    API AssetHandleShader LoadShader(const char* path, const ShaderLoadParams& desc, const AssetGroup& group);
+    API GfxShader* GetShader(AssetHandleShader shaderHandle);
 }
 
 

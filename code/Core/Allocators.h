@@ -49,6 +49,7 @@ struct MemTempAllocator final : MemAllocator
     ~MemTempAllocator();
 
     ID GetId() const { return mId; }
+    bool OwnsId() const { return mOwnsId; }
 
     [[nodiscard]] void* Malloc(size_t size, uint32 align = CONFIG_MACHINE_ALIGNMENT) override;
     [[nodiscard]] void* Realloc(void* ptr, size_t size, uint32 align = CONFIG_MACHINE_ALIGNMENT) override;

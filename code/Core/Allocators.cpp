@@ -284,11 +284,18 @@ MemTempAllocator::MemTempAllocator() :
 { 
 }
 
-MemTempAllocator::MemTempAllocator(ID id) : 
-    mId(id), 
-    mFiberProtectorId(Debug::FiberScopeProtector_Push("TempAllocator")),
-    mOwnsId(false)
+MemTempAllocator::MemTempAllocator(ID id)
 {
+    if (id) {
+        mId = id;
+        mFiberProtectorId = Debug::FiberScopeProtector_Push("TempAllocator");
+        mOwnsId = false;
+    }
+    else {
+        mId = MemTempAllocator::PushId();
+        mFiberProtectorId = Debug::FiberScopeProtector_Push("TempAllocator");
+        mOwnsId = true;
+    }
 }
 
 MemTempAllocator::~MemTempAllocator() 

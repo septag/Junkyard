@@ -5,6 +5,7 @@
 #include "../Core/Settings.h"
 #include "../Core/Log.h"
 #include "../Core/Jobs.h"
+#include "../Core/Hash.h"
 
 #include "../Common/RemoteServices.h"
 #include "../Common/VirtualFS.h"
@@ -38,6 +39,12 @@ struct ShaderLoader final : AssetCallbacks
     Mutex requestsMtx;
 };
 
+struct AssetShaderImpl final : AssetTypeImplBase
+{
+    bool Bake(const AssetParams& params, AssetData* data, const Span<uint8>& srcData, String<256>* outErrorDesc) override;
+};
+
+static AssetShaderImpl gShaderImpl;
 static ShaderLoader gShaderLoader;
 
 // MT: runs in task threads, dispatched by asset server for remote loads
@@ -92,7 +99,7 @@ static void shaderCompileLoadTask(uint32 groupIndex, void* userData)
 
             // Compilation
             char compileErrorDesc[512];
-            Pair<GfxShader*, uint32> shaderCompileResult = ShaderCompiler::Compile(fileBlob, shaderAbsolutePath.CStr(), compileDesc, 
+            Pair<GfxShader*, uint32> shaderCompileResult = ShaderCompiler::Compile(fileBlob.Slice(), shaderAbsolutePath.CStr(), compileDesc, 
                                                                          compileErrorDesc, sizeof(compileErrorDesc), Mem::GetDefaultAlloc());
             GfxShader* shader = shaderCompileResult.first;
             uint32 shaderDataSize = shaderCompileResult.second;
@@ -216,6 +223,7 @@ bool _private::assetInitializeShaderManager()
         .fourcc = SHADER_ASSET_TYPE,
         .name = "Shader",
         .callbacks = &gShaderLoader,
+        .impl = &gShaderImpl,
         .extraParamTypeName = "ShaderCompileDesc",
         .extraParamTypeSize = sizeof(ShaderCompileDesc),
         .failedObj = nullptr,
@@ -303,7 +311,7 @@ AssetResult ShaderLoader::Load(AssetHandle handle, const AssetLoadParams& params
             #endif
 
             char errorDiag[1024];
-            Pair<GfxShader*, uint32> shader = ShaderCompiler::Compile(blob, shaderAbsolutePath.CStr(), compileDesc, errorDiag, sizeof(errorDiag), params.alloc);
+            Pair<GfxShader*, uint32> shader = ShaderCompiler::Compile(blob.Slice(), shaderAbsolutePath.CStr(), compileDesc, errorDiag, sizeof(errorDiag), params.alloc);
             if (shader.first)
                 shader.first->hash = uint32(handle);
             else 
@@ -403,4 +411,58 @@ void ShaderLoader::Release(void* data, MemAllocator* alloc)
     Mem::Free(data, alloc);
 }
 
+//----------------------------------------------------------------------------------------------------------------------
+bool AssetShaderImpl::Bake(const AssetParams& params, AssetData* data, const Span<uint8>& srcData, String<256>* outErrorDesc)
+{
+    #if CONFIG_TOOLMODE
+        MemTempAllocator tmpAlloc;
+        ShaderCompileDesc compileDesc = *((ShaderCompileDesc*)params.typeSpecificParams);
+
+        compileDesc.dumpIntermediates |= data->GetMetaValue("dumpIntermediates", false);
+        compileDesc.debug |= data->GetMetaValue("debug", false);
+
+        const SettingsGraphics& graphicsSettings = SettingsJunkyard::Get().graphics;
+        compileDesc.dumpIntermediates |= graphicsSettings.shaderDumpIntermediates;
+        compileDesc.debug |= graphicsSettings.shaderDebug;
+
+        Path shaderAbsolutePath = Vfs::ResolveFilepath(params.path.CStr());
+        if constexpr (PLATFORM_WINDOWS)
+            shaderAbsolutePath.ConvertToWin();
+            
+        char errorDiag[256];
+        Pair<GfxShader*, uint32> shader = ShaderCompiler::Compile(srcData, shaderAbsolutePath.CStr(), compileDesc, errorDiag, sizeof(errorDiag), &tmpAlloc);
+        if (!shader.first) {
+            outErrorDesc->FormatSelf("Compiling shader failed: %s", errorDiag);
+            return false;
+        }
+
+        // TODO: TEMP: improve this. setting an artibary hash is not a good idea
+        shader.first->hash = Hash::Murmur32(&params, sizeof(params));
+
+        data->SetObjData(shader.first, shader.second);
+        return true;
+    #else
+        UNUSED(cacheHash);
+        UNUSED(params);
+        UNUSED(handle);
+        ASSERT_MSG(0, "None ToolMode builds does not support shader compilation");
+        return AssetResult {};
+    #endif
+}
+
+AssetHandleShader Asset::LoadShader(const char* path, const ShaderLoadParams& desc, const AssetGroup& group)
+{
+    AssetParams params {
+        .typeId = SHADER_ASSET_TYPE,
+        .path = path,
+        .typeSpecificParams = const_cast<ShaderLoadParams*>(&desc)
+    };
+
+    return (AssetHandleShader)group.AddToLoadQueue(params);
+}
+
+GfxShader* Asset::GetShader(AssetHandleShader shaderHandle)
+{
+    return (GfxShader*)Asset::GetObjData(shaderHandle);
+}
 

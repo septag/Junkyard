@@ -1130,7 +1130,7 @@ namespace limits
 {
     inline constexpr uint32 ASSET_MAX_GROUPS = 1024;
     inline constexpr uint32 ASSET_MAX_THREADS = 128;
-    inline constexpr size_t ASSET_MAX_SCRATCH_SIZE_PER_THREAD = 512*SIZE_MB;
+    inline constexpr size_t ASSET_MAX_SCRATCH_SIZE_PER_THREAD = SIZE_GB;
     inline constexpr size_t ASSET_HEADER_BUFFER_POOL_SIZE = SIZE_MB;
     inline constexpr size_t ASSET_DATA_BUFFER_POOL_SIZE = SIZE_MB*128;
 }
@@ -1350,10 +1350,11 @@ static void Asset::_SaveBakedTask(uint32 groupIdx, void* userData)
 
     uint64 writeFileData = 0;//(uint64(assetHash) << 32) | result.cacheHash;
     // Vfs::WriteFile(qa->bakedFilepath.CStr(), cache, VfsFlags::CreateDirs);
-    auto SaveFileCallback = [](const char* path, size_t bytesWritten, Blob&, void*)
+    auto SaveFileCallback = [](const char* path, size_t bytesWritten, Blob& blob, void*)
     {
         if (bytesWritten)
             LOG_VERBOSE("(save) Baked: %s", path);
+        blob.Free();
         
         /*
             uint64 writeFileData = PtrToInt<uint64>(user);
@@ -1774,7 +1775,7 @@ static void Asset::_LoadGroupTask(uint32, void* userData)
 
     // Pick a batch size 
     // This is the amount of tasks that are submitted to the task manager at a time
-    uint32 batchCount = Min(512u, loadList.Count());//Jobs::GetWorkerThreadsCount(JobsType::LongTask);
+    uint32 batchCount = Min(128u, loadList.Count());//Jobs::GetWorkerThreadsCount(JobsType::LongTask);
     uint32 allCount = loadList.Count();
 
     // We cannot use the actual temp allocators here. Because we are dispatching jobs and might end up in a different thread
@@ -1835,7 +1836,6 @@ static void Asset::_LoadGroupTask(uint32, void* userData)
 
         Jobs::WaitForCompletion(batchJob);
 
-        PROFILE_ZONE_NAME("Deps");
         for (uint32 k = 0; k < sliceCount; k++) {
             AssetLoadTaskInputs& in = taskDatas[k].inputs;
             AssetLoadTaskOutputs& out = taskDatas[k].outputs;
@@ -1877,8 +1877,6 @@ static void Asset::_LoadGroupTask(uint32, void* userData)
     }
 
     // Save to cache
-    {
-        PROFILE_ZONE_NAME("Save");
     Array<AssetQueuedItem*> saveItems(tempAlloc);
     for (uint32 i = 0; i < queuedAssets.Count(); i += batchCount) {
         uint32 sliceCount = Min(batchCount, loadList.Count() - i);
@@ -1897,7 +1895,6 @@ static void Asset::_LoadGroupTask(uint32, void* userData)
         }
     }
     tempAlloc->Reset();
-    }
 
     // Create GPU objects
 
@@ -1915,8 +1912,10 @@ static void Asset::_LoadGroupTask(uint32, void* userData)
             }
         }
 
-        JobsHandle batchJob = Jobs::Dispatch(JobsType::LongTask, _CreateGpuObjectTask, gpuObjs.Ptr(), gpuObjs.Count());
-        Jobs::WaitForCompletion(batchJob);
+        if (!gpuObjs.IsEmpty()) {
+            JobsHandle batchJob = Jobs::Dispatch(JobsType::LongTask, _CreateGpuObjectTask, gpuObjs.Ptr(), gpuObjs.Count());
+            Jobs::WaitForCompletion(batchJob);
+        }
 
         tempAlloc->Reset();
     }
@@ -2151,6 +2150,9 @@ AssetGroup Asset::CreateGroup()
 void Asset::DestroyGroup(AssetGroup& group)
 {
     ASSERT_MSG(Engine::IsMainThread(), "DestroyGroup can only be called in the main thread");
+
+    if (!group.mHandle.IsValid())
+        return;
     
     // Wait for any tasks to finish
     if (gAssetMan.loadJob.second == group.mHandle) {
@@ -2352,6 +2354,17 @@ void AssetGroup::Unload()
     }
 }
 
+void AssetGroup::Wait()
+{
+    ReadWriteMutexReadScope rdlock(gAssetMan.groupsMutex);
+    AssetGroupInternal& group = gAssetMan.groups.Data(mHandle);
+    while (Atomic::LoadExplicit(&group.state, AtomicMemoryOrder::Acquire) != uint32(AssetGroupState::Loaded)) {
+        OS::PauseCPU();
+        if (Engine::IsMainThread())
+            Asset::Update();
+    }
+}
+
 bool AssetGroup::IsLoadFinished() const
 {
     ReadWriteMutexReadScope rdlock(gAssetMan.groupsMutex);
@@ -2373,6 +2386,12 @@ AssetGroupState AssetGroup::GetState() const
     return (AssetGroupState)Atomic::LoadExplicit(&group.state, AtomicMemoryOrder::Acquire);
 }
 
+bool AssetGroup::HasItemsInQueue() const
+{
+    ReadWriteMutexReadScope rdlock(gAssetMan.groupsMutex);
+    AssetGroupInternal& group = gAssetMan.groups.Data(mHandle);
+    return !group.loadList.IsEmpty();
+}
 
 Span<AssetHandle> AssetGroup::GetAssetHandles(MemAllocator* alloc) const
 {
