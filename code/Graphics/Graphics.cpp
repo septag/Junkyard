@@ -124,7 +124,7 @@ namespace _limits
     static constexpr uint32 kGfxMaxPipelines = 256;
     static constexpr uint32 kGfxMaxPipelineLayouts = 256;
     static constexpr uint32 kGfxMaxGarbage = 4096;
-    static constexpr size_t kGfxRuntimeSize = 32*SIZE_MB;
+    static constexpr size_t kGfxRuntimeSize = 64*SIZE_MB;
 }
 
 // Fwd (TracyVk.cpp)
@@ -2992,7 +2992,7 @@ GfxPipeline gfxCreatePipeline(const GfxPipelineDesc& desc)
     { // Add to shader's used piplines list, so later we could iterate over them to recreate the pipelines
         MutexScope pipTableMtx(gVk.shaderPipelinesTableMtx);
         uint32 index = gVk.shaderPipelinesTable.Find(shaderInfo->hash);
-        if (index != UINT32_MAX) {
+        if (index != -1) {
             gVk.shaderPipelinesTable.GetMutable(index).Push(pip);
         }
         else {

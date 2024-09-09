@@ -872,14 +872,9 @@ bool AssetImageImpl::Bake(const AssetParams& params, AssetData* data, const Span
         .contentSize = uint32(contentBlob.Size()),
     };
 
-    // for (uint32 i = 0; i < numMips; i++)
-    //    header->mipOffsets[i] = mips[i].offset;
-
     uint32* mipOffsets = Mem::AllocTyped<uint32>(numMips, &tmpAlloc);
     for (uint32 i = 0; i < numMips; i++)
         mipOffsets[i] = mips[i].offset;
-
-    // header->content = Mem::AllocCopy<uint8>((uint8*)contentBlob.Data(), (uint32)contentBlob.Size(), &tmpAlloc);
 
     size_t headerTotalSize = tmpAlloc.GetOffset() - tmpAlloc.GetPointerOffset(header);
     ASSERT(headerTotalSize <= UINT32_MAX);

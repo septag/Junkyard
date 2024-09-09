@@ -230,9 +230,11 @@ struct AssetGroup
     void Load();
     void Unload();
 
+    void Wait();    // Not recommended, unless you really have to. It blocks the thread and wastes CPU cycles
     bool IsLoadFinished() const;
     bool IsIdle() const;
     AssetGroupState GetState() const;
+    bool HasItemsInQueue() const;
 
     Span<AssetHandle> GetAssetHandles(MemAllocator* alloc) const;
 };

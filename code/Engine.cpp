@@ -28,6 +28,8 @@ static constexpr uint32 ENGINE_REMOTE_CONNECT_RETRIES = 3;
 static constexpr float  ENGINE_JOBS_REFRESH_STATS_INTERVAL = 0.2f;
 static constexpr size_t ENGINE_INIT_HEAP_MAX = 2*SIZE_GB;
 
+using EngineInitializeResourcesPair = Pair<EngineInitializeResourcesCallback, void*>;
+
 struct EngineShortcutKeys
 {
     InputKeycode keys[2];
@@ -40,9 +42,9 @@ struct EngineContext
 {
     SysInfo    sysInfo = {};
 
-    bool       remoteReconnect;
-    float      remoteDisconnectTime;
-    uint32     remoteRetryCount;
+    bool remoteReconnect;
+    float remoteDisconnectTime;
+    uint32 remoteRetryCount;
     
     double elapsedTime;
     AtomicUint64 frameIndex;
@@ -52,67 +54,86 @@ struct EngineContext
     MemBumpAllocatorVM initHeap;
 
     bool initialized;
+    bool resourcesInitialized;
+    bool beginFrameCalled;
+    bool endFrameCalled;
     float refreshStatsTime;
     uint32 mainThreadId;
+    AssetGroup initResourcesGroup;
 
     Array<EngineShortcutKeys> shortcuts;
+    Array<EngineInitializeResourcesPair> initResourcesCallbacks;
 };
 
 static EngineContext gEng;
 
 namespace Engine
 {
-
-static void _RemoteDisconnected(const char* url, bool onPurpose, SocketErrorCode::Enum errCode)
-{
-    if (onPurpose)
-        return;
-
-    if (errCode == SocketErrorCode::Timeout || errCode == SocketErrorCode::ConnectionReset || 
-        errCode == SocketErrorCode::None /* invalid packet */)
+    static void _RemoteDisconnected(const char* url, bool onPurpose, SocketErrorCode::Enum errCode)
     {
-        if (gEng.remoteRetryCount <= ENGINE_REMOTE_CONNECT_RETRIES) {
-            LOG_INFO("Disconnected from '%s', reconnecting in %.0f seconds ...", url, ENGINE_REMOTE_RECONNECT_INTERVAL);
-            gEng.remoteReconnect = true;
+        if (onPurpose)
+            return;
+
+        if (errCode == SocketErrorCode::Timeout || errCode == SocketErrorCode::ConnectionReset || 
+            errCode == SocketErrorCode::None /* invalid packet */)
+        {
+            if (gEng.remoteRetryCount <= ENGINE_REMOTE_CONNECT_RETRIES) {
+                LOG_INFO("Disconnected from '%s', reconnecting in %.0f seconds ...", url, ENGINE_REMOTE_RECONNECT_INTERVAL);
+                gEng.remoteReconnect = true;
+            }
+        }
+        else {
+            ASSERT(0);  // investigate errCode
         }
     }
-    else {
-        ASSERT(0);  // investigate errCode
-    }
-}
 
-static void _OnEvent(const AppEvent& ev, [[maybe_unused]] void* userData)
-{
-    if (ev.type == AppEventType::KeyDown) {
-        // Trigger shortcuts
-        for (uint32 i = 0; i < gEng.shortcuts.Count(); i++) {
-            const EngineShortcutKeys& shortcut = gEng.shortcuts[i];
-            InputKeycode key1 = shortcut.keys[0];
-            InputKeycode key2 = shortcut.keys[1];
-            InputKeyModifiers mods = shortcut.mods;
-            if (App::IsKeyDown(key1) && 
-                (key2 == InputKeycode::Invalid || App::IsKeyDown(key2)) && 
-                (mods == InputKeyModifiers::None || (mods & ev.keyMods) == mods)) 
-            {
-                shortcut.callback(gEng.shortcuts[i].userData);
-                break;
-            } 
+    static void _OnEvent(const AppEvent& ev, [[maybe_unused]] void* userData)
+    {
+        if (ev.type == AppEventType::KeyDown) {
+            // Trigger shortcuts
+            for (uint32 i = 0; i < gEng.shortcuts.Count(); i++) {
+                const EngineShortcutKeys& shortcut = gEng.shortcuts[i];
+                InputKeycode key1 = shortcut.keys[0];
+                InputKeycode key2 = shortcut.keys[1];
+                InputKeyModifiers mods = shortcut.mods;
+                if (App::IsKeyDown(key1) && 
+                    (key2 == InputKeycode::Invalid || App::IsKeyDown(key2)) && 
+                    (mods == InputKeyModifiers::None || (mods & ev.keyMods) == mods)) 
+                {
+                    shortcut.callback(gEng.shortcuts[i].userData);
+                    break;
+                } 
+            }
+        }
+    #if PLATFORM_ANDROID
+        else if (ev.type == AppEventType::Suspended) 
+            gfxDestroySurfaceAndSwapchain();
+        else if (ev.type == AppEventType::Resumed)
+            gfxRecreateSurfaceAndSwapchain();
+    #endif
+    }
+
+    static void _InitResourcesUpdate(float dt, void*)
+    {
+        // TODO: can show some cool anim or something
+        BeginFrame(dt);
+        EndFrame(dt);
+
+        if (gEng.initResourcesGroup.IsLoadFinished()) {
+            for (EngineInitializeResourcesPair p : gEng.initResourcesCallbacks)
+                p.first(p.second);
+            gEng.resourcesInitialized = true;
+            App::OverrideUpdateCallback(nullptr);   // Switch back to the regular app update loop
         }
     }
-#if PLATFORM_ANDROID
-    else if (ev.type == AppEventType::Suspended) 
-        gfxDestroySurfaceAndSwapchain();
-    else if (ev.type == AppEventType::Resumed)
-        gfxRecreateSurfaceAndSwapchain();
-#endif
-}
+} // Engine
 
-bool IsMainThread()
+bool Engine::IsMainThread()
 {
     return Thread::GetCurrentId() == gEng.mainThreadId;
 }
 
-bool Initialize()
+bool Engine::Initialize()
 {
     PROFILE_ZONE();
 
@@ -124,6 +145,7 @@ bool Initialize()
     // Initialize heaps
     // TODO: make all heaps commit all memory upfront in RELEASE builds
     gEng.shortcuts.SetAllocator(Mem::GetDefaultAlloc());
+    gEng.initResourcesCallbacks.SetAllocator(Mem::GetDefaultAlloc());
     gEng.initHeap.Initialize(ENGINE_INIT_HEAP_MAX, SIZE_MB, SettingsJunkyard::Get().engine.debugAllocations);
 
     if (SettingsJunkyard::Get().engine.debugAllocations)
@@ -202,6 +224,9 @@ bool Initialize()
         return false;
     }
 
+    // Initialization resources
+    gEng.initResourcesGroup = Asset::CreateGroup();
+
     if (gfxSettings.enable) {
         if (!gfxSettings.headless) {
             if (gfxSettings.enableImGui) {
@@ -222,9 +247,6 @@ bool Initialize()
 
     App::RegisterEventsCallback(_OnEvent);
 
-    gEng.initialized = true;
-    LOG_INFO("(init) Engine initialized (%.1f ms)", Timer::ToMS(Timer::GetTicks()));
-    
     auto GetVMemStats = [](int, const char**, char* outResponse, uint32 responseSize, void*)->bool {
         MemVirtualStats stats = Mem::VirtualGetStats();
         strPrintFmt(outResponse, responseSize, "Reserverd: %_$$$llu, Commited: %_$$$llu", stats.reservedBytes, stats.commitedBytes);
@@ -236,10 +258,23 @@ bool Initialize()
         .help = "Get VMem stats",
         .callback = GetVMemStats
     });
+    LOG_INFO("(init) Engine initialized (%.1f ms)", Timer::ToMS(Timer::GetTicks()));
+    gEng.initialized = true;
+
+    // Fire up resource loading and override the update loop, so we can show something and wait for the init resources to finish
+    if (gEng.initResourcesGroup.HasItemsInQueue()) {
+        LOG_INFO("(init) Loading initial resources");
+        gEng.initResourcesGroup.Load();
+        App::OverrideUpdateCallback(_InitResourcesUpdate);
+    }
+    else {
+        gEng.resourcesInitialized = true;
+    }
+
     return true;
 }
 
-void Release()
+void Engine::Release()
 {
     const SettingsGraphics& gfxSettings = SettingsJunkyard::Get().graphics;
     LOG_INFO("Releasing engine sub systems ...");
@@ -254,6 +289,10 @@ void Release()
     } 
 
     _private::assetRelease();
+
+    if (gEng.initResourcesGroup.mHandle.IsValid())
+        gEng.initResourcesGroup.Unload();
+    Asset::DestroyGroup(gEng.initResourcesGroup);
     Asset::Release();
 
     if (gfxSettings.enable)
@@ -267,14 +306,18 @@ void Release()
     Console::Release();
 
     gEng.shortcuts.Free();
+    gEng.initResourcesCallbacks.Free();
     gEng.initHeap.Release();
 
     LOG_INFO("Engine released");
 }
 
-void BeginFrame(float dt)
+void Engine::BeginFrame(float dt)
 {
     ASSERT(gEng.initialized);
+    ASSERT_MSG(!gEng.beginFrameCalled, "Cannot call BeginFrame twice");
+    gEng.beginFrameCalled = true;
+    gEng.endFrameCalled = false;
 
     TracyCPlot("FrameTime", dt*1000.0f);
 
@@ -312,16 +355,21 @@ void BeginFrame(float dt)
 
     // Begin graphics
     if (!SettingsJunkyard::Get().graphics.headless) {
-        ImGui::BeginFrame(dt);
+        if (gEng.resourcesInitialized)
+            ImGui::BeginFrame(dt);
         _private::gfxBeginFrame();
     }
 
     gEng.rawFrameStartTime = Timer::GetTicks();
 }
 
-void EndFrame(float dt)
+void Engine::EndFrame(float dt)
 {
     ASSERT(gEng.initialized);
+    ASSERT_MSG(!gEng.endFrameCalled, "Cannot call EndFrame twice");
+    ASSERT_MSG(gEng.beginFrameCalled, "BeginFrame is not called");
+    gEng.beginFrameCalled = false;
+    gEng.endFrameCalled = true;
 
     Asset::Update();
 
@@ -341,27 +389,27 @@ void EndFrame(float dt)
     Atomic::FetchAddExplicit(&gEng.frameIndex, 1, AtomicMemoryOrder::Relaxed);
 }
 
-uint64 GetFrameIndex()
+uint64 Engine::GetFrameIndex()
 {
     return Atomic::LoadExplicit(&gEng.frameIndex, AtomicMemoryOrder::Relaxed);
 }
 
-const SysInfo& GetSysInfo()
+const SysInfo& Engine::GetSysInfo()
 {
     return gEng.sysInfo;
 }
 
-MemBumpAllocatorBase* GetInitHeap()
+MemBumpAllocatorBase* Engine::GetInitHeap()
 {
     return &gEng.initHeap;
 }
 
-float GetEngineTimeMS()
+float Engine::GetEngineTimeMS()
 {
     return (float)Timer::ToMS(gEng.rawFrameTime);
 }
 
-void RegisterShortcut(const char* shortcut, EngineShortcutCallback callback, void* userData)
+void Engine::RegisterShortcut(const char* shortcut, EngineShortcutCallback callback, void* userData)
 {
     ASSERT(callback);
     ASSERT(shortcut);
@@ -448,4 +496,13 @@ void RegisterShortcut(const char* shortcut, EngineShortcutCallback callback, voi
     }
 }
 
-} // Engine
+const AssetGroup& Engine::RegisterInitializeResources(EngineInitializeResourcesCallback callback, void* userData)
+{
+    ASSERT_MSG(!gEng.resourcesInitialized, "Cannot call this function when init resources are already loaded");
+    ASSERT_MSG(gEng.initResourcesCallbacks.FindIf([&callback](const EngineInitializeResourcesPair& p) { return p.first == callback; }) == -1,
+               "Cannot register one callback twice");
+
+    gEng.initResourcesCallbacks.Push(EngineInitializeResourcesPair(callback, userData));
+
+    return gEng.initResourcesGroup;
+}

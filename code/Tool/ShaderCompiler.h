@@ -25,7 +25,6 @@ struct ShaderCompileDesc
 #if CONFIG_TOOLMODE
 
 struct GfxShader;
-struct Blob;
 struct MemAllocator;
 
 namespace ShaderCompiler
@@ -34,7 +33,7 @@ namespace ShaderCompiler
     void Release();
 
     // Note: `alloc` should not be tmpAlloc
-    API Pair<GfxShader*, uint32> Compile(const Blob& blob, const char* filepath, const ShaderCompileDesc& desc, 
+    API Pair<GfxShader*, uint32> Compile(const Span<uint8>& sourceCode, const char* filepath, const ShaderCompileDesc& desc, 
                                          char* errorDiag, uint32 errorDiagSize, MemAllocator* alloc);
 }
 
