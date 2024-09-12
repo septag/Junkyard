@@ -6,13 +6,13 @@
 struct MemAllocator;
 
 // Graphics
-DEFINE_HANDLE(GfxBuffer);
-DEFINE_HANDLE(GfxImage);
-DEFINE_HANDLE(GfxPipeline);
-DEFINE_HANDLE(GfxPipelineLayout);
-DEFINE_HANDLE(GfxDescriptorSetLayout);
-DEFINE_HANDLE(GfxRenderPass);
-DEFINE_HANDLE(GfxDescriptorSet);
+DEFINE_HANDLE(GfxBufferHandle);
+DEFINE_HANDLE(GfxImageHandle);
+DEFINE_HANDLE(GfxPipelineHandle);
+DEFINE_HANDLE(GfxPipelineLayoutHandle);
+DEFINE_HANDLE(GfxDescriptorSetLayoutHandle);
+DEFINE_HANDLE(GfxRenderPassHandle);
+DEFINE_HANDLE(GfxDescriptorSetHandle);
 
 // AssetManager
 DEFINE_HANDLE(AssetHandle);

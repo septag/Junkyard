@@ -14,7 +14,7 @@
 #include "../Tool/ImageEncoder.h"
 
 
-//------------------------------------------------------------------------
+//----------------------------------------------------------------------------------------------------------------------
 static thread_local MemAllocator* gStbIAlloc = nullptr;
 
 #define STB_IMAGE_IMPLEMENTATION
@@ -47,7 +47,7 @@ static constexpr uint32 RCMD_LOAD_IMAGE = MakeFourCC('L', 'I', 'M', 'G');
 // keeps the parameters to UpdateDescriptorSet function, so we can keep the reloaded images in sync with GPU
 struct AssetDescriptorUpdateCacheItem
 {
-    GfxDescriptorSet dset;
+    GfxDescriptorSetHandle dset;
     uint32 numBindings;
     uint32 refCount;        // Total count of textures referencing this item in their bindings
     uint32 hash;            // Hash of the binding params (dset+numBindings+bindings)
@@ -88,7 +88,7 @@ struct AssetImageManager
     Array<AssetDescriptorUpdateCacheItem*> updateCache;
     Array<AssetImageLoadRequest> requests;
 
-    GfxImage imageWhite;
+    GfxImageHandle imageWhite;
 };
 
 static AssetImageManager gImageMgr;
@@ -111,7 +111,7 @@ INLINE GfxFormat assetImageConvertFormatSRGB(GfxFormat fmt)
 
 // This function is the main loader/baker
 // Depending on the local meta-data, we either directly load the image from the disk or encode it with block compression
-static Pair<AssetImage*, uint32> assetBakeImage(const char* filepath, MemAllocator* alloc, const AssetMetaKeyValue* metaData, uint32 numMeta,
+static Pair<GfxImage*, uint32> assetBakeImage(const char* filepath, MemAllocator* alloc, const AssetMetaKeyValue* metaData, uint32 numMeta,
                                                 char* outErrorDesc, uint32 errorDescSize)    
 {
     struct MipSurface
@@ -272,8 +272,8 @@ static Pair<AssetImage*, uint32> assetBakeImage(const char* filepath, MemAllocat
     
     // Create image header and serialize memory. So header comes first, then re-copy the final contents at the end
     // We have to do this because there is also a lot of scratch work in between image buffers creation
-    AssetImage* header = tmpAlloc.MallocTyped<AssetImage>();
-    *header = AssetImage {
+    GfxImage* header = tmpAlloc.MallocTyped<GfxImage>();
+    *header = GfxImage {
         .width = uint32(imgWidth),
         .height = uint32(imgHeight),
         .depth = 1, // TODO
@@ -288,7 +288,7 @@ static Pair<AssetImage*, uint32> assetBakeImage(const char* filepath, MemAllocat
     header->content = Mem::AllocCopy<uint8>((uint8*)contentBlob.Data(), (uint32)contentBlob.Size(), &tmpAlloc);
 
     uint32 bufferSize = uint32(tmpAlloc.GetOffset() - tmpAlloc.GetPointerOffset(header));
-    return Pair<AssetImage*, uint32>(Mem::AllocCopyRawBytes<AssetImage>(header, bufferSize, alloc), bufferSize);
+    return Pair<GfxImage*, uint32>(Mem::AllocCopyRawBytes<GfxImage>(header, bufferSize, alloc), bufferSize);
 }
 
 // MT: runs from a task thread (server-side)
@@ -331,8 +331,8 @@ static void assetLoadImageTask(uint32 groupIndex, void* userData)
     
     if (cacheHash != oldCacheHash) {
         TimerStopWatch timer;
-        Pair<AssetImage*, uint32> img = assetBakeImage(filepath, Mem::GetDefaultAlloc(), metaData, numMeta, errorMsg, sizeof(errorMsg));
-        AssetImage* header = img.first;
+        Pair<GfxImage*, uint32> img = assetBakeImage(filepath, Mem::GetDefaultAlloc(), metaData, numMeta, errorMsg, sizeof(errorMsg));
+        GfxImage* header = img.first;
         if (header) {
             uint32 bufferSize = img.second;
             outgoingBlob.Write<uint32>(cacheHash);
@@ -424,10 +424,10 @@ static void assetImageHandlerClientFn([[maybe_unused]] uint32 cmd, const Blob& i
     }
 }
 
-static void assetUpdateImageDescriptorSetCache(GfxDescriptorSet dset, uint32 numBindings, const GfxDescriptorBindingDesc* bindings)
+static void assetUpdateImageDescriptorSetCache(GfxDescriptorSetHandle dset, uint32 numBindings, const GfxDescriptorBindingDesc* bindings)
 {
     HashMurmur32Incremental hasher(0x1e1e);
-    uint32 hash = hasher.Add<GfxDescriptorSet>(dset)
+    uint32 hash = hasher.Add<GfxDescriptorSetHandle>(dset)
                         .Add<GfxDescriptorBindingDesc>(bindings, numBindings)
                         .Hash();
 
@@ -455,7 +455,7 @@ static void assetUpdateImageDescriptorSetCache(GfxDescriptorSet dset, uint32 num
     } // for each binding
 }
 
-GfxImage assetGetWhiteImage1x1()
+GfxImageHandle assetGetWhiteImage1x1()
 {
     return gImageMgr.imageWhite;
 }
@@ -465,16 +465,16 @@ AssetHandleImage assetLoadImage(const char* path, const ImageLoadParams& params,
     AssetLoadParams loadParams {
         .path = path,
         .alloc = Mem::GetDefaultAlloc(), // TODO: should be able to use custom allocator
-        .typeId = kImageAssetType,
+        .typeId = IMAGE_ASSET_TYPE,
         .barrier = barrier
     };
 
     return AssetHandleImage { assetLoad(loadParams, &params) };
 }
 
-GfxImage assetGetImage(AssetHandleImage imageHandle)
+GfxImageHandle assetGetImage(AssetHandleImage imageHandle)
 {
-    return reinterpret_cast<AssetImage*>(_private::assetGetData(imageHandle))->handle;
+    return reinterpret_cast<GfxImage*>(_private::assetGetData(imageHandle))->handle;
 }
 
 bool _private::assetInitializeImageManager()
@@ -500,7 +500,7 @@ bool _private::assetInitializeImageManager()
         if (!gImageMgr.imageWhite.IsValid())
             return false;
 
-        static AssetImage whiteImage = {
+        static GfxImage whiteImage = {
             .handle = gImageMgr.imageWhite,
             .width = 1,
             .height = 1,
@@ -510,7 +510,7 @@ bool _private::assetInitializeImageManager()
         };
 
         assetRegisterType(AssetTypeDesc {
-            .fourcc = kImageAssetType,
+            .fourcc = IMAGE_ASSET_TYPE,
             .name = "Image",
             .callbacks = &gImageMgr.imageLoader,
             .impl = &gImageMgr.imageImpl,
@@ -555,7 +555,7 @@ void _private::assetReleaseImageManager()
         gImageMgr.updateCache.Free();
         gImageMgr.updateCacheMtx.Release();
 
-        assetUnregisterType(kImageAssetType);
+        assetUnregisterType(IMAGE_ASSET_TYPE);
     }
 }
 
@@ -581,7 +581,7 @@ AssetResult AssetImageCallbacks::Load(AssetHandle handle, const AssetLoadParams&
 
     if (newCacheHash != cacheHash) {
         char errorDesc[512];
-        Pair<AssetImage*, uint32> img = assetBakeImage(params.path, params.alloc, metaData, numMeta, errorDesc, sizeof(errorDesc));
+        Pair<GfxImage*, uint32> img = assetBakeImage(params.path, params.alloc, metaData, numMeta, errorDesc, sizeof(errorDesc));
         if (img.first != nullptr) {
             return AssetResult { .obj = img.first, .objBufferSize = img.second, .cacheHash = newCacheHash };
         }
@@ -633,10 +633,10 @@ void AssetImageCallbacks::LoadRemote(AssetHandle handle, const AssetLoadParams& 
 
 bool AssetImageCallbacks::InitializeSystemResources(void* obj, const AssetLoadParams& params)
 {
-    AssetImage* header = reinterpret_cast<AssetImage*>(obj);
+    GfxImage* header = reinterpret_cast<GfxImage*>(obj);
     const ImageLoadParams& loadParams = *reinterpret_cast<const ImageLoadParams*>(params.next.Get());
 
-    GfxImage image = gfxCreateImage(GfxImageDesc {
+    GfxImageHandle image = gfxCreateImage(GfxImageDesc {
         .width = header->width,
         .height = header->height,
         .numMips = header->numMips,
@@ -655,8 +655,8 @@ bool AssetImageCallbacks::InitializeSystemResources(void* obj, const AssetLoadPa
 
 bool AssetImageCallbacks::ReloadSync(AssetHandle handle, void* prevData)
 {
-    GfxImage oldImageHandle { PtrToInt<uint32>(prevData) };
-    GfxImage newImageHandle { PtrToInt<uint32>(_private::assetGetData(handle)) };
+    GfxImageHandle oldImageHandle { PtrToInt<uint32>(prevData) };
+    GfxImageHandle newImageHandle { PtrToInt<uint32>(_private::assetGetData(handle)) };
 
     MutexScope mtx(gImageMgr.updateCacheMtx);
 
@@ -685,8 +685,8 @@ void AssetImageCallbacks::Release(void* data, MemAllocator* alloc)
 {
     ASSERT(data);
 
-    AssetImage* image = reinterpret_cast<AssetImage*>(data);
-    GfxImage handle = image->handle;
+    GfxImage* image = reinterpret_cast<GfxImage*>(data);
+    GfxImageHandle handle = image->handle;
 
     gfxDestroyImage(handle);
 
@@ -862,8 +862,8 @@ bool AssetImageImpl::Bake(const AssetParams& params, AssetData* data, const Span
 
     // Create image header and serialize memory. So header comes first, then re-copy the final contents at the end
     // We have to do this because there is also a lot of scratch work in between image buffers creation
-    AssetImage* header = Mem::AllocZeroTyped<AssetImage>(1, &tmpAlloc);
-    *header = AssetImage {
+    GfxImage* header = Mem::AllocZeroTyped<GfxImage>(1, &tmpAlloc);
+    *header = GfxImage {
         .width = uint32(imgWidth),
         .height = uint32(imgHeight),
         .depth = 1, // TODO
@@ -890,7 +890,7 @@ bool AssetImageImpl::Bake(const AssetParams& params, AssetData* data, const Span
         .sampled = true,
         .size = contentBlob.Size(),
         .content = contentBlob.Data(),
-        .mipOffsets =mipOffsets
+        .mipOffsets = mipOffsets
     };
 
     data->AddGpuTextureObject(&header->handle, imageDesc);
@@ -898,3 +898,18 @@ bool AssetImageImpl::Bake(const AssetParams& params, AssetData* data, const Span
     return true;
 }
 
+AssetHandleImage Asset::LoadImage(const char* path, const ImageLoadParams& params, const AssetGroup& group)
+{
+    AssetParams assetParams {
+        .typeId = IMAGE_ASSET_TYPE,
+        .path = path,
+        .typeSpecificParams = const_cast<ImageLoadParams*>(&params)
+    };
+
+    return (AssetHandleImage)group.AddToLoadQueue(assetParams);
+}
+
+GfxImage* Asset::GetImage(AssetHandleImage handle)
+{
+    return (GfxImage*)Asset::GetObjData(handle);
+}

@@ -32,14 +32,14 @@
 
 struct AppImpl final : AppCallbacks
 {
-    GfxPipeline pipeline;
-    GfxBuffer uniformBuffer;
-    GfxDescriptorSetLayout dsLayout;
+    GfxPipelineHandle pipeline;
+    GfxBufferHandle uniformBuffer;
+    GfxDescriptorSetLayoutHandle dsLayout;
 
     AssetHandleModel modelAsset;
     AssetHandleShader modelShaderAsset;
-    Array<GfxDescriptorSet> descriptorSets;
-    HashTable<GfxDescriptorSet> materialToDset;
+    Array<GfxDescriptorSetHandle> descriptorSets;
+    HashTable<GfxDescriptorSetHandle> materialToDset;
     CameraFPS   fpsCam;
     CameraOrbit orbitCam;
     Camera*     cam;
@@ -102,14 +102,14 @@ struct AppImpl final : AppCallbacks
     
     static void ChildTask(uint32 groupIndex, void*)
     {
-        PROFILE_ZONE(true);
+        PROFILE_ZONE();
         
         Thread::Sleep(5);
     }
 
     static void MainTaskSub()
     {
-        PROFILE_ZONE(true);
+        PROFILE_ZONE();
         Thread::Sleep(3);
         JobsHandle handle;
         handle = Jobs::Dispatch(JobsType::LongTask, ChildTask, nullptr, 1);
@@ -119,7 +119,7 @@ struct AppImpl final : AppCallbacks
 
     static void MainTask(uint32 groupIndex, void*)
     {
-        PROFILE_ZONE(true);
+        PROFILE_ZONE();
         Thread::Sleep(1);
         MainTaskSub();
         Thread::Sleep(7);
@@ -127,7 +127,7 @@ struct AppImpl final : AppCallbacks
 
     void Update(fl32 dt) override
     {
-        PROFILE_ZONE(true);
+        PROFILE_ZONE();
 
         cam->HandleMovementKeyboard(dt, 100.0f, 5.0f);
 
@@ -193,7 +193,7 @@ struct AppImpl final : AppCallbacks
                         const ModelSubmesh& submesh = mesh.submeshes[smi];
                         const ModelMaterial* mtl = model->materials[IdToIndex(submesh.materialId)].Get();
                         
-                        GfxDescriptorSet dset = materialToDset.FindAndFetch(Hash::Murmur32(mtl, sizeof(*mtl), 0));
+                        GfxDescriptorSetHandle dset = materialToDset.FindAndFetch(Hash::Murmur32(mtl, sizeof(*mtl), 0));
                         gfxCmdBindDescriptorSets(pipeline, 1, &dset);
                         gfxCmdDrawIndexed(mesh.numIndices, 1, 0, 0, 0);
                     }
@@ -359,11 +359,11 @@ struct AppImpl final : AppCallbacks
             for (uint32 smi = 0; smi < mesh.numSubmeshes; smi++) {
                 ModelMaterial* material = model->materials[IdToIndex(mesh.submeshes[smi].materialId)].Get();
 
-                GfxImage albedo = material->pbrMetallicRoughness.baseColorTex.texture.IsValid() ?
+                GfxImageHandle albedo = material->pbrMetallicRoughness.baseColorTex.texture.IsValid() ?
                     assetGetImage(material->pbrMetallicRoughness.baseColorTex.texture) :
-                    GfxImage();
+                    GfxImageHandle();
 
-                GfxDescriptorSet dset = gfxCreateDescriptorSet(dsLayout);
+                GfxDescriptorSetHandle dset = gfxCreateDescriptorSet(dsLayout);
                 
                 GfxDescriptorBindingDesc descBindings[] = {
                     {
@@ -420,3 +420,4 @@ int Main(int argc, char* argv[])
     Settings::Release();
     return 0;
 }
+

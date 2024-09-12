@@ -15,9 +15,9 @@ static constexpr uint32 kDebugDrawMaxVerts = 32*1000;
 
 struct DebugDrawContext
 {
-    GfxPipeline pipeline;
+    GfxPipelineHandle pipeline;
     AssetHandleShader shaderAsset;
-    GfxBuffer vertexBuffer;
+    GfxBufferHandle vertexBuffer;
 
     struct Vertex
     {

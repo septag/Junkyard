@@ -124,8 +124,8 @@ struct ModelMesh
 
     struct GpuBuffers
     {
-        GfxBuffer vertexBuffers[kModelMaxVertexBuffersPerShader];
-        GfxBuffer indexBuffer;
+        GfxBufferHandle vertexBuffers[kModelMaxVertexBuffersPerShader];
+        GfxBufferHandle indexBuffer;
     };
 
     String32 name;

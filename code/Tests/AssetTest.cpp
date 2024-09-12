@@ -29,15 +29,15 @@ static constexpr uint32 kNumCubes = 10;
 
 struct AppImpl : AppCallbacks
 {
-    GfxPipeline pipeline;
-    GfxBuffer uniformBuffer;
+    GfxPipelineHandle pipeline;
+    GfxBufferHandle uniformBuffer;
     GfxDynamicUniformBuffer transformsBuffer;
-    GfxDescriptorSetLayout dsLayout;
+    GfxDescriptorSetLayoutHandle dsLayout;
 
     AssetHandleModel modelAsset;
     AssetHandleImage testImageAssets[kNumCubes];
     AssetHandleShader modelShaderAsset;
-    GfxDescriptorSet descriptorSet;
+    GfxDescriptorSetHandle descriptorSet;
     CameraFPS   fpsCam;
     CameraOrbit orbitCam;
     Camera*     cam;
@@ -103,7 +103,7 @@ struct AppImpl : AppCallbacks
 
     void Update(fl32 dt) override
     {
-        PROFILE_ZONE(true);
+        PROFILE_ZONE();
 
         cam->HandleMovementKeyboard(dt, 10.0f, 5.0f);
 
@@ -117,8 +117,8 @@ struct AppImpl : AppCallbacks
         float height = (float)App::GetFramebufferHeight();
 
         { // draw something
-            PROFILE_ZONE_NAME("DrawSomething", true);
-            PROFILE_GPU_ZONE_NAME("DrawSomething", true);
+            PROFILE_ZONE_NAME("DrawSomething");
+            PROFILE_GPU_ZONE_NAME("DrawSomething");
 
             // We are drawing to swapchain, so we need ClipSpaceTransform
             FrameTransform ubo {
@@ -332,7 +332,7 @@ struct AppImpl : AppCallbacks
         });
 
         // TODO: TEMP create descriptor sets and assign them to material userData for later rendering
-        GfxImage images[kNumCubes];
+        GfxImageHandle images[kNumCubes];
         for (uint32 i = 0; i < kNumCubes; i++)
             images[i] = assetGetImage(testImageAssets[i]);
         descriptorSet = gfxCreateDescriptorSet(dsLayout);
