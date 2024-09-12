@@ -58,11 +58,11 @@ struct ImGuiState
     
     ImDrawVert*  vertices;
     uint16*      indices;
-    GfxBuffer    vertexBuffer;
-    GfxBuffer    indexBuffer;
-    GfxDescriptorSetLayout dsLayout;
-    GfxPipeline  pipeline;
-    GfxImage     fontImage;
+    GfxBufferHandle    vertexBuffer;
+    GfxBufferHandle    indexBuffer;
+    GfxDescriptorSetLayoutHandle dsLayout;
+    GfxPipelineHandle  pipeline;
+    GfxImageHandle     fontImage;
     AssetHandleShader imguiShader;
     size_t       initHeapStart;
     size_t       initHeapSize;
@@ -664,7 +664,7 @@ bool ImGui::DrawFrame()
     gfxCmdSetViewports(0, 1, &viewport, true);
     gfxCmdPushConstants(gImGui.pipeline, GfxShaderStage::Vertex, &projMat, sizeof(projMat));
 
-    GfxImage prevImg {};
+    GfxImageHandle prevImg {};
     uint32 baseElem = 0;
     for (int drawListIdx = 0; drawListIdx < drawData->CmdListsCount; drawListIdx++) {
         const ImDrawList* dlist = drawData->CmdLists[drawListIdx];
@@ -682,7 +682,7 @@ bool ImGui::DrawFrame()
                             (drawCmd->ClipRect.z - fbPos.x), (drawCmd->ClipRect.w - fbPos.y));
             if (clipRect.x < displaySize.x && clipRect.y < displaySize.y && clipRect.z >= 0.0f && clipRect.w >= 0.0f) {
                 Recti scissor(int(clipRect.x), int(clipRect.y), int(clipRect.z), int(clipRect.w));
-                GfxImage img(PtrToInt<uint32>(drawCmd->TextureId));
+                GfxImageHandle img(PtrToInt<uint32>(drawCmd->TextureId));
                 if (prevImg != img) {
                     GfxDescriptorBindingDesc descriptorBindings[] = {
                         {

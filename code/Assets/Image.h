@@ -2,12 +2,13 @@
 
 #include "../Graphics/Graphics.h"
 
-// Used in AssetManager 'Load' function as extra load parameter for texture types
-inline constexpr uint32 kImageAssetType = MakeFourCC('I', 'M', 'A', 'G');
+struct AssetGroup;
 
-struct AssetImage
+inline constexpr uint32 IMAGE_ASSET_TYPE = MakeFourCC('I', 'M', 'A', 'G');
+
+struct GfxImage
 {
-    GfxImage handle;
+    GfxImageHandle handle;
     uint32 width;
     uint32 height;
     uint32 depth;
@@ -26,13 +27,19 @@ struct ImageLoadParams
 };
 
 API AssetHandleImage assetLoadImage(const char* path, const ImageLoadParams& params, AssetBarrier barrier = AssetBarrier());
-API GfxImage assetGetImage(AssetHandleImage imageHandle);
-API GfxImage assetGetWhiteImage1x1();
+API GfxImageHandle assetGetImage(AssetHandleImage imageHandle);
+API GfxImageHandle assetGetWhiteImage1x1();
 
 namespace _private
 {
     bool assetInitializeImageManager();
     void assetReleaseImageManager();
+}
+
+namespace Asset
+{
+    API AssetHandleImage LoadImage(const char* path, const ImageLoadParams& params, const AssetGroup& group);
+    API GfxImage* GetImage(AssetHandleImage handle);
 }
 
 

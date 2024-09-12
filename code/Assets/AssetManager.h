@@ -246,8 +246,8 @@ struct GfxBufferDesc;
 struct AssetData
 {
     void AddDependency(AssetHandle* bindToHandle, const AssetParams& params);
-    void AddGpuTextureObject(GfxImage* bindToImage, const GfxImageDesc& desc);
-    void AddGpuBufferObject(GfxBuffer* bindToBuffer, const GfxBufferDesc& desc);
+    void AddGpuTextureObject(GfxImageHandle* bindToImage, const GfxImageDesc& desc);
+    void AddGpuBufferObject(GfxBufferHandle* bindToBuffer, const GfxBufferDesc& desc);
     void SetObjData(const void* data, uint32 dataSize);
 
     const char* GetMetaValue(const char* key, const char* defaultValue) const;

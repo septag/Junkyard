@@ -784,7 +784,7 @@ struct GfxPipelineDesc
     GfxPrimitiveTopology inputAssemblyTopology;
     
     uint32 numDescriptorSetLayouts;
-    const GfxDescriptorSetLayout* descriptorSetLayouts;
+    const GfxDescriptorSetLayoutHandle* descriptorSetLayouts;
 
     uint32 numPushConstants;
     const GfxPushConstantDesc* pushConstants;
@@ -889,7 +889,7 @@ struct GfxRenderPassDesc
 
 struct GfxDescriptorBufferDesc
 {
-    GfxBuffer buffer;
+    GfxBufferHandle buffer;
     size_t    offset;
     size_t    size;
 };
@@ -903,8 +903,8 @@ struct GfxDescriptorBindingDesc
     union
     {
         GfxDescriptorBufferDesc buffer;
-        GfxImage                image;
-        const GfxImage*         imageArray;
+        GfxImageHandle                image;
+        const GfxImageHandle*         imageArray;
     };
 };
 
@@ -1031,26 +1031,26 @@ API bool gfxIsRenderingToSwapchain();
 
 //----------------------------------------------------------------------------------------------------------------------
 // Create/Destroy resources
-API GfxBuffer gfxCreateBuffer(const GfxBufferDesc& desc);
-API void      gfxDestroyBuffer(GfxBuffer buffer);
+API GfxBufferHandle gfxCreateBuffer(const GfxBufferDesc& desc);
+API void      gfxDestroyBuffer(GfxBufferHandle buffer);
 
-API GfxImage  gfxCreateImage(const GfxImageDesc& desc);
-API void      gfxDestroyImage(GfxImage image);
-API GfxImageInfo gfxGetImageInfo(GfxImage img);
+API GfxImageHandle  gfxCreateImage(const GfxImageDesc& desc);
+API void      gfxDestroyImage(GfxImageHandle image);
+API GfxImageInfo gfxGetImageInfo(GfxImageHandle img);
 
-API GfxPipeline gfxCreatePipeline(const GfxPipelineDesc& desc);
-API void        gfxDestroyPipeline(GfxPipeline pipeline);
+API GfxPipelineHandle gfxCreatePipeline(const GfxPipelineDesc& desc);
+API void        gfxDestroyPipeline(GfxPipelineHandle pipeline);
 
-API GfxRenderPass gfxCreateRenderPass(const GfxRenderPassDesc& desc);
-API void gfxDestroyRenderPass(GfxRenderPass renderPass);
+API GfxRenderPassHandle gfxCreateRenderPass(const GfxRenderPassDesc& desc);
+API void gfxDestroyRenderPass(GfxRenderPassHandle renderPass);
 
-API GfxDescriptorSetLayout gfxCreateDescriptorSetLayout(const GfxShader& shader, 
-                                                        const GfxDescriptorSetLayoutBinding* bindings, uint32 numBindings,
-                                                        bool isPushDescriptor);
-API void gfxDestroyDescriptorSetLayout(GfxDescriptorSetLayout layout);
+API GfxDescriptorSetLayoutHandle gfxCreateDescriptorSetLayout(const GfxShader& shader, 
+                                                              const GfxDescriptorSetLayoutBinding* bindings, uint32 numBindings,
+                                                              bool isPushDescriptor);
+API void gfxDestroyDescriptorSetLayout(GfxDescriptorSetLayoutHandle layout);
 
-API GfxDescriptorSet gfxCreateDescriptorSet(GfxDescriptorSetLayout layout);
-API void gfxDestroyDescriptorSet(GfxDescriptorSet dset);
+API GfxDescriptorSetHandle gfxCreateDescriptorSet(GfxDescriptorSetLayoutHandle layout);
+API void gfxDestroyDescriptorSet(GfxDescriptorSetHandle dset);
 
 //----------------------------------------------------------------------------------------------------------------------
 // CommandBuffer Begin/End
@@ -1058,26 +1058,26 @@ API bool gfxBeginCommandBuffer();
 API void gfxEndCommandBuffer();
 
 // Command functions
-API void gfxCmdUpdateBuffer(GfxBuffer buffer, const void* data, uint32 size);
-API void gfxCmdBindPipeline(GfxPipeline pipeline);
-API void gfxCmdBindDescriptorSets(GfxPipeline pipeline, uint32 numDescriptorSets, const GfxDescriptorSet* descriptorSets, 
+API void gfxCmdUpdateBuffer(GfxBufferHandle buffer, const void* data, uint32 size);
+API void gfxCmdBindPipeline(GfxPipelineHandle pipeline);
+API void gfxCmdBindDescriptorSets(GfxPipelineHandle pipeline, uint32 numDescriptorSets, const GfxDescriptorSetHandle* descriptorSets, 
                                   const uint32* dynOffsets = nullptr, uint32 dynOffsetCount = 0);
-API void gfxCmdBindVertexBuffers(uint32 firstBinding, uint32 numBindings, const GfxBuffer* vertexBuffers, const uint64* offsets);
-API void gfxCmdBindIndexBuffer(GfxBuffer indexBuffer, uint64 offset, GfxIndexType indexType);
-API void gfxCmdPushConstants(GfxPipeline pipeline, GfxShaderStage stage, const void* data, uint32 size);
+API void gfxCmdBindVertexBuffers(uint32 firstBinding, uint32 numBindings, const GfxBufferHandle* vertexBuffers, const uint64* offsets);
+API void gfxCmdBindIndexBuffer(GfxBufferHandle indexBuffer, uint64 offset, GfxIndexType indexType);
+API void gfxCmdPushConstants(GfxPipelineHandle pipeline, GfxShaderStage stage, const void* data, uint32 size);
 API void gfxCmdBeginSwapchainRenderPass(Color bgColor = COLOR_BLACK);
 API void gfxCmdEndSwapchainRenderPass();
 API void gfxCmdDraw(uint32 vertexCount, uint32 instanceCount, uint32 firstVertex, uint32 firstInstance);
 API void gfxCmdDrawIndexed(uint32 indexCount, uint32 instanceCount, uint32 firstIndex, uint32 vertexOffset, uint32 firstInstance);
 API void gfxCmdSetScissors(uint32 firstScissors, uint32 numScissors, const Recti* scissors, bool isSwapchain = false);
 API void gfxCmdSetViewports(uint32 firstViewport, uint32 numViewports, const GfxViewport* viewports, bool isSwapchain = false);
-API void gfxCmdPushDescriptorSet(GfxPipeline pipline, GfxPipelineBindPoint bindPoint, uint32 setIndex, 
+API void gfxCmdPushDescriptorSet(GfxPipelineHandle pipline, GfxPipelineBindPoint bindPoint, uint32 setIndex, 
                                  uint32 numDescriptorBindings, const GfxDescriptorBindingDesc* descriptorBindings);
 
 //----------------------------------------------------------------------------------------------------------------------
 // Update descriptor sets
 // Should not come in between RenderPasses or you will get UB
-API void gfxUpdateDescriptorSet(GfxDescriptorSet dset, uint32 numBindings, const GfxDescriptorBindingDesc* bindings);
+API void gfxUpdateDescriptorSet(GfxDescriptorSetHandle dset, uint32 numBindings, const GfxDescriptorBindingDesc* bindings);
 
 // VkCommandBuffer
 typedef struct VkCommandBuffer_T* VkCommandBuffer;
@@ -1147,9 +1147,9 @@ struct GfxCommandBuffer2
     void UpdateBuffer(GfxBuffer2& buffer, const void* data, size_t size) const;
 
     void BindPipeline(const GfxPipeline2& pipeline) const;
-    void BindDescriptorSets(const GfxPipelineLayout2& layout, uint32 numDescriptorSets, const GfxDescriptorSet* descriptorSets, 
+    void BindDescriptorSets(const GfxPipelineLayout2& layout, uint32 numDescriptorSets, const GfxDescriptorSetHandle* descriptorSets, 
                             const uint32* dynOffsets = nullptr, uint32 dynOffsetCount = 0) const;
-    void BindVertexBuffers(uint32 firstBinding, uint32 numBindings, const GfxBuffer* vertexBuffers, const uint64* offsets) const;
+    void BindVertexBuffers(uint32 firstBinding, uint32 numBindings, const GfxBufferHandle* vertexBuffers, const uint64* offsets) const;
     void BindIndexBuffer(const GfxBuffer2& indexBuffer, uint64 offset, GfxIndexType indexType) const;
 
     void PushConstants(const GfxPipeline2& pipeline, GfxShaderStage stage, const void* data, uint32 size) const;
@@ -1243,7 +1243,7 @@ struct GfxDynamicUniformBuffer
     void Flush(const GfxDyanmicUniformBufferRange* ranges, uint32 numRanges);
     void Flush(uint32 index, uint32 _count);
 
-    GfxBuffer buffer;
+    GfxBufferHandle buffer;
     uint8* bufferPtr;
     uint32 stride;
     uint32 count;
@@ -1261,7 +1261,7 @@ namespace _private
     void gfxReleaseImageManager();
     void gfxRecreatePipelinesWithNewShader(uint32 shaderHash, GfxShader* shader);
 
-    using GfxUpdateImageDescriptorCallback = void(*)(GfxDescriptorSet dset, uint32 numBindings, const GfxDescriptorBindingDesc* bindings);
+    using GfxUpdateImageDescriptorCallback = void(*)(GfxDescriptorSetHandle dset, uint32 numBindings, const GfxDescriptorBindingDesc* bindings);
     void gfxSetUpdateImageDescriptorCallback(GfxUpdateImageDescriptorCallback callback);
 
     // Begin/End frame (TODO: Take this to private namespace)

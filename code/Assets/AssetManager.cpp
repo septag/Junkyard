@@ -1155,7 +1155,7 @@ struct AssetDataInternal
 
     struct GpuBufferDesc
     {
-        RelativePtr<GfxBuffer> bindToBuffer;
+        RelativePtr<GfxBufferHandle> bindToBuffer;
         uint32 size;
         GfxBufferType type;
         GfxBufferUsage usage;
@@ -1164,7 +1164,7 @@ struct AssetDataInternal
 
     struct GpuTextureDesc
     {
-        RelativePtr<GfxImage> bindToImage;
+        RelativePtr<GfxImageHandle> bindToImage;
         uint32 width;
         uint32 height;
         uint32 numMips;
@@ -1708,9 +1708,9 @@ static void Asset::_CreateGpuObjectTask(uint32 groupIdx, void* userData)
                 .content = gpuObj->bufferDesc.content.Get()
             };
         
-            GfxBuffer buffer = gfxCreateBuffer(desc);
+            GfxBufferHandle buffer = gfxCreateBuffer(desc);
             if (buffer.IsValid()) {
-                GfxBuffer* targetBuffer = gpuObj->bufferDesc.bindToBuffer.Get();
+                GfxBufferHandle* targetBuffer = gpuObj->bufferDesc.bindToBuffer.Get();
                 *targetBuffer = buffer;
             }
 
@@ -1734,9 +1734,9 @@ static void Asset::_CreateGpuObjectTask(uint32 groupIdx, void* userData)
                 .mipOffsets = gpuObj->textureDesc.mipOffsets.Get()
             };
 
-            GfxImage image = gfxCreateImage(desc);
+            GfxImageHandle image = gfxCreateImage(desc);
             if (image.IsValid()) {
-                GfxImage* targetImage = gpuObj->textureDesc.bindToImage.Get();
+                GfxImageHandle* targetImage = gpuObj->textureDesc.bindToImage.Get();
                 *targetImage = image;
             }
 
@@ -2237,14 +2237,14 @@ void AssetData::AddDependency(AssetHandle* bindToHandle, const AssetParams& para
     ++mData->numDependencies;
 }
 
-void AssetData::AddGpuTextureObject(GfxImage* bindToImage, const GfxImageDesc& desc)
+void AssetData::AddGpuTextureObject(GfxImageHandle* bindToImage, const GfxImageDesc& desc)
 {
     ASSERT_MSG(!mData->objData.IsNull(), "You must SetObjData before adding texture objects");
 
     AssetDataInternal::GpuObject* gpuObj = Mem::AllocZeroTyped<AssetDataInternal::GpuObject>(1, mAlloc);
 
     gpuObj->type = AssetDataInternal::GpuObjectType::Texture;
-    gpuObj->textureDesc.bindToImage = Asset::_TranslatePointer<GfxImage>(bindToImage, mOrigObjPtr, mData->objData.Get());
+    gpuObj->textureDesc.bindToImage = Asset::_TranslatePointer<GfxImageHandle>(bindToImage, mOrigObjPtr, mData->objData.Get());
     gpuObj->textureDesc.width = desc.width;
     gpuObj->textureDesc.height = desc.height;
     gpuObj->textureDesc.numMips = desc.numMips;
@@ -2271,14 +2271,14 @@ void AssetData::AddGpuTextureObject(GfxImage* bindToImage, const GfxImageDesc& d
     ++mData->numGpuObjects;
 }
 
-void AssetData::AddGpuBufferObject(GfxBuffer* bindToBuffer, const GfxBufferDesc& desc)
+void AssetData::AddGpuBufferObject(GfxBufferHandle* bindToBuffer, const GfxBufferDesc& desc)
 {
     ASSERT_MSG(!mData->objData.IsNull(), "You must SetObjData before adding buffer objects");
 
     AssetDataInternal::GpuObject* gpuObj = Mem::AllocZeroTyped<AssetDataInternal::GpuObject>(1, mAlloc);
 
     gpuObj->type = AssetDataInternal::GpuObjectType::Buffer;
-    gpuObj->bufferDesc.bindToBuffer = Asset::_TranslatePointer<GfxBuffer>(bindToBuffer, mOrigObjPtr, mData->objData.Get());
+    gpuObj->bufferDesc.bindToBuffer = Asset::_TranslatePointer<GfxBufferHandle>(bindToBuffer, mOrigObjPtr, mData->objData.Get());
     gpuObj->bufferDesc.size = desc.size;
     gpuObj->bufferDesc.usage = desc.usage;
     ASSERT(desc.content);

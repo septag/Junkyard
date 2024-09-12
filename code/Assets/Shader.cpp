@@ -450,15 +450,15 @@ bool AssetShaderImpl::Bake(const AssetParams& params, AssetData* data, const Spa
     #endif
 }
 
-AssetHandleShader Asset::LoadShader(const char* path, const ShaderLoadParams& desc, const AssetGroup& group)
+AssetHandleShader Asset::LoadShader(const char* path, const ShaderLoadParams& params, const AssetGroup& group)
 {
-    AssetParams params {
+    AssetParams assetParams {
         .typeId = SHADER_ASSET_TYPE,
         .path = path,
-        .typeSpecificParams = const_cast<ShaderLoadParams*>(&desc)
+        .typeSpecificParams = const_cast<ShaderLoadParams*>(&params)
     };
 
-    return (AssetHandleShader)group.AddToLoadQueue(params);
+    return (AssetHandleShader)group.AddToLoadQueue(assetParams);
 }
 
 GfxShader* Asset::GetShader(AssetHandleShader shaderHandle)

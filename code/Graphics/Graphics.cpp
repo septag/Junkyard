@@ -158,7 +158,7 @@ struct GfxSwapchain
     VkExtent2D extent;
     VkFormat colorFormat;
     VkRenderPass renderPass;
-    GfxImage depthImage;
+    GfxImageHandle depthImage;
 }; 
 
 struct GfxBufferData
@@ -223,7 +223,7 @@ struct GfxPipelineLayoutData
 {
     uint32                     hash;
     uint32                     numDescriptorSetLayouts;
-    GfxDescriptorSetLayout     descriptorSetLayouts[kMaxDescriptorSetLayoutPerPipeline];
+    GfxDescriptorSetLayoutHandle     descriptorSetLayouts[kMaxDescriptorSetLayoutPerPipeline];
     VkPipelineLayout           layout;
     uint32                     refCount;        // number of cached items referenced by pipeline objects
 
@@ -236,7 +236,7 @@ struct GfxPipelineLayoutData
 struct GfxPipelineData
 {
     VkPipeline pipeline;
-    GfxPipelineLayout pipelineLayout;
+    GfxPipelineLayoutHandle pipelineLayout;
     VkGraphicsPipelineCreateInfo* gfxCreateInfo;    // Keep this to be able recreate pipelines anytime
     uint32 shaderHash;
     uint32 numShaderParams;
@@ -250,7 +250,7 @@ struct GfxPipelineData
 
 struct GfxDescriptorSetData
 {
-    GfxDescriptorSetLayout layout;
+    GfxDescriptorSetLayoutHandle layout;
     VkDescriptorSet descriptorSet;
 
 #if !CONFIG_FINAL_BUILD
@@ -286,12 +286,12 @@ struct GfxObjectPools
 
     ReadWriteMutex locks[POOL_COUNT];
 
-    HandlePool<GfxBuffer, GfxBufferData> buffers;
-    HandlePool<GfxImage, GfxImageData> images;
-    HandlePool<GfxPipelineLayout, GfxPipelineLayoutData> pipelineLayouts;
-    HandlePool<GfxPipeline, GfxPipelineData> pipelines;
-    HandlePool<GfxDescriptorSet, GfxDescriptorSetData> descriptorSets;
-    HandlePool<GfxDescriptorSetLayout, GfxDescriptorSetLayoutData> descriptorSetLayouts;
+    HandlePool<GfxBufferHandle, GfxBufferData> buffers;
+    HandlePool<GfxImageHandle, GfxImageData> images;
+    HandlePool<GfxPipelineLayoutHandle, GfxPipelineLayoutData> pipelineLayouts;
+    HandlePool<GfxPipelineHandle, GfxPipelineData> pipelines;
+    HandlePool<GfxDescriptorSetHandle, GfxDescriptorSetData> descriptorSets;
+    HandlePool<GfxDescriptorSetLayoutHandle, GfxDescriptorSetLayoutData> descriptorSetLayouts;
 
     void Initialize();
     void Release();
@@ -396,7 +396,7 @@ struct GfxContext
     
     SpinLockMutex pendingCmdBuffersLock;
     StaticArray<VkCommandBuffer, 32> pendingCmdBuffers;
-    HashTable<Array<GfxPipeline>> shaderPipelinesTable;
+    HashTable<Array<GfxPipelineHandle>> shaderPipelinesTable;
     Array<GfxDeferredCommand> deferredCmds;
 
     size_t initHeapStart;
@@ -1243,32 +1243,32 @@ void GfxObjectPools::Initialize()
     MemAllocator* initHeap = Engine::GetInitHeap();
 
     {
-        size_t poolSize = HandlePool<GfxBuffer, GfxBufferData>::GetMemoryRequirement(_limits::kGfxMaxBuffers);
+        size_t poolSize = HandlePool<GfxBufferHandle, GfxBufferData>::GetMemoryRequirement(_limits::kGfxMaxBuffers);
         buffers.Reserve(_limits::kGfxMaxBuffers, Mem::Alloc(poolSize, initHeap), poolSize);
     }
 
     {
-        size_t poolSize = HandlePool<GfxImage, GfxImageData>::GetMemoryRequirement(_limits::kGfxMaxImages);
+        size_t poolSize = HandlePool<GfxImageHandle, GfxImageData>::GetMemoryRequirement(_limits::kGfxMaxImages);
         images.Reserve(_limits::kGfxMaxImages, Mem::Alloc(poolSize, initHeap), poolSize);
     }
 
     {
-        size_t poolSize = HandlePool<GfxDescriptorSet, GfxDescriptorSetData>::GetMemoryRequirement(_limits::kGfxMaxDescriptorSets);
+        size_t poolSize = HandlePool<GfxDescriptorSetHandle, GfxDescriptorSetData>::GetMemoryRequirement(_limits::kGfxMaxDescriptorSets);
         descriptorSets.Reserve(_limits::kGfxMaxDescriptorSets, Mem::Alloc(poolSize, initHeap), poolSize);
     }
 
     {
-        size_t poolSize = HandlePool<GfxDescriptorSetLayout, GfxDescriptorSetLayoutData>::GetMemoryRequirement(_limits::kGfxMaxDescriptorSetLayouts);
+        size_t poolSize = HandlePool<GfxDescriptorSetLayoutHandle, GfxDescriptorSetLayoutData>::GetMemoryRequirement(_limits::kGfxMaxDescriptorSetLayouts);
         descriptorSetLayouts.Reserve(_limits::kGfxMaxDescriptorSetLayouts, Mem::Alloc(poolSize, initHeap), poolSize);
     }
 
     {
-        size_t poolSize = HandlePool<GfxPipeline, GfxPipelineData>::GetMemoryRequirement(_limits::kGfxMaxPipelines);
+        size_t poolSize = HandlePool<GfxPipelineHandle, GfxPipelineData>::GetMemoryRequirement(_limits::kGfxMaxPipelines);
         pipelines.Reserve(_limits::kGfxMaxPipelines, Mem::Alloc(poolSize, initHeap), poolSize);
     }
 
     {
-        size_t poolSize = HandlePool<GfxPipelineLayout, GfxPipelineLayoutData>::GetMemoryRequirement(_limits::kGfxMaxPipelineLayouts);
+        size_t poolSize = HandlePool<GfxPipelineLayoutHandle, GfxPipelineLayoutData>::GetMemoryRequirement(_limits::kGfxMaxPipelineLayouts);
         pipelineLayouts.Reserve(_limits::kGfxMaxPipelineLayouts, Mem::Alloc(poolSize, initHeap), poolSize);
     }
 }
@@ -1809,7 +1809,7 @@ static void gfxCmdPipelineBarrier(VkPipelineStageFlags srcStageMask,
     }
 }
 
-void gfxCmdUpdateBuffer(GfxBuffer buffer, const void* data, uint32 size)
+void gfxCmdUpdateBuffer(GfxBufferHandle buffer, const void* data, uint32 size)
 {
     ASSERT(data);
     ASSERT(size);
@@ -1844,7 +1844,7 @@ void gfxCmdUpdateBuffer(GfxBuffer buffer, const void* data, uint32 size)
     }
 }
 
-void gfxCmdPushConstants(GfxPipeline pipeline, GfxShaderStage stage, const void* data, uint32 size)
+void gfxCmdPushConstants(GfxPipelineHandle pipeline, GfxShaderStage stage, const void* data, uint32 size)
 {
     VkPipelineLayout pipLayoutVk;
     VkCommandBuffer cmdBufferVk = gCmdBufferThreadData.curCmdBuffer;
@@ -1908,7 +1908,7 @@ void gfxCmdEndSwapchainRenderPass()
     }
 }
 
-void gfxCmdBindDescriptorSets(GfxPipeline pipeline, uint32 numDescriptorSets, const GfxDescriptorSet* descriptorSets, 
+void gfxCmdBindDescriptorSets(GfxPipelineHandle pipeline, uint32 numDescriptorSets, const GfxDescriptorSetHandle* descriptorSets, 
                               const uint32* dynOffsets, uint32 dynOffsetCount)
 {
     ASSERT(numDescriptorSets > 0);
@@ -1936,7 +1936,7 @@ void gfxCmdBindDescriptorSets(GfxPipeline pipeline, uint32 numDescriptorSets, co
                             0, numDescriptorSets, descriptorSetsVk, dynOffsetCount, dynOffsets);
 }
 
-void gfxCmdBindPipeline(GfxPipeline pipeline)
+void gfxCmdBindPipeline(GfxPipelineHandle pipeline)
 {
     VkPipeline pipVk;
     VkCommandBuffer cmdBufferVk = gCmdBufferThreadData.curCmdBuffer;
@@ -2015,7 +2015,7 @@ void gfxCmdDrawIndexed(uint32 indexCount, uint32 instanceCount, uint32 firstInde
     vkCmdDrawIndexed(cmdBufferVk, indexCount, instanceCount, firstIndex, vertexOffset, firstInstance);
 }
 
-void gfxCmdBindVertexBuffers(uint32 firstBinding, uint32 numBindings, const GfxBuffer* vertexBuffers, const uint64* offsets)
+void gfxCmdBindVertexBuffers(uint32 firstBinding, uint32 numBindings, const GfxBufferHandle* vertexBuffers, const uint64* offsets)
 {
     static_assert(sizeof(uint64) == sizeof(VkDeviceSize));
 
@@ -2036,7 +2036,7 @@ void gfxCmdBindVertexBuffers(uint32 firstBinding, uint32 numBindings, const GfxB
     vkCmdBindVertexBuffers(cmdBufferVk, firstBinding, numBindings, buffersVk, reinterpret_cast<const VkDeviceSize*>(offsets));
 }
 
-void gfxCmdBindIndexBuffer(GfxBuffer indexBuffer, uint64 offset, GfxIndexType indexType)
+void gfxCmdBindIndexBuffer(GfxBufferHandle indexBuffer, uint64 offset, GfxIndexType indexType)
 {
     VkCommandBuffer cmdBufferVk = gCmdBufferThreadData.curCmdBuffer;
     ASSERT_MSG(cmdBufferVk, "CmdXXX functions must come between Begin/End CommandBuffer calls");
@@ -2302,7 +2302,7 @@ static GfxSwapchain gfxCreateSwapchain(VkSurfaceKHR surface, uint16 width, uint1
 
     VkFormat depthFormat = gfxFindDepthFormat();
     if (depth) {
-        GfxImage depthImage = gfxCreateImage(GfxImageDesc {
+        GfxImageHandle depthImage = gfxCreateImage(GfxImageDesc {
             .width = uint32(extent.width),
             .height = uint32(extent.height),
             .format = static_cast<GfxFormat>(depthFormat),
@@ -2439,8 +2439,8 @@ static inline VkPipelineShaderStageCreateInfo gfxCreateShaderStageVk(const GfxSh
     return createInfo;
 }
 
-static GfxPipelineLayout gfxCreatePipelineLayout(const GfxShader& shader,
-                                                 const GfxDescriptorSetLayout* descriptorSetLayouts,
+static GfxPipelineLayoutHandle gfxCreatePipelineLayout(const GfxShader& shader,
+                                                 const GfxDescriptorSetLayoutHandle* descriptorSetLayouts,
                                                  uint32 numDescriptorSetLayouts,
                                                  const GfxPushConstantDesc* pushConstants,
                                                  uint32 numPushConstants,
@@ -2451,12 +2451,12 @@ static GfxPipelineLayout gfxCreatePipelineLayout(const GfxShader& shader,
     // hash the layout bindings and look in cache
     // TODO: cleanup the data for pipeline layout. maybe we can also remove the bindings (?)
     HashMurmur32Incremental hasher(0x5eed1);
-    uint32 hash = hasher.Add<GfxDescriptorSetLayout>(descriptorSetLayouts, numDescriptorSetLayouts)
+    uint32 hash = hasher.Add<GfxDescriptorSetLayoutHandle>(descriptorSetLayouts, numDescriptorSetLayouts)
                         .Add<GfxPushConstantDesc>(pushConstants, numPushConstants)
                         .Hash();
 
     gVk.pools.locks[GfxObjectPools::PIPELINE_LAYOUTS].EnterRead();
-    if (GfxPipelineLayout pipLayout = gVk.pools.pipelineLayouts.FindIf(
+    if (GfxPipelineLayoutHandle pipLayout = gVk.pools.pipelineLayouts.FindIf(
         [hash](const GfxPipelineLayoutData& item)->bool { return item.hash == hash; }); pipLayout.IsValid())
     {
         GfxPipelineLayoutData& item = gVk.pools.pipelineLayouts.Data(pipLayout);
@@ -2510,7 +2510,7 @@ static GfxPipelineLayout gfxCreatePipelineLayout(const GfxShader& shader,
         
         if (VK_FAILED(vkCreatePipelineLayout(gVk.device, &pipelineLayoutInfo, &gVk.allocVk, &pipelineLayoutVk))) {
             LOG_ERROR("Gfx: Failed to create pipeline layout");
-            return GfxPipelineLayout();
+            return GfxPipelineLayoutHandle();
         }
         
         GFX_LOCK_POOL_TEMP(PIPELINE_LAYOUTS);
@@ -2537,7 +2537,7 @@ static GfxPipelineLayout gfxCreatePipelineLayout(const GfxShader& shader,
     }
 }
 
-static void gfxDestroyPipelineLayout(GfxPipelineLayout layout)
+static void gfxDestroyPipelineLayout(GfxPipelineLayoutHandle layout)
 {
     GfxPipelineLayoutData& layoutData = gVk.pools.pipelineLayouts.Data(layout);
     ASSERT(layoutData.refCount > 0);
@@ -2766,7 +2766,7 @@ static VkGraphicsPipelineCreateInfo* gfxDuplicateGraphicsPipelineCreateInfo(cons
     return pipInfoNew;
 }
 
-GfxPipeline gfxCreatePipeline(const GfxPipelineDesc& desc)
+GfxPipelineHandle gfxCreatePipeline(const GfxPipelineDesc& desc)
 {
     MemTempAllocator tempAlloc;
 
@@ -2778,7 +2778,7 @@ GfxPipeline gfxCreatePipeline(const GfxPipelineDesc& desc)
     const GfxShaderStageInfo* fsInfo = gfxShaderGetStage(*shaderInfo, GfxShaderStage::Fragment);
     if (!vsInfo || !fsInfo) {
         LOG_ERROR("Gfx: Pipeline failed. Shader doesn't have vs/fs stages: %s", shaderInfo->name);
-        return GfxPipeline();
+        return GfxPipelineHandle();
     }
 
     VkPipelineShaderStageCreateInfo shaderStages[] = {
@@ -2833,7 +2833,7 @@ GfxPipeline gfxCreatePipeline(const GfxPipelineDesc& desc)
     };
 
     VkPipelineLayout pipLayout = nullptr;
-    GfxPipelineLayout pipelineLayout = gfxCreatePipelineLayout(*shaderInfo, 
+    GfxPipelineLayoutHandle pipelineLayout = gfxCreatePipelineLayout(*shaderInfo, 
                                                                desc.descriptorSetLayouts, desc.numDescriptorSetLayouts, 
                                                                desc.pushConstants, desc.numPushConstants, &pipLayout);
     ASSERT_ALWAYS(pipelineLayout.IsValid(), "Gfx: Create pipeline layout failed");
@@ -2960,7 +2960,7 @@ GfxPipeline gfxCreatePipeline(const GfxPipelineDesc& desc)
     VkPipeline pipeline;
     if (VK_FAILED(vkCreateGraphicsPipelines(gVk.device, VK_NULL_HANDLE, 1, &pipelineInfo, &gVk.allocVk, &pipeline))) {
         LOG_ERROR("Gfx: Creating graphics pipeline failed");
-        return GfxPipeline();
+        return GfxPipelineHandle();
     }
 
     if (gVk.hasPipelineExecutableProperties)
@@ -2983,7 +2983,7 @@ GfxPipeline gfxCreatePipeline(const GfxPipelineDesc& desc)
         pipData.numStackframes = Debug::CaptureStacktrace(pipData.stackframes, (uint16)CountOf(pipData.stackframes), 2);
     #endif
     
-    GfxPipeline pip;
+    GfxPipelineHandle pip;
     {
         GFX_LOCK_POOL_TEMP(PIPELINES);
         pip = gVk.pools.pipelines.Add(pipData);
@@ -2996,7 +2996,7 @@ GfxPipeline gfxCreatePipeline(const GfxPipelineDesc& desc)
             gVk.shaderPipelinesTable.GetMutable(index).Push(pip);
         }
         else {
-            Array<GfxPipeline>* arr = PLACEMENT_NEW(gVk.shaderPipelinesTable.Add(shaderInfo->hash), Array<GfxPipeline>);
+            Array<GfxPipelineHandle>* arr = PLACEMENT_NEW(gVk.shaderPipelinesTable.Add(shaderInfo->hash), Array<GfxPipelineHandle>);
             arr->Push(pip);
         }
     }
@@ -3004,7 +3004,7 @@ GfxPipeline gfxCreatePipeline(const GfxPipelineDesc& desc)
     return pip;   
 }
 
-void gfxDestroyPipeline(GfxPipeline pipeline)
+void gfxDestroyPipeline(GfxPipelineHandle pipeline)
 {
     if (!pipeline.IsValid())
         return;
@@ -3015,8 +3015,8 @@ void gfxDestroyPipeline(GfxPipeline pipeline)
         MutexScope pipTableMtx(gVk.shaderPipelinesTableMtx);
         uint32 index = gVk.shaderPipelinesTable.Find(pipData.shaderHash);
         if (index != UINT32_MAX) {
-            Array<GfxPipeline>& pipList = gVk.shaderPipelinesTable.GetMutable(index);
-            uint32 pipIdx = pipList.FindIf([pipeline](const GfxPipeline& pip)->bool { return pip == pipeline; });
+            Array<GfxPipelineHandle>& pipList = gVk.shaderPipelinesTable.GetMutable(index);
+            uint32 pipIdx = pipList.FindIf([pipeline](const GfxPipelineHandle& pip)->bool { return pip == pipeline; });
             if (pipIdx != UINT32_MAX)
                 pipList.RemoveAndSwap(pipIdx);
             if (pipList.Count() == 0) {
@@ -3045,7 +3045,7 @@ void _private::gfxRecreatePipelinesWithNewShader(uint32 shaderHash, GfxShader* s
     MutexScope mtx(gVk.shaderPipelinesTableMtx);
     uint32 index = gVk.shaderPipelinesTable.Find(shaderHash);
     if (index != UINT32_MAX) {
-        const Array<GfxPipeline>& pipelineList = gVk.shaderPipelinesTable.Get(index);
+        const Array<GfxPipelineHandle>& pipelineList = gVk.shaderPipelinesTable.Get(index);
 
         MemTempAllocator tmpAlloc;
         GfxPipelineData* pipDatas;
@@ -3110,7 +3110,7 @@ void _private::gfxRecreatePipelinesWithNewShader(uint32 shaderHash, GfxShader* s
 //    ╚═════╝  ╚═════╝ ╚═╝     ╚═╝     ╚══════╝╚═╝  ╚═╝
 
 // https://gpuopen-librariesandsdks.github.io/VulkanMemoryAllocator/html/usage_patterns.html#usage_patterns_advanced_data_uploading
-GfxBuffer gfxCreateBuffer(const GfxBufferDesc& desc)
+GfxBufferHandle gfxCreateBuffer(const GfxBufferDesc& desc)
 {
     ASSERT(desc.size);
 
@@ -3161,7 +3161,7 @@ GfxBuffer gfxCreateBuffer(const GfxBufferDesc& desc)
                         &bufferData.allocation, &allocInfo) != VK_SUCCESS)
     {
         ASSERT_MSG(0, "Create buffer failed");
-        return GfxBuffer();
+        return GfxBufferHandle();
     }
 
     vmaGetAllocationMemoryProperties(gVk.vma, bufferData.allocation, &bufferData.memFlags);
@@ -3190,7 +3190,7 @@ GfxBuffer gfxCreateBuffer(const GfxBufferDesc& desc)
             if (vmaCreateBuffer(gVk.vma, &stageBufferCreateInfo, &stageAllocCreateInfo, &stagingBuffer, &stagingAlloc, &allocInfo) != VK_SUCCESS) {
                 vmaDestroyBuffer(gVk.vma, bufferData.buffer, bufferData.allocation);
                 ASSERT_MSG(0, "Create staging buffer failed");
-                return GfxBuffer();
+                return GfxBufferHandle();
             }
 
             memcpy(allocInfo.pMappedData, desc.content, desc.size);
@@ -3233,7 +3233,7 @@ GfxBuffer gfxCreateBuffer(const GfxBufferDesc& desc)
             {
                 vmaDestroyBuffer(gVk.vma, bufferData.buffer, bufferData.allocation);
                 ASSERT_MSG(0, "Create staging buffer failed");
-                return GfxBuffer();
+                return GfxBufferHandle();
             }
 
             bufferData.mappedBuffer = allocInfo.pMappedData;
@@ -3255,7 +3255,7 @@ GfxBuffer gfxCreateBuffer(const GfxBufferDesc& desc)
     return gVk.pools.buffers.Add(bufferData);
 }
 
-void gfxDestroyBuffer(GfxBuffer buffer)
+void gfxDestroyBuffer(GfxBufferHandle buffer)
 {
     if (!buffer.IsValid())
         return;
@@ -3368,7 +3368,7 @@ static VkSampler gfxCreateSamplerVk(VkFilter minMagFilter, VkSamplerMipmapMode m
     return sampler;
 }
 
-GfxImage gfxCreateImage(const GfxImageDesc& desc)
+GfxImageHandle gfxCreateImage(const GfxImageDesc& desc)
 {
     GfxBufferUsage memUsage = desc.usage == GfxBufferUsage::Default ? GfxBufferUsage::Immutable : desc.usage;
     ASSERT_MSG(memUsage == GfxBufferUsage::Immutable, "Other usages are not supported");
@@ -3422,7 +3422,7 @@ GfxImage gfxCreateImage(const GfxImageDesc& desc)
     if (vmaCreateImage(gVk.vma, &imageCreateInfo, &allocCreateInfo, &imageData.image, &imageData.allocation, 
                        &allocInfo) != VK_SUCCESS) 
     {
-        return GfxImage();
+        return GfxImageHandle();
     }
 
     imageData.sizeBytes = allocInfo.size;
@@ -3477,7 +3477,7 @@ GfxImage gfxCreateImage(const GfxImageDesc& desc)
                 &stagingAlloc, &allocInfo) != VK_SUCCESS) 
             {
                 vmaDestroyImage(gVk.vma, imageData.image, imageData.allocation);
-                return GfxImage();
+                return GfxImageHandle();
             }
 
             void* stagingData = nullptr;
@@ -3577,7 +3577,7 @@ GfxImage gfxCreateImage(const GfxImageDesc& desc)
     return gVk.pools.images.Add(imageData);
 }
 
-void gfxDestroyImage(GfxImage image)
+void gfxDestroyImage(GfxImageHandle image)
 {
     if (!image.IsValid())
         return;
@@ -3605,8 +3605,8 @@ void gfxDestroyImage(GfxImage image)
 //    ██║  ██║██╔══╝  ╚════██║██║     ██╔══██╗██║██╔═══╝    ██║   ██║   ██║██╔══██╗    ╚════██║██╔══╝     ██║   
 //    ██████╔╝███████╗███████║╚██████╗██║  ██║██║██║        ██║   ╚██████╔╝██║  ██║    ███████║███████╗   ██║   
 //    ╚═════╝ ╚══════╝╚══════╝ ╚═════╝╚═╝  ╚═╝╚═╝╚═╝        ╚═╝    ╚═════╝ ╚═╝  ╚═╝    ╚══════╝╚══════╝   ╚═╝   
-GfxDescriptorSetLayout gfxCreateDescriptorSetLayout(const GfxShader& shader, const GfxDescriptorSetLayoutBinding* bindings, 
-                                                    uint32 numBindings, bool isPushDescriptor)
+GfxDescriptorSetLayoutHandle gfxCreateDescriptorSetLayout(const GfxShader& shader, const GfxDescriptorSetLayoutBinding* bindings, 
+                                                          uint32 numBindings, bool isPushDescriptor)
 {
     ASSERT(numBindings);
     ASSERT(bindings);
@@ -3641,7 +3641,7 @@ GfxDescriptorSetLayout gfxCreateDescriptorSetLayout(const GfxShader& shader, con
                         .Hash();
 
     gVk.pools.locks[GfxObjectPools::DESCRIPTOR_SET_LAYOUTS].EnterRead();
-    if (GfxDescriptorSetLayout layout = gVk.pools.descriptorSetLayouts.FindIf(
+    if (GfxDescriptorSetLayoutHandle layout = gVk.pools.descriptorSetLayouts.FindIf(
         [hash](const GfxDescriptorSetLayoutData& item)->bool { return item.hash == hash; }); layout.IsValid())
     {
         GfxDescriptorSetLayoutData& item = gVk.pools.descriptorSetLayouts.Data(layout);
@@ -3678,7 +3678,7 @@ GfxDescriptorSetLayout gfxCreateDescriptorSetLayout(const GfxShader& shader, con
         VkDescriptorSetLayout dsLayout;
         if (vkCreateDescriptorSetLayout(gVk.device, &layoutCreateInfo, &gVk.allocVk, &dsLayout) != VK_SUCCESS) {
             LOG_ERROR("Gfx: CreateDescriptorSetLayout failed");
-            return GfxDescriptorSetLayout();
+            return GfxDescriptorSetLayoutHandle();
         }
 
         // Copy layout bindings (for validation and lazy binding) and add descriptor set layout as Gfx object
@@ -3713,7 +3713,7 @@ GfxDescriptorSetLayout gfxCreateDescriptorSetLayout(const GfxShader& shader, con
 
 }
 
-void gfxDestroyDescriptorSetLayout(GfxDescriptorSetLayout layout)
+void gfxDestroyDescriptorSetLayout(GfxDescriptorSetLayoutHandle layout)
 {
     if (!layout.IsValid())
         return;
@@ -3732,7 +3732,7 @@ void gfxDestroyDescriptorSetLayout(GfxDescriptorSetLayout layout)
     }
 }
 
-GfxDescriptorSet gfxCreateDescriptorSet(GfxDescriptorSetLayout layout)
+GfxDescriptorSetHandle gfxCreateDescriptorSet(GfxDescriptorSetLayoutHandle layout)
 {
     MemTempAllocator tempAlloc;
     VkDescriptorSetLayout vkLayout;
@@ -3781,7 +3781,7 @@ GfxDescriptorSet gfxCreateDescriptorSet(GfxDescriptorSetLayout layout)
     GfxDescriptorSetData descriptorSetData { .layout = layout };
     if (vkAllocateDescriptorSets(gVk.device, &allocInfo, &descriptorSetData.descriptorSet) != VK_SUCCESS) {
         LOG_ERROR("Gfx: AllocateDescriptorSets failed");
-        return GfxDescriptorSet();
+        return GfxDescriptorSetHandle();
     }
 
     #if !CONFIG_FINAL_BUILD
@@ -3793,7 +3793,7 @@ GfxDescriptorSet gfxCreateDescriptorSet(GfxDescriptorSetLayout layout)
     return gVk.pools.descriptorSets.Add(descriptorSetData);
 }
 
-void gfxDestroyDescriptorSet(GfxDescriptorSet dset)
+void gfxDestroyDescriptorSet(GfxDescriptorSetHandle dset)
 {
     if (!dset.IsValid())
         return;
@@ -3831,7 +3831,7 @@ void gfxDestroyDescriptorSet(GfxDescriptorSet dset)
     gVk.pools.descriptorSets.Remove(dset);
 }
 
-void gfxCmdPushDescriptorSet(GfxPipeline pipeline, GfxPipelineBindPoint bindPoint, uint32 setIndex, uint32 numDescriptorBindings, const GfxDescriptorBindingDesc* descriptorBindings)
+void gfxCmdPushDescriptorSet(GfxPipelineHandle pipeline, GfxPipelineBindPoint bindPoint, uint32 setIndex, uint32 numDescriptorBindings, const GfxDescriptorBindingDesc* descriptorBindings)
 {
     ASSERT_ALWAYS(gVk.hasPushDescriptor, "VK_KHR_push_descriptor extension is not supported for this function");
     ASSERT(numDescriptorBindings);
@@ -3969,7 +3969,7 @@ void gfxCmdPushDescriptorSet(GfxPipeline pipeline, GfxPipelineBindPoint bindPoin
     vkCmdPushDescriptorSetKHR(cmdBufferVk, VkPipelineBindPoint(bindPoint), pipLayout, setIndex, numDescriptorBindings, dsWrites);
 }
 
-void gfxUpdateDescriptorSet(GfxDescriptorSet dset, uint32 numBindings, const GfxDescriptorBindingDesc* bindings)
+void gfxUpdateDescriptorSet(GfxDescriptorSetHandle dset, uint32 numBindings, const GfxDescriptorBindingDesc* bindings)
 {
     auto findDescriptorBindingByNameHash = 
         [](uint32 nameHash, uint32 numBindings, const GfxDescriptorSetLayoutData::Binding* bindings)->uint32 
@@ -4174,7 +4174,7 @@ void GfxObjectPools::DetectAndReleaseLeaks()
     if (gVk.pools.buffers.Count()) {
         LOG_WARNING("Gfx: Total %u buffers are not released. cleaning up...", gVk.pools.buffers.Count());
         for (uint32 i = 0; i < gVk.pools.buffers.Count(); i++) {
-            GfxBuffer handle = gVk.pools.buffers.HandleAt(i);
+            GfxBufferHandle handle = gVk.pools.buffers.HandleAt(i);
             #if !CONFIG_FINAL_BUILD
                 if (trackResourceLeaks) {
                     const GfxBufferData& bufferData = gVk.pools.buffers.Data(handle);
@@ -4188,7 +4188,7 @@ void GfxObjectPools::DetectAndReleaseLeaks()
     if (gVk.pools.images.Count()) {
         LOG_WARNING("Gfx: Total %u images are not released. cleaning up...", gVk.pools.images.Count());
         for (uint32 i = 0; i < gVk.pools.images.Count(); i++) {
-            GfxImage handle = gVk.pools.images.HandleAt(i);
+            GfxImageHandle handle = gVk.pools.images.HandleAt(i);
             #if !CONFIG_FINAL_BUILD
                 if (trackResourceLeaks) {
                     const GfxImageData& imageData = gVk.pools.images.Data(handle);
@@ -4203,7 +4203,7 @@ void GfxObjectPools::DetectAndReleaseLeaks()
     if (gVk.pools.pipelineLayouts.Count()) {
         LOG_WARNING("Gfx: Total %u pipeline layout are not released. cleaning up...", gVk.pools.pipelineLayouts.Count());
         for (uint32 i = 0; i < gVk.pools.pipelineLayouts.Count(); i++) {
-            GfxPipelineLayout handle = gVk.pools.pipelineLayouts.HandleAt(i);
+            GfxPipelineLayoutHandle handle = gVk.pools.pipelineLayouts.HandleAt(i);
             #if !CONFIG_FINAL_BUILD
                 if (trackResourceLeaks) {
                     const GfxPipelineLayoutData& pipLayout = gVk.pools.pipelineLayouts.Data(handle);
@@ -4218,7 +4218,7 @@ void GfxObjectPools::DetectAndReleaseLeaks()
     if (gVk.pools.pipelines.Count()) {
         LOG_WARNING("Gfx: Total %u pipelines are not released. cleaning up...", gVk.pools.pipelines.Count());
         for (uint32 i = 0; i < gVk.pools.pipelines.Count(); i++) {
-            GfxPipeline handle = gVk.pools.pipelines.HandleAt(i);
+            GfxPipelineHandle handle = gVk.pools.pipelines.HandleAt(i);
             #if !CONFIG_FINAL_BUILD
                 if (trackResourceLeaks) {
                     const GfxPipelineData& pipData = gVk.pools.pipelines.Data(handle);
@@ -4232,7 +4232,7 @@ void GfxObjectPools::DetectAndReleaseLeaks()
     if (gVk.pools.descriptorSets.Count()) {
         LOG_WARNING("Gfx: Total %u descriptor sets are not released. cleaning up...", gVk.pools.descriptorSets.Count());
         for (uint32 i = 0; i < gVk.pools.descriptorSets.Count(); i++) {
-            GfxDescriptorSet handle = gVk.pools.descriptorSets.HandleAt(i);
+            GfxDescriptorSetHandle handle = gVk.pools.descriptorSets.HandleAt(i);
             #if !CONFIG_FINAL_BUILD
                 if (trackResourceLeaks) {
                     const GfxDescriptorSetData& dsData = gVk.pools.descriptorSets.Data(handle);
@@ -4247,7 +4247,7 @@ void GfxObjectPools::DetectAndReleaseLeaks()
     if (gVk.pools.descriptorSetLayouts.Count()) {
         LOG_WARNING("Gfx: Total %u descriptor sets layouts are not released. cleaning up...", gVk.pools.descriptorSetLayouts.Count());
         for (uint32 i = 0; i < gVk.pools.descriptorSetLayouts.Count(); i++) {
-            GfxDescriptorSetLayout handle = gVk.pools.descriptorSetLayouts.HandleAt(i);
+            GfxDescriptorSetLayoutHandle handle = gVk.pools.descriptorSetLayouts.HandleAt(i);
             #if !CONFIG_FINAL_BUILD
                 if (trackResourceLeaks) {
                     const GfxDescriptorSetLayoutData& dsLayoutData = gVk.pools.descriptorSetLayouts.Data(handle);
@@ -4685,7 +4685,7 @@ const GfxPhysicalDeviceProperties& gfxGetPhysicalDeviceProperties()
     return props;
 }
 
-GfxImageInfo gfxGetImageInfo(GfxImage img)
+GfxImageInfo gfxGetImageInfo(GfxImageHandle img)
 {
     GFX_LOCK_POOL_TEMP(IMAGES);
     const GfxImageData& data = gVk.pools.images.Data(img);
@@ -4711,7 +4711,7 @@ GfxDynamicUniformBuffer gfxCreateDynamicUniformBuffer(uint32 count, uint32 strid
 
     stride = AlignValue(stride, uint32(gVk.deviceProps.limits.minUniformBufferOffsetAlignment));
 
-    GfxBuffer buffer = gfxCreateBuffer(GfxBufferDesc {
+    GfxBufferHandle buffer = gfxCreateBuffer(GfxBufferDesc {
         .size = stride * count,
         .type = GfxBufferType::Uniform,
         .usage = GfxBufferUsage::Stream

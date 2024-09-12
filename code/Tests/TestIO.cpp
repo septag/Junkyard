@@ -164,7 +164,7 @@ struct AppImpl final : AppCallbacks
 
             ImageLoadParams imageParams {};
             AssetParams params {
-                .typeId = kImageAssetType,
+                .typeId = IMAGE_ASSET_TYPE,
                 .path = mFilePaths[i].CStr(),
                 .typeSpecificParams = &imageParams
             };
@@ -304,7 +304,7 @@ struct AppImpl final : AppCallbacks
             }
 
             if (mTexture.IsValid()) {
-                AssetImage* image = (AssetImage*)Asset::GetObjData(mTexture);
+                GfxImage* image = (GfxImage*)Asset::GetObjData(mTexture);
                 if (image && image->handle.IsValid()) {
                     ImGui::Image((ImTextureID)IntToPtr(image->handle.mId), ImVec2(256, 256));
                 }
@@ -346,7 +346,7 @@ struct AppImpl final : AppCallbacks
                                     ImageLoadParams imageParams {};
                                     AssetParams* params = paramsAlloc.MallocTyped<AssetParams>(cell.files.Count());
                                     for (uint32 i = 0; i < cell.files.Count(); i++) {
-                                        params[i].typeId = kImageAssetType;
+                                        params[i].typeId = IMAGE_ASSET_TYPE;
                                         params[i].path = mFilePaths[cell.files[i]];
                                         params[i].typeSpecificParams = &imageParams;
                                     }   
@@ -386,7 +386,7 @@ struct AppImpl final : AppCallbacks
 
                     if (cell.selectedFile != -1) {
                         if (cell.handles[cell.selectedFile].IsValid()) {
-                            AssetImage* image = (AssetImage*)Asset::GetObjData(cell.handles[cell.selectedFile]);
+                            GfxImage* image = (GfxImage*)Asset::GetObjData(cell.handles[cell.selectedFile]);
                             if (image && image->handle.IsValid()) 
                                 ImGui::Image((ImTextureID)IntToPtr(image->handle.mId), ImVec2(256, 256));
                         }
