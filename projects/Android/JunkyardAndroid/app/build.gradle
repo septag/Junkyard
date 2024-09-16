@@ -1,13 +1,13 @@
 apply plugin: 'com.android.application'
 
 android {
-    compileSdkVersion 30
+    compileSdkVersion 33
     buildToolsVersion '34.0.0'
 
     defaultConfig.with {
         applicationId = "com.JunkyardAndroid"
         minSdkVersion 29
-        targetSdkVersion 29
+        targetSdkVersion 32
     }
 
     compileOptions.with {

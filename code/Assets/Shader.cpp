@@ -112,7 +112,7 @@ static void shaderCompileLoadTask(uint32 groupIndex, void* userData)
                 LOG_VERBOSE("Shader loaded: %s (%.1f ms)", filepath, timer.ElapsedMS());
             }
             else {
-                char errorMsg[kRemoteErrorDescSize];
+                char errorMsg[REMOTE_ERROR_SIZE];
                 strPrintFmt(errorMsg, sizeof(errorMsg), "Compiling shader '%s' failed: %s", filepath, compileErrorDesc);
                 Remote::SendResponse(RCMD_COMPILE_SHADER, outgoingBlob, true, errorMsg);
                 LOG_VERBOSE(errorMsg);
@@ -120,7 +120,7 @@ static void shaderCompileLoadTask(uint32 groupIndex, void* userData)
             Mem::Free(shader);
         }
         else {
-            char errorMsg[kRemoteErrorDescSize];
+            char errorMsg[REMOTE_ERROR_SIZE];
             strPrintFmt(errorMsg, sizeof(errorMsg), "Opening shader file failed: %s", filepath);
             Remote::SendResponse(RCMD_COMPILE_SHADER, outgoingBlob, true, errorMsg);
             LOG_VERBOSE(errorMsg);
@@ -144,7 +144,7 @@ static void shaderCompileLoadTask(uint32, void*)
 #endif
 
 static bool shaderCompileShaderHandlerServerFn([[maybe_unused]] uint32 cmd, const Blob& incomingData, Blob*, 
-                                               void*, char outgoingErrorDesc[kRemoteErrorDescSize])
+                                               void*, char outgoingErrorDesc[REMOTE_ERROR_SIZE])
 {
     ASSERT(cmd == RCMD_COMPILE_SHADER);
     UNUSED(outgoingErrorDesc);
@@ -213,11 +213,6 @@ static void shaderCompileShaderHandlerClientFn([[maybe_unused]] uint32 cmd, cons
 
 bool _private::assetInitializeShaderManager()
 {
-    #if CONFIG_TOOLMODE
-        if (!ShaderCompiler::Initialize())
-            return false;
-    #endif
-
     // Register asset loader
     assetRegisterType(AssetTypeDesc {
         .fourcc = SHADER_ASSET_TYPE,
@@ -246,8 +241,9 @@ bool _private::assetInitializeShaderManager()
 void _private::assetReleaseShaderManager()
 {
     #if CONFIG_TOOLMODE
-        ShaderCompiler::Release();
+    ShaderCompiler::ReleaseLiveSessions();
     #endif
+
     assetUnregisterType(SHADER_ASSET_TYPE);
     gShaderLoader.requestsMtx.Release();
     gShaderLoader.requests.Free();
@@ -442,11 +438,12 @@ bool AssetShaderImpl::Bake(const AssetParams& params, AssetData* data, const Spa
         data->SetObjData(shader.first, shader.second);
         return true;
     #else
-        UNUSED(cacheHash);
         UNUSED(params);
-        UNUSED(handle);
+        UNUSED(data);
+        UNUSED(srcData);
+        UNUSED(outErrorDesc);
         ASSERT_MSG(0, "None ToolMode builds does not support shader compilation");
-        return AssetResult {};
+        return false;
     #endif
 }
 
@@ -458,7 +455,7 @@ AssetHandleShader Asset::LoadShader(const char* path, const ShaderLoadParams& pa
         .typeSpecificParams = const_cast<ShaderLoadParams*>(&params)
     };
 
-    return (AssetHandleShader)group.AddToLoadQueue(assetParams);
+    return group.AddToLoadQueue(assetParams);
 }
 
 GfxShader* Asset::GetShader(AssetHandleShader shaderHandle)

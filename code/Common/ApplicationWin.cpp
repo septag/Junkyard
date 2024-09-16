@@ -6,6 +6,8 @@
 #include "RemoteServices.h"
 #include "JunkyardSettings.h"
 
+#include "../Engine.h"
+
 #include "../Core/StringUtil.h"
 #include "../Core/System.h"
 #include "../Core/Settings.h"
@@ -857,6 +859,8 @@ namespace App
             LOG_ERROR("Initialization failed");
             return false;
         }
+
+        Engine::_private::PostInitialize();
 
         // Main message loop
         uint64 tmNow = Timer::GetTicks();

@@ -1128,12 +1128,14 @@ static void assetFileChanged(const char* filepath)
 
 namespace limits
 {
-    inline constexpr uint32 ASSET_MAX_GROUPS = 1024;
-    inline constexpr uint32 ASSET_MAX_THREADS = 128;
-    inline constexpr size_t ASSET_MAX_SCRATCH_SIZE_PER_THREAD = SIZE_GB;
-    inline constexpr size_t ASSET_HEADER_BUFFER_POOL_SIZE = SIZE_MB;
-    inline constexpr size_t ASSET_DATA_BUFFER_POOL_SIZE = SIZE_MB*128;
+    static inline constexpr size_t ASSET_MAX_SCRATCH_SIZE_PER_THREAD = SIZE_GB;
+    static inline constexpr size_t ASSET_HEADER_BUFFER_POOL_SIZE = SIZE_MB;
+    static inline constexpr size_t ASSET_DATA_BUFFER_POOL_SIZE = SIZE_MB*128;
+    static inline constexpr uint32 ASSET_SERVER_MAX_IN_FLIGHT = 128;
 }
+
+static inline constexpr uint32 ASSET_LOAD_ASSET_REMOTE_CMD = MakeFourCC('L', 'D', 'A', 'S');
+static inline constexpr float ASSET_SAVE_CACHE_LOOKUP_INTERVAL = 1.0f;
 
 // Note: serializable. All data/array should use RelativePtr
 struct AssetDataInternal
@@ -1206,9 +1208,11 @@ struct AssetDataHeader
     uint32 paramsHash;
     uint32 refCount;
     uint32 dataSize;
+    uint32 typeId;
+    uint32 typeSpecificParamsSize;
+    const char* typeName;
     AssetParams* params;
     AssetDataInternal* data;
-    const char* typeName;
 };
 
 struct AssetScratchMemArena
@@ -1233,8 +1237,12 @@ struct AssetLoadTaskInputs
     uint32 fileSize;
     AssetLoadTaskInputType type;
     AssetGroupHandle groupHandle;
+    uint32 assetHash;
     AssetDataHeader* header;
     Path bakedFilepath;
+    String<256> remoteLoadErrorStr;
+    uint64 clientPayload;
+    bool isRemoteLoad;
 };
 
 struct AssetLoadTaskOutputs
@@ -1277,6 +1285,8 @@ struct AssetQueuedItem
 {
     uint32 indexInLoadList;
     uint32 dataSize;
+    uint32 paramsHash;
+    uint32 assetHash;
     AssetDataInternal* data;
     Path bakedFilepath;
     bool saveBaked;
@@ -1284,19 +1294,29 @@ struct AssetQueuedItem
 
 using AssetJobItem = Pair<JobsHandle, AssetGroupHandle>;
 
+struct AssetServer
+{
+    SpinLockMutex pendingTasksMutex;
+    Array<AssetLoadTaskData*> pendingTasks;
+    JobsHandle loadBatchTask;
+    AssetLoadTaskData* loadTaskDatas[limits::ASSET_SERVER_MAX_IN_FLIGHT];
+    uint32 numLoadTasks;
+};
+
 struct AssetMan
 {
     ReadWriteMutex assetMutex;
     ReadWriteMutex groupsMutex;
+    ReadWriteMutex hashLookupMutex;
     Mutex pendingLoadsMutex;
     Mutex pendingUnloadsMutex;
-    Mutex dataAllocMutex;
 
     AssetScratchMemArena memArena;
     MemBumpAllocatorVM tempAlloc;   // Used in LoadAssetGroup, because we cannot use regular temp allocators due to dispatching
 
     HandlePool<AssetHandle, AssetDataHeader*> assetDb;
     HashTable<AssetHandle> assetLookup;     // Key: AssetParams hash. To check for availibility
+    HashTableUint assetHashLookup;          // Key: AssetParams hash -> AssetHash
     MemTlsfAllocator assetHeaderAlloc;
     MemTlsfAllocator assetDataAlloc;
 
@@ -1307,7 +1327,9 @@ struct AssetMan
     AssetJobItem loadJob;
     AssetJobItem unloadJob;
 
-    AtomicUint32 state;     // Type is actually AssetManState
+    AssetServer server;
+    bool isServerEnabled;
+    bool isHashLookupUpdated;
 };
 
 static AssetMan gAssetMan;
@@ -1330,8 +1352,84 @@ namespace Asset
     static void _LoadGroupTask(uint32, void* userData);
     static void _UnloadGroupTask(uint32, void* userData);
     static void _DataCopyTask(uint32, void* userData);
-    static bool _MakeCacheFilepath(Path* outPath, const AssetDataHeader* header, uint32 overrideAssetHash = 0);
+    static uint32 _MakeCacheFilepath(Path* outPath, const AssetDataHeader* header, uint32 overrideAssetHash = 0);
+    static uint32 _MakeParamsHash(const AssetParams& params, uint32 typeSpecificParamsSize);
+    static bool _RemoteServerCallback(uint32 cmd, const Blob& incomingData, Blob*, void*, char outErrorDesc[REMOTE_ERROR_SIZE]);
+    static void _RemoteClientCallback(uint32 cmd, const Blob& incomingData, void*, bool error, const char* errorDesc);
+    static void _ServerLoadBatchTask(uint32, void*);
+    constexpr AssetPlatform::Enum _GetCurrentPlatform();
+    static void _SaveAssetHashLookup();
+    static void _LoadAssetHashLookup();
 } // Asset
+
+constexpr AssetPlatform::Enum Asset::_GetCurrentPlatform()
+{
+    if constexpr (PLATFORM_WINDOWS || PLATFORM_LINUX || PLATFORM_OSX)
+        return AssetPlatform::PC;
+    else if constexpr (PLATFORM_ANDROID || PLATFORM_IOS)  
+        return AssetPlatform::Mobile;
+    else {
+        ASSERT(0);
+        return AssetPlatform::Auto;
+    }
+}
+
+static void Asset::_SaveAssetHashLookup()
+{
+    PROFILE_ZONE();
+
+    const uint32* keys = gAssetMan.assetHashLookup.Keys();
+    const uint32* values = gAssetMan.assetHashLookup.Values();
+
+    MemTempAllocator tempAlloc;
+    Blob blob(&tempAlloc);
+    blob.SetGrowPolicy(Blob::GrowPolicy::Multiply);
+
+    String<64> line;
+    for (uint32 i = 0; i < gAssetMan.assetHashLookup.Capacity(); i++) {
+        if (keys[i]) {
+            line.FormatSelf("0x%x;0x%x\n", keys[i], values[i]);
+            blob.Write(line.Ptr(), line.Length());
+        }
+    }
+    blob.Write<char>('\0');
+
+    Vfs::WriteFileAsync("/cache/_HashLookup.txt", blob, VfsFlags::None, [](const char*, size_t, Blob&, void*) {}, nullptr);
+}
+
+static void Asset::_LoadAssetHashLookup()
+{
+    PROFILE_ZONE();
+    
+    MemTempAllocator tempAlloc;
+    Blob blob = Vfs::ReadFile("cache/_HashLookup.txt", VfsFlags::TextFile, &tempAlloc);
+    if (!blob.IsValid())
+        return;
+
+    Span<char*> lines = strSplit((const char*)blob.Data(), '\n', &tempAlloc);
+
+    ReadWriteMutexWriteScope lk(gAssetMan.hashLookupMutex);
+    for (char* line : lines) {
+        char* semicolon = const_cast<char*>(strFindChar(line, ';'));
+        if (semicolon) {
+            *semicolon = 0;
+            uint32 paramsHash = strToUint(line + 2, 16);
+            uint32 assetHash = strToUint(semicolon + 3, 16);
+
+            gAssetMan.assetHashLookup.Add(paramsHash, assetHash);
+        }
+    }
+}
+
+static uint32 Asset::_MakeParamsHash(const AssetParams& params, uint32 typeSpecificParamsSize)
+{
+    HashMurmur32Incremental hasher;
+    hasher.Add<uint32>(params.typeId);
+    hasher.AddAny(params.path.CStr(), params.path.Length());
+    hasher.Add<uint32>(uint32(params.platform));
+    hasher.AddAny(params.typeSpecificParams, typeSpecificParamsSize);
+    return hasher.Hash();
+}
 
 static void Asset::_SaveBakedTask(uint32 groupIdx, void* userData)
 {
@@ -1339,7 +1437,6 @@ static void Asset::_SaveBakedTask(uint32 groupIdx, void* userData)
 
     AssetQueuedItem* qa = ((AssetQueuedItem**)userData)[groupIdx];
 
-    // MemTempAllocator tempAlloc;
     Blob cache;
     cache.Reserve(32 + qa->dataSize);
     cache.SetGrowPolicy(Blob::GrowPolicy::Linear);
@@ -1348,26 +1445,34 @@ static void Asset::_SaveBakedTask(uint32 groupIdx, void* userData)
     cache.Write<uint32>(qa->dataSize);
     cache.Write(qa->data, qa->dataSize);
 
-    uint64 writeFileData = 0;//(uint64(assetHash) << 32) | result.cacheHash;
-    // Vfs::WriteFile(qa->bakedFilepath.CStr(), cache, VfsFlags::CreateDirs);
-    auto SaveFileCallback = [](const char* path, size_t bytesWritten, Blob& blob, void*)
+    uint64 writeFileData = (uint64(qa->paramsHash) << 32) | qa->assetHash;
+    auto SaveFileCallback = [](const char* path, size_t bytesWritten, Blob& blob, void* userData)
     {
         if (bytesWritten)
             LOG_VERBOSE("(save) Baked: %s", path);
         blob.Free();
-        
-        /*
-            uint64 writeFileData = PtrToInt<uint64>(user);
-            uint32 hash = uint32((writeFileData >> 32)&0xffffffff);
-            uint32 cacheHash = uint32(writeFileData&0xffffffff);
-        */
+
+        // TODO: save to paramsHash -> assetHash lookup table        
+        uint64 writeFileData = PtrToInt<uint64>(userData);
+        uint32 paramsHash = uint32((writeFileData >> 32)&0xffffffff);
+        uint32 assetHash = uint32(writeFileData&0xffffffff);
+
+        ReadWriteMutexWriteScope lk(gAssetMan.hashLookupMutex);
+        uint32 index = gAssetMan.assetHashLookup.AddIfNotFound(paramsHash, assetHash);
+
+        // Overwrite the value if it exists
+        // TODO: maybe have an API for that in HashTable
+        if (index != -1) 
+            ((uint32*)gAssetMan.assetHashLookup.mHashTable->values)[index] = assetHash;
+
+        gAssetMan.isHashLookupUpdated = true;
     };
 
     Vfs::WriteFileAsync(qa->bakedFilepath.CStr(), cache, VfsFlags::CreateDirs|VfsFlags::NoCopyWriteBlob, 
                         SaveFileCallback, IntToPtr(writeFileData));
 }
 
-static bool Asset::_MakeCacheFilepath(Path* outPath, const AssetDataHeader* header, uint32 overrideAssetHash)
+static uint32 Asset::_MakeCacheFilepath(Path* outPath, const AssetDataHeader* header, uint32 overrideAssetHash)
 {
     uint32 assetHash = overrideAssetHash;
     const Path& assetFilepath = header->params->path;
@@ -1399,7 +1504,7 @@ static bool Asset::_MakeCacheFilepath(Path* outPath, const AssetDataHeader* head
             assetHash = hasher.Hash();
         }
         else {
-            return false;
+            return 0;
         }
     }
 
@@ -1416,7 +1521,7 @@ static bool Asset::_MakeCacheFilepath(Path* outPath, const AssetDataHeader* head
               .Append(hashStr)
               .Append(".")
               .Append(header->typeName);    
-    return true;
+    return assetHash;
 }
 
 static MemBumpAllocatorVM* Asset::_GetOrCreateScratchAllocator(AssetScratchMemArena& arena)
@@ -1524,14 +1629,9 @@ static AssetHandleResult Asset::_CreateOrFetchHandle(const AssetParams& params)
     ASSERT_MSG(typeManIdx != UINT32_MAX, "AssetType with FourCC %x is not registered", params.typeId);
     const AssetTypeManager& typeMan = gAssetMgr.typeManagers[typeManIdx];
 
-    AssetHandleResult r {};
-
-    HashMurmur32Incremental hasher;
-    hasher.Add<uint32>(params.typeId);
-    hasher.AddAny(params.path.CStr(), params.path.Length());
-    hasher.Add<uint32>(uint32(params.platform));
-    hasher.AddAny(params.typeSpecificParams, typeMan.extraParamTypeSize);
-    r.paramsHash = hasher.Hash();
+    AssetHandleResult r {
+        .paramsHash = _MakeParamsHash(params, typeMan.extraParamTypeSize)
+    };
 
     // check with asset database and skip loading if it already exists
     {
@@ -1558,6 +1658,8 @@ static AssetHandleResult Asset::_CreateOrFetchHandle(const AssetParams& params)
 
         r.header->paramsHash = r.paramsHash;
         r.header->refCount = 1;
+        r.header->typeId = typeMan.fourcc;
+        r.header->typeSpecificParamsSize = typeMan.extraParamTypeSize;
         r.header->params->typeId = params.typeId;
         r.header->params->path = params.path;
         r.header->params->platform = params.platform;
@@ -1588,21 +1690,19 @@ static void Asset::_DataCopyTask(uint32 groupIdx, void* userData)
 
 static void Asset::_LoadAssetTask(uint32 groupIdx, void* userData)
 {
-    AssetLoadTaskData& taskData = ((AssetLoadTaskData*)userData)[groupIdx];
+    PROFILE_ZONE_COLOR(PROFILE_COLOR_ASSET2);
+
+    AssetLoadTaskData& taskData = *(((AssetLoadTaskData**)userData)[groupIdx]);
     const AssetParams& params = *taskData.inputs.header->params;
     uint32 typeManIdx = gAssetMgr.typeManagers.FindIf([typeId = params.typeId](const AssetTypeManager& typeMan) { return typeMan.fourcc == typeId; });
     ASSERT_MSG(typeManIdx != UINT32_MAX, "AssetType with FourCC %x is not registered", params.typeId);
     const AssetTypeManager& typeMan = gAssetMgr.typeManagers[typeManIdx];
 
-    PROFILE_ZONE_COLOR(PROFILE_COLOR_ASSET2);
-
     MemBumpAllocatorVM* alloc = _GetOrCreateScratchAllocator(gAssetMan.memArena);
 
-    #if !ASSET_ASYNC_EXPERIMENT
-    MemTempAllocator tempAlloc;
-    #endif
-
     if (taskData.inputs.type == AssetLoadTaskInputType::Source) {
+        ASSERT(!taskData.inputs.isRemoteLoad);
+
         size_t startOffset = alloc->GetOffset();
         AssetData assetData {
             .mAlloc = alloc,
@@ -1619,6 +1719,7 @@ static void Asset::_LoadAssetTask(uint32 groupIdx, void* userData)
         const void* fileData = taskData.inputs.fileData;
         uint32 fileSize = taskData.inputs.fileSize;
         #else
+        MemTempAllocator tempAlloc;
         Blob fileBlob = Vfs::ReadFile(taskData.inputs.header->params->path.CStr(), VfsFlags::None, &tempAlloc);
         const void* fileData = fileBlob.Data();
         ASSERT(fileBlob.Size() <= UINT32_MAX);
@@ -1648,14 +1749,26 @@ static void Asset::_LoadAssetTask(uint32 groupIdx, void* userData)
         const void* fileData = taskData.inputs.fileData;
         uint32 fileSize = taskData.inputs.fileSize;
         #else
-        Blob fileBlob = Vfs::ReadFile(taskData.inputs.bakedFilepath.CStr(), VfsFlags::None, &tempAlloc);
-        const void* fileData = fileBlob.Data();
-        ASSERT(fileBlob.Size() <= UINT32_MAX);
-        uint32 fileSize = uint32(fileBlob.Size());
-        #endif
+        const void* fileData = nullptr;
+        uint32 fileSize = 0;
+
+        if (taskData.inputs.isRemoteLoad) {
+            taskData.inputs.fileReadSignal.Wait();
+            fileData = taskData.inputs.fileData;
+            fileSize = taskData.inputs.fileSize;
+        }
+        
+        MemTempAllocator tempAlloc;
+        if (!taskData.inputs.isRemoteLoad) {
+            Blob fileBlob = Vfs::ReadFile(taskData.inputs.bakedFilepath.CStr(), VfsFlags::None, &tempAlloc);
+            fileData = fileBlob.Data();
+            ASSERT(fileBlob.Size() <= UINT32_MAX);
+            fileSize = uint32(fileBlob.Size());
+        }
+        #endif // ASSET_ASYNC_EXPERIMENT
 
         if (!fileData) {
-            taskData.outputs.errorDesc = "Failed opening baked file";
+            taskData.outputs.errorDesc = taskData.inputs.isRemoteLoad ? taskData.inputs.remoteLoadErrorStr : "Failed opening baked file";
             return;
         }
 
@@ -1775,7 +1888,7 @@ static void Asset::_LoadGroupTask(uint32, void* userData)
 
     // Pick a batch size 
     // This is the amount of tasks that are submitted to the task manager at a time
-    uint32 batchCount = Min(128u, loadList.Count());//Jobs::GetWorkerThreadsCount(JobsType::LongTask);
+    uint32 batchCount = Min(128u, loadList.Count());
     uint32 allCount = loadList.Count();
 
     // We cannot use the actual temp allocators here. Because we are dispatching jobs and might end up in a different thread
@@ -1786,8 +1899,8 @@ static void Asset::_LoadGroupTask(uint32, void* userData)
     for (uint32 i = 0; i < loadList.Count(); i += batchCount) {
         uint32 sliceCount = Min(batchCount, loadList.Count() - i);
 
-        AssetLoadTaskData* taskDatas = nullptr;
-        taskDatas = Mem::AllocZeroTyped<AssetLoadTaskData>(sliceCount, tempAlloc);
+        AssetLoadTaskData* taskDatas = Mem::AllocZeroTyped<AssetLoadTaskData>(sliceCount, tempAlloc);
+        AssetLoadTaskData** taskDataPtrs = Mem::AllocTyped<AssetLoadTaskData*>(sliceCount, tempAlloc);
         for (uint32 k = 0; k < sliceCount; k++) {
             AssetDataHeader* header = loadList[i + k];
 
@@ -1795,15 +1908,39 @@ static void Asset::_LoadGroupTask(uint32, void* userData)
             //       We will always have Baked data for remote connections
 
             // Returns false if source file could not be found
-            // Decide if baked file exists and we should skip loading from source
-            if (_MakeCacheFilepath(&taskDatas[k].inputs.bakedFilepath, header))
-                taskDatas[k].inputs.type = Vfs::FileExists(taskDatas[k].inputs.bakedFilepath.CStr()) ? AssetLoadTaskInputType::Baked : AssetLoadTaskInputType::Source;
+            // Decide if baked file exists and we should skip loading from source (with requires baking most assets)
+            uint32 assetHash = 0;   // TODO: try to fetch this from a database (probably with an argument/option)
+            {
+                ReadWriteMutexReadScope lk(gAssetMan.hashLookupMutex);
+                assetHash = gAssetMan.assetHashLookup.FindAndFetch(header->paramsHash, 0);
+            }
 
+            bool mountIsRemote = Vfs::GetMountType(header->params->path.CStr()) == VfsMountType::Remote;
+            taskDatas[k].inputs.isRemoteLoad = mountIsRemote;
+
+            if (!mountIsRemote || assetHash) {
+                assetHash = _MakeCacheFilepath(&taskDatas[k].inputs.bakedFilepath, header, assetHash);
+                if (assetHash) {
+                    taskDatas[k].inputs.type = Vfs::FileExists(taskDatas[k].inputs.bakedFilepath.CStr()) ? AssetLoadTaskInputType::Baked : AssetLoadTaskInputType::Source;
+                    taskDatas[k].inputs.assetHash = assetHash;
+                    
+                    // We have found the correct baked asset in the cache dir, ignore loading from remote and fetch it directly from disk
+                    if (taskDatas[k].inputs.type == AssetLoadTaskInputType::Baked)
+                        taskDatas[k].inputs.isRemoteLoad = false;
+                }
+            }
+            else if (mountIsRemote) {
+                taskDatas[k].inputs.type = AssetLoadTaskInputType::Baked;
+            }
+            
             taskDatas[k].inputs.groupHandle = groupHandle;
             taskDatas[k].inputs.header = header;
+
+            // Ouch! we have to comply across all calls here, so _LoadAssetTask needs pointers
+            taskDataPtrs[k] = &taskDatas[k];
         }
 
-        JobsHandle batchJob = Jobs::Dispatch(JobsType::LongTask, _LoadAssetTask, taskDatas, sliceCount, JobsPriority::High);
+        JobsHandle batchJob = Jobs::Dispatch(JobsType::LongTask, _LoadAssetTask, taskDataPtrs, sliceCount, JobsPriority::High, JobsStackSize::Large);
 
         #if ASSET_ASYNC_EXPERIMENT
         // TODO: Currently ReadFile seems weird on Windows API at least
@@ -1834,22 +1971,46 @@ static void Asset::_LoadGroupTask(uint32, void* userData)
         }
         #endif
 
+        // Make remote load requests
+        for (uint32 k = 0; k < sliceCount; k++) {
+            if (!taskDatas[k].inputs.isRemoteLoad) 
+                continue;
+
+            AssetDataHeader* header = loadList[i + k];
+            if (header->params->platform == AssetPlatform::Auto)
+                header->params->platform = _GetCurrentPlatform();
+
+            Blob requestBlob(tempAlloc);
+
+            requestBlob.Write<uint64>(uint64(&taskDatas[k].inputs));
+            requestBlob.Write<uint32>(header->typeId);
+            requestBlob.WriteStringBinary16(header->params->path.Ptr(), header->params->path.Length());
+            requestBlob.Write<uint32>(header->params->platform);
+            requestBlob.Write(header->params->typeSpecificParams, header->typeSpecificParamsSize);
+
+            Remote::ExecuteCommand(ASSET_LOAD_ASSET_REMOTE_CMD, requestBlob);
+        }
+
         Jobs::WaitForCompletion(batchJob);
 
+        // Gather dependency assets and add them to the queue
+        // Gather items to be saved in cache
         for (uint32 k = 0; k < sliceCount; k++) {
             AssetLoadTaskInputs& in = taskDatas[k].inputs;
             AssetLoadTaskOutputs& out = taskDatas[k].outputs;
             if (!out.data) {
-                LOG_ERROR("Loading asset '%s' failed: %s", in.header->params->path.CStr(), out.errorDesc.CStr());
+                LOG_ERROR("Loading %s '%s' failed: %s", in.header->typeName, in.header->params->path.CStr(), out.errorDesc.CStr());
                 continue;
             }
 
             AssetQueuedItem qa {
                 .indexInLoadList = i + k,
                 .dataSize = out.dataSize,
+                .paramsHash = in.header->paramsHash,
+                .assetHash = in.assetHash,
                 .data = out.data,
                 .bakedFilepath = in.bakedFilepath,
-                .saveBaked = in.type == AssetLoadTaskInputType::Source
+                .saveBaked = (in.type == AssetLoadTaskInputType::Source || in.isRemoteLoad)
             };
             queuedAssets.Push(qa);
 
@@ -1871,7 +2032,7 @@ static void Asset::_LoadGroupTask(uint32, void* userData)
 
                 dep = dep->next.Get();
             }
-        } // gather deps for each loaded asset
+        } 
 
         tempAlloc->Reset();
     }
@@ -1883,9 +2044,8 @@ static void Asset::_LoadGroupTask(uint32, void* userData)
 
         for (uint32 k = 0; k < sliceCount; k++) {
             AssetQueuedItem& qa = queuedAssets[i + k];
-            if (!qa.saveBaked)
-                continue;
-            saveItems.Push(&qa);
+            if (qa.saveBaked)
+                saveItems.Push(&qa);
         }
         
         if (!saveItems.IsEmpty()) {
@@ -1897,7 +2057,6 @@ static void Asset::_LoadGroupTask(uint32, void* userData)
     tempAlloc->Reset();
 
     // Create GPU objects
-
     for (uint32 i = 0; i < queuedAssets.Count(); i += batchCount) {
         uint32 sliceCount = Min(batchCount, loadList.Count() - i);
 
@@ -1920,7 +2079,7 @@ static void Asset::_LoadGroupTask(uint32, void* userData)
         tempAlloc->Reset();
     }
     
-    // Strip unwanted stuff and save it to persistant memory
+    // Strip unwanted stuff and save it to persistent memory
     // Note: 'AssetDataAlloc' doesn't need any thread protection, because it is guaranteed that only one thread uses it at a time 
     // Use the magic number 4 for now. Because it's a good balance with quad-channel RAM (seems to be)
     // TODO: maybe skipe smaller memcpys because they don't worth creating a task for ? (profile)
@@ -1946,7 +2105,7 @@ static void Asset::_LoadGroupTask(uint32, void* userData)
     queuedAssets.Free();
     loadList.Free();
 
-    // Reset area allocators, getting ready for the next group
+    // Reset arena allocators, getting ready for the next group
     for (uint32 i = 0; i < gAssetMan.memArena.numAllocators; i++) {
         if (gAssetMan.memArena.allocators[i].IsInitialized())
             gAssetMan.memArena.allocators[i].Reset();
@@ -1988,6 +2147,16 @@ static void Asset::_UnloadGroupTask(uint32, void* userData)
             } 
             else {
                 unloadDatas.Push(header->data);
+
+                // Add dependencies to the unload list
+                AssetDataInternal::Dependency* dep = header->data->deps.Get();
+                while (dep) {
+                    AssetHandle* targetHandle = dep->bindToHandle.Get();
+                    if (targetHandle->IsValid()) 
+                        unloadList.Push(*targetHandle);
+                    dep = dep->next.Get();
+                }
+
                 i++;
             }
         }
@@ -2035,6 +2204,176 @@ static void Asset::_UnloadGroupTask(uint32, void* userData)
     }
 }
 
+void Asset::_ServerLoadBatchTask(uint32, void*)
+{
+    AssetLoadTaskData** taskDatas = gAssetMan.server.loadTaskDatas;
+    uint32 numTasks = gAssetMan.server.numLoadTasks;
+    ASSERT(numTasks);
+
+    for (uint32 i = 0; i < numTasks; i++) {
+        AssetDataHeader* header = taskDatas[i]->inputs.header;
+        uint32 assetHash = _MakeCacheFilepath(&taskDatas[i]->inputs.bakedFilepath, header);
+        if (assetHash) {
+            taskDatas[i]->inputs.type = Vfs::FileExists(taskDatas[i]->inputs.bakedFilepath.CStr()) ? AssetLoadTaskInputType::Baked : AssetLoadTaskInputType::Source;
+            taskDatas[i]->inputs.assetHash = assetHash;
+        }
+    }
+
+    JobsHandle batchJob = Jobs::Dispatch(JobsType::LongTask, _LoadAssetTask, taskDatas, numTasks);
+    Jobs::WaitForCompletion(batchJob);
+
+    // Gather stuff that needs to be saved
+    StaticArray<AssetQueuedItem, limits::ASSET_SERVER_MAX_IN_FLIGHT> saveAssets;
+    for (uint32 i = 0; i < numTasks; i++) {
+        const AssetLoadTaskInputs& in = taskDatas[i]->inputs;
+        AssetLoadTaskOutputs& out = taskDatas[i]->outputs;
+
+        bool saveBaked = in.type == AssetLoadTaskInputType::Source;
+        if (out.data && saveBaked) {
+            AssetQueuedItem qa {
+                .indexInLoadList = i,
+                .dataSize = out.dataSize,
+                .data = out.data,
+                .bakedFilepath = in.bakedFilepath,
+                .saveBaked = saveBaked
+            };
+            saveAssets.Add(qa);
+        }
+    }
+
+    // Save the baked ones
+    // if (!saveAssets.IsEmpty())
+    //    batchJob = Jobs::Dispatch(JobsType::LongTask, _SaveBakedTask, saveAssets.Ptr(), saveAssets.Count());
+
+    // Send successfully loaded asset blobs to the client
+    // TODO: compress the data
+    {
+        MemTempAllocator tempAlloc;
+        for (uint32 i = 0; i < numTasks; i++) {
+            const AssetLoadTaskInputs& in = taskDatas[i]->inputs;
+            const AssetLoadTaskOutputs& out = taskDatas[i]->outputs;
+
+            Blob blobs[2];
+
+            blobs[0].SetAllocator(&tempAlloc);
+            blobs[0].SetGrowPolicy(Blob::GrowPolicy::Linear, 32);
+            blobs[0].Write<uint64>(in.clientPayload);
+
+            if (!out.data) {
+                String<512> errorMsg;
+                errorMsg.FormatSelf("Loading %s '%s' failed: %s", in.header->typeName, in.header->params->path.CStr(), out.errorDesc.CStr());
+                LOG_ERROR(errorMsg.CStr());
+
+                Remote::SendResponse(ASSET_LOAD_ASSET_REMOTE_CMD, blobs[0], true, errorMsg.CStr());
+            }
+            else {
+                blobs[0].Write<uint32>(in.assetHash);
+
+                // Add Cache header
+                // TODO: maybe make this cleaner. Because we are writing cache header in two places (_SaveBakedTask)
+                blobs[0].Write<uint32>(kAssetCacheFileId);
+                blobs[0].Write<uint32>(kAssetCacheVersion);
+                blobs[0].Write<uint32>(out.dataSize);
+
+                blobs[1].Reserve(out.data, out.dataSize);
+                blobs[1].SetSize(out.dataSize);
+
+                Remote::SendResponseMerge(ASSET_LOAD_ASSET_REMOTE_CMD, blobs, CountOf(blobs), false, nullptr);
+            }
+        }
+    }
+
+    // if (!saveAssets.IsEmpty())
+    //    Jobs::WaitForCompletion(batchJob);
+
+    // No need for TaskDatas (allocated in _RemoteServerCallback)
+    for (uint32 i = 0; i < numTasks; i++) 
+        MemSingleShotMalloc<AssetLoadTaskData>::Free(taskDatas[i]);
+    gAssetMan.server.numLoadTasks = 0;
+
+    // Reset arena allocators
+    for (uint32 i = 0; i < gAssetMan.memArena.numAllocators; i++) {
+        if (gAssetMan.memArena.allocators[i].IsInitialized())
+            gAssetMan.memArena.allocators[i].Reset();
+    }
+}
+
+bool Asset::_RemoteServerCallback([[maybe_unused]] uint32 cmd, const Blob& incomingData, Blob*, void*, char outErrorDesc[REMOTE_ERROR_SIZE])
+{
+    ASSERT(cmd == ASSET_LOAD_ASSET_REMOTE_CMD);
+    UNUSED(outErrorDesc);
+
+    uint32 typeId = 0;
+    uint32 platformId = 0;
+    uint64 clientPayload;
+
+    incomingData.Read<uint64>(&clientPayload);
+    incomingData.Read<uint32>(&typeId);
+    uint32 typeManIdx = gAssetMgr.typeManagers.FindIf([typeId](const AssetTypeManager& typeMgr) { return typeMgr.fourcc == typeId; });
+    ASSERT_MSG(typeManIdx != UINT32_MAX, "AssetType with FourCC %x is not registered", typeId);
+    const AssetTypeManager& typeMan = gAssetMgr.typeManagers[typeManIdx];
+
+    MemSingleShotMalloc<AssetParams> paramsMallocator;
+    if (typeMan.extraParamTypeSize)
+        paramsMallocator.AddMemberArray<uint8>(offsetof(AssetParams, typeSpecificParams), typeMan.extraParamTypeSize);
+    MemSingleShotMalloc<AssetDataHeader> dataHeaderMallocator;
+    dataHeaderMallocator.AddChildStructSingleShot(paramsMallocator, offsetof(AssetDataHeader, params), 1);
+    MemSingleShotMalloc<AssetLoadTaskData> mallocator;
+    mallocator.AddChildStructSingleShot(dataHeaderMallocator, offsetof(AssetLoadTaskInputs, header), 1);
+    AssetLoadTaskData* taskData = mallocator.Calloc();
+    AssetDataHeader* header = taskData->inputs.header;
+
+    incomingData.ReadStringBinary16(header->params->path.Ptr(), header->params->path.Capacity());
+
+    incomingData.Read<uint32>(&platformId);
+    incomingData.Read(header->params->typeSpecificParams, typeMan.extraParamTypeSize);
+
+    header->params->typeId = typeId;
+    header->params->platform = AssetPlatform::Enum(platformId);
+
+    header->paramsHash = _MakeParamsHash(*header->params, typeMan.extraParamTypeSize);
+    header->refCount = 1;
+    header->typeName = typeMan.name.CStr();
+
+    taskData->inputs.clientPayload = clientPayload;
+
+    SpinLockMutexScope mtx(gAssetMan.server.pendingTasksMutex);
+    gAssetMan.server.pendingTasks.Push(taskData);
+
+    return true;
+}
+
+void Asset::_RemoteClientCallback([[maybe_unused]] uint32 cmd, const Blob& incomingData, void*, bool error, const char* errorDesc)
+{
+    ASSERT(cmd == ASSET_LOAD_ASSET_REMOTE_CMD);
+
+    uint64 payload;
+    incomingData.Read<uint64>(&payload);
+    AssetLoadTaskInputs* inputs = (AssetLoadTaskInputs*)reinterpret_cast<void*>(payload);
+
+    if (!error) {
+        uint32 assetHash;
+        incomingData.Read<uint32>(&assetHash);
+        inputs->assetHash = _MakeCacheFilepath(&inputs->bakedFilepath, inputs->header, assetHash);
+
+        size_t bakedSize = incomingData.Size() - incomingData.ReadOffset();
+        ASSERT(bakedSize <= UINT32_MAX);
+
+        void* data = Mem::Alloc(bakedSize, &gAssetMan.tempAlloc);
+        incomingData.Read(data, bakedSize);
+        inputs->fileData = data;
+        inputs->fileSize = uint32(bakedSize);
+    }
+    else {
+        inputs->fileData = nullptr;
+        inputs->fileSize = 0;
+        inputs->remoteLoadErrorStr = errorDesc;
+    }
+
+    inputs->fileReadSignal.Set();
+    inputs->fileReadSignal.Raise();
+}
+
 template <typename _T>
 _T* Asset::_TranslatePointer(_T* ptr, const void* origPtr, void* newPtr)
 {
@@ -2047,9 +2386,9 @@ bool Asset::Initialize()
 {
     gAssetMan.assetMutex.Initialize();
     gAssetMan.groupsMutex.Initialize();
+    gAssetMan.hashLookupMutex.Initialize();
     gAssetMan.pendingLoadsMutex.Initialize();
     gAssetMan.pendingUnloadsMutex.Initialize();
-    gAssetMan.dataAllocMutex.Initialize();
 
     // TODO: set allocator (initHeap) for all main objects
     MemAllocator* alloc = Mem::GetDefaultAlloc();
@@ -2062,6 +2401,8 @@ bool Asset::Initialize()
     gAssetMan.groups.SetAllocator(alloc);
     gAssetMan.pendingLoads.SetAllocator(alloc);
     gAssetMan.pendingUnloads.SetAllocator(alloc);
+    gAssetMan.assetHashLookup.SetAllocator(alloc);
+    gAssetMan.assetHashLookup.Reserve(512);
 
     gAssetMan.memArena.maxAllocators = Jobs::GetWorkerThreadsCount(JobsType::LongTask);
     gAssetMan.memArena.allocators = NEW_ARRAY(alloc, MemBumpAllocatorVM, gAssetMan.memArena.maxAllocators);
@@ -2070,6 +2411,26 @@ bool Asset::Initialize()
 
     gAssetMan.tempAlloc.Initialize(SIZE_GB, 4*SIZE_MB);
 
+    RemoteCommandDesc loadRemoteDesc {
+        .cmdFourCC = ASSET_LOAD_ASSET_REMOTE_CMD,
+        .serverFn = Asset::_RemoteServerCallback,
+        .clientFn = Asset::_RemoteClientCallback,
+        .async = true
+    };
+    Remote::RegisterCommand(loadRemoteDesc);
+
+    if (SettingsJunkyard::Get().tooling.enableServer) {
+        // Initialize server stuff
+        AssetServer& server = gAssetMan.server;
+        server.pendingTasks.SetAllocator(alloc);
+        gAssetMan.isServerEnabled = true;
+
+        LOG_INFO("(init) Asset Server");
+    }
+
+    _LoadAssetHashLookup();
+
+    LOG_INFO("(init) Asset Manager");
     return true;
 }
 
@@ -2108,10 +2469,26 @@ void Asset::Release()
 
     MemAllocator* alloc = Mem::GetDefaultAlloc();
 
+    if (gAssetMan.isServerEnabled) {
+        if (gAssetMan.server.loadBatchTask)
+            Jobs::WaitForCompletion(gAssetMan.server.loadBatchTask);
+
+        for (AssetLoadTaskData* taskData : gAssetMan.server.pendingTasks)
+            MemSingleShotMalloc<AssetLoadTaskData>::Free(taskData);     // allocated in _RemoteServerCallback
+        
+        gAssetMan.server.pendingTasks.Free();
+    }
+
     for (uint32 i = 0; i < gAssetMan.memArena.numAllocators; i++) {
         if (gAssetMan.memArena.allocators[i].IsInitialized())
             gAssetMan.memArena.allocators[i].Release();
     }
+
+    if (gAssetMan.isHashLookupUpdated) {
+        _SaveAssetHashLookup();
+        gAssetMan.isHashLookupUpdated = false;
+    }
+
     Mem::Free(gAssetMan.memArena.allocators, alloc);
     gAssetMan.memArena.threadToAllocatorTable.Free();
     gAssetMan.tempAlloc.Release();
@@ -2119,13 +2496,14 @@ void Asset::Release()
     gAssetMan.groups.Free();
     gAssetMan.assetDb.Free();
     gAssetMan.assetLookup.Free();
+    gAssetMan.assetHashLookup.Free();
     gAssetMan.pendingUnloads.Free();
     gAssetMan.pendingLoads.Free();
 
     gAssetMan.assetHeaderAlloc.Release();
     gAssetMan.assetDataAlloc.Release();
 
-    gAssetMan.dataAllocMutex.Release();
+    gAssetMan.hashLookupMutex.Release();
     gAssetMan.assetMutex.Release();
     gAssetMan.groupsMutex.Release();
 }
@@ -2280,6 +2658,7 @@ void AssetData::AddGpuBufferObject(GfxBufferHandle* bindToBuffer, const GfxBuffe
     gpuObj->type = AssetDataInternal::GpuObjectType::Buffer;
     gpuObj->bufferDesc.bindToBuffer = Asset::_TranslatePointer<GfxBufferHandle>(bindToBuffer, mOrigObjPtr, mData->objData.Get());
     gpuObj->bufferDesc.size = desc.size;
+    gpuObj->bufferDesc.type = desc.type;
     gpuObj->bufferDesc.usage = desc.usage;
     ASSERT(desc.content);
     ASSERT(desc.size <= UINT32_MAX);
@@ -2430,6 +2809,8 @@ void Asset::Update()
     JobsHandle& unloadJob = gAssetMan.unloadJob.first;
     AssetGroupHandle& unloadJobGroupHandle = gAssetMan.unloadJob.second;
 
+    bool hasServerJob = gAssetMan.isServerEnabled && gAssetMan.server.loadBatchTask;
+
     if (loadJob && !Jobs::IsRunning(loadJob)) {
         Jobs::WaitForCompletion(loadJob);
         gAssetMan.loadJob = AssetJobItem(nullptr, AssetGroupHandle());        
@@ -2466,7 +2847,7 @@ void Asset::Update()
 
     // Pick a load job if no job is in progress
     // Note: we don't pick any jobs when we are releasing the AssetMan
-    if (!loadJob && !unloadJob) {
+    if (!loadJob && !unloadJob && !hasServerJob) {
         loadJobGroupHandle = PickLoadJob();
         if (loadJobGroupHandle.IsValid())
             loadJob = Jobs::Dispatch(JobsType::LongTask, Asset::_LoadGroupTask, IntToPtr<uint32>(loadJobGroupHandle.mId), 1);
@@ -2474,9 +2855,47 @@ void Asset::Update()
     
     // Pick an unload job if no job is in progress
     // When we are releasing the AssetMan, perform all unload jobs and wait for them to finish
-    if (!loadJob && !unloadJob) {
+    if (!loadJob && !unloadJob && !hasServerJob) {
         unloadJobGroupHandle = PickUnloadJob();
         if (unloadJobGroupHandle.IsValid()) 
             unloadJob = Jobs::Dispatch(JobsType::LongTask, Asset::_UnloadGroupTask, IntToPtr<uint32>(unloadJobGroupHandle.mId), 1);
+    }
+
+    //------------------------------------------------------------------------------------------------------------------
+    // Server
+    if (gAssetMan.isServerEnabled && !loadJob && !unloadJob) {
+        AssetServer& server = gAssetMan.server;
+        if (server.loadBatchTask && !Jobs::IsRunning(server.loadBatchTask)) {
+            Jobs::WaitForCompletion(server.loadBatchTask);
+            server.loadBatchTask = nullptr;
+        }
+
+        if (!server.loadBatchTask && server.pendingTasksMutex.TryEnter()) {
+            uint32 numLoadTasks = Min(limits::ASSET_SERVER_MAX_IN_FLIGHT, server.pendingTasks.Count());
+            if (numLoadTasks) {
+                for (uint32 i = 0; i < numLoadTasks; i++) 
+                    server.loadTaskDatas[i] = server.pendingTasks[i];
+                server.pendingTasks.ShiftLeft(numLoadTasks);            
+            }
+            server.pendingTasksMutex.Exit();
+
+            server.numLoadTasks = numLoadTasks;
+
+            if (numLoadTasks)
+                server.loadBatchTask = Jobs::Dispatch(JobsType::LongTask, _ServerLoadBatchTask);
+        }
+    }
+
+    //------------------------------------------------------------------------------------------------------------------
+    if (gAssetMan.isHashLookupUpdated) {
+        static uint64 lastUpdateTick = 0;
+        if (lastUpdateTick == 0)
+            lastUpdateTick = Timer::GetTicks();
+
+        float secsElapsed = (float)Timer::ToSec(Timer::Diff(Timer::GetTicks(), lastUpdateTick));
+        if (secsElapsed >= ASSET_SAVE_CACHE_LOOKUP_INTERVAL) {
+            _SaveAssetHashLookup();
+            gAssetMan.isHashLookupUpdated = false;
+        }
     }
 }

@@ -380,7 +380,7 @@ inline void Array<_T>::ShiftLeft(uint32 count)
     
     mCount -= count;
     if (mCount)
-    memmove(mBuffer, mBuffer + sizeof(_T)*count, sizeof(_T)*mCount);
+        memmove(mBuffer, mBuffer + sizeof(_T)*count, sizeof(_T)*mCount);
 }
 
 template <typename _T>
@@ -482,7 +482,7 @@ inline uint32 Array<_T>::Find(const _T& value)
 {
     for (uint32 i = 0; i < mCount; i++) {
         if (mBuffer[i] == value)
-        return i;
+            return i;
     }
 
     return UINT32_MAX;
@@ -493,7 +493,7 @@ template<typename _Func> inline uint32 Array<_T>::FindIf(_Func findFunc)
 {
     for (uint32 i = 0, c = mCount; i < c; i++) {
         if (findFunc(mBuffer[i]))
-        return i;
+            return i;
     }
 
     return UINT32_MAX;
@@ -607,7 +607,7 @@ inline uint32 StaticArray<_T, _MaxCount>::Find(const _T& value)
 {
     for (uint32 i = 0; i < mCount; i++) {
         if (mBuffer[i] == value)
-        return i;
+            return i;
     }
     return UINT32_MAX;
 }

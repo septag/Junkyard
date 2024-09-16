@@ -16,6 +16,8 @@
 #include "VirtualFS.h"
 #include "RemoteServices.h"
 
+#include "../Engine.h"
+
 inline constexpr uint32 APP_MAX_KEY_CODES = 512;
 
 #define APP_ABS(a) (((a)<0.0f)?-(a):(a))
@@ -71,6 +73,7 @@ struct AppMacState
     size_t clipboardSize;
     char* clipboard;
     Array<AppEventCallbackPair> eventCallbacks;
+    Pair<AppUpdateOverrideCallback, void*> overrideUpdateCallback;
     fl32 windowScale;
     fl32 contentScale;
     fl32 mouseScale;
@@ -292,20 +295,22 @@ static void _UpdateFrame()
 
     if (gApp.firstFrame) {
         gApp.firstFrame = false;
-        if (gApp.desc.callbacks) {
-            if (!gApp.desc.callbacks->Initialize()) {
-                App::Quit();
-                return;
-            }
+        if (!gApp.desc.callbacks->Initialize()) {
+            App::Quit();
+            return;
         }
+        
+        Engine::_private::PostInitialize();
     
         dt = 0;
         gApp.initCalled = true;
     }
     
-    if (gApp.desc.callbacks)
+    if (!gApp.overrideUpdateCallback.first)
         gApp.desc.callbacks->Update(dt);
-    
+    else
+        gApp.overrideUpdateCallback.first(dt, gApp.overrideUpdateCallback.second);
+
     tmPrev = tmNow;
 }
 
@@ -566,6 +571,12 @@ InputKeyModifiers GetKeyMods()
 const char* GetName()
 {
     return CONFIG_APP_NAME;
+}
+
+void OverrideUpdateCallback(AppUpdateOverrideCallback callback, void* userData)
+{
+    gApp.overrideUpdateCallback.first = callback;
+    gApp.overrideUpdateCallback.second = userData;
 }
 
 } // App

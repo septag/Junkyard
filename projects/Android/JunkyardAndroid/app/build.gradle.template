@@ -7,7 +7,7 @@ android {
     defaultConfig.with {
         $(ApplicationId)
         minSdkVersion 29
-        targetSdkVersion 29
+        targetSdkVersion 32
     }
 
     compileOptions.with {

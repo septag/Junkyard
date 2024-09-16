@@ -9,6 +9,7 @@
 #include "../Core/TracyHelper.h"
 #include "../Core/Arrays.h"
 #include "../Core/Allocators.h"
+#include "../Core/Hash.h"
 
 #if PLATFORM_ANDROID
     #include "Application.h"    // appGetNativeAssetManagerHandle
@@ -112,15 +113,37 @@ struct VfsManager
 
 static VfsManager gVfs;
 
+// Fwd
 namespace Vfs
 {
+    static uint32 _FindMount(const char* path);
+    static uint32 _ResolveDiskPath(char* dstPath, uint32 dstPathSize, const char* path, VfsFlags flags);
+    static Blob _DiskReadFile(const char* path, VfsFlags flags, MemAllocator* alloc, Path* outResolvedPath = nullptr);
+    static size_t _DiskWriteFile(const char* path, VfsFlags flags, const Blob& blob);
+    static void _MonitorChangesClientCallback(uint32 cmd, const Blob& incomingData, void*, bool error, const char* errorDesc);
+    static bool _MonitorChangesServerCallback([[maybe_unused]] uint32 cmd, const Blob& incomingData, Blob* outgoingData, 
+                                              void*, char outgoingErrorDesc[REMOTE_ERROR_SIZE]);
+    static int _AsyncWorkerThread(void*);
+    static void _RemoteReadFileComplete(const char* path, const Blob& blob, void*);
+    static void _RemoteWriteFileComplete(const char* path, size_t bytesWritten, Blob&, void*);
+    static bool _ReadFileHandlerServerFn(uint32 cmd, const Blob& incomingData, Blob* outgoingData, 
+                                         void*, char outgoingErrorDesc[REMOTE_ERROR_SIZE]);
+    static bool _WriteFileHandlerServerFn(uint32 cmd, const Blob& incomingData, Blob* outgoingData, 
+                                          void*, char outgoingErrorDesc[REMOTE_ERROR_SIZE]);
+    static void _ReadFileHandlerClientFn([[maybe_unused]] uint32 cmd, const Blob& incomingData, void* userData, 
+                                         bool error, const char* errorDesc);
+    static void _WriteFileHandlerClientFn([[maybe_unused]] uint32 cmd, const Blob& incomingData, void* userData, 
+                                          bool error, const char* errorDesc);
 
-//----------------------------------------------------------------------------------------------------------------------
-// @fwd
-#if CONFIG_TOOLMODE
-static void _DmonCallback(dmon_watch_id watchId, dmon_action action, const char* rootDir, const char* filepath, const char*, void*);
-#endif
+    #if CONFIG_TOOLMODE
+    static void _DmonCallback(dmon_watch_id watchId, dmon_action action, const char* rootDir, const char* filepath, 
+                              const char*, void*);
+    #endif
 
+    #if PLATFORM_ANDROID
+    static Blob _PackageBundleReadFile(const char* path, VfsFlags flags, MemAllocator* alloc);
+    #endif
+} // Vfs
 
 //    ███╗   ███╗ ██████╗ ██╗   ██╗███╗   ██╗████████╗███████╗
 //    ████╗ ████║██╔═══██╗██║   ██║████╗  ██║╚══██╔══╝██╔════╝
@@ -128,7 +151,7 @@ static void _DmonCallback(dmon_watch_id watchId, dmon_action action, const char*
 //    ██║╚██╔╝██║██║   ██║██║   ██║██║╚██╗██║   ██║   ╚════██║
 //    ██║ ╚═╝ ██║╚██████╔╝╚██████╔╝██║ ╚████║   ██║   ███████║
 //    ╚═╝     ╚═╝ ╚═════╝  ╚═════╝ ╚═╝  ╚═══╝   ╚═╝   ╚══════╝
-bool MountLocal(const char* rootDir, const char* alias, [[maybe_unused]] bool watch)
+bool Vfs::MountLocal(const char* rootDir, const char* alias, [[maybe_unused]] bool watch)
 {
     if (Path::Stat_CStr(rootDir).type != PathType::Directory) {
         LOG_ERROR("VirtualFS: RootDir '%s' is not a valid directory", rootDir);
@@ -160,8 +183,10 @@ bool MountLocal(const char* rootDir, const char* alias, [[maybe_unused]] bool wa
     return true;
 }
 
-bool MountRemote(const char* alias, bool watch)
+bool Vfs::MountRemote(const char* alias, bool watch)
 {
+    static bool requestThreadInit = false;
+
     ASSERT_MSG(SettingsJunkyard::Get().engine.connectToServer, "Remote services is not enabled in settings");
     const char* url = SettingsJunkyard::Get().engine.remoteServicesUrl.CStr();
     
@@ -178,7 +203,9 @@ bool MountRemote(const char* alias, bool watch)
         return false;
     }
 
-    if (watch) {
+    // Run a thread that pings server for file changes
+    if (watch && !requestThreadInit) {
+        requestThreadInit = true;
         mount.watchId = 1;
 
         auto ReqFileChangesThreadFn = [](void*)
@@ -194,7 +221,7 @@ bool MountRemote(const char* alias, bool watch)
         if (!gVfs.reqFileChangesThrd.IsRunning()) {
             gVfs.reqFileChangesThrd.Start(ThreadDesc {
                 .entryFn = ReqFileChangesThreadFn, 
-                .name = "VfsRequestFileChanges",
+                .name = "VfsRequestRemoteFileChanges",
                 .stackSize = 64*SIZE_KB
             });
             gVfs.reqFileChangesThrd.SetPriority(ThreadPriority::Idle);
@@ -206,7 +233,7 @@ bool MountRemote(const char* alias, bool watch)
     return true;
 }
 
-static uint32 _FindMount(const char* path)
+static uint32 Vfs::_FindMount(const char* path)
 {
     if (path[0] == '/') 
         path = path + 1;
@@ -216,7 +243,7 @@ static uint32 _FindMount(const char* path)
     });
 }
 
-VfsMountType GetMountType(const char* path)
+VfsMountType Vfs::GetMountType(const char* path)
 {
     uint32 idx = _FindMount(path);   
     if (idx != UINT32_MAX)
@@ -225,7 +252,7 @@ VfsMountType GetMountType(const char* path)
         return VfsMountType::None;
 }
 
-bool StripMountPath(char* outPath, uint32 outPathSize, const char* path)
+bool Vfs::StripMountPath(char* outPath, uint32 outPathSize, const char* path)
 {
     uint32 index = _FindMount(path);
     if (index != UINT32_MAX) {
@@ -242,7 +269,7 @@ bool StripMountPath(char* outPath, uint32 outPathSize, const char* path)
 }
 
 #if PLATFORM_MOBILE
-bool MountPackageBundle(const char* alias)
+bool Vfs::MountPackageBundle(const char* alias)
 {
     VfsMountPoint mount {
         .type = VfsMountType::PackageBundle,
@@ -261,7 +288,7 @@ bool MountPackageBundle(const char* alias)
     return true;
 }
 #else   // PLATFORM_MOBILE
-bool MountPackageBundle(const char*)
+bool Vfs::MountPackageBundle(const char*)
 {
     ASSERT_MSG(0, "This function must only be used on mobile platforms");
     return false;
@@ -274,7 +301,7 @@ bool MountPackageBundle(const char*)
 //    ██║  ██║██║╚════██║██╔═██╗     ██║██║   ██║
 //    ██████╔╝██║███████║██║  ██╗    ██║╚██████╔╝
 //    ╚═════╝ ╚═╝╚══════╝╚═╝  ╚═╝    ╚═╝ ╚═════╝ 
-static uint32 _ResolveDiskPath(char* dstPath, uint32 dstPathSize, const char* path, VfsFlags flags)
+static uint32 Vfs::_ResolveDiskPath(char* dstPath, uint32 dstPathSize, const char* path, VfsFlags flags)
 {
     if ((flags & VfsFlags::AbsolutePath) == VfsFlags::AbsolutePath) {
         return UINT32_MAX;
@@ -299,7 +326,7 @@ static uint32 _ResolveDiskPath(char* dstPath, uint32 dstPathSize, const char* pa
     }
 }
 
-static Blob _DiskReadFile(const char* path, VfsFlags flags, MemAllocator* alloc, Path* outResolvedPath = nullptr)
+static Blob Vfs::_DiskReadFile(const char* path, VfsFlags flags, MemAllocator* alloc, Path* outResolvedPath)
 {
     auto LoadFromDisk = [](const char* path, VfsFlags flags, MemAllocator* alloc)->Blob {
         File f;
@@ -343,7 +370,7 @@ static Blob _DiskReadFile(const char* path, VfsFlags flags, MemAllocator* alloc,
     }
 }
 
-static size_t _DiskWriteFile(const char* path, VfsFlags flags, const Blob& blob)
+static size_t Vfs::_DiskWriteFile(const char* path, VfsFlags flags, const Blob& blob)
 {
     auto SaveToDisk = [](const char* path, VfsFlags, const Blob& blob)->size_t 
     {
@@ -412,7 +439,7 @@ static size_t _DiskWriteFile(const char* path, VfsFlags flags, const Blob& blob)
 }
 
 #if PLATFORM_ANDROID
-static Blob _PackageBundleReadFile(const char* path, VfsFlags flags, MemAllocator* alloc)
+static Blob Vfs::_PackageBundleReadFile(const char* path, VfsFlags flags, MemAllocator* alloc)
 {
     auto LoadFromAssetManager = [](const char* path, VfsFlags flags, MemAllocator* alloc)->Blob {
         AAsset* asset = AAssetManager_open(App::AndroidGetAssetManager(), path, AASSET_MODE_BUFFER);
@@ -457,7 +484,7 @@ static Blob _PackageBundleReadFile(const char* path, VfsFlags flags, MemAllocato
 }
 #endif // PLATFORM_ANDROID
 
-Blob ReadFile(const char* path, VfsFlags flags, MemAllocator* alloc, Path* outResolvedPath)
+Blob Vfs::ReadFile(const char* path, VfsFlags flags, MemAllocator* alloc, Path* outResolvedPath)
 {
     ASSERT((flags & VfsFlags::CreateDirs) != VfsFlags::CreateDirs);
     ASSERT((flags & VfsFlags::Append) != VfsFlags::Append);
@@ -492,7 +519,7 @@ Blob ReadFile(const char* path, VfsFlags flags, MemAllocator* alloc, Path* outRe
     }
 }
 
-size_t WriteFile(const char* path, const Blob& blob, VfsFlags flags)
+size_t Vfs::WriteFile(const char* path, const Blob& blob, VfsFlags flags)
 {
     uint32 idx = _FindMount(path);
     if (idx != UINT32_MAX) {
@@ -507,7 +534,7 @@ size_t WriteFile(const char* path, const Blob& blob, VfsFlags flags)
     }
 }
 
-uint64 GetLastModified(const char* path)
+uint64 Vfs::GetLastModified(const char* path)
 {
     ASSERT_MSG(GetMountType(path) != VfsMountType::Remote, "Remote mounts cannot read files in blocking mode");
 
@@ -518,7 +545,7 @@ uint64 GetLastModified(const char* path)
         return Path::Stat_CStr(path).lastModified;
 }
 
-uint64 GetFileSize(const char* path)
+uint64 Vfs::GetFileSize(const char* path)
 {
     ASSERT_MSG(GetMountType(path) != VfsMountType::Remote, "Remote mounts cannot read files in blocking mode");
 
@@ -529,7 +556,7 @@ uint64 GetFileSize(const char* path)
         return Path::Stat_CStr(path).size;
 }
 
-PathInfo GetFileInfo(const char* path)
+PathInfo Vfs::GetFileInfo(const char* path)
 {
     ASSERT_MSG(GetMountType(path) != VfsMountType::Remote, "Remote mounts cannot read files in blocking mode");
 
@@ -540,7 +567,7 @@ PathInfo GetFileInfo(const char* path)
         return Path::Stat_CStr(path);
 }
 
-Path ResolveFilepath(const char* path)
+Path Vfs::ResolveFilepath(const char* path)
 {
     ASSERT_MSG(GetMountType(path) != VfsMountType::Remote, "Remote mounts cannot read files in blocking mode");
 
@@ -551,7 +578,7 @@ Path ResolveFilepath(const char* path)
         return Path(path);
 }
 
-bool FileExists(const char* path)
+bool Vfs::FileExists(const char* path)
 {
     ASSERT_MSG(GetMountType(path) != VfsMountType::Remote, "Remote mounts cannot read files in blocking mode");
 
@@ -568,7 +595,7 @@ bool FileExists(const char* path)
 //    ██╔══██║██║   ██║   ██║       ██╔══██╗██╔══╝  ██║     ██║   ██║██╔══██║██║  ██║
 //    ██║  ██║╚██████╔╝   ██║       ██║  ██║███████╗███████╗╚██████╔╝██║  ██║██████╔╝
 //    ╚═╝  ╚═╝ ╚═════╝    ╚═╝       ╚═╝  ╚═╝╚══════╝╚══════╝ ╚═════╝ ╚═╝  ╚═╝╚═════╝ 
-void RegisterFileChangeCallback(VfsFileChangeCallback callback)
+void Vfs::RegisterFileChangeCallback(VfsFileChangeCallback callback)
 {
     ASSERT(callback);
 
@@ -576,39 +603,49 @@ void RegisterFileChangeCallback(VfsFileChangeCallback callback)
 }
 
 #if CONFIG_TOOLMODE
-static void _DmonCallback(dmon_watch_id watchId, dmon_action action, const char* rootDir, const char* filepath, const char*, void*)
+static void Vfs::_DmonCallback(dmon_watch_id watchId, dmon_action action, const char* rootDir, const char* filepath, const char*, void*)
 {
     switch (action) {
-    case DMON_ACTION_MODIFY: {
-        Path absFilepath = Path::Join(Path(rootDir), filepath);
-        PathInfo info = absFilepath.Stat();
-        if (info.type == PathType::File && info.size) {
-            for (uint32 i = 0; i < gVfs.mounts.Count(); i++) {
-                const VfsMountPoint& mount = gVfs.mounts[i];
-                if (mount.watchId == watchId.id) {
-                    Path aliasFilepath = Path::JoinUnix(mount.alias, Path(filepath));
-                    if (mount.type == VfsMountType::Local) {
-                        for (uint32 k = 0; k < gVfs.fileChangeCallbacks.Count(); k++) {
-                            VfsFileChangeCallback callback = gVfs.fileChangeCallbacks[k];
-                            callback(aliasFilepath.CStr());
+    case DMON_ACTION_MODIFY:
+        {
+            Path absFilepath = Path::Join(Path(rootDir), filepath);
+            PathInfo info = absFilepath.Stat();
+            if (info.type == PathType::File && info.size) {
+                for (uint32 i = 0; i < gVfs.mounts.Count(); i++) {
+                    const VfsMountPoint& mount = gVfs.mounts[i];
+                    if (mount.watchId == watchId.id) {
+                        Path aliasFilepath = Path::JoinUnix(mount.alias, Path(filepath));
+                        if (mount.type == VfsMountType::Local) {
+                            for (uint32 k = 0; k < gVfs.fileChangeCallbacks.Count(); k++) {
+                                VfsFileChangeCallback callback = gVfs.fileChangeCallbacks[k];
+                                callback(aliasFilepath.CStr());
+                            }
                         }
-                    }
                     
-                    if (SettingsJunkyard::Get().tooling.enableServer) {
-                        MutexScope mtx(gVfs.fileChangesMtx);
-                        gVfs.fileChanges.Push(VfsFileChangeEvent { .filepath = aliasFilepath });
-                    }
-                    break;
-                } // if mount.watchId == watchId
+                        if (SettingsJunkyard::Get().tooling.enableServer) {
+                            MutexScope mtx(gVfs.fileChangesMtx);
+                            uint32 filepathHash = Hash::Fnv32Str(aliasFilepath.CStr());
+                            
+                            uint32 index = gVfs.fileChanges.FindIf([filepathHash](const VfsFileChangeEvent& e) {
+                                return Hash::Fnv32Str(e.filepath.CStr()) == filepathHash;
+                            });
+
+                            if (index == -1)
+                                gVfs.fileChanges.Push(VfsFileChangeEvent { .filepath = aliasFilepath });
+                        }
+                        break;
+                    } // if mount.watchId == watchId
+                }
             }
         }
-    } break;
-    default: break;
+        break;
+    default: 
+        break;
     }
 }
 #endif // CONFIG_TOOLMODE
 
-static void MonitorChangesClientCallback([[maybe_unused]] uint32 cmd, const Blob& incomingData, void*, bool error, const char* errorDesc)
+static void Vfs::_MonitorChangesClientCallback([[maybe_unused]] uint32 cmd, const Blob& incomingData, void*, bool error, const char* errorDesc)
 {
     ASSERT(cmd == VFS_REMOTE_MONITOR_CHANGES_CMD);
     UNUSED(error);
@@ -626,11 +663,11 @@ static void MonitorChangesClientCallback([[maybe_unused]] uint32 cmd, const Blob
             if (path[0] == '/') 
                 path = path + 1;
 
-            uint32 idx = gVfs.mounts.FindIf([path](const VfsMountPoint& mount)->bool 
-                { return strIsEqualCount(path, mount.alias.CStr(), mount.alias.Length()) && 
-                     path[mount.alias.Length()] == '/';
-                });
-            if (idx != UINT32_MAX && gVfs.mounts[idx].type == VfsMountType::Remote && gVfs.mounts[idx].watchId) {
+            uint32 index = gVfs.mounts.FindIf([path](const VfsMountPoint& mount) { 
+                return strIsEqualCount(path, mount.alias.CStr(), mount.alias.Length()) && path[mount.alias.Length()] == '/';
+            });
+
+            if (index != UINT32_MAX && gVfs.mounts[index].type == VfsMountType::Remote && gVfs.mounts[index].watchId) {
                 for (uint32 k = 0; k < gVfs.fileChangeCallbacks.Count(); k++ ) {
                     VfsFileChangeCallback callback = gVfs.fileChangeCallbacks[k];
                     callback(filepath);
@@ -640,13 +677,14 @@ static void MonitorChangesClientCallback([[maybe_unused]] uint32 cmd, const Blob
     }
 }
 
-static bool vfsMonitorChangesServerCallback([[maybe_unused]] uint32 cmd, const Blob& incomingData, Blob* outgoingData, 
-                                            void*, char outgoingErrorDesc[kRemoteErrorDescSize])
+static bool Vfs::_MonitorChangesServerCallback([[maybe_unused]] uint32 cmd, const Blob& incomingData, Blob* outgoingData, 
+                                            void*, char outgoingErrorDesc[REMOTE_ERROR_SIZE])
 {
     ASSERT(cmd == VFS_REMOTE_MONITOR_CHANGES_CMD);
     UNUSED(outgoingErrorDesc);
     UNUSED(incomingData);
         
+    MutexScope lk(gVfs.fileChangesMtx);
     uint32 numChanges = gVfs.fileChanges.Count();
     outgoingData->Write<uint32>(numChanges);
 
@@ -668,7 +706,7 @@ static bool vfsMonitorChangesServerCallback([[maybe_unused]] uint32 cmd, const B
 //    ██╔══██║╚════██║  ╚██╔╝  ██║╚██╗██║██║         ██║██║   ██║
 //    ██║  ██║███████║   ██║   ██║ ╚████║╚██████╗    ██║╚██████╔╝
 //    ╚═╝  ╚═╝╚══════╝   ╚═╝   ╚═╝  ╚═══╝ ╚═════╝    ╚═╝ ╚═════╝ 
-static int AsyncWorkerThread(void*)
+static int Vfs::_AsyncWorkerThread(void*)
 {
     VfsAsyncManager* mgr = &gVfs.asyncMgr;
 
@@ -718,7 +756,7 @@ static int AsyncWorkerThread(void*)
     return 0;
 }
 
-void ReadFileAsync(const char* path, VfsFlags flags, VfsReadAsyncCallback readResultFn, void* user, MemAllocator* alloc)
+void Vfs::ReadFileAsync(const char* path, VfsFlags flags, VfsReadAsyncCallback readResultFn, void* user, MemAllocator* alloc)
 {
     ASSERT(gVfs.initialized);
 
@@ -766,7 +804,7 @@ void ReadFileAsync(const char* path, VfsFlags flags, VfsReadAsyncCallback readRe
     }
 }
 
-void WriteFileAsync(const char* path, const Blob& blob, VfsFlags flags, VfsWriteAsyncCallback writeResultFn, void* user)
+void Vfs::WriteFileAsync(const char* path, const Blob& blob, VfsFlags flags, VfsWriteAsyncCallback writeResultFn, void* user)
 {
     ASSERT(gVfs.initialized);
 
@@ -835,10 +873,10 @@ void WriteFileAsync(const char* path, const Blob& blob, VfsFlags flags, VfsWrite
 //    ██╔══██╗██╔══╝  ██║╚██╔╝██║██║   ██║   ██║   ██╔══╝      ██║██║   ██║
 //    ██║  ██║███████╗██║ ╚═╝ ██║╚██████╔╝   ██║   ███████╗    ██║╚██████╔╝
 //    ╚═╝  ╚═╝╚══════╝╚═╝     ╚═╝ ╚═════╝    ╚═╝   ╚══════╝    ╚═╝ ╚═════╝ 
-static void _RemoteReadFileComplete(const char* path, const Blob& blob, void*)
+static void Vfs::_RemoteReadFileComplete(const char* path, const Blob& blob, void*)
 {
     bool error = !blob.IsValid();
-    char errorDesc[kRemoteErrorDescSize];   errorDesc[0] = '\0';
+    char errorDesc[REMOTE_ERROR_SIZE];   errorDesc[0] = '\0';
     if (error)
         strCopy(errorDesc, sizeof(errorDesc), path);
 
@@ -858,10 +896,10 @@ static void _RemoteReadFileComplete(const char* path, const Blob& blob, void*)
     }
 }
 
-static void _RemoteWriteFileComplete(const char* path, size_t bytesWritten, Blob&, void*)
+static void Vfs::_RemoteWriteFileComplete(const char* path, size_t bytesWritten, Blob&, void*)
 {
     bool error = bytesWritten == 0;
-    char errorDesc[kRemoteErrorDescSize];   errorDesc[0] = '\0';
+    char errorDesc[REMOTE_ERROR_SIZE];   errorDesc[0] = '\0';
     if (error)
         strCopy(errorDesc, sizeof(errorDesc), path);
 
@@ -881,8 +919,8 @@ static void _RemoteWriteFileComplete(const char* path, size_t bytesWritten, Blob
     }
 }
 
-static bool _ReadFileHandlerServerFn(uint32 cmd, const Blob& incomingData, Blob* outgoingData, 
-                                     void*, char outgoingErrorDesc[kRemoteErrorDescSize])
+static bool Vfs::_ReadFileHandlerServerFn(uint32 cmd, const Blob& incomingData, Blob* outgoingData, 
+                                          void*, char outgoingErrorDesc[REMOTE_ERROR_SIZE])
 {
     ASSERT(cmd == VFS_REMOTE_READ_FILE_CMD);
     UNUSED(cmd);
@@ -898,8 +936,8 @@ static bool _ReadFileHandlerServerFn(uint32 cmd, const Blob& incomingData, Blob*
     return true;
 }
 
-static bool _WriteFileHandlerServerFn(uint32 cmd, const Blob& incomingData, Blob* outgoingData, 
-                                      void*, char outgoingErrorDesc[kRemoteErrorDescSize])
+static bool Vfs::_WriteFileHandlerServerFn(uint32 cmd, const Blob& incomingData, Blob* outgoingData, 
+                                           void*, char outgoingErrorDesc[REMOTE_ERROR_SIZE])
 {
     ASSERT(cmd == VFS_REMOTE_READ_FILE_CMD);
     UNUSED(cmd);
@@ -927,7 +965,8 @@ static bool _WriteFileHandlerServerFn(uint32 cmd, const Blob& incomingData, Blob
     }
 }
 
-static void _ReadFileHandlerClientFn([[maybe_unused]] uint32 cmd, const Blob& incomingData, void* userData, bool error, const char* errorDesc)
+static void Vfs::_ReadFileHandlerClientFn([[maybe_unused]] uint32 cmd, const Blob& incomingData, void* userData, 
+                                          bool error, const char* errorDesc)
 {
     ASSERT(cmd == VFS_REMOTE_READ_FILE_CMD);
     UNUSED(userData);
@@ -979,7 +1018,8 @@ static void _ReadFileHandlerClientFn([[maybe_unused]] uint32 cmd, const Blob& in
     }
 }
 
-static void _WriteFileHandlerClientFn([[maybe_unused]] uint32 cmd, const Blob& incomingData, void* userData, bool error, const char* errorDesc)
+static void Vfs::_WriteFileHandlerClientFn([[maybe_unused]] uint32 cmd, const Blob& incomingData, void* userData, 
+                                           bool error, const char* errorDesc)
 {
     ASSERT(cmd == VFS_REMOTE_WRITE_FILE_CMD);
     UNUSED(userData);
@@ -1030,7 +1070,7 @@ static void _WriteFileHandlerClientFn([[maybe_unused]] uint32 cmd, const Blob& i
 //    ██║██║╚██╗██║██║   ██║ ██╔╝  ██║  ██║██╔══╝  ██║██║╚██╗██║██║   ██║   
 //    ██║██║ ╚████║██║   ██║██╔╝   ██████╔╝███████╗██║██║ ╚████║██║   ██║   
 //    ╚═╝╚═╝  ╚═══╝╚═╝   ╚═╝╚═╝    ╚═════╝ ╚══════╝╚═╝╚═╝  ╚═══╝╚═╝   ╚═╝   
-bool Initialize()
+bool Vfs::Initialize()
 {
     gVfs.alloc = Mem::GetDefaultAlloc();
     gVfs.mounts.SetAllocator(gVfs.alloc);
@@ -1044,7 +1084,7 @@ bool Initialize()
         mgr->semaphore.Initialize();
 
         mgr->thread.Start(ThreadDesc {
-            .entryFn = AsyncWorkerThread, 
+            .entryFn = _AsyncWorkerThread, 
             .name = "VfsAsyncWorkerThread"
         });
         mgr->thread.SetPriority(ThreadPriority::Low);
@@ -1083,8 +1123,8 @@ bool Initialize()
 
     Remote::RegisterCommand(RemoteCommandDesc {
         .cmdFourCC = VFS_REMOTE_MONITOR_CHANGES_CMD,
-        .serverFn = vfsMonitorChangesServerCallback,
-        .clientFn = MonitorChangesClientCallback
+        .serverFn = _MonitorChangesServerCallback,
+        .clientFn = _MonitorChangesClientCallback
     });
 
     gVfs.initialized = true;
@@ -1098,7 +1138,7 @@ bool Initialize()
     return true;
 }
 
-void Release()
+void Vfs::Release()
 {
     gVfs.quit = true;
 
@@ -1136,7 +1176,7 @@ void Release()
     gVfs.initialized = false;
 }
 
-void HelperMountDataAndShaders(bool remote, const char* dataDir)
+void Vfs::HelperMountDataAndShaders(bool remote, const char* dataDir)
 {
     // Assume that we are in the root directory of the project with "data" and "code" folders under it
     if (remote) {
@@ -1148,6 +1188,3 @@ void HelperMountDataAndShaders(bool remote, const char* dataDir)
         Vfs::MountLocal("code/Shaders", "shaders", true);
     }
 }
-
-
-} // Vfs

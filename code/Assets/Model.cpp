@@ -531,6 +531,7 @@ static bool modelSetupGpuBuffers(Model* model, GfxBufferUsage vbuffUsage, GfxBuf
 
                 if (!mesh->gpuBuffers.vertexBuffers[bufferIndex].IsValid())
                     return false;
+
                 bufferIndex++;
             }
         }
@@ -1063,7 +1064,7 @@ static void modelLoadTask(uint32 groupIndex, void* userData)
     outgoingBlob.SetGrowPolicy(Blob::GrowPolicy::Multiply);
     
     char filepath[PATH_CHARS_MAX];
-    char errorMsg[kRemoteErrorDescSize];
+    char errorMsg[REMOTE_ERROR_SIZE];
     AssetPlatform::Enum platform;
     ModelLoadParams loadModelParams;
 
@@ -1125,7 +1126,7 @@ static void modelLoadTask(uint32 groupIndex, void* userData)
 }
 
 static bool modelHandlerServerFn([[maybe_unused]] uint32 cmd, const Blob& incomingData, Blob*, 
-                                 void*, char outgoingErrorDesc[kRemoteErrorDescSize])
+                                 void*, char outgoingErrorDesc[REMOTE_ERROR_SIZE])
 {
     ASSERT(cmd == RCMD_LOAD_MODEL);
     UNUSED(outgoingErrorDesc);
@@ -1290,6 +1291,7 @@ bool _private::assetInitializeModelManager()
         .fourcc = MODEL_ASSET_TYPE,
         .name = "Model",
         .callbacks = &gModelLoader,
+        .impl = &gModelImpl,
         .extraParamTypeName = "ModelLoadParams",
         .extraParamTypeSize = sizeof(ModelLoadParams),
         .failedObj = nullptr,
@@ -1321,11 +1323,9 @@ void _private::assetReleaseModelManager()
 
 namespace Asset
 {
-    static Span<Model> _LoadGLTF(Blob& fileBlob, const Path& fileDir, MemAllocator* tmpAlloc, const ModelLoadParams& params, String<256>* outErrorDesc)
+    static Pair<Model*, uint32> _LoadGLTF(Blob& fileBlob, const Path& fileDir, MemTempAllocator* tmpAlloc, const ModelLoadParams& params, String<256>* outErrorDesc)
     {
         const ModelGeometryLayout& layout = params.layout.vertexBufferStrides[0] ? params.layout : gModelCtx.defaultLayout;
-
-        Path fileDir = Path(filepath).GetDirectory();
 
         cgltf_options options {
             .type = cgltf_file_type_invalid,
@@ -1361,10 +1361,10 @@ namespace Asset
         }
 
         // Load Data buffers
-        ASSERT_ALWAYS(data->buffers_count, "Model '%s' does not contain any data buffers", filepath);
+        ASSERT_ALWAYS(data->buffers_count, "Model does not contain any data buffers");
         for (uint32 i = 0; i < (uint32)data->buffers_count; i++) {
             Path bufferFilepath = Path::JoinUnix(fileDir, data->buffers[i].uri);
-            Blob bufferBlob = Vfs::ReadFile(bufferFilepath.CStr(), VfsFlags::None, &tmpAlloc);
+            Blob bufferBlob = Vfs::ReadFile(bufferFilepath.CStr(), VfsFlags::None, tmpAlloc);
             if (!bufferBlob.IsValid()) {
                 outErrorDesc->FormatSelf("Load model buffer failed: %s", bufferFilepath.CStr());
                 return {};
@@ -1383,8 +1383,8 @@ namespace Asset
         };
 
         uint32 numTotalTextures = 0;
-        Array<MaterialData> materials(&tmpAlloc);
-        Array<uint32> materialsMap(&tmpAlloc);     // count = NumMeshes*NumSubmeshPerMesh: maps each gltf material index to materials array
+        Array<MaterialData> materials(tmpAlloc);
+        Array<uint32> materialsMap(tmpAlloc);     // count = NumMeshes*NumSubmeshPerMesh: maps each gltf material index to materials array
 
         for (uint32 i = 0; i < uint32(data->meshes_count); i++) {
             cgltf_mesh* mesh = &data->meshes[i];
@@ -1394,7 +1394,7 @@ namespace Asset
                 if (prim->material) {
                     uint32 hash;
                     uint32 numTextures;
-                    ModelMaterial* mtl = modelCreateMaterial(&numTextures, &hash, prim->material, fileDir.CStr(), &tmpAlloc);
+                    ModelMaterial* mtl = modelCreateMaterial(&numTextures, &hash, prim->material, fileDir.CStr(), tmpAlloc);
 
                     numTotalTextures += numTextures;
 
@@ -1403,7 +1403,7 @@ namespace Asset
                         index = materials.Count();
                         materials.Push(MaterialData { 
                             .mtl = mtl, 
-                            .size = uint32(tmpAlloc.GetOffset() - tmpAlloc.GetPointerOffset(mtl)), 
+                            .size = uint32(tmpAlloc->GetOffset() - tmpAlloc->GetPointerOffset(mtl)), 
                             .id = IndexToId(index),
                             .hash = hash });
                     }
@@ -1414,12 +1414,13 @@ namespace Asset
         }
 
         // Start creating the model. This is where the blob data starts
-        Model* model = tmpAlloc.MallocZeroTyped<Model>();
+        Model* model = tmpAlloc->MallocZeroTyped<Model>();
         model->rootTransform = TRANSFORM3D_IDENT;
         model->layout = layout;
+        model->numMaterialTextures = numTotalTextures;
 
         // Meshes
-        model->meshes = tmpAlloc.MallocZeroTyped<ModelMesh>((uint32)data->meshes_count);
+        model->meshes = tmpAlloc->MallocZeroTyped<ModelMesh>((uint32)data->meshes_count);
         model->numMeshes = (uint32)data->meshes_count;
         uint32 mtlIndex = 0;
 
@@ -1430,17 +1431,17 @@ namespace Asset
             if (mesh->name == nullptr) {
                 char name[32];
                 strPrintFmt(name, sizeof(name), "Mesh_%u", i);
-                mesh->name = Mem::AllocCopy<char>(name, sizeof(name), &tmpAlloc);
+                mesh->name = Mem::AllocCopy<char>(name, strLen(name)+1, tmpAlloc);
             }
 
             dstMesh->name = mesh->name;
-            dstMesh->submeshes = tmpAlloc.MallocZeroTyped<ModelSubmesh>((uint32)mesh->primitives_count);
-            dstMesh->numSubmeshes = (uint32)mesh->primitives_count;
+            dstMesh->submeshes = tmpAlloc->MallocZeroTyped<ModelSubmesh>(uint32(mesh->primitives_count));
+            dstMesh->numSubmeshes = uint32(mesh->primitives_count);
 
             // NumVertices/Indices/MaterialsIds
             uint32 numVertices = 0;
             uint32 numIndices = 0;
-            for (uint32 pi = 0; pi < (uint32)mesh->primitives_count; pi++) {
+            for (uint32 pi = 0; pi < uint32(mesh->primitives_count); pi++) {
                 cgltf_primitive* prim = &mesh->primitives[pi];
                 uint32 count = 0;
 
@@ -1448,18 +1449,16 @@ namespace Asset
                     cgltf_attribute* srcAtt = &prim->attributes[ai];
                     if (count == 0) 
                     count = (uint32)srcAtt->data->count;
-                    ASSERT_ALWAYS(count == (uint32)srcAtt->data->count, 
-                                  "Model %s, mesh %s: all primitives of the mesh should have the same vertex attributes", 
-                                  filepath, mesh->name);
+                    ASSERT_ALWAYS(count == uint32(srcAtt->data->count), "Mesh %s: all primitives of the mesh should have the same vertex attributes", mesh->name);
                 }
 
                 numVertices += count;
-                numIndices += (uint32)mesh->primitives[pi].indices->count;
+                numIndices += uint32(mesh->primitives[pi].indices->count);
 
                 if (prim->material)
                 dstMesh->submeshes[pi].materialId = materials[materialsMap[mtlIndex++]].id;
             } // foreach (mesh-primitive)
-            ASSERT_ALWAYS(numVertices && numIndices, "Model %s Mesh %s: doesn't have any vertices", filepath, mesh->name);
+            ASSERT_ALWAYS(numVertices && numIndices, "Mesh %s: doesn't have any vertices", mesh->name);
             dstMesh->numVertices = numVertices;
             dstMesh->numIndices = numIndices;
 
@@ -1467,12 +1466,12 @@ namespace Asset
             uint32 bufferIdx = 0;
             while (layout.vertexBufferStrides[bufferIdx]) {
                 uint32 vertexSize = layout.vertexBufferStrides[bufferIdx];
-                dstMesh->cpuBuffers.vertexBuffers[bufferIdx] = tmpAlloc.MallocTyped<uint8>(vertexSize*numVertices);
+                dstMesh->cpuBuffers.vertexBuffers[bufferIdx] = tmpAlloc->MallocTyped<uint8>(vertexSize*numVertices);
                 bufferIdx++;
             }
             dstMesh->numVertexBuffers = bufferIdx;
 
-            dstMesh->cpuBuffers.indexBuffer = tmpAlloc.MallocTyped<uint32>(numIndices);
+            dstMesh->cpuBuffers.indexBuffer = tmpAlloc->MallocTyped<uint32>(numIndices);
             modelSetupBuffers(dstMesh, layout, mesh);
         } // foreach (mesh)
 
@@ -1480,15 +1479,15 @@ namespace Asset
         // Construct materials (from previously created array)
         if (materials.Count()) {
             model->numMaterials = materials.Count();
-            model->materials = tmpAlloc.MallocZeroTyped<RelativePtr<ModelMaterial>>(materials.Count());
+            model->materials = tmpAlloc->MallocZeroTyped<RelativePtr<ModelMaterial>>(materials.Count());
             for (uint32 i = 0; i < materials.Count(); i++) {
                 const MaterialData& m = materials[i];
-                model->materials[i] = Mem::AllocCopyRawBytes<ModelMaterial>(m.mtl, m.size, &tmpAlloc);
+                model->materials[i] = Mem::AllocCopyRawBytes<ModelMaterial>(m.mtl, m.size, tmpAlloc);
             }
         }
 
         // Nodes
-        model->nodes = tmpAlloc.MallocZeroTyped<ModelNode>((uint32)data->nodes_count);
+        model->nodes = tmpAlloc->MallocZeroTyped<ModelNode>((uint32)data->nodes_count);
         model->numNodes = (uint32)data->nodes_count;
 
         for (uint32 i = 0; i < (uint32)data->nodes_count; i++) {
@@ -1499,17 +1498,17 @@ namespace Asset
             if (srcNode->name == nullptr) {
                 char name[32];
                 strPrintFmt(name, sizeof(name), "Node_%u", i);
-                srcNode->name = Mem::AllocCopy<char>(name, sizeof(name), &tmpAlloc);
+                srcNode->name = Mem::AllocCopy<char>(name, sizeof(name), tmpAlloc);
             }
 
             dstNode->localTransform = TRANSFORM3D_IDENT;
             dstNode->name = srcNode->name;
             if (dstNode->name.Length() != strLen(srcNode->name)) {
-                LOG_WARNING("Model %s, Node: %s: name is too long (more than standard 31 characters), "
-                            "Node setup will likely have errors", filepath, srcNode->name);
+                LOG_WARNING("Node: %s: name is too long (more than standard 31 characters), "
+                            "Node setup will likely have errors", srcNode->name);
             }
 
-            ASSERT_ALWAYS(!srcNode->has_scale, "Model %s, Node: %s: Node scaling not supported yet", filepath, srcNode->name);
+            ASSERT_ALWAYS(!srcNode->has_scale, "Node: %s: Node scaling not supported yet", srcNode->name);
 
             if (srcNode->has_rotation) 
             dstNode->localTransform.rot = quatToMat3(Quat(srcNode->rotation));
@@ -1557,15 +1556,15 @@ namespace Asset
 
             if (srcNode->children_count) {
                 dstNode->numChilds = (uint32)srcNode->children_count;
-                dstNode->childIds = tmpAlloc.MallocZeroTyped<uint32>((uint32)srcNode->children_count);
+                dstNode->childIds = tmpAlloc->MallocZeroTyped<uint32>((uint32)srcNode->children_count);
                 for (uint32 ci = 0; ci < (uint32)srcNode->children_count; ci++)
                 dstNode->childIds[ci] = FindNodeByName(srcNode->children[ci]->name);
             }
         }
 
         // Allocate one big chunk and copy the temp data over to it
-        uint32 modelBufferSize = uint32(tmpAlloc.GetOffset() - tmpAlloc.GetPointerOffset(model));
-        return Span<Model>(Mem::AllocCopyRawBytes<Model>(model, modelBufferSize, alloc), modelBufferSize);
+        uint32 modelBufferSize = uint32(tmpAlloc->GetOffset() - tmpAlloc->GetPointerOffset(model));
+        return Pair<Model*, uint32>(model, modelBufferSize);
     }
 }
 
@@ -1573,13 +1572,17 @@ bool AssetModelImpl::Bake(const AssetParams& params, AssetData* data, const Span
 {
     const ModelLoadParams* modelParams = (const ModelLoadParams*)params.typeSpecificParams;
 
-    Span<Model> modelBuffer = modelLoadGltf(params.path, params.alloc, *modelParams, outErrorDesc->Ptr(), outErrorDesc->Capacity());
-    Model* model = modelBuffer.Ptr();
-    uint32 modelBufferSize = modelBuffer.Count();
-    if (!model) {
-        *outErrorDesc = "Parsing GLTF model failed";
+    MemTempAllocator tmpAlloc;
+    Blob fileBlob(const_cast<uint8*>(srcData.Ptr()), srcData.Count());
+    fileBlob.SetSize(srcData.Count());
+
+    Path fileDir = params.path.GetDirectory();
+
+    Pair<Model*, uint32> modelResult = Asset::_LoadGLTF(fileBlob, fileDir, &tmpAlloc, *modelParams, outErrorDesc);
+    Model* model = modelResult.first;
+    uint32 modelBufferSize = modelResult.second;
+    if (!model)
         return false;
-    }
     
     #if CONFIG_TOOLMODE
     modelOptimizeModel(model, *modelParams);
@@ -1598,10 +1601,10 @@ bool AssetModelImpl::Bake(const AssetParams& params, AssetData* data, const Span
                 uint32 bufferIndex = 0;
                 while (layout->vertexBufferStrides[bufferIndex]) {
                     GfxBufferDesc desc {
-                        .size = layout->vertexBufferStrides[bufferIndex]*mesh->numVertices,
+                        .size = layout->vertexBufferStrides[bufferIndex]*mesh.numVertices,
                         .type = GfxBufferType::Vertex,
                         .usage = modelParams->vertexBufferUsage,
-                        .content = mesh->cpuBuffers.vertexBuffers[bufferIndex].Get()
+                        .content = mesh.cpuBuffers.vertexBuffers[bufferIndex].Get()
                     };
 
                     data->AddGpuBufferObject(&mesh.gpuBuffers.vertexBuffers[bufferIndex], desc);
@@ -1611,10 +1614,10 @@ bool AssetModelImpl::Bake(const AssetParams& params, AssetData* data, const Span
 
             if (modelParams->indexBufferUsage != GfxBufferUsage::Default) {
                 GfxBufferDesc desc {
-                    .size = uint32(sizeof(uint32)*mesh->numIndices),
+                    .size = uint32(sizeof(uint32)*mesh.numIndices),
                     .type = GfxBufferType::Index,
                     .usage = modelParams->indexBufferUsage,
-                    .content = mesh->cpuBuffers.indexBuffer.Get(),
+                    .content = mesh.cpuBuffers.indexBuffer.Get(),
                 };
 
                 data->AddGpuBufferObject(&mesh.gpuBuffers.indexBuffer, desc);
@@ -1624,7 +1627,6 @@ bool AssetModelImpl::Bake(const AssetParams& params, AssetData* data, const Span
 
     // Dependencies (Textures)
     if (model->numMaterialTextures) {
-        uint32 dependsBufferSize;
         AssetParams assetParams {
             .typeId = IMAGE_ASSET_TYPE,
             .platform = params.platform
@@ -1634,7 +1636,7 @@ bool AssetModelImpl::Bake(const AssetParams& params, AssetData* data, const Span
             const ModelMesh& mesh = model->meshes[i];
             for (uint32 smi = 0; smi < mesh.numSubmeshes; smi++) {
                 const ModelSubmesh& submesh = mesh.submeshes[smi];
-                const ModelMaterial* mtl = model->materials[IdToIndex(submesh.materialId)].Get();
+                ModelMaterial* mtl = model->materials[IdToIndex(submesh.materialId)].Get();
 
                 if (!mtl->pbrMetallicRoughness.baseColorTex.texturePath.IsNull()) {
                     assetParams.path = mtl->pbrMetallicRoughness.baseColorTex.texturePath.Get();
@@ -1645,7 +1647,7 @@ bool AssetModelImpl::Bake(const AssetParams& params, AssetData* data, const Span
                 if (!mtl->pbrMetallicRoughness.metallicRoughnessTex.texturePath.IsNull()) {
                     assetParams.path = mtl->pbrMetallicRoughness.metallicRoughnessTex.texturePath.Get();
                     assetParams.typeSpecificParams = &mtl->pbrMetallicRoughness.metallicRoughnessTex.params;
-                    data->AddDependency(&mtl->pbrMetallicRoughness.pbrMetallicRoughness.texture, assetParams);
+                    data->AddDependency(&mtl->pbrMetallicRoughness.metallicRoughnessTex.texture, assetParams);
                 }
 
                 if (!mtl->normalTexture.texturePath.IsNull()) {
@@ -1664,4 +1666,20 @@ bool AssetModelImpl::Bake(const AssetParams& params, AssetData* data, const Span
     } // we have textures 
 
     return true;
+}
+
+AssetHandleModel Asset::LoadModel(const char* path, const ModelLoadParams& params, const AssetGroup& group)
+{
+    AssetParams assetParams {
+        .typeId = MODEL_ASSET_TYPE,
+        .path = path,
+        .typeSpecificParams = const_cast<ModelLoadParams*>(&params)
+    };
+
+    return group.AddToLoadQueue(assetParams);
+}
+
+Model* Asset::GetModel(AssetHandleModel handle)
+{
+    return (Model*)Asset::GetObjData(handle);
 }

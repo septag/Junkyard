@@ -29,7 +29,6 @@ PRAGMA_DIAGNOSTIC_POP()
 static constexpr size_t MEM_TEMP_MAX_BUFFER_SIZE = CONFIG_TEMP_ALLOC_MAX;
 static constexpr uint32 MEM_TEMP_FRAME_PEAKS_COUNT = 4;
 static constexpr uint32 MEM_TEMP_PAGE_SIZE = CONFIG_TEMP_ALLOC_PAGE_SIZE;
-static constexpr float  MEM_TEMP_VALIDATE_RESET_TIME = 5.0f;
 static constexpr uint32 MEM_TEMP_MAX_STACK_FRAMES = 8;
 
 struct MemTempStack

@@ -107,7 +107,7 @@ PRAGMA_DIAGNOSTIC_POP()
 //    ╚██████╔╝███████╗╚██████╔╝██████╔╝██║  ██║███████╗███████║
 //     ╚═════╝ ╚══════╝ ╚═════╝ ╚═════╝ ╚═╝  ╚═╝╚══════╝╚══════╝
 static constexpr uint32 kMaxSwapchainImages = 3;
-static constexpr uint32 kMaxFramesInFlight = 2;
+static constexpr uint32 MAX_FRAMES_IN_FLIGHT = 2;
 static constexpr uint32 kMaxDescriptorSetLayoutPerPipeline = 3;
 
 #ifdef TRACY_ENABLE
@@ -262,10 +262,10 @@ struct GfxDescriptorSetData
 struct GfxCommandBufferThreadData
 {
     uint64 lastResetFrame;
-    VkCommandPool commandPools[kMaxFramesInFlight];
+    VkCommandPool commandPools[MAX_FRAMES_IN_FLIGHT];
     VkCommandBuffer curCmdBuffer;
-    Array<VkCommandBuffer> freeLists[kMaxFramesInFlight];
-    Array<VkCommandBuffer> cmdBuffers[kMaxFramesInFlight];
+    Array<VkCommandBuffer> freeLists[MAX_FRAMES_IN_FLIGHT];
+    Array<VkCommandBuffer> cmdBuffers[MAX_FRAMES_IN_FLIGHT];
     bool initialized;
     bool deferredCmdBuffer;
     bool renderingToSwapchain;
@@ -376,13 +376,13 @@ struct GfxContext
     GfxSwapchain swapchain;
     VkDescriptorPool descriptorPool;
 
-    VkQueryPool queryPool[kMaxFramesInFlight];
+    VkQueryPool queryPool[MAX_FRAMES_IN_FLIGHT];
     AtomicUint32 queryFirstCall;
     uint32 _padding3;
 
-    VkSemaphore imageAvailSemaphores[kMaxFramesInFlight];
-    VkSemaphore renderFinishedSemaphores[kMaxFramesInFlight];
-    VkFence inflightFences[kMaxFramesInFlight];
+    VkSemaphore imageAvailSemaphores[MAX_FRAMES_IN_FLIGHT];
+    VkSemaphore renderFinishedSemaphores[MAX_FRAMES_IN_FLIGHT];
+    VkFence inflightFences[MAX_FRAMES_IN_FLIGHT];
     VkFence inflightImageFences[kMaxSwapchainImages];  // count: Swapchain.numImages
     Array<GfxGarbage> garbage;
 
@@ -1129,7 +1129,7 @@ bool _private::gfxInitialize()
     fenceCreateInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
     fenceCreateInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
 
-    for (uint32 i = 0; i < kMaxFramesInFlight; i++) {
+    for (uint32 i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
         if (VK_FAILED(vkCreateSemaphore(gVk.device, &semaphoreCreateInfo, &gVk.allocVk, &gVk.imageAvailSemaphores[i])) ||
             VK_FAILED(vkCreateSemaphore(gVk.device, &semaphoreCreateInfo, &gVk.allocVk, &gVk.renderFinishedSemaphores[i])))
         {
@@ -1221,7 +1221,7 @@ bool _private::gfxInitialize()
             .queryType = VK_QUERY_TYPE_TIMESTAMP,
             .queryCount = 2
         };
-        for (uint32 i = 0; i < kMaxFramesInFlight; i++) {
+        for (uint32 i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
             if (vkCreateQueryPool(gVk.device, &queryCreateInfo, &gVk.allocVk, &gVk.queryPool[i]) != VK_SUCCESS) {
                 LOG_ERROR("Gfx: Creating main query pool failed");
                 return false;
@@ -1488,7 +1488,7 @@ static VkCommandBuffer gfxGetNewCommandBuffer()
             .queueFamilyIndex = gVk.gfxQueueFamilyIndex
         };
 
-        for (uint32 i = 0; i < kMaxFramesInFlight; i++) {
+        for (uint32 i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
             if (vkCreateCommandPool(gVk.device, &poolCreateInfo, &gVk.allocVk, &gCmdBufferThreadData.commandPools[i]) != VK_SUCCESS) {
                 ASSERT_MSG(0, "Creating command-pool failed");
                 return VK_NULL_HANDLE;
@@ -4134,7 +4134,7 @@ void _private::gfxSetUpdateImageDescriptorCallback(_private::GfxUpdateImageDescr
 static void gfxCollectGarbage(bool force)
 {
     uint64 frameIdx = Engine::GetFrameIndex();
-    const uint32 numFramesToWait = kMaxFramesInFlight;
+    const uint32 numFramesToWait = MAX_FRAMES_IN_FLIGHT;
 
     for (uint32 i = 0; i < gVk.garbage.Count();) {
         const GfxGarbage& garbage = gVk.garbage[i];
@@ -4279,7 +4279,7 @@ void _private::gfxRelease()
     #ifdef TRACY_ENABLE
     gfxReleaseProfiler();
     #endif
-    for (uint32 i = 0; i < kMaxFramesInFlight; i++) {
+    for (uint32 i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
         if (gVk.queryPool[i])
             vkDestroyQueryPool(gVk.device, gVk.queryPool[i], &gVk.allocVk);
     }
@@ -4300,7 +4300,7 @@ void _private::gfxRelease()
 
         // Release any allocated command buffer pools collected from threads
         for (GfxCommandBufferThreadData* threadData : gVk.initializedThreadData) {
-            for (uint32 i = 0; i < kMaxFramesInFlight; i++) {
+            for (uint32 i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
                 vkDestroyCommandPool(gVk.device, threadData->commandPools[i], &gVk.allocVk);
                 threadData->freeLists[i].Free();
                 threadData->cmdBuffers[i].Free();
@@ -4308,7 +4308,7 @@ void _private::gfxRelease()
             memset(threadData, 0x0, sizeof(*threadData));
         }
 
-        for (uint32 i = 0; i < kMaxFramesInFlight; i++) {
+        for (uint32 i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
             if (gVk.imageAvailSemaphores[i])
                 vkDestroySemaphore(gVk.device, gVk.imageAvailSemaphores[i], &gVk.allocVk);
             if (gVk.renderFinishedSemaphores[i])
@@ -4445,7 +4445,7 @@ void _private::gfxEndFrame()
     }
 
     gVk.prevFrameIdx = frameIdx;
-    Atomic::StoreExplicit(&gVk.currentFrameIdx, (frameIdx + 1) % kMaxFramesInFlight, AtomicMemoryOrder::Release);
+    Atomic::StoreExplicit(&gVk.currentFrameIdx, (frameIdx + 1) % MAX_FRAMES_IN_FLIGHT, AtomicMemoryOrder::Release);
 
     //------------------------------------------------------------------------
     // Submit last command-buffers + draw to swpachain framebuffer
@@ -4654,8 +4654,8 @@ float gfxGetRenderTimeNs()
 
     uint64 frameTimestamps[2];
     // Try getting results for the last successfully queried frame
-    for (uint32 i = kMaxFramesInFlight; i-- > 0;) {
-        uint32 frame = (gVk.currentFrameIdx + i)%kMaxFramesInFlight;
+    for (uint32 i = MAX_FRAMES_IN_FLIGHT; i-- > 0;) {
+        uint32 frame = (gVk.currentFrameIdx + i)%MAX_FRAMES_IN_FLIGHT;
         if (vkGetQueryPoolResults(gVk.device, gVk.queryPool[frame], 0, 2, sizeof(frameTimestamps), frameTimestamps, 
                                   sizeof(uint64), VK_QUERY_RESULT_64_BIT) == VK_SUCCESS)
         {
@@ -4810,7 +4810,7 @@ struct GfxProfileQueryContext
 
 struct GfxProfileState
 {
-    GfxProfileQueryContext gfxQueries[kMaxFramesInFlight];
+    GfxProfileQueryContext gfxQueries[MAX_FRAMES_IN_FLIGHT];
     VkTimeDomainEXT timeDomain;
     uint8 uniqueIdGenerator;
     bool initialized;
@@ -5032,7 +5032,7 @@ static bool gfxInitializeProfiler()
     //------------------------------------------------------------------------------------------------------------------
     //
     const char* name = "GfxQueue";
-    for (uint32 i = 0; i < kMaxFramesInFlight; i++) {
+    for (uint32 i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
         GfxProfileQueryContext* ctx = &gGfxProfile.gfxQueries[i];
         if (!gfxInitializeProfileQueryContext(ctx, gGfxProfile.uniqueIdGenerator++, cmdPool)) {
             vkDestroyCommandPool(gVk.device, cmdPool, nullptr);
@@ -5056,7 +5056,7 @@ static bool gfxInitializeProfiler()
 static void gfxReleaseProfiler()
 {
     if (gGfxProfile.initialized) {
-        for (uint32 i = 0; i < kMaxFramesInFlight; i++) {
+        for (uint32 i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
             gfxReleaseProfileQueryContext(&gGfxProfile.gfxQueries[i]);
         }
     }

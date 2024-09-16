@@ -117,6 +117,10 @@ namespace Engine
     {
         // TODO: can show some cool anim or something
         BeginFrame(dt);
+        gfxBeginCommandBuffer();
+        gfxCmdBeginSwapchainRenderPass();
+        gfxCmdEndSwapchainRenderPass();
+        gfxEndCommandBuffer();
         EndFrame(dt);
 
         if (gEng.initResourcesGroup.IsLoadFinished()) {
@@ -212,14 +216,14 @@ bool Engine::Initialize()
             LOG_INFO("(init) Display (%ux%u), DPI scale: %.2f, RefreshRate: %uhz", dinfo.width, dinfo.height, dinfo.dpiScale, dinfo.refreshRate);
         }
 
-        if (!_private::gfxInitialize()) {
+        if (!::_private::gfxInitialize()) {
             LOG_ERROR("Initializing Graphics failed");
             return false;
         }
     }
 
     // Asset manager
-    if (!_private::assetInitialize() || !Asset::Initialize()) {
+    if (!::_private::assetInitialize() || !Asset::Initialize()) {
         LOG_ERROR("Initializing AssetManager failed");
         return false;
     }
@@ -261,6 +265,11 @@ bool Engine::Initialize()
     LOG_INFO("(init) Engine initialized (%.1f ms)", Timer::ToMS(Timer::GetTicks()));
     gEng.initialized = true;
 
+    return true;
+}
+
+void Engine::_private::PostInitialize()
+{
     // Fire up resource loading and override the update loop, so we can show something and wait for the init resources to finish
     if (gEng.initResourcesGroup.HasItemsInQueue()) {
         LOG_INFO("(init) Loading initial resources");
@@ -270,8 +279,6 @@ bool Engine::Initialize()
     else {
         gEng.resourcesInitialized = true;
     }
-
-    return true;
 }
 
 void Engine::Release()
@@ -288,15 +295,22 @@ void Engine::Release()
         DebugDraw::Release();
     } 
 
-    _private::assetRelease();
+    ::_private::assetRelease();
 
-    if (gEng.initResourcesGroup.mHandle.IsValid())
+    if (gEng.initResourcesGroup.mHandle.IsValid()) {
         gEng.initResourcesGroup.Unload();
+
+        while (!gEng.initResourcesGroup.IsIdle()) {
+            Asset::Update();
+            Thread::Sleep(1);
+        }
+    }
+
     Asset::DestroyGroup(gEng.initResourcesGroup);
     Asset::Release();
 
     if (gfxSettings.enable)
-        _private::gfxRelease();
+        ::_private::gfxRelease();
 
     if (SettingsJunkyard::Get().engine.connectToServer)
         Remote::Disconnect();
@@ -357,7 +371,7 @@ void Engine::BeginFrame(float dt)
     if (!SettingsJunkyard::Get().graphics.headless) {
         if (gEng.resourcesInitialized)
             ImGui::BeginFrame(dt);
-        _private::gfxBeginFrame();
+        ::_private::gfxBeginFrame();
     }
 
     gEng.rawFrameStartTime = Timer::GetTicks();
@@ -376,11 +390,11 @@ void Engine::EndFrame(float dt)
     gEng.rawFrameTime = Timer::Diff(Timer::GetTicks(), gEng.rawFrameStartTime);
 
     if (!SettingsJunkyard::Get().graphics.headless) {
-        _private::gfxEndFrame();
-        _private::assetCollectGarbage();
+        ::_private::gfxEndFrame();
+        ::_private::assetCollectGarbage();
     }
 
-    _private::assetUpdateCache(dt);
+    ::_private::assetUpdateCache(dt);
 
     MemTempAllocator::Reset();
 

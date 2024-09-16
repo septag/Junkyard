@@ -32,17 +32,17 @@
 
 struct AppImpl final : AppCallbacks
 {
-    GfxPipelineHandle pipeline;
-    GfxBufferHandle uniformBuffer;
-    GfxDescriptorSetLayoutHandle dsLayout;
+    GfxPipelineHandle mPipeline;
+    GfxBufferHandle mUniformBuffer;
+    GfxDescriptorSetLayoutHandle mDsLayout;
 
-    AssetHandleModel modelAsset;
-    AssetHandleShader modelShaderAsset;
-    Array<GfxDescriptorSetHandle> descriptorSets;
-    HashTable<GfxDescriptorSetHandle> materialToDset;
-    CameraFPS   fpsCam;
-    CameraOrbit orbitCam;
-    Camera*     cam;
+    AssetHandleModel mModelAsset;
+    AssetHandleShader mModelShaderAsset;
+    Array<GfxDescriptorSetHandle> mDescriptorSets;
+    HashTable<GfxDescriptorSetHandle> mMaterialToDset;
+    CameraFPS   mFpsCam;
+    CameraOrbit mOrbitCam;
+    Camera*     mCam;
 
     struct Vertex 
     {
@@ -57,198 +57,10 @@ struct AppImpl final : AppCallbacks
         Mat4 projMat;
     };
 
-    bool Initialize() override
+    static void CreateGraphicsResources(void* userData)
     {
-        MemTempAllocator::EnableCallstackCapture(true);
+        AppImpl* self = (AppImpl*)userData;
 
-        Vfs::HelperMountDataAndShaders(SettingsJunkyard::Get().engine.connectToServer);
-
-        if (!Engine::Initialize())
-            return false;
-
-        if (!CreateGraphicsObjects())
-            return false;
-
-        fpsCam.SetLookAt(Float3(0, -2.0f, 3.0f), FLOAT3_ZERO);
-        orbitCam.SetLookAt(Float3(0, -2.0f, 3.0f), FLOAT3_ZERO);
-        cam = &orbitCam;
-
-        Engine::RegisterShortcut("TAB", [](void* userData) {
-           AppImpl* app = reinterpret_cast<AppImpl*>(userData);
-           if (app->cam == &app->orbitCam) {
-               app->fpsCam.SetViewMat(app->cam->GetViewMat());
-               app->cam = &app->fpsCam;
-           }
-           else {
-               app->cam = &app->orbitCam;
-           }
-        }, this);
-
-        LOG_INFO("Use right mouse button to rotate camera. And [TAB] to switch between Orbital and FPS (WASD) camera");
-
-        return true;
-    };
-    
-    void Cleanup() override
-    {
-        ReleaseGraphicsObjects();
-
-        assetUnload(modelAsset);
-        assetUnload(modelShaderAsset);
-
-        Engine::Release();
-
-    };
-    
-    static void ChildTask(uint32 groupIndex, void*)
-    {
-        PROFILE_ZONE();
-        
-        Thread::Sleep(5);
-    }
-
-    static void MainTaskSub()
-    {
-        PROFILE_ZONE();
-        Thread::Sleep(3);
-        JobsHandle handle;
-        handle = Jobs::Dispatch(JobsType::LongTask, ChildTask, nullptr, 1);
-        Jobs::WaitForCompletion(handle);
-        Thread::Sleep(1);
-    }
-
-    static void MainTask(uint32 groupIndex, void*)
-    {
-        PROFILE_ZONE();
-        Thread::Sleep(1);
-        MainTaskSub();
-        Thread::Sleep(7);
-    }
-
-    void Update(fl32 dt) override
-    {
-        PROFILE_ZONE();
-
-        cam->HandleMovementKeyboard(dt, 100.0f, 5.0f);
-
-        Engine::BeginFrame(dt);
-        
-        gfxBeginCommandBuffer();
-
-        float width = (float)App::GetFramebufferWidth();
-        float height = (float)App::GetFramebufferHeight();
-
-        static Mat4 modelMat = MAT4_IDENT;
-
-        { // draw something
-            
-            // JobsHandle handle = jobsDispatch(JobsType::LongTask, MainTask);
-            // jobsWaitForCompletion(handle);
-
-            MemTempAllocator tmpAlloc;
-
-            // PROFILE_ZONE_NAME("DrawSomething", true);
-            PROFILE_GPU_ZONE_NAME("DrawSomething", true);
-
-            // We are drawing to swapchain, so we need ClipSpaceTransform
-            FrameTransform ubo {
-                .viewMat = cam->GetViewMat(),
-                .projMat = gfxGetClipspaceTransform() * cam->GetPerspectiveMat(width, height)
-            };
-
-            gfxCmdUpdateBuffer(uniformBuffer, &ubo, sizeof(ubo));
-            gfxCmdBeginSwapchainRenderPass();
-            gfxCmdBindPipeline(pipeline);
-
-            // model transform
-            // Viewport
-            GfxViewport viewport {
-                .width = width,
-                .height = height,
-            };
-
-            gfxCmdSetViewports(0, 1, &viewport, true);
-
-            Recti scissor(0, 0, App::GetFramebufferWidth(), App::GetFramebufferHeight());
-            gfxCmdSetScissors(0, 1, &scissor, true);
-
-            Model* model = assetGetModel(modelAsset);
-
-            for (uint32 i = 0; i < model->numNodes; i++) {
-                const ModelNode& node = model->nodes[i];
-                if (node.meshId) {
-                    Mat4 worldMat = modelMat * transform3DToMat4(node.localTransform);
-                    gfxCmdPushConstants(pipeline, GfxShaderStage::Vertex, &worldMat, sizeof(worldMat));
-
-                    const ModelMesh& mesh = model->meshes[IdToIndex(node.meshId)];
-
-                    // Buffers
-                    uint64* offsets = tmpAlloc.MallocTyped<uint64>(mesh.numVertexBuffers);
-                    memset(offsets, 0x0, sizeof(uint64)*mesh.numVertexBuffers);
-                    gfxCmdBindVertexBuffers(0, mesh.numVertexBuffers, mesh.gpuBuffers.vertexBuffers, offsets);
-                    gfxCmdBindIndexBuffer(mesh.gpuBuffers.indexBuffer, 0, GfxIndexType::Uint32);
-
-                    // DescriptorSets
-                    for (uint32 smi = 0; smi < mesh.numSubmeshes; smi++) {
-                        const ModelSubmesh& submesh = mesh.submeshes[smi];
-                        const ModelMaterial* mtl = model->materials[IdToIndex(submesh.materialId)].Get();
-                        
-                        GfxDescriptorSetHandle dset = materialToDset.FindAndFetch(Hash::Murmur32(mtl, sizeof(*mtl), 0));
-                        gfxCmdBindDescriptorSets(pipeline, 1, &dset);
-                        gfxCmdDrawIndexed(mesh.numIndices, 1, 0, 0, 0);
-                    }
-
-                }
-            }
-        }
-
-        {
-            DebugDraw::DrawGroundGrid(*cam, width, height, DebugDrawGridProperties { 
-                .lineColor = Color(0x565656), 
-                .boldLineColor = Color(0xd6d6d6) 
-            });
-        }
-
-        if (ImGui::IsEnabled()) { // imgui test
-            PROFILE_GPU_ZONE_NAME("ImGuiRender", true);
-            DebugHud::DrawQuickFrameInfo(dt);
-            DebugHud::DrawStatusBar(dt);
-            DebugHud::DrawMemBudgets(dt);
-
-            #if 0
-                Mat4 view = fpsCam.GetViewMat();
-                ImGuizmo::ViewManipulate(view.f, 0.1f, ImVec2(5.0f, height - 128.0f - 5.0f), ImVec2(128, 128), 0xff000000);
-                fpsCam.SetViewMat(view);
-            #endif
-
-            ImGui::DrawFrame();
-        }
-
-        // jobsWaitForCompletion(handle);
-
-        gfxCmdEndSwapchainRenderPass();
-        gfxEndCommandBuffer();        
-
-        Engine::EndFrame(dt);
-    }
-    
-    void OnEvent(const AppEvent& ev) override
-    {
-        switch (ev.type) {
-        case AppEventType::Resized:
-            gfxResizeSwapchain(ev.framebufferWidth, ev.framebufferHeight);
-            break;
-        default:
-            break;
-        }
-
-        //if (!ImGui::IsWindowHovered())
-        if (!ImGui::IsAnyItemHovered() && !ImGui::GetIO().WantCaptureMouse && !ImGuizmo::IsOver())
-            cam->HandleRotationMouse(ev, 0.2f, 0.1f);
-    }
-
-    bool CreateGraphicsObjects()
-    {
         // Graphics Objects
         const GfxDescriptorSetLayoutBinding bindingLayout[] = {
             {
@@ -296,44 +108,22 @@ struct AppImpl final : AppCallbacks
             }
         };
 
-        {
-            AssetBarrierScope b;
-            ModelLoadParams loadParams {
-                .layout = {
-                    .vertexAttributes = {
-                        {"POSITION", 0, 0, GfxFormat::R32G32B32_SFLOAT, offsetof(Vertex, pos)},
-                        {"NORMAL", 0, 0, GfxFormat::R32G32B32_SFLOAT, offsetof(Vertex, normal)},
-                        {"TEXCOORD", 0, 0, GfxFormat::R32G32_SFLOAT, offsetof(Vertex, uv)}
-                    },
-                    .vertexBufferStrides = {
-                        sizeof(Vertex)
-                    }
-                },
-                .vertexBufferUsage = GfxBufferUsage::Immutable,
-                .indexBufferUsage = GfxBufferUsage::Immutable,
-            };
+        GfxBufferDesc bufferDesc {
+            .size = sizeof(FrameTransform),
+            .type = GfxBufferType::Uniform,
+            .usage = GfxBufferUsage::Stream 
+        };
 
-            modelAsset = assetLoadModel("/data/models/Duck/Duck.gltf", loadParams, b.Barrier());
-            modelShaderAsset = assetLoadShader("/shaders/Model.hlsl", ShaderLoadParams {}, b.Barrier());
-        }
-        if (!assetIsAlive(modelAsset) || !assetIsAlive(modelShaderAsset))
-            return false;
+        self->mUniformBuffer = gfxCreateBuffer(bufferDesc);
+        self->mDsLayout = gfxCreateDescriptorSetLayout(*Asset::GetShader(self->mModelShaderAsset), bindingLayout, CountOf(bindingLayout), false);
 
-        uniformBuffer = gfxCreateBuffer(GfxBufferDesc {
-                                        .size = sizeof(FrameTransform),
-                                        .type = GfxBufferType::Uniform,
-                                        .usage = GfxBufferUsage::Stream
-        });
+        Model* model = Asset::GetModel(self->mModelAsset);
 
-        dsLayout = gfxCreateDescriptorSetLayout(*assetGetShader(modelShaderAsset), bindingLayout, CountOf(bindingLayout), false);
-
-        Model* model = assetGetModel(modelAsset);
-
-        pipeline = gfxCreatePipeline(GfxPipelineDesc {
-            .shader = assetGetShader(modelShaderAsset),
+        self->mPipeline = gfxCreatePipeline(GfxPipelineDesc {
+            .shader = Asset::GetShader(self->mModelShaderAsset),
             .inputAssemblyTopology = GfxPrimitiveTopology::TriangleList,
             .numDescriptorSetLayouts = 1,
-            .descriptorSetLayouts = &dsLayout,
+            .descriptorSetLayouts = &self->mDsLayout,
             .numPushConstants = 1,
             .pushConstants = &pushConstant,
             .numVertexInputAttributes = CountOf(vertexInputAttDescs),
@@ -360,16 +150,16 @@ struct AppImpl final : AppCallbacks
                 ModelMaterial* material = model->materials[IdToIndex(mesh.submeshes[smi].materialId)].Get();
 
                 GfxImageHandle albedo = material->pbrMetallicRoughness.baseColorTex.texture.IsValid() ?
-                    assetGetImage(material->pbrMetallicRoughness.baseColorTex.texture) :
+                    Asset::GetImage(material->pbrMetallicRoughness.baseColorTex.texture)->handle :
                     GfxImageHandle();
 
-                GfxDescriptorSetHandle dset = gfxCreateDescriptorSet(dsLayout);
+                GfxDescriptorSetHandle dset = gfxCreateDescriptorSet(self->mDsLayout);
                 
                 GfxDescriptorBindingDesc descBindings[] = {
                     {
                         .name = "FrameTransform",
                         .type = GfxDescriptorType::UniformBuffer,
-                        .buffer = { uniformBuffer, 0, sizeof(FrameTransform) }
+                        .buffer = { self->mUniformBuffer, 0, sizeof(FrameTransform) }
                     },
                     {
                         .name = "BaseColorTexture",
@@ -380,24 +170,226 @@ struct AppImpl final : AppCallbacks
 
                 gfxUpdateDescriptorSet(dset, CountOf(descBindings), descBindings);
 
-                materialToDset.Add(Hash::Murmur32(material, sizeof(*material), 0), dset);
-                descriptorSets.Push(dset);
+                self->mMaterialToDset.Add(Hash::Murmur32(material, sizeof(*material), 0), dset);
+                self->mDescriptorSets.Push(dset);
+            }
+        }
+    }
+
+    bool Initialize() override
+    {
+        MemTempAllocator::EnableCallstackCapture(true);
+
+        Vfs::HelperMountDataAndShaders(SettingsJunkyard::Get().engine.connectToServer);
+
+        if (!Engine::Initialize())
+            return false;
+
+        {
+            ModelLoadParams loadParams {
+                .layout = {
+                    .vertexAttributes = {
+                        {"POSITION", 0, 0, GfxFormat::R32G32B32_SFLOAT, offsetof(Vertex, pos)},
+                        {"NORMAL", 0, 0, GfxFormat::R32G32B32_SFLOAT, offsetof(Vertex, normal)},
+                        {"TEXCOORD", 0, 0, GfxFormat::R32G32_SFLOAT, offsetof(Vertex, uv)}
+                    },
+                    .vertexBufferStrides = {
+                        sizeof(Vertex)
+                    }
+                },
+                .vertexBufferUsage = GfxBufferUsage::Immutable,
+                .indexBufferUsage = GfxBufferUsage::Immutable,
+            };
+
+            AssetGroup assetGroup = Engine::RegisterInitializeResources(AppImpl::CreateGraphicsResources, this);
+            mModelAsset = Asset::LoadModel("/data/models/Duck/Duck.gltf", loadParams, assetGroup);
+            mModelShaderAsset = Asset::LoadShader("/shaders/Model.hlsl", ShaderLoadParams {}, assetGroup);
+        }
+
+        mFpsCam.SetLookAt(Float3(0, -2.0f, 3.0f), FLOAT3_ZERO);
+        mOrbitCam.SetLookAt(Float3(0, -2.0f, 3.0f), FLOAT3_ZERO);
+        mCam = &mOrbitCam;
+
+        Engine::RegisterShortcut("TAB", [](void* userData) {
+           AppImpl* app = reinterpret_cast<AppImpl*>(userData);
+           if (app->mCam == &app->mOrbitCam) {
+               app->mFpsCam.SetViewMat(app->mCam->GetViewMat());
+               app->mCam = &app->mFpsCam;
+           }
+           else {
+               app->mCam = &app->mOrbitCam;
+           }
+        }, this);
+
+        LOG_INFO("Use right mouse button to rotate camera. And [TAB] to switch between Orbital and FPS (WASD) camera");
+
+        return true;
+    };
+    
+    void Cleanup() override
+    {
+        ReleaseGraphicsResources();
+
+        Engine::Release();
+    };
+    
+    static void ChildTask(uint32 groupIndex, void*)
+    {
+        PROFILE_ZONE();
+        
+        Thread::Sleep(5);
+    }
+
+    static void MainTaskSub()
+    {
+        PROFILE_ZONE();
+        Thread::Sleep(3);
+        JobsHandle handle;
+        handle = Jobs::Dispatch(JobsType::LongTask, ChildTask, nullptr, 1);
+        Jobs::WaitForCompletion(handle);
+        Thread::Sleep(1);
+    }
+
+    static void MainTask(uint32 groupIndex, void*)
+    {
+        PROFILE_ZONE();
+        Thread::Sleep(1);
+        MainTaskSub();
+        Thread::Sleep(7);
+    }
+
+    void Update(fl32 dt) override
+    {
+        PROFILE_ZONE();
+
+        mCam->HandleMovementKeyboard(dt, 100.0f, 5.0f);
+
+        Engine::BeginFrame(dt);
+        
+        gfxBeginCommandBuffer();
+
+        float width = (float)App::GetFramebufferWidth();
+        float height = (float)App::GetFramebufferHeight();
+
+        static Mat4 modelMat = MAT4_IDENT;
+
+        { // draw something
+            
+            // JobsHandle handle = jobsDispatch(JobsType::LongTask, MainTask);
+            // jobsWaitForCompletion(handle);
+
+            MemTempAllocator tmpAlloc;
+
+            // PROFILE_ZONE_NAME("DrawSomething", true);
+            PROFILE_GPU_ZONE_NAME("DrawSomething", true);
+
+            // We are drawing to swapchain, so we need ClipSpaceTransform
+            FrameTransform ubo {
+                .viewMat = mCam->GetViewMat(),
+                .projMat = gfxGetClipspaceTransform() * mCam->GetPerspectiveMat(width, height)
+            };
+
+            gfxCmdUpdateBuffer(mUniformBuffer, &ubo, sizeof(ubo));
+            gfxCmdBeginSwapchainRenderPass();
+            gfxCmdBindPipeline(mPipeline);
+
+            // model transform
+            // Viewport
+            GfxViewport viewport {
+                .width = width,
+                .height = height,
+            };
+
+            gfxCmdSetViewports(0, 1, &viewport, true);
+
+            Recti scissor(0, 0, App::GetFramebufferWidth(), App::GetFramebufferHeight());
+            gfxCmdSetScissors(0, 1, &scissor, true);
+
+            Model* model = Asset::GetModel(mModelAsset);
+
+            for (uint32 i = 0; i < model->numNodes; i++) {
+                const ModelNode& node = model->nodes[i];
+                if (node.meshId) {
+                    Mat4 worldMat = modelMat * transform3DToMat4(node.localTransform);
+                    gfxCmdPushConstants(mPipeline, GfxShaderStage::Vertex, &worldMat, sizeof(worldMat));
+
+                    const ModelMesh& mesh = model->meshes[IdToIndex(node.meshId)];
+
+                    // Buffers
+                    uint64* offsets = tmpAlloc.MallocTyped<uint64>(mesh.numVertexBuffers);
+                    memset(offsets, 0x0, sizeof(uint64)*mesh.numVertexBuffers);
+                    gfxCmdBindVertexBuffers(0, mesh.numVertexBuffers, mesh.gpuBuffers.vertexBuffers, offsets);
+                    gfxCmdBindIndexBuffer(mesh.gpuBuffers.indexBuffer, 0, GfxIndexType::Uint32);
+
+                    // DescriptorSets
+                    for (uint32 smi = 0; smi < mesh.numSubmeshes; smi++) {
+                        const ModelSubmesh& submesh = mesh.submeshes[smi];
+                        const ModelMaterial* mtl = model->materials[IdToIndex(submesh.materialId)].Get();
+                        
+                        GfxDescriptorSetHandle dset = mMaterialToDset.FindAndFetch(Hash::Murmur32(mtl, sizeof(*mtl), 0));
+                        gfxCmdBindDescriptorSets(mPipeline, 1, &dset);
+                        gfxCmdDrawIndexed(mesh.numIndices, 1, 0, 0, 0);
+                    }
+
+                }
             }
         }
 
-        return true;
+        {
+            DebugDraw::DrawGroundGrid(*mCam, width, height, DebugDrawGridProperties { 
+                .lineColor = Color(0x565656), 
+                .boldLineColor = Color(0xd6d6d6) 
+            });
+        }
+
+        if (ImGui::IsEnabled()) { // imgui test
+            PROFILE_GPU_ZONE_NAME("ImGuiRender", true);
+            DebugHud::DrawQuickFrameInfo(dt);
+            DebugHud::DrawStatusBar(dt);
+            DebugHud::DrawMemBudgets(dt);
+
+            #if 0
+                Mat4 view = mFpsCam.GetViewMat();
+                ImGuizmo::ViewManipulate(view.f, 0.1f, ImVec2(5.0f, height - 128.0f - 5.0f), ImVec2(128, 128), 0xff000000);
+                mFpsCam.SetViewMat(view);
+            #endif
+
+            ImGui::DrawFrame();
+        }
+
+        // jobsWaitForCompletion(handle);
+
+        gfxCmdEndSwapchainRenderPass();
+        gfxEndCommandBuffer();        
+
+        Engine::EndFrame(dt);
+    }
+    
+    void OnEvent(const AppEvent& ev) override
+    {
+        switch (ev.type) {
+        case AppEventType::Resized:
+            gfxResizeSwapchain(ev.framebufferWidth, ev.framebufferHeight);
+            break;
+        default:
+            break;
+        }
+
+        //if (!ImGui::IsWindowHovered())
+        if (!ImGui::IsAnyItemHovered() && !ImGui::GetIO().WantCaptureMouse && !ImGuizmo::IsOver())
+            mCam->HandleRotationMouse(ev, 0.2f, 0.1f);
     }
 
-    void ReleaseGraphicsObjects()
+    void ReleaseGraphicsResources()
     {
         gfxWaitForIdle();
-        for (uint32 i = 0; i < descriptorSets.Count(); i++) 
-            gfxDestroyDescriptorSet(descriptorSets[i]);
-        gfxDestroyDescriptorSetLayout(dsLayout);
-        gfxDestroyPipeline(pipeline);
-        gfxDestroyBuffer(uniformBuffer);
-        descriptorSets.Free();
-        materialToDset.Free();
+        for (uint32 i = 0; i < mDescriptorSets.Count(); i++) 
+            gfxDestroyDescriptorSet(mDescriptorSets[i]);
+        gfxDestroyDescriptorSetLayout(mDsLayout);
+        gfxDestroyPipeline(mPipeline);
+        gfxDestroyBuffer(mUniformBuffer);
+        mDescriptorSets.Free();
+        mMaterialToDset.Free();
     }
 };
 
