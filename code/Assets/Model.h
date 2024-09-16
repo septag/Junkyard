@@ -182,3 +182,9 @@ namespace _private
     bool assetInitializeModelManager();
     void assetReleaseModelManager();
 } // _private
+
+namespace Asset
+{
+    API AssetHandleModel LoadModel(const char* path, const ModelLoadParams& params, const AssetGroup& group);
+    API Model* GetModel(AssetHandleModel handle);
+}

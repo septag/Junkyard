@@ -607,14 +607,14 @@ int strToInt(const char* str)
     return atoi(str);
 }
 
-uint32 strToUint(const char* str)
+uint32 strToUint(const char* str, uint32 radix)
 {
-    return static_cast<uint32>(strtoul(str, nullptr, 10));
+    return static_cast<uint32>(strtoul(str, nullptr, radix));
 }
 
-uint64 strToUint64(const char* str)
+uint64 strToUint64(const char* str, uint32 radix)
 {
-    return static_cast<uint64>(strtoull(str, nullptr, 10));
+    return static_cast<uint64>(strtoull(str, nullptr, radix));
 }
 
 double strToDouble(const char* str)

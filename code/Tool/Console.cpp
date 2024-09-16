@@ -163,7 +163,7 @@ static void HandlerClientCallback([[maybe_unused]] uint32 cmd, const Blob& incom
 }
 
 static bool HandlerServerCallback([[maybe_unused]] uint32 cmd, const Blob& incomingData, Blob* outgoingBlob, void*, 
-                                  char outgoingErrorDesc[kRemoteErrorDescSize])
+                                  char outgoingErrorDesc[REMOTE_ERROR_SIZE])
 {
     ASSERT(cmd == CONSOLE_REMOTE_CMD);
 
@@ -175,7 +175,7 @@ static bool HandlerServerCallback([[maybe_unused]] uint32 cmd, const Blob& incom
     if (r)
         outgoingBlob->WriteStringBinary(response, strLen(response));
     else
-        strCopy(outgoingErrorDesc, kRemoteErrorDescSize, response);
+        strCopy(outgoingErrorDesc, REMOTE_ERROR_SIZE, response);
 
     return r;
 }

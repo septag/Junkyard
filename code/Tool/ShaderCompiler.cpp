@@ -5,22 +5,19 @@
 
 #include "../Graphics/Graphics.h"
 
-#include "../External/slang/slang.h"
+#include "../External/slang/include/slang.h"
 
 #include "../Core/Log.h"
 #include "../Core/TracyHelper.h"
 
-struct ShaderCompilerContext
-{
-    SlangSession* slang;
-};
-
-static ShaderCompilerContext gShaderCompiler;
-
 namespace ShaderCompiler
 {
 
-static inline GfxShaderStage shaderTranslateStage(SlangStage stage)
+static thread_local SlangSession* gSlangSession = nullptr;
+static SpinLockMutex gLiveSessionMutex;
+static Array<SlangSession**> gLiveSessions; 
+
+static inline GfxShaderStage _TranslateStage(SlangStage stage)
 {
     switch (stage) {
     case SLANG_STAGE_VERTEX:            return GfxShaderStage::Vertex;
@@ -91,9 +88,15 @@ static GfxFormat shaderTranslateVertexInputFormat([[maybe_unused]] uint32 rows, 
 Pair<GfxShader*, uint32> Compile(const Span<uint8>& sourceCode, const char* filepath, const ShaderCompileDesc& desc, 
                                  char* errorDiag, uint32 errorDiagSize, MemAllocator* alloc)
 {
-    ASSERT(gShaderCompiler.slang);
+    if (gSlangSession == nullptr) {
+        gSlangSession = spCreateSession();
+        ASSERT(gSlangSession);
 
-    SlangCompileRequest* req = spCreateCompileRequest(gShaderCompiler.slang);
+        SpinLockMutexScope l(gLiveSessionMutex);
+        gLiveSessions.Push(&gSlangSession);
+    }
+
+    SlangCompileRequest* req = spCreateCompileRequest(gSlangSession);
 
     int targetIdx = spAddCodeGenTarget(req, SLANG_SPIRV);
     spSetMatrixLayoutMode(req, SLANG_MATRIX_LAYOUT_COLUMN_MAJOR);
@@ -153,8 +156,8 @@ Pair<GfxShader*, uint32> Compile(const Span<uint8>& sourceCode, const char* file
     MemTempAllocator tmpAlloc(alloc->GetType() == MemAllocatorType::Temp ? ((MemTempAllocator*)alloc)->GetId() : 0);
     GfxShader* shader = tmpAlloc.MallocZeroTyped<GfxShader>();
 
-    shader->stages = tmpAlloc.MallocTyped<GfxShaderStageInfo>((uint32)refl->getEntryPointCount());
-    shader->params = tmpAlloc.MallocTyped<GfxShaderParameterInfo>((uint32)refl->getParameterCount());
+    shader->stages = tmpAlloc.MallocZeroTyped<GfxShaderStageInfo>((uint32)refl->getEntryPointCount());
+    shader->params = tmpAlloc.MallocZeroTyped<GfxShaderParameterInfo>((uint32)refl->getParameterCount());
     if (numVertexAttributes)
         shader->vertexAttributes = tmpAlloc.MallocZeroTyped<GfxShaderVertexAttributeInfo>(numVertexAttributes);
     
@@ -166,7 +169,7 @@ Pair<GfxShader*, uint32> Compile(const Span<uint8>& sourceCode, const char* file
         slang::EntryPointReflection* entryPoint = refl->getEntryPointByIndex(i);
         GfxShaderStageInfo* stageInfo = &shader->stages[i];
 
-        stageInfo->stage = shaderTranslateStage(entryPoint->getStage());
+        stageInfo->stage = _TranslateStage(entryPoint->getStage());
         strCopy(stageInfo->entryName, sizeof(stageInfo->entryName), entryPoint->getName()); 
 
         size_t dataSize;
@@ -218,7 +221,7 @@ Pair<GfxShader*, uint32> Compile(const Span<uint8>& sourceCode, const char* file
         
         strCopy(paramInfo->name, sizeof(paramInfo->name), param->getName());
         // TODO: get the stage that this parameter is being used (param->getStage() returns nothing)
-        //paramInfo->stage = shaderTranslateStage(param->getStage());
+        // paramInfo->stage = _TranslateStage(param->getStage());
         paramInfo->bindingIdx = param->getBindingIndex();
 
         switch (type->getKind()) {
@@ -237,18 +240,14 @@ Pair<GfxShader*, uint32> Compile(const Span<uint8>& sourceCode, const char* file
         return Pair<GfxShader*, uint32>(shader, shaderBufferSize);
 }
 
-bool Initialize()
+void ReleaseLiveSessions()
 {
-    gShaderCompiler.slang = spCreateSession();
-    if (!gShaderCompiler.slang)
-        return false;
-    return true;
-}
-
-void Release()
-{
-    if (gShaderCompiler.slang)
-        spDestroySession(gShaderCompiler.slang);
+    SpinLockMutexScope lk(gLiveSessionMutex);
+    for (SlangSession** sessionPtr : gLiveSessions) {
+        spDestroySession(*sessionPtr);
+        *sessionPtr = nullptr;
+    }
+    gLiveSessions.Free();
 }
 
 } // ShaderCompiler

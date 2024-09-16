@@ -24,6 +24,8 @@
 #include "RemoteServices.h"
 #include "JunkyardSettings.h"
 
+#include "../Engine.h"
+
 inline constexpr uint32 kAppMaxKeycodes = 512;
 
 // fwd declared, should be implemented by user (Using 'Main' macro)
@@ -87,6 +89,7 @@ struct AppAndroidState
     char* clipboard;
     
     Array<AppEventCallbackPair> eventCallbacks;
+    Pair<AppUpdateOverrideCallback, void*> overrideUpdateCallback;
 
     uint64 frameCount;
     int eventReadFd;
@@ -780,17 +783,22 @@ static bool appAndroidFrame(fl32 dt)
 
     if (gApp.firstFrame) {
         gApp.firstFrame = false;
-        if (gApp.desc.callbacks) {
-            if (!gApp.desc.callbacks->Initialize()) {
-                App::Quit();
-                return false;
-            }
+        if (!gApp.desc.callbacks->Initialize()) {
+            App::Quit();
+            return false;
         }
+        
+        Engine::_private::PostInitialize();
+
         gApp.initCalled = true;
     }
     
-    if (gApp.desc.callbacks && gApp.initCalled)
-        gApp.desc.callbacks->Update(dt);
+    if (gApp.initCalled) {
+        if (!gApp.overrideUpdateCallback.first)
+            gApp.desc.callbacks->Update(dt);
+        else
+            gApp.overrideUpdateCallback.first(dt, gApp.overrideUpdateCallback.second);
+    }
 
     gApp.frameCount++;
     return true;
@@ -1123,5 +1131,12 @@ void App::CaptureMouse()
 void  App::ReleaseMouse()
 {
 }
+
+void App::OverrideUpdateCallback(AppUpdateOverrideCallback callback, void* userData)
+{
+    gApp.overrideUpdateCallback.first = callback;
+    gApp.overrideUpdateCallback.second = userData;
+}
+
 
 #endif  // PLATFORM_ANDROID

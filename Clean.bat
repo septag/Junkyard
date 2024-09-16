@@ -22,7 +22,7 @@ if "%1" == "all" (
 	rmdir /q /s code\External\meshoptimizer\lib
 
 	rmdir /q /s code\External\ispc_texcomp\include
-    rmdir /q /s code\External\ispc_texcomp\lib
+	rmdir /q /s code\External\ispc_texcomp\lib
 
 	del /q code\External\slang\*.h
 	rmdir /q /s code\External\slang\bin

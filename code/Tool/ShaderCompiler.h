@@ -29,12 +29,10 @@ struct MemAllocator;
 
 namespace ShaderCompiler
 {
-    bool Initialize();
-    void Release();
-
     // Note: `alloc` should not be tmpAlloc
     API Pair<GfxShader*, uint32> Compile(const Span<uint8>& sourceCode, const char* filepath, const ShaderCompileDesc& desc, 
                                          char* errorDiag, uint32 errorDiagSize, MemAllocator* alloc);
+    API void ReleaseLiveSessions();
 }
 
 #endif

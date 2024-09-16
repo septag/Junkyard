@@ -33,8 +33,8 @@ API char*   strReplaceChar(char* dst, uint32 dstSize, char ch, char replaceWith)
 API char*   strSubStr(char* dst, uint32 dstSize, const char* str, uint32 startIdx, uint32 endIdx = 0);
 API bool    strToBool(const char* str);
 API int     strToInt(const char* str);
-API uint32  strToUint(const char* str);
-API uint64  strToUint64(const char* str);
+API uint32  strToUint(const char* str, uint32 radix = 10);
+API uint64  strToUint64(const char* str, uint32 radix = 10);
 API double  strToDouble(const char* str);
 
 API bool    strIsWhitespace(char ch);
@@ -241,6 +241,7 @@ inline String<_Size>& String<_Size>::FormatSelf(const char* fmt, ...)
     va_start(args, fmt);
     strPrintFmtArgs(mStr, _Size, fmt, args);
     va_end(args);
+    mLen = strLen(mStr);
     return *this;
 }
 
@@ -252,6 +253,7 @@ inline String<_Size> String<_Size>::Format(const char* fmt, ...)
     va_start(args, fmt);
     strPrintFmtArgs(str.mStr, _Size, fmt, args);
     va_end(args);
+    str.mLen = strLen(str.mStr);
     return str;
 }
 

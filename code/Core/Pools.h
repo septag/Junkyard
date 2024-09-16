@@ -274,11 +274,11 @@ inline _HandleType HandlePool<_HandleType, _DataType>::Add(const _DataType& item
     if (index >= mItems.Count()) {
         mItems.Push(item);
         if (prevItem)
-        *prevItem = _DataType {};
+            *prevItem = _DataType {};
     }
     else {
         if (prevItem) 
-        *prevItem = mItems[index];
+            *prevItem = mItems[index];
         mItems[index] = item;
     }
 

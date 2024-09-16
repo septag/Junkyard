@@ -54,26 +54,26 @@ if errorlevel 1 (
 )
 
 :InstallVulkan
-choice /c YN /M "Install vulkan 1.3.23 "
+choice /c YN /M "Install vulkan 1.3.29 "
 if errorlevel 2 goto :InstallPython 
 if errorlevel 1 (
     rem make sure to update the vulkan android layers (below) as well
     rem pc
     echo "Installing Vulkan PC SDK runtime..."
-    if not exist .downloads\VulkanRT-1.3.231.1-Installer.exe (
-        powershell Invoke-WebRequest -Uri "https://sdk.lunarg.com/sdk/download/1.3.231.1/windows/VulkanRT-1.3.231.1-Installer.exe" -OutFile .downloads\VulkanRT-1.3.231.1-Installer.exe
+    if not exist .downloads\VulkanRT-1.3.290.0-Installer.exe (
+        powershell Invoke-WebRequest -Uri "https://sdk.lunarg.com/sdk/download/1.3.290.0/windows/VulkanRT-1.3.290.0-Installer.exe" -OutFile .downloads\VulkanRT-1.3.290.0-Installer.exe
         if %errorlevel% neq 1 goto :End
     )
 
-    call .downloads\VulkanRT-1.3.231.1-Installer.exe 
+    call .downloads\VulkanRT-1.3.290.0-Installer.exe 
 
     echo "Installing Vulkan PC SDK tools and layers..."
-    if not exist .downloads\VulkanSDK-1.3.231.1-Installer.exe (
-        powershell Invoke-WebRequest -Uri "https://sdk.lunarg.com/sdk/download/1.3.231.1/windows/VulkanSDK-1.3.231.1-Installer.exe" -OutFile .downloads\VulkanSDK-1.3.231.1-Installer.exe
+    if not exist .downloads\VulkanSDK-1.3.290.0-Installer.exe (
+        powershell Invoke-WebRequest -Uri "https://sdk.lunarg.com/sdk/download/1.3.290.0/windows/VulkanSDK-1.3.290.0-Installer.exe" -OutFile .downloads\VulkanSDK-1.3.290.0-Installer.exe
         if %errorlevel% neq 1 goto :End
     )
 
-    call .downloads\VulkanSDK-1.3.231.1-Installer.exe
+    call .downloads\VulkanSDK-1.3.290.0-Installer.exe
 )
 
 :InstallPython

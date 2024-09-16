@@ -304,7 +304,7 @@ static void assetLoadImageTask(uint32 groupIndex, void* userData)
     char filepath[PATH_CHARS_MAX];
     AssetPlatform::Enum platform;
     ImageLoadParams loadImageParams;
-    char errorMsg[kRemoteErrorDescSize];
+    char errorMsg[REMOTE_ERROR_SIZE];
 
     uint32 handle;
     uint32 oldCacheHash;
@@ -362,7 +362,7 @@ static void assetLoadImageTask(uint32 groupIndex, void* userData)
 
 // MT: runs from RemoteServices thread
 static bool assetImageHandlerServerFn([[maybe_unused]] uint32 cmd, const Blob& incomingData, Blob*, 
-                                    void*, char outgoingErrorDesc[kRemoteErrorDescSize])
+                                    void*, char outgoingErrorDesc[REMOTE_ERROR_SIZE])
 {
     ASSERT(cmd == RCMD_LOAD_IMAGE);
     UNUSED(outgoingErrorDesc);
@@ -485,6 +485,7 @@ bool _private::assetInitializeImageManager()
     // - placeholder images
     // - Asset loaders for the images
     // - Descriptor cache management for reloads
+    static GfxImage whiteImage {};
     if (SettingsJunkyard::Get().graphics.enable && !SettingsJunkyard::Get().graphics.headless) {
         const uint32 kWhitePixel = 0xffffffff;
         GfxImageDesc imageDesc = GfxImageDesc {
@@ -495,12 +496,11 @@ bool _private::assetInitializeImageManager()
             .size = sizeof(kWhitePixel),
             .content = &kWhitePixel
         };
-        //imageDesc.content = &kWhitePixel;
         gImageMgr.imageWhite = gfxCreateImage(imageDesc);
         if (!gImageMgr.imageWhite.IsValid())
             return false;
 
-        static GfxImage whiteImage = {
+        whiteImage = {
             .handle = gImageMgr.imageWhite,
             .width = 1,
             .height = 1,
@@ -509,20 +509,20 @@ bool _private::assetInitializeImageManager()
             .format = GfxFormat::R8G8B8A8_UNORM
         };
 
-        assetRegisterType(AssetTypeDesc {
-            .fourcc = IMAGE_ASSET_TYPE,
-            .name = "Image",
-            .callbacks = &gImageMgr.imageLoader,
-            .impl = &gImageMgr.imageImpl,
-            .extraParamTypeName = "ImageLoadParams",
-            .extraParamTypeSize = sizeof(ImageLoadParams),
-            .failedObj = &whiteImage,
-            .asyncObj = &whiteImage
-        });
-    
         gImageMgr.updateCacheMtx.Initialize();
         gImageMgr.updateCache.SetAllocator(gImageMgr.runtimeAlloc);
     }
+
+    assetRegisterType(AssetTypeDesc {
+        .fourcc = IMAGE_ASSET_TYPE,
+        .name = "Image",
+        .callbacks = &gImageMgr.imageLoader,
+        .impl = &gImageMgr.imageImpl,
+        .extraParamTypeName = "ImageLoadParams",
+        .extraParamTypeSize = sizeof(ImageLoadParams),
+        .failedObj = &whiteImage,
+        .asyncObj = &whiteImage
+    });
 
     // initialized in all cases
     // - Remote loader/baker
@@ -906,7 +906,7 @@ AssetHandleImage Asset::LoadImage(const char* path, const ImageLoadParams& param
         .typeSpecificParams = const_cast<ImageLoadParams*>(&params)
     };
 
-    return (AssetHandleImage)group.AddToLoadQueue(assetParams);
+    return group.AddToLoadQueue(assetParams);
 }
 
 GfxImage* Asset::GetImage(AssetHandleImage handle)

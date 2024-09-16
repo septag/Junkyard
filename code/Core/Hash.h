@@ -132,7 +132,7 @@ struct HashTable
     const _T* Values() const;
     bool IsFull() const;
 
-private:
+public:
     _private::HashTableData* mHashTable;
     MemAllocator* mAlloc;
 };

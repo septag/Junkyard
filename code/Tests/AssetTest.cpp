@@ -118,7 +118,7 @@ struct AppImpl : AppCallbacks
 
         { // draw something
             PROFILE_ZONE_NAME("DrawSomething");
-            PROFILE_GPU_ZONE_NAME("DrawSomething");
+            PROFILE_GPU_ZONE_NAME("DrawSomething", true);
 
             // We are drawing to swapchain, so we need ClipSpaceTransform
             FrameTransform ubo {
@@ -289,14 +289,13 @@ struct AppImpl : AppCallbacks
                 }
             };
 
-            dsLayout = gfxCreateDescriptorSetLayout(*assetGetShader(modelShaderAsset), bindingLayout, CountOf(bindingLayout));
+            dsLayout = gfxCreateDescriptorSetLayout(*assetGetShader(modelShaderAsset), bindingLayout, CountOf(bindingLayout), false);
         }
 
         uniformBuffer = gfxCreateBuffer(GfxBufferDesc {
                                         .size = sizeof(FrameTransform),
                                         .type = GfxBufferType::Uniform,
-                                        .usage = GfxBufferUsage::Stream
-        });
+                                        .usage = GfxBufferUsage::Stream});
 
         transformsBuffer = gfxCreateDynamicUniformBuffer(kNumCubes, sizeof(WorldTransform));
 

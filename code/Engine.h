@@ -31,5 +31,10 @@ namespace Engine
 
     // TODO: Proper error-handling within the callback
     API const AssetGroup& RegisterInitializeResources(EngineInitializeResourcesCallback callback, void* userData = nullptr);
+
+    namespace _private
+    {
+        void PostInitialize();
+    }
 } // Engine
     

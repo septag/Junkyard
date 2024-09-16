@@ -19,9 +19,9 @@ DEFINE_HANDLE(AssetHandle);
 DEFINE_HANDLE(AssetBarrier);
 
 // Grahics assets
-struct AssetHandleImage : AssetHandle {};
-struct AssetHandleShader : AssetHandle {};
-struct AssetHandleModel : AssetHandle {};
+using AssetHandleImage = AssetHandle;
+using AssetHandleShader = AssetHandle;
+using AssetHandleModel = AssetHandle;
 
 // Clipboard
 DEFINE_HANDLE(ClipboardVarHandle);
