@@ -13,7 +13,6 @@
 
 #include "../Tool/ImageEncoder.h"
 
-
 //----------------------------------------------------------------------------------------------------------------------
 static thread_local MemAllocator* gStbIAlloc = nullptr;
 
@@ -898,6 +897,14 @@ bool AssetImageImpl::Bake(const AssetParams& params, AssetData* data, const Span
     return true;
 }
 
+// Freaking windows.h with it's Macros! In unity builds, it causes LoadImage to be converted to LoadImageA/W
+#if PLATFORM_WINDOWS
+    #ifdef LoadImage
+    // #define _LoadImage LoadImage
+    #undef LoadImage
+    #endif
+#endif
+
 AssetHandleImage Asset::LoadImage(const char* path, const ImageLoadParams& params, const AssetGroup& group)
 {
     AssetParams assetParams {
@@ -908,6 +915,12 @@ AssetHandleImage Asset::LoadImage(const char* path, const ImageLoadParams& param
 
     return group.AddToLoadQueue(assetParams);
 }
+
+#if PLATFORM_WINDOWS
+    #ifdef _LoadImage
+    #define LoadImage _LoadImage
+    #endif
+#endif
 
 GfxImage* Asset::GetImage(AssetHandleImage handle)
 {

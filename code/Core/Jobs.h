@@ -104,8 +104,10 @@ namespace Jobs
                                           uint32 groupSize = 1, JobsPriority prio = JobsPriority::Normal, 
                                           JobsStackSize stackSize = JobsStackSize::Medium);
     // Might yield the current running job as well. Also deletes the JobHandle after it's finished
-    API void WaitForCompletion(JobsHandle handle);
+    API void WaitForCompletionAndDelete(JobsHandle handle);
+
     API bool IsRunning(JobsHandle handle);
+    API void Delete(JobsHandle handle);
 
     // In this version, we don't care about waiting on the handle. Handle will be automatically delete itself after job is finished
     API void DispatchAndForget(JobsType type, JobsCallback callback, void* userData = nullptr, 

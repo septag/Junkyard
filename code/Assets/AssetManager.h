@@ -54,9 +54,9 @@ struct AssetLoadParams
 enum class AssetState : uint32
 {
     Zombie = 0,
-    Alive,
+    Loading,
+    Loaded,
     LoadFailed,
-    Loading
 };
 
 struct AssetDependency

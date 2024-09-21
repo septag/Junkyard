@@ -246,7 +246,7 @@ struct AppImpl final : AppCallbacks
         Thread::Sleep(3);
         JobsHandle handle;
         handle = Jobs::Dispatch(JobsType::LongTask, ChildTask, nullptr, 1);
-        Jobs::WaitForCompletion(handle);
+        Jobs::WaitForCompletionAndDelete(handle);
         Thread::Sleep(1);
     }
 

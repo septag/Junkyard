@@ -570,7 +570,7 @@ static JobsInstance* _DispatchInternal(bool isAutoDelete, JobsType type, JobsCal
     return instance;
 }
 
-void WaitForCompletion(JobsHandle instance)
+void WaitForCompletionAndDelete(JobsHandle instance)
 {
     ASSERT(!instance->isAutoDelete);
 
@@ -631,6 +631,14 @@ bool IsRunning(JobsHandle handle)
     ASSERT(handle);
     ASSERT(!handle->isAutoDelete);    // Can't query for AutoDelete jobs
     return Atomic::LoadExplicit(&handle->counter, AtomicMemoryOrder::Acquire);
+}
+
+void Delete(JobsHandle handle)
+{
+    ASSERT_MSG(Atomic::LoadExplicit(&handle->counter, AtomicMemoryOrder::Acquire) == 0, "Job must be completed before deletion");
+    
+    gJobs.instancePool->Delete(handle);
+    Atomic::FetchSubExplicit(&gJobs.numInstances, 1, AtomicMemoryOrder::Relaxed);
 }
 
 JobsHandle Dispatch(JobsType type, JobsCallback callback, void* userData, uint32 groupSize, JobsPriority prio, JobsStackSize stackSize)

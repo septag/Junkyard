@@ -2,6 +2,14 @@
 
 #include "../Graphics/Graphics.h"
 
+// Freaking windows.h with it's Macros! In unity builds, it causes LoadImage to be converted to LoadImageA/W
+#if PLATFORM_WINDOWS
+    #ifdef LoadImage
+    #define _LoadImage LoadImage
+    #undef LoadImage
+    #endif
+#endif
+
 struct AssetGroup;
 
 inline constexpr uint32 IMAGE_ASSET_TYPE = MakeFourCC('I', 'M', 'A', 'G');
@@ -42,6 +50,8 @@ namespace Asset
     API GfxImage* GetImage(AssetHandleImage handle);
 }
 
-
-
-
+#if PLATFORM_WINDOWS
+    #ifdef _LoadImage
+    #define LoadImage _LoadImage
+    #endif
+#endif
