@@ -25,6 +25,8 @@
 template <typename _T>
 struct Array
 {
+    using SortFunc = bool (*)(const _T& a, const _T& b);
+
     Array() : Array(Mem::GetDefaultAlloc()) {}
     explicit Array(MemAllocator* alloc) : mAlloc(alloc) {}
     explicit Array(const void* buffer, size_t size);
@@ -38,6 +40,13 @@ struct Array
     [[nodiscard]] _T* Push();
     _T* Push(const _T& item);
     _T* PushBatch(const _T* items, uint32 numItems);
+
+    // _Func = [](const _T& a, const _T& b)->int
+    // This is just a naive insertion sort. Works for small/relatively sorted data sets
+    // For faster sorting in larger datasets, use BlitSort
+    // Result is like memcmp: <0: a is lower than b, =0: equal, >0 a is higher than b
+    // With these preassumptions, it sorts with ascending order
+    template <typename _Func> _T* PushAndSort(const _T& item, _Func sortFunc);
 
     void RemoveAndSwap(uint32 index);
     void RemoveAndShift(uint32 index);
@@ -67,7 +76,8 @@ struct Array
     void CopyTo(Array<_T>* otherArray) const;
 
     uint32 Find(const _T& value);
-    // _Func = [capture](const _T& item)->bool
+
+    // _Func = [](const _T& item)->bool
     template <typename _Func> uint32 FindIf(_Func findFunc);
     
     // C++ stl crap compatibility. it's mainly `for(auto t : array)` syntax sugar
@@ -195,6 +205,25 @@ inline _T* Array<_T>::Push(const _T& item)
     _T* dest = &mBuffer[mCount++];
     *dest = item;
     return dest;
+}
+
+template <typename _T>
+template<typename _Func> inline _T* Array<_T>::PushAndSort(const _T& item, _Func sortFunc)
+{
+    Push(item);
+    uint32 itemIndex = mCount - 1;
+    if (itemIndex) {
+        for (uint32 i = itemIndex; i-- > 0;) {
+            int val = sortFunc(mBuffer[itemIndex], mBuffer[i]);
+            if (val >= 0)
+                break;
+
+            Swap<_T>(mBuffer[itemIndex], mBuffer[i]);
+            itemIndex = i;
+        }
+    }
+
+    return &mBuffer[itemIndex];    
 }
 
 template <typename _T>

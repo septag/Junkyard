@@ -78,15 +78,15 @@ cl %DEFINES% ^
    %COMPILE_FLAGS% ^
    "%ROOT_DIR%\%SOURCE_FILE%" ^
    /link %LINK_FLAGS% ^
-   /LIBPATH:"%ROOT_DIR%\code\External\slang\bin\windows-x64\release" ^
+   /LIBPATH:"%ROOT_DIR%\code\External\slang\lib" ^
    /LIBPATH:"%ROOT_DIR%\code\External\ispc_texcomp\lib\win64" ^
    /LIBPATH:"%ROOT_DIR%\code\External\meshoptimizer\lib\win64" ^
    %LIBS%
 popd
 if %errorlevel% neq 0 goto Quit
 
-echo No | copy /-Y %ROOT_DIR%\code\External\slang\bin\windows-x64\release\slang.dll %OUTPUT_DIR%
-echo No | copy /-Y %ROOT_DIR%\code\External\slang\bin\windows-x64\release\slang-glslang.dll %OUTPUT_DIR%
+echo No | copy /-Y %ROOT_DIR%\code\External\slang\bin\slang.dll %OUTPUT_DIR%
+echo No | copy /-Y %ROOT_DIR%\code\External\slang\bin\slang-glslang.dll %OUTPUT_DIR%
 echo No | copy /-Y %ROOT_DIR%\code\External\dbghelp\dbghelp.dll %OUTPUT_DIR%
 echo No | copy /-Y %ROOT_DIR%\code\External\ispc_texcomp\lib\win64\ispc_texcomp.dll %OUTPUT_DIR%
 echo No | copy /-Y %ROOT_DIR%\code\External\meshoptimizer\lib\win64\meshoptimizer.dll %OUTPUT_DIR%

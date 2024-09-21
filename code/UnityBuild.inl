@@ -30,9 +30,8 @@
 #include "Assets/Shader.cpp"
 
 // DebugTools
-#include "DebugTools/BudgetViewer.cpp"
+#include "DebugTools/DebugHud.cpp"
 #include "DebugTools/DebugDraw.cpp"
-#include "DebugTools/FrameInfoHud.cpp"
 
 // Graphics
 #include "Graphics/Graphics.cpp"
@@ -48,7 +47,7 @@
 #include "External/imgui/imgui_draw.cpp"
 #include "External/imgui/imgui_tables.cpp"
 #include "External/imgui/imgui_widgets.cpp"
-#include "ImGui/ImGuiWrapper.cpp"
+#include "ImGui/ImGuiMain.cpp"
 #include "ImGui/ImGuizmo.cpp"
 
 #include "Engine.cpp"

@@ -413,7 +413,7 @@ void _private::assetRelease()
 
         // Detect asset leaks and release them
         for (AssetItem& a : gAssetMgr.assets) {
-            if (a.state == AssetState::Alive) {
+            if (a.state == AssetState::Loaded) {
                 LOG_WARNING("Asset '%s' (RefCount=%u) is not unloaded", a.params->path, a.refCount);
                 if (a.obj) {
                     AssetTypeManager* typeMgr = &gAssetMgr.typeManagers[a.typeMgrIdx];
@@ -642,7 +642,7 @@ static void assetLoadTask(uint32 groupIndex, void* userData)
         prevObj = asset.obj;
 
     if (result.obj) {
-        asset.state = AssetState::Alive;
+        asset.state = AssetState::Loaded;
         asset.obj = result.obj;
         asset.objBufferSize = result.objBufferSize;
 
@@ -776,7 +776,7 @@ void assetUnload(AssetHandle handle)
         gAssetMgr.assetsMtx.EnterRead();
         AssetItem& asset = gAssetMgr.assets.Data(handle);
 
-        if (asset.state != AssetState::Alive) {
+        if (asset.state != AssetState::Loaded) {
             gAssetMgr.assetsMtx.ExitRead();
             LOG_WARNING("Asset is either failed or already released: %s", asset.params->path);
             return;
@@ -1021,7 +1021,7 @@ bool assetIsAlive(AssetHandle handle)
 
     ReadWriteMutexReadScope mtx(gAssetMgr.assetsMtx);
     AssetItem& asset = gAssetMgr.assets.Data(handle);
-    return asset.state == AssetState::Alive;
+    return asset.state == AssetState::Loaded;
 }
 
 AssetHandle assetAddRef(AssetHandle handle)
@@ -1292,15 +1292,27 @@ struct AssetQueuedItem
     bool saveBaked;
 };
 
-using AssetJobItem = Pair<JobsHandle, AssetGroupHandle>;
 
 struct AssetServer
 {
     SpinLockMutex pendingTasksMutex;
     Array<AssetLoadTaskData*> pendingTasks;
-    JobsHandle loadBatchTask;
     AssetLoadTaskData* loadTaskDatas[limits::ASSET_SERVER_MAX_IN_FLIGHT];
     uint32 numLoadTasks;
+};
+
+// From highest priority to lowest
+enum class AssetJobType : int
+{
+    Server = 0,
+    Load,
+    Unload
+};
+
+struct AssetJobItem 
+{
+    AssetJobType type;
+    AssetGroupHandle groupHandle;
 };
 
 struct AssetMan
@@ -1308,8 +1320,7 @@ struct AssetMan
     ReadWriteMutex assetMutex;
     ReadWriteMutex groupsMutex;
     ReadWriteMutex hashLookupMutex;
-    Mutex pendingLoadsMutex;
-    Mutex pendingUnloadsMutex;
+    Mutex pendingJobsMutex;
 
     AssetScratchMemArena memArena;
     MemBumpAllocatorVM tempAlloc;   // Used in LoadAssetGroup, because we cannot use regular temp allocators due to dispatching
@@ -1322,10 +1333,8 @@ struct AssetMan
 
     HandlePool<AssetGroupHandle, AssetGroupInternal> groups;
 
-    Array<AssetGroupHandle> pendingLoads;
-    Array<AssetGroupHandle> pendingUnloads;
-    AssetJobItem loadJob;
-    AssetJobItem unloadJob;
+    Array<AssetJobItem> pendingJobs;
+    JobsHandle curJob;
 
     AssetServer server;
     bool isServerEnabled;
@@ -1903,6 +1912,7 @@ static void Asset::_LoadGroupTask(uint32, void* userData)
         AssetLoadTaskData** taskDataPtrs = Mem::AllocTyped<AssetLoadTaskData*>(sliceCount, tempAlloc);
         for (uint32 k = 0; k < sliceCount; k++) {
             AssetDataHeader* header = loadList[i + k];
+            header->state = AssetState::Loading;
 
             // TODO: this part will not run on remote connection mode
             //       We will always have Baked data for remote connections
@@ -1991,7 +2001,7 @@ static void Asset::_LoadGroupTask(uint32, void* userData)
             Remote::ExecuteCommand(ASSET_LOAD_ASSET_REMOTE_CMD, requestBlob);
         }
 
-        Jobs::WaitForCompletion(batchJob);
+        Jobs::WaitForCompletionAndDelete(batchJob);
 
         // Gather dependency assets and add them to the queue
         // Gather items to be saved in cache
@@ -1999,6 +2009,7 @@ static void Asset::_LoadGroupTask(uint32, void* userData)
             AssetLoadTaskInputs& in = taskDatas[k].inputs;
             AssetLoadTaskOutputs& out = taskDatas[k].outputs;
             if (!out.data) {
+                in.header->state = AssetState::LoadFailed;
                 LOG_ERROR("Loading %s '%s' failed: %s", in.header->typeName, in.header->params->path.CStr(), out.errorDesc.CStr());
                 continue;
             }
@@ -2050,7 +2061,7 @@ static void Asset::_LoadGroupTask(uint32, void* userData)
         
         if (!saveItems.IsEmpty()) {
             JobsHandle batchJob = Jobs::Dispatch(JobsType::LongTask, _SaveBakedTask, saveItems.Ptr(), saveItems.Count());
-            Jobs::WaitForCompletion(batchJob);
+            Jobs::WaitForCompletionAndDelete(batchJob);
             saveItems.Clear();
         }
     }
@@ -2073,7 +2084,7 @@ static void Asset::_LoadGroupTask(uint32, void* userData)
 
         if (!gpuObjs.IsEmpty()) {
             JobsHandle batchJob = Jobs::Dispatch(JobsType::LongTask, _CreateGpuObjectTask, gpuObjs.Ptr(), gpuObjs.Count());
-            Jobs::WaitForCompletion(batchJob);
+            Jobs::WaitForCompletionAndDelete(batchJob);
         }
 
         tempAlloc->Reset();
@@ -2097,9 +2108,14 @@ static void Asset::_LoadGroupTask(uint32, void* userData)
         }
 
         JobsHandle batchJob = Jobs::Dispatch(JobsType::LongTask, _DataCopyTask, dataCopyItems, sliceCount);
-        Jobs::WaitForCompletion(batchJob);
+        Jobs::WaitForCompletionAndDelete(batchJob);
 
         tempAlloc->Reset();
+    }
+
+    for (AssetQueuedItem& qa : queuedAssets) {
+        AssetDataHeader* header = loadList[qa.indexInLoadList];
+        header->state = AssetState::Loaded;
     }
 
     queuedAssets.Free();
@@ -2220,7 +2236,7 @@ void Asset::_ServerLoadBatchTask(uint32, void*)
     }
 
     JobsHandle batchJob = Jobs::Dispatch(JobsType::LongTask, _LoadAssetTask, taskDatas, numTasks);
-    Jobs::WaitForCompletion(batchJob);
+    Jobs::WaitForCompletionAndDelete(batchJob);
 
     // Gather stuff that needs to be saved
     StaticArray<AssetQueuedItem, limits::ASSET_SERVER_MAX_IN_FLIGHT> saveAssets;
@@ -2337,8 +2353,20 @@ bool Asset::_RemoteServerCallback([[maybe_unused]] uint32 cmd, const Blob& incom
 
     taskData->inputs.clientPayload = clientPayload;
 
-    SpinLockMutexScope mtx(gAssetMan.server.pendingTasksMutex);
-    gAssetMan.server.pendingTasks.Push(taskData);
+    {
+        SpinLockMutexScope mtx(gAssetMan.server.pendingTasksMutex);
+        gAssetMan.server.pendingTasks.Push(taskData);
+    }
+
+    // Trigger server job, so we can dispatch server jobs in Update when we get idle
+    {
+        MutexScope lock(gAssetMan.pendingJobsMutex);
+        uint32 index = gAssetMan.pendingJobs.FindIf([](const AssetJobItem& item) { return item.type == AssetJobType::Server; });
+        if (index == -1) {
+            AssetJobItem item { .type = AssetJobType::Server };
+            gAssetMan.pendingJobs.PushAndSort(item, [](const AssetJobItem& a, const AssetJobItem& b) { return int(b.type) - int(a.type); });
+        }
+    }
 
     return true;
 }
@@ -2387,8 +2415,7 @@ bool Asset::Initialize()
     gAssetMan.assetMutex.Initialize();
     gAssetMan.groupsMutex.Initialize();
     gAssetMan.hashLookupMutex.Initialize();
-    gAssetMan.pendingLoadsMutex.Initialize();
-    gAssetMan.pendingUnloadsMutex.Initialize();
+    gAssetMan.pendingJobsMutex.Initialize();
 
     // TODO: set allocator (initHeap) for all main objects
     MemAllocator* alloc = Mem::GetDefaultAlloc();
@@ -2399,10 +2426,9 @@ bool Asset::Initialize()
     gAssetMan.assetHeaderAlloc.Initialize(alloc, limits::ASSET_HEADER_BUFFER_POOL_SIZE, false);
     gAssetMan.assetDataAlloc.Initialize(alloc, limits::ASSET_DATA_BUFFER_POOL_SIZE, false);
     gAssetMan.groups.SetAllocator(alloc);
-    gAssetMan.pendingLoads.SetAllocator(alloc);
-    gAssetMan.pendingUnloads.SetAllocator(alloc);
     gAssetMan.assetHashLookup.SetAllocator(alloc);
     gAssetMan.assetHashLookup.Reserve(512);
+    gAssetMan.pendingJobs.SetAllocator(alloc);
 
     gAssetMan.memArena.maxAllocators = Jobs::GetWorkerThreadsCount(JobsType::LongTask);
     gAssetMan.memArena.allocators = NEW_ARRAY(alloc, MemBumpAllocatorVM, gAssetMan.memArena.maxAllocators);
@@ -2436,43 +2462,37 @@ bool Asset::Initialize()
 
 void Asset::Release()
 {
+    if (gAssetMan.curJob && Jobs::IsRunning(gAssetMan.curJob)) {
+        LOG_VERBOSE("Waiting for in-flight AssetMan jobs to finish ...");
+        Jobs::WaitForCompletionAndDelete(gAssetMan.curJob);
+        gAssetMan.curJob = nullptr;
+    }
+
     // Perform all pending unload jobs to clean stuff up
+    // We do this by removing all the pending jobs that are not Unloads and run the Update loop until no pending job remains
+    uint32 numUnloadJobs = 0;
     {
-        JobsHandle& loadJob = gAssetMan.loadJob.first;
-        JobsHandle& unloadJob = gAssetMan.unloadJob.first;
+        MutexScope lock(gAssetMan.pendingJobsMutex);
+        for (uint32 i = 0; i < gAssetMan.pendingJobs.Count();) {
+            if (gAssetMan.pendingJobs[i].type != AssetJobType::Unload)
+                gAssetMan.pendingJobs.RemoveAndSwap(i);
+            else
+                i++;
+        }
+        numUnloadJobs = gAssetMan.pendingJobs.Count();
+    }
 
-        if (loadJob && Jobs::IsRunning(loadJob)) 
-            Jobs::WaitForCompletion(loadJob);
-
-        if (unloadJob && Jobs::IsRunning(unloadJob))
-            Jobs::WaitForCompletion(unloadJob);
-
-        auto PickUnloadJob = []()->AssetGroupHandle
-        {
-            MutexScope lock(gAssetMan.pendingUnloadsMutex);
-            if (!gAssetMan.pendingUnloads.IsEmpty()) {
-                AssetGroupHandle handle = gAssetMan.pendingUnloads[0];
-                gAssetMan.pendingUnloads.RemoveAndShift(0);
-                return handle;
-            }
-
-            return AssetGroupHandle();
-        };
-
-        AssetGroupHandle unloadJobGroupHandle = PickUnloadJob();
-        while (unloadJobGroupHandle.IsValid()) {
-            unloadJob = Jobs::Dispatch(JobsType::LongTask, Asset::_UnloadGroupTask, IntToPtr<uint32>(unloadJobGroupHandle.mId), 1);
-            Jobs::WaitForCompletion(unloadJob);
-            unloadJobGroupHandle = PickUnloadJob();
+    if (numUnloadJobs) {
+        LOG_VERBOSE("Unloading %u AssetGroups ...");
+        while (gAssetMan.curJob) {
+            Update();
+            Thread::Sleep(1);
         }
     }
 
     MemAllocator* alloc = Mem::GetDefaultAlloc();
 
     if (gAssetMan.isServerEnabled) {
-        if (gAssetMan.server.loadBatchTask)
-            Jobs::WaitForCompletion(gAssetMan.server.loadBatchTask);
-
         for (AssetLoadTaskData* taskData : gAssetMan.server.pendingTasks)
             MemSingleShotMalloc<AssetLoadTaskData>::Free(taskData);     // allocated in _RemoteServerCallback
         
@@ -2497,8 +2517,7 @@ void Asset::Release()
     gAssetMan.assetDb.Free();
     gAssetMan.assetLookup.Free();
     gAssetMan.assetHashLookup.Free();
-    gAssetMan.pendingUnloads.Free();
-    gAssetMan.pendingLoads.Free();
+    gAssetMan.pendingJobs.Free();
 
     gAssetMan.assetHeaderAlloc.Release();
     gAssetMan.assetDataAlloc.Release();
@@ -2506,6 +2525,7 @@ void Asset::Release()
     gAssetMan.hashLookupMutex.Release();
     gAssetMan.assetMutex.Release();
     gAssetMan.groupsMutex.Release();
+    gAssetMan.pendingJobsMutex.Release();
 }
 
 AssetGroup Asset::CreateGroup()
@@ -2531,36 +2551,19 @@ void Asset::DestroyGroup(AssetGroup& group)
 
     if (!group.mHandle.IsValid())
         return;
-    
-    // Wait for any tasks to finish
-    if (gAssetMan.loadJob.second == group.mHandle) {
-        Jobs::WaitForCompletion(gAssetMan.loadJob.first);
-        gAssetMan.loadJob = AssetJobItem(nullptr, AssetGroupHandle());
-    }
-
-    if (gAssetMan.unloadJob.second == group.mHandle) {
-        Jobs::WaitForCompletion(gAssetMan.unloadJob.first);
-        gAssetMan.unloadJob = AssetJobItem(nullptr, AssetGroupHandle());
-    }
-
-    // Remove from pending lists
-    {
-        MutexScope lock(gAssetMan.pendingLoadsMutex);
-        uint32 index = gAssetMan.pendingLoads.Find(group.mHandle);
-        if (index != -1)
-            gAssetMan.pendingLoads.RemoveAndShift(index);
-    }
 
     {
-        MutexScope lock(gAssetMan.pendingUnloadsMutex);
-        uint32 index = gAssetMan.pendingUnloads.Find(group.mHandle);
+        MutexScope lock(gAssetMan.pendingJobsMutex);
+        uint32 index = gAssetMan.pendingJobs.FindIf([handle = group.mHandle](const AssetJobItem& item) { 
+            return item.groupHandle == handle; });
         if (index != -1)
-            gAssetMan.pendingUnloads.RemoveAndShift(index);
+            gAssetMan.pendingJobs.RemoveAndShift(index);
     }
 
     {
         ReadWriteMutexReadScope rdlock(gAssetMan.groupsMutex);
         AssetGroupInternal& gi = gAssetMan.groups.Data(group.mHandle);
+        ASSERT_MSG(gi.state == AssetGroupState::Idle, "AssetGroup must be fully unloaded (Idle state) before getting destroyed");
 
         gi.loadList.Free();
         gi.handles.Free();
@@ -2709,27 +2712,51 @@ AssetHandle AssetGroup::AddToLoadQueue(const AssetParams& params) const
 
 void AssetGroup::Load()
 {
-    MutexScope lock(gAssetMan.pendingLoadsMutex);
-    uint32 index = gAssetMan.pendingLoads.Find(mHandle);
-    if (index == -1) {
+    MutexScope lock(gAssetMan.pendingJobsMutex);
+    uint32 index = gAssetMan.pendingJobs.FindIf([handle = mHandle](const AssetJobItem& item) { return item.groupHandle == handle; });
+    if (index == -1 || gAssetMan.pendingJobs[index].type == AssetJobType::Unload) {
         ReadWriteMutexReadScope groupsLock(gAssetMan.groupsMutex);
         AssetGroupInternal& group = gAssetMan.groups.Data(mHandle);
 
-        if (!group.loadList.IsEmpty())
-            gAssetMan.pendingLoads.Push(mHandle);
+        if (!group.loadList.IsEmpty()) {
+            // If we already have an unload group in the queue, remove it from the queue because we are about to load it again
+            // Every Load() call should be acompanied later by an Unload() call anyways
+            // This basically means that in the pending queue, the most recent command for the group, cancels the previous one
+            if (index != -1 && gAssetMan.pendingJobs[index].type == AssetJobType::Unload) {
+                gAssetMan.pendingJobs.RemoveAndShift(index);
+            }
+
+            AssetJobItem item {
+                .type = AssetJobType::Load,
+                .groupHandle = mHandle
+            };
+            gAssetMan.pendingJobs.PushAndSort(item, [](const AssetJobItem& a, const AssetJobItem& b) { return int(b.type) - int(a.type); });
+        }            
     }
 }
 
 void AssetGroup::Unload()
 {
-    MutexScope lock(gAssetMan.pendingUnloadsMutex);
-    uint32 index = gAssetMan.pendingUnloads.Find(mHandle);
-    if (index == -1) {
+    MutexScope lock(gAssetMan.pendingJobsMutex);
+    uint32 index = gAssetMan.pendingJobs.FindIf([handle = mHandle](const AssetJobItem& item) { return item.groupHandle == handle; });
+
+    if (index == -1 || gAssetMan.pendingJobs[index].type == AssetJobType::Load) {
         ReadWriteMutexReadScope groupsLock(gAssetMan.groupsMutex);
         AssetGroupInternal& group = gAssetMan.groups.Data(mHandle);
 
-        if (!group.handles.IsEmpty())
-            gAssetMan.pendingUnloads.Push(mHandle);
+        if (!group.handles.IsEmpty()) {
+            // If we already have a load group job in the queue, remove that one. Because we are unloading afterwards anyways
+            // This basically means that in the pending queue, the most recent command for the group, cancels the previous one
+            if (index != -1 && gAssetMan.pendingJobs[index].type == AssetJobType::Load) {
+                gAssetMan.pendingJobs.RemoveAndShift(index);
+            }
+
+            AssetJobItem item {
+                .type = AssetJobType::Unload,
+                .groupHandle = mHandle
+            };
+            gAssetMan.pendingJobs.PushAndSort(item, [](const AssetJobItem& a, const AssetJobItem& b) { return int(b.type) - int(a.type); });
+        }
     }
 }
 
@@ -2803,90 +2830,58 @@ void Asset::Update()
     PROFILE_ZONE_COLOR(PROFILE_COLOR_ASSET1);
     ASSERT_MSG(Engine::IsMainThread(), "Update can only be called in the main thread");
 
-    JobsHandle& loadJob = gAssetMan.loadJob.first;
-    AssetGroupHandle& loadJobGroupHandle = gAssetMan.loadJob.second;
-
-    JobsHandle& unloadJob = gAssetMan.unloadJob.first;
-    AssetGroupHandle& unloadJobGroupHandle = gAssetMan.unloadJob.second;
-
-    bool hasServerJob = gAssetMan.isServerEnabled && gAssetMan.server.loadBatchTask;
-
-    if (loadJob && !Jobs::IsRunning(loadJob)) {
-        Jobs::WaitForCompletion(loadJob);
-        gAssetMan.loadJob = AssetJobItem(nullptr, AssetGroupHandle());        
+    if (gAssetMan.curJob && !Jobs::IsRunning(gAssetMan.curJob)) {
+        Jobs::Delete(gAssetMan.curJob);
+        gAssetMan.curJob = nullptr;
     }
 
-    if (unloadJob && !Jobs::IsRunning(unloadJob)) {
-        Jobs::WaitForCompletion(unloadJob);
-        gAssetMan.unloadJob = AssetJobItem(nullptr, AssetGroupHandle());
-    }
+    if (gAssetMan.curJob == nullptr) {
+        // Pick a new job
+        // Pending jobs are sorted in descending order, which means that higher priority jobs (see AssetJobType) are at the end of array
+        // So we just need to pop one item from the end of the array
+        
+        MutexScope lk(gAssetMan.pendingJobsMutex);
+        if (!gAssetMan.pendingJobs.IsEmpty()) {
+            AssetJobItem item = gAssetMan.pendingJobs.PopLast();
 
-    auto PickLoadJob = []()->AssetGroupHandle
-    {
-        MutexScope lock(gAssetMan.pendingLoadsMutex);
-        if (!gAssetMan.pendingLoads.IsEmpty()) {
-            AssetGroupHandle handle = gAssetMan.pendingLoads[0];
-            gAssetMan.pendingLoads.RemoveAndShift(0);
-            return handle;
-        }
+            switch (item.type) {
+            case AssetJobType::Load:
+                gAssetMan.curJob = Jobs::Dispatch(JobsType::LongTask, Asset::_LoadGroupTask, 
+                                                  IntToPtr<uint32>(item.groupHandle.mId), 1);
+                break;
 
-        return AssetGroupHandle();
-    };
+            case AssetJobType::Unload:
+                gAssetMan.curJob = Jobs::Dispatch(JobsType::LongTask, Asset::_UnloadGroupTask, 
+                                                  IntToPtr<uint32>(item.groupHandle.mId), 1);
+                break;
 
-    auto PickUnloadJob = []()->AssetGroupHandle
-    {
-        MutexScope lock(gAssetMan.pendingUnloadsMutex);
-        if (!gAssetMan.pendingUnloads.IsEmpty()) {
-            AssetGroupHandle handle = gAssetMan.pendingUnloads[0];
-            gAssetMan.pendingUnloads.RemoveAndShift(0);
-            return handle;
-        }
+            case AssetJobType::Server: 
+            {
+                // Take a batch of server tasks and run them
+                AssetServer& server = gAssetMan.server;
+                uint32 numLoadTasks;
+                {
+                    SpinLockMutexScope lock(server.pendingTasksMutex);
+                    numLoadTasks = Min(limits::ASSET_SERVER_MAX_IN_FLIGHT, server.pendingTasks.Count());
+                    if (numLoadTasks) {
+                        for (uint32 i = 0; i < numLoadTasks; i++) 
+                            server.loadTaskDatas[i] = server.pendingTasks[i];
+                        server.pendingTasks.ShiftLeft(numLoadTasks);            
+                    }
+                }
 
-        return AssetGroupHandle();
-    };
+                server.numLoadTasks = numLoadTasks;
+                if (numLoadTasks)
+                    gAssetMan.curJob = Jobs::Dispatch(JobsType::LongTask, _ServerLoadBatchTask);
 
-    // Pick a load job if no job is in progress
-    // Note: we don't pick any jobs when we are releasing the AssetMan
-    if (!loadJob && !unloadJob && !hasServerJob) {
-        loadJobGroupHandle = PickLoadJob();
-        if (loadJobGroupHandle.IsValid())
-            loadJob = Jobs::Dispatch(JobsType::LongTask, Asset::_LoadGroupTask, IntToPtr<uint32>(loadJobGroupHandle.mId), 1);
-    }
-    
-    // Pick an unload job if no job is in progress
-    // When we are releasing the AssetMan, perform all unload jobs and wait for them to finish
-    if (!loadJob && !unloadJob && !hasServerJob) {
-        unloadJobGroupHandle = PickUnloadJob();
-        if (unloadJobGroupHandle.IsValid()) 
-            unloadJob = Jobs::Dispatch(JobsType::LongTask, Asset::_UnloadGroupTask, IntToPtr<uint32>(unloadJobGroupHandle.mId), 1);
-    }
-
-    //------------------------------------------------------------------------------------------------------------------
-    // Server
-    if (gAssetMan.isServerEnabled && !loadJob && !unloadJob) {
-        AssetServer& server = gAssetMan.server;
-        if (server.loadBatchTask && !Jobs::IsRunning(server.loadBatchTask)) {
-            Jobs::WaitForCompletion(server.loadBatchTask);
-            server.loadBatchTask = nullptr;
-        }
-
-        if (!server.loadBatchTask && server.pendingTasksMutex.TryEnter()) {
-            uint32 numLoadTasks = Min(limits::ASSET_SERVER_MAX_IN_FLIGHT, server.pendingTasks.Count());
-            if (numLoadTasks) {
-                for (uint32 i = 0; i < numLoadTasks; i++) 
-                    server.loadTaskDatas[i] = server.pendingTasks[i];
-                server.pendingTasks.ShiftLeft(numLoadTasks);            
+                break;
             }
-            server.pendingTasksMutex.Exit();
-
-            server.numLoadTasks = numLoadTasks;
-
-            if (numLoadTasks)
-                server.loadBatchTask = Jobs::Dispatch(JobsType::LongTask, _ServerLoadBatchTask);
+            }
         }
     }
 
     //------------------------------------------------------------------------------------------------------------------
+    // Save hash lookup table in intervals
     if (gAssetMan.isHashLookupUpdated) {
         static uint64 lastUpdateTick = 0;
         if (lastUpdateTick == 0)
