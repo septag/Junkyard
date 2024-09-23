@@ -787,8 +787,8 @@ namespace App
             strCopy(gApp.windowTitle, sizeof(gApp.windowTitle), "Junkyard");
 
         char moduleFilename[128];
-        Path::GetMyPath_CStr(moduleFilename, sizeof(moduleFilename));
-        Path::GetFilename_CStr(moduleFilename, moduleFilename, sizeof(moduleFilename));
+        OS::GetMyPath(moduleFilename, sizeof(moduleFilename));
+        PathUtils::GetFilename(moduleFilename, moduleFilename, sizeof(moduleFilename));
         strCopy(gApp.name, sizeof(gApp.name), moduleFilename);
 
         if (SettingsJunkyard::Get().app.launchMinimized)

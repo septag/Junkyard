@@ -249,7 +249,7 @@ static constexpr uint32 RDBG_BUFFER_SIZE = 8*SIZE_KB;
 
 struct RDBG_Context
 {
-    SysProcess remedybgProc;
+    OSProcess remedybgProc;
     HANDLE cmdPipe = INVALID_HANDLE_VALUE;
 };
 static RDBG_Context gRemedyBG;
@@ -266,7 +266,7 @@ bool RDBG::Initialize(const char* serverName, const char* remedybgPath)
     Path remedybgCmdline(remedybgPath);
     remedybgCmdline.Append(" --servername ");
     remedybgCmdline.Append(serverName);
-    if (!gRemedyBG.remedybgProc.Run(remedybgCmdline.CStr(), SysProcessFlags::None)) {
+    if (!gRemedyBG.remedybgProc.Run(remedybgCmdline.CStr(), OSProcessFlags::None)) {
         LOG_ERROR("RemedyBG: Could not run RemedyBG instance '%s'", remedybgPath);
         return false;
     }

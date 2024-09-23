@@ -42,6 +42,7 @@ struct ShaderLoader final : AssetCallbacks
 struct AssetShaderImpl final : AssetTypeImplBase
 {
     bool Bake(const AssetParams& params, AssetData* data, const Span<uint8>& srcData, String<256>* outErrorDesc) override;
+    bool Reload(void* newData, void* oldData) override;
 };
 
 static AssetShaderImpl gShaderImpl;
@@ -432,8 +433,8 @@ bool AssetShaderImpl::Bake(const AssetParams& params, AssetData* data, const Spa
             return false;
         }
 
-        // TODO: TEMP: improve this. setting an artibary hash is not a good idea
-        shader.first->hash = Hash::Murmur32(&params, sizeof(params));
+        // Used for reloading pipelines in Graphics subsystem
+        shader.first->hash = data->mParamsHash;
 
         data->SetObjData(shader.first, shader.second);
         return true;
@@ -447,6 +448,42 @@ bool AssetShaderImpl::Bake(const AssetParams& params, AssetData* data, const Spa
     #endif
 }
 
+bool AssetShaderImpl::Reload(void* newData, void* oldData) 
+{
+    GfxShader* oldShader = reinterpret_cast<GfxShader*>(oldData);
+    GfxShader* newShader = reinterpret_cast<GfxShader*>(newData);
+
+    if (newShader == nullptr)
+        return false;
+    ASSERT(oldShader);
+
+    // Compare the two, if any gloval state, like vertex layout or input params don't match, do not reload
+    if (oldShader->numStages != newShader->numStages)
+        return false;
+
+    if (oldShader->numParams != newShader->numParams)
+        return false;
+
+    if (oldShader->numVertexAttributes != newShader->numVertexAttributes)
+        return false;
+
+    if (memcmp(oldShader->vertexAttributes.Get(), newShader->vertexAttributes.Get(), 
+               newShader->numVertexAttributes*sizeof(GfxShaderVertexAttributeInfo)) != 0)
+    {
+        return false;
+    }
+
+    if (memcmp(oldShader->params.Get(), newShader->params.Get(), 
+               newShader->numParams*sizeof(GfxShaderParameterInfo)) != 0)
+    {
+        return false;
+    }
+
+    _private::gfxRecreatePipelinesWithNewShader(newShader->hash, newShader);
+    return true;
+    
+}
+
 AssetHandleShader Asset::LoadShader(const char* path, const ShaderLoadParams& params, const AssetGroup& group)
 {
     AssetParams assetParams {
@@ -458,8 +495,4 @@ AssetHandleShader Asset::LoadShader(const char* path, const ShaderLoadParams& pa
     return group.AddToLoadQueue(assetParams);
 }
 
-GfxShader* Asset::GetShader(AssetHandleShader shaderHandle)
-{
-    return (GfxShader*)Asset::GetObjData(shaderHandle);
-}
 

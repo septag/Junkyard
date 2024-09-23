@@ -28,6 +28,7 @@ constexpr uint32 RCMD_LOAD_MODEL = MakeFourCC('M', 'O', 'D', 'L');
 struct AssetModelImpl final : AssetTypeImplBase
 {
     bool Bake(const AssetParams& params, AssetData* data, const Span<uint8>& srcData, String<256>* outErrorDesc) override;
+    bool Reload(void* newData, void* oldData) override;
 };
 
 struct ModelVertexAttribute
@@ -1668,6 +1669,14 @@ bool AssetModelImpl::Bake(const AssetParams& params, AssetData* data, const Span
     return true;
 }
 
+bool AssetModelImpl::Reload(void* newData, void* oldData)
+{
+    UNUSED(newData);
+    UNUSED(oldData);
+
+    return false;
+}
+
 AssetHandleModel Asset::LoadModel(const char* path, const ModelLoadParams& params, const AssetGroup& group)
 {
     AssetParams assetParams {
@@ -1677,9 +1686,4 @@ AssetHandleModel Asset::LoadModel(const char* path, const ModelLoadParams& param
     };
 
     return group.AddToLoadQueue(assetParams);
-}
-
-Model* Asset::GetModel(AssetHandleModel handle)
-{
-    return (Model*)Asset::GetObjData(handle);
 }

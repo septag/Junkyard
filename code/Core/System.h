@@ -165,7 +165,7 @@ struct alignas(CACHE_LINE_SIZE) SpinLockMutex
 
 private:
     uint32 mLocked = 0;
-    [[maybe_unused]] uint8  _padding[CACHE_LINE_SIZE - sizeof(uint32)];
+    [[maybe_unused]] uint8 _padding[CACHE_LINE_SIZE - sizeof(uint32)];
 };
 
 struct SpinLockMutexScope
@@ -305,6 +305,18 @@ struct PathInfo
     uint64 lastModified;
 };
 
+namespace PathUtils
+{
+    API char* ToUnix(const char* path, char* dst, size_t dstSize);
+    API char* ToWin(const char* path, char* dst, size_t dstSize);
+    API char* GetFileExtension(const char* path, char* dst, size_t dstSize);
+    API char* GetFilenameAndExtension(const char* path, char* dst, size_t dstSize);
+    API char* GetFilename(const char* path, char* dst, size_t dstSize);
+    API char* GetDirectory(const char* path, char* dst, size_t dstSize);
+    API char* Join(char* dst, size_t dstSize, const char* pathA, const char* pathB);
+    API char* JoinUnixStyle(char* dst, size_t dstSize, const char* pathA, const char* pathB);
+}
+
 struct Path : String<PATH_CHARS_MAX>
 {
     Path() = default;
@@ -331,32 +343,6 @@ struct Path : String<PATH_CHARS_MAX>
     Path& Join(const Path& path);
     static Path Join(const Path& pathA, const Path& pathB);
     static Path JoinUnix(const Path& pathA, const Path& pathB);
-
-    // TODO: try to move all CStr functions into Path friendly ones
-    static char* GetMyPath_CStr(char* dst, size_t dstSize);
-    static char* Absolute_CStr(const char* path, char* dst, size_t dstSize);
-    static char* GetCurrentDir_CStr(char* dst, size_t dstSize);
-    static void  SetCurrentDir_CStr(const char* path);
-    static char* GetHomeDir_CStr(char* dst, size_t dstSize);
-    static char* GetCacheDir_CStr(char* dst, size_t dstSize, const char* appName);
-    static char* ToUnix_CStr(const char* path, char* dst, size_t dstSize);
-    static char* ToWin_CStr(const char* path, char* dst, size_t dstSize);
-    static char* GetFileExtension_CStr(const char* path, char* dst, size_t dstSize);
-    static char* GetFilenameAndExtension_CStr(const char* path, char* dst, size_t dstSize);
-    static char* GetFilename_CStr(const char* path, char* dst, size_t dstSize);
-    static char* GetDirectory_CStr(const char* path, char* dst, size_t dstSize);
-    static char* Join_CStr(char* dst, size_t dstSize, const char* pathA, const char* pathB);
-    static char* JoinUnixStyle_CStr(char* dst, size_t dstSize, const char* pathA, const char* pathB);
-    static PathInfo Stat_CStr(const char* path);
-    static bool Exists_CStr(const char* path);
-    static bool IsFile_CStr(const char* path);
-    static bool IsDir_CStr(const char* path);
-    static bool CreateDir_CStr(const char* path);
-    static bool Move_CStr(const char* src, const char* dest);
-    static bool MakeTemp_CStr(char* dst, size_t dstSize, const char* namePrefix, const char* dir = nullptr);
-
-private:
-    static char* Join_CStr(char *dst, size_t dstSize, const char *sep, const char *pathA, const char *pathB);
 };
 
 //    ███████╗██╗██╗     ███████╗
@@ -548,21 +534,21 @@ struct UniqueID
 //    ██║   ██║██╔══╝  ██║╚██╗██║██╔══╝  ██╔══██╗██╔══██║██║         ██║   ██║╚════██║
 //    ╚██████╔╝███████╗██║ ╚████║███████╗██║  ██║██║  ██║███████╗    ╚██████╔╝███████║
 //     ╚═════╝ ╚══════╝╚═╝  ╚═══╝╚══════╝╚═╝  ╚═╝╚═╝  ╚═╝╚══════╝     ╚═════╝ ╚══════╝
-using SysDLL = void*;
-
-enum class SysCpuFamily 
-{
-    Unknown = 0,
-    ARM,
-    x86_64,
-    ARM64
-};
+using OSDLL = void*;
 
 struct SysInfo
 {
+    enum class CpuFamily 
+    {
+        Unknown = 0,
+        ARM,
+        x86_64,
+        ARM64
+    };
+
     char         cpuName[32];
     char         cpuModel[64];
-    SysCpuFamily cpuFamily;
+    CpuFamily    cpuFamily;
     size_t       pageSize;
     size_t       physicalMemorySize;
     uint32       coreCount;
@@ -582,9 +568,9 @@ namespace OS
     API void PauseCPU();
     uint64 GetCPUClock();
 
-    API [[nodiscard]] SysDLL LoadDLL(const char* filepath, char** pErrorMsg = nullptr);
-    API void UnloadDLL(SysDLL dll);
-    API void* GetSymbolAddress(SysDLL dll, const char* symbolName);
+    API [[nodiscard]] OSDLL LoadDLL(const char* filepath, char** pErrorMsg = nullptr);
+    API void UnloadDLL(OSDLL dll);
+    API void* GetSymbolAddress(OSDLL dll, const char* symbolName);
     API size_t GetPageSize();
     API void GetSysInfo(SysInfo* info);
     API bool IsDebuggerPresent();
@@ -594,10 +580,25 @@ namespace OS
     // If 'value' is nullptr, then variable will be cleared from the environment
     API bool SetEnvVar(const char* name, const char* value);
     API bool GetEnvVar(const char* name, char* outValue, uint32 valueSize);
+
+    API char* GetMyPath(char* dst, size_t dstSize);
+    API char* GetAbsolutePath(const char* path, char* dst, size_t dstSize);
+    API char* GetCurrentDir(char* dst, size_t dstSize);
+    API void  SetCurrentDir(const char* path);
+    API char* GetHomeDir(char* dst, size_t dstSize);
+    API char* GetCacheDir(char* dst, size_t dstSize, const char* appName);
+    API PathInfo GetPathInfo(const char* path);
+    API bool PathExists(const char* path);
+    API bool IsPathFile(const char* path);
+    API bool IsPathDir(const char* path);
+    API bool CreateDir(const char* path);
+    API bool MovePath(const char* src, const char* dest);
+    API bool MakeTempPath(char* dst, size_t dstSize, const char* namePrefix, const char* dir = nullptr);
+    API bool DeleteFilePath(const char* path);
 }
 
 #if PLATFORM_DESKTOP
-enum class SysProcessFlags : uint32
+enum class OSProcessFlags : uint32
 {
     None = 0,
     CaptureOutput = 0x1,
@@ -605,14 +606,14 @@ enum class SysProcessFlags : uint32
     DontCreateConsole = 0x4,
     ForceCreateConsole = 0x8
 };
-ENABLE_BITMASK(SysProcessFlags);
+ENABLE_BITMASK(OSProcessFlags);
 
-struct SysProcess
+struct OSProcess
 {
-    SysProcess();
-    ~SysProcess();
+    OSProcess();
+    ~OSProcess();
 
-    bool Run(const char* cmdline, SysProcessFlags flags, const char* cwd = nullptr);
+    bool Run(const char* cmdline, OSProcessFlags flags, const char* cwd = nullptr);
     void Wait() const;
     bool IsRunning() const;
     void Abort();
@@ -639,7 +640,7 @@ private:
 #if PLATFORM_WINDOWS
 
 // https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-showwindow
-enum class SysWin32ShowWindow : int
+enum class OSWin32ShowWindow : int
 {
     Hide = 0,
     Normal = 1,
@@ -654,7 +655,7 @@ enum class SysWin32ShowWindow : int
     ForceMinimize = 11
 };
 
-enum class SysWin32ShellExecuteResult
+enum class OSWin32ShellExecuteResult
 {
     Ok,
     OutOfMemory,
@@ -666,7 +667,7 @@ enum class SysWin32ShellExecuteResult
     UnknownError
 };
 
-enum class SysWin32Folder
+enum class OSWin32Folder
 {
     Documents = 0,  // %USERPROFILE%\My Documents
     Fonts,          // %windir%\Fonts
@@ -688,12 +689,12 @@ namespace OS
     API bool Win32SetPrivilege(const char* name, bool enable = true);
     // https://learn.microsoft.com/en-us/windows/win32/api/shellapi/nf-shellapi-shellexecutea
     // For "operation": valid ops are "edit", "explore", "find", "open", "print", "runas"
-    API SysWin32ShellExecuteResult Win32ShellExecute(const char* filepath, const char* args = nullptr, 
+    API OSWin32ShellExecuteResult Win32ShellExecute(const char* filepath, const char* args = nullptr, 
                                                          const char* cwd = nullptr, 
-                                                         SysWin32ShowWindow showFlag = SysWin32ShowWindow::Default, 
+                                                         OSWin32ShowWindow showFlag = OSWin32ShowWindow::Default, 
                                                          const char* operation = nullptr,
                                                          void** pInstance = nullptr);
-    API char* Win32GetFolder(SysWin32Folder folder, char* dst, size_t dstSize);
+    API char* Win32GetFolder(OSWin32Folder folder, char* dst, size_t dstSize);
 }
 
 
@@ -703,7 +704,7 @@ typedef _JNIEnv JNIEnv;
 
 typedef struct ANativeActivity ANativeActivity; // <android/native_activity.h>
 
-enum class SysAndroidLogType 
+enum class OSAndroidLogType 
 {
     Unknown = 0,
     Default,
@@ -718,7 +719,7 @@ enum class SysAndroidLogType
 
 namespace OS
 {
-    API void AndroidPrintToLog(SysAndroidLogType logType, const char* tag, const char* text);
+    API void AndroidPrintToLog(OSAndroidLogType logType, const char* tag, const char* text);
     API JNIEnv* AndroidAcquireJniEnv(ANativeActivity* activity);
     API void AndroidReleaseJniEnv(ANativeActivity* activity);    
     API JNIEnv* AndroidGetJniEnv();
@@ -759,51 +760,36 @@ SysPrimitiveStats GetSystemPrimitiveStats();
 //    ██║██║╚██╗██║██║     ██║██║╚██╗██║██╔══╝  ╚════██║
 //    ██║██║ ╚████║███████╗██║██║ ╚████║███████╗███████║
 //    ╚═╝╚═╝  ╚═══╝╚══════╝╚═╝╚═╝  ╚═══╝╚══════╝╚══════╝
-inline bool Path::Exists_CStr(const char* path)
-{
-    return Path::Stat_CStr(path).type != PathType::Invalid;
-}
-
-inline bool Path::IsFile_CStr(const char* path)
-{
-    return Path::Stat_CStr(path).type == PathType::File;
-}
-
-inline bool Path::IsDir_CStr(const char* path)
-{
-    return Path::Stat_CStr(path).type == PathType::Directory;
-}
-
 inline Path& Path::SetToCurrentDir()
 {
-    Path::GetCurrentDir_CStr(mStr, sizeof(mStr));
+    OS::GetCurrentDir(mStr, sizeof(mStr));
     mLen = strLen(mStr);
     return *this;
 }
 
 inline Path& Path::ConvertToUnix()
 {
-    Path::ToUnix_CStr(mStr, mStr, sizeof(mStr));
+    PathUtils::ToUnix(mStr, mStr, sizeof(mStr));
     return *this;
 }
 
 inline Path& Path::ConvertToWin()
 {
-    Path::ToWin_CStr(mStr, mStr, sizeof(mStr));
+    PathUtils::ToWin(mStr, mStr, sizeof(mStr));
     return *this;
 }
 
 inline Path& Path::ConvertToAbsolute()
 {
     char abspath[PATH_CHARS_MAX];
-    Path::Absolute_CStr(mStr, abspath, sizeof(abspath));
+    OS::GetAbsolutePath(mStr, abspath, sizeof(abspath));
     return *this = abspath;
 }
 
 inline Path Path::GetAbsolute() const 
 {
     Path p;
-    Path::Absolute_CStr(mStr, p.mStr, sizeof(p.mStr));
+    OS::GetAbsolutePath(mStr, p.mStr, sizeof(p.mStr));
     p.mLen = strLen(p.mStr);
     return p;
 }
@@ -811,7 +797,7 @@ inline Path Path::GetAbsolute() const
 inline Path Path::GetFileExtension() const
 {
     Path p;
-    Path::GetFileExtension_CStr(mStr, p.mStr, sizeof(p.mStr));
+    PathUtils::GetFileExtension(mStr, p.mStr, sizeof(p.mStr));
     p.mLen = strLen(p.mStr);
     return p;
 }
@@ -819,7 +805,7 @@ inline Path Path::GetFileExtension() const
 inline Path Path::GetFileNameAndExt() const
 {
     Path p;
-    Path::GetFilenameAndExtension_CStr(mStr, p.mStr, sizeof(p.mStr));
+    PathUtils::GetFilenameAndExtension(mStr, p.mStr, sizeof(p.mStr));
     p.mLen = strLen(p.mStr);
     return p;
 }
@@ -827,7 +813,7 @@ inline Path Path::GetFileNameAndExt() const
 inline Path Path::GetFileName() const
 {
     Path p;
-    Path::GetFilename_CStr(mStr, p.mStr, sizeof(p.mStr));
+    PathUtils::GetFilename(mStr, p.mStr, sizeof(p.mStr));
     p.mLen = strLen(p.mStr);
     return p;
 }
@@ -835,14 +821,14 @@ inline Path Path::GetFileName() const
 inline Path Path::GetDirectory() const
 {
     Path p;
-    Path::GetDirectory_CStr(mStr, p.mStr, sizeof(p.mStr));
+    PathUtils::GetDirectory(mStr, p.mStr, sizeof(p.mStr));
     p.mLen = strLen(p.mStr);
     return p;
 }
 
 inline Path& Path::Join(const Path& path)
 {
-    Join_CStr(mStr, sizeof(mStr), mStr, path.mStr);
+    PathUtils::Join(mStr, sizeof(mStr), mStr, path.mStr);
     mLen = strLen(mStr);
     return *this;
 }
@@ -850,7 +836,7 @@ inline Path& Path::Join(const Path& path)
 inline Path Path::Join(const Path& pathA, const Path& pathB)
 {
     Path p;
-    Path::Join_CStr(p.mStr, sizeof(p.mStr), pathA.mStr, pathB.mStr);
+    PathUtils::Join(p.mStr, sizeof(p.mStr), pathA.mStr, pathB.mStr);
     p.mLen = strLen(p.mStr);
     return p;
 }
@@ -858,29 +844,44 @@ inline Path Path::Join(const Path& pathA, const Path& pathB)
 inline Path Path::JoinUnix(const Path& pathA, const Path& pathB)
 {
     Path p;
-    Path::JoinUnixStyle_CStr(p.mStr, sizeof(p.mStr), pathA.mStr, pathB.mStr);
+    PathUtils::JoinUnixStyle(p.mStr, sizeof(p.mStr), pathA.mStr, pathB.mStr);
     p.mLen = strLen(p.mStr);
     return p;
 }
 
 inline PathInfo Path::Stat() const
 {
-    return Path::Stat_CStr(mStr);
+    return OS::GetPathInfo(mStr);
 }
 
 inline bool Path::Exists() const
 {
-    return Path::Exists_CStr(mStr);
+    return OS::PathExists(mStr);
 }
 
 inline bool Path::IsFile() const
 {
-    return Path::Stat_CStr(mStr).type == PathType::File;
+    return OS::GetPathInfo(mStr).type == PathType::File;
 }
 
 inline bool Path::IsDir() const
 {
-    return Path::Stat_CStr(mStr).type == PathType::Directory;
+    return OS::GetPathInfo(mStr).type == PathType::Directory;
+}
+
+inline bool OS::PathExists(const char* path)
+{
+    return OS::GetPathInfo(path).type != PathType::Invalid;
+}
+
+inline bool OS::IsPathFile(const char* path)
+{
+    return OS::GetPathInfo(path).type == PathType::File;
+}
+
+inline bool OS::IsPathDir(const char* path)
+{
+    return OS::GetPathInfo(path).type == PathType::Directory;
 }
 
 INLINE uint64 Timer::Diff(uint64 newTick, uint64 oldTick)

@@ -573,7 +573,7 @@ bool _private::gfxInitialize()
     StaticArray<const char*, 4> enabledLayers;
     if (settings.validate) {
         if (HasLayer("VK_LAYER_KHRONOS_validation")) {
-            enabledLayers.Add("VK_LAYER_KHRONOS_validation");
+            enabledLayers.Push("VK_LAYER_KHRONOS_validation");
         }
         else {
             LOG_ERROR("Gfx: Vulkan backend doesn't have validation layer support. Turn it off in the settings.");
@@ -588,27 +588,27 @@ bool _private::gfxInitialize()
     // Instance extensions
     StaticArray<const char*, 32> enabledInstanceExtensions;
     for (uint32 i = 0; i < sizeof(kGfxVkExtensions)/sizeof(const char*); i++)
-        enabledInstanceExtensions.Add(kGfxVkExtensions[i]);
+        enabledInstanceExtensions.Push(kGfxVkExtensions[i]);
     
     // Enable Validation
     VkValidationFeaturesEXT validationFeatures;
     StaticArray<VkValidationFeatureEnableEXT, 5> validationFeatureFlags;
     if constexpr (!CONFIG_FINAL_BUILD) {
         if (gfxHasInstanceExtension("VK_EXT_debug_utils"))
-            enabledInstanceExtensions.Add("VK_EXT_debug_utils");
+            enabledInstanceExtensions.Push("VK_EXT_debug_utils");
         else if (gfxHasInstanceExtension("VK_EXT_debug_report"))
-            enabledInstanceExtensions.Add("VK_EXT_debug_report");
+            enabledInstanceExtensions.Push("VK_EXT_debug_report");
 
         bool validateFeatures = settings.validateBestPractices || settings.validateSynchronization;
         // TODO: How can we know we have VK_Validation_Features ? 
         //       Because it is only enabled when debug layer is activated
         if (validateFeatures/* && gfxHasInstanceExtension("VK_EXT_validation_features")*/) {
-            enabledInstanceExtensions.Add("VK_EXT_validation_features");
+            enabledInstanceExtensions.Push("VK_EXT_validation_features");
             
             if (settings.validateBestPractices)
-                validationFeatureFlags.Add(VK_VALIDATION_FEATURE_ENABLE_BEST_PRACTICES_EXT);
+                validationFeatureFlags.Push(VK_VALIDATION_FEATURE_ENABLE_BEST_PRACTICES_EXT);
             if (settings.validateSynchronization)
-                validationFeatureFlags.Add(VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT);
+                validationFeatureFlags.Push(VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT);
             validationFeatures = {
                 .sType = VK_STRUCTURE_TYPE_VALIDATION_FEATURES_EXT,
                 .pNext = nullptr,
@@ -623,7 +623,7 @@ bool _private::gfxInitialize()
     
     // physical device properties is always enabled if exists
     if (gfxHasInstanceExtension("VK_KHR_get_physical_device_properties2"))
-        enabledInstanceExtensions.Add("VK_KHR_get_physical_device_properties2");
+        enabledInstanceExtensions.Push("VK_KHR_get_physical_device_properties2");
 
     instCreateInfo.enabledExtensionCount = enabledInstanceExtensions.Count();
     instCreateInfo.ppEnabledExtensionNames = enabledInstanceExtensions.Ptr();
@@ -913,7 +913,7 @@ bool _private::gfxInitialize()
                 queueCreateInfo.queueFamilyIndex = queueIndex;
                 queueCreateInfo.queueCount = 1;
                 queueCreateInfo.pQueuePriorities = &queuePriority;
-                queueCreateInfos.Add(queueCreateInfo);
+                queueCreateInfos.Push(queueCreateInfo);
             }
         }
     }
@@ -938,14 +938,14 @@ bool _private::gfxInitialize()
     StaticArray<const char*, 32> enabledDeviceExtensions;
     if (!settings.headless) {
         if (gfxHasDeviceExtension("VK_KHR_swapchain"))
-            enabledDeviceExtensions.Add("VK_KHR_swapchain");
+            enabledDeviceExtensions.Push("VK_KHR_swapchain");
         if (gVk.hasAstcDecodeMode)
-            enabledDeviceExtensions.Add("VK_EXT_astc_decode_mode");
+            enabledDeviceExtensions.Push("VK_EXT_astc_decode_mode");
     }
 
     #ifdef TRACY_ENABLE
         if (gfxHasDeviceExtension(VK_EXT_CALIBRATED_TIMESTAMPS_EXTENSION_NAME)) {
-            enabledDeviceExtensions.Add(VK_EXT_CALIBRATED_TIMESTAMPS_EXTENSION_NAME);
+            enabledDeviceExtensions.Push(VK_EXT_CALIBRATED_TIMESTAMPS_EXTENSION_NAME);
         }
     #endif
 
@@ -954,22 +954,22 @@ bool _private::gfxInitialize()
         gfxHasInstanceExtension("VK_KHR_get_physical_device_properties2"))
     {
         gVk.hasPipelineExecutableProperties = true;
-        enabledDeviceExtensions.Add("VK_KHR_pipeline_executable_properties");
+        enabledDeviceExtensions.Push("VK_KHR_pipeline_executable_properties");
     }
 
     if (gVk.hasMemoryBudget)
-        enabledDeviceExtensions.Add("VK_EXT_memory_budget");
+        enabledDeviceExtensions.Push("VK_EXT_memory_budget");
     if (gVk.hasHostQueryReset)
-        enabledDeviceExtensions.Add("VK_EXT_host_query_reset");
+        enabledDeviceExtensions.Push("VK_EXT_host_query_reset");
 
     if (gVk.hasFloat16Support)
-        enabledDeviceExtensions.Add("VK_KHR_shader_float16_int8");
+        enabledDeviceExtensions.Push("VK_KHR_shader_float16_int8");
     if (gVk.hasNonSemanticInfo)
-        enabledDeviceExtensions.Add("VK_KHR_shader_non_semantic_info");
+        enabledDeviceExtensions.Push("VK_KHR_shader_non_semantic_info");
     if (gVk.hasDescriptorIndexing)
-        enabledDeviceExtensions.Add("VK_EXT_descriptor_indexing");
+        enabledDeviceExtensions.Push("VK_EXT_descriptor_indexing");
     if (gVk.hasPushDescriptor)
-        enabledDeviceExtensions.Add("VK_KHR_push_descriptor");
+        enabledDeviceExtensions.Push("VK_KHR_push_descriptor");
 
     // Enabled layers
     VkDeviceCreateInfo devCreateInfo {
@@ -1504,7 +1504,7 @@ static VkCommandBuffer gfxGetNewCommandBuffer()
 
         // Add to thread data collection for later house-cleaning
         SpinLockMutexScope lock(gVk.threadDataLock);
-        gVk.initializedThreadData.Add(&gCmdBufferThreadData);
+        gVk.initializedThreadData.Push(&gCmdBufferThreadData);
     }
     else {
         PROFILE_ZONE_NAME("ResetCommandPool");
@@ -1631,7 +1631,7 @@ void gfxEndCommandBuffer()
 
     // Recoding finished, push it for submittion
     SpinLockMutexScope lock(gVk.pendingCmdBuffersLock);
-    gVk.pendingCmdBuffers.Add(gCmdBufferThreadData.curCmdBuffer);
+    gVk.pendingCmdBuffers.Push(gCmdBufferThreadData.curCmdBuffer);
     gCmdBufferThreadData.curCmdBuffer = VK_NULL_HANDLE;
 }
 
@@ -2118,7 +2118,7 @@ static VkRenderPass gfxCreateRenderPassVk(VkFormat format, VkFormat depthFormat 
     };
 
     StaticArray<VkAttachmentDescription, 2> attachments;
-    attachments.Add(VkAttachmentDescription {
+    attachments.Push(VkAttachmentDescription {
         .format = format,
         .samples = VK_SAMPLE_COUNT_1_BIT,
         .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
@@ -2131,7 +2131,7 @@ static VkRenderPass gfxCreateRenderPassVk(VkFormat format, VkFormat depthFormat 
 
     // Do we have a depth attachment ?
     if (depthFormat != VK_FORMAT_UNDEFINED) {
-        attachments.Add(VkAttachmentDescription {
+        attachments.Push(VkAttachmentDescription {
             .format = depthFormat,
             .samples = VK_SAMPLE_COUNT_1_BIT,
             .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
@@ -3606,7 +3606,7 @@ void gfxDestroyImage(GfxImageHandle image)
 //    ██████╔╝███████╗███████║╚██████╗██║  ██║██║██║        ██║   ╚██████╔╝██║  ██║    ███████║███████╗   ██║   
 //    ╚═════╝ ╚══════╝╚══════╝ ╚═════╝╚═╝  ╚═╝╚═╝╚═╝        ╚═╝    ╚═════╝ ╚═╝  ╚═╝    ╚══════╝╚══════╝   ╚═╝   
 GfxDescriptorSetLayoutHandle gfxCreateDescriptorSetLayout(const GfxShader& shader, const GfxDescriptorSetLayoutBinding* bindings, 
-                                                          uint32 numBindings, bool isPushDescriptor)
+                                                          uint32 numBindings, GfxDescriptorSetLayoutFlags flags)
 {
     ASSERT(numBindings);
     ASSERT(bindings);
@@ -3652,6 +3652,7 @@ GfxDescriptorSetLayoutHandle gfxCreateDescriptorSetLayout(const GfxShader& shade
     else {
         gVk.pools.locks[GfxObjectPools::DESCRIPTOR_SET_LAYOUTS].ExitRead();
 
+        bool isPushDescriptor = (flags & GfxDescriptorSetLayoutFlags::PushDescriptor) == GfxDescriptorSetLayoutFlags::PushDescriptor;
         ASSERT_ALWAYS((isPushDescriptor && gVk.hasPushDescriptor) || !isPushDescriptor, "VK_KHR_push_descriptor extension is not supported");
 
         VkDescriptorSetLayoutCreateInfo layoutCreateInfo {
@@ -3831,7 +3832,8 @@ void gfxDestroyDescriptorSet(GfxDescriptorSetHandle dset)
     gVk.pools.descriptorSets.Remove(dset);
 }
 
-void gfxCmdPushDescriptorSet(GfxPipelineHandle pipeline, GfxPipelineBindPoint bindPoint, uint32 setIndex, uint32 numDescriptorBindings, const GfxDescriptorBindingDesc* descriptorBindings)
+void gfxCmdPushDescriptorSet(GfxPipelineHandle pipeline, GfxPipelineBindPoint bindPoint, uint32 setIndex, uint32 numDescriptorBindings, 
+                             const GfxDescriptorBindingDesc* descriptorBindings)
 {
     ASSERT_ALWAYS(gVk.hasPushDescriptor, "VK_KHR_push_descriptor extension is not supported for this function");
     ASSERT(numDescriptorBindings);

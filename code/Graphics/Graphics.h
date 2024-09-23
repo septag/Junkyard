@@ -454,6 +454,13 @@ struct GfxDescriptorSetLayoutBinding
     uint32              arrayCount = 1;      
 };
 
+enum class GfxDescriptorSetLayoutFlags : uint32
+{
+    None = 0,
+    PushDescriptor = 0x1
+};
+ENABLE_BITMASK(GfxDescriptorSetLayoutFlags);
+
 // 1-1 vulkan
 enum class GfxPolygonMode : uint32
 {
@@ -1046,7 +1053,7 @@ API void gfxDestroyRenderPass(GfxRenderPassHandle renderPass);
 
 API GfxDescriptorSetLayoutHandle gfxCreateDescriptorSetLayout(const GfxShader& shader, 
                                                               const GfxDescriptorSetLayoutBinding* bindings, uint32 numBindings,
-                                                              bool isPushDescriptor);
+                                                              GfxDescriptorSetLayoutFlags flags);
 API void gfxDestroyDescriptorSetLayout(GfxDescriptorSetLayoutHandle layout);
 
 API GfxDescriptorSetHandle gfxCreateDescriptorSet(GfxDescriptorSetLayoutHandle layout);

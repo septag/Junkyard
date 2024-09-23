@@ -378,8 +378,8 @@ bool _private::assetInitialize()
 
     // Create and mount cache directory
     #if PLATFORM_WINDOWS || PLATFORM_OSX || PLATFORM_LINUX
-        if (!Path::IsDir_CStr(".cache"))
-            Path::CreateDir_CStr(".cache");
+        if (!OS::IsPathDir(".cache"))
+            OS::CreateDir(".cache");
         Vfs::MountLocal(".cache", "cache", false);
     #elif PLATFORM_ANDROID
         Vfs::MountLocal(OS::AndroidGetCacheDirectory(App::AndroidGetActivity()).CStr(), "cache", false);
@@ -834,7 +834,7 @@ bool assetLoadMetaData(const char* filepath, AssetPlatform::Enum platform, MemAl
                     memset(&item, 0x0, sizeof(item));
                     item.key = key;
                     item.value = value;
-                    keys->Add(item);
+                    keys->Push(item);
                 }
 
                 jitem = jroot.GetNextChildItem(jitem);
@@ -1132,10 +1132,12 @@ namespace limits
     static inline constexpr size_t ASSET_HEADER_BUFFER_POOL_SIZE = SIZE_MB;
     static inline constexpr size_t ASSET_DATA_BUFFER_POOL_SIZE = SIZE_MB*128;
     static inline constexpr uint32 ASSET_SERVER_MAX_IN_FLIGHT = 128;
+    static inline constexpr uint32 ASSET_HOT_RELOAD_MAX_IN_FLIGHT = 128;
 }
 
 static inline constexpr uint32 ASSET_LOAD_ASSET_REMOTE_CMD = MakeFourCC('L', 'D', 'A', 'S');
 static inline constexpr float ASSET_SAVE_CACHE_LOOKUP_INTERVAL = 1.0f;
+static inline constexpr float ASSET_HOT_RELOAD_INTERVAL = 0.2f;
 
 // Note: serializable. All data/array should use RelativePtr
 struct AssetDataInternal
@@ -1201,10 +1203,11 @@ struct AssetDataInternal
     RelativePtr<uint8> objData;
     RelativePtr<GpuObject> gpuObjects;
 };
+using AssetDataPair = Pair<AssetDataInternal*, uint32>; // second=dataSize
 
-struct AssetDataHeader
+struct alignas(CACHE_LINE_SIZE) AssetDataHeader
 {
-    AssetState state;
+    AtomicUint32 state; // AssetState
     uint32 paramsHash;
     uint32 refCount;
     uint32 dataSize;
@@ -1213,6 +1216,7 @@ struct AssetDataHeader
     const char* typeName;
     AssetParams* params;
     AssetDataInternal* data;
+    uint8 _reserved[16];
 };
 
 struct AssetScratchMemArena
@@ -1241,7 +1245,10 @@ struct AssetLoadTaskInputs
     AssetDataHeader* header;
     Path bakedFilepath;
     String<256> remoteLoadErrorStr;
+
+    // specific to remote loading 
     uint64 clientPayload;
+    uint32 clientAssetHash;
     bool isRemoteLoad;
 };
 
@@ -1268,17 +1275,17 @@ struct AssetDataCopyTaskData
 
 struct AssetHandleResult
 {
-    AssetHandle handle;
-    uint32 paramsHash;
     AssetDataHeader* header;
+    AssetHandle handle;
     bool newlyCreated;
 };
 
 struct AssetGroupInternal
 {
-    Array<AssetDataHeader*> loadList;  
+    Array<AssetHandle> loadList;
     Array<AssetHandle> handles;
     AtomicUint32 state; // AssetGroupState
+    bool hotReloadGroup;    // HotReload group is a special group that behaves differently and destroys itself after done
 };
 
 struct AssetQueuedItem
@@ -1292,6 +1299,11 @@ struct AssetQueuedItem
     bool saveBaked;
 };
 
+enum class AssetServerBlobType : uint32
+{
+    LocalCacheIsValid = 0,
+    IncludesBakedData
+};
 
 struct AssetServer
 {
@@ -1321,6 +1333,7 @@ struct AssetMan
     ReadWriteMutex groupsMutex;
     ReadWriteMutex hashLookupMutex;
     Mutex pendingJobsMutex;
+    Mutex hotReloadMutex;
 
     AssetScratchMemArena memArena;
     MemBumpAllocatorVM tempAlloc;   // Used in LoadAssetGroup, because we cannot use regular temp allocators due to dispatching
@@ -1336,9 +1349,13 @@ struct AssetMan
     Array<AssetJobItem> pendingJobs;
     JobsHandle curJob;
 
+    Array<AssetHandle> hotReloadList;
+
     AssetServer server;
     bool isServerEnabled;
     bool isHashLookupUpdated;
+    bool isHotReloadEnabled;
+    bool isForceUseCache;
 };
 
 static AssetMan gAssetMan;
@@ -1369,6 +1386,8 @@ namespace Asset
     constexpr AssetPlatform::Enum _GetCurrentPlatform();
     static void _SaveAssetHashLookup();
     static void _LoadAssetHashLookup();
+    static void _OnFileChanged(const char* filepath);
+    static void _UnloadDatasManually(Span<AssetDataPair> datas);
 } // Asset
 
 constexpr AssetPlatform::Enum Asset::_GetCurrentPlatform()
@@ -1380,6 +1399,85 @@ constexpr AssetPlatform::Enum Asset::_GetCurrentPlatform()
     else {
         ASSERT(0);
         return AssetPlatform::Auto;
+    }
+}
+
+static void Asset::_UnloadDatasManually(Span<AssetDataPair> datas)
+{
+    PROFILE_ZONE_COLOR(PROFILE_COLOR_ASSET3);
+
+    // Unload dependencies
+    {
+        MemTempAllocator tempAlloc;
+        Array<AssetHandle> depHandles(&tempAlloc);
+        for (uint32 i = 0; i < datas.Count(); i++) {
+            AssetDataInternal* data = datas[i].first;
+            
+            AssetDataInternal::Dependency* dep = data->deps.Get();
+            while (dep) {
+                AssetHandle* targetHandle = dep->bindToHandle.Get();
+                if (targetHandle->IsValid()) 
+                    depHandles.Push(*targetHandle);
+                dep = dep->next.Get();
+            }
+        }
+
+        if (!depHandles.IsEmpty()) {
+            AssetGroup unloadGroup = Asset::CreateGroup();
+
+            {
+                ReadWriteMutexReadScope rdlock(gAssetMan.groupsMutex);
+                AssetGroupInternal& groupData = gAssetMan.groups.Data(unloadGroup.mHandle);
+
+                depHandles.CopyTo(&groupData.handles);
+                groupData.hotReloadGroup = true;
+            }
+            
+            unloadGroup.Unload();
+        }
+    }
+
+    // Destroy GPU objects and asset data
+    for (AssetDataPair& data : datas) {
+        AssetDataInternal::GpuObject* gpuObj = data.first->gpuObjects.Get();
+        while (gpuObj) {
+            switch (gpuObj->type) {
+            case AssetDataInternal::GpuObjectType::Texture:
+                ASSERT(!gpuObj->textureDesc.bindToImage.IsNull());
+                gfxDestroyImage(*gpuObj->textureDesc.bindToImage.Get());
+                break;
+            case AssetDataInternal::GpuObjectType::Buffer:
+                ASSERT(!gpuObj->bufferDesc.bindToBuffer.IsNull());
+                gfxDestroyBuffer(*gpuObj->bufferDesc.bindToBuffer.Get());
+                break;
+            }
+            gpuObj = gpuObj->next.Get();
+        }
+
+        // Note: 'AssetDataAlloc' doesn't need any thread protection, because it is guaranteed that only one thread uses it at a time 
+        Mem::Free(data.first, &gAssetMan.assetDataAlloc);
+    }
+}
+
+static void Asset::_OnFileChanged(const char* filepath)
+{
+    if (!gAssetMan.isHotReloadEnabled)
+        return;
+
+    // TODO: if filepath is a metadata file, then check the asset filepath instead
+
+    ReadWriteMutexReadScope mtx(gAssetMan.assetMutex);
+    for (uint32 i = 0; i < gAssetMan.assetDb.Count(); i++) {
+        AssetHandle handle = gAssetMan.assetDb.HandleAt(i);
+        AssetDataHeader* header = gAssetMan.assetDb.Data(handle);
+
+        const char* assetPath = header->params->path.CStr();
+        if (assetPath[0] == '/')
+            ++assetPath;
+        if (strIsEqualNoCase(filepath, assetPath)) {
+            MutexScope lk(gAssetMan.hotReloadMutex);
+            gAssetMan.hotReloadList.Push(handle);
+        }
     }
 }
 
@@ -1583,7 +1681,7 @@ static Span<AssetMetaKeyValue> Asset::_LoadMetaData(const char* assetFilepath, A
                         AssetMetaKeyValue item;
                         jitem.GetKey(item.key.Ptr(), item.key.Capacity());
                         jitem.GetValue(item.value.Ptr(), item.value.Capacity());
-                        keys.Add(item);
+                        keys.Push(item);
                     }
 
                     jitem = jroot.GetNextChildItem(jitem);
@@ -1604,7 +1702,7 @@ static Span<AssetMetaKeyValue> Asset::_LoadMetaData(const char* assetFilepath, A
                         AssetMetaKeyValue item;
                         jitem.GetKey(item.key.Ptr(), item.key.Capacity());
                         jitem.GetValue(item.value.Ptr(), item.value.Capacity());
-                        keys.Add(item);
+                        keys.Push(item);
                     }
 
                     jitem = jplatform.GetNextChildItem(jitem);
@@ -1638,14 +1736,13 @@ static AssetHandleResult Asset::_CreateOrFetchHandle(const AssetParams& params)
     ASSERT_MSG(typeManIdx != UINT32_MAX, "AssetType with FourCC %x is not registered", params.typeId);
     const AssetTypeManager& typeMan = gAssetMgr.typeManagers[typeManIdx];
 
-    AssetHandleResult r {
-        .paramsHash = _MakeParamsHash(params, typeMan.extraParamTypeSize)
-    };
+    uint32 paramsHash = _MakeParamsHash(params, typeMan.extraParamTypeSize);
+    AssetHandleResult r {};
 
     // check with asset database and skip loading if it already exists
     {
         ReadWriteMutexReadScope lock(gAssetMan.assetMutex);
-        r.handle = gAssetMan.assetLookup.FindAndFetch(r.paramsHash, AssetHandle());
+        r.handle = gAssetMan.assetLookup.FindAndFetch(paramsHash, AssetHandle());
         if (r.handle.IsValid()) {
             r.header = gAssetMan.assetDb.Data(r.handle);
             ++r.header->refCount;
@@ -1665,7 +1762,7 @@ static AssetHandleResult Asset::_CreateOrFetchHandle(const AssetParams& params)
         mallocator.AddChildStructSingleShot(paramsMallocator, offsetof(AssetDataHeader, params), 1);
         r.header = mallocator.Calloc(&gAssetMan.assetHeaderAlloc); // Note: This allocator is protected by 'assetMutex'
 
-        r.header->paramsHash = r.paramsHash;
+        r.header->paramsHash = paramsHash;
         r.header->refCount = 1;
         r.header->typeId = typeMan.fourcc;
         r.header->typeSpecificParamsSize = typeMan.extraParamTypeSize;
@@ -1678,7 +1775,7 @@ static AssetHandleResult Asset::_CreateOrFetchHandle(const AssetParams& params)
 
         r.handle = gAssetMan.assetDb.Add(r.header);
 
-        gAssetMan.assetLookup.Add(r.paramsHash, r.handle);
+        gAssetMan.assetLookup.Add(paramsHash, r.handle);
         r.newlyCreated = true;
     }
 
@@ -1715,7 +1812,8 @@ static void Asset::_LoadAssetTask(uint32 groupIdx, void* userData)
         size_t startOffset = alloc->GetOffset();
         AssetData assetData {
             .mAlloc = alloc,
-            .mData = Mem::AllocZeroTyped<AssetDataInternal>(1, alloc)
+            .mData = Mem::AllocZeroTyped<AssetDataInternal>(1, alloc),
+            .mParamsHash = taskData.inputs.header->paramsHash
         };
 
         // Load metadata
@@ -1761,6 +1859,7 @@ static void Asset::_LoadAssetTask(uint32 groupIdx, void* userData)
         const void* fileData = nullptr;
         uint32 fileSize = 0;
 
+        // REMOTE: wait for file to arrive 
         if (taskData.inputs.isRemoteLoad) {
             taskData.inputs.fileReadSignal.Wait();
             fileData = taskData.inputs.fileData;
@@ -1769,6 +1868,8 @@ static void Asset::_LoadAssetTask(uint32 groupIdx, void* userData)
         
         MemTempAllocator tempAlloc;
         if (!taskData.inputs.isRemoteLoad) {
+            ASSERT(fileData == nullptr);
+
             Blob fileBlob = Vfs::ReadFile(taskData.inputs.bakedFilepath.CStr(), VfsFlags::None, &tempAlloc);
             fileData = fileBlob.Data();
             ASSERT(fileBlob.Size() <= UINT32_MAX);
@@ -1886,12 +1987,22 @@ static void Asset::_LoadGroupTask(uint32, void* userData)
     // Fetch load list (pointers in the loadList are persistant through the lifetime of the group)
     AssetGroupHandle groupHandle(PtrToInt<uint32>(userData));
     Array<AssetDataHeader*> loadList;
+    bool isHotReloadGroup;
 
     {
         ReadWriteMutexReadScope rdlock(gAssetMan.groupsMutex);
         AssetGroupInternal& group = gAssetMan.groups.Data(groupHandle);
         Atomic::StoreExplicit(&group.state, uint32(AssetGroupState::Loading), AtomicMemoryOrder::Release);
-        group.loadList.CopyTo(&loadList);
+        isHotReloadGroup = group.hotReloadGroup;
+
+        ReadWriteMutexReadScope rdlockAsset(gAssetMan.assetMutex);
+        loadList.Reserve(group.loadList.Count());
+
+        for (AssetHandle handle : group.loadList) {
+            if (gAssetMan.assetDb.IsValid(handle))
+                loadList.Push(gAssetMan.assetDb.Data(handle));
+        }
+
         group.loadList.Clear();
     }
 
@@ -1912,34 +2023,35 @@ static void Asset::_LoadGroupTask(uint32, void* userData)
         AssetLoadTaskData** taskDataPtrs = Mem::AllocTyped<AssetLoadTaskData*>(sliceCount, tempAlloc);
         for (uint32 k = 0; k < sliceCount; k++) {
             AssetDataHeader* header = loadList[i + k];
-            header->state = AssetState::Loading;
+            Atomic::StoreExplicit(&header->state, uint32(AssetState::Loading), AtomicMemoryOrder::Relaxed);
 
-            // TODO: this part will not run on remote connection mode
-            //       We will always have Baked data for remote connections
-
-            // Returns false if source file could not be found
             // Decide if baked file exists and we should skip loading from source (with requires baking most assets)
-            uint32 assetHash = 0;   // TODO: try to fetch this from a database (probably with an argument/option)
-            {
+            uint32 assetHash = 0;   
+            bool isRemoteLoad = Vfs::GetMountType(header->params->path.CStr()) == VfsMountType::Remote;
+            taskDatas[k].inputs.isRemoteLoad = isRemoteLoad;
+
+            // For remote loading, we are forced to use cache lookup table
+            if (gAssetMan.isForceUseCache || isRemoteLoad) {
                 ReadWriteMutexReadScope lk(gAssetMan.hashLookupMutex);
                 assetHash = gAssetMan.assetHashLookup.FindAndFetch(header->paramsHash, 0);
             }
 
-            bool mountIsRemote = Vfs::GetMountType(header->params->path.CStr()) == VfsMountType::Remote;
-            taskDatas[k].inputs.isRemoteLoad = mountIsRemote;
-
-            if (!mountIsRemote || assetHash) {
+            if (!isRemoteLoad || assetHash) {
                 assetHash = _MakeCacheFilepath(&taskDatas[k].inputs.bakedFilepath, header, assetHash);
                 if (assetHash) {
-                    taskDatas[k].inputs.type = Vfs::FileExists(taskDatas[k].inputs.bakedFilepath.CStr()) ? AssetLoadTaskInputType::Baked : AssetLoadTaskInputType::Source;
+                    if (!isRemoteLoad)
+                        taskDatas[k].inputs.type = Vfs::FileExists(taskDatas[k].inputs.bakedFilepath.CStr()) ? AssetLoadTaskInputType::Baked : AssetLoadTaskInputType::Source;
+                    else
+                        taskDatas[k].inputs.type = AssetLoadTaskInputType::Baked;
+
                     taskDatas[k].inputs.assetHash = assetHash;
-                    
-                    // We have found the correct baked asset in the cache dir, ignore loading from remote and fetch it directly from disk
-                    if (taskDatas[k].inputs.type == AssetLoadTaskInputType::Baked)
+
+                    // For remote assets, clearing 'isRemoteLoad' means that we don't even make any requests to server
+                    if (gAssetMan.isForceUseCache && isRemoteLoad && taskDatas[k].inputs.type == AssetLoadTaskInputType::Baked)
                         taskDatas[k].inputs.isRemoteLoad = false;
                 }
             }
-            else if (mountIsRemote) {
+            else if (isRemoteLoad) {
                 taskDatas[k].inputs.type = AssetLoadTaskInputType::Baked;
             }
             
@@ -1981,7 +2093,7 @@ static void Asset::_LoadGroupTask(uint32, void* userData)
         }
         #endif
 
-        // Make remote load requests
+        // REMOTE: Make load requests
         for (uint32 k = 0; k < sliceCount; k++) {
             if (!taskDatas[k].inputs.isRemoteLoad) 
                 continue;
@@ -1993,6 +2105,7 @@ static void Asset::_LoadGroupTask(uint32, void* userData)
             Blob requestBlob(tempAlloc);
 
             requestBlob.Write<uint64>(uint64(&taskDatas[k].inputs));
+            requestBlob.Write<uint32>(taskDatas[k].inputs.assetHash);
             requestBlob.Write<uint32>(header->typeId);
             requestBlob.WriteStringBinary16(header->params->path.Ptr(), header->params->path.Length());
             requestBlob.Write<uint32>(header->params->platform);
@@ -2009,7 +2122,7 @@ static void Asset::_LoadGroupTask(uint32, void* userData)
             AssetLoadTaskInputs& in = taskDatas[k].inputs;
             AssetLoadTaskOutputs& out = taskDatas[k].outputs;
             if (!out.data) {
-                in.header->state = AssetState::LoadFailed;
+                Atomic::StoreExplicit(&in.header->state, uint32(AssetState::LoadFailed), AtomicMemoryOrder::Relaxed);
                 LOG_ERROR("Loading %s '%s' failed: %s", in.header->typeName, in.header->params->path.CStr(), out.errorDesc.CStr());
                 continue;
             }
@@ -2038,8 +2151,14 @@ static void Asset::_LoadGroupTask(uint32, void* userData)
                 AssetHandleResult depHandleResult = _CreateOrFetchHandle(params);
                 AssetHandle* targetHandle = dep->bindToHandle.Get();
                 *targetHandle = depHandleResult.handle;
-                if (depHandleResult.newlyCreated)
+                if (depHandleResult.newlyCreated) {
+                    // Before pushing to loadList, we need to check if we are running the next loop, if not, fix the index
+                    if (i > loadList.Count())
+                        i = loadList.Count();
+
                     loadList.Push(depHandleResult.header);
+                    ++allCount;
+                }
 
                 dep = dep->next.Get();
             }
@@ -2050,6 +2169,7 @@ static void Asset::_LoadGroupTask(uint32, void* userData)
 
     // Save to cache
     Array<AssetQueuedItem*> saveItems(tempAlloc);
+    saveItems.Reserve(queuedAssets.Count());
     for (uint32 i = 0; i < queuedAssets.Count(); i += batchCount) {
         uint32 sliceCount = Min(batchCount, loadList.Count() - i);
 
@@ -2089,6 +2209,19 @@ static void Asset::_LoadGroupTask(uint32, void* userData)
 
         tempAlloc->Reset();
     }
+
+    // HOT-RELOAD: Before finalizing the data, we get all the current data pointers
+    AssetDataPair* oldDatas = nullptr;
+    if (isHotReloadGroup && !queuedAssets.IsEmpty()) {
+        oldDatas = Mem::AllocTyped<AssetDataPair>(queuedAssets.Count());
+        for (uint32 i = 0; i < queuedAssets.Count(); i++) {
+            AssetDataHeader* header = loadList[queuedAssets[i].indexInLoadList];
+            oldDatas[i].first = header->data;
+            oldDatas[i].second = header->dataSize;
+            header->data = nullptr;
+            header->dataSize = 0;
+        }
+    }
     
     // Strip unwanted stuff and save it to persistent memory
     // Note: 'AssetDataAlloc' doesn't need any thread protection, because it is guaranteed that only one thread uses it at a time 
@@ -2115,7 +2248,31 @@ static void Asset::_LoadGroupTask(uint32, void* userData)
 
     for (AssetQueuedItem& qa : queuedAssets) {
         AssetDataHeader* header = loadList[qa.indexInLoadList];
-        header->state = AssetState::Loaded;
+        Atomic::StoreExplicit(&header->state, uint32(AssetState::Loaded), AtomicMemoryOrder::Relaxed);
+    }
+
+    // HOT-RELOAD: now we have the previous data and newly loaded asset. Run the callbacks to do asset post-processing 
+    if (isHotReloadGroup && !queuedAssets.IsEmpty()) {
+        for (uint32 i = 0; i < queuedAssets.Count(); i++) {
+            AssetDataHeader* header = loadList[queuedAssets[i].indexInLoadList];
+            uint32 typeManIdx = gAssetMgr.typeManagers.FindIf(
+                [typeId = header->typeId](const AssetTypeManager& typeMgr) { return typeMgr.fourcc == typeId; });
+            ASSERT_MSG(typeManIdx != UINT32_MAX, "AssetType with FourCC %x is not registered", header->typeId);
+            const AssetTypeManager& typeMan = gAssetMgr.typeManagers[typeManIdx];
+
+            if (!typeMan.impl->Reload(header->data->objData.Get(), oldDatas[i].first->objData.Get())) {
+                LOG_ERROR("Reloading %s '%s' failed", typeMan.name.CStr(), header->params->path.CStr());
+
+                // Switch back to the old data because it cannot be reloaded properly
+                Swap<AssetDataInternal*>(oldDatas[i].first, header->data);
+                Swap<uint32>(oldDatas[i].second, header->dataSize);
+            }
+        }
+
+        // TODO: we should probably queue this to happen in later frames
+        //       The reason is that GPU objects are already binded to graphics pipeline while we destroy them
+        _UnloadDatasManually(Span<AssetDataPair>(oldDatas, queuedAssets.Count()));
+        Mem::Free(oldDatas);
     }
 
     queuedAssets.Free();
@@ -2127,13 +2284,23 @@ static void Asset::_LoadGroupTask(uint32, void* userData)
             gAssetMan.memArena.allocators[i].Reset();
     }
 
-    {
+    if (!isHotReloadGroup) {
         ReadWriteMutexReadScope rdlock(gAssetMan.groupsMutex);
         AssetGroupInternal& group = gAssetMan.groups.Data(groupHandle);
         Atomic::StoreExplicit(&group.state, uint32(AssetGroupState::Loaded), AtomicMemoryOrder::Release);
     }
+    else {
+        {
+            ReadWriteMutexReadScope rdlock(gAssetMan.groupsMutex);
+            AssetGroupInternal& group = gAssetMan.groups.Data(groupHandle);
+            group.state = AssetGroupState::Idle;
+        }
 
-    LOG_INFO("LoadGroup with %u assets finished (%.1f ms)", allCount, timer.ElapsedMS());
+        AssetGroup group { groupHandle };
+        Asset::DestroyGroup(group);
+    }
+
+    LOG_INFO("%s with %u assets finished (%.1f ms)", isHotReloadGroup ? "Reload" : "Load", allCount, timer.ElapsedMS());
 };
 
 static void Asset::_UnloadGroupTask(uint32, void* userData)
@@ -2146,14 +2313,19 @@ static void Asset::_UnloadGroupTask(uint32, void* userData)
     Array<AssetHandle> unloadList(&tempAlloc);
     Array<AssetDataInternal*> unloadDatas(&tempAlloc);
 
+    bool isHotReloadGroup;
     {
         ReadWriteMutexReadScope rdlock(gAssetMan.groupsMutex);
         AssetGroupInternal& group = gAssetMan.groups.Data(groupHandle);
         Atomic::StoreExplicit(&group.state, uint32(AssetGroupState::Unloading), AtomicMemoryOrder::Release);
         group.handles.CopyTo(&unloadList);
         group.handles.Clear();
+
+        isHotReloadGroup = group.hotReloadGroup;
     }
 
+    // Unload assets and their dependencies
+    // Omit assets that has refCount > 0
     {
         ReadWriteMutexReadScope rlock(gAssetMan.assetMutex);
         for (uint32 i = 0; i < unloadList.Count();) {
@@ -2162,6 +2334,9 @@ static void Asset::_UnloadGroupTask(uint32, void* userData)
                 unloadList.RemoveAndSwap(i);
             } 
             else {
+                // TODO: do something about hot-reloads
+                ASSERT_MSG(AssetState(Atomic::LoadExplicit(&header->state, AtomicMemoryOrder::Relaxed)) != AssetState::Locked,
+                           "%s asset is still locked and cannot be unloaded: %s", header->typeName, header->params->path.CStr());
                 unloadDatas.Push(header->data);
 
                 // Add dependencies to the unload list
@@ -2199,6 +2374,7 @@ static void Asset::_UnloadGroupTask(uint32, void* userData)
         Mem::Free(data, &gAssetMan.assetDataAlloc);
     }
 
+    // Remove the handles and free the header
     {
         ReadWriteMutexWriteScope wlock(gAssetMan.assetMutex);
         for (AssetHandle handle : unloadList) {
@@ -2213,10 +2389,14 @@ static void Asset::_UnloadGroupTask(uint32, void* userData)
         }
     }
 
-    {
+    if (!isHotReloadGroup) {
         ReadWriteMutexReadScope rdlock(gAssetMan.groupsMutex);
         AssetGroupInternal& group = gAssetMan.groups.Data(groupHandle);
         Atomic::StoreExplicit(&group.state, uint32(AssetGroupState::Idle), AtomicMemoryOrder::Release);
+    }
+    else {
+        AssetGroup group { groupHandle };
+        Asset::DestroyGroup(group);
     }
 }
 
@@ -2226,6 +2406,9 @@ void Asset::_ServerLoadBatchTask(uint32, void*)
     uint32 numTasks = gAssetMan.server.numLoadTasks;
     ASSERT(numTasks);
 
+    Array<AssetLoadTaskData*> tasksForLoad;
+    tasksForLoad.Reserve(numTasks);
+
     for (uint32 i = 0; i < numTasks; i++) {
         AssetDataHeader* header = taskDatas[i]->inputs.header;
         uint32 assetHash = _MakeCacheFilepath(&taskDatas[i]->inputs.bakedFilepath, header);
@@ -2233,10 +2416,16 @@ void Asset::_ServerLoadBatchTask(uint32, void*)
             taskDatas[i]->inputs.type = Vfs::FileExists(taskDatas[i]->inputs.bakedFilepath.CStr()) ? AssetLoadTaskInputType::Baked : AssetLoadTaskInputType::Source;
             taskDatas[i]->inputs.assetHash = assetHash;
         }
+
+        if (assetHash == 0 || assetHash != taskDatas[i]->inputs.clientAssetHash)
+            tasksForLoad.Push(taskDatas[i]);
     }
 
-    JobsHandle batchJob = Jobs::Dispatch(JobsType::LongTask, _LoadAssetTask, taskDatas, numTasks);
-    Jobs::WaitForCompletionAndDelete(batchJob);
+    if (!tasksForLoad.IsEmpty()) {
+        JobsHandle batchJob = Jobs::Dispatch(JobsType::LongTask, _LoadAssetTask, tasksForLoad.Ptr(), tasksForLoad.Count());
+        Jobs::WaitForCompletionAndDelete(batchJob);
+    }
+    tasksForLoad.Free();
 
     // Gather stuff that needs to be saved
     StaticArray<AssetQueuedItem, limits::ASSET_SERVER_MAX_IN_FLIGHT> saveAssets;
@@ -2253,7 +2442,7 @@ void Asset::_ServerLoadBatchTask(uint32, void*)
                 .bakedFilepath = in.bakedFilepath,
                 .saveBaked = saveBaked
             };
-            saveAssets.Add(qa);
+            saveAssets.Push(qa);
         }
     }
 
@@ -2275,7 +2464,11 @@ void Asset::_ServerLoadBatchTask(uint32, void*)
             blobs[0].SetGrowPolicy(Blob::GrowPolicy::Linear, 32);
             blobs[0].Write<uint64>(in.clientPayload);
 
-            if (!out.data) {
+            if (in.assetHash && in.clientAssetHash == in.assetHash) {
+                blobs[0].Write<uint32>(uint32(AssetServerBlobType::LocalCacheIsValid));
+                Remote::SendResponse(ASSET_LOAD_ASSET_REMOTE_CMD, blobs[0], false, nullptr);
+            }
+            else if (!out.data) {
                 String<512> errorMsg;
                 errorMsg.FormatSelf("Loading %s '%s' failed: %s", in.header->typeName, in.header->params->path.CStr(), out.errorDesc.CStr());
                 LOG_ERROR(errorMsg.CStr());
@@ -2283,6 +2476,7 @@ void Asset::_ServerLoadBatchTask(uint32, void*)
                 Remote::SendResponse(ASSET_LOAD_ASSET_REMOTE_CMD, blobs[0], true, errorMsg.CStr());
             }
             else {
+                blobs[0].Write<uint32>(uint32(AssetServerBlobType::IncludesBakedData));
                 blobs[0].Write<uint32>(in.assetHash);
 
                 // Add Cache header
@@ -2322,8 +2516,10 @@ bool Asset::_RemoteServerCallback([[maybe_unused]] uint32 cmd, const Blob& incom
     uint32 typeId = 0;
     uint32 platformId = 0;
     uint64 clientPayload;
+    uint32 clientAssetHash;
 
     incomingData.Read<uint64>(&clientPayload);
+    incomingData.Read<uint32>(&clientAssetHash);
     incomingData.Read<uint32>(&typeId);
     uint32 typeManIdx = gAssetMgr.typeManagers.FindIf([typeId](const AssetTypeManager& typeMgr) { return typeMgr.fourcc == typeId; });
     ASSERT_MSG(typeManIdx != UINT32_MAX, "AssetType with FourCC %x is not registered", typeId);
@@ -2340,6 +2536,7 @@ bool Asset::_RemoteServerCallback([[maybe_unused]] uint32 cmd, const Blob& incom
     AssetDataHeader* header = taskData->inputs.header;
 
     incomingData.ReadStringBinary16(header->params->path.Ptr(), header->params->path.Capacity());
+    header->params->path.CalcLength();
 
     incomingData.Read<uint32>(&platformId);
     incomingData.Read(header->params->typeSpecificParams, typeMan.extraParamTypeSize);
@@ -2352,6 +2549,7 @@ bool Asset::_RemoteServerCallback([[maybe_unused]] uint32 cmd, const Blob& incom
     header->typeName = typeMan.name.CStr();
 
     taskData->inputs.clientPayload = clientPayload;
+    taskData->inputs.clientAssetHash = clientAssetHash;
 
     {
         SpinLockMutexScope mtx(gAssetMan.server.pendingTasksMutex);
@@ -2380,17 +2578,35 @@ void Asset::_RemoteClientCallback([[maybe_unused]] uint32 cmd, const Blob& incom
     AssetLoadTaskInputs* inputs = (AssetLoadTaskInputs*)reinterpret_cast<void*>(payload);
 
     if (!error) {
+        AssetServerBlobType blobType;
         uint32 assetHash;
-        incomingData.Read<uint32>(&assetHash);
-        inputs->assetHash = _MakeCacheFilepath(&inputs->bakedFilepath, inputs->header, assetHash);
 
-        size_t bakedSize = incomingData.Size() - incomingData.ReadOffset();
-        ASSERT(bakedSize <= UINT32_MAX);
+        incomingData.Read<uint32>((uint32*)&blobType);
 
-        void* data = Mem::Alloc(bakedSize, &gAssetMan.tempAlloc);
-        incomingData.Read(data, bakedSize);
-        inputs->fileData = data;
-        inputs->fileSize = uint32(bakedSize);
+        if (blobType == AssetServerBlobType::IncludesBakedData) {
+            incomingData.Read<uint32>(&assetHash);
+
+            if (!inputs->bakedFilepath.IsEmpty()) {
+                Path absOldBakedFilepath = Vfs::ResolveFilepath(inputs->bakedFilepath.CStr());
+                OS::DeleteFilePath(absOldBakedFilepath.CStr());
+            }
+
+            inputs->assetHash = _MakeCacheFilepath(&inputs->bakedFilepath, inputs->header, assetHash);
+
+            size_t bakedSize = incomingData.Size() - incomingData.ReadOffset();
+            ASSERT(bakedSize <= UINT32_MAX);
+
+            void* data = Mem::Alloc(bakedSize, &gAssetMan.tempAlloc);
+            incomingData.Read(data, bakedSize);
+            inputs->fileData = data;
+            inputs->fileSize = uint32(bakedSize);
+        }
+        else if (blobType == AssetServerBlobType::LocalCacheIsValid) {
+            inputs->isRemoteLoad = false;
+        }
+        else {
+            ASSERT(0);
+        }            
     }
     else {
         inputs->fileData = nullptr;
@@ -2454,6 +2670,16 @@ bool Asset::Initialize()
         LOG_INFO("(init) Asset Server");
     }
 
+    if constexpr (CONFIG_DEV_MODE) {
+        gAssetMan.isHotReloadEnabled = true;
+        gAssetMan.hotReloadMutex.Initialize();
+        gAssetMan.hotReloadList.SetAllocator(alloc);
+
+        Vfs::RegisterFileChangeCallback(_OnFileChanged);
+    }
+
+    gAssetMan.isForceUseCache = SettingsJunkyard::Get().engine.useCacheOnly;
+
     _LoadAssetHashLookup();
 
     LOG_INFO("(init) Asset Manager");
@@ -2509,6 +2735,12 @@ void Asset::Release()
         gAssetMan.isHashLookupUpdated = false;
     }
 
+    if (gAssetMan.isHotReloadEnabled) {
+        gAssetMan.isHotReloadEnabled = false;
+        gAssetMan.hotReloadMutex.Release();
+        gAssetMan.hotReloadList.Free();
+    }
+
     Mem::Free(gAssetMan.memArena.allocators, alloc);
     gAssetMan.memArena.threadToAllocatorTable.Free();
     gAssetMan.tempAlloc.Release();
@@ -2547,7 +2779,7 @@ AssetGroup Asset::CreateGroup()
 
 void Asset::DestroyGroup(AssetGroup& group)
 {
-    ASSERT_MSG(Engine::IsMainThread(), "DestroyGroup can only be called in the main thread");
+    // ASSERT_MSG(Engine::IsMainThread(), "DestroyGroup can only be called in the main thread");
 
     if (!group.mHandle.IsValid())
         return;
@@ -2573,14 +2805,47 @@ void Asset::DestroyGroup(AssetGroup& group)
     gAssetMan.groups.Remove(group.mHandle);
 }
 
-void* Asset::GetObjData(AssetHandle handle)
+void* Asset::LockObjData(AssetHandle handle)
 {
     if (!handle.IsValid())
         return nullptr;
 
     ReadWriteMutexReadScope rdlock(gAssetMan.assetMutex);
-    AssetDataInternal* data = gAssetMan.assetDb.IsValid(handle) ? gAssetMan.assetDb.Data(handle)->data : nullptr;
-    return data ? data->objData.Get() : nullptr;
+    if (!gAssetMan.assetDb.IsValid(handle))
+        return nullptr;
+
+    AssetDataHeader* header = gAssetMan.assetDb.Data(handle);
+
+    // TODO: maybe also take care of Failed state
+    if (AssetState(Atomic::LoadExplicit(&header->state, AtomicMemoryOrder::Relaxed)) != AssetState::Loaded)
+        return nullptr;
+
+    while (Atomic::ExchangeExplicit(&header->state, uint32(AssetState::Locked), AtomicMemoryOrder::Acquire) == uint32(AssetState::Locked)) {
+        uint32 spinCount = 1;
+        do {
+            if (spinCount++ & 1023)
+                OS::PauseCPU();
+            else
+                Thread::SwitchContext();
+        } while (Atomic::LoadExplicit(&header->state, AtomicMemoryOrder::Relaxed)  == uint32(AssetState::Locked));
+    }
+
+    return header->data->objData.Get();
+}
+
+void Asset::UnlockObjData(AssetHandle handle)
+{
+    if (!handle.IsValid())
+        return;
+
+    ReadWriteMutexReadScope rdlock(gAssetMan.assetMutex);
+    if (!gAssetMan.assetDb.IsValid(handle))
+        return;
+
+    AssetDataHeader* header = gAssetMan.assetDb.Data(handle);
+
+    AtomicUint32 expectedState = uint32(AssetState::Locked);
+    Atomic::CompareExchange_Weak(&header->state, &expectedState, uint32(AssetState::Loaded));
 }
 
 const AssetParams* Asset::GetParams(AssetHandle handle)
@@ -2690,13 +2955,17 @@ void AssetGroup::AddToLoadQueue(const AssetParams* paramsArray, uint32 numAssets
     ASSERT_MSG(Atomic::LoadExplicit(&group.state, AtomicMemoryOrder::Acquire) == uint32(AssetGroupState::Idle), 
                "AssetGroup should only be populated while it's not loading or unloading");
 
+    MemTempAllocator tempAlloc;
+    if (outHandles == nullptr)
+        outHandles = tempAlloc.MallocTyped<AssetHandle>(numAssets);
+
     // TODO: the problem here is that while we are adding to LoadQueue, asset database can change and items are removed or added
     // So put some restrictions or management here
     for (uint32 i = 0; i < numAssets; i++) {
         const AssetParams& params = paramsArray[i];
         AssetHandleResult r = Asset::_CreateOrFetchHandle(params);
         if (r.newlyCreated)
-            group.loadList.Push(r.header);
+            group.loadList.Push(r.handle);
         outHandles[i] = r.handle;
     }
 
@@ -2887,10 +3156,46 @@ void Asset::Update()
         if (lastUpdateTick == 0)
             lastUpdateTick = Timer::GetTicks();
 
-        float secsElapsed = (float)Timer::ToSec(Timer::Diff(Timer::GetTicks(), lastUpdateTick));
+        uint64 now = Timer::GetTicks();
+        float secsElapsed = (float)Timer::ToSec(Timer::Diff(now, lastUpdateTick));
         if (secsElapsed >= ASSET_SAVE_CACHE_LOOKUP_INTERVAL) {
             _SaveAssetHashLookup();
             gAssetMan.isHashLookupUpdated = false;
+            lastUpdateTick = now;
+        }
+    }
+
+    //------------------------------------------------------------------------------------------------------------------
+    // Gather hot reload items every N intervals and submit the 
+    if (gAssetMan.isHotReloadEnabled) {
+        static uint64 lastUpdateTick = 0;
+        if (lastUpdateTick == 0) 
+            lastUpdateTick = Timer::GetTicks();
+
+        uint64 now = Timer::GetTicks();
+        float secsElapsed = (float)Timer::ToSec(Timer::Diff(now, lastUpdateTick));
+        if (secsElapsed >= ASSET_HOT_RELOAD_INTERVAL) {
+            MutexScope lk(gAssetMan.hotReloadMutex);
+            uint32 numItems = Min(gAssetMan.hotReloadList.Count(), limits::ASSET_HOT_RELOAD_MAX_IN_FLIGHT);
+            if (numItems) {
+                AssetGroup group = Asset::CreateGroup();
+
+                {
+                    ReadWriteMutexReadScope rdlock(gAssetMan.groupsMutex);
+                    AssetGroupInternal& groupData = gAssetMan.groups.Data(group.mHandle);
+
+                    groupData.loadList.Reserve(numItems);
+                    groupData.hotReloadGroup = true;
+
+                    for (uint32 i = 0; i < numItems; i++)
+                        groupData.loadList.Push(gAssetMan.hotReloadList[i]);
+                    gAssetMan.hotReloadList.ShiftLeft(numItems);
+                }
+
+                group.Load();
+            }
+
+            lastUpdateTick = now;
         }
     }
 }

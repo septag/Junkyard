@@ -22,7 +22,7 @@ void Debug::Print(const char* text)
     #if PLATFORM_WINDOWS
         OS::Win32PrintToDebugger(text);
     #elif PLATFORM_ANDROID
-        OS::AndroidPrintToLog(SysAndroidLogType::Debug, CONFIG_APP_NAME, text);
+        OS::AndroidPrintToLog(OSAndroidLogType::Debug, CONFIG_APP_NAME, text);
     #else
         puts(text);
     #endif
@@ -72,7 +72,7 @@ void Debug::FiberScopeProtector_RegisterCallback(DebugFiberScopeProtectorCallbac
 {
     ASSERT_MSG(gFiberProtector.callbacks.FindIf([callback](const DebugFiberScopeProtectorCallbackPair& p) { return p.first == callback; }) == UINT32_MAX,
                "Callback already added");
-    gFiberProtector.callbacks.Add(DebugFiberScopeProtectorCallbackPair(callback, userData));
+    gFiberProtector.callbacks.Push(DebugFiberScopeProtectorCallbackPair(callback, userData));
 }
 
 INLINE bool debugFiberScopeProtector_IsInFiber()

@@ -74,6 +74,7 @@ struct AssetImageCallbacks final : AssetCallbacks
 struct AssetImageImpl final : AssetTypeImplBase
 {
     bool Bake(const AssetParams& params, AssetData* data, const Span<uint8>& srcData, String<256>* outErrorDesc) override;
+    bool Reload(void* newData, void* oldData) override;
 };
 
 struct AssetImageManager
@@ -897,6 +898,11 @@ bool AssetImageImpl::Bake(const AssetParams& params, AssetData* data, const Span
     return true;
 }
 
+bool AssetImageImpl::Reload(void*, void*)
+{
+    return true;
+}
+
 // Freaking windows.h with it's Macros! In unity builds, it causes LoadImage to be converted to LoadImageA/W
 #if PLATFORM_WINDOWS
     #ifdef LoadImage
@@ -922,7 +928,3 @@ AssetHandleImage Asset::LoadImage(const char* path, const ImageLoadParams& param
     #endif
 #endif
 
-GfxImage* Asset::GetImage(AssetHandleImage handle)
-{
-    return (GfxImage*)Asset::GetObjData(handle);
-}

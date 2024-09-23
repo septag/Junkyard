@@ -304,10 +304,9 @@ struct AppImpl final : AppCallbacks
             }
 
             if (mTexture.IsValid()) {
-                GfxImage* image = (GfxImage*)Asset::GetObjData(mTexture);
-                if (image && image->handle.IsValid()) {
+                AssetObjPtrScope<GfxImage> image(mTexture);
+                if (image) 
                     ImGui::Image((ImTextureID)IntToPtr(image->handle.mId), ImVec2(256, 256));
-                }
             }
         }
         ImGui::End();
@@ -386,8 +385,8 @@ struct AppImpl final : AppCallbacks
 
                     if (cell.selectedFile != -1) {
                         if (cell.handles[cell.selectedFile].IsValid()) {
-                            GfxImage* image = (GfxImage*)Asset::GetObjData(cell.handles[cell.selectedFile]);
-                            if (image && image->handle.IsValid()) 
+                            AssetObjPtrScope<GfxImage> image(cell.handles[cell.selectedFile]);
+                            if (image) 
                                 ImGui::Image((ImTextureID)IntToPtr(image->handle.mId), ImVec2(256, 256));
                         }
                     }

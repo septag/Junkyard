@@ -109,7 +109,7 @@ Pair<GfxShader*, uint32> Compile(const Span<uint8>& sourceCode, const char* file
     
     if (desc.dumpIntermediates) {
         char filename[64];
-        Path::GetFilename_CStr(filepath, filename, sizeof(filename));
+        PathUtils::GetFilename(filepath, filename, sizeof(filename));
         spSetDumpIntermediates(req, true);
         spSetDumpIntermediatePrefix(req, filename);
     }
@@ -161,7 +161,7 @@ Pair<GfxShader*, uint32> Compile(const Span<uint8>& sourceCode, const char* file
     if (numVertexAttributes)
         shader->vertexAttributes = tmpAlloc.MallocZeroTyped<GfxShaderVertexAttributeInfo>(numVertexAttributes);
     
-    Path::GetFilename_CStr(filepath, shader->name, sizeof(shader->name));
+    PathUtils::GetFilename(filepath, shader->name, sizeof(shader->name));
     shader->numStages = static_cast<uint32>(refl->getEntryPointCount());
     shader->numVertexAttributes = numVertexAttributes;
 

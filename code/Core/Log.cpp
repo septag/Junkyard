@@ -100,14 +100,14 @@ namespace Log
     #if PLATFORM_ANDROID
     static void PrintToAndroidLog(const LogEntry& entry)
     {
-        SysAndroidLogType androidLogType;
+        OSAndroidLogType androidLogType;
         switch (entry.type) {
-        case LogLevel::Info:	androidLogType = SysAndroidLogType::Info;        break;
-        case LogLevel::Debug:	androidLogType = SysAndroidLogType::Debug;       break;
-        case LogLevel::Verbose:	androidLogType = SysAndroidLogType::Verbose;     break;
-        case LogLevel::Warning:	androidLogType = SysAndroidLogType::Warn;        break;
-        case LogLevel::Error:	androidLogType = SysAndroidLogType::Error;       break;
-        default:			    androidLogType = SysAndroidLogType::Unknown;
+        case LogLevel::Info:	androidLogType = OSAndroidLogType::Info;        break;
+        case LogLevel::Debug:	androidLogType = OSAndroidLogType::Debug;       break;
+        case LogLevel::Verbose:	androidLogType = OSAndroidLogType::Verbose;     break;
+        case LogLevel::Warning:	androidLogType = OSAndroidLogType::Warn;        break;
+        case LogLevel::Error:	androidLogType = OSAndroidLogType::Error;       break;
+        default:			    androidLogType = OSAndroidLogType::Unknown;
         }
         
         OS::AndroidPrintToLog(androidLogType, CONFIG_APP_NAME, entry.text);
@@ -312,7 +312,7 @@ namespace Log
     {
         ASSERT(callback);
         ASSERT_MSG(gLog.callbacks.FindIf([callback](const Pair<LogCallback, void*>& p) { return p.first == callback; }) == UINT32_MAX, "Callback already added");
-        gLog.callbacks.Add(Pair<LogCallback, void*>(callback, userData));
+        gLog.callbacks.Push(Pair<LogCallback, void*>(callback, userData));
     }
 
     void UnregisterCallback(LogCallback callback)

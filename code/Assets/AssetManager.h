@@ -57,12 +57,12 @@ enum class AssetState : uint32
     Loading,
     Loaded,
     LoadFailed,
+    Locked
 };
 
 struct AssetDependency
 {
-    Path path;
-    AssetLoadParams params;
+    Path path;AssetLoadParams params;
 };
 
 struct AssetInfo
@@ -260,11 +260,13 @@ struct AssetData
     void* mLastDependencyPtr;
     void* mLastGpuObjectPtr;
     const void* mOrigObjPtr;      // original pointer that has passed to SetObjData. We use it later for calculating handle pointer offsets
+    uint32 mParamsHash;
 };
 
 struct NO_VTABLE AssetTypeImplBase
 {
     virtual bool Bake(const AssetParams& params, AssetData* data, const Span<uint8>& srcData, String<256>* outErrorDesc) = 0;
+    virtual bool Reload(void* newData, void* oldData) = 0;
 };
 
 namespace Asset
@@ -277,9 +279,41 @@ namespace Asset
 
     API void Update();
 
-    void* GetObjData(AssetHandle handle);
     const AssetParams* GetParams(AssetHandle handle);
+
+    void* LockObjData(AssetHandle handle);
+    void UnlockObjData(AssetHandle handle);
 }
+
+template <typename _T>
+struct AssetObjPtrScope
+{
+    AssetObjPtrScope() = delete;
+    AssetObjPtrScope(const AssetObjPtrScope&) = delete;
+
+    explicit AssetObjPtrScope(AssetHandle handle) : mHandle(handle), mObjPtr((_T*)Asset::LockObjData(handle)) {}
+    ~AssetObjPtrScope() { Asset::UnlockObjData(mHandle); }
+
+    _T* operator->() { return Get(); }
+    const _T* operator->() const { return Get(); }
+    _T& operator*() const { return *Get(); }
+    bool operator!() const { return IsNull(); }
+    operator bool() const { return !IsNull(); }
+
+    bool IsNull() const { return mObjPtr == nullptr; };
+    operator _T*() { return Get(); }
+    operator const _T*() const { return Get(); }
+
+    inline _T* Get() const
+    {
+        ASSERT(!IsNull());
+        return mObjPtr;
+    }
+
+private:
+    AssetHandle mHandle;
+    _T* mObjPtr;
+};
 
 
 //    ██╗███╗   ██╗██╗     ██╗███╗   ██╗███████╗███████╗
