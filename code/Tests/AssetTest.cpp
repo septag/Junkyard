@@ -270,6 +270,7 @@ struct AppImpl : AppCallbacks
 
 
         {
+            AssetObjPtrScope<GfxShader> shader(modelShaderAsset);
             const GfxDescriptorSetLayoutBinding bindingLayout[] = {
                 {
                     .name = "ModelTransform",
@@ -289,7 +290,7 @@ struct AppImpl : AppCallbacks
                 }
             };
 
-            dsLayout = gfxCreateDescriptorSetLayout(*assetGetShader(modelShaderAsset), bindingLayout, CountOf(bindingLayout), false);
+            dsLayout = gfxCreateDescriptorSetLayout(*shader, bindingLayout, CountOf(bindingLayout), GfxDescriptorSetLayoutFlags::None);
         }
 
         uniformBuffer = gfxCreateBuffer(GfxBufferDesc {

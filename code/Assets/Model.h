@@ -186,5 +186,4 @@ namespace _private
 namespace Asset
 {
     API AssetHandleModel LoadModel(const char* path, const ModelLoadParams& params, const AssetGroup& group);
-    API Model* GetModel(AssetHandleModel handle);
 }

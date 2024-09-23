@@ -103,19 +103,19 @@ uint64 Timer::GetTicks()
     return timerInt64MulDiv(machNow, gTimer.timebase.numer, gTimer.timebase.denom);
 }
 
-char* Path::GetMyPath_CStr(char* dst, size_t dstSize)
+char* OS::GetMyPath(char* dst, size_t dstSize)
 {
     uint32 size32 = (uint32)dstSize;
     _NSGetExecutablePath(dst, (uint32_t*)&size32);
     return dst;
 }
 
-char* Path::GetCurrentDir_CStr(char* dst, size_t dstSize)
+char* OS::GetCurrentDir(char* dst, size_t dstSize)
 {
     return getcwd(dst, dstSize);
 }
 
-void Path::SetCurrentDir_CStr(const char* path)
+void OS::SetCurrentDir(const char* path)
 {
     chdir(path);
 }
@@ -143,7 +143,7 @@ void OS::GetSysInfo(SysInfo* info)
     // TODO
 }
 
-SysProcess::SysProcess() :
+OSProcess::SysProcess() :
     mExitCode(-1),
     mTermSignalCode(0)
 {
@@ -152,7 +152,7 @@ SysProcess::SysProcess() :
     mStdErrPipeRead = IntToPtr<int>(-1);
 }
 
-SysProcess::~SysProcess()
+OSProcess::~OSProcess()
 {
     int stdoutPipeRead = PtrToInt<int32>(mStdOutPipeRead);
     int stderrPipeRead = PtrToInt<int32>(mStdErrPipeRead);
@@ -169,7 +169,7 @@ SysProcess::~SysProcess()
     }
 }
 
-bool SysProcess::Run(const char* cmdline, SysProcessFlags flags, const char* cwd)
+bool OSProcess::Run(const char* cmdline, OSProcessFlags flags, const char* cwd)
 {
     int stdoutPipes[2] = {-1, -1};
     int stderrPipes[2] = {-1, -1};
@@ -179,7 +179,7 @@ bool SysProcess::Run(const char* cmdline, SysProcessFlags flags, const char* cwd
     [[maybe_unused]] int r = posix_spawn_file_actions_init(&fileActions);
     ASSERT_MSG(r == 0, "posix_spawn_file_actions_init failed");
 
-    if ((flags & SysProcessFlags::CaptureOutput) == SysProcessFlags::CaptureOutput) {
+    if ((flags & OSProcessFlags::CaptureOutput) == OSProcessFlags::CaptureOutput) {
         r = pipe(stdoutPipes);
         ASSERT_MSG(r == 0, "Creating pipes failed");
 
@@ -248,7 +248,7 @@ bool SysProcess::Run(const char* cmdline, SysProcessFlags flags, const char* cwd
         return false;
     }
     
-    if ((flags & SysProcessFlags::CaptureOutput) == SysProcessFlags::CaptureOutput) {
+    if ((flags & OSProcessFlags::CaptureOutput) == OSProcessFlags::CaptureOutput) {
         close(stdoutPipes[1]);
         close(stderrPipes[1]);
         mStdOutPipeRead = IntToPtr<int>(stdoutPipes[0]);
@@ -260,7 +260,7 @@ bool SysProcess::Run(const char* cmdline, SysProcessFlags flags, const char* cwd
     return true;
 }
 
-void SysProcess::Wait() const
+void OSProcess::Wait() const
 {
     pid_t pid = PtrToInt<int32>(mProcess);
     ASSERT(pid != -1);
@@ -268,13 +268,13 @@ void SysProcess::Wait() const
     [[maybe_unused]] int r = waitpid(pid, &status, 0);
     ASSERT(r == pid);
     if (WIFEXITED(status))
-        const_cast<SysProcess*>(this)->mExitCode = WEXITSTATUS(status);
+        const_cast<OSProcess*>(this)->mExitCode = WEXITSTATUS(status);
     else if (WIFSIGNALED(status))
-        const_cast<SysProcess*>(this)->mTermSignalCode = WTERMSIG(status);
-    const_cast<SysProcess*>(this)->mProcess = IntToPtr<int32>(-1);
+        const_cast<OSProcess*>(this)->mTermSignalCode = WTERMSIG(status);
+    const_cast<OSProcess*>(this)->mProcess = IntToPtr<int32>(-1);
 }
 
-bool SysProcess::IsRunning() const
+bool OSProcess::IsRunning() const
 {
     pid_t pid = PtrToInt<int32>(mProcess);
     ASSERT(pid != -1);
@@ -282,12 +282,12 @@ bool SysProcess::IsRunning() const
     return waitpid(pid, &status, WNOHANG) == 0;
 }
 
-int SysProcess::GetExitCode() const
+int OSProcess::GetExitCode() const
 {
     return mExitCode;
 }
 
-uint32 SysProcess::ReadStdOut(void* data, uint32 size) const
+uint32 OSProcess::ReadStdOut(void* data, uint32 size) const
 {
     int pipeId = PtrToInt<int>(mStdOutPipeRead);
     ASSERT(pipeId != -1);
@@ -295,7 +295,7 @@ uint32 SysProcess::ReadStdOut(void* data, uint32 size) const
     return r > 0 ? (uint32)r : 0;
 }
 
-uint32 SysProcess::ReadStdErr(void* data, uint32 size) const
+uint32 OSProcess::ReadStdErr(void* data, uint32 size) const
 {
     int pipeId = PtrToInt<int>(mStdErrPipeRead);
     ASSERT(pipeId != -1);
@@ -303,7 +303,7 @@ uint32 SysProcess::ReadStdErr(void* data, uint32 size) const
     return r > 0 ? (uint32)r : 0;
 }
 
-void SysProcess::Abort()
+void OSProcess::Abort()
 {
     pid_t pid = PtrToInt<int32>(mProcess);
     if (pid)
@@ -332,7 +332,7 @@ bool OS::IsDebuggerPresent()
     return (info.kp_proc.p_flag & P_TRACED) != 0;
 }
 
-char* Path::GetHomeDir_CStr(char* dst, size_t dstSize)
+char* OS::GetCurrentDir(char* dst, size_t dstSize)
 {
     #if PLATFORM_OSX
         const char* homeDir = getenv("HOME");
@@ -345,7 +345,7 @@ char* Path::GetHomeDir_CStr(char* dst, size_t dstSize)
     #endif
 }
 
-char* Path::GetCacheDir_CStr(char* dst, size_t dstSize, const char* appName)
+char* OS::GetCacheDir(char* dst, size_t dstSize, const char* appName)
 {
     #if PLATFORM_OSX
         const char* homeDir = getenv("HOME");
@@ -416,7 +416,7 @@ AsyncFile* Async::ReadFile(const char* filepath, const AsyncFileRequest& request
     uint64 fileModificationTime = 0;
     
     if (!fileSize) {
-        PathInfo info = Path::Stat_CStr(filepath);
+        PathInfo info = OS::GetPathInfo(filepath);
         if (info.type != PathType::File) {
             close(fd);
             return nullptr;
@@ -525,7 +525,7 @@ void Async::Release()
 AsyncFile* Async::ReadFile(const char* filepath, const AsyncFileRequest& request)
 {
     // TODO: do a ASIO (posix) implementation as well and compare it with this
-    PathInfo info = Path::Stat_CStr(filepath);
+    PathInfo info = OS::GetPathInfo(filepath);
     if (info.type != PathType::File)
         return nullptr;
     

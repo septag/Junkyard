@@ -60,8 +60,11 @@ namespace DebugDraw
             .range = { 0, sizeof(Mat4) }
         };
 
+        AssetObjPtrScope<GfxShader> shader(gDebugDraw.shaderAsset);
+        ASSERT(shader);
+
         gDebugDraw.pipeline = gfxCreatePipeline(GfxPipelineDesc {
-            .shader = Asset::GetShader(gDebugDraw.shaderAsset),
+            .shader = shader.Get(),
             .inputAssemblyTopology = GfxPrimitiveTopology::LineList,
             .numPushConstants = 1,
             .pushConstants = &pushConstant,

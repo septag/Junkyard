@@ -651,9 +651,9 @@ uint64 Timer::GetTicks()
 //    ██║   ██║██╔══╝  ██║╚██╗██║██╔══╝  ██╔══██╗██╔══██║██║         ██║   ██║╚════██║
 //    ╚██████╔╝███████╗██║ ╚████║███████╗██║  ██║██║  ██║███████╗    ╚██████╔╝███████║
 //     ╚═════╝ ╚══════╝╚═╝  ╚═══╝╚══════╝╚═╝  ╚═╝╚═╝  ╚═╝╚══════╝     ╚═════╝ ╚══════╝
-SysDLL OS::LoadDLL(const char* filepath, char** pErrorMsg)
+OSDLL OS::LoadDLL(const char* filepath, char** pErrorMsg)
 {
-    SysDLL dll = dlopen(filepath, RTLD_LOCAL | RTLD_LAZY);
+    OSDLL dll = dlopen(filepath, RTLD_LOCAL | RTLD_LAZY);
     if (dll == nullptr && pErrorMsg) {
         static char errMsg[64];
         strPrintFmt(errMsg, sizeof(errMsg), dlerror());
@@ -666,13 +666,13 @@ SysDLL OS::LoadDLL(const char* filepath, char** pErrorMsg)
     return dll;
 }
 
-void OS::UnloadDLL(SysDLL dll)
+void OS::UnloadDLL(OSDLL dll)
 {
     if (dll)
         dlclose(dll);
 }
 
-void* OS::GetSymbolAddress(SysDLL dll, const char* symbolName)
+void* OS::GetSymbolAddress(OSDLL dll, const char* symbolName)
 {
     return dlsym(dll, symbolName);
 }
@@ -702,7 +702,7 @@ bool sysGetEnvVar(const char* name, char* outValue, uint32 valueSize)
 //    ██╔═══╝ ██╔══██║   ██║   ██╔══██║
 //    ██║     ██║  ██║   ██║   ██║  ██║
 //    ╚═╝     ╚═╝  ╚═╝   ╚═╝   ╚═╝  ╚═╝
-char* Path::Absolute_CStr(const char* path, char* dst, size_t dstSize)
+char* OS::GetAbsolutePath(const char* path, char* dst, size_t dstSize)
 {
     char absPath[PATH_CHARS_MAX];
     if (realpath(path, absPath) != NULL) {
@@ -713,7 +713,7 @@ char* Path::Absolute_CStr(const char* path, char* dst, size_t dstSize)
     return dst;
 }
 
-PathInfo Path::Stat_CStr(const char* path)
+PathInfo OS::GetPathInfo(const char* path)
 {
     struct stat st;
     int result = stat(path, &st);
@@ -738,21 +738,26 @@ PathInfo Path::Stat_CStr(const char* path)
     };
 }
 
-bool Path::CreateDir_CStr(const char* path)
+bool OS::CreateDir(const char* path)
 {
     return mkdir(path, S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH) == 0;
 }
 
-bool Path::Move_CStr(const char* src, const char* dest)
+bool OS::MovePath(const char* src, const char* dest)
 {
     return rename(src, dest) == 0;
 }
 
-bool Path::MakeTemp_CStr(char* dst, size_t dstSize, const char* namePrefix, const char* dir)
+bool OS::DeleteFilePath(const char* path)
+{
+    return remove(path) == 0;
+}
+
+bool OS::MakeTempPath(char* dst, size_t dstSize, const char* namePrefix, const char* dir)
 {
     if (dir == nullptr)
         dir = "/tmp";
-    Path::Join_CStr(dst, dstSize, dir, namePrefix);
+    PathUtils::Join(dst, dstSize, dir, namePrefix);
     strConcat(dst, uint32(dstSize), "XXXXXX");
     mkstemp(dst);
     return dst[0] ? true : false;
@@ -1395,7 +1400,7 @@ AsyncFile* Async::ReadFile(const char* filepath, const AsyncFileRequest& request
     uint64 fileModificationTime = 0;
     
     if (!fileSize) {
-        PathInfo info = Path::Stat_CStr(filepath);
+        PathInfo info = OS::GetPathInfo(filepath);
         if (info.type != PathType::File) {
             close(fd);
             return nullptr;

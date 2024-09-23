@@ -187,17 +187,17 @@ static bool conRunExternalCommand(int argc, const char* argv[])
     
         const char* prefixCmd = nullptr;
         Path ext = Path(argv[1]).GetFileExtension();
-        SysProcessFlags flags = SysProcessFlags::None;
+        OSProcessFlags flags = OSProcessFlags::None;
         if (ext.IsEqualNoCase(".bat") || ext.IsEqualNoCase(".cmd")) {
             prefixCmd = "cmd /k";
-            flags |= SysProcessFlags::ForceCreateConsole;
+            flags |= OSProcessFlags::ForceCreateConsole;
         }
     
         char* cmdline;
         uint32 cmdlineSize;
         MemTempAllocator tmpAlloc;
         OS::GenerateCmdLineFromArgcArgv(argc - 1, &argv[1], &cmdline, &cmdlineSize, Mem::GetDefaultAlloc(), prefixCmd);
-        SysProcess process;
+        OSProcess process;
         bool r = process.Run(cmdline, flags);
         Mem::Free(cmdline);
     

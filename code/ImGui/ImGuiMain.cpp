@@ -308,7 +308,7 @@ namespace ImGui
             break;
         
         case AppEventType::Char:
-            gImGui.charInput.Add((ImWchar)ev.charcode);
+            gImGui.charInput.Push((ImWchar)ev.charcode);
             break;
         
         case AppEventType::UpdateCursor:
@@ -371,8 +371,10 @@ namespace ImGui
             }
         };
 
-        GfxShader* shader = Asset::GetShader(gImGui.imguiShader);
-        gImGui.dsLayout = gfxCreateDescriptorSetLayout(*shader, dsetBindings, CountOf(dsetBindings), true);
+        AssetObjPtrScope<GfxShader> shader(gImGui.imguiShader);
+        ASSERT(shader);
+
+        gImGui.dsLayout = gfxCreateDescriptorSetLayout(*shader, dsetBindings, CountOf(dsetBindings), GfxDescriptorSetLayoutFlags::PushDescriptor);
 
         gImGui.pipeline = gfxCreatePipeline(GfxPipelineDesc {
             .shader = shader,
@@ -691,12 +693,10 @@ bool ImGui::DrawFrame()
                             .image = img
                         }
                     };
-                    // gfxUpdateDescriptorSet(gImGui.descriptorSet, CountOf(descriptorBindings), descriptorBindings);
                     gfxCmdPushDescriptorSet(gImGui.pipeline, GfxPipelineBindPoint::Graphics, 0, CountOf(descriptorBindings), descriptorBindings);
 
                     prevImg = img;
                 }
-                // ASSERT_MSG(!img.IsValid() || img == gImGui.fontImage, "Doesn't support multiple images yet");
 
                 gfxCmdSetScissors(0, 1, &scissor, true);
                 gfxCmdDrawIndexed(drawCmd->ElemCount, 1, baseElem, 0, 0);

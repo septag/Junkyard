@@ -43,7 +43,7 @@ void AddCustomCallbacks(SettingsCustomCallbacks* callbacks)
 
     uint32 index = gSettings.customCallbacks.Find(callbacks);
     if (index == UINT32_MAX) 
-        gSettings.customCallbacks.Add(callbacks);
+        gSettings.customCallbacks.Push(callbacks);
 }
 
 void RemoveCustomCallbacks(SettingsCustomCallbacks* callbacks)

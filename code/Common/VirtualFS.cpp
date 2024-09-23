@@ -153,7 +153,7 @@ namespace Vfs
 //    ╚═╝     ╚═╝ ╚═════╝  ╚═════╝ ╚═╝  ╚═══╝   ╚═╝   ╚══════╝
 bool Vfs::MountLocal(const char* rootDir, const char* alias, [[maybe_unused]] bool watch)
 {
-    if (Path::Stat_CStr(rootDir).type != PathType::Directory) {
+    if (OS::GetPathInfo(rootDir).type != PathType::Directory) {
         LOG_ERROR("VirtualFS: RootDir '%s' is not a valid directory", rootDir);
         return false;
     }
@@ -206,7 +206,6 @@ bool Vfs::MountRemote(const char* alias, bool watch)
     // Run a thread that pings server for file changes
     if (watch && !requestThreadInit) {
         requestThreadInit = true;
-        mount.watchId = 1;
 
         auto ReqFileChangesThreadFn = [](void*)
         {
@@ -227,6 +226,8 @@ bool Vfs::MountRemote(const char* alias, bool watch)
             gVfs.reqFileChangesThrd.SetPriority(ThreadPriority::Idle);
         }
     }
+
+    mount.watchId = watch ? 1 : 0;
 
     gVfs.mounts.Push(mount);
     LOG_INFO("Mounted '%s' on remote service '%s'", alias, url);
@@ -317,7 +318,7 @@ static uint32 Vfs::_ResolveDiskPath(char* dstPath, uint32 dstPathSize, const cha
         if (idx != UINT32_MAX) {
             char tmpPath[PATH_CHARS_MAX];
             strCopy(tmpPath, sizeof(tmpPath), path + gVfs.mounts[idx].alias.Length());
-            Path::JoinUnixStyle_CStr(dstPath, dstPathSize, gVfs.mounts[idx].path.CStr(), tmpPath);
+            PathUtils::JoinUnixStyle(dstPath, dstPathSize, gVfs.mounts[idx].path.CStr(), tmpPath);
             return idx;
         }
         else {
@@ -377,18 +378,18 @@ static size_t Vfs::_DiskWriteFile(const char* path, VfsFlags flags, const Blob& 
         File f;
         char tempPath[PATH_CHARS_MAX];
         char tempName[PATH_CHARS_MAX];
-        Path::GetFilename_CStr(path, tempName, sizeof(tempName));
+        PathUtils::GetFilename(path, tempName, sizeof(tempName));
 
         #if PLATFORM_WINDOWS
         // On windows, we better use the same path of the destination file
         // Because if it's a different volume, then it does a copy/delete instead
         char tempDir[PATH_CHARS_MAX];
-        Path::GetDirectory_CStr(path, tempDir, sizeof(tempDir));
+        PathUtils::GetDirectory(path, tempDir, sizeof(tempDir));
         #else
         char* tempDir = nullptr;    // use /tmp on posix
         #endif
         
-        bool makeTempSuccess = Path::MakeTemp_CStr(tempPath, sizeof(tempPath), tempName, tempDir);
+        bool makeTempSuccess = OS::MakeTempPath(tempPath, sizeof(tempPath), tempName, tempDir);
         if (!makeTempSuccess)
             LOG_WARNING("Making temp file failed: %s", path);
 
@@ -397,7 +398,7 @@ static size_t Vfs::_DiskWriteFile(const char* path, VfsFlags flags, const Blob& 
             f.Close();
             
             if (bytesWritten && makeTempSuccess)
-                return Path::Move_CStr(tempPath, path);
+                return OS::MovePath(tempPath, path);
             else
                 return bytesWritten;
         }
@@ -413,12 +414,12 @@ static size_t Vfs::_DiskWriteFile(const char* path, VfsFlags flags, const Blob& 
             while ((slashIdx = dirname.FindChar('/', slashIdx + 1)) != UINT32_MAX) {
                 Path subDir(dirname.SubStr(0, slashIdx));
                 if (!subDir.IsDir()) {
-                    [[maybe_unused]] bool r = Path::CreateDir_CStr(subDir.CStr());
+                    [[maybe_unused]] bool r = OS::CreateDir(subDir.CStr());
                     ASSERT(r);
                 }
             }
             if (!dirname.IsDir()) {
-                [[maybe_unused]] bool r = Path::CreateDir_CStr(dirname.CStr());
+                [[maybe_unused]] bool r = OS::CreateDir(dirname.CStr());
                 ASSERT(r);
             }
         }
@@ -540,9 +541,9 @@ uint64 Vfs::GetLastModified(const char* path)
 
     char resolvedPath[PATH_CHARS_MAX];
     if (_ResolveDiskPath(resolvedPath, sizeof(resolvedPath), path, VfsFlags::None) != UINT32_MAX)
-        return Path::Stat_CStr(resolvedPath).lastModified;
+        return OS::GetPathInfo(resolvedPath).lastModified;
     else
-        return Path::Stat_CStr(path).lastModified;
+        return OS::GetPathInfo(path).lastModified;
 }
 
 uint64 Vfs::GetFileSize(const char* path)
@@ -551,9 +552,9 @@ uint64 Vfs::GetFileSize(const char* path)
 
     char resolvedPath[PATH_CHARS_MAX];
     if (_ResolveDiskPath(resolvedPath, sizeof(resolvedPath), path, VfsFlags::None) != UINT32_MAX)
-        return Path::Stat_CStr(resolvedPath).size;
+        return OS::GetPathInfo(resolvedPath).size;
     else
-        return Path::Stat_CStr(path).size;
+        return OS::GetPathInfo(path).size;
 }
 
 PathInfo Vfs::GetFileInfo(const char* path)
@@ -562,9 +563,9 @@ PathInfo Vfs::GetFileInfo(const char* path)
 
     char resolvedPath[PATH_CHARS_MAX];
     if (_ResolveDiskPath(resolvedPath, sizeof(resolvedPath), path, VfsFlags::None) != UINT32_MAX)
-        return Path::Stat_CStr(resolvedPath);
+        return OS::GetPathInfo(resolvedPath);
     else
-        return Path::Stat_CStr(path);
+        return OS::GetPathInfo(path);
 }
 
 Path Vfs::ResolveFilepath(const char* path)
@@ -584,9 +585,9 @@ bool Vfs::FileExists(const char* path)
 
     char resolvedPath[PATH_CHARS_MAX];
     if (_ResolveDiskPath(resolvedPath, sizeof(resolvedPath), path, VfsFlags::None) != UINT32_MAX)
-        return Path::Exists_CStr(resolvedPath);
+        return OS::PathExists(resolvedPath);
     else
-        return Path::Exists_CStr(path);
+        return OS::PathExists(path);
 }
 
 //    ██╗  ██╗ ██████╗ ████████╗    ██████╗ ███████╗██╗      ██████╗  █████╗ ██████╗ 

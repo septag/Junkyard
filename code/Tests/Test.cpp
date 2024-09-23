@@ -38,8 +38,6 @@ struct AppImpl final : AppCallbacks
 
     AssetHandleModel mModelAsset;
     AssetHandleShader mModelShaderAsset;
-    Array<GfxDescriptorSetHandle> mDescriptorSets;
-    HashTable<GfxDescriptorSetHandle> mMaterialToDset;
     CameraFPS   mFpsCam;
     CameraOrbit mOrbitCam;
     Camera*     mCam;
@@ -114,13 +112,14 @@ struct AppImpl final : AppCallbacks
             .usage = GfxBufferUsage::Stream 
         };
 
+        AssetObjPtrScope<GfxShader> shader(self->mModelShaderAsset);
         self->mUniformBuffer = gfxCreateBuffer(bufferDesc);
-        self->mDsLayout = gfxCreateDescriptorSetLayout(*Asset::GetShader(self->mModelShaderAsset), bindingLayout, CountOf(bindingLayout), false);
+        self->mDsLayout = gfxCreateDescriptorSetLayout(*shader, bindingLayout, CountOf(bindingLayout), 
+                                                       GfxDescriptorSetLayoutFlags::PushDescriptor);
 
-        Model* model = Asset::GetModel(self->mModelAsset);
 
         self->mPipeline = gfxCreatePipeline(GfxPipelineDesc {
-            .shader = Asset::GetShader(self->mModelShaderAsset),
+            .shader = shader,
             .inputAssemblyTopology = GfxPrimitiveTopology::TriangleList,
             .numDescriptorSetLayouts = 1,
             .descriptorSetLayouts = &self->mDsLayout,
@@ -143,37 +142,6 @@ struct AppImpl final : AppCallbacks
                 .depthCompareOp = GfxCompareOp::Less
             }
         });
-
-        for (uint32 i = 0; i < model->numMeshes; i++) {
-            ModelMesh& mesh = model->meshes[i];
-            for (uint32 smi = 0; smi < mesh.numSubmeshes; smi++) {
-                ModelMaterial* material = model->materials[IdToIndex(mesh.submeshes[smi].materialId)].Get();
-
-                GfxImageHandle albedo = material->pbrMetallicRoughness.baseColorTex.texture.IsValid() ?
-                    Asset::GetImage(material->pbrMetallicRoughness.baseColorTex.texture)->handle :
-                    GfxImageHandle();
-
-                GfxDescriptorSetHandle dset = gfxCreateDescriptorSet(self->mDsLayout);
-                
-                GfxDescriptorBindingDesc descBindings[] = {
-                    {
-                        .name = "FrameTransform",
-                        .type = GfxDescriptorType::UniformBuffer,
-                        .buffer = { self->mUniformBuffer, 0, sizeof(FrameTransform) }
-                    },
-                    {
-                        .name = "BaseColorTexture",
-                        .type = GfxDescriptorType::CombinedImageSampler,
-                        .image = albedo
-                    }
-                };
-
-                gfxUpdateDescriptorSet(dset, CountOf(descBindings), descBindings);
-
-                self->mMaterialToDset.Add(Hash::Murmur32(material, sizeof(*material), 0), dset);
-                self->mDescriptorSets.Push(dset);
-            }
-        }
     }
 
     bool Initialize() override
@@ -305,7 +273,7 @@ struct AppImpl final : AppCallbacks
             Recti scissor(0, 0, App::GetFramebufferWidth(), App::GetFramebufferHeight());
             gfxCmdSetScissors(0, 1, &scissor, true);
 
-            Model* model = Asset::GetModel(mModelAsset);
+            AssetObjPtrScope<Model> model(mModelAsset);
 
             for (uint32 i = 0; i < model->numNodes; i++) {
                 const ModelNode& node = model->nodes[i];
@@ -321,19 +289,38 @@ struct AppImpl final : AppCallbacks
                     gfxCmdBindVertexBuffers(0, mesh.numVertexBuffers, mesh.gpuBuffers.vertexBuffers, offsets);
                     gfxCmdBindIndexBuffer(mesh.gpuBuffers.indexBuffer, 0, GfxIndexType::Uint32);
 
-                    // DescriptorSets
                     for (uint32 smi = 0; smi < mesh.numSubmeshes; smi++) {
                         const ModelSubmesh& submesh = mesh.submeshes[smi];
                         const ModelMaterial* mtl = model->materials[IdToIndex(submesh.materialId)].Get();
                         
-                        GfxDescriptorSetHandle dset = mMaterialToDset.FindAndFetch(Hash::Murmur32(mtl, sizeof(*mtl), 0));
-                        gfxCmdBindDescriptorSets(mPipeline, 1, &dset);
+                        GfxImageHandle imgHandle {};
+
+                        if (mtl->pbrMetallicRoughness.baseColorTex.texture.IsValid()) {
+                            AssetObjPtrScope<GfxImage> img(mtl->pbrMetallicRoughness.baseColorTex.texture);
+                            if (!img.IsNull())
+                                imgHandle = img->handle;
+                        }
+
+                        GfxDescriptorBindingDesc bindings[] = {
+                            {
+                                .name = "FrameTransform",
+                                .type = GfxDescriptorType::UniformBuffer,
+                                .buffer = { mUniformBuffer, 0, sizeof(FrameTransform) }
+                            },
+                            {
+                                .name = "BaseColorTexture",
+                                .type = GfxDescriptorType::CombinedImageSampler,
+                                .image = imgHandle
+                            }
+                        };
+                        gfxCmdPushDescriptorSet(mPipeline, GfxPipelineBindPoint::Graphics, 0, CountOf(bindings), bindings);
+
                         gfxCmdDrawIndexed(mesh.numIndices, 1, 0, 0, 0);
                     }
 
                 }
             }
-        }
+        } // Draw
 
         {
             DebugDraw::DrawGroundGrid(*mCam, width, height, DebugDrawGridProperties { 
@@ -383,13 +370,9 @@ struct AppImpl final : AppCallbacks
     void ReleaseGraphicsResources()
     {
         gfxWaitForIdle();
-        for (uint32 i = 0; i < mDescriptorSets.Count(); i++) 
-            gfxDestroyDescriptorSet(mDescriptorSets[i]);
         gfxDestroyDescriptorSetLayout(mDsLayout);
         gfxDestroyPipeline(mPipeline);
         gfxDestroyBuffer(mUniformBuffer);
-        mDescriptorSets.Free();
-        mMaterialToDset.Free();
     }
 };
 

@@ -113,15 +113,25 @@ private:
 template <typename _T, uint32 _MaxCount>
 struct StaticArray
 {
-    _T* Add();
-    _T* Add(const _T& item);
+    _T* Push();
+    _T* Push(const _T& item);
+
+    // _Func = [](const _T& a, const _T& b)->int
+    // This is just a naive insertion sort. Works for small/relatively sorted data sets
+    // For faster sorting in larger datasets, use BlitSort
+    // Result is like memcmp: <0: a is lower than b, =0: equal, >0 a is higher than b
+    // With these preassumptions, it sorts with ascending order
+    template <typename _Func> _T* PushAndSort(const _T& item, _Func sortFunc);
+
     void RemoveAndSwap(uint32 index);
     uint32 Count() const;
     bool IsEmpty() const;
     bool IsFull() const;
     void Clear();
     _T& Last();
-    _T& RemoveLast();
+    _T PopFirst();
+    _T Pop(uint32 index);
+    _T& PopLast();
     const _T& operator[](uint32 index) const;
     _T& operator[](uint32 index);
     const _T* Ptr() const;
@@ -143,6 +153,9 @@ struct StaticArray
     
     Iterator begin()    { return Iterator(&mBuffer[0]); }
     Iterator end()      { return Iterator(&mBuffer[mCount]); }
+
+    Iterator begin() const    { return Iterator(&mBuffer[0]); }
+    Iterator end() const     { return Iterator(&mBuffer[mCount]); }
 
 private:
     uint32 mCount = 0;
@@ -538,20 +551,40 @@ inline size_t Array<_T>::GetMemoryRequirement(uint32 capacity)
 //----------------------------------------------------------------------------------------------------------------------
 // @impl StaticArray
 template<typename _T, uint32 _MaxCount>
-inline _T* StaticArray<_T, _MaxCount>::Add()
+inline _T* StaticArray<_T, _MaxCount>::Push()
 {
     ASSERT_MSG(mCount < _MaxCount, "Trying to add more than _MaxCount=%u", _MaxCount);
     return &mBuffer[mCount++];
 }
 
 template<typename _T, uint32 _MaxCount>
-inline _T* StaticArray<_T, _MaxCount>::Add(const _T& item)
+inline _T* StaticArray<_T, _MaxCount>::Push(const _T& item)
 {
     ASSERT_MSG(mCount < _MaxCount, "Trying to add more than _MaxCount=%u", _MaxCount);
     uint32 index = mCount++;
     mBuffer[index] = item;
     return &mBuffer[index];
 }
+
+template <typename _T, uint32 _MaxCount>
+template<typename _Func> inline _T* StaticArray<_T, _MaxCount>::PushAndSort(const _T& item, _Func sortFunc)
+{
+    Push(item);
+    uint32 itemIndex = mCount - 1;
+    if (itemIndex) {
+        for (uint32 i = itemIndex; i-- > 0;) {
+            int val = sortFunc(mBuffer[itemIndex], mBuffer[i]);
+            if (val >= 0)
+                break;
+
+            Swap<_T>(mBuffer[itemIndex], mBuffer[i]);
+            itemIndex = i;
+        }
+    }
+
+    return &mBuffer[itemIndex];    
+}
+
 
 template<typename _T, uint32 _MaxCount>
 inline void StaticArray<_T, _MaxCount>::RemoveAndSwap(uint32 index)
@@ -594,8 +627,30 @@ inline _T& StaticArray<_T, _MaxCount>::Last()
     return mBuffer[mCount - 1];
 }
 
+template <typename _T, uint32 _MaxCount>
+inline _T StaticArray<_T, _MaxCount>::Pop(uint32 index)
+{
+    ASSERT(mCount > 0);
+    #ifdef CONFIG_CHECK_OUTOFBOUNDS
+    ASSERT_MSG(index < mCount, "Index out of bounds (count: %u, index: %u)", mCount, index);
+    #endif
+
+    _T item = mBuffer[index];
+    // shuffle all items to the left
+    for (uint32 i = index+1, c = mCount; i < c; i++)
+        mBuffer[i-1] = mBuffer[i];
+    --mCount;
+    return item;
+}
+
+template <typename _T, uint32 _MaxCount>
+inline _T StaticArray<_T, _MaxCount>::PopFirst()
+{
+    Pop(0);
+}
+
 template<typename _T, uint32 _MaxCount>
-inline _T& StaticArray<_T, _MaxCount>::RemoveLast()
+inline _T& StaticArray<_T, _MaxCount>::PopLast()
 {
     ASSERT(mCount > 0);
     return mBuffer[--mCount];

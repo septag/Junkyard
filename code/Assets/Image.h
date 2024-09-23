@@ -47,7 +47,6 @@ namespace _private
 namespace Asset
 {
     API AssetHandleImage LoadImage(const char* path, const ImageLoadParams& params, const AssetGroup& group);
-    API GfxImage* GetImage(AssetHandleImage handle);
 }
 
 #if PLATFORM_WINDOWS

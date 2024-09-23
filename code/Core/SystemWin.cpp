@@ -742,9 +742,9 @@ bool uuidFromString(UniqueID* _uuid, const char* str)
 //    ╚██████╔╝███████╗██║ ╚████║███████╗██║  ██║██║  ██║███████╗    ╚██████╔╝███████║
 //     ╚═════╝ ╚══════╝╚═╝  ╚═══╝╚══════╝╚═╝  ╚═╝╚═╝  ╚═╝╚══════╝     ╚═════╝ ╚══════╝
 
-SysDLL OS::LoadDLL(const char* filepath, char** pErrorMsg)
+OSDLL OS::LoadDLL(const char* filepath, char** pErrorMsg)
 {
-    SysDLL dll = (SysDLL)LoadLibraryA(filepath);
+    OSDLL dll = (OSDLL)LoadLibraryA(filepath);
     if (dll == nullptr && pErrorMsg) {
         static char errMsg[64];
         strPrintFmt(errMsg, sizeof(errMsg), "GetLastError: %u", GetLastError());
@@ -757,13 +757,13 @@ SysDLL OS::LoadDLL(const char* filepath, char** pErrorMsg)
     return dll;
 }
 
-void OS::UnloadDLL(SysDLL dll)
+void OS::UnloadDLL(OSDLL dll)
 {
     if (dll)
         FreeLibrary((HMODULE)dll);
 }
 
-void* OS::GetSymbolAddress(SysDLL dll, const char* symbolName)
+void* OS::GetSymbolAddress(OSDLL dll, const char* symbolName)
 {
     return (void*)GetProcAddress((HMODULE)dll, symbolName);
 }
@@ -895,9 +895,9 @@ void OS::GetSysInfo(SysInfo* info)
     strTrim(info->cpuModel, sizeof(info->cpuModel), info->cpuModel);
 
     #if CPU_X86
-        info->cpuFamily = SysCpuFamily::x86_64;
+        info->cpuFamily = SysInfo::CpuFamily::x86_64;
     #else
-        info->cpuFamily = SysCpuFamily::ARM64;
+        info->cpuFamily = SysInfo::CpuFamily::ARM64;
     #endif
     info->cpuCapsSSE = ((f_1_EDX_ >> 25) & 0x1) ? true : false;
     info->cpuCapsSSE2 = ((f_1_EDX_ >> 26) & 0x1) ? true : false;
@@ -925,14 +925,14 @@ void OS::GetSysInfo(SysInfo* info)
 }
 
 #if PLATFORM_DESKTOP
-SysProcess::SysProcess() :
+OSProcess::OSProcess() :
     mProcess(INVALID_HANDLE_VALUE),
     mStdOutPipeRead(INVALID_HANDLE_VALUE),
     mStdErrPipeRead(INVALID_HANDLE_VALUE)
 {
 }
 
-SysProcess::~SysProcess()
+OSProcess::~OSProcess()
 {
     if (mStdOutPipeRead != INVALID_HANDLE_VALUE) 
         CloseHandle(mStdOutPipeRead);
@@ -942,16 +942,16 @@ SysProcess::~SysProcess()
         CloseHandle(mProcess);
 }
 
-bool SysProcess::Run(const char* cmdline, SysProcessFlags flags, const char* cwd)
+bool OSProcess::Run(const char* cmdline, OSProcessFlags flags, const char* cwd)
 {
     ASSERT(mProcess == INVALID_HANDLE_VALUE);
 
     HANDLE stdOutPipeWrite = INVALID_HANDLE_VALUE;
     HANDLE stdErrPipeWrite = INVALID_HANDLE_VALUE;
     BOOL r;
-    BOOL inheritHandles = (flags & SysProcessFlags::InheritHandles) == SysProcessFlags::InheritHandles ? TRUE : FALSE;
+    BOOL inheritHandles = (flags & OSProcessFlags::InheritHandles) == OSProcessFlags::InheritHandles ? TRUE : FALSE;
 
-    if ((flags & SysProcessFlags::CaptureOutput) == SysProcessFlags::CaptureOutput) {
+    if ((flags & OSProcessFlags::CaptureOutput) == OSProcessFlags::CaptureOutput) {
         SECURITY_ATTRIBUTES saAttr {}; 
         saAttr.nLength = sizeof(SECURITY_ATTRIBUTES); 
         saAttr.bInheritHandle = inheritHandles; 
@@ -973,7 +973,7 @@ bool SysProcess::Run(const char* cmdline, SysProcessFlags flags, const char* cwd
     PROCESS_INFORMATION procInfo {};
     STARTUPINFOA startInfo {};
     startInfo.cb = sizeof(startInfo);
-    if ((flags & SysProcessFlags::CaptureOutput) == SysProcessFlags::CaptureOutput) {
+    if ((flags & OSProcessFlags::CaptureOutput) == OSProcessFlags::CaptureOutput) {
         startInfo.dwFlags = STARTF_USESTDHANDLES;
         startInfo.hStdOutput = stdOutPipeWrite;
         startInfo.hStdError = stdErrPipeWrite;
@@ -984,9 +984,9 @@ bool SysProcess::Run(const char* cmdline, SysProcessFlags flags, const char* cwd
     char* cmdLineCopy = Mem::AllocCopy<char>(cmdline, strLen(cmdline)+1, &tmpAlloc);
     DWORD createProcessFlags = 0; // TODO
 
-    if ((flags & SysProcessFlags::DontCreateConsole) == SysProcessFlags::DontCreateConsole) 
+    if ((flags & OSProcessFlags::DontCreateConsole) == OSProcessFlags::DontCreateConsole) 
         createProcessFlags |= CREATE_NO_WINDOW;
-    if ((flags & SysProcessFlags::ForceCreateConsole) == SysProcessFlags::ForceCreateConsole)
+    if ((flags & OSProcessFlags::ForceCreateConsole) == OSProcessFlags::ForceCreateConsole)
         createProcessFlags |= CREATE_NEW_CONSOLE;
 
     r = CreateProcessA(nullptr, cmdLineCopy, nullptr, nullptr, inheritHandles, createProcessFlags, NULL, cwd, &startInfo, &procInfo);
@@ -998,7 +998,7 @@ bool SysProcess::Run(const char* cmdline, SysProcessFlags flags, const char* cwd
     CloseHandle(procInfo.hThread);
     mProcess = procInfo.hProcess;
 
-    if ((flags & SysProcessFlags::CaptureOutput) == SysProcessFlags::CaptureOutput) {
+    if ((flags & OSProcessFlags::CaptureOutput) == OSProcessFlags::CaptureOutput) {
         CloseHandle(stdOutPipeWrite);
         CloseHandle(stdErrPipeWrite);
     }
@@ -1006,19 +1006,19 @@ bool SysProcess::Run(const char* cmdline, SysProcessFlags flags, const char* cwd
     return true;
 }
 
-void SysProcess::Wait() const
+void OSProcess::Wait() const
 {
     ASSERT(mProcess != INVALID_HANDLE_VALUE);
     WaitForSingleObject(mProcess, INFINITE);
 }
 
-bool SysProcess::IsRunning() const
+bool OSProcess::IsRunning() const
 {
     ASSERT(mProcess != INVALID_HANDLE_VALUE);
     return WaitForSingleObject(mProcess, 0) != WAIT_OBJECT_0;
 }
 
-bool SysProcess::IsValid() const
+bool OSProcess::IsValid() const
 {
     return mProcess != INVALID_HANDLE_VALUE;
 }
@@ -1048,7 +1048,7 @@ static void _TerminateChildProcesses(DWORD parentProcessId)
     }
 };
 
-void SysProcess::Abort()
+void OSProcess::Abort()
 {
     ASSERT(mProcess != INVALID_HANDLE_VALUE);
 
@@ -1065,7 +1065,7 @@ void SysProcess::Abort()
     }
 }
 
-int SysProcess::GetExitCode() const
+int OSProcess::GetExitCode() const
 {
     ASSERT(mProcess != INVALID_HANDLE_VALUE);
     DWORD exitCode = UINT32_MAX;
@@ -1073,7 +1073,7 @@ int SysProcess::GetExitCode() const
     return static_cast<int>(exitCode);
 }
 
-uint32 SysProcess::ReadStdOut(void* data, uint32 size) const
+uint32 OSProcess::ReadStdOut(void* data, uint32 size) const
 {
     ASSERT(mStdOutPipeRead != INVALID_HANDLE_VALUE);
 
@@ -1082,7 +1082,7 @@ uint32 SysProcess::ReadStdOut(void* data, uint32 size) const
     return (r && bytesRead) ? bytesRead : 0; 
 }
 
-uint32 SysProcess::ReadStdErr(void* data, uint32 size) const
+uint32 OSProcess::ReadStdErr(void* data, uint32 size) const
 {
     ASSERT(mStdErrPipeRead != INVALID_HANDLE_VALUE);
 
@@ -1122,8 +1122,8 @@ bool OS::Win32IsProcessRunning(const char* execName)
     return false;
 }
 
-SysWin32ShellExecuteResult OS::Win32ShellExecute(const char* filepath, const char* args, 
-                                                const char* cwd, SysWin32ShowWindow showFlag, 
+OSWin32ShellExecuteResult OS::Win32ShellExecute(const char* filepath, const char* args, 
+                                                const char* cwd, OSWin32ShowWindow showFlag, 
                                                 const char* operation,
                                                 void** pInstance)
 {
@@ -1136,27 +1136,27 @@ SysWin32ShellExecuteResult OS::Win32ShellExecute(const char* filepath, const cha
         switch (errCode) {
         case 0:
         case SE_ERR_OOM:
-            return SysWin32ShellExecuteResult::OutOfMemory;
+            return OSWin32ShellExecuteResult::OutOfMemory;
         case SE_ERR_DLLNOTFOUND:
         case SE_ERR_FNF:
-            return SysWin32ShellExecuteResult::FileNotFound;
+            return OSWin32ShellExecuteResult::FileNotFound;
         case SE_ERR_PNF:
-            return SysWin32ShellExecuteResult::PathNotFound;
+            return OSWin32ShellExecuteResult::PathNotFound;
         case ERROR_BAD_FORMAT:
-            return SysWin32ShellExecuteResult::BadFormat;
+            return OSWin32ShellExecuteResult::BadFormat;
         case SE_ERR_ASSOCINCOMPLETE:
         case SE_ERR_NOASSOC:
-            return SysWin32ShellExecuteResult::NoAssociation;
+            return OSWin32ShellExecuteResult::NoAssociation;
         case SE_ERR_ACCESSDENIED:
-            return SysWin32ShellExecuteResult::AccessDenied;
+            return OSWin32ShellExecuteResult::AccessDenied;
         default:
-            return SysWin32ShellExecuteResult::UnknownError;
+            return OSWin32ShellExecuteResult::UnknownError;
         }
     }
     else {
         if (pInstance)
             *pInstance = hInst;
-        return SysWin32ShellExecuteResult::Ok;
+        return OSWin32ShellExecuteResult::Ok;
     }
 }
 
@@ -1215,38 +1215,126 @@ bool OS::Win32SetPrivilege(const char* name, bool enable)
     return true;
 }
 
-//    ██████╗  █████╗ ████████╗██╗  ██╗
-//    ██╔══██╗██╔══██╗╚══██╔══╝██║  ██║
-//    ██████╔╝███████║   ██║   ███████║
-//    ██╔═══╝ ██╔══██║   ██║   ██╔══██║
-//    ██║     ██║  ██║   ██║   ██║  ██║
-//    ╚═╝     ╚═╝  ╚═╝   ╚═╝   ╚═╝  ╚═╝
-
-char* Path::GetMyPath_CStr(char* dst, size_t dstSize)
+char* OS::GetMyPath(char* dst, size_t dstSize)
 {
     GetModuleFileNameA(NULL, dst, (DWORD)dstSize);
     return dst;
 }
 
-char* Path::Absolute_CStr(const char* path, char* dst, size_t dstSize)
+char* OS::GetAbsolutePath(const char* path, char* dst, size_t dstSize)
 {
     if (GetFullPathNameA(path, (DWORD)dstSize, dst, NULL) == 0)
         dst[0] = '\0';
     return dst;
 }
 
-char* Path::GetCurrentDir_CStr(char* dst, size_t dstSize)
+char* OS::GetCurrentDir(char* dst, size_t dstSize)
 {
     GetCurrentDirectoryA((DWORD)dstSize, dst);
     return dst;
 }
 
-void Path::SetCurrentDir_CStr(const char* path)
+void OS::SetCurrentDir(const char* path)
 {
     SetCurrentDirectoryA(path);
 }
 
-PathInfo Path::Stat_CStr(const char* path)
+bool OS::CreateDir(const char* path)
+{
+    return bool(CreateDirectoryA(path, nullptr)); 
+}
+
+bool OS::MovePath(const char* src, const char* dest)
+{
+    return bool(MoveFileExA(src, dest, MOVEFILE_REPLACE_EXISTING|MOVEFILE_COPY_ALLOWED));
+}
+
+char* OS::GetHomeDir(char* dst, size_t dstSize)
+{
+    _LoadOle32();
+    _LoadShell32();
+
+    PWSTR homeDir = nullptr;
+    if (SUCCEEDED(gShell32.SHGetKnownFolderPath(FOLDERID_Profile, 0, nullptr, &homeDir))) {
+        strWideToUtf8(homeDir, dst, (uint32)dstSize);
+        gOle32.CoTaskMemFree(homeDir);
+        return dst;
+    }
+    else {
+        ASSERT_MSG(0, "Getting home directory failed");
+        return nullptr;
+    }
+}
+
+char* OS::GetCacheDir(char* dst, size_t dstSize, const char* appName)
+{
+    _LoadOle32();
+    _LoadShell32();
+
+    PWSTR homeDir = nullptr;
+    if (SUCCEEDED(gShell32.SHGetKnownFolderPath(FOLDERID_LocalAppData, 0, nullptr, &homeDir))) {
+        char homeDirUtf8[CONFIG_MAX_PATH];
+        strWideToUtf8(homeDir, homeDirUtf8, sizeof(homeDirUtf8));
+        gOle32.CoTaskMemFree(homeDir);
+        PathUtils::Join(dst, dstSize, homeDirUtf8, appName);
+        return dst;
+    }
+    else {
+        ASSERT_MSG(0, "Getting LOCALAPPDATA directory failed");
+        return nullptr;
+    }
+}
+
+bool OS::MakeTempPath(char* dst, [[maybe_unused]] size_t dstSize, const char* namePrefix, const char* dir)
+{
+    static char osTempPath[PATH_CHARS_MAX] = {};
+    if (dir == nullptr) {
+        if (osTempPath[0] == '\0')
+            GetTempPathA(sizeof(osTempPath), osTempPath);
+        dir = osTempPath;
+    }
+
+    ASSERT(dstSize >= PATH_CHARS_MAX);
+    return GetTempFileNameA(dir, namePrefix, 0, dst) != 0;
+}
+
+bool OS::DeleteFilePath(const char* path)
+{
+    ASSERT(path);
+    return DeleteFileA(path);
+}
+
+char* OS::Win32GetFolder(OSWin32Folder folder, char* dst, size_t dstSize)
+{
+    _LoadOle32();
+    _LoadShell32();
+
+    static const KNOWNFOLDERID folderIds[] = {
+        FOLDERID_Documents,
+        FOLDERID_Fonts,
+        FOLDERID_Downloads,
+        FOLDERID_RoamingAppData,
+        FOLDERID_LocalAppData,
+        FOLDERID_ProgramFiles,
+        FOLDERID_System,
+        FOLDERID_CommonStartup,
+        FOLDERID_Desktop
+    };
+    static_assert(CountOf(folderIds) == uint32(OSWin32Folder::_Count));
+
+    PWSTR folderPath = nullptr;
+    if (SUCCEEDED(gShell32.SHGetKnownFolderPath(folderIds[uint32(folder)], 0, nullptr, &folderPath))) {
+        strWideToUtf8(folderPath, dst, (uint32)dstSize);
+        gOle32.CoTaskMemFree(folderPath);
+        return dst;
+    }
+    else {
+        ASSERT_MSG(0, "SHGetKnownFolderPath failed");
+        return nullptr;
+    }
+}
+
+PathInfo OS::GetPathInfo(const char* path)
 {
     WIN32_FILE_ATTRIBUTE_DATA fad;
     if (!GetFileAttributesExA(path, GetFileExInfoStandard, &fad)) {
@@ -1272,95 +1360,6 @@ PathInfo Path::Stat_CStr(const char* path)
         .size = static_cast<uint64>(size.QuadPart),
         .lastModified = static_cast<uint64>(tm.QuadPart / 10000000 - 11644473600LL)
     };
-}
-
-bool Path::CreateDir_CStr(const char* path)
-{
-    return bool(CreateDirectoryA(path, nullptr)); 
-}
-
-bool Path::Move_CStr(const char* src, const char* dest)
-{
-    return bool(MoveFileExA(src, dest, MOVEFILE_REPLACE_EXISTING|MOVEFILE_COPY_ALLOWED));
-}
-
-char* Path::GetHomeDir_CStr(char* dst, size_t dstSize)
-{
-    _LoadOle32();
-    _LoadShell32();
-
-    PWSTR homeDir = nullptr;
-    if (SUCCEEDED(gShell32.SHGetKnownFolderPath(FOLDERID_Profile, 0, nullptr, &homeDir))) {
-        strWideToUtf8(homeDir, dst, (uint32)dstSize);
-        gOle32.CoTaskMemFree(homeDir);
-        return dst;
-    }
-    else {
-        ASSERT_MSG(0, "Getting home directory failed");
-        return nullptr;
-    }
-}
-
-char* Path::GetCacheDir_CStr(char* dst, size_t dstSize, const char* appName)
-{
-    _LoadOle32();
-    _LoadShell32();
-
-    PWSTR homeDir = nullptr;
-    if (SUCCEEDED(gShell32.SHGetKnownFolderPath(FOLDERID_LocalAppData, 0, nullptr, &homeDir))) {
-        char homeDirUtf8[CONFIG_MAX_PATH];
-        strWideToUtf8(homeDir, homeDirUtf8, sizeof(homeDirUtf8));
-        gOle32.CoTaskMemFree(homeDir);
-        Path::Join_CStr(dst, dstSize, homeDirUtf8, appName);
-        return dst;
-    }
-    else {
-        ASSERT_MSG(0, "Getting LOCALAPPDATA directory failed");
-        return nullptr;
-    }
-}
-
-bool Path::MakeTemp_CStr(char* dst, [[maybe_unused]] size_t dstSize, const char* namePrefix, const char* dir)
-{
-    static char osTempPath[PATH_CHARS_MAX] = {};
-    if (dir == nullptr) {
-        if (osTempPath[0] == '\0')
-            GetTempPathA(sizeof(osTempPath), osTempPath);
-        dir = osTempPath;
-    }
-
-    ASSERT(dstSize >= PATH_CHARS_MAX);
-    return GetTempFileNameA(dir, namePrefix, 0, dst) != 0;
-}
-
-char* OS::Win32GetFolder(SysWin32Folder folder, char* dst, size_t dstSize)
-{
-    _LoadOle32();
-    _LoadShell32();
-
-    static const KNOWNFOLDERID folderIds[] = {
-        FOLDERID_Documents,
-        FOLDERID_Fonts,
-        FOLDERID_Downloads,
-        FOLDERID_RoamingAppData,
-        FOLDERID_LocalAppData,
-        FOLDERID_ProgramFiles,
-        FOLDERID_System,
-        FOLDERID_CommonStartup,
-        FOLDERID_Desktop
-    };
-    static_assert(CountOf(folderIds) == uint32(SysWin32Folder::_Count));
-
-    PWSTR folderPath = nullptr;
-    if (SUCCEEDED(gShell32.SHGetKnownFolderPath(folderIds[uint32(folder)], 0, nullptr, &folderPath))) {
-        strWideToUtf8(folderPath, dst, (uint32)dstSize);
-        gOle32.CoTaskMemFree(folderPath);
-        return dst;
-    }
-    else {
-        ASSERT_MSG(0, "SHGetKnownFolderPath failed");
-        return nullptr;
-    }
 }
 
 //    ███╗   ███╗███████╗███╗   ███╗ ██████╗ ██████╗ ██╗   ██╗

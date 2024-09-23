@@ -581,7 +581,7 @@ void WaitForCompletionAndDelete(JobsHandle instance)
         // Otherwise, it just blocks the thread (Like waiting for tasks on main thread)
         JobsThreadData* tdata = _GetThreadData();
         if (tdata) {
-            ASSERT_MSG(tdata->curFiber, "Worker threads should always have a fiber assigned when 'Wait' is called");
+            ASSERT_MSG(tdata->curFiber, "Task threads should always have a fiber assigned when 'Wait' is called");
 
             JobsFiber* curFiber = tdata->curFiber;
             curFiber->ownerTid = tdata->threadId;    // save ownerTid as a hint so we can pick this up again on the same thread context
@@ -624,6 +624,42 @@ void WaitForCompletionAndDelete(JobsHandle instance)
 
     gJobs.instancePool->Delete(instance);
     Atomic::FetchSubExplicit(&gJobs.numInstances, 1, AtomicMemoryOrder::Relaxed);
+}
+
+void Yield()
+{
+    JobsThreadData* tdata = _GetThreadData();
+    ASSERT_MSG(tdata, "Yield() can only be called within the task threads");
+    ASSERT_MSG(tdata->curFiber, "Task threads should always have a fiber assigned when 'Yield' is called");
+
+    JobsFiber* curFiber = tdata->curFiber;
+
+    // Jump out of the fiber
+    // Back to `jobsThreadFn::jobsSetFiberToCurrentThread
+    {
+        mco_coro* co = curFiber->co;
+        ASSERT(co);
+        ASSERT(co->state != MCO_SUSPENDED);
+        ASSERT(co->state != MCO_DEAD);
+        co->state = MCO_SUSPENDED;
+
+        #ifdef _MCO_USE_ASAN
+        void* bottom_old = nullptr;
+        size_t size_old = 0;
+        __sanitizer_finish_switch_fiber(co->asan_prev_stack, (const void**)&bottom_old, &size_old);
+        #endif
+
+        #ifdef _MCO_USE_TSAN
+        void* tsan_prev_fiber = co->tsan_prev_fiber;
+        co->tsan_prev_fiber = nullptr;
+        __tsan_switch_to_fiber(tsan_prev_fiber, 0);
+        #endif
+
+        Debug::FiberScopeProtector_Check();
+
+        _mco_context* context = (_mco_context*)co->context;
+        _mco_switch(&context->ctx, &context->back_ctx);
+    }
 }
 
 bool IsRunning(JobsHandle handle)
@@ -724,7 +760,7 @@ void Initialize(const JobsInitParams& initParams)
     uint32 numTotalThreads = gJobs.numThreads[0] + gJobs.numThreads[1] + 1;
     gJobs.waitingListLock.Initialize(numTotalThreads, Mem::AllocAlignedTyped<JobsAndersonLockThread>(numTotalThreads, alignof(JobsAndersonLockThread), initParams.alloc));
     if (initParams.alloc->GetType() != MemAllocatorType::Bump)
-        gJobs.pointers.Add(Pair<void*, uint32>(gJobs.waitingListLock.mSlots, alignof(JobsAndersonLockThread)));
+        gJobs.pointers.Push(Pair<void*, uint32>(gJobs.waitingListLock.mSlots, alignof(JobsAndersonLockThread)));
     #endif
 
     gJobs.semaphores[uint32(JobsType::ShortTask)].Initialize();
@@ -742,7 +778,7 @@ void Initialize(const JobsInitParams& initParams)
     // LongTasks
     gJobs.threads[uint32(JobsType::LongTask)] = NEW_ARRAY(initParams.alloc, Thread, gJobs.numThreads[uint32(JobsType::LongTask)]);
     if (initParams.alloc->GetType() != MemAllocatorType::Bump)
-        gJobs.pointers.Add(Pair<void*, uint32>(gJobs.threads[uint32(JobsType::LongTask)], 0));
+        gJobs.pointers.Push(Pair<void*, uint32>(gJobs.threads[uint32(JobsType::LongTask)], 0));
 
     for (uint32 i = 0; i < gJobs.numThreads[uint32(JobsType::LongTask)]; i++) {
         char name[32];
@@ -761,7 +797,7 @@ void Initialize(const JobsInitParams& initParams)
     // ShortTasks
     gJobs.threads[uint32(JobsType::ShortTask)] = NEW_ARRAY(initParams.alloc, Thread, gJobs.numThreads[uint32(JobsType::ShortTask)]);
     if (initParams.alloc->GetType() != MemAllocatorType::Bump)
-        gJobs.pointers.Add(Pair<void*, uint32>(gJobs.threads[uint32(JobsType::ShortTask)], 0));
+        gJobs.pointers.Push(Pair<void*, uint32>(gJobs.threads[uint32(JobsType::ShortTask)], 0));
 
     for (uint32 i = 0; i < gJobs.numThreads[uint32(JobsType::ShortTask)]; i++) {
         char name[32];

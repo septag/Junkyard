@@ -105,6 +105,7 @@ namespace Jobs
                                           JobsStackSize stackSize = JobsStackSize::Medium);
     // Might yield the current running job as well. Also deletes the JobHandle after it's finished
     API void WaitForCompletionAndDelete(JobsHandle handle);
+    API void Yield();
 
     API bool IsRunning(JobsHandle handle);
     API void Delete(JobsHandle handle);

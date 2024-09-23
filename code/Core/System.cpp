@@ -65,7 +65,7 @@ struct TimerInitializer
 
 static TimerInitializer gTimerInit;
 
-char* Path::ToUnix_CStr(const char *path, char *dst, size_t dstSize)
+char* PathUtils::ToUnix(const char *path, char *dst, size_t dstSize)
 {
     size_t len = strLen(path);
     len = Min<size_t>(len, dstSize - 1);
@@ -80,7 +80,7 @@ char* Path::ToUnix_CStr(const char *path, char *dst, size_t dstSize)
     return dst;
 }
 
-char* Path::ToWin_CStr(const char *path, char *dst, size_t dstSize)
+char* PathUtils::ToWin(const char *path, char *dst, size_t dstSize)
 {
     size_t len = strLen(path);
     len = Min<size_t>(len, dstSize - 1);
@@ -95,7 +95,7 @@ char* Path::ToWin_CStr(const char *path, char *dst, size_t dstSize)
     return dst;
 }
 
-char* Path::GetFileExtension_CStr(const char *path, char *dst, size_t dstSize)
+char* PathUtils::GetFileExtension(const char *path, char *dst, size_t dstSize)
 {
     ASSERT(dstSize > 0);
 
@@ -121,7 +121,7 @@ char* Path::GetFileExtension_CStr(const char *path, char *dst, size_t dstSize)
     return dst;
 }
 
-char* Path::GetFilenameAndExtension_CStr(const char *path, char *dst, size_t dstSize)
+char* PathUtils::GetFilenameAndExtension(const char *path, char *dst, size_t dstSize)
 {
     const char *r = strrchr(path, '/');
     #if PLATFORM_WINDOWS
@@ -137,7 +137,7 @@ char* Path::GetFilenameAndExtension_CStr(const char *path, char *dst, size_t dst
     return dst;
 }
 
-char* Path::GetFilename_CStr(const char* path, char* dst, size_t dstSize)
+char* PathUtils::GetFilename(const char* path, char* dst, size_t dstSize)
 {
     const char *r = strrchr(path, '/');
     #if PLATFORM_WINDOWS
@@ -158,7 +158,7 @@ char* Path::GetFilename_CStr(const char* path, char* dst, size_t dstSize)
     return dst;
 }
 
-char* Path::GetDirectory_CStr(const char *path, char *dst, size_t dstSize)
+char* PathUtils::GetDirectory(const char *path, char *dst, size_t dstSize)
 {
     const char *r = strrchr(path, '/');
     #if PLATFORM_WINDOWS
@@ -185,33 +185,36 @@ char* Path::GetDirectory_CStr(const char *path, char *dst, size_t dstSize)
     return dst;
 }
 
-char* Path::Join_CStr(char *dst, size_t dstSize, const char *sep, const char *pathA, const char *pathB)
+namespace PathUtils
 {
-    ASSERT(dst != pathB);
-    int len = strLen(pathA);
-    if (dst != pathA) {
-        if (len > 0 && pathA[len - 1] == sep[0]) {
-            strCopy(dst, (uint32)dstSize, pathA);
+    static char* Join(char *dst, size_t dstSize, const char *sep, const char *pathA, const char *pathB)
+    {
+        ASSERT(dst != pathB);
+        int len = strLen(pathA);
+        if (dst != pathA) {
+            if (len > 0 && pathA[len - 1] == sep[0]) {
+                strCopy(dst, (uint32)dstSize, pathA);
+            }
+            else if (len > 0) {
+                strCopy(dst, (uint32)dstSize, pathA);
+                strConcat(dst, (uint32)dstSize, sep);
+            }
+            else {
+                dst[0] = '\0';
+            }
         }
-        else if (len > 0) {
-            strCopy(dst, (uint32)dstSize, pathA);
+        else if (len > 0 && pathA[len - 1] != sep[0]) {
             strConcat(dst, (uint32)dstSize, sep);
         }
-        else {
-            dst[0] = '\0';
-        }
-    }
-    else if (len > 0 && pathA[len - 1] != sep[0]) {
-        strConcat(dst, (uint32)dstSize, sep);
-    }
 
-    if (pathB[0] == sep[0])
+        if (pathB[0] == sep[0])
         ++pathB;
-    strConcat(dst, (uint32)dstSize, pathB);
-    return dst;
+        strConcat(dst, (uint32)dstSize, pathB);
+        return dst;
+    }
 }
 
-char* Path::Join_CStr(char *dst, size_t dstSize, const char *pathA, const char *pathB)
+char* PathUtils::Join(char *dst, size_t dstSize, const char *pathA, const char *pathB)
 {
     #if PLATFORM_WINDOWS
     const char *kSep = "\\";
@@ -219,12 +222,12 @@ char* Path::Join_CStr(char *dst, size_t dstSize, const char *pathA, const char *
     const char *kSep = "/";
     #endif
 
-    return Path::Join_CStr(dst, dstSize, kSep, pathA, pathB);
+    return PathUtils::Join(dst, dstSize, kSep, pathA, pathB);
 }
 
-char* Path::JoinUnixStyle_CStr(char *dst, size_t dstSize, const char *pathA, const char *pathB)
+char* PathUtils::JoinUnixStyle(char *dst, size_t dstSize, const char *pathA, const char *pathB)
 {
-    return Path::Join_CStr(dst, dstSize, "/", pathA, pathB);
+    return PathUtils::Join(dst, dstSize, "/", pathA, pathB);
 }
 
 uint64 Timer::LapTime(uint64* lastTime)

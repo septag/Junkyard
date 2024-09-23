@@ -100,7 +100,7 @@ void Debug::StacktraceSaveStopPoint(void* funcPtr)
     ASSERT(funcPtr);
     ASSERT_MSG(gDebugStopFuncs.FindIf([funcPtr](const void* fn)->bool { return funcPtr == fn; }) == UINT32_MAX, 
                "Function pointer is already saved");
-    gDebugStopFuncs.Add(funcPtr);
+    gDebugStopFuncs.Push(funcPtr);
 }
 
 #endif // COMPILER_CLANG

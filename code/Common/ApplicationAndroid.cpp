@@ -338,7 +338,7 @@ static void appAndroidFreeSavedState()
 static void appAndroidWriteCmd(AppAndroidCmd event)
 {
     if (write(gApp.eventWriteFd, &event, sizeof(event)) != sizeof(event)) {
-        OS::AndroidPrintToLog(SysAndroidLogType::Fatal, gApp.name, "Android: Writing event to nessage pipe failed");
+        OS::AndroidPrintToLog(OSAndroidLogType::Fatal, gApp.name, "Android: Writing event to nessage pipe failed");
     }
 }
 
@@ -350,7 +350,7 @@ static AppAndroidCmd appAndroidReadCmd()
             appAndroidFreeSavedState();
         return cmd;
     } else {
-        OS::AndroidPrintToLog(SysAndroidLogType::Fatal, gApp.name, "Android: No data in command pipe");
+        OS::AndroidPrintToLog(OSAndroidLogType::Fatal, gApp.name, "Android: No data in command pipe");
     }
     return ANDROID_CMD_INVALID;
 }
@@ -1049,7 +1049,7 @@ extern "C" JNIEXPORT void ANativeActivity_onCreate(ANativeActivity * activity, v
     
     int msgPipe[2];
     if (pipe(msgPipe)) {
-        OS::AndroidPrintToLog(SysAndroidLogType::Fatal, gApp.name, "Android: Writing event to message pipe failed");
+        OS::AndroidPrintToLog(OSAndroidLogType::Fatal, gApp.name, "Android: Writing event to message pipe failed");
         return;
     }
     gApp.eventReadFd = msgPipe[0];
