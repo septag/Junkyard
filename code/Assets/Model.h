@@ -31,8 +31,8 @@
 
 #include "Image.h"
 
-inline constexpr uint32 kModelMaxVertexAttributes = 16;
-inline constexpr uint32 kModelMaxVertexBuffersPerShader = 8;
+inline constexpr uint32 MODEL_MAX_VERTEX_ATTRIBUTES = 16;
+inline constexpr uint32 MODEL_MAX_VERTEX_BUFFERS_PER_SHADER = 8;
 
 //------------------------------------------------------------------------
 // Material
@@ -103,8 +103,8 @@ struct ModelMaterial
 //------------------------------------------------------------------------
 struct ModelGeometryLayout 
 {
-    GfxVertexInputAttributeDesc vertexAttributes[kModelMaxVertexAttributes];
-    uint32 vertexBufferStrides[kModelMaxVertexBuffersPerShader];
+    GfxVertexInputAttributeDesc vertexAttributes[MODEL_MAX_VERTEX_ATTRIBUTES];
+    uint32 vertexBufferStrides[MODEL_MAX_VERTEX_BUFFERS_PER_SHADER];
 };
 
 struct ModelSubmesh 
@@ -118,13 +118,13 @@ struct ModelMesh
 {
     struct CpuBuffers
     {
-        RelativePtr<uint8>  vertexBuffers[kModelMaxVertexBuffersPerShader];    // void cast struct for each vbuff (count=numVertexBuffers)
+        RelativePtr<uint8>  vertexBuffers[MODEL_MAX_VERTEX_BUFFERS_PER_SHADER];    // void cast struct for each vbuff (count=numVertexBuffers)
         RelativePtr<uint32> indexBuffer;
     };
 
     struct GpuBuffers
     {
-        GfxBufferHandle vertexBuffers[kModelMaxVertexBuffersPerShader];
+        GfxBufferHandle vertexBuffers[MODEL_MAX_VERTEX_BUFFERS_PER_SHADER];
         GfxBufferHandle indexBuffer;
     };
 
@@ -174,16 +174,10 @@ struct ModelLoadParams
     GfxBufferUsage indexBufferUsage = GfxBufferUsage::Default;
 };
 
-API AssetHandleModel assetLoadModel(const char* path, const ModelLoadParams& params, AssetBarrier barrier = AssetBarrier());
-API Model* assetGetModel(AssetHandleModel modelHandle);  
-
-namespace _private
-{
-    bool assetInitializeModelManager();
-    void assetReleaseModelManager();
-} // _private
-
 namespace Asset
 {
+    API bool InitializeModelManager();
+    API void ReleaseModelManager();
+
     API AssetHandleModel LoadModel(const char* path, const ModelLoadParams& params, const AssetGroup& group);
 }

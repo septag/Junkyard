@@ -119,7 +119,8 @@ struct AppImpl final : AppCallbacks
     bool Initialize() override
     {
         Vfs::HelperMountDataAndShaders(SettingsJunkyard::Get().engine.connectToServer, "test");
-        Engine::Initialize();
+        if (!Engine::Initialize())
+            return false;
 
         LOG_INFO("Reading file list ...");
         MemTempAllocator tempAlloc;
@@ -404,7 +405,7 @@ struct AppImpl final : AppCallbacks
 
         gfxEndCommandBuffer();
 
-        Engine::EndFrame(dt);
+        Engine::EndFrame();
     }
     
     void OnEvent(const AppEvent& e) override

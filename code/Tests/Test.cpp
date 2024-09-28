@@ -349,7 +349,7 @@ struct AppImpl final : AppCallbacks
         gfxCmdEndSwapchainRenderPass();
         gfxEndCommandBuffer();        
 
-        Engine::EndFrame(dt);
+        Engine::EndFrame();
     }
     
     void OnEvent(const AppEvent& ev) override
