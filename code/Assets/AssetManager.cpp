@@ -275,6 +275,23 @@ struct AssetMan
 static AssetMan gAssetMan;
 
 //----------------------------------------------------------------------------------------------------------------------
+// Fwd
+namespace Asset
+{
+    // Image.h
+    bool InitializeImageManager();      
+    void ReleaseImageManager();
+
+    // Shader.h
+    bool InitializeShaderManager();     
+    void ReleaseShaderManager();
+
+    // Model.h
+    bool InitializeModelManager();      
+    void ReleaseModelManager();
+}
+
+//----------------------------------------------------------------------------------------------------------------------
 // These functions should be exported for per asset type loading
 using DataChunk = Pair<void*, uint32>;
 
@@ -1651,7 +1668,33 @@ bool Asset::Initialize()
 
     gAssetMan.isForceUseCache = SettingsJunkyard::Get().engine.useCacheOnly;
 
+    // Create and mount cache directory
+    #if PLATFORM_WINDOWS || PLATFORM_OSX || PLATFORM_LINUX
+    if (!OS::IsPathDir(".cache"))
+        OS::CreateDir(".cache");
+    Vfs::MountLocal(".cache", "cache", false);
+    #elif PLATFORM_ANDROID
+    Vfs::MountLocal(OS::AndroidGetCacheDirectory(App::AndroidGetActivity()).CStr(), "cache", false);
+    #endif
+
     _LoadAssetHashLookup();
+
+    //------------------------------------------------------------------------------------------------------------------
+    // Initialize asset managers here
+    if (!Asset::InitializeImageManager()) {
+        LOG_ERROR("Failed to initialize ImageManager");
+        return false;
+    }
+
+    if (!Asset::InitializeModelManager()) {
+        LOG_ERROR("Failed to initialize ModelManager");
+        return false;
+    }
+
+    if (!Asset::InitializeShaderManager()) {
+        LOG_ERROR("Failed to initialize ShaderManager");
+        return false;
+    }
 
     LOG_INFO("(init) Asset Manager");
     return true;
@@ -1711,6 +1754,10 @@ void Asset::Release()
         gAssetMan.hotReloadMutex.Release();
         gAssetMan.hotReloadList.Free();
     }
+
+    Asset::ReleaseImageManager();
+    Asset::ReleaseModelManager();
+    Asset::ReleaseShaderManager();
 
     Mem::Free(gAssetMan.memArena.allocators, alloc);
     gAssetMan.memArena.threadToAllocatorTable.Free();
