@@ -129,45 +129,6 @@ void DrawMemBudgets(float dt, bool* pOpen)
             ImGui::Text("InitHeapSize: %_$llu", stats.initHeapSize);
         }
 
-        assetOpen = ImGui::CollapsingHeader("AssetManager", nullptr, assetOpen ? ImGuiTreeNodeFlags_DefaultOpen : 0);
-        if (assetOpen) {
-            AssetBudgetStats stats;
-            assetGetBudgetStats(&stats);
-
-            ImGui::TextColored(kTextColor, "Assets:");
-            ImGui::SameLine();
-            ImGui::ProgressBar(DivideInt(stats.numAssets, stats.maxAssets), ImVec2(-1.0f, 0),
-                               String32::Format("%u/%u", stats.numAssets, stats.maxAssets).CStr());
-
-            ImGui::TextColored(kTextColor, "Barriers:");
-            ImGui::SameLine();
-            ImGui::ProgressBar(DivideInt(stats.numBarriers, stats.maxBarriers), ImVec2(-1.0f, 0),
-                               String32::Format("%u/%u", stats.numBarriers, stats.maxBarriers).CStr());
-
-            ImGui::TextColored(kTextColor, "Garbage:");
-            ImGui::SameLine();
-            ImGui::ProgressBar(DivideInt(stats.numGarbage, stats.maxGarbage), ImVec2(-1.0f, 0),
-                               String32::Format("%u/%u", stats.numGarbage, stats.maxGarbage).CStr());
-
-            ImGui::TextColored(kTextColor, "RuntimeHeap:");
-            ImGui::SameLine();
-            ImGui::ProgressBar(DivideSize(stats.runtimeHeapSize, stats.runtimeHeapMax), ImVec2(-1.0f, 0),
-                               String32::Format("%_$llu/%_$llu", stats.runtimeHeapSize, stats.runtimeHeapMax).CStr());
-
-            gMemBudget.assetLastFragTm += dt;
-            if (gMemBudget.assetLastFragTm >= DEBUG_HUD_FRAGMENTATION_INTERVAL) {
-                gMemBudget.assetHeapFragmentation = stats.runtimeHeap->CalculateFragmentation() * 100.0f;
-                gMemBudget.assetHeapValidate = stats.runtimeHeap->Validate();
-                gMemBudget.assetLastFragTm = 0;
-            }
-            ImGui::Text("RuntimeHeap fragmentation: %.1f%%", gMemBudget.assetHeapFragmentation);
-
-            ImGui::TextColored(gMemBudget.assetHeapValidate ? ImGui::ColorToImVec4(COLOR_GREEN) : ImGui::ColorToImVec4(COLOR_RED), 
-                               "RuntimeHeap validate: %s", gMemBudget.assetHeapValidate ? "Ok" : "Fail");
-
-            ImGui::Text("InitHeapSize: %_$llu", stats.initHeapSize);
-        }
-
         gfxOpen = ImGui::CollapsingHeader("Graphics", nullptr, gfxOpen ? ImGuiTreeNodeFlags_DefaultOpen : 0);
         if (gfxOpen) {
             GfxBudgetStats stats;

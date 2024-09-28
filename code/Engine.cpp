@@ -121,7 +121,7 @@ namespace Engine
         gfxCmdBeginSwapchainRenderPass();
         gfxCmdEndSwapchainRenderPass();
         gfxEndCommandBuffer();
-        EndFrame(dt);
+        EndFrame();
 
         if (gEng.initResourcesGroup.IsLoadFinished()) {
             for (EngineInitializeResourcesPair p : gEng.initResourcesCallbacks)
@@ -223,7 +223,7 @@ bool Engine::Initialize()
     }
 
     // Asset manager
-    if (!::_private::assetInitialize() || !Asset::Initialize()) {
+    if (!Asset::Initialize()) {
         LOG_ERROR("Initializing AssetManager failed");
         return false;
     }
@@ -294,8 +294,6 @@ void Engine::Release()
         }
         DebugDraw::Release();
     } 
-
-    ::_private::assetRelease();
 
     if (gEng.initResourcesGroup.mHandle.IsValid()) {
         gEng.initResourcesGroup.Unload();
@@ -377,7 +375,7 @@ void Engine::BeginFrame(float dt)
     gEng.rawFrameStartTime = Timer::GetTicks();
 }
 
-void Engine::EndFrame(float dt)
+void Engine::EndFrame()
 {
     ASSERT(gEng.initialized);
     ASSERT_MSG(!gEng.endFrameCalled, "Cannot call EndFrame twice");
@@ -391,10 +389,7 @@ void Engine::EndFrame(float dt)
 
     if (!SettingsJunkyard::Get().graphics.headless) {
         ::_private::gfxEndFrame();
-        ::_private::assetCollectGarbage();
     }
-
-    ::_private::assetUpdateCache(dt);
 
     MemTempAllocator::Reset();
 

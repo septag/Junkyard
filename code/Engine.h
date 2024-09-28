@@ -15,7 +15,7 @@ namespace Engine
     API void Release();
 
     API void BeginFrame(float dt);
-    API void EndFrame(float dt);
+    API void EndFrame();
 
     API uint64 GetFrameIndex();
     API const SysInfo& GetSysInfo();

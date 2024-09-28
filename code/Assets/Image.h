@@ -34,18 +34,10 @@ struct ImageLoadParams
     GfxSamplerWrapMode samplerWrap = GfxSamplerWrapMode::Default;
 };
 
-API AssetHandleImage assetLoadImage(const char* path, const ImageLoadParams& params, AssetBarrier barrier = AssetBarrier());
-API GfxImageHandle assetGetImage(AssetHandleImage imageHandle);
-API GfxImageHandle assetGetWhiteImage1x1();
-
-namespace _private
-{
-    bool assetInitializeImageManager();
-    void assetReleaseImageManager();
-}
-
 namespace Asset
 {
+    API bool InitializeImageManager();
+    API void ReleaseImageManager();
     API AssetHandleImage LoadImage(const char* path, const ImageLoadParams& params, const AssetGroup& group);
 }
 

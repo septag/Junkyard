@@ -25,22 +25,20 @@
 
 #include "../Engine.h"
 
-static constexpr uint32 kNumCubes = 10;
+static constexpr uint32 NUM_CUBES = 10;
 
 struct AppImpl : AppCallbacks
 {
-    GfxPipelineHandle pipeline;
-    GfxBufferHandle uniformBuffer;
-    GfxDynamicUniformBuffer transformsBuffer;
-    GfxDescriptorSetLayoutHandle dsLayout;
+    GfxPipelineHandle mPipeline;
+    GfxBufferHandle mUniformBuffer;
+    GfxDynamicUniformBuffer mTransformBuffer;
+    GfxDescriptorSetLayoutHandle mDSLayout;
+    GfxDescriptorSetHandle mDescriptorSet;
+    AssetHandleShader mUnlitShader;
 
-    AssetHandleModel modelAsset;
-    AssetHandleImage testImageAssets[kNumCubes];
-    AssetHandleShader modelShaderAsset;
-    GfxDescriptorSetHandle descriptorSet;
-    CameraFPS   fpsCam;
-    CameraOrbit orbitCam;
-    Camera*     cam;
+    CameraFPS   mFpsCam;
+    CameraOrbit mOrbitCam;
+    Camera*     mCam;
 
     struct Vertex 
     {
@@ -61,30 +59,35 @@ struct AppImpl : AppCallbacks
 
     bool Initialize() override
     {
+        ASSERT_MSG(0, "Not fully implemented yet");
+
         Vfs::HelperMountDataAndShaders(SettingsJunkyard::Get().engine.connectToServer);
 
         if (!Engine::Initialize())
             return false;
 
-        if (!CreateGraphicsObjects())
-            return false;
-
-        fpsCam.SetLookAt(Float3(0, -2.0f, 3.0f), FLOAT3_ZERO);
-        orbitCam.SetLookAt(Float3(0, -2.0f, 3.0f), FLOAT3_ZERO);
-        cam = &orbitCam;
+        mFpsCam.SetLookAt(Float3(0, -2.0f, 3.0f), FLOAT3_ZERO);
+        mOrbitCam.SetLookAt(Float3(0, -2.0f, 3.0f), FLOAT3_ZERO);
+        mCam = &mOrbitCam;
 
         Engine::RegisterShortcut("TAB", [](void* userData) {
            AppImpl* app = reinterpret_cast<AppImpl*>(userData);
-           if (app->cam == &app->orbitCam) {
-               app->fpsCam.SetViewMat(app->cam->GetViewMat());
-               app->cam = &app->fpsCam;
+           if (app->mCam == &app->mOrbitCam) {
+               app->mFpsCam.SetViewMat(app->mCam->GetViewMat());
+               app->mCam = &app->mFpsCam;
            }
            else {
-               app->cam = &app->orbitCam;
+               app->mCam = &app->mOrbitCam;
            }
         }, this);
 
         LOG_INFO("Use right mouse button to rotate camera. And [TAB] to switch between Orbital and FPS (WASD) camera");
+
+        {
+            AssetGroup group = Engine::RegisterInitializeResources(AppImpl::CreateGraphicsResources, this);
+            mUnlitShader = Asset::LoadShader("/shaders/Unlit.hlsl", {}, group);
+        }
+
 
         return true;
     };
@@ -93,10 +96,6 @@ struct AppImpl : AppCallbacks
     {
         ReleaseGraphicsObjects();
 
-        for (uint32 i = 0; i < kNumCubes; i++) 
-            assetUnload(testImageAssets[i]);
-        assetUnload(modelAsset);
-        assetUnload(modelShaderAsset);
 
         Engine::Release();
     };
@@ -105,7 +104,7 @@ struct AppImpl : AppCallbacks
     {
         PROFILE_ZONE();
 
-        cam->HandleMovementKeyboard(dt, 10.0f, 5.0f);
+        mCam->HandleMovementKeyboard(dt, 10.0f, 5.0f);
 
         Engine::BeginFrame(dt);
         
@@ -122,12 +121,12 @@ struct AppImpl : AppCallbacks
 
             // We are drawing to swapchain, so we need ClipSpaceTransform
             FrameTransform ubo {
-                .viewMat = cam->GetViewMat(),
-                .projMat = gfxGetClipspaceTransform() * cam->GetPerspectiveMat(width, height)
+                .viewMat = mCam->GetViewMat(),
+                .projMat = gfxGetClipspaceTransform() * mCam->GetPerspectiveMat(width, height)
             };
 
-            gfxCmdUpdateBuffer(uniformBuffer, &ubo, sizeof(ubo));
-            gfxCmdBindPipeline(pipeline);
+            gfxCmdUpdateBuffer(mUniformBuffer, &ubo, sizeof(ubo));
+            gfxCmdBindPipeline(mPipeline);
 
             // model transform
             // Viewport
@@ -141,15 +140,16 @@ struct AppImpl : AppCallbacks
             Recti scissor(0, 0, App::GetFramebufferWidth(), App::GetFramebufferHeight());
             gfxCmdSetScissors(0, 1, &scissor, true);
 
-            Model* model = assetGetModel(modelAsset);
+            Model* model = nullptr;
+            ASSERT(model);
 
-            for (uint32 inst = 0; inst < kNumCubes; inst++) {
+            for (uint32 inst = 0; inst < NUM_CUBES; inst++) {
                 Mat4 modelMat = mat4Translate(float(inst)*1.5f, 0, 0);
-                *((Mat4*)transformsBuffer.Data(inst)) = modelMat;
+                *((Mat4*)mTransformBuffer.Data(inst)) = modelMat;
             }
-            transformsBuffer.Flush(0u, kNumCubes);
+            mTransformBuffer.Flush(0u, NUM_CUBES);
 
-            for (uint32 inst = 0; inst < kNumCubes; inst++) {
+            for (uint32 inst = 0; inst < NUM_CUBES; inst++) {
                 for (uint32 i = 0; i < model->numNodes; i++) {
                     const ModelNode& node = model->nodes[i];
                     if (node.meshId) {
@@ -162,13 +162,13 @@ struct AppImpl : AppCallbacks
                         gfxCmdBindIndexBuffer(mesh.gpuBuffers.indexBuffer, 0, GfxIndexType::Uint32);
 
                         uint32 materialData[] = {inst, 0, 0, 0};
-                        gfxCmdPushConstants(pipeline, GfxShaderStage::Fragment, materialData, sizeof(materialData));
+                        gfxCmdPushConstants(mPipeline, GfxShaderStage::Fragment, materialData, sizeof(materialData));
     
                         // DescriptorSets
                         for (uint32 smi = 0; smi < mesh.numSubmeshes; smi++) {
-                            uint32 dynOffset = transformsBuffer.Offset(inst);
+                            uint32 dynOffset = mTransformBuffer.Offset(inst);
     
-                            gfxCmdBindDescriptorSets(pipeline, 1, &descriptorSet, &dynOffset, 1);
+                            gfxCmdBindDescriptorSets(mPipeline, 1, &mDescriptorSet, &dynOffset, 1);
                             gfxCmdDrawIndexed(mesh.numIndices, 1, 0, 0, 0);
                         }    
                     }  
@@ -177,7 +177,7 @@ struct AppImpl : AppCallbacks
         }
 
         {
-            DebugDraw::DrawGroundGrid(*cam, width, height, DebugDrawGridProperties { 
+            DebugDraw::DrawGroundGrid(*mCam, width, height, DebugDrawGridProperties { 
                 .lineColor = Color(0x565656), 
                 .boldLineColor = Color(0xd6d6d6) 
             });
@@ -189,9 +189,9 @@ struct AppImpl : AppCallbacks
             DebugHud::DrawQuickFrameInfo(dt);
 
             #if 0
-            Mat4 view = fpsCam.GetViewMat();
+            Mat4 view = mFpsCam.GetViewMat();
             ImGuizmo::ViewManipulate(view.f, 0.1f, ImVec2(5.0f, height - 128.0f - 5.0f), ImVec2(128, 128), 0xff000000);
-            fpsCam.SetViewMat(view);
+            mFpsCam.SetViewMat(view);
             #endif
 
             ImGui::DrawFrame();
@@ -200,7 +200,7 @@ struct AppImpl : AppCallbacks
         gfxCmdEndSwapchainRenderPass();
         gfxEndCommandBuffer();        
 
-        Engine::EndFrame(dt);
+        Engine::EndFrame();
     }
     
     void OnEvent(const AppEvent& ev) override
@@ -214,12 +214,13 @@ struct AppImpl : AppCallbacks
         }
 
         if (!ImGui::IsAnyItemHovered() && !ImGui::GetIO().WantCaptureMouse && !ImGuizmo::IsOver())
-            cam->HandleRotationMouse(ev, 0.2f, 0.1f);
+            mCam->HandleRotationMouse(ev, 0.2f, 0.1f);
     }
 
-    bool CreateGraphicsObjects()
+    static void CreateGraphicsResources(void* userData)
     {
-        // Graphics Objects
+        AppImpl* self = (AppImpl*)userData;
+
         GfxVertexBufferBindingDesc vertexBufferBindingDesc {
             .binding = 0,
             .stride = sizeof(Vertex),
@@ -242,7 +243,6 @@ struct AppImpl : AppCallbacks
         };
 
         {
-            AssetBarrierScope b;
             ModelLoadParams loadParams {
                 .layout = {
                     .vertexAttributes = {
@@ -256,21 +256,10 @@ struct AppImpl : AppCallbacks
                 .vertexBufferUsage = GfxBufferUsage::Immutable,
                 .indexBufferUsage = GfxBufferUsage::Immutable
             };
-
-            modelAsset = assetLoadModel("/data/models/HighPolyBox/HighPolyBox.gltf", loadParams, b.Barrier());
-            modelShaderAsset = assetLoadShader("/shaders/Unlit.hlsl", ShaderLoadParams {}, b.Barrier());
-            for (uint32 i = 0; i < kNumCubes; i++) {
-                char imagePath[128];
-                strPrintFmt(imagePath, sizeof(imagePath), "/data/images/gen/%u.png", i+1);
-                testImageAssets[i] = assetLoadImage(imagePath, ImageLoadParams {}, b.Barrier());
-            }
         }
-        if (!assetIsAlive(modelAsset) || !assetIsAlive(modelShaderAsset))
-            return false;
-
 
         {
-            AssetObjPtrScope<GfxShader> shader(modelShaderAsset);
+            AssetObjPtrScope<GfxShader> shader(self->mUnlitShader);
             const GfxDescriptorSetLayoutBinding bindingLayout[] = {
                 {
                     .name = "ModelTransform",
@@ -286,19 +275,22 @@ struct AppImpl : AppCallbacks
                     .name = "BaseColorTextures",
                     .type = GfxDescriptorType::CombinedImageSampler,
                     .stages = GfxShaderStage::Fragment,
-                    .arrayCount = kNumCubes
+                    .arrayCount = NUM_CUBES
                 }
             };
 
-            dsLayout = gfxCreateDescriptorSetLayout(*shader, bindingLayout, CountOf(bindingLayout), GfxDescriptorSetLayoutFlags::None);
+            self->mDSLayout = gfxCreateDescriptorSetLayout(*shader, bindingLayout, CountOf(bindingLayout), GfxDescriptorSetLayoutFlags::None);
         }
 
-        uniformBuffer = gfxCreateBuffer(GfxBufferDesc {
-                                        .size = sizeof(FrameTransform),
-                                        .type = GfxBufferType::Uniform,
-                                        .usage = GfxBufferUsage::Stream});
+        GfxBufferDesc uniformBufferDesc {
+            .size = sizeof(FrameTransform),
+            .type = GfxBufferType::Uniform,
+            .usage = GfxBufferUsage::Stream
+        };
 
-        transformsBuffer = gfxCreateDynamicUniformBuffer(kNumCubes, sizeof(WorldTransform));
+        self->mUniformBuffer = gfxCreateBuffer(uniformBufferDesc);
+
+        self->mTransformBuffer = gfxCreateDynamicUniformBuffer(NUM_CUBES, sizeof(WorldTransform));
 
         GfxPushConstantDesc pushConstant = {
             .name = "Material",
@@ -306,11 +298,12 @@ struct AppImpl : AppCallbacks
             .range = {0, sizeof(uint32)*4}
         };
 
-        pipeline = gfxCreatePipeline(GfxPipelineDesc {
-            .shader = assetGetShader(modelShaderAsset),
+        AssetObjPtrScope<GfxShader> unlitShader(self->mUnlitShader);
+        GfxPipelineDesc pipelineDesc {
+            .shader = unlitShader,
             .inputAssemblyTopology = GfxPrimitiveTopology::TriangleList,
             .numDescriptorSetLayouts = 1,
-            .descriptorSetLayouts = &dsLayout,
+            .descriptorSetLayouts = &self->mDSLayout,
             .numPushConstants = 1,
             .pushConstants = &pushConstant,
             .numVertexInputAttributes = CountOf(vertexInputAttDescs),
@@ -329,43 +322,44 @@ struct AppImpl : AppCallbacks
                 .depthWriteEnable = true,
                 .depthCompareOp = GfxCompareOp::Less
             }
-        });
+        };
+
+        self->mPipeline = gfxCreatePipeline(pipelineDesc);
 
         // TODO: TEMP create descriptor sets and assign them to material userData for later rendering
-        GfxImageHandle images[kNumCubes];
-        for (uint32 i = 0; i < kNumCubes; i++)
-            images[i] = assetGetImage(testImageAssets[i]);
-        descriptorSet = gfxCreateDescriptorSet(dsLayout);
+        GfxImageHandle images[NUM_CUBES];
+        for (uint32 i = 0; i < NUM_CUBES; i++)
+            images[i] = GfxImageHandle();
+        self->mDescriptorSet = gfxCreateDescriptorSet(self->mDSLayout);
         GfxDescriptorBindingDesc descBindings[] = {
             {
                 .name = "ModelTransform",
                 .type = GfxDescriptorType::UniformBufferDynamic,
-                .buffer = {transformsBuffer.buffer, 0, transformsBuffer.stride}
+                .buffer = {self->mTransformBuffer.buffer, 0, self->mTransformBuffer.stride}
             },
             {
                 .name = "FrameTransform",
                 .type = GfxDescriptorType::UniformBuffer,
-                .buffer = { uniformBuffer, 0, sizeof(FrameTransform) }
+                .buffer = { self->mUniformBuffer, 0, sizeof(FrameTransform) }
             },
             {
                 .name = "BaseColorTextures",
                 .type = GfxDescriptorType::CombinedImageSampler,
-                .imageArrayCount = kNumCubes,
+                .imageArrayCount = NUM_CUBES,
                 .imageArray = images
             }
         };
-        gfxUpdateDescriptorSet(descriptorSet, CountOf(descBindings), descBindings);
-        return true;
+        gfxUpdateDescriptorSet(self->mDescriptorSet, CountOf(descBindings), descBindings);
     }
 
     void ReleaseGraphicsObjects()
     {
         gfxWaitForIdle();
-        gfxDestroyDescriptorSet(descriptorSet);
-        gfxDestroyPipeline(pipeline);
-        gfxDestroyDescriptorSetLayout(dsLayout);
-        gfxDestroyBuffer(uniformBuffer);
-        gfxDestroyDynamicUniformBuffer(transformsBuffer);
+        gfxDestroyDescriptorSet(mDescriptorSet);
+        gfxDestroyPipeline(mPipeline);
+        gfxDestroyDescriptorSetLayout(mDSLayout);
+        gfxDestroyBuffer(mUniformBuffer);
+        gfxDestroyDynamicUniformBuffer(mTransformBuffer);
     }
 };
 

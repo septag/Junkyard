@@ -40,7 +40,7 @@ struct AppImpl final : AppCallbacks
     {
         Engine::BeginFrame(dt);
         Thread::Sleep(16);
-        Engine::EndFrame(dt);
+        Engine::EndFrame();
     }
     
     void OnEvent(const AppEvent&) override
