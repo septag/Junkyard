@@ -2,13 +2,22 @@
 
 from PIL import Image, ImageDraw, ImageFont
 import os
+import argparse
+import sys
 
-IMAGE_W = 1024
-IMAGE_H = 1024
+arg_parser = argparse.ArgumentParser(description='')
+arg_parser.add_argument('--outputdir', help='RootDir of generated images', default='./images')
+arg_parser.add_argument('--datasize', help='Total data size of the images in Gigabytes', default='1')
+arg_parser.add_argument('--imagedim', help='Dimension of the generated image in pixels', default='1024')
+args = arg_parser.parse_args(sys.argv[1:])
+
+IMAGE_W = int(args.imagedim)
+IMAGE_H = int(args.imagedim)
 STROKE_COLOR = (255, 255, 255, 255)
 BG_COLOR = (0, 0, 0, 255)
-MAX_DATA_SIZE = 4*1024*1024*1024
 IMAGE_FORMAT = "tga"
+OUTPUT_DIR = args.outputdir
+MAX_DATA_SIZE = int(args.datasize)*1024*1024*1024
 
 image = Image.new('RGBA', (IMAGE_W, IMAGE_H))
 canvas = ImageDraw.Draw(image)
@@ -29,13 +38,14 @@ meta_template = """
         format: "astc_6x6"
     },
     pc: {
-        format: "bc7"
+        format: "bc1"
     }
 }
 """
 
-if not os.path.exists('images'): os.mkdir('images')
-os.chdir('images')
+if not os.path.exists(OUTPUT_DIR): os.makedirs(OUTPUT_DIR)
+cur_dir = os.curdir
+os.chdir(OUTPUT_DIR)
 
 print('Generating images ...')
 while True:
@@ -60,6 +70,6 @@ while True:
     if total_size >= MAX_DATA_SIZE:
         break
 
-os.chdir('..')
+os.chdir(cur_dir)
 print('Generated total {0} mb of image data'.format(total_size/(1024*1024)))
 

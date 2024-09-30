@@ -15,14 +15,15 @@
     </ProjectConfiguration>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="..\..\..\..\code\Tests\AssetTest.cpp" />
+    <ClCompile Include="..\..\..\..\code\Tests\TestAsset.cpp" />
   </ItemGroup>
   <PropertyGroup Label="Globals">
     <VCProjectVersion>16.0</VCProjectVersion>
     <Keyword>Win32Proj</Keyword>
     <ProjectGuid>{609F9710-4103-4FB5-8D62-92EC7EAAEAE0}</ProjectGuid>
-    <RootNamespace>AssetTest</RootNamespace>
+    <RootNamespace>TestAsset</RootNamespace>
     <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+    <ProjectName>TestAsset</ProjectName>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
