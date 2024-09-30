@@ -716,13 +716,7 @@ Span<char*> strSplitWhitespace(const char* str, MemAllocator* alloc)
 
             s = strSkipWhitespace(s);
 
-            if (*s) {
-                start = s + 1;
-                ++s;
-            }
-            else {
-                start = s;
-            }
+            start = s;
         }
         else {
             ++s;

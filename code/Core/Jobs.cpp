@@ -827,7 +827,7 @@ void Initialize(const JobsInitParams& initParams)
             ASSERT(tdata->curFiber);
 
             ASSERT_MSG(!tdata->curFiber->tracyZonesStack.IsFull(), "Profile sampling stack is too deep. Either remove samples or increase the kJobsMaxTracyStackDepth");
-            tdata->curFiber->tracyZonesStack.Add(JobsTracyZone {*ctx, sourceLoc});
+            tdata->curFiber->tracyZonesStack.Push(JobsTracyZone {*ctx, sourceLoc});
         }
     };
 
@@ -840,12 +840,12 @@ void Initialize(const JobsInitParams& initParams)
             if (fiber->tracyZonesStack.Count()) {
                 if (fiber->tracyZonesStack.Last().ctx.id != ctx->id) {
                     TracyCZoneEnd(fiber->tracyZonesStack.Last().ctx);
-                    fiber->tracyZonesStack.RemoveLast();
+                    fiber->tracyZonesStack.PopLast();
                     return true;
                 }
                 else {
                     // We have pop one item from the stack anyways, since the Zone has been ended by scope destructor
-                    fiber->tracyZonesStack.RemoveLast();
+                    fiber->tracyZonesStack.PopLast();
                 }            
             }        
         }
