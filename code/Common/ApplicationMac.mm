@@ -228,9 +228,9 @@ bool Run(const AppDesc& desc)
         gApp.clipboard = (char*)Mem::Alloc(gApp.desc.clipboardSizeBytes);
     
     if (desc.windowTitle)
-        strCopy(gApp.windowTitle, sizeof(gApp.windowTitle), desc.windowTitle);
+        Str::Copy(gApp.windowTitle, sizeof(gApp.windowTitle), desc.windowTitle);
     else
-        strCopy(gApp.windowTitle, sizeof(gApp.windowTitle), "Junkyard");
+        Str::Copy(gApp.windowTitle, sizeof(gApp.windowTitle), "Junkyard");
     
     _InitKeyTable();
     
@@ -417,7 +417,7 @@ bool SetClipboardString(const char* str)
         [pasteboard setString:@(str) forType:NSPasteboardTypeString];
     }
     
-    strCopy(gApp.clipboard, (uint32)gApp.clipboardSize, str);
+    Str::Copy(gApp.clipboard, (uint32)gApp.clipboardSize, str);
     return true;
 }
 
@@ -448,7 +448,7 @@ const char* GetClipboardString(void)
         if (!str) {
             return gApp.clipboard;
         }
-        strCopy(gApp.clipboard, (uint32)gApp.clipboardSize, [str UTF8String]);
+        Str::Copy(gApp.clipboard, (uint32)gApp.clipboardSize, [str UTF8String]);
     }
     return gApp.clipboard;
 }
