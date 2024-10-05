@@ -44,9 +44,9 @@
          runnableDebuggingMode = "0">
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "14E748CD2C76360100F5644B"
-            BuildableName = "TestIO.app"
-            BlueprintName = "TestIO"
+            BlueprintIdentifier = "ABF103ED2A642B2300D853CC"
+            BuildableName = "Test1.app"
+            BlueprintName = "Test1"
             ReferencedContainer = "container:Junkyard.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>

@@ -143,7 +143,7 @@ void OS::GetSysInfo(SysInfo* info)
     // TODO
 }
 
-OSProcess::SysProcess() :
+OSProcess::OSProcess() :
     mExitCode(-1),
     mTermSignalCode(0)
 {
@@ -332,7 +332,7 @@ bool OS::IsDebuggerPresent()
     return (info.kp_proc.p_flag & P_TRACED) != 0;
 }
 
-char* OS::GetCurrentDir(char* dst, size_t dstSize)
+char* OS::GetHomeDir(char* dst, size_t dstSize)
 {
     #if PLATFORM_OSX
         const char* homeDir = getenv("HOME");
