@@ -38,7 +38,7 @@ JsonContext* Json::Parse(const char* json5, uint32 json5Len, JsonErrorLocation* 
         .user_data = &tokens
     };
 
-    json5Len = json5Len == 0 ? json5Len : strLen(json5);
+    json5Len = json5Len == 0 ? json5Len : Str::Len(json5);
     cj5_result r = cj5_parse_with_factory(json5, (int)json5Len, factory);
 
     if (r.error == CJ5_ERROR_NONE) {

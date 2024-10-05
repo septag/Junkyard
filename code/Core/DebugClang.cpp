@@ -83,13 +83,13 @@ void Debug::ResolveStacktrace(uint16 numStacktrace, void* const* stackframes, De
         const void* addr = stackframes[i];
         Dl_info info;
         if (dladdr(addr, &info)) {
-            strCopy(entries[i].filename, sizeof(entries[i].filename), info.dli_fname);
-            strCopy(entries[i].name, sizeof(entries[i].name), info.dli_sname);
+            Str::Copy(entries[i].filename, sizeof(entries[i].filename), info.dli_fname);
+            Str::Copy(entries[i].name, sizeof(entries[i].name), info.dli_sname);
 
             int status = 0;
             char* demangled = abi::__cxa_demangle(entries[i].name, 0, 0, &status);
             if (status == 0)
-                strCopy(entries[i].name, sizeof(entries[i].name), demangled);
+                Str::Copy(entries[i].name, sizeof(entries[i].name), demangled);
             ::free(demangled);
         }
     }

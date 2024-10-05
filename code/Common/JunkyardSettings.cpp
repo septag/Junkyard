@@ -49,11 +49,11 @@ static SettingsJunkyardContext gSettingsJunkyard;
 
 static SettingsEngine::LogLevel settingsParseEngineLogLevel(const char* strLogLevel)
 {
-    if (strIsEqualNoCase(strLogLevel, "Error"))           return SettingsEngine::LogLevel::Error;
-    else if (strIsEqualNoCase(strLogLevel, "Warning"))    return SettingsEngine::LogLevel::Warning;
-    else if (strIsEqualNoCase(strLogLevel, "Info"))       return SettingsEngine::LogLevel::Info;
-    else if (strIsEqualNoCase(strLogLevel, "Verbose"))    return SettingsEngine::LogLevel::Verbose;
-    else if (strIsEqualNoCase(strLogLevel, "Debug"))      return SettingsEngine::LogLevel::Debug;
+    if (Str::IsEqualNoCase(strLogLevel, "Error"))           return SettingsEngine::LogLevel::Error;
+    else if (Str::IsEqualNoCase(strLogLevel, "Warning"))    return SettingsEngine::LogLevel::Warning;
+    else if (Str::IsEqualNoCase(strLogLevel, "Info"))       return SettingsEngine::LogLevel::Info;
+    else if (Str::IsEqualNoCase(strLogLevel, "Verbose"))    return SettingsEngine::LogLevel::Verbose;
+    else if (Str::IsEqualNoCase(strLogLevel, "Debug"))      return SettingsEngine::LogLevel::Debug;
     else                                                  return SettingsEngine::LogLevel::Default;
 }
 
@@ -64,131 +64,131 @@ bool SettingsJunkyardParser::ParseSetting(uint32 categoryId, const char* key, co
 
     if (category == SettingsCategory::App) {
         SettingsApp* app = &gSettingsJunkyard.settings.app;
-        if (strIsEqualNoCase(key, "launchMinimized")) {
-            app->launchMinimized = strToBool(value);
+        if (Str::IsEqualNoCase(key, "launchMinimized")) {
+            app->launchMinimized = Str::ToBool(value);
             return true;
         }
     }
     else if (category == SettingsCategory::Engine) {
         SettingsEngine* engine = &gSettingsJunkyard.settings.engine;
-        if (strIsEqualNoCase(key, "connectToServer")) {
-            engine->connectToServer = strToBool(value);
+        if (Str::IsEqualNoCase(key, "connectToServer")) {
+            engine->connectToServer = Str::ToBool(value);
             return true;
         }
-        else if (strIsEqualNoCase(key, "remoteServicesUrl")) {
+        else if (Str::IsEqualNoCase(key, "remoteServicesUrl")) {
             engine->remoteServicesUrl = value;
             return true;
         }
-        else if (strIsEqualNoCase(key, "logLevel")) {
+        else if (Str::IsEqualNoCase(key, "logLevel")) {
             engine->logLevel = settingsParseEngineLogLevel(value);
             return true;
         }
-        else if (strIsEqualNoCase(key, "jobsNumShortTaskThreads")) {
-            engine->jobsNumShortTaskThreads = strToUint(value);
+        else if (Str::IsEqualNoCase(key, "jobsNumShortTaskThreads")) {
+            engine->jobsNumShortTaskThreads = Str::ToUint(value);
             return true;
         }
-        else if (strIsEqualNoCase(key, "jobsNumLongTaskThreads")) {
-            engine->jobsNumLongTaskThreads = strToUint(value);
+        else if (Str::IsEqualNoCase(key, "jobsNumLongTaskThreads")) {
+            engine->jobsNumLongTaskThreads = Str::ToUint(value);
             return true;
         }
-        else if (strIsEqualNoCase(key, "debugAllocations")) {
-            engine->debugAllocations = strToBool(value);
+        else if (Str::IsEqualNoCase(key, "debugAllocations")) {
+            engine->debugAllocations = Str::ToBool(value);
             return true;
         }
-        else if (strIsEqualNoCase(key, "breakOnErrors")) {
-            engine->breakOnErrors = strToBool(value);
+        else if (Str::IsEqualNoCase(key, "breakOnErrors")) {
+            engine->breakOnErrors = Str::ToBool(value);
             return true;
         }
-        else if (strIsEqualNoCase(key, "treatWarningsAsErrors")) {
-            engine->treatWarningsAsErrors = strToBool(value);
+        else if (Str::IsEqualNoCase(key, "treatWarningsAsErrors")) {
+            engine->treatWarningsAsErrors = Str::ToBool(value);
             return true;
         }
-        else if (strIsEqualNoCase(key, "enableMemPro")) {
-            engine->enableMemPro = strToBool(value);
+        else if (Str::IsEqualNoCase(key, "enableMemPro")) {
+            engine->enableMemPro = Str::ToBool(value);
             return true;            
         }
-        else if (strIsEqualNoCase(key, "useCacheOnly")) {
-            engine->useCacheOnly = strToBool(value);
+        else if (Str::IsEqualNoCase(key, "useCacheOnly")) {
+            engine->useCacheOnly = Str::ToBool(value);
             return true;
         }
     }
     else if (category == SettingsCategory::Graphics) {
         SettingsGraphics* graphics = &gSettingsJunkyard.settings.graphics;
-        if (strIsEqualNoCase(key, "enable")) {
-            graphics->enable = strToBool(value);
+        if (Str::IsEqualNoCase(key, "enable")) {
+            graphics->enable = Str::ToBool(value);
             return true;
         }
-        else if (strIsEqualNoCase(key, "validate")) {
-            graphics->validate = strToBool(value);
+        else if (Str::IsEqualNoCase(key, "validate")) {
+            graphics->validate = Str::ToBool(value);
             return true;
         }
-        else if (strIsEqualNoCase(key, "headless")) {
-            graphics->headless = strToBool(value);
+        else if (Str::IsEqualNoCase(key, "headless")) {
+            graphics->headless = Str::ToBool(value);
             return true;
         }
-        else if (strIsEqualNoCase(key, "SurfaceSRGB")) {
-            graphics->surfaceSRGB = strToBool(value);
+        else if (Str::IsEqualNoCase(key, "SurfaceSRGB")) {
+            graphics->surfaceSRGB = Str::ToBool(value);
             return true;
         }
-        else if (strIsEqualNoCase(key, "listExtensions")) {
-            graphics->listExtensions = strToBool(value);
+        else if (Str::IsEqualNoCase(key, "listExtensions")) {
+            graphics->listExtensions = Str::ToBool(value);
             return true;
         }
-        else if (strIsEqualNoCase(key, "validateBestPractices")) {
-            graphics->validateBestPractices = strToBool(value);
+        else if (Str::IsEqualNoCase(key, "validateBestPractices")) {
+            graphics->validateBestPractices = Str::ToBool(value);
             return true;
         }
-        else if (strIsEqualNoCase(key, "validateSynchronization")) {
-            graphics->validateSynchronization = strToBool(value);
+        else if (Str::IsEqualNoCase(key, "validateSynchronization")) {
+            graphics->validateSynchronization = Str::ToBool(value);
             return true;
         }
-        else if (strIsEqualNoCase(key, "shaderDumpIntermediates")) {
-            graphics->shaderDumpIntermediates = strToBool(value);
+        else if (Str::IsEqualNoCase(key, "shaderDumpIntermediates")) {
+            graphics->shaderDumpIntermediates = Str::ToBool(value);
             return true;
         }
-        else if (strIsEqualNoCase(key, "shaderDumpProperties")) {
-            graphics->shaderDumpProperties = strToBool(value);
+        else if (Str::IsEqualNoCase(key, "shaderDumpProperties")) {
+            graphics->shaderDumpProperties = Str::ToBool(value);
             return true;
         }
-        else if (strIsEqualNoCase(key, "shaderDebug")) {
-            graphics->shaderDebug = strToBool(value);
+        else if (Str::IsEqualNoCase(key, "shaderDebug")) {
+            graphics->shaderDebug = Str::ToBool(value);
             return true;
         }
-        else if (strIsEqualNoCase(key, "enableGpuProfile")) {
-            graphics->enableGpuProfile = strToBool(value);
+        else if (Str::IsEqualNoCase(key, "enableGpuProfile")) {
+            graphics->enableGpuProfile = Str::ToBool(value);
             return true;
         }
-        else if (strIsEqualNoCase(key, "enableImGui")) {
-            graphics->enableImGui = strToBool(value);
+        else if (Str::IsEqualNoCase(key, "enableImGui")) {
+            graphics->enableImGui = Str::ToBool(value);
             return true;
         }
-        else if (strIsEqualNoCase(key, "enableVsync")) {
-            graphics->enableVsync = strToBool(value);
+        else if (Str::IsEqualNoCase(key, "enableVsync")) {
+            graphics->enableVsync = Str::ToBool(value);
             return true;
         }
-        else if (strIsEqualNoCase(key, "trackResourceLeaks")) {
-            graphics->trackResourceLeaks = strToBool(value);
+        else if (Str::IsEqualNoCase(key, "trackResourceLeaks")) {
+            graphics->trackResourceLeaks = Str::ToBool(value);
             return true;
         }
     }
     else if (category == SettingsCategory::Tooling) {
         SettingsTooling* tooling = &gSettingsJunkyard.settings.tooling;
-        if (strIsEqualNoCase(key, "enableServer")) {
-            tooling->enableServer = strToBool(value);
+        if (Str::IsEqualNoCase(key, "enableServer")) {
+            tooling->enableServer = Str::ToBool(value);
             return true;
         }
-        else if (strIsEqualNoCase(key, "serverPort")) {
-            tooling->serverPort = static_cast<uint16>(strToInt(value));
+        else if (Str::IsEqualNoCase(key, "serverPort")) {
+            tooling->serverPort = static_cast<uint16>(Str::ToInt(value));
             return true;
         }
     }
     else if (category == SettingsCategory::Debug) {
         SettingsDebug* debug = &gSettingsJunkyard.settings.debug;
-        if (strIsEqualNoCase(key, "captureStacktraceForFiberProtector")) {
+        if (Str::IsEqualNoCase(key, "captureStacktraceForFiberProtector")) {
             debug->captureStacktraceForFiberProtector = true;
             return true;
         }
-        else if (strIsEqualNoCase(key, "captureStacktraceForTempAllocator")) {
+        else if (Str::IsEqualNoCase(key, "captureStacktraceForTempAllocator")) {
             debug->captureStacktraceForTempAllocator = true;
             return true;
         }

@@ -782,7 +782,7 @@ void Initialize(const JobsInitParams& initParams)
 
     for (uint32 i = 0; i < gJobs.numThreads[uint32(JobsType::LongTask)]; i++) {
         char name[32];
-        strPrintFmt(name, sizeof(name), "LongTask_%u", i+1);
+        Str::PrintFmt(name, sizeof(name), "LongTask_%u", i+1);
         gJobs.threads[uint32(JobsType::LongTask)][i].Start(ThreadDesc {
             .entryFn = _WorkerThread, 
             .userData = IntToPtr<uint64>((static_cast<uint64>(i+1) << 32) | uint32(JobsType::LongTask)), 
@@ -801,7 +801,7 @@ void Initialize(const JobsInitParams& initParams)
 
     for (uint32 i = 0; i < gJobs.numThreads[uint32(JobsType::ShortTask)]; i++) {
         char name[32];
-        strPrintFmt(name, sizeof(name), "ShortTask_%u", i+1);
+        Str::PrintFmt(name, sizeof(name), "ShortTask_%u", i+1);
         gJobs.threads[uint32(JobsType::ShortTask)][i].Start(ThreadDesc {
             .entryFn = _WorkerThread, 
             .userData = IntToPtr<uint64>((static_cast<uint64>(i+1) << 32) | uint32(JobsType::ShortTask)), 

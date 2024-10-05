@@ -172,9 +172,6 @@
     <ClInclude Include="..\..\code\Common\JunkyardSettings.h">
       <Filter>Common</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\code\Core\MathVector.h">
-      <Filter>Core</Filter>
-    </ClInclude>
     <ClInclude Include="..\..\code\Core\MathTypes.h">
       <Filter>Core</Filter>
     </ClInclude>

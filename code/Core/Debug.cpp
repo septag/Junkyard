@@ -119,19 +119,19 @@ void Debug::FiberScopeProtector_Check()
     char msg[512];
     
     if (FiberProtectorCtx().items.Count()) {
-        strPrintFmt(msg, sizeof(msg), "Found %u protected items in the fiber that are not destructed in the scope:", FiberProtectorCtx().items.Count());
+        Str::PrintFmt(msg, sizeof(msg), "Found %u protected items in the fiber that are not destructed in the scope:", FiberProtectorCtx().items.Count());
         Debug::Print(msg);
         if constexpr (PLATFORM_WINDOWS) Debug::Print("\n");
         
         DebugStacktraceEntry stacktraces[kDebugMaxFiberProtectorStackframes];
         for (const DebugFiberProtectorThreadContext::Item& item : FiberProtectorCtx().items) {
-            strPrintFmt(msg, sizeof(msg), "\t%s:", item.name);
+            Str::PrintFmt(msg, sizeof(msg), "\t%s:", item.name);
             Debug::Print(msg);
             if constexpr (PLATFORM_WINDOWS) Debug::Print("\n");
             if (item.numStackframes) {
                 Debug::ResolveStacktrace(item.numStackframes, item.stackframes, stacktraces);
                 for (uint16 i = 0; i < item.numStackframes; i++) {
-                    strPrintFmt(msg, sizeof(msg), "\t\t%s(%u): %s", stacktraces[i].filename, stacktraces[i].line, stacktraces[i].name);
+                    Str::PrintFmt(msg, sizeof(msg), "\t\t%s(%u): %s", stacktraces[i].filename, stacktraces[i].line, stacktraces[i].name);
                     Debug::Print(msg);
                     if constexpr (PLATFORM_WINDOWS) Debug::Print("\n");
                 }

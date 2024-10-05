@@ -117,6 +117,8 @@ namespace ModelUtil
 
     static void _CalculateTangents(ModelMesh* mesh, const ModelGeometryLayout& vertexLayout)
     {
+        using namespace M;
+
         uint32* indexBuffer = mesh->cpuBuffers.indexBuffer.Get();
 
         MemTempAllocator tmpAlloc;
@@ -154,7 +156,7 @@ namespace ModelUtil
             float t2 = w3.y - w1.y;
 
             float r = 1.0f / (s1 * t2 - s2 * t1);
-            if (!mathIsINF(r)) {
+            if (!IsINF(r)) {
                 Float3 sdir = Float3((t2 * x1 - t1 * x2)*r, (t2 * y1 - t1 * y2)*r, (t2 * z1 - t1 * z2)*r);
                 Float3 tdir = Float3((s1 * x2 - s2 * x1)*r, (s1 * y2 - s2 * y1)*r, (s1 * z2 - s2 * z1)*r);
 
@@ -176,14 +178,14 @@ namespace ModelUtil
             Float3 n = *((Float3*)(normalPtr + normalStride*i));
             Float3 t = tan1[i];
     
-            if (float3Dot(t, t) != 0) {
-                Float3 tangent = float3Norm(t - n*float3Dot(n, t));
+            if (Float3Dot(t, t) != 0) {
+                Float3 tangent = Float3Norm(t - n*Float3Dot(n, t));
                 *((Float3*)(tangentPtr + tangentStride*i)) = tangent;
     
                 // (Dot(Cross(n, t), tan2[a]) < 0.0F) ? -1.0F : 1.0F;
-                float handedness = (float3Dot(float3Cross(n, t), tan2[i]) < 0.0f) ? -1.0f : 1.0f;
+                float handedness = (Float3Dot(Float3Cross(n, t), tan2[i]) < 0.0f) ? -1.0f : 1.0f;
 
-                *((Float3*)(bitangentPtr + bitangentStride*i)) = float3Cross(n, tangent) * -handedness;
+                *((Float3*)(bitangentPtr + bitangentStride*i)) = Float3Cross(n, tangent) * -handedness;
             }
         }
     }
@@ -283,13 +285,13 @@ namespace GLTF
             ASSERT(gltfTexture);
             char texturePath[PATH_CHARS_MAX];
             {
-                char* dir = strCopy(texturePath, sizeof(texturePath), fileDir);
+                char* dir = Str::Copy(texturePath, sizeof(texturePath), fileDir);
                 if (*(dir - 1) != '/') {
                     dir[0] = '/';
                     dir[1] = '\0';
                     ++dir;
                 }
-                strConcat(dir, sizeof(texturePath), gltfTexture->image->uri);
+                Str::Concat(dir, sizeof(texturePath), gltfTexture->image->uri);
             }
 
 
@@ -300,7 +302,7 @@ namespace GLTF
                 tparams.samplerWrap = GLTF::_GetWrap((GLTFWrap)gltfTexture->sampler->wrap_s);
             }
 
-            uint32 texturePathLen = strLen(texturePath);
+            uint32 texturePathLen = Str::Len(texturePath);
             tex->texturePath = Mem::AllocCopy<char>(texturePath, texturePathLen+1, alloc);
             tex->params = tparams;
 
@@ -656,8 +658,8 @@ namespace GLTF
 
             if (mesh->name == nullptr) {
                 char name[32];
-                strPrintFmt(name, sizeof(name), "Mesh_%u", i);
-                mesh->name = Mem::AllocCopy<char>(name, strLen(name)+1, tmpAlloc);
+                Str::PrintFmt(name, sizeof(name), "Mesh_%u", i);
+                mesh->name = Mem::AllocCopy<char>(name, Str::Len(name)+1, tmpAlloc);
             }
 
             dstMesh->name = mesh->name;
@@ -723,13 +725,13 @@ namespace GLTF
             // Auto-generate name if it's not set
             if (srcNode->name == nullptr) {
                 char name[32];
-                strPrintFmt(name, sizeof(name), "Node_%u", i);
+                Str::PrintFmt(name, sizeof(name), "Node_%u", i);
                 srcNode->name = Mem::AllocCopy<char>(name, sizeof(name), tmpAlloc);
             }
 
             dstNode->localTransform = TRANSFORM3D_IDENT;
             dstNode->name = srcNode->name;
-            if (dstNode->name.Length() != strLen(srcNode->name)) {
+            if (dstNode->name.Length() != Str::Len(srcNode->name)) {
                 LOG_WARNING("Node: %s: name is too long (more than standard 31 characters), "
                             "Node setup will likely have errors", srcNode->name);
             }
@@ -737,7 +739,7 @@ namespace GLTF
             ASSERT_ALWAYS(!srcNode->has_scale, "Node: %s: Node scaling not supported yet", srcNode->name);
 
             if (srcNode->has_rotation) 
-                dstNode->localTransform.rot = quatToMat3(Quat(srcNode->rotation));
+                dstNode->localTransform.rot = Mat3::FromQuat(Quat(srcNode->rotation));
             if (srcNode->has_translation)
                 dstNode->localTransform.pos = Float3(srcNode->translation);
 
@@ -757,7 +759,7 @@ namespace GLTF
                 uint8* vbuffu8 = mesh.cpuBuffers.vertexBuffers[attr->binding].Get();
                 for (uint32 v = 0; v < mesh.numVertices; v++) {
                     Float3 pos = *((Float3*)(vbuffu8 + v*vertexStride + attr->offset));
-                    AABBAddPoint(&bounds, pos);
+                    AABB::AddPoint(&bounds, pos);
                 }
             }
             dstNode->bounds = bounds;

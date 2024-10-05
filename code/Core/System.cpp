@@ -67,7 +67,7 @@ static TimerInitializer gTimerInit;
 
 char* PathUtils::ToUnix(const char *path, char *dst, size_t dstSize)
 {
-    size_t len = strLen(path);
+    size_t len = Str::Len(path);
     len = Min<size_t>(len, dstSize - 1);
 
     for (int i = 0; i < len; i++) {
@@ -82,7 +82,7 @@ char* PathUtils::ToUnix(const char *path, char *dst, size_t dstSize)
 
 char* PathUtils::ToWin(const char *path, char *dst, size_t dstSize)
 {
-    size_t len = strLen(path);
+    size_t len = Str::Len(path);
     len = Min<size_t>(len, dstSize - 1);
 
     for (int i = 0; i < len; i++) {
@@ -99,7 +99,7 @@ char* PathUtils::GetFileExtension(const char *path, char *dst, size_t dstSize)
 {
     ASSERT(dstSize > 0);
 
-    int len = strLen(path);
+    int len = Str::Len(path);
     if (len > 0) {
         const char *start = strrchr(path, '/');
         #if PLATFORM_WINDOWS
@@ -112,7 +112,7 @@ char* PathUtils::GetFileExtension(const char *path, char *dst, size_t dstSize)
         for (const char *e = start; e < end; ++e) {
             if (*e != '.')
                 continue;
-            strCopy(dst, (uint32)dstSize, e);
+            Str::Copy(dst, (uint32)dstSize, e);
             return dst;
         }
     }
@@ -129,10 +129,10 @@ char* PathUtils::GetFilenameAndExtension(const char *path, char *dst, size_t dst
         r = strrchr(path, '\\');
     #endif
     if (r) {
-        strCopy(dst, (uint32)dstSize, r + 1);
+        Str::Copy(dst, (uint32)dstSize, r + 1);
     }
     else if (dst != path) {
-        strCopy(dst, (uint32)dstSize, path);
+        Str::Copy(dst, (uint32)dstSize, path);
     }
     return dst;
 }
@@ -145,10 +145,10 @@ char* PathUtils::GetFilename(const char* path, char* dst, size_t dstSize)
         r = strrchr(path, '\\');
     #endif
     if (r) {
-        strCopy(dst, (uint32)dstSize, r + 1);
+        Str::Copy(dst, (uint32)dstSize, r + 1);
     }
     else if (dst != path) {
-        strCopy(dst, (uint32)dstSize, path);
+        Str::Copy(dst, (uint32)dstSize, path);
     }
 
     char* dot = strrchr(dst, '.');
@@ -171,12 +171,12 @@ char* PathUtils::GetDirectory(const char *path, char *dst, size_t dstSize)
             dst[o] = '\0';
         }
         else {
-            strCopyCount(dst, (uint32)dstSize, path, o);
+            Str::CopyCount(dst, (uint32)dstSize, path, o);
         }
 
         #if PLATFORM_WINDOWS
         // if (o > 0 && dst[o-1] == ':')
-        //    strConcat(dst, (uint32)dstSize, "\\");
+        //    Str::Concat(dst, (uint32)dstSize, "\\");
         #endif
     }
     else if (dst != path) {
@@ -190,26 +190,26 @@ namespace PathUtils
     static char* Join(char *dst, size_t dstSize, const char *sep, const char *pathA, const char *pathB)
     {
         ASSERT(dst != pathB);
-        int len = strLen(pathA);
+        int len = Str::Len(pathA);
         if (dst != pathA) {
             if (len > 0 && pathA[len - 1] == sep[0]) {
-                strCopy(dst, (uint32)dstSize, pathA);
+                Str::Copy(dst, (uint32)dstSize, pathA);
             }
             else if (len > 0) {
-                strCopy(dst, (uint32)dstSize, pathA);
-                strConcat(dst, (uint32)dstSize, sep);
+                Str::Copy(dst, (uint32)dstSize, pathA);
+                Str::Concat(dst, (uint32)dstSize, sep);
             }
             else {
                 dst[0] = '\0';
             }
         }
         else if (len > 0 && pathA[len - 1] != sep[0]) {
-            strConcat(dst, (uint32)dstSize, sep);
+            Str::Concat(dst, (uint32)dstSize, sep);
         }
 
         if (pathB[0] == sep[0])
         ++pathB;
-        strConcat(dst, (uint32)dstSize, pathB);
+        Str::Concat(dst, (uint32)dstSize, pathB);
         return dst;
     }
 }
@@ -252,13 +252,13 @@ void OS::GenerateCmdLineFromArgcArgv(int argc, const char* argv[], char** outStr
 
     // If we have a prefix command, append to the beginning
     if (prefixCmd) {
-        blob.Write(prefixCmd, strLen(prefixCmd));
+        blob.Write(prefixCmd, Str::Len(prefixCmd));
         blob.Write<char>(32);
     }
 
     // TODO: perform escaping on the strings
     for (int i = 0; i < argc; i++) {
-        blob.Write(argv[i], strLen(argv[i]));
+        blob.Write(argv[i], Str::Len(argv[i]));
         if (i != argc - 1)
             blob.Write<char>(32);
     }
@@ -302,15 +302,15 @@ uint64 OS::GetCPUClock()
 
 bool SocketTCP::ParseUrl(const char* url, char* address, size_t addressSize, char* port, size_t portSize, const char** pResource)
 {
-    uint32 urlLen = strLen(url);
+    uint32 urlLen = Str::Len(url);
     
     // skip the 'protocol://' part
-    if (const char* addressBegin = strFindStr(url, "://"); addressBegin)
+    if (const char* addressBegin = Str::FindStr(url, "://"); addressBegin)
         url = addressBegin + 2;
     
     // find end of address part of url
-    char const* addressEnd = strFindChar(url, ':');
-    if (!addressEnd) addressEnd = strFindChar(url, '/');
+    char const* addressEnd = Str::FindChar(url, ':');
+    if (!addressEnd) addressEnd = Str::FindChar(url, '/');
     if (!addressEnd) addressEnd = url + urlLen;
         
     // extract address
@@ -324,9 +324,9 @@ bool SocketTCP::ParseUrl(const char* url, char* address, size_t addressSize, cha
     char const* portEnd = addressEnd;
     if (*addressEnd == ':') {
         ++addressEnd;
-        portEnd = strFindChar(addressEnd, '/');
+        portEnd = Str::FindChar(addressEnd, '/');
         if (!portEnd) 
-            portEnd = addressEnd + strLen(addressEnd);
+            portEnd = addressEnd + Str::Len(addressEnd);
         uint32 portLen = PtrToInt<uint32>((void*)(portEnd - addressEnd));
         if (portLen >= portSize) 
             return false;

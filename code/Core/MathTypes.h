@@ -6,51 +6,100 @@ PRAGMA_DIAGNOSTIC_PUSH()
 PRAGMA_DIAGNOSTIC_IGNORED_MSVC(4201)    // nonstandard extension used : nameless struct/union
 PRAGMA_DIAGNOSTIC_IGNORED_MSVC(4204)    // nonstandard extension used: non-constant aggregate initializer
 
-union Float2 
+struct Float2 
 {
-    struct 
-    {
-        float x;
-        float y;
-    };
+    union {
+        struct 
+        {
+            float x;
+            float y;
+        };
 
-    float f[2];
+        float f[2];
+    };
 
     Float2() = default;
     explicit constexpr Float2(float _x, float _y) : x(_x), y(_y) {}
     explicit constexpr Float2(float _xx) : x(_xx), y(_xx) {}
     explicit constexpr Float2(const float* _f) : x(_f[0]), y(_f[1]) {}
+
+
+    static float  Dot(Float2 _a, Float2 _b);
+    static Float2 Norm(Float2 _a);
+    static float  Len(Float2 _a);
+    static Float2 NormLen(Float2 _a, float* outlen);
+    static Float2 Min(Float2 _a, Float2 _b);
+    static Float2 Max(Float2 _a, Float2 _b);
+    static Float2 Lerp(Float2 _a, Float2 _b, float _t);
+    static Float2 Abs(Float2 _a);
+    static Float2 Neg(Float2 _a);
+    static Float2 Add(Float2 _a, Float2 _b);
+    static Float2 Add(Float2 _a, float _b);
+    static Float2 Sub(Float2 _a, Float2 _b);
+    static Float2 Sub(Float2 _a, float _b);
+    static Float2 Mul(Float2 _a, Float2 _b);
+    static Float2 Mul(Float2 _a, float _b);
+    static Float2 CalcLinearFit2D(const Float2* _points, int _num);
 };
 
-union Float3 
+struct Float3 
 {
-    struct 
-    {
-        float x;
-        float y;
-        float z;
-    };
+    union {
+        struct 
+        {
+            float x;
+            float y;
+            float z;
+        };
 
-    float f[3];
+        float f[3];
+    };
 
     Float3() = default;
     explicit constexpr Float3(float _x, float _y, float _z) : x(_x), y(_y), z(_z) {}
     explicit constexpr Float3(float _xxx) : x(_xxx), y(_xxx), z(_xxx) {}
     explicit constexpr Float3(const float* _f) : x(_f[0]), y(_f[1]), z(_f[2]) {}
     explicit constexpr Float3(Float2 v, float _z = 0) : x(v.x), y(v.y), z(_z) {}
+
+
+    static Float3 Abs(Float3 _a);
+    static Float3 Neg(Float3 _a);
+    static Float3 Add(Float3 _a, Float3 _b);
+    static Float3 Add(Float3 _a, float _b);
+    static Float3 Sub(Float3 _a, Float3 _b);
+    static Float3 Sub(Float3 _a, float _b);
+    static Float3 Mul(Float3 _a, Float3 _b);
+    static Float3 Mul(Float3 _a, float _b);
+    static float  Dot(Float3 _a, Float3 _b);
+    static Float3 Cross(Float3 _a, Float3 _b);
+    static Float3 Lerp(Float3 _a, Float3 _b, float _t);
+    static Float3 SmoothLerp(Float3 _a, Float3 _b, float _dt, float _h);
+    static float  Len(Float3 _a);
+    static Float3 Norm(Float3 _a);
+    static Float3 NormLen(Float3 _a, float* _outlen);
+    static Float3 Min(Float3 _a, Float3 _b);
+    static Float3 Max(Float3 _a, Float3 _b);
+    static Float3 Rcp(Float3 _a);
+    static void   Tangent(Float3* _t, Float3* _b, Float3 _n);
+    static void   TangentAngle(Float3* _t, Float3* _b, Float3 _n, float _angle);
+    static Float3 FromLatLong(float _u, float _v);
+    static Float2 ToLatLong(Float3 _dir);
+    static Float3 CalcLinearFit3D(const Float3* _points, int _num);
 };
 
-union Float4 
+struct Float4 
 {
-    struct 
-    {
-        float x;
-        float y;
-        float z;
-        float w;
-    };
+    union {
+        struct 
+        {
+            float x;
+            float y;
+            float z;
+            float w;
+        };
 
-    float f[4];
+        float f[4];
+    };
 
     Float4() = default;
     explicit constexpr Float4(float _x, float _y, float _z, float _w = 1.0f) : x(_x), y(_y), z(_z), w(_w) {}
@@ -58,19 +107,26 @@ union Float4
     explicit constexpr Float4(const float* _f) : x(_f[0]), y(_f[1]), z(_f[2]), w(_f[3]) {}
     explicit constexpr Float4(Float3 v, float _w = 1.0f) : x(v.x), y(v.y), z(v.z), w(_w) {}
     explicit constexpr Float4(Float2 v, float _z = 0, float _w = 1.0f) : x(v.x), y(v.y), z(_z), w(_w) {}
+
+    static Float4 Mul(Float4 _a, Float4 _b);
+    static Float4 Mul(Float4 _a, float _b);
+    static Float4 Add(Float4 _a, Float4 _b);
+    static Float4 Sub(Float4 _a, Float4 _b);
 };
 
-union Color 
+struct Color 
 {
-    struct 
-    {
-        uint8 r;
-        uint8 g;
-        uint8 b;
-        uint8 a;
-    };
+    union {
+        struct 
+        {
+            uint8 r;
+            uint8 g;
+            uint8 b;
+            uint8 a;
+        };
 
-    unsigned int n;
+        unsigned int n;
+    };
 
     Color() = default;
 
@@ -95,58 +151,95 @@ union Color
         n = _n;
         return *this;
     }
+
+    static float ValueToLinear(float _a);
+    static float ValueToGamma(float _a);
+    static Float4 ToFloat4(Color c);
+    static Color  Blend(Color _a, Color _b, float _t);
+    static Float4 ToFloat4SRGB(Float4 cf);
+    static Float4 ToFloat4Linear(Float4 c);
+    static Float3 RGBtoHSV(Float3 rgb);
+    static Float3 HSVtoRGB(Float3 hsv);
 };
 
-union Int2 
+struct Int2 
 {
-    struct 
-    {
-        int x;
-        int y;
-    };
+    union {
+        struct 
+        {
+            int x;
+            int y;
+        };
 
-    int n[2];
+        int n[2];
+    };
 
     Int2() = default;
     explicit constexpr Int2(int _x, int _y) : x(_x), y(_y) {}
     explicit constexpr Int2(const int* _i) : x(_i[0]), y(_i[1]) {}
     explicit constexpr Int2(int _xx) : x(_xx), y(_xx) {}
+
+    static Int2 Add(Int2 _a, Int2 _b);
+    static Int2 Sub(Int2 _a, Int2 _b);
+    static Int2 Min(Int2 _a, Int2 _b);
+    static Int2 Max(Int2 _a, Int2 _b);
 };
 
-union Quat 
+struct Quat 
 {
-    struct 
-    {
-        float x;
-        float y;
-        float z;
-        float w;
-    };
+    union {
+        struct 
+        {
+            float x;
+            float y;
+            float z;
+            float w;
+        };
 
-    float f[4];
+        float f[4];
+    };
 
     Quat() = default;
     explicit constexpr Quat(float _x, float _y, float _z, float _w) : x(_x), y(_y), z(_z), w(_w) {}
     explicit constexpr Quat(const float* _f) : x(_f[0]), y(_f[1]), z(_f[2]), w(_f[3]) {}
+
+    static Float3 MulXYZ(Quat _qa, Quat _qb);
+    static Quat   Mul(Quat p, Quat q);
+    static Quat   Inverse(Quat _q);
+    static float  Dot(Quat _a, Quat _b);
+    static float  Angle(Quat _a, Quat _b);
+    static Quat   Norm(Quat _q);
+    static Quat   RotateAxis(Float3 _axis, float _angle);
+    static Quat   RotateX(float _ax);
+    static Quat   RotateY(float _ay);
+    static Quat   RotateZ(float _az);
+    static Quat   Lerp(Quat _a, Quat _b, float t);
+    static Quat   Slerp(Quat _a, Quat _b, float t);
+    static Float3 ToEuler(Quat _q);
+    static Quat   FromEuler(Float3 _float3);
+    static Float3 TransformFloat3(Float3 v, Quat q);
 };
 
-union Mat3 
+struct Mat3 
 {
-    struct 
-    {
-        float m11, m21, m31;
-        float m12, m22, m32;
-        float m13, m23, m33;
+    union {
+        struct 
+        {
+            float m11, m21, m31;
+            float m12, m22, m32;
+            float m13, m23, m33;
+        };
+
+        struct 
+        {
+            float fc1[3];
+            float fc2[3];
+            float fc3[3];
+        };
+
+        float f[9];
     };
 
-    struct 
-    {
-        float fc1[3];
-        float fc2[3];
-        float fc3[3];
-    };
-
-    float f[9];
 
     Mat3() = default;
     explicit constexpr Mat3(float _m11, float _m12, float _m13, 
@@ -168,28 +261,49 @@ union Mat3
     explicit constexpr Mat3(Float3 _col1, Float3 _col2, Float3 _col3) :
         Mat3(_col1.f, _col2.f, _col3.f)
     {
-    }    
+    }  
+
+    Float3 Row1() const;
+    Float3 Row2() const;
+    Float3 Row3() const;
+    
+    static Mat3   Transpose(const Mat3& _a);
+    static Float3 MulFloat3(const Mat3& _mat, Float3 _vec);
+    static Mat3   MulInverse(const Mat3& _a, const Mat3& _b);
+    static Float3 MulFloat3Inverse(const Mat3& mat, Float3 v);
+    static Float2 MulFloat2(const Mat3& _mat, Float2 _vec);
+    static Mat3   Translate(float x, float y);
+    static Mat3   TranslateFloat2(Float2 p);
+    static Mat3   Rotate(float theta);
+    static Mat3   Scale(float sx, float sy);
+    static Mat3   ScaleRotateTranslate(float sx, float sy, float angle, float tx, float ty);
+    static Mat3   Inverse(const Mat3& _a);
+    static Mat3   Mul(const Mat3& _a, const Mat3& _b);
+    static Mat3   Abs(const Mat3& m);
+    static Mat3   FromQuat(Quat q);
 };
 
-union Mat4 
+struct Mat4 
 {
-    struct 
-    {
-        float m11, m21, m31, m41;
-        float m12, m22, m32, m42;
-        float m13, m23, m33, m43;
-        float m14, m24, m34, m44;
-    };
+    union {
+        struct 
+        {
+            float m11, m21, m31, m41;
+            float m12, m22, m32, m42;
+            float m13, m23, m33, m43;
+            float m14, m24, m34, m44;
+        };
 
-    struct 
-    {
-        float fc1[4];
-        float fc2[4];
-        float fc3[4];
-        float fc4[4];
-    };
+        struct 
+        {
+            float fc1[4];
+            float fc2[4];
+            float fc3[4];
+            float fc4[4];
+        };
 
-    float f[16];
+        float f[16];
+    };
 
     Mat4() = default;
     explicit constexpr Mat4(float _m11, float _m12, float _m13, float _m14, 
@@ -202,6 +316,7 @@ union Mat4
         m14(_m14),     m24(_m24),     m34(_m34),     m44(_m44)
     {    
     }
+
     explicit constexpr Mat4(const float* _col1, const float* _col2, const float* _col3, const float* _col4)
     :   m11(_col1[0]),     m21(_col1[1]),     m31(_col1[2]),     m41(_col1[3]),
         m12(_col2[0]),     m22(_col2[1]),     m32(_col2[2]),     m42(_col2[3]),
@@ -209,91 +324,183 @@ union Mat4
         m14(_col4[0]),     m24(_col4[1]),     m34(_col4[2]),     m44(_col4[3])
     {
     }
+
     explicit constexpr Mat4(Float4 _col1, Float4 _col2, Float4 _col3, Float4 _col4) : 
         Mat4(_col1.f, _col2.f, _col3.f, _col4.f)
     {
     }
+
+    Float4 Row1() const;
+    Float4 Row2() const;
+    Float4 Row3() const;
+    Float4 Row4() const;
+
+    static Mat4   Translate(float _tx, float _ty, float _tz);
+    static Mat4   Scale(float _sx, float _sy, float _sz);
+    static Mat4   Scale(float _scale);
+    static Mat4   RotateX(float _ax);
+    static Mat4   RotateY(float _ay);
+    static Mat4   RotateZ(float _az);
+    static Mat4   RotateXY(float _ax, float _ay);
+    static Mat4   RotateXYZ(float _ax, float _ay, float _az);
+    static Mat4   RotateZYX(float _ax, float _ay, float _az);
+    static Mat4   ToQuatTranslate(Quat _quat, Float3 _translation);
+    static Mat4   ToQuatTranslateHMD(Quat _quat, Float3 _translation);
+    static Float3 MulFloat3(const Mat4& _mat, Float3 _vec);
+    static Float3 MulFloat3_xyz0(const Mat4& _mat, Float3 _vec);
+    static Float3 MulFloat3H(const Mat4& _mat, Float3 _vec);
+    static Float4 MulFloat4(const Mat4& _mat, Float4 _vec);
+    static Mat4   Transpose(const Mat4& _a);
+    static void   ProjFlipHandedness(Mat4* _dst, const Mat4& _src);
+    static void   ViewFlipHandedness(Mat4* _dst, const Mat4& _src);
+    static Mat4   FromNormal(Float3 _normal, float _scale, Float3 _pos);
+    static Mat4   FromNormalAngle(Float3 _normal, float _scale, Float3 _pos, float _angle);
+    static Mat4   ViewLookAt(Float3 eye, Float3 target, Float3 up);
+    static Mat4   ViewLookAtLH(Float3 eye, Float3 target, Float3 up);
+    static Mat4   ViewFPS(Float3 eye, float pitch, float yaw);
+    static Mat4   ViewArcBall(Float3 move, Quat rot, Float3 target_pos);
+    static Mat4   Perspective(float width, float height, float zn, float zf, bool d3dNdc = false);
+    static Mat4   PerspectiveLH(float width, float height, float zn, float zf, bool d3dNdc = false);
+    static Mat4   PerspectiveOffCenter(float xmin, float ymin, float xmax, float ymax,
+                                                 float zn, float zf, bool d3dNdc = false);
+    static Mat4   PerspectiveOffCenterLH(float xmin, float ymin, float xmax, float ymax,
+                                                   float zn, float zf, bool d3dNdc = false);
+    static Mat4   PerspectiveFOV(float fov_y, float aspect, float zn, float zf, bool d3dNdc = false);
+    static Mat4   PerspectiveFOVLH(float fov_y, float aspect, float zn, float zf, bool d3dNdc = false);
+    static Mat4   Ortho(float width, float height, float zn, float zf, float offset = 0, bool d3dNdc = false);
+    static Mat4   OrthoLH(float width, float height, float zn, float zf, float offset = 0, bool d3dNdc = false);
+    static Mat4   OrthoOffCenter(float xmin, float ymin, float xmax, float ymax, float zn,
+                                           float zf, float offset = 0, bool d3dNdc = false);
+    static Mat4   OrthoOffCenterLH(float xmin, float ymin, float xmax, float ymax, float zn,
+                                             float zf, float offset = 0, bool d3dNdc = false);
+    static Mat4   ScaleRotateTranslate(float _sx, float _sy, float _sz, 
+                                                 float _ax, float _ay, float _az,
+                                                 float _tx, float _ty, float _tz);
+    static Mat4   Mul(const Mat4& _a, const Mat4& _b);
+    static Mat4   Inverse(const Mat4& _a);
+    static Mat4   InverseTransformMat(const Mat4& _a);
+    static Quat   ToQuat(const Mat4& _mat);
+    static Mat4   FromQuat(Quat q);
+    static Mat4   ProjectPlane(Float3 planeNormal);
 };
 
-union Rect 
+struct Rect 
 {
-    struct 
-    {
-        float xmin, ymin;
-        float xmax, ymax;
-    };
+    union {
+        struct 
+        {
+            float xmin, ymin;
+            float xmax, ymax;
+        };
 
-    struct 
-    {
-        float vmin[2];
-        float vmax[2];
-    };
+        struct 
+        {
+            float vmin[2];
+            float vmax[2];
+        };
 
-    float f[4];
+        float f[4];
+    };
 
     Rect() = default;
+
     explicit constexpr Rect(float _xmin, float _ymin, float _xmax, float _ymax) 
     : xmin(_xmin), ymin(_ymin), xmax(_xmax), ymax(_ymax)
     {
     }
+
     explicit constexpr Rect(const float* _vmin, const float* _vmax) 
     : vmin { _vmin[0], _vmin[1] },
       vmax { _vmax[0], _vmax[1] }
     {
     }
+
     explicit constexpr Rect(Float2 _vmin, Float2 _vmax) :
         Rect(_vmin.f, _vmax.f)
     {
     }
+
+    bool   IsEmpty() const;
+    float  Width() const;
+    float  Height() const;
+
+    static Rect   CenterExtents(Float2 center, Float2 extents);
+    static Rect   Expand(const Rect rc, Float2 expand);
+    static bool   TestPoint(const Rect rc, Float2 pt);
+    static bool   Test(const Rect rc1, const Rect rc2);
+    static void   AddPoint(Rect* rc, Float2 pt);
+    static Float2 GetCorner(const Rect* rc, int index);
+    static void   GetCorners(Float2 corners[4], const Rect* rc);
+    static Float2 Extents(const Rect rc);
+    static Float2 Center(const Rect rc);
+    static Rect   Translate(const Rect rc, Float2 pos);
 };
 
-union Recti 
+struct RectInt 
 {
-    struct 
-    {
-        int xmin, ymin;
-        int xmax, ymax;
+    union {
+        struct 
+        {
+            int xmin, ymin;
+            int xmax, ymax;
+        };
+
+        struct 
+        {
+            int vmin[3];
+            int vmax[3];
+        };
+
+        int n[4];
     };
 
-    struct 
-    {
-        int vmin[3];
-        int vmax[3];
-    };
 
-    int n[4];
+    RectInt() = default;
 
-    Recti() = default;
-    explicit constexpr Recti(int _xmin, int _ymin, int _xmax, int _ymax) 
+    explicit constexpr RectInt(int _xmin, int _ymin, int _xmax, int _ymax) 
         : xmin(_xmin),   ymin(_ymin),   xmax(_xmax),   ymax(_ymax)
     {
     }
-    explicit constexpr Recti(const int* _vmin, const int* _vmax) 
+
+    explicit constexpr RectInt(const int* _vmin, const int* _vmax) 
     : vmin { _vmin[0], _vmin[1] },
       vmax { _vmax[0], _vmax[1] }
     {
     }
-    explicit constexpr Recti(Int2 _vmin, Int2 _vmax) :
-        Recti(_vmin.n, _vmax.n)
+
+    explicit constexpr RectInt(Int2 _vmin, Int2 _vmax) :
+        RectInt(_vmin.n, _vmax.n)
     { 
     }
+
+    int Width() const;
+    int Height() const;
+
+    static RectInt  Expand(const RectInt rc, Int2 expand);
+    static bool   TestPoint(const RectInt rc, Int2 pt);
+    static bool   Test(const RectInt rc1, const RectInt rc2);
+    static void   AddPoint(RectInt* rc, Int2 pt);
+    static Int2   GetCorner(const RectInt* rc, int index);
+    static void   GetCorners(Int2 corners[4], const RectInt* rc);
 };
 
-union AABB 
+struct AABB 
 {
-    struct 
-    {
-        float xmin, ymin, zmin;
-        float xmax, ymax, zmax;
-    };
+    union {
+        struct 
+        {
+            float xmin, ymin, zmin;
+            float xmax, ymax, zmax;
+        };
 
-    struct 
-    {
-        float vmin[3];
-        float vmax[3];
-    };
+        struct 
+        {
+            float vmin[3];
+            float vmax[3];
+        };
 
-    float f[6];
+        float f[6];
+    };
 
     AABB() = default;
     explicit constexpr AABB(float _xmin, float _ymin, float _zmin, float _xmax, float _ymax, float _zmax) 
@@ -310,17 +517,37 @@ union AABB
         AABB(_vmin.f, _vmax.f)
     {
     }
+
+    bool IsEmpty() const;
+    Float3 Extents() const;
+    Float3 Center() const;
+
+    static void   AddPoint(AABB* aabb, Float3 pt);
+    static AABB   Unify(const AABB& aabb1, const AABB& aabb2);
+    static bool   TestPoint(const AABB& aabb, Float3 pt);
+    static bool   Test(const AABB& aabb1, const AABB& aabb2);
+    static Float3 GetCorner(const AABB& aabb, int index);
+    static void   GetCorners(Float3 corners[8], const AABB& aabb);
+    static AABB   Translate(const AABB& aabb, Float3 offset);
+    static AABB   SetPos(const AABB& aabb, Float3 pos);
+    static AABB   Expand(const AABB& aabb, Float3 expand);
+    static AABB   Scale(const AABB& aabb, Float3 scale);
+    static AABB   Transform(const AABB& aabb, const Mat4& mat);
 };
 
 // 3d plane: a*nx + b*ny + c*nz + d = 0
-union Plane 
+struct Plane 
 {
-    Float4 p;
-    struct {
-        float normal[3];
-        float dist;
+    union {
+        Float4 p;
+
+        struct {
+            float normal[3];
+            float dist;
+        };
+
+        float f[4];
     };
-    float f[4];
 
     Plane() = default;
     explicit constexpr Plane(float _nx, float _ny, float _nz, float _d) : p(_nx, _ny, _nz, _d) {}
@@ -328,6 +555,13 @@ union Plane
         normal { _normal.x,     _normal.y,  _normal.z}, dist(_d)
     {   
     }
+
+    static Float3 CalcNormal(Float3 _va, Float3 _vb, Float3 _vc);
+    static Plane  From3Points(Float3 _va, Float3 _vb, Float3 _vc);
+    static Plane  FromNormalPoint(Float3 _normal, Float3 _p);
+    static float  Distance(Plane _plane, Float3 _p);
+    static Float3 ProjectPoint(Plane _plane, Float3 _p);
+    static Float3 Origin(Plane _plane);
 };
 
 // Simplified 3D transform. by position and rotation
@@ -338,6 +572,16 @@ struct Transform3D
 
     Transform3D() = default;
     explicit constexpr Transform3D(Float3 _pos, const Mat3& _rot) : pos(_pos), rot(_rot) {}
+
+    static Transform3D Mul(const Transform3D& txa, const Transform3D& txb);
+    static Float3      MulFloat3(const Transform3D& tx, Float3 v);
+    static Float3      MulFloat3Scale(const Transform3D& tx, Float3 scale, Float3 v);
+    static Transform3D Inverse(const Transform3D& tx);
+    static Float3      MulFloat3Inverse(const Transform3D& tx, Float3 v);
+    static Transform3D MulInverse(const Transform3D& txa, const Transform3D& txb);
+    static Mat4        ToMat4(const Transform3D& tx);
+    static Transform3D Make(float x, float y, float z, float rx, float ry, float rz);
+    static Transform3D FromMat4(const Mat4& mat);
 };
 
 // Box is a 3d primitive (cube), that extents in each X,Y,Z direction and has arbitary transform
@@ -349,6 +593,8 @@ struct Box
 
     Box() = default;
     explicit constexpr Box(const Transform3D& _tx, Float3 _e) : tx(_tx), e(_e) {}
+
+    static AABB ToAABB(const Box& box);
 };
 
 
@@ -418,7 +664,7 @@ inline constexpr Color COLOR_BLUE   { uint8(0), uint8(0), uint8(255), uint8(255)
 inline constexpr Color COLOR_PURPLE { uint8(255), uint8(0), uint8(255), uint8(255) };
 
 inline constexpr Rect RECT_EMPTY { M_FLOAT32_MAX, M_FLOAT32_MAX, -M_FLOAT32_MAX, -M_FLOAT32_MAX };
-inline constexpr Recti RECTI_EMPTY { INT32_MAX, INT32_MAX, INT32_MIN, INT32_MIN };
+inline constexpr RectInt RECTI_EMPTY { INT32_MAX, INT32_MAX, INT32_MIN, INT32_MIN };
 inline constexpr AABB AABB_EMPTY { M_FLOAT32_MAX, M_FLOAT32_MAX, M_FLOAT32_MAX, -M_FLOAT32_MAX, -M_FLOAT32_MAX, -M_FLOAT32_MAX };
 
 PRAGMA_DIAGNOSTIC_POP()    // ignore msvc warnings

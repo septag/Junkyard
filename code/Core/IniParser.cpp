@@ -8,8 +8,8 @@
 #define INI_MALLOC(ctx, size)       Mem::Alloc(size, (MemAllocator*)ctx)
 #define INI_FREE(ctx, ptr)          Mem::Free(ptr, (MemAllocator*)ctx)
 #define INI_MEMCPY(dst, src, cnt)   memcpy(dst, src, cnt)
-#define INI_STRLEN(s)               strLen(s)
-#define INI_STRNICMP(s1, s2, cnt)   (strIsEqualNoCaseCount(s1, s2, cnt) ? 0 : 1)
+#define INI_STRLEN(s)               Str::Len(s)
+#define INI_STRNICMP(s1, s2, cnt)   (Str::IsEqualNoCaseCount(s1, s2, cnt) ? 0 : 1)
 
 PRAGMA_DIAGNOSTIC_PUSH()
 PRAGMA_DIAGNOSTIC_IGNORED_CLANG_GCC("-Wsign-compare")
@@ -118,13 +118,13 @@ INIFileSection INIFileContext::GetRootSection() const
 INIFileSection INIFileContext::NewSection(const char* name) const
 {
     ASSERT(this->ini);
-    return INIFileSection { .ini = this->ini, .id = ini_section_add(this->ini, name, strLen(name)) };
+    return INIFileSection { .ini = this->ini, .id = ini_section_add(this->ini, name, Str::Len(name)) };
 }
 
 INIFileSection INIFileContext::FindSection(const char* name) const
 {
     ASSERT(this->ini);
-    return INIFileSection { .ini = this->ini, .id = ini_find_section(this->ini, name, strLen(name)) };
+    return INIFileSection { .ini = this->ini, .id = ini_find_section(this->ini, name, Str::Len(name)) };
 }
 
 void INIFileContext::Destroy()
@@ -154,7 +154,7 @@ const char* INIFileSection::GetPropertyName(uint32 index)
 INIFileProperty INIFileSection::NewProperty(const char* name, const char* value)
 {
     ASSERT(this->id != INI_NOT_FOUND);
-    ini_property_add(this->ini, this->id, name, strLen(name), value, strLen(value));
+    ini_property_add(this->ini, this->id, name, Str::Len(name), value, Str::Len(value));
     return INIFileProperty { 
         .ini = this->ini, 
         .sectionId = this->id,
@@ -168,14 +168,14 @@ INIFileProperty INIFileSection::FindProperty(const char* name)
     return INIFileProperty { 
         .ini = this->ini, 
         .sectionId = this->id,
-        .id = ini_find_property(this->ini, this->id, name, strLen(name)) 
+        .id = ini_find_property(this->ini, this->id, name, Str::Len(name)) 
     };
 }
 
 void INIFileSection::SetName(const char* name)
 {
     ASSERT(this->id != INI_NOT_FOUND);
-    ini_section_name_set(this->ini, this->id, name, strLen(name));
+    ini_section_name_set(this->ini, this->id, name, Str::Len(name));
 }
 
 const char* INIFileSection::GetName()
@@ -193,13 +193,13 @@ void INIFileSection::Delete()
 void INIFileProperty::SetName(const char* name)
 {
     ASSERT(this->id != INI_NOT_FOUND);
-    ini_property_name_set(this->ini, this->sectionId, this->id, name, (int)strLen(name));
+    ini_property_name_set(this->ini, this->sectionId, this->id, name, (int)Str::Len(name));
 }
 
 void INIFileProperty::SetValue(const char* value)
 {
     ASSERT(this->id != INI_NOT_FOUND);
-    ini_property_value_set(this->ini, this->sectionId, this->id, value, (int)strLen(value));
+    ini_property_value_set(this->ini, this->sectionId, this->id, value, (int)Str::Len(value));
 }
 
 const char* INIFileProperty::GetName()

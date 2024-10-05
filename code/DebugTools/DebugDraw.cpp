@@ -7,7 +7,7 @@
 #include "../Assets/AssetManager.h"
 
 #include "../Core/Log.h"
-#include "../Core/MathVector.h"
+#include "../Core/MathAll.h"
 
 #include "../Common/Camera.h"
 
@@ -92,7 +92,7 @@ void DebugDraw::DrawGroundGrid(const Camera& cam, float viewWidth, float viewHei
     Color color = props.lineColor;
     Color boldColor = props.boldLineColor;
 
-    float spacing = mathCeil(Max(props.spacing, 0.0001f));
+    float spacing = M::Ceil(Max(props.spacing, 0.0001f));
     float boldSpacing = props.boldSpacing;
     ASSERT(boldSpacing >= spacing);
     ASSERT(props.distance > 0);
@@ -102,14 +102,14 @@ void DebugDraw::DrawGroundGrid(const Camera& cam, float viewWidth, float viewHei
     AABB bb = AABB_EMPTY;
 
     // extrude near plane
-    Float3 nearPlaneN = planeNormal(frustumPts[0], frustumPts[1], frustumPts[2]);
+    Float3 nearPlaneN = Plane::CalcNormal(frustumPts[0], frustumPts[1], frustumPts[2]);
     for (uint32 i = 0; i < frustumPts.Count(); i++) {
         if (i < 4) {
             Float3 offsetPt = frustumPts[i] - nearPlaneN*spacing;
-            AABBAddPoint(&bb, Float3(offsetPt.x, offsetPt.y, 0));
+            AABB::AddPoint(&bb, Float3(offsetPt.x, offsetPt.y, 0));
         } 
         else {
-            AABBAddPoint(&bb, Float3(frustumPts[i].x, frustumPts[i].y, 0));
+            AABB::AddPoint(&bb, Float3(frustumPts[i].x, frustumPts[i].y, 0));
         }
     }
 
@@ -122,7 +122,7 @@ void DebugDraw::DrawGroundGrid(const Camera& cam, float viewWidth, float viewHei
                         0);
     float w = snapbox.xmax - snapbox.xmin;
     float h = snapbox.ymax - snapbox.ymin;
-    if (mathIsEqual(w, 0, 0.00001f) || mathIsEqual(h, 0, 0.00001f))
+    if (M::IsEqual(w, 0, 0.00001f) || M::IsEqual(h, 0, 0.00001f))
         return;
     ASSERT(w > 0);
     ASSERT(h > 0);
@@ -146,7 +146,7 @@ void DebugDraw::DrawGroundGrid(const Camera& cam, float viewWidth, float viewHei
         vertices[ni].pos.z = 0;
 
         vertices[i].color = vertices[ni].color = (yoffset != 0.0f)
-                ? (!mathIsEqual(mathMod(yoffset, boldSpacing), 0.0f, 0.0001f) ? color : boldColor)
+                ? (!M::IsEqual(M::Mod(yoffset, boldSpacing), 0.0f, 0.0001f) ? color : boldColor)
                 : COLOR_RED;
     }
 
@@ -162,7 +162,7 @@ void DebugDraw::DrawGroundGrid(const Camera& cam, float viewWidth, float viewHei
         vertices[ni].pos.z = 0;
 
         vertices[i].color = vertices[ni].color = (xoffset != 0.0f)
-                ? (!mathIsEqual(mathMod(xoffset, boldSpacing), 0.0f, 0.0001f) ? color : boldColor)
+                ? (!M::IsEqual(M::Mod(xoffset, boldSpacing), 0.0f, 0.0001f) ? color : boldColor)
                 : COLOR_GREEN;
     }
 

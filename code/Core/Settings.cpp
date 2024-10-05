@@ -75,7 +75,7 @@ static bool settingsLoadFromINIInternal(const Blob& blob)
 
             uint32 foundCatId = UINT32_MAX;
             for (uint32 catId = 0, catIdCount = callbacks->GetCategoryCount(); catId < catIdCount; catId++) {
-                if (strIsEqualNoCase(sectionName, callbacks->GetCategory(catId))) {
+                if (Str::IsEqualNoCase(sectionName, callbacks->GetCategory(catId))) {
                     foundCatId = catId;
                     break;
                 }
@@ -84,8 +84,8 @@ static bool settingsLoadFromINIInternal(const Blob& blob)
             for (int j = 0; j < ini_property_count(ini, i); j++) {
                 const char* key = ini_property_name(ini, i, j);
                 const char* value = ini_property_value(ini, i, j);
-                strTrim(keyTrimmed, sizeof(keyTrimmed), key);
-                strTrim(valueTrimmed, sizeof(valueTrimmed), value);
+                Str::Trim(keyTrimmed, sizeof(keyTrimmed), key);
+                Str::Trim(valueTrimmed, sizeof(valueTrimmed), value);
 
                 bool predefined = foundCatId != UINT32_MAX ? callbacks->ParseSetting(foundCatId, keyTrimmed, valueTrimmed) : false;
 
@@ -94,14 +94,14 @@ static bool settingsLoadFromINIInternal(const Blob& blob)
                     SetValue(keyTrimmed, valueTrimmed);
 
                 char msg[256];
-                strPrintFmt(msg, sizeof(msg), "\t%u) %s%s = %s\n", ++count, keyTrimmed, !predefined ? "(*)" : "", valueTrimmed);
+                Str::PrintFmt(msg, sizeof(msg), "\t%u) %s%s = %s\n", ++count, keyTrimmed, !predefined ? "(*)" : "", valueTrimmed);
                 Debug::Print(msg);
             }
         } // for each custom settings parser
     }
 
     // Try to load none-predefined settings
-    int sectionId = ini_find_section(ini, SETTINGS_NONE_PREDEFINED, strLen(SETTINGS_NONE_PREDEFINED));
+    int sectionId = ini_find_section(ini, SETTINGS_NONE_PREDEFINED, Str::Len(SETTINGS_NONE_PREDEFINED));
     if (sectionId != -1) {
         for (int i = 0; i < ini_property_count(ini, sectionId); i++) {
             SetValue(ini_property_name(ini, sectionId, i), ini_property_value(ini, sectionId, i));
@@ -116,7 +116,7 @@ static bool settingsLoadFromINIInternal(const Blob& blob)
 bool InitializeFromAndroidAsset(AAssetManager* assetMgr, const char* iniFilepath)
 {
     char msg[256];
-    strPrintFmt(msg, sizeof(msg), "Loading settings from assets: %s\n", iniFilepath);
+    Str::PrintFmt(msg, sizeof(msg), "Loading settings from assets: %s\n", iniFilepath);
     Debug::Print(msg);
 
     Blob blob;
@@ -135,7 +135,7 @@ bool InitializeFromAndroidAsset(AAssetManager* assetMgr, const char* iniFilepath
     }
 
     if (!blob.IsValid()) {
-        strPrintFmt(msg, sizeof(msg), "Opening ini file '%s' failed\n", iniFilepath);
+        Str::PrintFmt(msg, sizeof(msg), "Opening ini file '%s' failed\n", iniFilepath);
         Debug::Print(msg);
         return false;
     }
@@ -144,7 +144,7 @@ bool InitializeFromAndroidAsset(AAssetManager* assetMgr, const char* iniFilepath
     blob.Free();
 
     if (!r) {
-        strPrintFmt(msg, sizeof(msg), "Parsing ini file '%s' failed\n", iniFilepath);
+        Str::PrintFmt(msg, sizeof(msg), "Parsing ini file '%s' failed\n", iniFilepath);
         Debug::Print(msg);
     }
     return r;
@@ -154,7 +154,7 @@ bool InitializeFromAndroidAsset(AAssetManager* assetMgr, const char* iniFilepath
 bool InitializeFromINI(const char* iniFilepath)
 {
     char msg[256];
-    strPrintFmt(msg, sizeof(msg), "Loading settings from file: %s", iniFilepath);
+    Str::PrintFmt(msg, sizeof(msg), "Loading settings from file: %s", iniFilepath);
     Debug::Print(msg);
 
     Blob blob;
@@ -171,7 +171,7 @@ bool InitializeFromINI(const char* iniFilepath)
     }
 
     if (!blob.IsValid()) {
-        strPrintFmt(msg, sizeof(msg), "Opening ini file '%s' failed", iniFilepath);
+        Str::PrintFmt(msg, sizeof(msg), "Opening ini file '%s' failed", iniFilepath);
         Debug::Print(msg);
         return false;
     }
@@ -180,7 +180,7 @@ bool InitializeFromINI(const char* iniFilepath)
     blob.Free();
 
     if (!r) {
-        strPrintFmt(msg, sizeof(msg), "Parsing ini file '%s' failed", iniFilepath);
+        Str::PrintFmt(msg, sizeof(msg), "Parsing ini file '%s' failed", iniFilepath);
         Debug::Print(msg);
     }
     return r;
@@ -189,7 +189,7 @@ bool InitializeFromINI(const char* iniFilepath)
 void SaveToINI(const char* iniFilepath)
 {
     char msg[256];
-    strPrintFmt(msg, sizeof(msg), "Saving settings to file: %s", iniFilepath);
+    Str::PrintFmt(msg, sizeof(msg), "Saving settings to file: %s", iniFilepath);
     Debug::Print(msg);
     
     MemTempAllocator tmpAlloc;
@@ -199,7 +199,7 @@ void SaveToINI(const char* iniFilepath)
         for (uint32 cId = 0; cId < callbacks->GetCategoryCount(); cId++) {
             Array<SettingsKeyValue> items(&tmpAlloc);
             const char* catName = callbacks->GetCategory(cId);
-            int sectionId = ini_section_add(ini, catName, strLen(catName));
+            int sectionId = ini_section_add(ini, catName, Str::Len(catName));
             
             callbacks->SaveCategory(cId, items);
             
@@ -214,7 +214,7 @@ void SaveToINI(const char* iniFilepath)
 
     // Put None-predefined settings into INI as well
     if (gSettings.keyValuePairs.Count()) {
-        int sectionId = ini_section_add(ini, SETTINGS_NONE_PREDEFINED, strLen(SETTINGS_NONE_PREDEFINED));
+        int sectionId = ini_section_add(ini, SETTINGS_NONE_PREDEFINED, Str::Len(SETTINGS_NONE_PREDEFINED));
         
         for (SettingsKeyValue& item : gSettings.keyValuePairs) {
             if (item.value.Length())
@@ -268,8 +268,8 @@ bool InitializeFromCommandLine(int argc, char* argv[])
             uint32 catLen = 0;
             for (uint32 catId = 0, catIdCount = callbacks->GetCategoryCount(); catId < catIdCount; catId++) {
                 const char* cat = callbacks->GetCategory(catId);
-                catLen = strLen(cat);
-                if (strIsEqualNoCaseCount(key, cat, catLen)) {
+                catLen = Str::Len(cat);
+                if (Str::IsEqualNoCaseCount(key, cat, catLen)) {
                     foundCatId = catId;
                     break;
                 }
@@ -282,7 +282,7 @@ bool InitializeFromCommandLine(int argc, char* argv[])
                 SetValue(key, value);
 
             char msg[256];
-            strPrintFmt(msg, sizeof(msg), "\t%d) %s%s = %s", i+1, key, !predefined ? "(*)" : "", value);
+            Str::PrintFmt(msg, sizeof(msg), "\t%d) %s%s = %s", i+1, key, !predefined ? "(*)" : "", value);
             Debug::Print(msg);
             #if PLATFORM_WINDOWS
             Debug::Print("\n");

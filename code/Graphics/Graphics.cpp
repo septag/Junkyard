@@ -542,7 +542,7 @@ bool _private::gfxInitialize()
     auto HasLayer = [](const char* layerName)
     {
         for (uint32 i = 0; i < gVk.numLayers; i++) {
-            if (strIsEqual(gVk.layers[i].layerName, layerName))
+            if (Str::IsEqual(gVk.layers[i].layerName, layerName))
                 return true;
         }
         return false;
@@ -1310,7 +1310,7 @@ INLINE VkFormat gfxFindDepthFormat()
 bool gfxHasDeviceExtension(const char* extension)
 {
     for (uint32 i = 0; i < gVk.numDeviceExtensions; i++) {
-        if (strIsEqual(gVk.deviceExtensions[i].extensionName, extension)) 
+        if (Str::IsEqual(gVk.deviceExtensions[i].extensionName, extension)) 
             return true;
     }
 
@@ -1320,7 +1320,7 @@ bool gfxHasDeviceExtension(const char* extension)
 bool gfxHasInstanceExtension(const char* extension)
 {
     for (uint32 i = 0; i < gVk.numInstanceExtensions; i++) {
-        if (strIsEqual(gVk.instanceExtensions[i].extensionName, extension)) 
+        if (Str::IsEqual(gVk.instanceExtensions[i].extensionName, extension)) 
             return true;
     }
 
@@ -1364,7 +1364,7 @@ INLINE const GfxShaderStageInfo* gfxShaderGetStage(const GfxShader& info, GfxSha
 INLINE const GfxShaderParameterInfo* gfxShaderGetParam(const GfxShader& info, const char* name)
 {
     for (uint32 i = 0; i < info.numParams; i++) {
-        if (strIsEqual(info.params[i].name, name))
+        if (Str::IsEqual(info.params[i].name, name))
             return &info.params[i];
     }
     return nullptr;
@@ -1417,9 +1417,9 @@ static VKAPI_ATTR VkBool32 VKAPI_CALL gfxDebugUtilsMessageFn(
 
     char typeStr[128];  typeStr[0] = '\0';
     if (messageType & VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT)  
-        strConcat(typeStr, sizeof(typeStr), "[V]");
+        Str::Concat(typeStr, sizeof(typeStr), "[V]");
     if (messageType & VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT)  
-        strConcat(typeStr, sizeof(typeStr), "[P]");
+        Str::Concat(typeStr, sizeof(typeStr), "[P]");
 
     switch (messageSeverity) {
     case VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT:
@@ -1871,7 +1871,7 @@ void gfxCmdBeginSwapchainRenderPass(Color bgColor)
 
     uint32 imageIdx = gVk.swapchain.imageIdx;
 
-    Float4 bgColor4f = colorToFloat4(bgColor);
+    Float4 bgColor4f = Color::ToFloat4(bgColor);
     const VkClearValue clearValues[] = {
         { .color = {{bgColor4f.x, bgColor4f.y, bgColor4f.z, bgColor4f.w}} },
         { .depthStencil = {1.0f, 0} }
@@ -1950,7 +1950,7 @@ void gfxCmdBindPipeline(GfxPipelineHandle pipeline)
     vkCmdBindPipeline(cmdBufferVk, VK_PIPELINE_BIND_POINT_GRAPHICS, pipVk);
 }
 
-void gfxCmdSetScissors(uint32 firstScissor, uint32 numScissors, const Recti* scissors, bool isSwapchain)
+void gfxCmdSetScissors(uint32 firstScissor, uint32 numScissors, const RectInt* scissors, bool isSwapchain)
 {
     ASSERT(numScissors);
 
@@ -1960,10 +1960,10 @@ void gfxCmdSetScissors(uint32 firstScissor, uint32 numScissors, const Recti* sci
     ASSERT_MSG(cmdBufferVk, "CmdXXX functions must come between Begin/End CommandBuffer calls");
 
     for (uint32 i = 0; i < numScissors; i++) {
-        const Recti& scissor = scissors[i];
+        const RectInt& scissor = scissors[i];
         Pair<Int2, Int2> transformed = 
             gfxTransformRectangleBasedOnOrientation(scissor.xmin, scissor.ymin, 
-                                                    rectiWidth(scissor), rectiHeight(scissor), isSwapchain);
+                                                    scissor.Width(), scissor.Height(), isSwapchain);
         scissorsVk[i].offset.x = transformed.first.x;
         scissorsVk[i].offset.y = transformed.first.y;
         scissorsVk[i].extent.width = transformed.second.x;
@@ -2580,8 +2580,8 @@ static void gfxSavePipelineBinaryProperties(const char* name, VkPipeline pip)
         for (uint32 i = 0; i < numExecutables; i++) {
             const VkPipelineExecutablePropertiesKHR& ep = executableProperties[i];
 
-            strPrintFmt(lineStr, sizeof(lineStr), "%s - %s:\n", ep.name, ep.description);
-            info.Write(lineStr, strLen(lineStr));
+            Str::PrintFmt(lineStr, sizeof(lineStr), "%s - %s:\n", ep.name, ep.description);
+            info.Write(lineStr, Str::Len(lineStr));
 
             VkPipelineExecutableInfoKHR pipExecInfo {
                 .sType = VK_STRUCTURE_TYPE_PIPELINE_EXECUTABLE_INFO_KHR,
@@ -2604,22 +2604,22 @@ static void gfxSavePipelineBinaryProperties(const char* name, VkPipeline pip)
                     char valueStr[32];
                     switch (stat.format) {
                     case VK_PIPELINE_EXECUTABLE_STATISTIC_FORMAT_BOOL32_KHR:    
-                        strCopy(valueStr, sizeof(valueStr), stat.value.b32 ? "True" : "False"); 
+                        Str::Copy(valueStr, sizeof(valueStr), stat.value.b32 ? "True" : "False"); 
                         break;
                     case VK_PIPELINE_EXECUTABLE_STATISTIC_FORMAT_INT64_KHR:     
-                        strPrintFmt(valueStr, sizeof(valueStr), "%lld", stat.value.i64); 
+                        Str::PrintFmt(valueStr, sizeof(valueStr), "%lld", stat.value.i64); 
                         break;
                     case VK_PIPELINE_EXECUTABLE_STATISTIC_FORMAT_UINT64_KHR:    
-                        strPrintFmt(valueStr, sizeof(valueStr), "%llu", stat.value.u64); 
+                        Str::PrintFmt(valueStr, sizeof(valueStr), "%llu", stat.value.u64); 
                         break;
                     case VK_PIPELINE_EXECUTABLE_STATISTIC_FORMAT_FLOAT64_KHR:   
-                        strPrintFmt(valueStr, sizeof(valueStr), "%.3f", stat.value.f64); 
+                        Str::PrintFmt(valueStr, sizeof(valueStr), "%.3f", stat.value.f64); 
                         break;
                     default: ASSERT(0); break;
                     }
 
-                    strPrintFmt(lineStr, sizeof(lineStr), "\t%s = %s\n", stat.name, valueStr);
-                    info.Write(lineStr, strLen(lineStr));
+                    Str::PrintFmt(lineStr, sizeof(lineStr), "\t%s = %s\n", stat.name, valueStr);
+                    info.Write(lineStr, Str::Len(lineStr));
                 }
             }
 
@@ -3869,7 +3869,7 @@ void gfxCmdPushDescriptorSet(GfxPipelineHandle pipeline, GfxPipelineBindPoint bi
     auto FindBindingIndex = [&pipData](const char* name)->uint32
     {
         for (uint32 i = 0; i < pipData->numShaderParams; i++) {
-            if (strIsEqual(pipData->shaderParams[i].name, name))
+            if (Str::IsEqual(pipData->shaderParams[i].name, name))
                 return pipData->shaderParams[i].bindingIdx;
         }
         return uint32(-1);
@@ -4636,9 +4636,9 @@ Mat4 gfxGetClipspaceTransform()
 {
     switch (App::GetFramebufferTransform()) {
     case AppFramebufferTransform::None:           return MAT4_IDENT;
-    case AppFramebufferTransform::Rotate90:       return mat4RotateZ(M_HALFPI);
-    case AppFramebufferTransform::Rotate180:      return mat4RotateZ(M_PI);
-    case AppFramebufferTransform::Rotate270:      return mat4RotateZ(M_PI + M_HALFPI);
+    case AppFramebufferTransform::Rotate90:       return Mat4::RotateZ(M_HALFPI);
+    case AppFramebufferTransform::Rotate180:      return Mat4::RotateZ(M_PI);
+    case AppFramebufferTransform::Rotate270:      return Mat4::RotateZ(M_PI + M_HALFPI);
     }
 
     return MAT4_IDENT;
@@ -5045,7 +5045,7 @@ static bool gfxInitializeProfiler()
         ___tracy_emit_gpu_context_name_serial(___tracy_gpu_context_name_data {
             .context = ctx->id,
             .name = name,
-            .len = static_cast<uint16>(strLen(name))
+            .len = static_cast<uint16>(Str::Len(name))
         });
     }
 

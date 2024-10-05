@@ -2809,17 +2809,17 @@ static void vma_aligned_free(void* VMA_NULLABLE ptr)
 
 // Define this macro to 1 to enable functions: vmaBuildStatsString, vmaFreeStatsString.
 #if VMA_STATS_STRING_ENABLED
-    static inline void VmaUint32ToStr(char* VMA_NOT_NULL outStr, size_t strLen, uint32_t num)
+    static inline void VmaUint32ToStr(char* VMA_NOT_NULL outStr, size_t Str::Len, uint32_t num)
     {
-        snprintf(outStr, strLen, "%u", static_cast<unsigned int>(num));
+        snprintf(outStr, Str::Len, "%u", static_cast<unsigned int>(num));
     }
-    static inline void VmaUint64ToStr(char* VMA_NOT_NULL outStr, size_t strLen, uint64_t num)
+    static inline void VmaUint64ToStr(char* VMA_NOT_NULL outStr, size_t Str::Len, uint64_t num)
     {
-        snprintf(outStr, strLen, "%llu", static_cast<unsigned long long>(num));
+        snprintf(outStr, Str::Len, "%llu", static_cast<unsigned long long>(num));
     }
-    static inline void VmaPtrToStr(char* VMA_NOT_NULL outStr, size_t strLen, const void* ptr)
+    static inline void VmaPtrToStr(char* VMA_NOT_NULL outStr, size_t Str::Len, const void* ptr)
     {
-        snprintf(outStr, strLen, "%p", ptr);
+        snprintf(outStr, Str::Len, "%p", ptr);
     }
 #endif
 
@@ -3786,13 +3786,13 @@ static char* VmaCreateStringCopy(const VkAllocationCallbacks* allocs, const char
 }
 
 #if VMA_STATS_STRING_ENABLED
-static char* VmaCreateStringCopy(const VkAllocationCallbacks* allocs, const char* srcStr, size_t strLen)
+static char* VmaCreateStringCopy(const VkAllocationCallbacks* allocs, const char* srcStr, size_t Str::Len)
 {
     if (srcStr != VMA_NULL)
     {
-        char* const result = vma_new_array(allocs, char, strLen + 1);
-        memcpy(result, srcStr, strLen);
-        result[strLen] = '\0';
+        char* const result = vma_new_array(allocs, char, Str::Len + 1);
+        memcpy(result, srcStr, Str::Len);
+        result[Str::Len] = '\0';
         return result;
     }
     return VMA_NULL;
@@ -5357,12 +5357,12 @@ private:
 #ifndef _VMA_STRING_BUILDER_FUNCTIONS
 void VmaStringBuilder::Add(const char* pStr)
 {
-    const size_t strLen = strlen(pStr);
-    if (strLen > 0)
+    const size_t Str::Len = strlen(pStr);
+    if (Str::Len > 0)
     {
         const size_t oldCount = m_Data.size();
-        m_Data.resize(oldCount + strLen);
-        memcpy(m_Data.data() + oldCount, pStr, strLen);
+        m_Data.resize(oldCount + Str::Len);
+        memcpy(m_Data.data() + oldCount, pStr, Str::Len);
     }
 }
 
@@ -5572,8 +5572,8 @@ void VmaJsonWriter::ContinueString(const char* pStr)
 {
     VMA_ASSERT(m_InsideString);
 
-    const size_t strLen = strlen(pStr);
-    for (size_t i = 0; i < strLen; ++i)
+    const size_t Str::Len = strlen(pStr);
+    for (size_t i = 0; i < Str::Len; ++i)
     {
         char ch = pStr[i];
         if (ch == '\\')

@@ -128,7 +128,7 @@ Pair<GfxShader*, uint32> Compile(const Span<uint8>& sourceCode, const char* file
     const char* diag = spGetDiagnosticOutput(req);
     if (result != 0) {
         if (errorDiag)
-            strCopy(errorDiag, errorDiagSize, diag);
+            Str::Copy(errorDiag, errorDiagSize, diag);
         else 
             LOG_ERROR(diag);
         return {};
@@ -170,7 +170,7 @@ Pair<GfxShader*, uint32> Compile(const Span<uint8>& sourceCode, const char* file
         GfxShaderStageInfo* stageInfo = &shader->stages[i];
 
         stageInfo->stage = _TranslateStage(entryPoint->getStage());
-        strCopy(stageInfo->entryName, sizeof(stageInfo->entryName), entryPoint->getName()); 
+        Str::Copy(stageInfo->entryName, sizeof(stageInfo->entryName), entryPoint->getName()); 
 
         size_t dataSize;
         const void* data = spGetEntryPointCode(req, i, &dataSize);
@@ -197,8 +197,8 @@ Pair<GfxShader*, uint32> Compile(const Span<uint8>& sourceCode, const char* file
                 uint32 numRows = field->getTypeLayout()->getRowCount();
                 uint32 numCols = field->getTypeLayout()->getColumnCount();
 
-                strCopy(vertexAtt->name, sizeof(vertexAtt->name), field->getName());
-                strCopy(vertexAtt->semantic, sizeof(vertexAtt->semantic), field->getSemanticName());
+                Str::Copy(vertexAtt->name, sizeof(vertexAtt->name), field->getName());
+                Str::Copy(vertexAtt->semantic, sizeof(vertexAtt->semantic), field->getSemanticName());
                 vertexAtt->semanticIdx = static_cast<uint32>(field->getSemanticIndex());
                 vertexAtt->location = field->getBindingIndex();
                 vertexAtt->format = shaderTranslateVertexInputFormat(numRows, numCols, scalarType, kind);
@@ -219,7 +219,7 @@ Pair<GfxShader*, uint32> Compile(const Span<uint8>& sourceCode, const char* file
         else
             ASSERT(param->getCategory() == slang::DescriptorTableSlot);
         
-        strCopy(paramInfo->name, sizeof(paramInfo->name), param->getName());
+        Str::Copy(paramInfo->name, sizeof(paramInfo->name), param->getName());
         // TODO: get the stage that this parameter is being used (param->getStage() returns nothing)
         // paramInfo->stage = _TranslateStage(param->getStage());
         paramInfo->bindingIdx = param->getBindingIndex();

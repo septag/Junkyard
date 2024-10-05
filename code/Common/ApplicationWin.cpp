@@ -230,7 +230,7 @@ namespace App
     {
         ini_t* windowsIni = nullptr;
         char iniFilename[64];
-        strPrintFmt(iniFilename, sizeof(iniFilename), "%s_windows.ini", GetName());
+        Str::PrintFmt(iniFilename, sizeof(iniFilename), "%s_windows.ini", GetName());
 
         Blob data = Vfs::ReadFile(iniFilename, VfsFlags::TextFile|VfsFlags::AbsolutePath);
         if (data.IsValid()) {
@@ -239,7 +239,7 @@ namespace App
         }
     
         auto GetWindowData = [](ini_t* ini, const char* name, RECT* rc) {
-            int id = ini_find_section(ini, name, strLen(name));
+            int id = ini_find_section(ini, name, Str::Len(name));
             if (id != -1) {
             int topId = ini_find_property(ini, id, "top", 0);
             int bottomId = ini_find_property(ini, id, "bottom", 0);
@@ -247,13 +247,13 @@ namespace App
             int rightId = ini_find_property(ini, id, "right", 0);
 
             if (topId != -1)
-                rc->top = strToInt(ini_property_value(ini, id, topId));
+                rc->top = Str::ToInt(ini_property_value(ini, id, topId));
             if (bottomId != -1)
-                rc->bottom = strToInt(ini_property_value(ini, id, bottomId));
+                rc->bottom = Str::ToInt(ini_property_value(ini, id, bottomId));
             if (leftId != -1)
-                rc->left = strToInt(ini_property_value(ini, id, leftId));
+                rc->left = Str::ToInt(ini_property_value(ini, id, leftId));
             if (rightId != -1)
-                rc->right = strToInt(ini_property_value(ini, id, rightId));
+                rc->right = Str::ToInt(ini_property_value(ini, id, rightId));
             }
             return rc;
         };
@@ -270,25 +270,25 @@ namespace App
     static void SaveInitRects()
     {
         auto PutWindowData = [](ini_t* ini, const char* name, const RECT& rc) {
-            int id = ini_section_add(ini, name, strLen(name));
+            int id = ini_section_add(ini, name, Str::Len(name));
             char value[32];
-            strPrintFmt(value, sizeof(value), "%d", rc.top);
-            ini_property_add(ini, id, "top", 0, value, strLen(value));
+            Str::PrintFmt(value, sizeof(value), "%d", rc.top);
+            ini_property_add(ini, id, "top", 0, value, Str::Len(value));
 
-            strPrintFmt(value, sizeof(value), "%d", rc.bottom);
-            ini_property_add(ini, id, "bottom", 0, value, strLen(value));
+            Str::PrintFmt(value, sizeof(value), "%d", rc.bottom);
+            ini_property_add(ini, id, "bottom", 0, value, Str::Len(value));
 
-            strPrintFmt(value, sizeof(value), "%d", rc.left);
-            ini_property_add(ini, id, "left", 0, value, strLen(value));
+            Str::PrintFmt(value, sizeof(value), "%d", rc.left);
+            ini_property_add(ini, id, "left", 0, value, Str::Len(value));
 
-            strPrintFmt(value, sizeof(value), "%d", rc.right);
-            ini_property_add(ini, id, "right", 0, value, strLen(value));
+            Str::PrintFmt(value, sizeof(value), "%d", rc.right);
+            ini_property_add(ini, id, "right", 0, value, Str::Len(value));
         };
 
         if (gApp.windowModified && gApp.hwnd) {
             ini_t* windowsIni = ini_create(Mem::GetDefaultAlloc());
             char iniFilename[64];
-            strPrintFmt(iniFilename, sizeof(iniFilename), "%s_windows.ini", GetName());
+            Str::PrintFmt(iniFilename, sizeof(iniFilename), "%s_windows.ini", GetName());
 
             RECT mainRect, consoleRect;
             if (GetWindowRect(gApp.hwnd, &mainRect))
@@ -424,7 +424,7 @@ namespace App
         wcharBuff = (wchar_t*)GlobalLock(object);
         if (!wcharBuff)
             goto error;
-        if (!strUt8ToWide(str, wcharBuff, wcharBuffSize))
+        if (!Str::Ut8ToWide(str, wcharBuff, wcharBuffSize))
             goto error;
 
         GlobalUnlock(wcharBuff);
@@ -436,7 +436,7 @@ namespace App
         SetClipboardData(CF_UNICODETEXT, object);
         CloseClipboard();
 
-        strCopy(gApp.clipboard, (uint32)gApp.desc.clipboardSizeBytes, str);
+        Str::Copy(gApp.clipboard, (uint32)gApp.desc.clipboardSizeBytes, str);
         return true;
     
         error:
@@ -732,7 +732,7 @@ namespace App
         const int winHeight = uint16(rect.bottom - rect.top);
     
         static wchar_t winTitleWide[128];
-        strUt8ToWide(gApp.windowTitle, winTitleWide, sizeof(winTitleWide));
+        Str::Ut8ToWide(gApp.windowTitle, winTitleWide, sizeof(winTitleWide));
 
         HWND hwnd = CreateWindowExW(
             winExStyle,               	/* dwExStyle */
@@ -782,14 +782,14 @@ namespace App
             gApp.clipboard = Mem::AllocZeroTyped<char>((uint32)gApp.desc.clipboardSizeBytes);
 
         if (desc.windowTitle)
-            strCopy(gApp.windowTitle, sizeof(gApp.windowTitle), desc.windowTitle);
+            Str::Copy(gApp.windowTitle, sizeof(gApp.windowTitle), desc.windowTitle);
         else
-            strCopy(gApp.windowTitle, sizeof(gApp.windowTitle), "Junkyard");
+            Str::Copy(gApp.windowTitle, sizeof(gApp.windowTitle), "Junkyard");
 
         char moduleFilename[128];
         OS::GetMyPath(moduleFilename, sizeof(moduleFilename));
         PathUtils::GetFilename(moduleFilename, moduleFilename, sizeof(moduleFilename));
-        strCopy(gApp.name, sizeof(gApp.name), moduleFilename);
+        Str::Copy(gApp.name, sizeof(gApp.name), moduleFilename);
 
         if (SettingsJunkyard::Get().app.launchMinimized)
             ShowWindow(GetConsoleWindow(), SW_MINIMIZE);
@@ -971,7 +971,7 @@ namespace App
             return gApp.clipboard;
         }
     
-        strWideToUtf8(wcharBuff, gApp.clipboard, gApp.desc.clipboardSizeBytes);
+        Str::WideToUtf8(wcharBuff, gApp.clipboard, gApp.desc.clipboardSizeBytes);
         GlobalUnlock(object);
         CloseClipboard();
     

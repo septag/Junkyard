@@ -173,6 +173,8 @@
     </ClCompile>
     <ClCompile Include="..\..\code\Common\ApplicationAndroid.cpp">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='ReleaseDev|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\..\code\Common\ApplicationWin.cpp" />
     <ClCompile Include="..\..\code\Common\Camera.cpp" />
@@ -183,7 +185,11 @@
     <ClCompile Include="..\..\code\Core\Allocators.cpp" />
     <ClCompile Include="..\..\code\Core\Base.cpp" />
     <ClCompile Include="..\..\code\Core\Debug.cpp" />
-    <ClCompile Include="..\..\code\Core\DebugClang.cpp" />
+    <ClCompile Include="..\..\code\Core\DebugClang.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='ReleaseDev|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
+    </ClCompile>
     <ClCompile Include="..\..\code\Core\DebugWin.cpp" />
     <ClCompile Include="..\..\code\Core\Hash.cpp" />
     <ClCompile Include="..\..\code\Core\IniParser.cpp" />
@@ -196,6 +202,11 @@
     <ClCompile Include="..\..\code\Core\StringUtil.cpp" />
     <ClCompile Include="..\..\code\Core\StringUtilWin.cpp" />
     <ClCompile Include="..\..\code\Core\System.cpp" />
+    <ClCompile Include="..\..\code\Core\SystemAndroid.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='ReleaseDev|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
+    </ClCompile>
     <ClCompile Include="..\..\code\Core\SystemMac.cpp">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='ReleaseDev|x64'">true</ExcludedFromBuild>
@@ -287,7 +298,6 @@
     <ClInclude Include="..\..\code\Core\MathAll.h" />
     <ClInclude Include="..\..\code\Core\MathScalar.h" />
     <ClInclude Include="..\..\code\Core\MathTypes.h" />
-    <ClInclude Include="..\..\code\Core\MathVector.h" />
     <ClInclude Include="..\..\code\Core\Pools.h" />
     <ClInclude Include="..\..\code\Core\Settings.h" />
     <ClInclude Include="..\..\code\Core\StringUtil.h" />
@@ -335,6 +345,8 @@
   <ItemGroup>
     <None Include="..\..\code\Common\ApplicationMac.mm">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='ReleaseDev|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
     </None>
     <None Include="..\..\code\Graphics\ValidateEnumsVk.inl" />
     <None Include="..\..\code\UnityBuild.inl" />

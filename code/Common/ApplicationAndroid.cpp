@@ -706,10 +706,10 @@ bool App::Run(const AppDesc& desc)
     if (desc.enableClipboard)
         gApp.clipboard = Mem::AllocZeroTyped<char>((uint32)gApp.desc.clipboardSizeBytes);
 
-    if (desc.windowTitle)   strCopy(gApp.windowTitle, sizeof(gApp.windowTitle), desc.windowTitle);
-    else                    strCopy(gApp.windowTitle, sizeof(gApp.windowTitle), "Junkyard");
+    if (desc.windowTitle)   Str::Copy(gApp.windowTitle, sizeof(gApp.windowTitle), desc.windowTitle);
+    else                    Str::Copy(gApp.windowTitle, sizeof(gApp.windowTitle), "Junkyard");
 
-    strCopy(gApp.name, sizeof(gApp.name), "Junkyard");
+    Str::Copy(gApp.name, sizeof(gApp.name), "Junkyard");
 
     appAndroidInitKeyTable();
 

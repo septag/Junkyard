@@ -4,7 +4,7 @@
 
 #include "IncludeWin.h"
 
-bool strUt8ToWide(const char* src, wchar_t* dst, size_t dstNumBytes)
+bool Str::Ut8ToWide(const char* src, wchar_t* dst, size_t dstNumBytes)
 {
 	ASSERT(src && dst && (dstNumBytes > 1));
 
@@ -20,7 +20,7 @@ bool strUt8ToWide(const char* src, wchar_t* dst, size_t dstNumBytes)
     }
 }
 
-bool strWideToUtf8(const wchar_t* src, char* dst, size_t dstNumBytes)
+bool Str::WideToUtf8(const wchar_t* src, char* dst, size_t dstNumBytes)
 {
 	ASSERT(src && dst && (dstNumBytes > 1));
 

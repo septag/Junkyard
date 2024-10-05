@@ -51,7 +51,6 @@
     <ClInclude Include="..\..\code\Core\MathAll.h" />
     <ClInclude Include="..\..\code\Core\MathScalar.h" />
     <ClInclude Include="..\..\code\Core\MathTypes.h" />
-    <ClInclude Include="..\..\code\Core\MathVector.h" />
     <ClInclude Include="..\..\code\Core\Pools.h" />
     <ClInclude Include="..\..\code\Core\Settings.h" />
     <ClInclude Include="..\..\code\Core\StringUtil.h" />

@@ -285,7 +285,7 @@
 #endif    // defined(__has_extension)
 
 #if COMPILER_GCC || COMPILER_CLANG
-    #define FORCE_INLINE static inline __attribute__((__always_inline__))
+    #define FORCE_INLINE inline __attribute__((__always_inline__))
     #define FUNCTION __PRETTY_FUNCTION__
     #define NO_OPT_BEGIN __attribute__((optnone))
     #define NO_OPT_END 

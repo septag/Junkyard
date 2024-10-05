@@ -8,58 +8,58 @@
 //    ╚════██║██║     ██╔══██║██║     ██╔══██║██╔══██╗
 //    ███████║╚██████╗██║  ██║███████╗██║  ██║██║  ██║
 //    ╚══════╝ ╚═════╝╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝╚═╝  ╚═╝
-float mathCopySign(float _x, float _y)
+float M::CopySign(float _x, float _y)
 {
     return ::copysignf(_x, _y);
 }
 
-float mathFloor(float _f)
+float M::Floor(float _f)
 {
     return ::floorf(_f);
 }
 
-float mathCos(float _a)
+float M::Cos(float _a)
 {
     return ::cosf(_a);
 }
 
-float mathACos(float _a)
+float M::ACos(float _a)
 {
     return ::acosf(_a);
 }
 
-float mathSin(float _a)
+float M::Sin(float _a)
 {
     return ::sinf(_a);
 }
 
-float mathASin(float _a)
+float M::ASin(float _a)
 {
     return ::asinf(_a);
 }
 
-float mathATan2(float _y, float _x)
+float M::ATan2(float _y, float _x)
 {
     return ::atan2f(_y, _x);
 }
 
-float mathExp(float _a)
+float M::Exp(float _a)
 {
     return ::expf(_a);
 }
 
-float mathLog(float _a)
+float M::Log(float _a)
 {
     return ::logf(_a);
 }
 
 #if !(defined(__SSE2__) || (COMPILER_MSVC && (ARCH_64BIT || _M_IX86_FP >= 2)))
-    float mathSqrt(float _a)
+    float M::Sqrt(float _a)
     {
         return ::sqrtf(_a);
     }
 
-    float mathRsqrt(float _a)
+    float M::Rsqrt(float _a)
     {
         return 1.0f / ::sqrtf(_a);
     }
@@ -73,61 +73,61 @@ float mathLog(float _a)
 //    ██║ ╚═╝ ██║██║  ██║   ██║        ██║
 //    ╚═╝     ╚═╝╚═╝  ╚═╝   ╚═╝        ╚═╝
                                         
-Mat4 mat4ViewLookAt(Float3 eye, Float3 target, Float3 up)
+Mat4 Mat4::ViewLookAt(Float3 eye, Float3 target, Float3 up)
 {
-    Float3 zaxis = float3Norm(float3Sub(target, eye));
-    Float3 xaxis = float3Norm(float3Cross(zaxis, up));
-    Float3 yaxis = float3Cross(xaxis, zaxis);
+    Float3 zaxis = Float3::Norm(Float3::Sub(target, eye));
+    Float3 xaxis = Float3::Norm(Float3::Cross(zaxis, up));
+    Float3 yaxis = Float3::Cross(xaxis, zaxis);
     
-    return Mat4(xaxis.x,    xaxis.y,    xaxis.z,    -float3Dot(xaxis, eye), 
-                yaxis.x,    yaxis.y,    yaxis.z,    -float3Dot(yaxis, eye), 
-                -zaxis.x,   -zaxis.y,   -zaxis.z,    float3Dot(zaxis, eye),
+    return Mat4(xaxis.x,    xaxis.y,    xaxis.z,    -Float3::Dot(xaxis, eye), 
+                yaxis.x,    yaxis.y,    yaxis.z,    -Float3::Dot(yaxis, eye), 
+                -zaxis.x,   -zaxis.y,   -zaxis.z,    Float3::Dot(zaxis, eye),
                 0,          0,          0,           1.0f);
 }
 
-Mat4 mat4ViewLookAtLH(Float3 eye, Float3 target, Float3 up)
+Mat4 Mat4::ViewLookAtLH(Float3 eye, Float3 target, Float3 up)
 {
-    Float3 zaxis = float3Norm(float3Sub(target, eye));
-    Float3 xaxis = float3Norm(float3Cross(up, zaxis));
-    Float3 yaxis = float3Cross(zaxis, xaxis);
+    Float3 zaxis = Float3::Norm(Float3::Sub(target, eye));
+    Float3 xaxis = Float3::Norm(Float3::Cross(up, zaxis));
+    Float3 yaxis = Float3::Cross(zaxis, xaxis);
     
-    return Mat4(xaxis.x, xaxis.y, xaxis.z, -float3Dot(xaxis, eye), 
-                yaxis.x, yaxis.y, yaxis.z, -float3Dot(yaxis, eye), 
-                zaxis.x, zaxis.y, zaxis.z, -float3Dot(zaxis, eye),
+    return Mat4(xaxis.x, xaxis.y, xaxis.z, -Float3::Dot(xaxis, eye), 
+                yaxis.x, yaxis.y, yaxis.z, -Float3::Dot(yaxis, eye), 
+                zaxis.x, zaxis.y, zaxis.z, -Float3::Dot(zaxis, eye),
                 0,       0,       0,        1.0f);
 }
 
-Mat4 mat4ViewFPS(Float3 eye, float pitch, float yaw)
+Mat4 Mat4::ViewFPS(Float3 eye, float pitch, float yaw)
 {
-    float cos_pitch = mathCos(pitch);
-    float sin_pitch = mathSin(pitch);
-    float cos_yaw = mathCos(yaw);
-    float sin_yaw = mathSin(yaw);
+    float cos_pitch = M::Cos(pitch);
+    float sin_pitch = M::Sin(pitch);
+    float cos_yaw = M::Cos(yaw);
+    float sin_yaw = M::Sin(yaw);
     
     Float3 xaxis = Float3(cos_yaw, 0, -sin_yaw);
     Float3 yaxis = Float3(sin_yaw * sin_pitch, cos_pitch, cos_yaw * sin_pitch);
     Float3 zaxis = Float3(sin_yaw * cos_pitch, -sin_pitch, cos_pitch * cos_yaw);
     
-    return Mat4(xaxis.x, xaxis.y, xaxis.z, -float3Dot(xaxis, eye), yaxis.x, yaxis.y, yaxis.z,
-                -float3Dot(yaxis, eye), zaxis.x, zaxis.y, zaxis.z, -float3Dot(zaxis, eye),
+    return Mat4(xaxis.x, xaxis.y, xaxis.z, -Float3::Dot(xaxis, eye), yaxis.x, yaxis.y, yaxis.z,
+                -Float3::Dot(yaxis, eye), zaxis.x, zaxis.y, zaxis.z, -Float3::Dot(zaxis, eye),
                 0, 0, 0, 1.0f);
 }
 
-Mat4 mat4ViewArcBall(Float3 move, Quat rot, Float3 target_pos)
+Mat4 Mat4::ViewArcBall(Float3 move, Quat rot, Float3 target_pos)
 {
     // CameraMat = Tobj * Rcam * Tcam;      // move -> rotate around pivot pt -> move to object pos
     // ViewMat = CameraMat(inv) = Tobj(inv) * Rcam(inv) * Tobj(inv)
-    Mat4 translateInv = mat4Translate(-move.x, -move.y, -move.z);
-    Mat4 rotateInv = quatToMat4(quatInverse(rot));
-    Mat4 translateObjInv = mat4Translate(-target_pos.x, -target_pos.y, -target_pos.z);
-    Mat4 TR = mat4Mul(translateObjInv, rotateInv);
-    return mat4Mul(TR, translateInv);
+    Mat4 translateInv = Mat4::Translate(-move.x, -move.y, -move.z);
+    Mat4 rotateInv = Mat4::FromQuat(Quat::Inverse(rot));
+    Mat4 translateObjInv = Mat4::Translate(-target_pos.x, -target_pos.y, -target_pos.z);
+    Mat4 TR = Mat4::Mul(translateObjInv, rotateInv);
+    return Mat4::Mul(TR, translateInv);
 }
 
 
 // Vulkan NDC:(-1, -1)=top-left
 // D3D NDC:(-1, 1)=top-left
-Mat4 mat4Perspective(float width, float height, float zn, float zf, bool d3dNdc)
+Mat4 Mat4::Perspective(float width, float height, float zn, float zf, bool d3dNdc)
 {
     const float d = zf - zn;
     const float aa = zf / d;
@@ -139,7 +139,7 @@ Mat4 mat4Perspective(float width, float height, float zn, float zf, bool d3dNdc)
                 0,      0,              -1.0f,  0);
 }
 
-Mat4 mat4PerspectiveLH(float width, float height, float zn, float zf, bool d3dNdc)
+Mat4 Mat4::PerspectiveLH(float width, float height, float zn, float zf, bool d3dNdc)
 {
     const float d = zf - zn;
     const float aa = zf / d;
@@ -151,7 +151,7 @@ Mat4 mat4PerspectiveLH(float width, float height, float zn, float zf, bool d3dNd
                 0,      0,              1.0f,   0);
 }
 
-Mat4 mat4PerspectiveOffCenter(float xmin, float ymin, float xmax, float ymax, float zn, float zf, bool d3dNdc)
+Mat4 Mat4::PerspectiveOffCenter(float xmin, float ymin, float xmax, float ymax, float zn, float zf, bool d3dNdc)
 {
     const float d = zf - zn;
     const float aa = zf / d;
@@ -165,7 +165,7 @@ Mat4 mat4PerspectiveOffCenter(float xmin, float ymin, float xmax, float ymax, fl
                 0,      0,              -1.0f,  0);
 }
 
-Mat4 mat4PerspectiveOffCenterLH(float xmin, float ymin, float xmax, float ymax, float zn, float zf, bool d3dNdc)
+Mat4 Mat4::PerspectiveOffCenterLH(float xmin, float ymin, float xmax, float ymax, float zn, float zf, bool d3dNdc)
 {
     const float d = zf - zn;
     const float aa = zf / d;
@@ -179,21 +179,21 @@ Mat4 mat4PerspectiveOffCenterLH(float xmin, float ymin, float xmax, float ymax, 
                 0,      0,              1.0f,   0);
 }
 
-Mat4 mat4PerspectiveFOV(float fov_y, float aspect, float zn, float zf, bool d3dNdc)
+Mat4 Mat4::PerspectiveFOV(float fov_y, float aspect, float zn, float zf, bool d3dNdc)
 {
-    const float height = 1.0f / mathTan(fov_y * 0.5f);
+    const float height = 1.0f / M::Tan(fov_y * 0.5f);
     const float width = height / aspect;
-    return mat4Perspective(width, height, zn, zf, d3dNdc);
+    return Mat4::Perspective(width, height, zn, zf, d3dNdc);
 }
 
-Mat4 mat4PerspectiveFOVLH(float fov_y, float aspect, float zn, float zf, bool d3dNdc)
+Mat4 Mat4::PerspectiveFOVLH(float fov_y, float aspect, float zn, float zf, bool d3dNdc)
 {
-    const float height = 1.0f / mathTan(fov_y * 0.5f);
+    const float height = 1.0f / M::Tan(fov_y * 0.5f);
     const float width = height / aspect;
-    return mat4PerspectiveLH(width, height, zn, zf, d3dNdc);
+    return Mat4::PerspectiveLH(width, height, zn, zf, d3dNdc);
 }
 
-Mat4 mat4Ortho(float width, float height, float zn, float zf, float offset, bool d3dNdc)
+Mat4 Mat4::Ortho(float width, float height, float zn, float zf, float offset, bool d3dNdc)
 {
     const float d = zf - zn;
     const float cc = 1.0f / d;
@@ -206,7 +206,7 @@ Mat4 mat4Ortho(float width, float height, float zn, float zf, float offset, bool
                 0,              0,                      0,      1.0f);
 }
 
-Mat4 mat4OrthoLH(float width, float height, float zn, float zf, float offset, bool d3dNdc)
+Mat4 Mat4::OrthoLH(float width, float height, float zn, float zf, float offset, bool d3dNdc)
 {
     const float d = zf - zn;
     const float cc = 1.0f / d;
@@ -219,7 +219,7 @@ Mat4 mat4OrthoLH(float width, float height, float zn, float zf, float offset, bo
                 0,              0,                      0,      1.0f);
 }
 
-Mat4 mat4OrthoOffCenter(float xmin, float ymin, float xmax, float ymax, float zn, float zf, float offset, bool d3dNdc)
+Mat4 Mat4::OrthoOffCenter(float xmin, float ymin, float xmax, float ymax, float zn, float zf, float offset, bool d3dNdc)
 {
     const float width = xmax - xmin;
     const float height = ymax - ymin;
@@ -236,7 +236,7 @@ Mat4 mat4OrthoOffCenter(float xmin, float ymin, float xmax, float ymax, float zn
                 0,              0,                  0,      1.0f);
 }
 
-Mat4 mat4OrthoOffCenterLH(float xmin, float ymin, float xmax, float ymax, float zn, float zf, float offset, bool d3dNdc)
+Mat4 Mat4::OrthoOffCenterLH(float xmin, float ymin, float xmax, float ymax, float zn, float zf, float offset, bool d3dNdc)
 {
     const float width = xmax - xmin;
     const float height = ymax - ymin;
@@ -253,29 +253,29 @@ Mat4 mat4OrthoOffCenterLH(float xmin, float ymin, float xmax, float ymax, float 
                 0,              0,                      0,      1.0f);
 }
 
-Mat4 mat4ScaleRotateTranslate(float _sx, float _sy, float _sz, float _ax, float _ay, float _az, float _tx, float _ty, float _tz)
+Mat4 Mat4::ScaleRotateTranslate(float _sx, float _sy, float _sz, float _ax, float _ay, float _az, float _tx, float _ty, float _tz)
 {
     float sx, cx, sy, cy, sz, cz;
     
     if (_ax != 0) {
-        sx = mathSin(_ax);
-        cx = mathCos(_ax);
+        sx = M::Sin(_ax);
+        cx = M::Cos(_ax);
     } else {
         sx = 0;
         cx = 1.0f;
     }
     
     if (_ay != 0) {
-        sy = mathSin(_ay);
-        cy = mathCos(_ay);
+        sy = M::Sin(_ay);
+        cy = M::Cos(_ay);
     } else {
         sy = 0;
         cy = 1.0f;
     }
     
     if (_az != 0) {
-        sz = mathSin(_az);
-        cz = mathCos(_az);
+        sz = M::Sin(_az);
+        cz = M::Cos(_az);
     } else {
         sz = 0;
         cz = 1.0f;
@@ -290,20 +290,20 @@ Mat4 mat4ScaleRotateTranslate(float _sx, float _sy, float _sz, float _ax, float 
                     0.0f,                           0.0f,           0.0f,                           1.0f);
 }
 
-Mat4 mat4FromNormal(Float3 _normal, float _scale, Float3 _pos)
+Mat4 Mat4::FromNormal(Float3 _normal, float _scale, Float3 _pos)
 {
     Float3 tangent;
     Float3 bitangent;
-    float3Tangent(&tangent, &bitangent, _normal);
+    Float3::Tangent(&tangent, &bitangent, _normal);
     
-    Float4 row1 = Float4(float3Mulf(bitangent, _scale), 0.0f);
-    Float4 row2 = Float4(float3Mulf(_normal, _scale), 0.0f);
-    Float4 row3 = Float4(float3Mulf(tangent, _scale), 0.0f);
+    Float4 row1 = Float4(Float3::Mul(bitangent, _scale), 0.0f);
+    Float4 row2 = Float4(Float3::Mul(_normal, _scale), 0.0f);
+    Float4 row3 = Float4(Float3::Mul(tangent, _scale), 0.0f);
     
     return Mat4(row1.f, row2.f, row3.f, Float4(_pos, 1.0f).f);
 }
 
-Mat4 mat4Inverse(const Mat4& _a)
+Mat4 Mat4::Inverse(const Mat4& _a)
 {
     float xx = _a.f[0];
     float xy = _a.f[1];
@@ -353,131 +353,10 @@ Mat4 mat4Inverse(const Mat4& _a)
             +(xx * (yy * zz - zy * yz) - xy * (yx * zz - zx * yz) + xz * (yx * zy - zx * yy))*det_rcp));
 }
 
-Quat mat4ToQuat(const Mat4& m)
+Mat4 Mat4::InverseTransformMat(const Mat4& _mat)
 {
-    float trace, r, rinv;
-    Quat q;
-    
-    trace = m.m11 + m.m22 + m.m33;
-    if (trace >= 0.0f) {
-        r = mathSqrt(1.0f + trace);
-        rinv = 0.5f / r;
-        
-        q.x = rinv * (m.m32 - m.m23);
-        q.y = rinv * (m.m13 - m.m31);
-        q.z = rinv * (m.m21 - m.m12);
-        q.w = r * 0.5f;
-    } 
-    else if (m.m11 >= m.m22 && m.m11 >= m.m33) {
-        r = mathSqrt(1.0f - m.m22 - m.m33 + m.m11);
-        rinv = 0.5f / r;
-        
-        q.x = r * 0.5f;
-        q.y = rinv * (m.m21 + m.m12);
-        q.z = rinv * (m.m31 + m.m13);
-        q.w = rinv * (m.m32 - m.m23);
-    } 
-    else if (m.m22 >= m.m33) {
-        r = mathSqrt(1.0f - m.m11 - m.m33 + m.m22);
-        rinv = 0.5f / r;
-        
-        q.x = rinv * (m.m21 + m.m12);
-        q.y = r * 0.5f;
-        q.z = rinv * (m.m32 + m.m23);
-        q.w = rinv * (m.m13 - m.m31);
-    } 
-    else {
-        r = mathSqrt(1.0f - m.m11 - m.m22 + m.m33);
-        rinv = 0.5f / r;
-        
-        q.x = rinv * (m.m31 + m.m13);
-        q.y = rinv * (m.m32 + m.m23);
-        q.z = r * 0.5f;
-        q.w = rinv * (m.m21 - m.m12);
-    }
-    
-    return q;
-}
+    ASSERT((_mat.m41 + _mat.m42 + _mat.m43) == 0 && _mat.m44 == 1.0f);
 
-Mat4 mat4FromNormalAngle(Float3 _normal, float _scale, Float3 _pos, float _angle)
-{
-    Float3 tangent;
-    Float3 bitangent;
-    float3TangentAngle(&tangent, &bitangent, _normal, _angle);
-    
-    Float4 row1 = Float4(float3Mulf(bitangent, _scale), 0.0f);
-    Float4 row2 = Float4(float3Mulf(_normal, _scale), 0.0f);
-    Float4 row3 = Float4(float3Mulf(tangent, _scale), 0.0f);
-    
-    return Mat4(row1.f, row2.f, row3.f, Float4(_pos, 1.0f).f);
-}
-
-Mat4 mat4ProjectPlane(Float3 planeNormal)
-{
-    float xx = planeNormal.x * planeNormal.x;
-    float yy = planeNormal.y * planeNormal.y;
-    float zz = planeNormal.z * planeNormal.z;
-    float xy = planeNormal.x * planeNormal.y;
-    float xz = planeNormal.x * planeNormal.z;
-    float yz = planeNormal.y * planeNormal.z;
-    
-    return Mat4(1.0f - xx,      -xy,        -xz,        0.0f,
-                -xy,            1.0f - yy,  -yz,        0.0f,
-                -xz,            -yz,        1.0f - zz,  0.0f,
-                0.0f,           0.0f,       0.0f,       1.0f);
-}
-
-Mat4 mat4Mul(const Mat4& _a, const Mat4& _b)
-{
-    return Mat4(
-        mat4MulFloat4(_a, Float4(_b.fc1)).f, 
-        mat4MulFloat4(_a, Float4(_b.fc2)).f,
-        mat4MulFloat4(_a, Float4(_b.fc3)).f, 
-        mat4MulFloat4(_a, Float4(_b.fc4)).f);
-}
-
-//    ███╗   ███╗ █████╗ ████████╗██████╗ 
-//    ████╗ ████║██╔══██╗╚══██╔══╝╚════██╗
-//    ██╔████╔██║███████║   ██║    █████╔╝
-//    ██║╚██╔╝██║██╔══██║   ██║    ╚═══██╗
-//    ██║ ╚═╝ ██║██║  ██║   ██║   ██████╔╝
-//    ╚═╝     ╚═╝╚═╝  ╚═╝   ╚═╝   ╚═════╝ 
-Mat3 mat3Inverse(const Mat3& _a)
-{
-    float xx = _a.f[0];
-    float xy = _a.f[3];
-    float xz = _a.f[6];
-    float yx = _a.f[1];
-    float yy = _a.f[4];
-    float yz = _a.f[7];
-    float zx = _a.f[2];
-    float zy = _a.f[5];
-    float zz = _a.f[8];
-    
-    float det = 0.0f;
-    det += xx * (yy * zz - yz * zy);
-    det -= xy * (yx * zz - yz * zx);
-    det += xz * (yx * zy - yy * zx);
-    
-    float det_rcp = 1.0f / det;
-    
-    return Mat3(+(yy * zz - yz * zy) * det_rcp, -(xy * zz - xz * zy) * det_rcp,
-        +(xy * yz - xz * yy) * det_rcp, -(yx * zz - yz * zx) * det_rcp,
-        +(xx * zz - xz * zx) * det_rcp, -(xx * yz - xz * yx) * det_rcp,
-        +(yx * zy - yy * zx) * det_rcp, -(xx * zy - xy * zx) * det_rcp,
-        +(xx * yy - xy * yx) * det_rcp);
-}
-
-Mat3 mat3Mul(const Mat3& _a, const Mat3& _b)
-{
-    return Mat3(
-        mat3MulFloat3(_a, Float3(_b.fc1)), 
-        mat3MulFloat3(_a, Float3(_b.fc2)),
-        mat3MulFloat3(_a, Float3(_b.fc3)));
-}
-
-Mat4 mat3InverseTransform(const Mat4& _mat)
-{
     float det = (_mat.m11 * (_mat.m22 * _mat.m33 - _mat.m23 * _mat.m32) +
         _mat.m12 * (_mat.m23 * _mat.m31 - _mat.m21 * _mat.m33) +
         _mat.m13 * (_mat.m21 * _mat.m32 - _mat.m22 * _mat.m31));
@@ -503,14 +382,187 @@ Mat4 mat3InverseTransform(const Mat4& _mat)
     return r;
 }
 
-Mat3 mat3Abs(const Mat3& m)
+Quat Mat4::ToQuat(const Mat4& m)
 {
-    return Mat3(
-        mathAbs(m.m11), mathAbs(m.m12), mathAbs(m.m13), 
-        mathAbs(m.m21), mathAbs(m.m22), mathAbs(m.m23), 
-        mathAbs(m.m31), mathAbs(m.m32), mathAbs(m.m33));
+    float trace, r, rinv;
+    Quat q;
+    
+    trace = m.m11 + m.m22 + m.m33;
+    if (trace >= 0.0f) {
+        r = M::Sqrt(1.0f + trace);
+        rinv = 0.5f / r;
+        
+        q.x = rinv * (m.m32 - m.m23);
+        q.y = rinv * (m.m13 - m.m31);
+        q.z = rinv * (m.m21 - m.m12);
+        q.w = r * 0.5f;
+    } 
+    else if (m.m11 >= m.m22 && m.m11 >= m.m33) {
+        r = M::Sqrt(1.0f - m.m22 - m.m33 + m.m11);
+        rinv = 0.5f / r;
+        
+        q.x = r * 0.5f;
+        q.y = rinv * (m.m21 + m.m12);
+        q.z = rinv * (m.m31 + m.m13);
+        q.w = rinv * (m.m32 - m.m23);
+    } 
+    else if (m.m22 >= m.m33) {
+        r = M::Sqrt(1.0f - m.m11 - m.m33 + m.m22);
+        rinv = 0.5f / r;
+        
+        q.x = rinv * (m.m21 + m.m12);
+        q.y = r * 0.5f;
+        q.z = rinv * (m.m32 + m.m23);
+        q.w = rinv * (m.m13 - m.m31);
+    } 
+    else {
+        r = M::Sqrt(1.0f - m.m11 - m.m22 + m.m33);
+        rinv = 0.5f / r;
+        
+        q.x = rinv * (m.m31 + m.m13);
+        q.y = rinv * (m.m32 + m.m23);
+        q.z = r * 0.5f;
+        q.w = rinv * (m.m21 - m.m12);
+    }
+    
+    return q;
 }
 
+Mat4 Mat4::FromQuat(Quat q)
+{
+    float norm = M::Sqrt(Quat::Dot(q, q));
+    float s = norm > 0.0f ? (2.0f / norm) : 0.0f;
+    
+    float x = q.x;
+    float y = q.y;
+    float z = q.z;
+    float w = q.w;
+    
+    float xx = s * x * x;
+    float xy = s * x * y;
+    float wx = s * w * x;
+    float yy = s * y * y;
+    float yz = s * y * z;
+    float wy = s * w * y;
+    float zz = s * z * z;
+    float xz = s * x * z;
+    float wz = s * w * z;
+    
+    return Mat4(1.0f - yy - zz,     xy - wz,            xz + wy,        0.0f,
+                xy + wz,            1.0f - xx - zz,     yz - wx,        0.0f,
+                xz - wy,            yz + wx,            1.0f - xx - yy, 0.0f,
+                0.0f,               0.0f,               0.0f,           1.0f);
+}
+
+Mat4 Mat4::FromNormalAngle(Float3 _normal, float _scale, Float3 _pos, float _angle)
+{
+    Float3 tangent;
+    Float3 bitangent;
+    Float3::TangentAngle(&tangent, &bitangent, _normal, _angle);
+    
+    Float4 row1 = Float4(Float3::Mul(bitangent, _scale), 0.0f);
+    Float4 row2 = Float4(Float3::Mul(_normal, _scale), 0.0f);
+    Float4 row3 = Float4(Float3::Mul(tangent, _scale), 0.0f);
+    
+    return Mat4(row1.f, row2.f, row3.f, Float4(_pos, 1.0f).f);
+}
+
+Mat4 Mat4::ProjectPlane(Float3 planeNormal)
+{
+    float xx = planeNormal.x * planeNormal.x;
+    float yy = planeNormal.y * planeNormal.y;
+    float zz = planeNormal.z * planeNormal.z;
+    float xy = planeNormal.x * planeNormal.y;
+    float xz = planeNormal.x * planeNormal.z;
+    float yz = planeNormal.y * planeNormal.z;
+    
+    return Mat4(1.0f - xx,      -xy,        -xz,        0.0f,
+                -xy,            1.0f - yy,  -yz,        0.0f,
+                -xz,            -yz,        1.0f - zz,  0.0f,
+                0.0f,           0.0f,       0.0f,       1.0f);
+}
+
+Mat4 Mat4::Mul(const Mat4& _a, const Mat4& _b)
+{
+    return Mat4(
+        Mat4::MulFloat4(_a, Float4(_b.fc1)).f, 
+        Mat4::MulFloat4(_a, Float4(_b.fc2)).f,
+        Mat4::MulFloat4(_a, Float4(_b.fc3)).f, 
+        Mat4::MulFloat4(_a, Float4(_b.fc4)).f);
+}
+
+//    ███╗   ███╗ █████╗ ████████╗██████╗ 
+//    ████╗ ████║██╔══██╗╚══██╔══╝╚════██╗
+//    ██╔████╔██║███████║   ██║    █████╔╝
+//    ██║╚██╔╝██║██╔══██║   ██║    ╚═══██╗
+//    ██║ ╚═╝ ██║██║  ██║   ██║   ██████╔╝
+//    ╚═╝     ╚═╝╚═╝  ╚═╝   ╚═╝   ╚═════╝ 
+Mat3 Mat3::Inverse(const Mat3& _a)
+{
+    float xx = _a.f[0];
+    float xy = _a.f[3];
+    float xz = _a.f[6];
+    float yx = _a.f[1];
+    float yy = _a.f[4];
+    float yz = _a.f[7];
+    float zx = _a.f[2];
+    float zy = _a.f[5];
+    float zz = _a.f[8];
+    
+    float det = 0.0f;
+    det += xx * (yy * zz - yz * zy);
+    det -= xy * (yx * zz - yz * zx);
+    det += xz * (yx * zy - yy * zx);
+    
+    float det_rcp = 1.0f / det;
+    
+    return Mat3(+(yy * zz - yz * zy) * det_rcp, -(xy * zz - xz * zy) * det_rcp,
+        +(xy * yz - xz * yy) * det_rcp, -(yx * zz - yz * zx) * det_rcp,
+        +(xx * zz - xz * zx) * det_rcp, -(xx * yz - xz * yx) * det_rcp,
+        +(yx * zy - yy * zx) * det_rcp, -(xx * zy - xy * zx) * det_rcp,
+        +(xx * yy - xy * yx) * det_rcp);
+}
+
+Mat3 Mat3::Mul(const Mat3& _a, const Mat3& _b)
+{
+    return Mat3(
+        Mat3::MulFloat3(_a, Float3(_b.fc1)), 
+        Mat3::MulFloat3(_a, Float3(_b.fc2)),
+        Mat3::MulFloat3(_a, Float3(_b.fc3)));
+}
+
+Mat3 Mat3::Abs(const Mat3& m)
+{
+    return Mat3(
+        M::Abs(m.m11), M::Abs(m.m12), M::Abs(m.m13), 
+        M::Abs(m.m21), M::Abs(m.m22), M::Abs(m.m23), 
+        M::Abs(m.m31), M::Abs(m.m32), M::Abs(m.m33));
+}
+
+Mat3 Mat3::FromQuat(Quat q)
+{
+    float norm = M::Sqrt(Quat::Dot(q, q));
+    float s = norm > 0.0f ? (2.0f / norm) : 0.0f;
+    
+    float x = q.x;
+    float y = q.y;
+    float z = q.z;
+    float w = q.w;
+    
+    float xx = s * x * x;
+    float xy = s * x * y;
+    float wx = s * w * x;
+    float yy = s * y * y;
+    float yz = s * y * z;
+    float wy = s * w * y;
+    float zz = s * z * z;
+    float xz = s * x * z;
+    float wz = s * w * z;
+    
+    return Mat3(1.0f - yy - zz,     xy - wz,            xz + wy,
+                xy + wz,            1.0f - xx - zz,     yz - wx,
+                xz - wy,            yz + wx,            1.0f - xx - yy);
+}
 
 //    ███████╗██╗      ██████╗  █████╗ ████████╗██████╗ 
 //    ██╔════╝██║     ██╔═══██╗██╔══██╗╚══██╔══╝╚════██╗
@@ -550,7 +602,7 @@ Float2 float2CalcLinearFit2D(const Float2* _points, int _num)
 //    ██╔══╝  ██║     ██║   ██║██╔══██║   ██║    ╚═══██╗
 //    ██║     ███████╗╚██████╔╝██║  ██║   ██║   ██████╔╝
 //    ╚═╝     ╚══════╝ ╚═════╝ ╚═╝  ╚═╝   ╚═╝   ╚═════╝ 
-Float3 float3CalcLinearFit3D(const Float3* _points, int _num)
+Float3 Float3::CalcLinearFit3D(const Float3* _points, int _num)
 {
     float sumX = 0.0f;
     float sumY = 0.0f;
@@ -581,7 +633,7 @@ Float3 float3CalcLinearFit3D(const Float3* _points, int _num)
     // [ sum(x)   sum(y)   numPoints ] [ C ]   [ sum(z)   ]
     
     Mat3 mat(sumXX, sumXY, sumX, sumXY, sumYY, sumY, sumX, sumY, (float)(_num));
-    Mat3 matInv = mat3Inverse(mat);
+    Mat3 matInv = Mat3::Inverse(mat);
     
     return Float3(matInv.f[0] * sumXZ + matInv.f[1] * sumYZ + matInv.f[2] * sumZ,
                   matInv.f[3] * sumXZ + matInv.f[4] * sumYZ + matInv.f[5] * sumZ,
@@ -595,12 +647,12 @@ Float3 float3CalcLinearFit3D(const Float3* _points, int _num)
 //    ██║     ██║   ██║██║     ██║   ██║██╔══██╗
 //    ╚██████╗╚██████╔╝███████╗╚██████╔╝██║  ██║
 //     ╚═════╝ ╚═════╝ ╚══════╝ ╚═════╝ ╚═╝  ╚═╝
-void colorRGBtoHSV(float _hsv[3], const float _rgb[3])
+Float3 Color::RGBtoHSV(Float3 rgb)
 {
     float K = 0.f;
-    float r = _rgb[0];
-    float g = _rgb[1];
-    float b = _rgb[2];
+    float r = rgb.f[0];
+    float g = rgb.f[1];
+    float b = rgb.f[2];
     
     if (g < b)
     {
@@ -615,54 +667,54 @@ void colorRGBtoHSV(float _hsv[3], const float _rgb[3])
     }
     
     float chroma = r - Min(g, b);
-    _hsv[0] = mathAbs(K + (g - b) / (6.f * chroma + 1e-20f));
-    _hsv[1] = chroma / (r + 1e-20f);
-    _hsv[2] = r;
+    return Float3(M::Abs(K + (g - b) / (6.f * chroma + 1e-20f)),
+                  chroma / (r + 1e-20f),
+                  r);
 }
 
-void colorRGBToHSV(float _rgb[3], const float _hsv[3])
+Float3 Color::HSVtoRGB(Float3 hsv)
 {
-    const float hh = _hsv[0];
-    const float ss = _hsv[1];
-    const float vv = _hsv[2];
+    const float hh = hsv.f[0];
+    const float ss = hsv.f[1];
+    const float vv = hsv.f[2];
     
-    const float px = mathAbs(mathFract(hh + 1.0f) * 6.0f - 3.0f);
-    const float py = mathAbs(mathFract(hh + 2.0f / 3.0f) * 6.0f - 3.0f);
-    const float pz = mathAbs(mathFract(hh + 1.0f / 3.0f) * 6.0f - 3.0f);
+    const float px = M::Abs(M::Fract(hh + 1.0f) * 6.0f - 3.0f);
+    const float py = M::Abs(M::Fract(hh + 2.0f / 3.0f) * 6.0f - 3.0f);
+    const float pz = M::Abs(M::Fract(hh + 1.0f / 3.0f) * 6.0f - 3.0f);
     
-    _rgb[0] = vv * mathLerp(1.0f, mathSaturate(px - 1.0f), ss);
-    _rgb[1] = vv * mathLerp(1.0f, mathSaturate(py - 1.0f), ss);
-    _rgb[2] = vv * mathLerp(1.0f, mathSaturate(pz - 1.0f), ss);
+    return Float3(vv * M::Lerp(1.0f, M::Saturate(px - 1.0f), ss), 
+                  vv * M::Lerp(1.0f, M::Saturate(py - 1.0f), ss),
+                  vv * M::Lerp(1.0f, M::Saturate(pz - 1.0f), ss));
 }
 
-Color colorBlend(Color _a, Color _b, float _t)
+Color Color::Blend(Color _a, Color _b, float _t)
 {
-    Float4 c1 = colorToFloat4(_a);
-    Float4 c2 = colorToFloat4(_b);
+    Float4 c1 = Color::ToFloat4(_a);
+    Float4 c2 = Color::ToFloat4(_b);
     
     return Color(
-        mathLerp(c1.x, c2.x, _t),
-        mathLerp(c1.y, c2.y, _t),
-        mathLerp(c1.z, c2.z, _t),
-        mathLerp(c1.w, c2.w, _t)
+        M::Lerp(c1.x, c2.x, _t),
+        M::Lerp(c1.y, c2.y, _t),
+        M::Lerp(c1.z, c2.z, _t),
+        M::Lerp(c1.w, c2.w, _t)
     );
 }
 
 // https://en.wikipedia.org/wiki/SRGB#Specification_of_the_transformation
-Float4 colorToFloat4Linear(Float4 c)
+Float4 Color::ToFloat4Linear(Float4 c)
 {
     for (int i = 0; i < 3; i++) {
-        c.f[i] = c.f[i] < 0.04045f ? c.f[i]/12.92f : mathPow((c.f[i] + 0.055f)/1.055f, 2.4f);
+        c.f[i] = c.f[i] < 0.04045f ? c.f[i]/12.92f : M::Pow((c.f[i] + 0.055f)/1.055f, 2.4f);
     }
     return c;
 }
 
-Float4 colorToFloat4SRGB(Float4 cf) 
+Float4 Color::ToFloat4SRGB(Float4 cf) 
 {
     for (int i = 0; i < 3; i++) {
         cf.f[i] = cf.f[i] <= 0.0031308 ? 
             (12.92f*cf.f[i]) : 
-            1.055f*mathPow(cf.f[i], 0.416666f) - 0.055f;
+            1.055f*M::Pow(cf.f[i], 0.416666f) - 0.055f;
     }
     return cf;
 }
@@ -673,61 +725,10 @@ Float4 colorToFloat4SRGB(Float4 cf)
 //    ██║▄▄ ██║██║   ██║██╔══██║   ██║   
 //    ╚██████╔╝╚██████╔╝██║  ██║   ██║   
 //     ╚══▀▀═╝  ╚═════╝ ╚═╝  ╚═╝   ╚═╝   
-Mat3 quatToMat3(Quat quat)
-{
-    float norm = mathSqrt(quatDot(quat, quat));
-    float s = norm > 0.0f ? (2.0f / norm) : 0.0f;
-    
-    float x = quat.x;
-    float y = quat.y;
-    float z = quat.z;
-    float w = quat.w;
-    
-    float xx = s * x * x;
-    float xy = s * x * y;
-    float wx = s * w * x;
-    float yy = s * y * y;
-    float yz = s * y * z;
-    float wy = s * w * y;
-    float zz = s * z * z;
-    float xz = s * x * z;
-    float wz = s * w * z;
-    
-    return Mat3(1.0f - yy - zz,     xy - wz,            xz + wy,
-                xy + wz,            1.0f - xx - zz,     yz - wx,
-                xz - wy,            yz + wx,            1.0f - xx - yy);
-}
-
-Mat4 quatToMat4(Quat quat)
-{
-    float norm = mathSqrt(quatDot(quat, quat));
-    float s = norm > 0.0f ? (2.0f / norm) : 0.0f;
-    
-    float x = quat.x;
-    float y = quat.y;
-    float z = quat.z;
-    float w = quat.w;
-    
-    float xx = s * x * x;
-    float xy = s * x * y;
-    float wx = s * w * x;
-    float yy = s * y * y;
-    float yz = s * y * z;
-    float wy = s * w * y;
-    float zz = s * z * z;
-    float xz = s * x * z;
-    float wz = s * w * z;
-    
-    return Mat4(1.0f - yy - zz,     xy - wz,            xz + wy,        0.0f,
-                xy + wz,            1.0f - xx - zz,     yz - wx,        0.0f,
-                xz - wy,            yz + wx,            1.0f - xx - yy, 0.0f,
-                0.0f,               0.0f,               0.0f,           1.0f);
-}
-
-Quat quatLerp(Quat _a, Quat _b, float t)
+Quat Quat::Lerp(Quat _a, Quat _b, float t)
 {
     float tinv = 1.0f - t;
-    float dot = quatDot(_a, _b);
+    float dot = Quat::Dot(_a, _b);
     Quat r;
     if (dot >= 0.0f) {
         r = Quat(tinv * _a.x + t * _b.x, 
@@ -740,14 +741,14 @@ Quat quatLerp(Quat _a, Quat _b, float t)
                  tinv * _a.z - t * _b.z, 
                  tinv * _a.w - t * _b.w);
     }
-    return quatNorm(r);
+    return Quat::Norm(r);
 }
 
-Quat quatSlerp(Quat _a, Quat _b, float t)
+Quat Quat::Slerp(Quat _a, Quat _b, float t)
 {
     const float epsilon = 1e-6f;
     
-    float dot = quatDot(_a, _b);
+    float dot = Quat::Dot(_a, _b);
     bool flip = false;
     if (dot < 0.0f) {
         flip = true;
@@ -761,10 +762,10 @@ Quat quatSlerp(Quat _a, Quat _b, float t)
         if (flip)
             s2 *= -1.0f;
     } else {
-        float omega = mathACos(dot);
-        float inv_omega_sin = 1.0f / mathSin(omega);
-        s1 = mathSin((1.0f - t) * omega) * inv_omega_sin;
-        s2 = mathSin(t * omega) * inv_omega_sin;
+        float omega = M::ACos(dot);
+        float inv_omega_sin = 1.0f / M::Sin(omega);
+        s1 = M::Sin((1.0f - t) * omega) * inv_omega_sin;
+        s2 = M::Sin(t * omega) * inv_omega_sin;
         if (flip)
             s2 *= -1.0f;
     }
@@ -775,38 +776,38 @@ Quat quatSlerp(Quat _a, Quat _b, float t)
                 s1 * _a.w + s2 * _b.w);
 }
 
-Float3 quatToEuler(Quat _quat)
+Float3 Quat::ToEuler(Quat q)
 {
-    float sinr_cosp = 2 * (_quat.w * _quat.x + _quat.y * _quat.z);
-    float cosr_cosp = 1 - 2 * (_quat.x * _quat.x + _quat.y * _quat.y);
-    float x = mathATan2(sinr_cosp, cosr_cosp);
+    float sinr_cosp = 2 * (q.w * q.x + q.y * q.z);
+    float cosr_cosp = 1 - 2 * (q.x * q.x + q.y * q.y);
+    float x = M::ATan2(sinr_cosp, cosr_cosp);
     
-    float sinp = 2 * (_quat.w * _quat.y - _quat.z * _quat.x);
+    float sinp = 2 * (q.w * q.y - q.z * q.x);
     float y;
-    if (mathAbs(sinp) >= 1)
-        y = mathCopySign(M_HALFPI, sinp);
+    if (M::Abs(sinp) >= 1)
+        y = M::CopySign(M_HALFPI, sinp);
     else
-        y = mathASin(sinp);
+        y = M::ASin(sinp);
     
-    float siny_cosp = 2 * (_quat.w * _quat.z + _quat.x * _quat.y);
-    float cosy_cosp = 1 - 2 * (_quat.y * _quat.y + _quat.z * _quat.z);
-    float z = mathATan2(siny_cosp, cosy_cosp);
+    float siny_cosp = 2 * (q.w * q.z + q.x * q.y);
+    float cosy_cosp = 1 - 2 * (q.y * q.y + q.z * q.z);
+    float z = M::ATan2(siny_cosp, cosy_cosp);
     
     return Float3(x, y, z);
 }
 
-Quat quatFromEuler(Float3 _vec3)
+Quat Quat::FromEuler(Float3 _vec3)
 {
     float z = _vec3.z;
     float x = _vec3.x;
     float y = _vec3.y;
     
-    float cy = mathCos(z * 0.5f);
-    float sy = mathSin(z * 0.5f);
-    float cp = mathCos(y * 0.5f);
-    float sp = mathSin(y * 0.5f);
-    float cr = mathCos(x * 0.5f);
-    float sr = mathSin(x * 0.5f);
+    float cy = M::Cos(z * 0.5f);
+    float sy = M::Sin(z * 0.5f);
+    float cp = M::Cos(y * 0.5f);
+    float sp = M::Sin(y * 0.5f);
+    float cr = M::Cos(x * 0.5f);
+    float sr = M::Sin(x * 0.5f);
     
     Quat q;
     q.w = cr * cp * cy + sr * sp * sy;
@@ -824,41 +825,41 @@ Quat quatFromEuler(Float3 _vec3)
 //    ██╔═══╝ ██║     ██╔══██║██║╚██╗██║██╔══╝  
 //    ██║     ███████╗██║  ██║██║ ╚████║███████╗
 //    ╚═╝     ╚══════╝╚═╝  ╚═╝╚═╝  ╚═══╝╚══════╝
-Float3 planeNormal(Float3 _va, Float3 _vb, Float3 _vc)
+Float3 Plane::CalcNormal(Float3 _va, Float3 _vb, Float3 _vc)
 {
-    Float3 ba = float3Sub(_vb, _va);
-    Float3 ca = float3Sub(_vc, _va);
-    Float3 baca = float3Cross(ca, ba);
+    Float3 ba = Float3::Sub(_vb, _va);
+    Float3 ca = Float3::Sub(_vc, _va);
+    Float3 baca = Float3::Cross(ca, ba);
     
-    return float3Norm(baca);
+    return Float3::Norm(baca);
 }
 
-Plane plane3Points(Float3 _va, Float3 _vb, Float3 _vc)
+Plane Plane::From3Points(Float3 _va, Float3 _vb, Float3 _vc)
 {
-    Float3 normal = planeNormal(_va, _vb, _vc);
-    return Plane(normal, -float3Dot(normal, _va));
+    Float3 normal = Plane::CalcNormal(_va, _vb, _vc);
+    return Plane(normal, -Float3::Dot(normal, _va));
 }
 
-Plane planeNormalPoint(Float3 _normal, Float3 _p)
+Plane Plane::FromNormalPoint(Float3 _normal, Float3 _p)
 {
-    Float3 normal = float3Norm(_normal);
-    float d = float3Dot(_normal, _p);
+    Float3 normal = Float3::Norm(_normal);
+    float d = Float3::Dot(_normal, _p);
     return Plane(normal, -d);
 }
 
-float planeDistance(Plane _plane, Float3 _p)
+float Plane::Distance(Plane _plane, Float3 _p)
 {
-    return float3Dot(Float3(_plane.normal), _p) + _plane.dist;
+    return Float3::Dot(Float3(_plane.normal), _p) + _plane.dist;
 }
 
-Float3 planeProjectPoint(Plane _plane, Float3 _p)
+Float3 Plane::ProjectPoint(Plane _plane, Float3 _p)
 {
-    return float3Sub(_p, float3Mulf(Float3(_plane.normal), planeDistance(_plane, _p)));
+    return Float3::Sub(_p, Float3::Mul(Float3(_plane.normal), Distance(_plane, _p)));
 }
 
-Float3 planeOrigin(Plane _plane)
+Float3 Plane::Origin(Plane _plane)
 {
-    return float3Mulf(Float3(_plane.normal), -_plane.dist);
+    return Float3::Mul(Float3(_plane.normal), -_plane.dist);
 }
 
 //     █████╗  █████╗ ██████╗ ██████╗ 
@@ -867,24 +868,26 @@ Float3 planeOrigin(Plane _plane)
 //    ██╔══██║██╔══██║██╔══██╗██╔══██╗
 //    ██║  ██║██║  ██║██████╔╝██████╔╝
 //    ╚═╝  ╚═╝╚═╝  ╚═╝╚═════╝ ╚═════╝ 
-AABB AABBFromBox(const Box* box)
-{
-    Float3 center = box->tx.pos;
-    Mat3 absMat = mat3Abs(box->tx.rot);
-    Float3 extents = mat3MulFloat3(absMat, box->e);
-    return AABB(float3Sub(center, extents), float3Add(center, extents));
-}
-
 // https://zeux.io/2010/10/17/aabb-from-obb-with-component-wise-abs/
-AABB AABBTransform(const AABB& aabb, const Mat4& mat)
+AABB AABB::Transform(const AABB& aabb, const Mat4& mat)
 {
-    Float3 center = AABBCenter(aabb);
-    Float3 extents = AABBExtents(aabb);
+    Float3 center = aabb.Center();
+    Float3 extents = aabb.Extents();
     
     Mat3 rotMat = Mat3(mat.fc1, mat.fc2, mat.fc3);
-    Mat3 absMat  = mat3Abs(rotMat);
-    Float3 newCenter = mat4MulFloat3(mat, center);
-    Float3 newExtents = mat3MulFloat3(absMat, extents);
+    Mat3 absMat  = Mat3::Abs(rotMat);
+    Float3 newCenter = Mat4::MulFloat3(mat, center);
+    Float3 newExtents = Mat3::MulFloat3(absMat, extents);
     
-    return AABB(float3Sub(newCenter, newExtents), float3Add(newCenter, newExtents));
+    return AABB(Float3::Sub(newCenter, newExtents), Float3::Add(newCenter, newExtents));
 }
+
+AABB Box::ToAABB(const Box& box)
+{
+    Float3 center = box.tx.pos;
+    Mat3 absMat = Mat3::Abs(box.tx.rot);
+    Float3 extents = Mat3::MulFloat3(absMat, box.e);
+    return AABB(Float3::Sub(center, extents), Float3::Add(center, extents));
+}
+
+

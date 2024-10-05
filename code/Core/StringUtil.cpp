@@ -22,30 +22,93 @@ PRAGMA_DIAGNOSTIC_POP();
 
 #include "Arrays.h"
 
-uint32 strPrintFmt(char* str, uint32 size, const char* fmt, ...)
+namespace Str
+{
+    NO_ASAN INLINE uint32 LenCount(const char* str, uint32 _max)
+    {
+        const char* char_ptr;
+        const uintptr* longWordPtr;
+        uintptr longword, himagic, lomagic;
+
+        for (char_ptr = str; ((uintptr)char_ptr & (sizeof(longword) - 1)) != 0; ++char_ptr) {
+            if (*char_ptr == '\0') {
+                uint32 _len = (uint32)(uintptr)(char_ptr - str);
+                return (_len > _max) ? _max : _len;
+            }
+        }
+
+        longWordPtr = (uintptr*)char_ptr;
+        himagic = 0x80808080L;
+        lomagic = 0x01010101L;
+        #if ARCH_64BIT
+        /* 64-bit version of the magic.  */
+        /* Do the shift in two steps to avoid a warning if long has 32 bits.  */
+        himagic = ((himagic << 16) << 16) | himagic;
+        lomagic = ((lomagic << 16) << 16) | lomagic;
+        #endif
+
+        for (;;) {
+            longword = *longWordPtr++;
+
+            if (((longword - lomagic) & ~longword & himagic) != 0) {
+                const char* cp = (const char*)(longWordPtr - 1);
+                uint32 baseOffset = (uint32)(intptr_t)(cp - str);
+                if (baseOffset > _max)
+                return _max;
+
+                if (cp[0] == 0)
+                return Min(_max, baseOffset);
+                if (cp[1] == 0)
+                return Min(_max, baseOffset + 1);
+                if (cp[2] == 0)
+                return Min(_max, baseOffset + 2);
+                if (cp[3] == 0)
+                return Min(_max, baseOffset + 3);
+                #if ARCH_64BIT
+                if (cp[4] == 0)
+                return Min(_max, baseOffset + 4);
+                if (cp[5] == 0)
+                return Min(_max, baseOffset + 5);
+                if (cp[6] == 0)
+                return Min(_max, baseOffset + 6);
+                if (cp[7] == 0)
+                return Min(_max, baseOffset + 7);
+                #endif // ARCH_64BIT
+            }
+        }
+
+        #if !COMPILER_MSVC
+        ASSERT_MSG(0, "Not a null-terminated string");
+        return 0;
+        #endif
+    }
+} // Str
+
+
+uint32 Str::PrintFmt(char* str, uint32 size, const char* fmt, ...)
 {
     va_list args;
     va_start(args, fmt);
-    uint32 r = strPrintFmtArgs(str, size, fmt, args);
+    uint32 r = Str::PrintFmtArgs(str, size, fmt, args);
     va_end(args);
     return r;
 }
 
-uint32 strPrintFmtArgs(char* str, uint32 size, const char* fmt, va_list args)
+uint32 Str::PrintFmtArgs(char* str, uint32 size, const char* fmt, va_list args)
 {
     return (uint32)stbsp_vsnprintf(str, (int)size, fmt, args);
 }
 
-char* strPrintFmtAlloc(MemAllocator* alloc, const char* fmt, ...)
+char* Str::PrintFmtAlloc(MemAllocator* alloc, const char* fmt, ...)
 {
     va_list args;
     va_start(args, fmt);
-    char* str = strPrintFmtAllocArgs(alloc, fmt, args);
+    char* str = Str::PrintFmtAllocArgs(alloc, fmt, args);
     va_end(args);
     return str;
 }
 
-char* strPrintFmtAllocArgs(MemAllocator* alloc, const char* fmt, va_list args)
+char* Str::PrintFmtAllocArgs(MemAllocator* alloc, const char* fmt, va_list args)
 {
     struct strPrintfContext
     {
@@ -74,12 +137,12 @@ char* strPrintFmtAllocArgs(MemAllocator* alloc, const char* fmt, va_list args)
     return ctx.buff;
 }
 
-char* strCopy(char* RESTRICT dst, uint32 dstSize, const char* RESTRICT src)
+char* Str::Copy(char* RESTRICT dst, uint32 dstSize, const char* RESTRICT src)
 {
     ASSERT(dst);
     ASSERT(src);		
 
-    const uint32 len = strLen(src);
+    const uint32 len = Str::Len(src);
     const uint32 max = dstSize ? dstSize - 1 : 0;
     const uint32 num = (len < max ? len : max);
     if (num > 0) {
@@ -91,7 +154,7 @@ char* strCopy(char* RESTRICT dst, uint32 dstSize, const char* RESTRICT src)
 }
 
 // https://github.com/lattera/glibc/blob/master/string/strlen.c
-uint32 strLen(const char* str)
+uint32 Str::Len(const char* str)
 {
     const char* char_ptr;
     const uintptr* longWordPtr;
@@ -144,71 +207,12 @@ uint32 strLen(const char* str)
     #endif
 }
 
-NO_ASAN INLINE uint32 strLenCount(const char* str, uint32 _max)
-{
-    const char* char_ptr;
-    const uintptr* longWordPtr;
-    uintptr longword, himagic, lomagic;
-
-    for (char_ptr = str; ((uintptr)char_ptr & (sizeof(longword) - 1)) != 0; ++char_ptr) {
-        if (*char_ptr == '\0') {
-            uint32 _len = (uint32)(uintptr)(char_ptr - str);
-            return (_len > _max) ? _max : _len;
-        }
-    }
-
-    longWordPtr = (uintptr*)char_ptr;
-    himagic = 0x80808080L;
-    lomagic = 0x01010101L;
-    #if ARCH_64BIT
-    /* 64-bit version of the magic.  */
-    /* Do the shift in two steps to avoid a warning if long has 32 bits.  */
-    himagic = ((himagic << 16) << 16) | himagic;
-    lomagic = ((lomagic << 16) << 16) | lomagic;
-    #endif
-
-    for (;;) {
-        longword = *longWordPtr++;
-
-        if (((longword - lomagic) & ~longword & himagic) != 0) {
-            const char* cp = (const char*)(longWordPtr - 1);
-            uint32 baseOffset = (uint32)(intptr_t)(cp - str);
-            if (baseOffset > _max)
-                return _max;
-
-            if (cp[0] == 0)
-                return Min(_max, baseOffset);
-            if (cp[1] == 0)
-                return Min(_max, baseOffset + 1);
-            if (cp[2] == 0)
-                return Min(_max, baseOffset + 2);
-            if (cp[3] == 0)
-                return Min(_max, baseOffset + 3);
-            #if ARCH_64BIT
-            if (cp[4] == 0)
-                return Min(_max, baseOffset + 4);
-            if (cp[5] == 0)
-                return Min(_max, baseOffset + 5);
-            if (cp[6] == 0)
-                return Min(_max, baseOffset + 6);
-            if (cp[7] == 0)
-                return Min(_max, baseOffset + 7);
-            #endif // ARCH_64BIT
-        }
-    }
-
-    #if !COMPILER_MSVC
-        ASSERT_MSG(0, "Not a null-terminated string");
-        return 0;
-    #endif
-}
-
-char* strCopyCount(char* RESTRICT dst, uint32 dstSize, const char* RESTRICT src, uint32 count)
+char* Str::CopyCount(char* RESTRICT dst, uint32 dstSize, const char* RESTRICT src, uint32 count)
 {
     ASSERT(dst);
     ASSERT(src);
 
-    const uint32 len = strLenCount(src, count);
+    const uint32 len = LenCount(src, count);
     const uint32 max = dstSize ? dstSize - 1 : 0;
     const uint32 num = (len < max ? len : max);
     if (num > 0) 
@@ -218,28 +222,28 @@ char* strCopyCount(char* RESTRICT dst, uint32 dstSize, const char* RESTRICT src,
     return &dst[num];
 }
 
-char* strConcat(char* RESTRICT dst, uint32 dstSize, const char* RESTRICT src)
+char* Str::Concat(char* RESTRICT dst, uint32 dstSize, const char* RESTRICT src)
 {
     ASSERT(dst);
     ASSERT(src);
 
-    uint32 len = strLen(dst);
-    return strCopy(dst + len, dstSize - len, src);
+    uint32 len = Str::Len(dst);
+    return Str::Copy(dst + len, dstSize - len, src);
 }
 
-char* strConcatCount(char* RESTRICT dst, uint32 dstSize, const char* RESTRICT src, uint32 count)
+char* Str::ConcatCount(char* RESTRICT dst, uint32 dstSize, const char* RESTRICT src, uint32 count)
 {
     ASSERT(dst);
     ASSERT(src);
 
-    uint32 len = strLen(dst);
-    return strCopyCount(dst + len, dstSize - len, src, count);
+    uint32 len = Str::Len(dst);
+    return Str::CopyCount(dst + len, dstSize - len, src, count);
 }
 
-bool strIsEqual(const char* s1, const char* s2)
+bool Str::IsEqual(const char* s1, const char* s2)
 {
-    uint32 alen = strLen(s1);
-    uint32 blen = strLen(s2);
+    uint32 alen = Str::Len(s1);
+    uint32 blen = Str::Len(s2);
     if (alen != blen)
         return false;
 
@@ -250,24 +254,24 @@ bool strIsEqual(const char* s1, const char* s2)
     return true;
 }
 
-bool strIsEqualNoCase(const char* s1, const char* s2)
+bool Str::IsEqualNoCase(const char* s1, const char* s2)
 {
-    uint32 alen = strLen(s1);
-    uint32 blen = strLen(s2);
+    uint32 alen = Str::Len(s1);
+    uint32 blen = Str::Len(s2);
     if (alen != blen)
         return false;
 
     for (uint32 i = 0; i < alen; i++) {
-        if (strToLower(s1[i]) != strToLower(s2[i]))
+        if (Str::ToLower(s1[i]) != Str::ToLower(s2[i]))
             return false;
     }
     return true;    
 }
 
-bool strIsEqualCount(const char* a, const char* b, uint32 count)
+bool Str::IsEqualCount(const char* a, const char* b, uint32 count)
 {
-    uint32 _alen = strLen(a);
-    uint32 _blen = strLen(b);
+    uint32 _alen = Str::Len(a);
+    uint32 _blen = Str::Len(b);
     uint32 alen = Min(count, _alen);
     uint32 blen = Min(count, _blen);
     if (alen != blen)
@@ -280,23 +284,23 @@ bool strIsEqualCount(const char* a, const char* b, uint32 count)
     return true;
 }
 
-bool strIsEqualNoCaseCount(const char* a, const char* b, uint32 count)
+bool Str::IsEqualNoCaseCount(const char* a, const char* b, uint32 count)
 {
-    uint32 _alen = strLen(a);
-    uint32 _blen = strLen(b);
+    uint32 _alen = Str::Len(a);
+    uint32 _blen = Str::Len(b);
     uint32 alen = Min(count, _alen);
     uint32 blen = Min(count, _blen);
     if (alen != blen)
         return false;
 
     for (uint32 i = 0; i < alen; i++) {
-        if (strToLower(a[i]) != strToLower(b[i]))
+        if (Str::ToLower(a[i]) != Str::ToLower(b[i]))
             return false;
     }
     return true;
 }
 
-uint32 strCountMatchingFirstChars(const char* s1, const char* s2)
+uint32 Str::CountMatchingFirstChars(const char* s1, const char* s2)
 {
     uint32 count = 0;
     while (true) {
@@ -308,84 +312,84 @@ uint32 strCountMatchingFirstChars(const char* s1, const char* s2)
     return count;
 }
 
-bool strStartsWith(const char* str, const char* startsWith)
+bool Str::StartsWith(const char* str, const char* startsWith)
 {
-    uint32 len = strLen(str);
-    uint32 startsWithLen = strLen(startsWith);
+    uint32 len = Str::Len(str);
+    uint32 startsWithLen = Str::Len(startsWith);
     if (startsWithLen > len)
         return false;
 
-    return strIsEqualCount(str, startsWith, startsWithLen);
+    return Str::IsEqualCount(str, startsWith, startsWithLen);
 }
 
-bool strEndsWith(const char* str, const char* endsWith)
+bool Str::EndsWith(const char* str, const char* endsWith)
 {
-    uint32 len = strLen(str);
-    uint32 endsWithLen = strLen(endsWith);
+    uint32 len = Str::Len(str);
+    uint32 endsWithLen = Str::Len(endsWith);
     if (endsWithLen > len)
         return false;
-    return strIsEqual(str + len - endsWithLen, endsWith);   
+    return Str::IsEqual(str + len - endsWithLen, endsWith);   
 }
 
-bool strIsWhitespace(char ch)
+bool Str::IsWhitespace(char ch)
 {
     return static_cast<uint32>(ch - 1) < 32 && ((0x80001F00 >> static_cast<uint32>(ch - 1)) & 1) == 1;
 }
 
-char strToLower(char ch)
+char Str::ToLower(char ch)
 {
-    return ch + (strIsInRange(ch, 'A', 'Z') ? 0x20 : 0);
+    return ch + (Str::IsInRange(ch, 'A', 'Z') ? 0x20 : 0);
 }
 
-char* strToLower(char* dst, uint32 dstSize, const char* src)
+char* Str::ToLower(char* dst, uint32 dstSize, const char* src)
 {
     uint32 offset = 0;
     uint32 dstMax = dstSize - 1;
     while (*src && offset < dstMax) {
-        dst[offset++] = strToLower(*src);
+        dst[offset++] = Str::ToLower(*src);
         ++src;
     }
     dst[offset] = '\0';
     return dst;
 }
 
-char strToUpper(char ch)
+char Str::ToUpper(char ch)
 {
-    return ch - (strIsInRange(ch, 'a', 'z') ? 0x20 : 0);
+    return ch - (Str::IsInRange(ch, 'a', 'z') ? 0x20 : 0);
 }
 
-char* strToUpper(char* dst, uint32 dstSize, const char* src)
+char* Str::ToUpper(char* dst, uint32 dstSize, const char* src)
 {
     uint32 offset = 0;
     uint32 dstMax = dstSize - 1;
     while (*src && offset < dstMax) {
-        dst[offset++] = strToUpper(*src);
+        dst[offset++] = Str::ToUpper(*src);
         ++src;
     }
     dst[offset] = '\0';
     return dst;
 }
 
-char strIsInRange(char ch, char from, char to)
+char Str::IsInRange(char ch, char from, char to)
 {
     return static_cast<uint8>(ch - from) <= static_cast<uint8>(to - from);
 }
 
-char strIsNumber(char ch)
+char Str::IsNumber(char ch)
 {
-    return strIsInRange(ch, '0', '9');
+    return Str::IsInRange(ch, '0', '9');
 }
 
-char* strTrim(char* dst, uint32 dstSize, const char* src)
+char* Str::Trim(char* dst, uint32 dstSize, const char* src)
 {
-    uint32 len = Min(strLen(src), dstSize - 1);
+    uint32 len = Min(Str::Len(src), dstSize - 1);
     uint32 startOffset = 0;
     uint32 endOffset = len;
     
     // trim from start
     {
         for (uint32 i = 0; i < len; i++) {
-            if (strIsWhitespace(src[i]))
+            if (Str::IsWhitespace(src[i]))
                 startOffset++;
             else
                 break;
@@ -395,7 +399,7 @@ char* strTrim(char* dst, uint32 dstSize, const char* src)
     // trim from the end
     if (len) {
         for (uint32 i = len; --i > 0; ) {
-            if (!strIsWhitespace(src[i]))   {
+            if (!Str::IsWhitespace(src[i]))   {
                 endOffset = i + 1;  
                 break;
             }
@@ -410,9 +414,9 @@ char* strTrim(char* dst, uint32 dstSize, const char* src)
     return dst;
 }
 
-char* strTrim(char* dst, uint32 dstSize, const char* src, char ch)
+char* Str::Trim(char* dst, uint32 dstSize, const char* src, char ch)
 {
-    uint32 len = Min(strLen(src), dstSize - 1);
+    uint32 len = Min(Str::Len(src), dstSize - 1);
     uint32 startOffset = 0;
     uint32 endOffset = len;
     
@@ -444,11 +448,11 @@ char* strTrim(char* dst, uint32 dstSize, const char* src, char ch)
     return dst;
 }
 
-char* strRemoveWhitespace(char* dst, uint32 dstSize, const char* src)
+char* Str::RemoveWhitespace(char* dst, uint32 dstSize, const char* src)
 {
     uint32 c = 0;
     while (*src) {
-        if (!strIsWhitespace(*src)) {
+        if (!Str::IsWhitespace(*src)) {
             if (c < (dstSize - 1))
                 dst[c++] = *src;
             else
@@ -460,7 +464,7 @@ char* strRemoveWhitespace(char* dst, uint32 dstSize, const char* src)
     return dst;
 }
 
-char* strRemoveChar(char* dst, uint32 dstSize, const char* src, char ch)
+char* Str::RemoveChar(char* dst, uint32 dstSize, const char* src, char ch)
 {
     uint32 c = 0;
     while (*src) {
@@ -477,7 +481,7 @@ char* strRemoveChar(char* dst, uint32 dstSize, const char* src, char ch)
 }
 
 // https://github.com/lattera/glibc/blob/master/string/strchr.c
-const char* strFindChar(const char* str, char ch)
+const char* Str::FindChar(const char* str, char ch)
 {
     const uint8* charPtr;
     uintptr* longwordPtr;
@@ -551,29 +555,29 @@ const char* strFindChar(const char* str, char ch)
     return nullptr;
 }
 
-const char* strFindCharRev(const char* str, char ch)
+const char* Str::FindCharRev(const char* str, char ch)
 {
     const char *found = nullptr, *p;
     ch = (uint8)ch;
     
     if (ch == '\0')
-        return strFindChar(str, '\0');
-    while ((p = strFindChar(str, ch)) != NULL) {
+        return Str::FindChar(str, '\0');
+    while ((p = Str::FindChar(str, ch)) != NULL) {
         found = p;
         str = p + 1;
     }
     return (const char*)found;
 }
 
-const char* strFindStr(const char* RESTRICT str, const char* RESTRICT find)
+const char* Str::FindStr(const char* RESTRICT str, const char* RESTRICT find)
 {
     ASSERT(str);
     ASSERT(find);
     
     char ch = find[0];
-    const char* _start = strFindChar(str, ch);
-    uint32 find_len = strLen(find);
-    uint32 len = strLen(str);
+    const char* _start = Str::FindChar(str, ch);
+    uint32 find_len = Str::Len(find);
+    uint32 len = Str::Len(str);
     
     while (_start) {
         // We have the first character, check the rest
@@ -585,44 +589,44 @@ const char* strFindStr(const char* RESTRICT str, const char* RESTRICT find)
         if (memcmp(_start, find, find_len) == 0)
             return str;
         
-        _start = strFindChar(_start + 1, ch);
+        _start = Str::FindChar(_start + 1, ch);
     }
     
     return nullptr;
 }
 
-bool strToBool(const char* str)
+bool Str::ToBool(const char* str)
 {
     if (!str || str[0] == '\0')
         return false;
 
-    if (strIsEqualNoCase(str, "true") || strIsEqualNoCase(str, "on") || str[0] == '1')
+    if (Str::IsEqualNoCase(str, "true") || Str::IsEqualNoCase(str, "on") || str[0] == '1')
         return true;
 
     return false;    
 }
 
-int strToInt(const char* str)
+int Str::ToInt(const char* str)
 {
     return atoi(str);
 }
 
-uint32 strToUint(const char* str, uint32 radix)
+uint32 Str::ToUint(const char* str, uint32 radix)
 {
     return static_cast<uint32>(strtoul(str, nullptr, radix));
 }
 
-uint64 strToUint64(const char* str, uint32 radix)
+uint64 Str::ToUint64(const char* str, uint32 radix)
 {
     return static_cast<uint64>(strtoull(str, nullptr, radix));
 }
 
-double strToDouble(const char* str)
+double Str::ToDouble(const char* str)
 {
     return strtod(str, nullptr);
 }
 
-char* strReplaceChar(char* dst, uint32 dstSize, char ch, char replaceWith)
+char* Str::ReplaceChar(char* dst, uint32 dstSize, char ch, char replaceWith)
 {
     char* s = dst;
     uint32 count = 0; 
@@ -634,10 +638,10 @@ char* strReplaceChar(char* dst, uint32 dstSize, char ch, char replaceWith)
     return dst;
 }
 
-char* strSubStr(char* dst, uint32 dstSize, const char* str, uint32 startIdx, uint32 endIdx)
+char* Str::SubStr(char* dst, uint32 dstSize, const char* str, uint32 startIdx, uint32 endIdx)
 {
     if (endIdx == 0)
-        endIdx = strLen(str);
+        endIdx = Str::Len(str);
 
     ASSERT(startIdx < endIdx);
 
@@ -648,10 +652,10 @@ char* strSubStr(char* dst, uint32 dstSize, const char* str, uint32 startIdx, uin
     return dst;
 }
 
-const char* strSkipWhitespace(const char* str)
+const char* Str::SkipWhitespace(const char* str)
 {
     while (*str) {
-        if (strIsWhitespace(*str))
+        if (Str::IsWhitespace(*str))
             ++str;
         else
             break;
@@ -659,7 +663,7 @@ const char* strSkipWhitespace(const char* str)
     return str;
 }
 
-const char* strSkipChar(const char* str, char ch)
+const char* Str::SkipChar(const char* str, char ch)
 {
     while (*str) {
         if (*str == ch)
@@ -670,7 +674,7 @@ const char* strSkipChar(const char* str, char ch)
     return str;
 }
 
-Span<char*> strSplit(const char* str, char ch, MemAllocator* alloc)
+Span<char*> Str::Split(const char* str, char ch, MemAllocator* alloc)
 {
     Array<char*> splits(alloc);
 
@@ -683,8 +687,8 @@ Span<char*> strSplit(const char* str, char ch, MemAllocator* alloc)
             splitItem[len] = 0;
             splits.Push(splitItem);
 
-            s = strSkipChar(s, ch);
-            start = strSkipChar(s, ch);
+            s = Str::SkipChar(s, ch);
+            start = Str::SkipChar(s, ch);
         }
 
         if (*s) ++s;
@@ -699,14 +703,14 @@ Span<char*> strSplit(const char* str, char ch, MemAllocator* alloc)
     return splits.Detach();
 }
 
-Span<char*> strSplitWhitespace(const char* str, MemAllocator* alloc)
+Span<char*> Str::SplitWhitespace(const char* str, MemAllocator* alloc)
 {
     Array<char*> splits(alloc);
 
     const char* s = str;
     const char* start = str;
     while (*s) {
-        if (strIsWhitespace(*s)) {
+        if (Str::IsWhitespace(*s)) {
             if (start != s) {
                 uint32 len = PtrToInt<uint32>((void*)(s - start));
                 char* splitItem = Mem::AllocCopy<char>(start, len + 1, alloc);
@@ -714,7 +718,7 @@ Span<char*> strSplitWhitespace(const char* str, MemAllocator* alloc)
                 splits.Push(splitItem);
             }
 
-            s = strSkipWhitespace(s);
+            s = Str::SkipWhitespace(s);
 
             start = s;
         }

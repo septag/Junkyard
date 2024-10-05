@@ -58,7 +58,7 @@ struct AppImpl final : AppCallbacks
             return true;
         }
 
-        Span<char*> filePaths = strSplitWhitespace((const char*)fileListBlob.Data(), &tempAlloc);
+        Span<char*> filePaths = Str::SplitWhitespace((const char*)fileListBlob.Data(), &tempAlloc);
         mNumFilePaths = filePaths.Count();
         mFilePaths = Mem::AllocZeroTyped<Path>(mNumFilePaths);
         for (uint32 i = 0; i < filePaths.Count(); i++) {

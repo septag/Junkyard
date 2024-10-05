@@ -113,7 +113,7 @@ bool Thread::Start(const ThreadDesc& desc)
     thrd->entryFn = desc.entryFn;
     thrd->userData = desc.userData;
     thrd->stackSize = Max<uint64>(static_cast<uint64>(desc.stackSize), 64*SIZE_KB);
-    strCopy(thrd->name, sizeof(thrd->name), desc.name ? desc.name : "");
+    Str::Copy(thrd->name, sizeof(thrd->name), desc.name ? desc.name : "");
 
     pthread_attr_t attr;
     [[maybe_unused]] int r = pthread_attr_init(&attr);
@@ -656,7 +656,7 @@ OSDLL OS::LoadDLL(const char* filepath, char** pErrorMsg)
     OSDLL dll = dlopen(filepath, RTLD_LOCAL | RTLD_LAZY);
     if (dll == nullptr && pErrorMsg) {
         static char errMsg[64];
-        strPrintFmt(errMsg, sizeof(errMsg), dlerror());
+        Str::PrintFmt(errMsg, sizeof(errMsg), dlerror());
         *pErrorMsg = errMsg;
     }
     else {
@@ -692,7 +692,7 @@ bool sysGetEnvVar(const char* name, char* outValue, uint32 valueSize)
     char* value = getenv(name);
     if (!value)
         return false;
-    strCopy(outValue, valueSize, value);
+    Str::Copy(outValue, valueSize, value);
     return true;
 }
 
@@ -706,7 +706,7 @@ char* OS::GetAbsolutePath(const char* path, char* dst, size_t dstSize)
 {
     char absPath[PATH_CHARS_MAX];
     if (realpath(path, absPath) != NULL) {
-        strCopy(dst, (uint32)dstSize, absPath);
+        Str::Copy(dst, (uint32)dstSize, absPath);
     } else {
         dst[0] = '\0';
     }
@@ -758,7 +758,7 @@ bool OS::MakeTempPath(char* dst, size_t dstSize, const char* namePrefix, const c
     if (dir == nullptr)
         dir = "/tmp";
     PathUtils::Join(dst, dstSize, dir, namePrefix);
-    strConcat(dst, uint32(dstSize), "XXXXXX");
+    Str::Concat(dst, uint32(dstSize), "XXXXXX");
     mkstemp(dst);
     return dst[0] ? true : false;
 }
@@ -1178,7 +1178,7 @@ SocketTCP SocketTCP::Accept(char* clientUrl, uint32 clientUrlSize)
         inet_ntop(AF_INET, &addr.sin_addr, ip, sizeof(ip));
         uint16 port = htons(addr.sin_port);
         
-        strPrintFmt(clientUrl, clientUrlSize, "%s:%d", ip, port);
+        Str::PrintFmt(clientUrl, clientUrlSize, "%s:%d", ip, port);
     }
 
     newSock.mLive = true;

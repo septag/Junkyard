@@ -240,7 +240,7 @@ static uint32 Vfs::_FindMount(const char* path)
         path = path + 1;
     return gVfs.mounts.FindIf([path](const VfsMountPoint& mount)->bool 
     {
-        return strIsEqualCount(path, mount.alias.CStr(), mount.alias.Length()) && path[mount.alias.Length()] == '/';
+        return Str::IsEqualCount(path, mount.alias.CStr(), mount.alias.Length()) && path[mount.alias.Length()] == '/';
     });
 }
 
@@ -260,11 +260,11 @@ bool Vfs::StripMountPath(char* outPath, uint32 outPathSize, const char* path)
         if (path[0] == '/')
             ++path;
         const char* stripped = path + gVfs.mounts[index].alias.Length();
-        strCopy(outPath, outPathSize, stripped);
+        Str::Copy(outPath, outPathSize, stripped);
         return true;
     }
     else {
-        strCopy(outPath, outPathSize, path);
+        Str::Copy(outPath, outPathSize, path);
         return false;
     }
 }
@@ -313,11 +313,11 @@ static uint32 Vfs::_ResolveDiskPath(char* dstPath, uint32 dstPathSize, const cha
             path = path + 1;
 
         uint32 idx = gVfs.mounts.FindIf([path](const VfsMountPoint& mount)->bool { 
-            return strIsEqualCount(path, mount.alias.CStr(), mount.alias.Length()) && path[mount.alias.Length()] == '/';
+            return Str::IsEqualCount(path, mount.alias.CStr(), mount.alias.Length()) && path[mount.alias.Length()] == '/';
         });
         if (idx != UINT32_MAX) {
             char tmpPath[PATH_CHARS_MAX];
-            strCopy(tmpPath, sizeof(tmpPath), path + gVfs.mounts[idx].alias.Length());
+            Str::Copy(tmpPath, sizeof(tmpPath), path + gVfs.mounts[idx].alias.Length());
             PathUtils::JoinUnixStyle(dstPath, dstPathSize, gVfs.mounts[idx].path.CStr(), tmpPath);
             return idx;
         }
@@ -409,7 +409,7 @@ static size_t Vfs::_DiskWriteFile(const char* path, VfsFlags flags, const Blob& 
     auto CheckAndCreateDirsRecursive = [](const char* resolvedPath, const char* mountRootDir) {
         Path dirname = Path(resolvedPath).GetDirectory();
         if (!dirname.IsDir()) {
-            uint32 mountRootDirLen = mountRootDir ? strLen(mountRootDir) : 0;
+            uint32 mountRootDirLen = mountRootDir ? Str::Len(mountRootDir) : 0;
             uint32 slashIdx = mountRootDirLen;
             while ((slashIdx = dirname.FindChar('/', slashIdx + 1)) != UINT32_MAX) {
                 Path subDir(dirname.SubStr(0, slashIdx));
@@ -476,7 +476,7 @@ static Blob Vfs::_PackageBundleReadFile(const char* path, VfsFlags flags, MemAll
         path = path + 1;
 
     uint32 idx = gVfs.mounts.FindIf([path](const VfsMountPoint& mount)->bool {
-        return strIsEqualCount(path, mount.alias.CStr(), mount.alias.Length()) &&
+        return Str::IsEqualCount(path, mount.alias.CStr(), mount.alias.Length()) &&
                path[mount.alias.Length()] == '/';
     });
     return idx != UINT32_MAX ? 
@@ -510,7 +510,7 @@ Blob Vfs::ReadFile(const char* path, VfsFlags flags, MemAllocator* alloc, Path* 
         if (normPath[0] == '/')
             normPath++;
         const char predefinedAssets[] = "assets/";
-        if (strIsEqualNoCaseCount(normPath, predefinedAssets, sizeof(predefinedAssets)-1))
+        if (Str::IsEqualNoCaseCount(normPath, predefinedAssets, sizeof(predefinedAssets)-1))
             return _PackageBundleReadFile(normPath + sizeof(predefinedAssets) - 1, flags, alloc);
         #endif // PALTFORM_ANDROID
 
@@ -665,7 +665,7 @@ static void Vfs::_MonitorChangesClientCallback([[maybe_unused]] uint32 cmd, cons
                 path = path + 1;
 
             uint32 index = gVfs.mounts.FindIf([path](const VfsMountPoint& mount) { 
-                return strIsEqualCount(path, mount.alias.CStr(), mount.alias.Length()) && path[mount.alias.Length()] == '/';
+                return Str::IsEqualCount(path, mount.alias.CStr(), mount.alias.Length()) && path[mount.alias.Length()] == '/';
             });
 
             if (index != UINT32_MAX && gVfs.mounts[index].type == VfsMountType::Remote && gVfs.mounts[index].watchId) {
@@ -786,7 +786,7 @@ void Vfs::ReadFileAsync(const char* path, VfsFlags flags, VfsReadAsyncCallback r
             paramsBlob.SetAllocator(&tmpAlloc);
             paramsBlob.SetGrowPolicy(Blob::GrowPolicy::Multiply);
 
-            paramsBlob.WriteStringBinary(path, strLen(path));
+            paramsBlob.WriteStringBinary(path, Str::Len(path));
 
             Remote::ExecuteCommand(VFS_REMOTE_READ_FILE_CMD, paramsBlob);
             paramsBlob.Free();
@@ -834,7 +834,7 @@ void Vfs::WriteFileAsync(const char* path, const Blob& blob, VfsFlags flags, Vfs
             paramsBlob.SetAllocator(&tmpAlloc);
             paramsBlob.SetGrowPolicy(Blob::GrowPolicy::Multiply);
 
-            paramsBlob.WriteStringBinary(path, strLen(path));
+            paramsBlob.WriteStringBinary(path, Str::Len(path));
             paramsBlob.Write<VfsFlags>(flags);
 
             ASSERT(blob.Size() < UINT32_MAX);
@@ -879,7 +879,7 @@ static void Vfs::_RemoteReadFileComplete(const char* path, const Blob& blob, voi
     bool error = !blob.IsValid();
     char errorDesc[REMOTE_ERROR_SIZE];   errorDesc[0] = '\0';
     if (error)
-        strCopy(errorDesc, sizeof(errorDesc), path);
+        Str::Copy(errorDesc, sizeof(errorDesc), path);
 
 
     if (!error) {
@@ -887,7 +887,7 @@ static void Vfs::_RemoteReadFileComplete(const char* path, const Blob& blob, voi
         Blob responseBlob;
         responseBlob.SetAllocator(&tmpAlloc);      // TODO: use temp allocator
         responseBlob.SetGrowPolicy(Blob::GrowPolicy::Multiply);
-        responseBlob.WriteStringBinary(path, strLen(path));
+        responseBlob.WriteStringBinary(path, Str::Len(path));
         responseBlob.Write(blob.Data(), blob.Size());
         Remote::SendResponse(VFS_REMOTE_READ_FILE_CMD, responseBlob, error, errorDesc);
         responseBlob.Free();
@@ -902,14 +902,14 @@ static void Vfs::_RemoteWriteFileComplete(const char* path, size_t bytesWritten,
     bool error = bytesWritten == 0;
     char errorDesc[REMOTE_ERROR_SIZE];   errorDesc[0] = '\0';
     if (error)
-        strCopy(errorDesc, sizeof(errorDesc), path);
+        Str::Copy(errorDesc, sizeof(errorDesc), path);
 
     if (!error) {
         MemTempAllocator tmpAlloc;
         Blob responseBlob;
         responseBlob.SetAllocator(&tmpAlloc);      // TODO: use temp allocator
         responseBlob.SetGrowPolicy(Blob::GrowPolicy::Multiply);
-        responseBlob.Write(path, strLen(path));
+        responseBlob.Write(path, Str::Len(path));
         responseBlob.Write<size_t>(bytesWritten);
 
         Remote::SendResponse(VFS_REMOTE_WRITE_FILE_CMD, responseBlob, error, errorDesc);

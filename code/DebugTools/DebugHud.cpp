@@ -68,13 +68,13 @@ void DrawMemBudgets(float dt, bool* pOpen)
 
         ImGui::Text("InitHeap Commited: %_$llu", Engine::GetInitHeap()->GetCommitedSize());
 
-        bool vmOpen = strToBool(ImGui::GetSetting("MemBudgets.VirtualMem"));
-        bool transientOpen = strToBool(ImGui::GetSetting("MemBudgets.TransientAllocs"));
-        bool jobsOpen = strToBool(ImGui::GetSetting("MemBudgets.Jobs"));
-        bool assetOpen = strToBool(ImGui::GetSetting("MemBudgets.AssetManager"));
-        bool gfxOpen = strToBool(ImGui::GetSetting("MemBudgets.Graphics"));
-        bool imguiOpen = strToBool(ImGui::GetSetting("MemBudgets.ImGui"));
-        bool systemOpen = strToBool(ImGui::GetSetting("MemBudgets.System"));
+        bool vmOpen = Str::ToBool(ImGui::GetSetting("MemBudgets.VirtualMem"));
+        bool transientOpen = Str::ToBool(ImGui::GetSetting("MemBudgets.TransientAllocs"));
+        bool jobsOpen = Str::ToBool(ImGui::GetSetting("MemBudgets.Jobs"));
+        bool assetOpen = Str::ToBool(ImGui::GetSetting("MemBudgets.AssetManager"));
+        bool gfxOpen = Str::ToBool(ImGui::GetSetting("MemBudgets.Graphics"));
+        bool imguiOpen = Str::ToBool(ImGui::GetSetting("MemBudgets.ImGui"));
+        bool systemOpen = Str::ToBool(ImGui::GetSetting("MemBudgets.System"));
 
         vmOpen = ImGui::CollapsingHeader("Virtual Mem", nullptr, vmOpen ? ImGuiTreeNodeFlags_DefaultOpen : 0);
         if (vmOpen) {
@@ -402,8 +402,8 @@ void DrawStatusBar(float dt)
     ImDrawList* fgDrawList = ImGui::GetForegroundDrawList();
     float y = kDisplaySize.y - kLineSize;
     gQuickFrameInfo.statusShowTime += dt;
-    float alpha = mathLinearStep(gQuickFrameInfo.statusShowTime, 0, 5.0f);
-    alpha = 1.0f - mathGain(alpha, 0.05f);
+    float alpha = M::LinearStep(gQuickFrameInfo.statusShowTime, 0, 5.0f);
+    alpha = 1.0f - M::Gain(alpha, 0.05f);
     gQuickFrameInfo.statusColor.a = uint8(alpha * 255.0f);
 
     fgDrawList->AddText(ImVec2(kStyle.WindowPadding.x, y), gQuickFrameInfo.statusColor.n, gQuickFrameInfo.statusText.CStr());
