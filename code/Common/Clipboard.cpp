@@ -124,7 +124,7 @@ void ClipboardVar::SetString(const char* str, uint32 len)
     ASSERT(str);
     type = ClipboardVarType::String;
     if (len == 0)
-        len = strLen(str);
+        len = Str::Len(str);
     char* oldString = valueString;
     valueString = Mem::AllocCopy<char>(str, len + 1, &gClipboard.scrapAlloc);
     Mem::Free(oldString, &gClipboard.scrapAlloc);

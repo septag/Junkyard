@@ -7,54 +7,58 @@
 
 struct MemAllocator;
 
-API char*   strCopy(char* RESTRICT dst, uint32 dstSize, const char* RESTRICT src);
-API char*   strCopyCount(char* RESTRICT dst, uint32 dstSize, const char* RESTRICT src, uint32 count);
-API char*   strConcat(char* RESTRICT dst, uint32 dstSize, const char* RESTRICT src);
-API char*   strConcatCount(char* RESTRICT dst, uint32 dstSize, const char* RESTRICT src, uint32 count);
-NO_ASAN API uint32 strLen(const char* str);
-API uint32  strPrintFmt(char* str, uint32 size, const char* fmt, ...);
-API uint32  strPrintFmtArgs(char* str, uint32 size, const char* fmt, va_list args);
-API char*   strPrintFmtAlloc(MemAllocator* alloc, const char* fmt, ...);
-API char*   strPrintFmtAllocArgs(MemAllocator* alloc, const char* fmt, va_list args);
-API bool    strUt8ToWide(const char* src, wchar_t* dst, size_t dstNumBytes);
-API bool    strWideToUtf8(const wchar_t* src, char* dst, size_t dstNumBytes);
-API bool    strIsEqual(const char* s1, const char* s2);
-API bool    strIsEqualNoCase(const char* s1, const char* s2);
-API bool    strIsEqualCount(const char* s1, const char* s2, uint32 count);
-API bool    strIsEqualNoCaseCount(const char* s1, const char* s2, uint32 count);
-API uint32  strCountMatchingFirstChars(const char* s1, const char* s2);
-API bool    strStartsWith(const char* str, const char* startsWith);
-API bool    strEndsWith(const char* str, const char* endsWith);
-API char*   strTrim(char* dst, uint32 dstSize, const char* src);
-API char*   strTrim(char* dst, uint32 dstSize, const char* src, char ch);
-API char*   strRemoveWhitespace(char* dst, uint32 dstSize, const char* src);
-API char*   strRemoveChar(char* dst, uint32 dstSize, const char* src, char ch);
-API char*   strReplaceChar(char* dst, uint32 dstSize, char ch, char replaceWith);
-API char*   strSubStr(char* dst, uint32 dstSize, const char* str, uint32 startIdx, uint32 endIdx = 0);
-API bool    strToBool(const char* str);
-API int     strToInt(const char* str);
-API uint32  strToUint(const char* str, uint32 radix = 10);
-API uint64  strToUint64(const char* str, uint32 radix = 10);
-API double  strToDouble(const char* str);
+namespace Str
+{
+    API char* Copy(char* RESTRICT dst, uint32 dstSize, const char* RESTRICT src);
+    API char* CopyCount(char* RESTRICT dst, uint32 dstSize, const char* RESTRICT src, uint32 count);
+    API char* Concat(char* RESTRICT dst, uint32 dstSize, const char* RESTRICT src);
+    API char* ConcatCount(char* RESTRICT dst, uint32 dstSize, const char* RESTRICT src, uint32 count);
+    NO_ASAN API uint32 Len(const char* str);
+    API uint32 PrintFmt(char* str, uint32 size, const char* fmt, ...);
+    API uint32 PrintFmtArgs(char* str, uint32 size, const char* fmt, va_list args);
+    API char* PrintFmtAlloc(MemAllocator* alloc, const char* fmt, ...);
+    API char* PrintFmtAllocArgs(MemAllocator* alloc, const char* fmt, va_list args);
+    API bool Ut8ToWide(const char* src, wchar_t* dst, size_t dstNumBytes);
+    API bool WideToUtf8(const wchar_t* src, char* dst, size_t dstNumBytes);
+    API bool IsEqual(const char* s1, const char* s2);
+    API bool IsEqualNoCase(const char* s1, const char* s2);
+    API bool IsEqualCount(const char* s1, const char* s2, uint32 count);
+    API bool IsEqualNoCaseCount(const char* s1, const char* s2, uint32 count);
+    API uint32 CountMatchingFirstChars(const char* s1, const char* s2);
+    API bool StartsWith(const char* str, const char* startsWith);
+    API bool EndsWith(const char* str, const char* endsWith);
+    API char* Trim(char* dst, uint32 dstSize, const char* src);
+    API char* Trim(char* dst, uint32 dstSize, const char* src, char ch);
+    API char* RemoveWhitespace(char* dst, uint32 dstSize, const char* src);
+    API char* RemoveChar(char* dst, uint32 dstSize, const char* src, char ch);
+    API char* ReplaceChar(char* dst, uint32 dstSize, char ch, char replaceWith);
+    API char* SubStr(char* dst, uint32 dstSize, const char* str, uint32 startIdx, uint32 endIdx = 0);
+    API bool ToBool(const char* str);
+    API int ToInt(const char* str);
+    API uint32 ToUint(const char* str, uint32 radix = 10);
+    API uint64 ToUint64(const char* str, uint32 radix = 10);
+    API double ToDouble(const char* str);
 
-API bool    strIsWhitespace(char ch);
-API char    strToLower(char ch);
-API char    strToUpper(char ch);
-API char    strIsInRange(char ch, char from, char to);
-API char    strIsNumber(char ch);
+    API bool IsWhitespace(char ch);
+    API char ToLower(char ch);
+    API char ToUpper(char ch);
+    API char IsInRange(char ch, char from, char to);
+    API char IsNumber(char ch);
 
-API const char* strSkipWhitespace(const char* str);
-API const char* strSkipChar(const char* str, char ch);
-API char* strToUpper(char* dst, uint32 dstSize, const char* src);
-API char* strToLower(char* dst, uint32 dstSize, const char* src);
+    API const char* SkipWhitespace(const char* str);
+    API const char* SkipChar(const char* str, char ch);
+    API char* ToUpper(char* dst, uint32 dstSize, const char* src);
+    API char* ToLower(char* dst, uint32 dstSize, const char* src);
 
-NO_ASAN API const char* strFindChar(const char* str, char ch);
-NO_ASAN API const char* strFindCharRev(const char* str, char ch);
-NO_ASAN API const char* strFindStr(const char* RESTRICT str, const char* RESTRICT find);
+    NO_ASAN API const char* FindChar(const char* str, char ch);
+    NO_ASAN API const char* FindCharRev(const char* str, char ch);
+    NO_ASAN API const char* FindStr(const char* RESTRICT str, const char* RESTRICT find);
 
-// Returns indexes to the input string with 
-API Span<char*> strSplit(const char* str, char ch, MemAllocator* alloc);
-API Span<char*> strSplitWhitespace(const char* str, MemAllocator* alloc);
+    // Returns indexes to the input string with 
+    API Span<char*> Split(const char* str, char ch, MemAllocator* alloc);
+    API Span<char*> SplitWhitespace(const char* str, MemAllocator* alloc);
+} // Str
+
 
 template <uint32 _Size>
 struct String 
@@ -131,7 +135,7 @@ inline String<_Size>::String() : mLen(0)
 template <uint32 _Size>
 inline String<_Size>::String(const char* cstr)
 {
-    char* end = strCopy(mStr, _Size, cstr);
+    char* end = Str::Copy(mStr, _Size, cstr);
     mLen = PtrToInt<uint32>(reinterpret_cast<void*>(end - mStr));
     memset(end, 0x0, _Size - mLen);
 }
@@ -161,7 +165,7 @@ inline String<_Size>& String<_Size>::operator=(const String<_Size>& str)
 template <uint32 _Size> 
 inline String<_Size>& String<_Size>::operator=(const char* cstr)
 {
-    char* end = strCopy(mStr, _Size, cstr);
+    char* end = Str::Copy(mStr, _Size, cstr);
     mLen = PtrToInt<uint32>(reinterpret_cast<void*>(end - mStr));
     return *this;
 }
@@ -169,7 +173,7 @@ inline String<_Size>& String<_Size>::operator=(const char* cstr)
 template <uint32 _Size> 
 inline bool String<_Size>::operator==(const char* str) const
 {
-    return strIsEqual(mStr, str);
+    return Str::IsEqual(mStr, str);
 }
 
 template <uint32 _Size> 
@@ -181,7 +185,7 @@ inline bool String<_Size>::operator==(const String<_Size>& str) const
 template <uint32 _Size> 
 inline bool String<_Size>::operator!=(const char* str) const
 {
-    return !strIsEqual(mStr, str);
+    return !Str::IsEqual(mStr, str);
 }
 
 template <uint32 _Size> 
@@ -239,9 +243,9 @@ inline String<_Size>& String<_Size>::FormatSelf(const char* fmt, ...)
 {
     va_list args;
     va_start(args, fmt);
-    strPrintFmtArgs(mStr, _Size, fmt, args);
+    Str::PrintFmtArgs(mStr, _Size, fmt, args);
     va_end(args);
-    mLen = strLen(mStr);
+    mLen = Str::Len(mStr);
     return *this;
 }
 
@@ -251,42 +255,42 @@ inline String<_Size> String<_Size>::Format(const char* fmt, ...)
     String<_Size> str;
     va_list args;
     va_start(args, fmt);
-    strPrintFmtArgs(str.mStr, _Size, fmt, args);
+    Str::PrintFmtArgs(str.mStr, _Size, fmt, args);
     va_end(args);
-    str.mLen = strLen(str.mStr);
+    str.mLen = Str::Len(str.mStr);
     return str;
 }
 
 template <uint32 _Size> 
 inline String<_Size>& String<_Size>::FormatArgsSelf(const char* fmt, va_list args)
 {
-    strPrintFmtArgs(mStr, _Size, fmt, args);
+    Str::PrintFmtArgs(mStr, _Size, fmt, args);
     return *this;
 }
 
 template <uint32 _Size> 
 inline bool String<_Size>::IsEqual(const char* cstr) const
 {
-    return strIsEqual(mStr, cstr);
+    return Str::IsEqual(mStr, cstr);
 }
 
 template <uint32 _Size>
 inline bool String<_Size>::IsEqualNoCase(const char* cstr) const
 {
-    return strIsEqualNoCase(mStr, cstr);
+    return Str::IsEqualNoCase(mStr, cstr);
 }
 
 template <uint32 _Size> 
 inline bool String<_Size>::IsEqual(const char* cstr, uint32 count) const
 {
-    return strIsEqualCount(mStr, cstr, count);
+    return Str::IsEqualCount(mStr, cstr, count);
 }
 
 template <uint32 _Size> 
 inline uint32 String<_Size>::FindChar(char ch, uint32 startIndex) const
 {
     ASSERT(startIndex <= mLen);
-    const char* r = strFindChar(mStr + startIndex, ch);
+    const char* r = Str::FindChar(mStr + startIndex, ch);
     if (r)
         return PtrToInt<uint32>((void*)(r - mStr));
     else
@@ -296,7 +300,7 @@ inline uint32 String<_Size>::FindChar(char ch, uint32 startIndex) const
 template <uint32 _Size> 
 inline uint32 String<_Size>::FindCharRev(char ch) const
 {
-    const char* r = strFindCharRev(mStr, ch);
+    const char* r = Str::FindCharRev(mStr, ch);
     if (r)
         return PtrToInt<uint32>(r - mStr);
     else
@@ -306,7 +310,7 @@ inline uint32 String<_Size>::FindCharRev(char ch) const
 template <uint32 _Size> 
 inline uint32 String<_Size>::FindString(const char* cstr) const
 {
-    const char* r = strFindStr(mStr, cstr);
+    const char* r = Str::FindStr(mStr, cstr);
     if (r)
         return PtrToInt<uint32>(r - mStr);
     else
@@ -322,8 +326,8 @@ bool String<_Size>::StartsWith(char ch) const
 template <uint32 _Size> 
 bool String<_Size>::StartsWith(const char* cstr) const
 {
-    uint32 cstrLen = strLen(cstr);
-    return mLen >= cstrLen && strIsEqualCount(mStr, cstr, cstrLen);
+    uint32 cstrLen = Str::Len(cstr);
+    return mLen >= cstrLen && Str::IsEqualCount(mStr, cstr, cstrLen);
 }
 
 template <uint32 _Size> 
@@ -335,15 +339,15 @@ inline bool String<_Size>::EndsWith(char ch) const
 template <uint32 _Size> 
 inline bool String<_Size>::EndsWith(const char* cstr) const
 {
-    uint32 cstrLen = strLen(cstr);
-    return mLen >= cstrLen && strFindStr(&mStr[mLen - cstrLen], cstr) != nullptr;
+    uint32 cstrLen = Str::Len(cstr);
+    return mLen >= cstrLen && Str::FindStr(&mStr[mLen - cstrLen], cstr) != nullptr;
 }
 
 template <uint32 _Size> 
 inline String<_Size>& String<_Size>::Append(const char* cstr)
 {
-    strCopy(mStr + mLen, _Size - mLen, cstr);
-    mLen += strLen(cstr);
+    Str::Copy(mStr + mLen, _Size - mLen, cstr);
+    mLen += Str::Len(cstr);
     return *this;
 }
 
@@ -351,7 +355,7 @@ template <uint32 _Size>
 inline String<_Size>& String<_Size>::Append(const char* cstr, uint32 count)
 {
     ASSERT(mLen + count < _Size);
-    strCopyCount(mStr + mLen, _Size - mLen, cstr, count);
+    Str::CopyCount(mStr + mLen, _Size - mLen, cstr, count);
     mLen += count;
     return *this;
 }
@@ -360,7 +364,7 @@ template <uint32 _Size>
 inline String<_Size>& String<_Size>::Append(const String<_Size>& str)
 {
     ASSERT(mLen + str.mLen < _Size);
-    strCopyCount(mStr + mLen, _Size - mLen, str.mStr, str.mLen);
+    Str::CopyCount(mStr + mLen, _Size - mLen, str.mStr, str.mLen);
     mLen += str.mLen;
     return *this;
 }
@@ -368,16 +372,16 @@ inline String<_Size>& String<_Size>::Append(const String<_Size>& str)
 template <uint32 _Size> 
 inline String<_Size>& String<_Size>::Trim()
 {
-    strTrim(mStr, _Size, mStr);
-    mLen = strLen(mStr);
+    Str::Trim(mStr, _Size, mStr);
+    mLen = Str::Len(mStr);
     return *this;
 }
 
 template <uint32 _Size> 
 inline String<_Size>& String<_Size>::Trim(char ch)
 {
-    strTrim(mStr, _Size, mStr, ch);
-    mLen = strLen(mStr);
+    Str::Trim(mStr, _Size, mStr, ch);
+    mLen = Str::Len(mStr);
     return *this;
 }
 
@@ -387,7 +391,7 @@ inline String<_Size> String<_Size>::SubStr(uint32 start, uint32 end)
     end = (end == 0) ? mLen : end;
 
     String<_Size> r;
-    strCopyCount(r.mStr, _Size, mStr + start, end - start);
+    Str::CopyCount(r.mStr, _Size, mStr + start, end - start);
     r.mLen = end - start;
 
     return r;
@@ -396,6 +400,6 @@ inline String<_Size> String<_Size>::SubStr(uint32 start, uint32 end)
 template <uint32 _Size>
 inline uint32 String<_Size>::CalcLength()
 {
-    mLen = strLen(mStr);
+    mLen = Str::Len(mStr);
     return mLen;
 }

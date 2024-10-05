@@ -85,7 +85,7 @@ namespace Log
             default:			    break;
             }
 
-            strPrintFmt(text, newSize, "%s%s%s%s", 
+            Str::PrintFmt(text, newSize, "%s%s%s%s", 
                 openFmt, 
                 LOG_ENTRY_TYPES[static_cast<uint32>(entry.type)], 
                 entry.text, closeFmt);
@@ -124,10 +124,10 @@ namespace Log
             if (text) {
                 char source[PATH_CHARS_MAX];
                 if (entry.sourceFile)
-                    strPrintFmt(source, sizeof(source), "%s(%d): ", entry.sourceFile, entry.line);
+                    Str::PrintFmt(source, sizeof(source), "%s(%d): ", entry.sourceFile, entry.line);
                 else 
                     source[0] = '\0';
-                strPrintFmt(text, newSize, "%s%s%s\n", source, LOG_ENTRY_TYPES[static_cast<uint32>(entry.type)], entry.text);
+                Str::PrintFmt(text, newSize, "%s%s%s\n", source, LOG_ENTRY_TYPES[static_cast<uint32>(entry.type)], entry.text);
                 Debug::Print(text);
             }
             else {
@@ -181,19 +181,19 @@ namespace Log
             return;
 
         MemTempAllocator tmp;
-        uint32 fmtLen = strLen(fmt) + 1024;
+        uint32 fmtLen = Str::Len(fmt) + 1024;
         char* text = tmp.MallocTyped<char>(fmtLen);
 
         va_list args;
         va_start(args, fmt);
-        strPrintFmtArgs(text, fmtLen, fmt, args);
+        Str::PrintFmtArgs(text, fmtLen, fmt, args);
         va_end(args);
 
         engineDispatchLogEntry({
             .type = LogLevel::Info,
             .channels = channels,
-            .textLen = strLen(text),
-            .sourceFileLen = sourceFile ? strLen(sourceFile) : 0,
+            .textLen = Str::Len(text),
+            .sourceFileLen = sourceFile ? Str::Len(sourceFile) : 0,
             .line = line,
             .text = text,
             .sourceFile = sourceFile
@@ -208,19 +208,19 @@ namespace Log
                 return;
         
             MemTempAllocator tmp;
-            uint32 fmtLen = strLen(fmt) + 1024;
+            uint32 fmtLen = Str::Len(fmt) + 1024;
             char* text = tmp.MallocTyped<char>(fmtLen);
 
             va_list args;
             va_start(args, fmt);
-            strPrintFmtArgs(text, fmtLen, fmt, args);
+            Str::PrintFmtArgs(text, fmtLen, fmt, args);
             va_end(args);
 
             engineDispatchLogEntry({
                 .type = LogLevel::Debug,
                 .channels = channels,
-                .textLen = strLen(text),
-                .sourceFileLen = sourceFile ? strLen(sourceFile) : 0,
+                .textLen = Str::Len(text),
+                .sourceFileLen = sourceFile ? Str::Len(sourceFile) : 0,
                 .line = line,
                 .text = text,
                 .sourceFile = sourceFile
@@ -239,19 +239,19 @@ namespace Log
             return;
 
         MemTempAllocator tmp;
-        uint32 fmtLen = strLen(fmt) + 1024;
+        uint32 fmtLen = Str::Len(fmt) + 1024;
         char* text = tmp.MallocTyped<char>(fmtLen);
 
         va_list args;
         va_start(args, fmt);
-        strPrintFmtArgs(text, fmtLen, fmt, args);
+        Str::PrintFmtArgs(text, fmtLen, fmt, args);
         va_end(args);
 
         engineDispatchLogEntry({
             .type = LogLevel::Verbose,
             .channels = channels,
-            .textLen = strLen(text),
-            .sourceFileLen = sourceFile ? strLen(sourceFile) : 0,
+            .textLen = Str::Len(text),
+            .sourceFileLen = sourceFile ? Str::Len(sourceFile) : 0,
             .line = line,
             .text = text,
             .sourceFile = sourceFile
@@ -264,19 +264,19 @@ namespace Log
             return;
 
         MemTempAllocator tmp;
-        uint32 fmtLen = strLen(fmt) + 1024;
+        uint32 fmtLen = Str::Len(fmt) + 1024;
         char* text = tmp.MallocTyped<char>(fmtLen);
 
         va_list args;
         va_start(args, fmt);
-        strPrintFmtArgs(text, fmtLen, fmt, args);
+        Str::PrintFmtArgs(text, fmtLen, fmt, args);
         va_end(args);
 
         engineDispatchLogEntry({
             .type = !gLog.treatWarningsAsErrors ? LogLevel::Warning : LogLevel::Error,
             .channels = channels,
-            .textLen = strLen(text),
-            .sourceFileLen = sourceFile ? strLen(sourceFile) : 0,
+            .textLen = Str::Len(text),
+            .sourceFileLen = sourceFile ? Str::Len(sourceFile) : 0,
             .line = line,
             .text = text,
             .sourceFile = sourceFile
@@ -289,19 +289,19 @@ namespace Log
             return;
 
         MemTempAllocator tmp;
-        uint32 fmtLen = strLen(fmt) + 1024;
+        uint32 fmtLen = Str::Len(fmt) + 1024;
         char* text = tmp.MallocTyped<char>(fmtLen);
 
         va_list args;
         va_start(args, fmt);
-        strPrintFmtArgs(text, fmtLen, fmt, args);
+        Str::PrintFmtArgs(text, fmtLen, fmt, args);
         va_end(args);
 
         engineDispatchLogEntry({
             .type = LogLevel::Error,
             .channels = channels,
-            .textLen = strLen(text),
-            .sourceFileLen = sourceFile ? strLen(sourceFile) : 0,
+            .textLen = Str::Len(text),
+            .sourceFileLen = sourceFile ? Str::Len(sourceFile) : 0,
             .line = line,
             .text = text,
             .sourceFile = sourceFile        

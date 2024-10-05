@@ -47,18 +47,18 @@ bool Execute(const char* cmd, char* outResponse, uint32 responseSize)
     
     const char* cmdStart = cmd;
     const char* bracket;
-    while ((bracket = strFindChar(cmdStart, '{')) != nullptr) {
-        const char* closingBracket = strFindChar(bracket+1, '}');
+    while ((bracket = Str::FindChar(cmdStart, '{')) != nullptr) {
+        const char* closingBracket = Str::FindChar(bracket+1, '}');
         if (closingBracket) {
             cmdBuffer.Write(cmd, size_t(bracket - cmdStart));
 
             if (closingBracket > bracket + 1) {
                 char varName[32] {};
-                strCopyCount(varName, sizeof(varName), bracket+1, uint32(closingBracket-bracket-1));
+                Str::CopyCount(varName, sizeof(varName), bracket+1, uint32(closingBracket-bracket-1));
                 
                 const char* replacement = LookupVariable(varName);
                 if (replacement) 
-                    cmdBuffer.Write(replacement, strLen(replacement));
+                    cmdBuffer.Write(replacement, Str::Len(replacement));
             }
 
             cmdStart = closingBracket + 1;
@@ -69,7 +69,7 @@ bool Execute(const char* cmd, char* outResponse, uint32 responseSize)
     }
 
     if (cmdStart[0])
-        cmdBuffer.Write(cmdStart, strLen(cmdStart));
+        cmdBuffer.Write(cmdStart, Str::Len(cmdStart));
     cmdBuffer.Write<char>('\0');
 
     // tokenize space
@@ -83,7 +83,7 @@ bool Execute(const char* cmd, char* outResponse, uint32 responseSize)
     char* argStart = c;
     char quote = 0;
     while (*c != 0) {
-        if (strIsWhitespace(*c) && quote == 0) {
+        if (Str::IsWhitespace(*c) && quote == 0) {
             *c = 0;
             if (c != argStart)
                 argv.Push(argStart);
@@ -106,11 +106,11 @@ bool Execute(const char* cmd, char* outResponse, uint32 responseSize)
 
     if (argv.Count()) {
         const char* name = argv[0];
-        uint32 index = gConsole.commands.FindIf([name](const ConCommandDesc& desc) { return strIsEqualNoCase(name, desc.name); });
+        uint32 index = gConsole.commands.FindIf([name](const ConCommandDesc& desc) { return Str::IsEqualNoCase(name, desc.name); });
         if (index != UINT32_MAX) {
             const ConCommandDesc& cmdDesc = gConsole.commands[index];
             if (argv.Count() < cmdDesc.minArgc) {
-                strPrintFmt(outResponse, responseSize, "Command '%s' failed. Invalid number of arguments (expected %u)", 
+                Str::PrintFmt(outResponse, responseSize, "Command '%s' failed. Invalid number of arguments (expected %u)", 
                             name, cmdDesc.minArgc);
                 return false;
             }
@@ -121,14 +121,14 @@ bool Execute(const char* cmd, char* outResponse, uint32 responseSize)
         }
         else {
             if (outResponse && responseSize)
-                strPrintFmt(outResponse, responseSize, "Command not found: %s", name);
+                Str::PrintFmt(outResponse, responseSize, "Command not found: %s", name);
             LOG_WARNING("Command not found: %s", name);
             return false;
         }
     }
     else {
         if (outResponse && responseSize) 
-            strPrintFmt(outResponse, responseSize, "Cannot parse command: %s", cmd);
+            Str::PrintFmt(outResponse, responseSize, "Cannot parse command: %s", cmd);
         LOG_WARNING("Cannot parse command: %s", cmd);
         return false;
     }
@@ -143,7 +143,7 @@ void ExecuteRemote(const char* cmd)
         MemTempAllocator tmpAlloc;
         Blob blob(&tmpAlloc);
         blob.SetGrowPolicy(Blob::GrowPolicy::Multiply);
-        blob.WriteStringBinary(cmd, strLen(cmd));
+        blob.WriteStringBinary(cmd, Str::Len(cmd));
     
         Remote::ExecuteCommand(CONSOLE_REMOTE_CMD, blob);
     }
@@ -173,9 +173,9 @@ static bool HandlerServerCallback([[maybe_unused]] uint32 cmd, const Blob& incom
     bool r = Execute(cmdline, response, sizeof(response));
 
     if (r)
-        outgoingBlob->WriteStringBinary(response, strLen(response));
+        outgoingBlob->WriteStringBinary(response, Str::Len(response));
     else
-        strCopy(outgoingErrorDesc, REMOTE_ERROR_SIZE, response);
+        Str::Copy(outgoingErrorDesc, REMOTE_ERROR_SIZE, response);
 
     return r;
 }
@@ -293,7 +293,7 @@ void Release()
 
 void RegisterCommand(const ConCommandDesc& desc)
 {
-    [[maybe_unused]] uint32 index = gConsole.commands.FindIf([name=desc.name](const ConCommandDesc& desc) { return strIsEqual(desc.name, name); });
+    [[maybe_unused]] uint32 index = gConsole.commands.FindIf([name=desc.name](const ConCommandDesc& desc) { return Str::IsEqual(desc.name, name); });
     ASSERT_MSG(index == UINT32_MAX, "Command '%s' already registered", desc.name);
 
     ConCommandDesc* data = gConsole.commands.Push(desc);

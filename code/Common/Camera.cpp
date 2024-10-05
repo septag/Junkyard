@@ -1,7 +1,7 @@
 #include "Camera.h"
 #include "Application.h"
 
-#include "../Core/MathVector.h"
+#include "../Core/MathAll.h"
 
 #ifdef near
     #undef near
@@ -14,7 +14,7 @@
 Camera::Camera(float fovDeg, float fnear, float ffar) :
     mNear(fnear),
     mFar(ffar),
-    mFov(mathToRad(fovDeg))
+    mFov(M::ToRad(fovDeg))
 {
     ASSERT(mFar > mNear);
 }
@@ -23,19 +23,19 @@ void Camera::Setup(float fovDeg, float fnear, float ffar)
 {
     ASSERT(ffar > fnear);
 
-    mFov = mathToRad(fovDeg);
+    mFov = M::ToRad(fovDeg);
     mNear = fnear;
     mFar = ffar;
 }
 
 Mat4 Camera::GetOrthoMat(float viewWidth, float viewHeight) const
 {
-    return mat4Ortho(viewWidth, viewHeight, mNear, mFar);
+    return Mat4::Ortho(viewWidth, viewHeight, mNear, mFar);
 }
 
 Mat4 Camera::GetPerspectiveMat(float viewWidth, float viewHeight) const
 {
-    return mat4PerspectiveFOV(mFov, viewWidth/viewHeight, mNear, mFar);
+    return Mat4::PerspectiveFOV(mFov, viewWidth/viewHeight, mNear, mFar);
 }
 
 Mat4 Camera::GetViewMat() const
@@ -44,15 +44,15 @@ Mat4 Camera::GetViewMat() const
     Float3 xaxis = mRight;    // norm(cross(zaxis, up));
     Float3 yaxis = mUp;       // cross(xaxis, zaxis);
 
-    return Mat4(xaxis.x,   xaxis.y,    xaxis.z,    -float3Dot(xaxis, mPos), 
-                yaxis.x,   yaxis.y,    yaxis.z,    -float3Dot(yaxis, mPos), 
-                -zaxis.x, -zaxis.y,    -zaxis.z,    float3Dot(zaxis, mPos), 
+    return Mat4(xaxis.x,   xaxis.y,    xaxis.z,    -Float3::Dot(xaxis, mPos), 
+                yaxis.x,   yaxis.y,    yaxis.z,    -Float3::Dot(yaxis, mPos), 
+                -zaxis.x, -zaxis.y,    -zaxis.z,    Float3::Dot(zaxis, mPos), 
                 0.0f,      0.0f,       0.0f,        1.0f);
 }
 
 void Camera::SetViewMat(const Mat4& viewMat)
 {
-    Mat4 vpInv = mat4Inverse(viewMat);
+    Mat4 vpInv = Mat4::Inverse(viewMat);
     mRight = Float3(vpInv.fc1);
     mUp = Float3(vpInv.fc2);
     mForward = Float3(vpInv.fc3) * -1.0f;
@@ -75,10 +75,10 @@ CameraFrustumPoints Camera::GetFrustumPoints(float viewWidth, float viewHeight, 
     Float3 zaxis = mForward;
     Float3 pos = mPos;
 
-    float nearPlaneH = mathTan(fov*0.5f) * near;
+    float nearPlaneH = M::Tan(fov*0.5f) * near;
     float nearPlaneW = nearPlaneH * aspect;
 
-    float farPlaneH = mathTan(fov*0.5f) * far;
+    float farPlaneH = M::Tan(fov*0.5f) * far;
     float farPlaneW = farPlaneH * aspect;
 
     Float3 centerNear = zaxis*near + pos;
@@ -113,10 +113,11 @@ CameraFrustumPlanes Camera::GetFrustumPlanes(const Mat4& viewProjMat) const
 
 void Camera::SetLookAt(Float3 pos, Float3 target, Float3 up)
 {
+    using namespace M;
     // TODO: figure UP vector out, I hacked up vector (in the matrix) to make it work correctly
-    mForward = float3Norm(target - pos);
-    mRight = float3Norm(float3Cross(mForward, up));
-    mUp = float3Cross(mRight, mForward);
+    mForward = Float3Norm(target - pos);
+    mRight = Float3Norm(Float3Cross(mForward, up));
+    mUp = Float3Cross(mRight, mForward);
     mPos = pos;
 }
 
@@ -136,9 +137,9 @@ void CameraFPS::SetLookAt(Float3 pos, Float3 target, Float3 up)
                   Float4(-mUp.x,      -mUp.y,         -mUp.z,      0),
                   Float4(mForward.x,   mForward.y,     mForward.z, 0), 
                   Float4(0,            0,              0,          1.0f));
-    mQuat = mat4ToQuat(m);
+    mQuat = Mat4::ToQuat(m);
 
-    Float3 euler = quatToEuler(mQuat);
+    Float3 euler = Quat::ToEuler(mQuat);
     mPitch = euler.x;
     mYaw = euler.z;
 }
@@ -151,16 +152,16 @@ void CameraFPS::SetViewMat(const Mat4& viewMat)
                   Float4(-mUp.x,      -mUp.y,         -mUp.z,      0),
                   Float4(mForward.x,   mForward.y,     mForward.z, 0), 
                   Float4(0,            0,              0,          1.0f));
-    mQuat = mat4ToQuat(m);
+    mQuat = Mat4::ToQuat(m);
 
-    Float3 euler = quatToEuler(mQuat);
+    Float3 euler = Quat::ToEuler(mQuat);
     mPitch = euler.x;
     mYaw = euler.z;
 }
 
 void CameraFPS::UpdateRotation()
 {
-    Mat4 m = quatToMat4(mQuat);
+    Mat4 m = Mat4::FromQuat(mQuat);
     mRight = Float3(m.fc1);
     mUp = Float3(m.fc2)*-1.0f;
     mForward = Float3(m.fc3);
@@ -169,14 +170,14 @@ void CameraFPS::UpdateRotation()
 void CameraFPS::RotatePitch(float pitch, float pitchMin, float pitchMax)
 {
     mPitch = Clamp(mPitch - pitch, pitchMin, pitchMax);
-    mQuat = quatRotateZ(mYaw) * quatRotateX(mPitch);
+    mQuat = Quat::RotateZ(mYaw) * Quat::RotateX(mPitch);
     UpdateRotation();
 }
 
 void CameraFPS::RotateYaw(float yaw)
 {
     mYaw -= yaw;
-    mQuat = quatRotateZ(mYaw) * quatRotateX(mPitch);
+    mQuat = Quat::RotateZ(mYaw) * Quat::RotateX(mPitch);
     UpdateRotation();
 }
 
@@ -192,6 +193,8 @@ void CameraFPS::Strafe(float strafe)
 
 void CameraFPS::HandleMovementKeyboard(float dt, float moveSpeed, float slowMoveSpeed)
 {
+    using namespace M;
+
     if (App::IsKeyDown(InputKeycode::LeftShift) || App::IsKeyDown(InputKeycode::RightShift))
         moveSpeed = slowMoveSpeed;
 
@@ -205,8 +208,8 @@ void CameraFPS::HandleMovementKeyboard(float dt, float moveSpeed, float slowMove
     if (App::IsKeyDown(InputKeycode::S) || App::IsKeyDown(InputKeycode::Down))
         targetPos = mPos - mForward*(moveSpeed*dt);
 
-    float h = -0.1f/mathLog2(0.01f);
-    mPos = float3SmoothLerp(mPos, targetPos, dt, h);
+    float h = -0.1f/Log2(0.01f);
+    mPos = Float3SmoothLerp(mPos, targetPos, dt, h);
 }
 
 void CameraFPS::HandleRotationMouse(const AppEvent& ev, float rotateSpeed, float zoomStep)
@@ -239,8 +242,8 @@ void CameraFPS::HandleRotationMouse(const AppEvent& ev, float rotateSpeed, float
         break;
     case AppEventType::MouseMove:
         if (mMouseDown) {
-            float dx = mathToRad(ev.mouseX - mLastMouse.x) * rotateSpeed;
-            float dy = mathToRad(ev.mouseY - mLastMouse.y) * rotateSpeed;
+            float dx = M::ToRad(ev.mouseX - mLastMouse.x) * rotateSpeed;
+            float dy = M::ToRad(ev.mouseY - mLastMouse.y) * rotateSpeed;
             mLastMouse = Float2(ev.mouseX, ev.mouseY);
             RotatePitch(dy);
             RotateYaw(dx);
@@ -263,15 +266,17 @@ void CameraFPS::HandleRotationMouse(const AppEvent& ev, float rotateSpeed, float
 
 void CameraOrbit::SetLookAt(Float3 pos, Float3 target, Float3 up) 
 {
+    using namespace M;
+
     UNUSED(up);     // Maybe we should also keep `up` and pass it on ?
 
     mTarget = target;
     Float3 look = target - pos;
 
-    mDistance = float3Len(look);
-    mOrbit = -mathACos(float2Dot(float2Norm(Float2(look.f)*-1.0f), Float2(1.0f, 0)));
+    mDistance = Float3::Len(look);
+    mOrbit = -ACos(Float2Dot(Float2Norm(Float2(look.f)*-1.0f), Float2(1.0f, 0)));
 
-    float a = mathACos(float3Dot(float3Norm(look), mathIsEqual(look.z, 0, 0.00001f) ? FLOAT3_ZERO : float3Norm(Float3(0, 0, look.z))));
+    float a = ACos(Float3Dot(Float3Norm(look), IsEqual(look.z, 0, 0.00001f) ? FLOAT3_ZERO : Float3Norm(Float3(0, 0, look.z))));
     mElevation = M_HALFPI - a;
     if (mElevation < 0)
         mElevation = -mElevation;
@@ -289,9 +294,9 @@ void CameraOrbit::RotateOrbit(float orbit)
 {
     mOrbit += orbit;
 
-    float x = mDistance * mathCos(mOrbit);
-    float y = mDistance * mathSin(mOrbit);
-    float z = mDistance * mathCos(M_HALFPI - mElevation);
+    float x = mDistance * M::Cos(mOrbit);
+    float y = mDistance * M::Sin(mOrbit);
+    float z = mDistance * M::Cos(M_HALFPI - mElevation);
 
     Camera::SetLookAt(Float3(x, y, z), mTarget);
 }
@@ -322,7 +327,7 @@ void CameraOrbit::HandleRotationMouse(const AppEvent& ev, float rotateSpeed, flo
         break;
     case AppEventType::MouseMove:
         if (mMouseDown) {
-            float dx = mathToRad(ev.mouseX - mLastMouse.x) * rotateSpeed;
+            float dx = M::ToRad(ev.mouseX - mLastMouse.x) * rotateSpeed;
             mLastMouse = Float2(ev.mouseX, ev.mouseY);
             RotateOrbit(dx);
         }

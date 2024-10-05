@@ -214,15 +214,15 @@ bool OSProcess::Run(const char* cmdline, OSProcessFlags flags, const char* cwd)
     MemTempAllocator tmpAlloc;
     Array<char*> argsArr(&tmpAlloc);
 
-    char* cmdlineCopy = Mem::AllocCopy<char>(cmdline, strLen(cmdline)+1, &tmpAlloc);
-    char* str = const_cast<char*>(strSkipWhitespace(cmdlineCopy));
+    char* cmdlineCopy = Mem::AllocCopy<char>(cmdline, Str::Len(cmdline)+1, &tmpAlloc);
+    char* str = const_cast<char*>(Str::SkipWhitespace(cmdlineCopy));
     while (*str) {
         // Find the next whitespace, or end of string
         char* start = str;
         while (*(++str)) {
-            if (strIsWhitespace(*str)) {
+            if (Str::IsWhitespace(*str)) {
                 *str = 0;
-                str = const_cast<char*>(strSkipWhitespace(str+1));
+                str = const_cast<char*>(Str::SkipWhitespace(str+1));
                 break;
             }
         }
@@ -337,7 +337,7 @@ char* OS::GetCurrentDir(char* dst, size_t dstSize)
     #if PLATFORM_OSX
         const char* homeDir = getenv("HOME");
         ASSERT(homeDir);
-        strCopy(dst, (uint32)dstSize, homeDir);
+        Str::Copy(dst, (uint32)dstSize, homeDir);
         return dst;
     #else
         ASSERT(0, "Not implemented in iOS");
@@ -350,9 +350,9 @@ char* OS::GetCacheDir(char* dst, size_t dstSize, const char* appName)
     #if PLATFORM_OSX
         const char* homeDir = getenv("HOME");
         ASSERT(homeDir);
-        strCopy(dst, (uint32)dstSize, homeDir);
-        strConcat(dst, (uint32)dstSize, "/Library/Application Support/");
-        strConcat(dst, (uint32)dstSize, appName);
+        Str::Copy(dst, (uint32)dstSize, homeDir);
+        Str::Concat(dst, (uint32)dstSize, "/Library/Application Support/");
+        Str::Concat(dst, (uint32)dstSize, appName);
         return dst;
     #else
         ASSERT(0, "Not implemented");

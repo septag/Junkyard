@@ -1076,7 +1076,7 @@ API void gfxCmdBeginSwapchainRenderPass(Color bgColor = COLOR_BLACK);
 API void gfxCmdEndSwapchainRenderPass();
 API void gfxCmdDraw(uint32 vertexCount, uint32 instanceCount, uint32 firstVertex, uint32 firstInstance);
 API void gfxCmdDrawIndexed(uint32 indexCount, uint32 instanceCount, uint32 firstIndex, uint32 vertexOffset, uint32 firstInstance);
-API void gfxCmdSetScissors(uint32 firstScissors, uint32 numScissors, const Recti* scissors, bool isSwapchain = false);
+API void gfxCmdSetScissors(uint32 firstScissors, uint32 numScissors, const RectInt* scissors, bool isSwapchain = false);
 API void gfxCmdSetViewports(uint32 firstViewport, uint32 numViewports, const GfxViewport* viewports, bool isSwapchain = false);
 API void gfxCmdPushDescriptorSet(GfxPipelineHandle pipline, GfxPipelineBindPoint bindPoint, uint32 setIndex, 
                                  uint32 numDescriptorBindings, const GfxDescriptorBindingDesc* descriptorBindings);
@@ -1162,7 +1162,7 @@ struct GfxCommandBuffer2
     void PushConstants(const GfxPipeline2& pipeline, GfxShaderStage stage, const void* data, uint32 size) const;
     void Draw(uint32 vertexCount, uint32 instanceCount, uint32 firstVertex, uint32 firstInstance) const;
     void DrawIndexed(uint32 indexCount, uint32 instanceCount, uint32 firstIndex, uint32 vertexOffset, uint32 firstInstance) const;
-    void SetScissors(uint32 firstScissors, uint32 numScissors, const Recti* scissors, bool isSwapchain = false) const;
+    void SetScissors(uint32 firstScissors, uint32 numScissors, const RectInt* scissors, bool isSwapchain = false) const;
     void SetViewports(uint32 firstViewport, uint32 numViewports, const GfxViewport* viewports, bool isSwapchain = false) const;
 
     static GfxCommandBuffer2 Begin();

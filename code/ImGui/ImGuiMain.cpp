@@ -102,7 +102,7 @@ namespace ImGui
         {
             MemTempAllocator tmpAlloc;
             char iniFilename[64];
-            strPrintFmt(iniFilename, sizeof(iniFilename), "%s_imgui_controls.ini", App::GetName());
+            Str::PrintFmt(iniFilename, sizeof(iniFilename), "%s_imgui_controls.ini", App::GetName());
             Blob data = Vfs::ReadFile(iniFilename, VfsFlags::TextFile|VfsFlags::AbsolutePath, &tmpAlloc);
             if (data.IsValid())
                 gImGui.settingsIni = INIFile::LoadFromString((const char*)data.Data());
@@ -134,7 +134,7 @@ namespace ImGui
     {
         if (gImGui.settingsIni.IsValid()) {
             char iniFilename[64];
-            strPrintFmt(iniFilename, sizeof(iniFilename), "%s_imgui_controls.ini", App::GetName());
+            Str::PrintFmt(iniFilename, sizeof(iniFilename), "%s_imgui_controls.ini", App::GetName());
             INIFile::Save(gImGui.settingsIni, iniFilename);
             gImGui.settingsIni.Destroy();
         }
@@ -279,7 +279,7 @@ namespace ImGui
             gImGui.mouseWheelH = ev.scrollX;
             gImGui.mouseWheel += ev.scrollY;
             if (gImGui.alphaControl && App::GetKeyMods() == InputKeyModifiers::Ctrl)
-                *gImGui.alphaControl = Clamp(*gImGui.alphaControl + mathSign(ev.scrollY)*0.2f, 0.1f, 1.0f);
+                *gImGui.alphaControl = Clamp(*gImGui.alphaControl + M::Sign(ev.scrollY)*0.2f, 0.1f, 1.0f);
             
             break;
         
@@ -401,14 +401,14 @@ namespace ImGui
 
     static void _SetSetting(const char* key, const char* value)
     {
-        const char* dot = strFindChar(key, '.');
+        const char* dot = Str::FindChar(key, '.');
         ASSERT_MSG(dot, "ImGui settings should come with Control.Name pattern");
     
         char sectionName[64];
         char propertyName[64];
 
-        strCopyCount(sectionName, sizeof(sectionName), key, PtrToInt<uint32>((void*)(dot - key)));
-        strCopy(propertyName, sizeof(propertyName), dot + 1);
+        Str::CopyCount(sectionName, sizeof(sectionName), key, PtrToInt<uint32>((void*)(dot - key)));
+        Str::Copy(propertyName, sizeof(propertyName), dot + 1);
 
         INIFileSection section = gImGui.settingsIni.FindSection(sectionName);
         if (!section.IsValid())
@@ -451,7 +451,7 @@ bool ImGui::Initialize()
     ImGuiIO& conf = GetIO();
 
     static char iniFilename[64];
-    strPrintFmt(iniFilename, sizeof(iniFilename), "%s_imgui.ini", App::GetName());
+    Str::PrintFmt(iniFilename, sizeof(iniFilename), "%s_imgui.ini", App::GetName());
     conf.IniFilename = iniFilename;
 
     float frameBufferScale = App::GetDisplayInfo().dpiScale;
@@ -653,7 +653,7 @@ bool ImGui::DrawFrame()
         .height = displaySize.y
     };
 
-    Mat4 projMat = gfxGetClipspaceTransform() * mat4OrthoOffCenter(fbPos.x, fbPos.y + displaySize.y, 
+    Mat4 projMat = gfxGetClipspaceTransform() * Mat4::OrthoOffCenter(fbPos.x, fbPos.y + displaySize.y, 
                                                                    fbPos.x + displaySize.x, fbPos.y,
                                                                    -1.0f, 1.0f);
     
@@ -683,7 +683,7 @@ bool ImGui::DrawFrame()
             Float4 clipRect((drawCmd->ClipRect.x - fbPos.x), (drawCmd->ClipRect.y - fbPos.y),
                             (drawCmd->ClipRect.z - fbPos.x), (drawCmd->ClipRect.w - fbPos.y));
             if (clipRect.x < displaySize.x && clipRect.y < displaySize.y && clipRect.z >= 0.0f && clipRect.w >= 0.0f) {
-                Recti scissor(int(clipRect.x), int(clipRect.y), int(clipRect.z), int(clipRect.w));
+                RectInt scissor(int(clipRect.x), int(clipRect.y), int(clipRect.z), int(clipRect.w));
                 GfxImageHandle img(PtrToInt<uint32>(drawCmd->TextureId));
                 if (prevImg != img) {
                     GfxDescriptorBindingDesc descriptorBindings[] = {
@@ -748,7 +748,7 @@ void ImGui::SetSetting(const char* key, bool b)
 void ImGui::SetSetting(const char* key, int i)
 {
     char istr[32];
-    strPrintFmt(istr, sizeof(istr), "%d", i);
+    Str::PrintFmt(istr, sizeof(istr), "%d", i);
     _SetSetting(key, istr);
 }
 

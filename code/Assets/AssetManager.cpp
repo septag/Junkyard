@@ -411,7 +411,7 @@ static void Asset::_OnFileChanged(const char* filepath)
         const char* assetPath = header->params->path.CStr();
         if (assetPath[0] == '/')
             ++assetPath;
-        if (strIsEqualNoCase(filepath, assetPath)) {
+        if (Str::IsEqualNoCase(filepath, assetPath)) {
             MutexScope lk(gAssetMan.hotReloadMutex);
             gAssetMan.hotReloadList.Push(handle);
         }
@@ -450,15 +450,15 @@ static void Asset::_LoadAssetHashLookup()
     if (!blob.IsValid())
         return;
 
-    Span<char*> lines = strSplit((const char*)blob.Data(), '\n', &tempAlloc);
+    Span<char*> lines = Str::Split((const char*)blob.Data(), '\n', &tempAlloc);
 
     ReadWriteMutexWriteScope lk(gAssetMan.hashLookupMutex);
     for (char* line : lines) {
-        char* semicolon = const_cast<char*>(strFindChar(line, ';'));
+        char* semicolon = const_cast<char*>(Str::FindChar(line, ';'));
         if (semicolon) {
             *semicolon = 0;
-            uint32 paramsHash = strToUint(line + 2, 16);
-            uint32 assetHash = strToUint(semicolon + 3, 16);
+            uint32 paramsHash = Str::ToUint(line + 2, 16);
+            uint32 assetHash = Str::ToUint(semicolon + 3, 16);
 
             gAssetMan.assetHashLookup.Add(paramsHash, assetHash);
         }
@@ -556,7 +556,7 @@ static uint32 Asset::_MakeCacheFilepath(Path* outPath, const AssetDataHeader* he
     Vfs::StripMountPath(strippedPath.Ptr(), strippedPath.Capacity(), assetFilepath.CStr());
 
     char hashStr[64];
-    strPrintFmt(hashStr, sizeof(hashStr), "_%x", assetHash);
+    Str::PrintFmt(hashStr, sizeof(hashStr), "_%x", assetHash);
 
     *outPath = "/cache";
     (*outPath).Append(strippedPath.GetDirectory())

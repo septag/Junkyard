@@ -236,7 +236,7 @@ bool Thread::Start(const ThreadDesc& desc)
     thrd->threadFn = desc.entryFn;
     thrd->userData = desc.userData;
     thrd->stackSize = Max<size_t>(desc.stackSize, 64*SIZE_KB);
-    strCopy(thrd->name, sizeof(thrd->name), desc.name ? desc.name : "");
+    Str::Copy(thrd->name, sizeof(thrd->name), desc.name ? desc.name : "");
 
     thrd->handle = CreateThread(nullptr, thrd->stackSize, (LPTHREAD_START_ROUTINE)_ThreadStubFn, thrd, 0, nullptr);
     if (thrd->handle == nullptr) {
@@ -331,7 +331,7 @@ void Thread::SetCurrentThreadPriority(ThreadPriority prio)
 void Thread::SetCurrentThreadName(const char* name)
 {
     wchar_t namew[32];
-    strUt8ToWide(name, namew, sizeof(namew));
+    Str::Ut8ToWide(name, namew, sizeof(namew));
     SetThreadDescription(GetCurrentThread(), namew);
 
     #if TRACY_ENABLE
@@ -343,7 +343,7 @@ void Thread::GetCurrentThreadName(char* nameOut, uint32 nameSize)
 {
     PWSTR namew;
     if (SUCCEEDED(GetThreadDescription(GetCurrentThread(), &namew)))
-        strWideToUtf8(namew, nameOut, nameSize);
+        Str::WideToUtf8(namew, nameOut, nameSize);
     else 
         nameOut[0] = 0;
 }
@@ -692,7 +692,7 @@ bool uuidToString(const UniqueID& _uuid, char* str, uint32 size)
     return false;
 
     // strip brackets
-    uint32 len = strLen(str);
+    uint32 len = Str::Len(str);
     if (str[0] == '{') {
         memmove(str, str + 1, len + 1);
         --len;
@@ -713,16 +713,16 @@ bool uuidFromString(UniqueID* _uuid, const char* str)
 
     char strTmp[64] {};
 
-    uint32 len = strLen(str);
+    uint32 len = Str::Len(str);
     if (str[0] != '{') {
         strTmp[0] = '{';
-        strConcat(strTmp, sizeof(strTmp), str);
+        Str::Concat(strTmp, sizeof(strTmp), str);
         if (str[len - 1] != '}') 
-        strConcat(strTmp, sizeof(strTmp), "}");
+        Str::Concat(strTmp, sizeof(strTmp), "}");
     }
     else {
         ASSERT(str[len - 1] == '}');
-        strCopy(strTmp, sizeof(strTmp), str);
+        Str::Copy(strTmp, sizeof(strTmp), str);
     }        
 
     UUIDImpl* uuid = reinterpret_cast<UUIDImpl*>(_uuid);
@@ -747,7 +747,7 @@ OSDLL OS::LoadDLL(const char* filepath, char** pErrorMsg)
     OSDLL dll = (OSDLL)LoadLibraryA(filepath);
     if (dll == nullptr && pErrorMsg) {
         static char errMsg[64];
-        strPrintFmt(errMsg, sizeof(errMsg), "GetLastError: %u", GetLastError());
+        Str::PrintFmt(errMsg, sizeof(errMsg), "GetLastError: %u", GetLastError());
         *pErrorMsg = errMsg;
     }
     else {
@@ -850,7 +850,7 @@ void OS::GetSysInfo(SysInfo* info)
     *(int*)(vendor + 4) = data[0].i[3];
     *(int*)(vendor + 8) = data[0].i[2];
     
-    strCopy(info->cpuName, sizeof(info->cpuName), vendor);
+    Str::Copy(info->cpuName, sizeof(info->cpuName), vendor);
     
     if (ids >= 1) {
         f_1_ECX_ = static_cast<uint32>(data[1].i[2]);
@@ -891,8 +891,8 @@ void OS::GetSysInfo(SysInfo* info)
         memcpy(brand + 32, extData[4].i, sizeof(cpui));
     }
 
-    strCopy(info->cpuModel, sizeof(info->cpuModel), brand);
-    strTrim(info->cpuModel, sizeof(info->cpuModel), info->cpuModel);
+    Str::Copy(info->cpuModel, sizeof(info->cpuModel), brand);
+    Str::Trim(info->cpuModel, sizeof(info->cpuModel), info->cpuModel);
 
     #if CPU_X86
         info->cpuFamily = SysInfo::CpuFamily::x86_64;
@@ -981,7 +981,7 @@ bool OSProcess::Run(const char* cmdline, OSProcessFlags flags, const char* cwd)
     }
 
     MemTempAllocator tmpAlloc;
-    char* cmdLineCopy = Mem::AllocCopy<char>(cmdline, strLen(cmdline)+1, &tmpAlloc);
+    char* cmdLineCopy = Mem::AllocCopy<char>(cmdline, Str::Len(cmdline)+1, &tmpAlloc);
     DWORD createProcessFlags = 0; // TODO
 
     if ((flags & OSProcessFlags::DontCreateConsole) == OSProcessFlags::DontCreateConsole) 
@@ -1097,8 +1097,8 @@ bool OS::Win32IsProcessRunning(const char* execName)
     PROCESSENTRY32 entry { sizeof(PROCESSENTRY32) };
 
     char execNameTrimmed[PATH_CHARS_MAX];
-    strTrim(execNameTrimmed, sizeof(execNameTrimmed), execName, '\'');
-    strTrim(execNameTrimmed, sizeof(execNameTrimmed), execNameTrimmed, '"');
+    Str::Trim(execNameTrimmed, sizeof(execNameTrimmed), execName, '\'');
+    Str::Trim(execNameTrimmed, sizeof(execNameTrimmed), execNameTrimmed, '"');
 
     HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, TH32CS_SNAPPROCESS);
     if (!Process32First(snapshot, &entry)) {
@@ -1110,11 +1110,11 @@ bool OS::Win32IsProcessRunning(const char* execName)
     do {
         if constexpr (sizeof(CHAR) == 2) {
             char exeFile[MAX_PATH];
-            if (strWideToUtf8((const wchar_t*)entry.szExeFile, exeFile, sizeof(exeFile)))
-                isRunning = strIsEqualNoCase(exeFile, execNameTrimmed);
+            if (Str::WideToUtf8((const wchar_t*)entry.szExeFile, exeFile, sizeof(exeFile)))
+                isRunning = Str::IsEqualNoCase(exeFile, execNameTrimmed);
         }
         else {
-            isRunning = strIsEqualNoCase((const char*)entry.szExeFile, execNameTrimmed);
+            isRunning = Str::IsEqualNoCase((const char*)entry.szExeFile, execNameTrimmed);
         }
     } while (!isRunning && Process32Next(snapshot, &entry));
 
@@ -1256,7 +1256,7 @@ char* OS::GetHomeDir(char* dst, size_t dstSize)
 
     PWSTR homeDir = nullptr;
     if (SUCCEEDED(gShell32.SHGetKnownFolderPath(FOLDERID_Profile, 0, nullptr, &homeDir))) {
-        strWideToUtf8(homeDir, dst, (uint32)dstSize);
+        Str::WideToUtf8(homeDir, dst, (uint32)dstSize);
         gOle32.CoTaskMemFree(homeDir);
         return dst;
     }
@@ -1274,7 +1274,7 @@ char* OS::GetCacheDir(char* dst, size_t dstSize, const char* appName)
     PWSTR homeDir = nullptr;
     if (SUCCEEDED(gShell32.SHGetKnownFolderPath(FOLDERID_LocalAppData, 0, nullptr, &homeDir))) {
         char homeDirUtf8[CONFIG_MAX_PATH];
-        strWideToUtf8(homeDir, homeDirUtf8, sizeof(homeDirUtf8));
+        Str::WideToUtf8(homeDir, homeDirUtf8, sizeof(homeDirUtf8));
         gOle32.CoTaskMemFree(homeDir);
         PathUtils::Join(dst, dstSize, homeDirUtf8, appName);
         return dst;
@@ -1324,7 +1324,7 @@ char* OS::Win32GetFolder(OSWin32Folder folder, char* dst, size_t dstSize)
 
     PWSTR folderPath = nullptr;
     if (SUCCEEDED(gShell32.SHGetKnownFolderPath(folderIds[uint32(folder)], 0, nullptr, &folderPath))) {
-        strWideToUtf8(folderPath, dst, (uint32)dstSize);
+        Str::WideToUtf8(folderPath, dst, (uint32)dstSize);
         gOle32.CoTaskMemFree(folderPath);
         return dst;
     }
@@ -1984,7 +1984,7 @@ SocketTCP SocketTCP::Accept(char* clientUrl, uint32 clientUrlSize)
         inet_ntop(AF_INET, &addr.sin_addr, ip, sizeof(ip));
         uint16 port = htons(addr.sin_port);
         
-        strPrintFmt(clientUrl, clientUrlSize, "%s:%d", ip, port);
+        Str::PrintFmt(clientUrl, clientUrlSize, "%s:%d", ip, port);
     }
 
     newSock.mLive = true;

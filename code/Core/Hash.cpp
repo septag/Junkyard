@@ -1,6 +1,6 @@
 #include "Hash.h"
 
-#include "StringUtil.h" // strLen
+#include "StringUtil.h" // Str::Len
 #include "Allocators.h"
 
 #if CPU_X86
@@ -317,7 +317,7 @@ HashMurmur32Incremental& HashMurmur32Incremental::AddCStringArray(const char** _
         return *this;
 
     for (uint32 i = 0; i < _numStrings; i++) 
-        AddAny(_strs[i], strLen(_strs[i]));
+        AddAny(_strs[i], Str::Len(_strs[i]));
 
     return *this;
 }

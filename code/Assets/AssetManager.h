@@ -192,17 +192,17 @@ private:
 inline uint32 AssetData::GetMetaValue(const char* key, uint32 defaultValue) const
 {
     const char* value = GetMetaValue(key, "");
-    return value ? strToUint(value) : defaultValue;
+    return value ? Str::ToUint(value) : defaultValue;
 }
 
 inline float AssetData::GetMetaValue(const char* key, float defaultValue) const
 {
     const char* value = GetMetaValue(key, "");
-    return value ? static_cast<float>(strToDouble(value)) : defaultValue;
+    return value ? static_cast<float>(Str::ToDouble(value)) : defaultValue;
 }
 
 inline bool AssetData::GetMetaValue(const char* key, bool defaultValue) const
 {
     const char* value = GetMetaValue(key, "");
-    return value ? strToBool(value) : defaultValue;
+    return value ? Str::ToBool(value) : defaultValue;
 }

@@ -4,7 +4,7 @@
 
 #include "External/remedybg/remedybg_driver.h"
 
-#include "StringUtil.h"  // strCopy/..
+#include "StringUtil.h"  // Str::Copy/..
 #include "IncludeWin.h"
 #include "System.h"
 #include "Log.h"
@@ -155,7 +155,7 @@ void Debug::ResolveStacktrace(uint16 numStacktrace, void* const* stackframes, De
     for (uint16 i = 0; i < numStacktrace; i++) {
         DebugStacktraceEntry entry = {};
         if (_SymGetSymFromAddr64(gStacktrace.process, (DWORD64)stackframes[i], &entry.offsetFromSymbol, symbol)) {
-            strCopy(entry.name, sizeof(entry.name), symbol->Name);
+            Str::Copy(entry.name, sizeof(entry.name), symbol->Name);
         } 
         else {
             DWORD gle = GetLastError();
@@ -163,12 +163,12 @@ void Debug::ResolveStacktrace(uint16 numStacktrace, void* const* stackframes, De
                 Debug::Print("_SymGetSymFromAddr64 failed");
                 break;
             }
-            strCopy(entry.name, sizeof(entry.name), "[NA]");
+            Str::Copy(entry.name, sizeof(entry.name), "[NA]");
         }
 
         if (_SymGetLineFromAddr64(gStacktrace.process, (DWORD64)stackframes[i], (PDWORD)&(entry.offsetFromLine), &line)) {
             entry.line = line.LineNumber;
-            strCopy(entry.filename, PATH_CHARS_MAX, line.FileName);
+            Str::Copy(entry.filename, PATH_CHARS_MAX, line.FileName);
         } 
         else {
             DWORD gle = GetLastError();
@@ -176,7 +176,7 @@ void Debug::ResolveStacktrace(uint16 numStacktrace, void* const* stackframes, De
                 Debug::Print("_SymGetLineFromAddr64 failed");
                 break;
             }
-            strCopy(entry.filename, PATH_CHARS_MAX, "[NA]");
+            Str::Copy(entry.filename, PATH_CHARS_MAX, "[NA]");
         }
 
         memcpy(&entries[i], &entry, sizeof(DebugStacktraceEntry));
@@ -260,7 +260,7 @@ bool RDBG::Initialize(const char* serverName, const char* remedybgPath)
     ASSERT_MSG(gRemedyBG.cmdPipe == INVALID_HANDLE_VALUE, "RemedyBG is initialized before");
 
     ASSERT_MSG(!OS::IsDebuggerPresent(), "Another debugger is already attached to this executable");
-    ASSERT_ALWAYS(strLen(serverName) <= RDBG_MAX_SERVERNAME_LEN, "ServerName is too long for RemedyBG sessions: %s", serverName);
+    ASSERT_ALWAYS(Str::Len(serverName) <= RDBG_MAX_SERVERNAME_LEN, "ServerName is too long for RemedyBG sessions: %s", serverName);
 
     // Open remedybg executable and attach the current process to it
     Path remedybgCmdline(remedybgPath);
@@ -471,7 +471,7 @@ RDBG_Id RDBG::AddProcessorBreakpoint(const void* addr, uint8 numBytes, RDBG_Proc
     DEBUG_REMEDYBG_BEGINCOMMAND(RDBG_COMMAND_ADD_PROCESSOR_BREAKPOINT);
 
     char addrExpr[64];
-    strPrintFmt(addrExpr, sizeof(addrExpr), "0x%llx", addr);
+    Str::PrintFmt(addrExpr, sizeof(addrExpr), "0x%llx", addr);
     cmdBuffer.WriteStringBinary16(addrExpr);
     cmdBuffer.Write<uint8>(numBytes);
     cmdBuffer.Write<uint8>(uint8(type));

@@ -28,7 +28,6 @@
 inline constexpr uint32 NUM_CUBES = 10;
 inline constexpr uint32 CELL_SIZE = 50*SIZE_MB;
 
-
 struct Cell
 {
     String<32> name;
@@ -107,14 +106,14 @@ struct AppImpl : AppCallbacks
             }
         }
 
-        uint32 dimSize = (uint32)mathCeil(mathSqrt(float(cells.Count())));
+        uint32 dimSize = (uint32)M::Ceil(M::Sqrt(float(cells.Count())));
         for (uint32 i = 0; i < cells.Count(); i++) {
             cells[i].col = i % dimSize;    
             cells[i].row = i / dimSize;    
             cells[i].name = String32::Format("%02u,%02u", cells[i].row, cells[i].col);  // row, col
             cells[i].assetGroup = Asset::CreateGroup();
-            if (!cells[i].files.IsEmpty())
-            cells[i].handles = Mem::AllocZeroTyped<AssetHandle>(cells[i].files.Count());
+            if (!cells[i].files.IsEmpty()) 
+                cells[i].handles = Mem::AllocZeroTyped<AssetHandle>(cells[i].files.Count());
         }
 
         cells.Detach(&mGrid.cells, &mGrid.numCells);
@@ -171,7 +170,7 @@ struct AppImpl : AppCallbacks
             return true;
         }
 
-        Span<char*> filePaths = strSplitWhitespace((const char*)fileListBlob.Data(), &tempAlloc);
+        Span<char*> filePaths = Str::SplitWhitespace((const char*)fileListBlob.Data(), &tempAlloc);
         mNumFilePaths = filePaths.Count();
         mFilePaths = Mem::AllocZeroTyped<Path>(mNumFilePaths);
         for (uint32 i = 0; i < filePaths.Count(); i++) {
@@ -320,14 +319,14 @@ struct AppImpl : AppCallbacks
 
             gfxCmdSetViewports(0, 1, &viewport, true);
 
-            Recti scissor(0, 0, App::GetFramebufferWidth(), App::GetFramebufferHeight());
+            RectInt scissor(0, 0, App::GetFramebufferWidth(), App::GetFramebufferHeight());
             gfxCmdSetScissors(0, 1, &scissor, true);
 
             Model* model = nullptr;
             ASSERT(model);
 
             for (uint32 inst = 0; inst < NUM_CUBES; inst++) {
-                Mat4 modelMat = mat4Translate(float(inst)*1.5f, 0, 0);
+                Mat4 modelMat = Mat4::Translate(float(inst)*1.5f, 0, 0);
                 *((Mat4*)mTransformBuffer.Data(inst)) = modelMat;
             }
             mTransformBuffer.Flush(0u, NUM_CUBES);

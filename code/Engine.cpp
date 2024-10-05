@@ -160,23 +160,23 @@ bool Engine::Initialize()
 
         char cpuCaps[128] = {0};
         if (gEng.sysInfo.cpuCapsSSE)
-            strConcat(cpuCaps, sizeof(cpuCaps), "SSE ");
+            Str::Concat(cpuCaps, sizeof(cpuCaps), "SSE ");
         if (gEng.sysInfo.cpuCapsSSE2)
-            strConcat(cpuCaps, sizeof(cpuCaps), "SSE2 ");
+            Str::Concat(cpuCaps, sizeof(cpuCaps), "SSE2 ");
         if (gEng.sysInfo.cpuCapsSSE3)
-            strConcat(cpuCaps, sizeof(cpuCaps), "SSE3 ");
+            Str::Concat(cpuCaps, sizeof(cpuCaps), "SSE3 ");
         if (gEng.sysInfo.cpuCapsSSE41)
-            strConcat(cpuCaps, sizeof(cpuCaps), "SSE4.1 ");
+            Str::Concat(cpuCaps, sizeof(cpuCaps), "SSE4.1 ");
         if (gEng.sysInfo.cpuCapsSSE42)
-            strConcat(cpuCaps, sizeof(cpuCaps), "SSE4.2 ");
+            Str::Concat(cpuCaps, sizeof(cpuCaps), "SSE4.2 ");
         if (gEng.sysInfo.cpuCapsAVX)
-            strConcat(cpuCaps, sizeof(cpuCaps), "AVX ");
+            Str::Concat(cpuCaps, sizeof(cpuCaps), "AVX ");
         if (gEng.sysInfo.cpuCapsAVX2)
-            strConcat(cpuCaps, sizeof(cpuCaps), "AVX2 ");
+            Str::Concat(cpuCaps, sizeof(cpuCaps), "AVX2 ");
         if (gEng.sysInfo.cpuCapsAVX512)
-            strConcat(cpuCaps, sizeof(cpuCaps), "AVX512 ");
+            Str::Concat(cpuCaps, sizeof(cpuCaps), "AVX512 ");
         if (gEng.sysInfo.cpuCapsNeon)
-            strConcat(cpuCaps, sizeof(cpuCaps), "Neon ");
+            Str::Concat(cpuCaps, sizeof(cpuCaps), "Neon ");
         
         LOG_INFO("(init) Compiler: %s", COMPILER_NAME);
         LOG_INFO("(init) CPU: %s", gEng.sysInfo.cpuModel);
@@ -253,7 +253,7 @@ bool Engine::Initialize()
 
     auto GetVMemStats = [](int, const char**, char* outResponse, uint32 responseSize, void*)->bool {
         MemVirtualStats stats = Mem::VirtualGetStats();
-        strPrintFmt(outResponse, responseSize, "Reserverd: %_$$$llu, Commited: %_$$$llu", stats.reservedBytes, stats.commitedBytes);
+        Str::PrintFmt(outResponse, responseSize, "Reserverd: %_$$$llu, Commited: %_$$$llu", stats.reservedBytes, stats.commitedBytes);
         return true;
     };
 
@@ -427,7 +427,7 @@ void Engine::RegisterShortcut(const char* shortcut, EngineShortcutCallback callb
     InputKeyModifiers mods = InputKeyModifiers::None;
 
     // Parse shortcut keys string
-    shortcut = strSkipWhitespace(shortcut);
+    shortcut = Str::SkipWhitespace(shortcut);
 
     uint32 numKeys = 0;
     const char* plus;
@@ -435,52 +435,52 @@ void Engine::RegisterShortcut(const char* shortcut, EngineShortcutCallback callb
 
     auto ParseShortcutKey = [&numKeys, &keys, &mods](const char* keystr)
     {
-        uint32 len = strLen(keystr);
+        uint32 len = Str::Len(keystr);
 
         // function keys
-        bool isFn = (len == 2 || len == 3) && strToUpper(keystr[0]) == 'F' && 
-            ((len == 2 && strIsNumber(keystr[1])) || (len == 3 && strIsNumber(keystr[1]) && strIsNumber(keystr[2])));
+        bool isFn = (len == 2 || len == 3) && Str::ToUpper(keystr[0]) == 'F' && 
+            ((len == 2 && Str::IsNumber(keystr[1])) || (len == 3 && Str::IsNumber(keystr[1]) && Str::IsNumber(keystr[2])));
         if (isFn && numKeys < 2) {
             char numStr[3] = {keystr[1], keystr[2], 0};
-            int fnum = strToInt(numStr) - 1;
+            int fnum = Str::ToInt(numStr) - 1;
             if (fnum >= 0 && fnum < 25) {
                 keys[numKeys++] = static_cast<InputKeycode>(uint32(InputKeycode::F1) + fnum);
             }
         }
         else if (len > 1) {
-            if (strIsEqualNoCase(keystr, "ALT"))        mods |= InputKeyModifiers::Alt;
-            else if (strIsEqualNoCase(keystr, "CTRL"))  mods |= InputKeyModifiers::Ctrl;
-            else if (strIsEqualNoCase(keystr, "SHIFT")) mods |= InputKeyModifiers::Shift;
-            else if (strIsEqualNoCase(keystr, "SUPER")) mods |= InputKeyModifiers::Super;
-            else if (strIsEqualNoCase(keystr, "ESC"))       keys[numKeys++] = InputKeycode::Escape;
-            else if (strIsEqualNoCase(keystr, "INS"))       keys[numKeys++] = InputKeycode::Insert;
-            else if (strIsEqualNoCase(keystr, "PGUP"))      keys[numKeys++] = InputKeycode::PageUp;
-            else if (strIsEqualNoCase(keystr, "PGDOWN"))    keys[numKeys++] = InputKeycode::PageDown;
-            else if (strIsEqualNoCase(keystr, "HOME"))      keys[numKeys++] = InputKeycode::Home;
-            else if (strIsEqualNoCase(keystr, "END"))       keys[numKeys++] = InputKeycode::End;
-            else if (strIsEqualNoCase(keystr, "TAB"))       keys[numKeys++] = InputKeycode::Tab;
+            if (Str::IsEqualNoCase(keystr, "ALT"))        mods |= InputKeyModifiers::Alt;
+            else if (Str::IsEqualNoCase(keystr, "CTRL"))  mods |= InputKeyModifiers::Ctrl;
+            else if (Str::IsEqualNoCase(keystr, "SHIFT")) mods |= InputKeyModifiers::Shift;
+            else if (Str::IsEqualNoCase(keystr, "SUPER")) mods |= InputKeyModifiers::Super;
+            else if (Str::IsEqualNoCase(keystr, "ESC"))       keys[numKeys++] = InputKeycode::Escape;
+            else if (Str::IsEqualNoCase(keystr, "INS"))       keys[numKeys++] = InputKeycode::Insert;
+            else if (Str::IsEqualNoCase(keystr, "PGUP"))      keys[numKeys++] = InputKeycode::PageUp;
+            else if (Str::IsEqualNoCase(keystr, "PGDOWN"))    keys[numKeys++] = InputKeycode::PageDown;
+            else if (Str::IsEqualNoCase(keystr, "HOME"))      keys[numKeys++] = InputKeycode::Home;
+            else if (Str::IsEqualNoCase(keystr, "END"))       keys[numKeys++] = InputKeycode::End;
+            else if (Str::IsEqualNoCase(keystr, "TAB"))       keys[numKeys++] = InputKeycode::Tab;
             else    ASSERT_MSG(0, "Shortcut not recognized: %s", keystr);
         } 
         else if (len == 1 && numKeys < 2) {
-            char key = strToUpper(keystr[0]);
+            char key = Str::ToUpper(keystr[0]);
             if (keystr[0] > uint32(InputKeycode::Space))
                 keys[numKeys++] = static_cast<InputKeycode>(key);
         }
     };
 
     while (*shortcut) {
-        plus = strFindChar(shortcut, '+');
+        plus = Str::FindChar(shortcut, '+');
         if (!plus)
             break;
 
-        strCopyCount(keystr, sizeof(keystr), shortcut, uint32(plus - shortcut));
-        strTrim(keystr, sizeof(keystr), keystr);
+        Str::CopyCount(keystr, sizeof(keystr), shortcut, uint32(plus - shortcut));
+        Str::Trim(keystr, sizeof(keystr), keystr);
         ParseShortcutKey(keystr);
-        shortcut = strSkipWhitespace(plus + 1);
+        shortcut = Str::SkipWhitespace(plus + 1);
     }
 
     if (shortcut[0]) {
-        strCopy(keystr, sizeof(keystr), shortcut);
+        Str::Copy(keystr, sizeof(keystr), shortcut);
         ParseShortcutKey(keystr);
     }
 

@@ -763,7 +763,7 @@ SysPrimitiveStats GetSystemPrimitiveStats();
 inline Path& Path::SetToCurrentDir()
 {
     OS::GetCurrentDir(mStr, sizeof(mStr));
-    mLen = strLen(mStr);
+    mLen = Str::Len(mStr);
     return *this;
 }
 
@@ -790,7 +790,7 @@ inline Path Path::GetAbsolute() const
 {
     Path p;
     OS::GetAbsolutePath(mStr, p.mStr, sizeof(p.mStr));
-    p.mLen = strLen(p.mStr);
+    p.mLen = Str::Len(p.mStr);
     return p;
 }
 
@@ -798,7 +798,7 @@ inline Path Path::GetFileExtension() const
 {
     Path p;
     PathUtils::GetFileExtension(mStr, p.mStr, sizeof(p.mStr));
-    p.mLen = strLen(p.mStr);
+    p.mLen = Str::Len(p.mStr);
     return p;
 }
 
@@ -806,7 +806,7 @@ inline Path Path::GetFileNameAndExt() const
 {
     Path p;
     PathUtils::GetFilenameAndExtension(mStr, p.mStr, sizeof(p.mStr));
-    p.mLen = strLen(p.mStr);
+    p.mLen = Str::Len(p.mStr);
     return p;
 }
 
@@ -814,7 +814,7 @@ inline Path Path::GetFileName() const
 {
     Path p;
     PathUtils::GetFilename(mStr, p.mStr, sizeof(p.mStr));
-    p.mLen = strLen(p.mStr);
+    p.mLen = Str::Len(p.mStr);
     return p;
 }
 
@@ -822,14 +822,14 @@ inline Path Path::GetDirectory() const
 {
     Path p;
     PathUtils::GetDirectory(mStr, p.mStr, sizeof(p.mStr));
-    p.mLen = strLen(p.mStr);
+    p.mLen = Str::Len(p.mStr);
     return p;
 }
 
 inline Path& Path::Join(const Path& path)
 {
     PathUtils::Join(mStr, sizeof(mStr), mStr, path.mStr);
-    mLen = strLen(mStr);
+    mLen = Str::Len(mStr);
     return *this;
 }
 
@@ -837,7 +837,7 @@ inline Path Path::Join(const Path& pathA, const Path& pathB)
 {
     Path p;
     PathUtils::Join(p.mStr, sizeof(p.mStr), pathA.mStr, pathB.mStr);
-    p.mLen = strLen(p.mStr);
+    p.mLen = Str::Len(p.mStr);
     return p;
 }
 
@@ -845,7 +845,7 @@ inline Path Path::JoinUnix(const Path& pathA, const Path& pathB)
 {
     Path p;
     PathUtils::JoinUnixStyle(p.mStr, sizeof(p.mStr), pathA.mStr, pathB.mStr);
-    p.mLen = strLen(p.mStr);
+    p.mLen = Str::Len(p.mStr);
     return p;
 }
 

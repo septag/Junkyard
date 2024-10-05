@@ -17,7 +17,7 @@
 //
 //        
 #include "Base.h"
-#include "StringUtil.h"     // strLen
+#include "StringUtil.h"     // Str::Len
 
 
 //    ██████╗ ██╗      ██████╗ ██████╗ 
@@ -525,7 +525,7 @@ inline size_t Blob::WriteStringBinary(const char* str, uint32 len)
 {
     ASSERT(str);
     if (len == 0)
-        len = strLen(str);
+        len = Str::Len(str);
     size_t writtenBytes = Write<uint32>(len);
     if (len) 
         writtenBytes += Write(str, len);
@@ -536,7 +536,7 @@ inline size_t Blob::WriteStringBinary16(const char* str, uint32 len)
 {
     ASSERT(str);
     if (len == 0)
-        len = strLen(str);
+        len = Str::Len(str);
     ASSERT(len < UINT16_MAX);
     size_t writtenBytes = Write<uint16>(uint16(len));
     if (len) 

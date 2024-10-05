@@ -451,7 +451,7 @@ void Remote::SendResponseMerge(uint32 cmdCode, const Blob* blobs, uint32 numBlob
             // Append error message to the end
             if (error) {
                 ASSERT(errorDesc);
-                dataOut.WriteStringBinary(errorDesc, strLen(errorDesc));
+                dataOut.WriteStringBinary(errorDesc, Str::Len(errorDesc));
             }
             
             sock->Write(dataOut.Data(), static_cast<uint32>(dataOut.Size()));

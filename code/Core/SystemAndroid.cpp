@@ -7,6 +7,7 @@
 #include <android/native_activity.h>
 #include <jni.h>
 
+// TODO: I don't think we need this, we can get more info from reading /proc/cpuinfo or other proc related files
 #include "External/cpufeatures/cpu-features.h"
 PRAGMA_DIAGNOSTIC_PUSH()
 PRAGMA_DIAGNOSTIC_IGNORED_CLANG_GCC("-Wunused-function")
@@ -31,20 +32,20 @@ void OS::GetSysInfo(SysInfo* info)
     info->pageSize = OS::GetPageSize();
 
     switch (android_getCpuFamily()) {
-    case ANDROID_CPU_FAMILY_ARM:        info->cpuFamily = SysCpuFamily::ARM;    break;
-    case ANDROID_CPU_FAMILY_ARM64:      info->cpuFamily = SysCpuFamily::ARM64;  break;
+    case ANDROID_CPU_FAMILY_ARM:        info->cpuFamily = SysInfo::CpuFamily::ARM;    break;
+    case ANDROID_CPU_FAMILY_ARM64:      info->cpuFamily = SysInfo::CpuFamily::ARM64;  break;
     case ANDROID_CPU_FAMILY_X86:        
-    case ANDROID_CPU_FAMILY_X86_64:     info->cpuFamily = SysCpuFamily::x86_64; break;
+    case ANDROID_CPU_FAMILY_X86_64:     info->cpuFamily = SysInfo::CpuFamily::x86_64; break;
     default:                            
-        ASSERT_MSG(0, "Hardware not supported"); info->cpuFamily = SysCpuFamily::Unknown; break;
+        ASSERT_MSG(0, "Hardware not supported"); info->cpuFamily = SysInfo::CpuFamily::Unknown; break;
     }
 
     uint64 features  = android_getCpuFeatures();
-    if (info->cpuFamily == SysCpuFamily::ARM || info->cpuFamily == SysCpuFamily::ARM64) {
+    if (info->cpuFamily == SysInfo::CpuFamily::ARM || info->cpuFamily == SysInfo::CpuFamily::ARM64) {
         if (features & ANDROID_CPU_ARM_FEATURE_NEON)
             info->cpuCapsNeon = true;
     }
-    else if (info->cpuFamily == SysCpuFamily::x86_64) {
+    else if (info->cpuFamily == SysInfo::CpuFamily::x86_64) {
         if (features & ANDROID_CPU_X86_FEATURE_SSSE3)
             info->cpuCapsSSE3 = true;
         if (features & ANDROID_CPU_X86_FEATURE_SSE4_1)
@@ -75,21 +76,21 @@ void OS::GetSysInfo(SysInfo* info)
             char* text;
             data.Detach((void**)&text, &numChars);
             
-            const char* memTotalLine = strFindStr(text, "MemTotal:");
+            const char* memTotalLine = Str::FindStr(text, "MemTotal:");
             if (memTotalLine) {
                memTotalLine += 9;
                char memText[32];
                uint32 memTextSize = 0;
 
-               while (strIsWhitespace(*memTotalLine))
+               while (Str::IsWhitespace(*memTotalLine))
                    memTotalLine++;
                
-               while (strIsNumber(*memTotalLine)) {
+               while (Str::IsNumber(*memTotalLine)) {
                    memText[memTextSize++] = *memTotalLine;
                    memTotalLine++;
                }
                memText[memTextSize] = '\0';
-               info->physicalMemorySize = strToUint64(memText)*SIZE_KB;
+               info->physicalMemorySize = Str::ToUint64(memText)*SIZE_KB;
             }
 
             Mem::Free(text);
@@ -113,16 +114,16 @@ void OS::GetSysInfo(SysInfo* info)
 
             char* text;
             data.Detach((void**)&text, &numChars);
-            strTrim(text, numChars, text, '\n');
+            Str::Trim(text, numChars, text, '\n');
             
-            const char* lastNewline = strFindCharRev(text, '\n');
+            const char* lastNewline = Str::FindCharRev(text, '\n');
             if (lastNewline) {
                 const char* lastLine = lastNewline + 1;
-                if (strIsEqualCount(lastLine, "Hardware", 8)) {
-                    const char* colon = strFindChar(lastLine, ':');
+                if (Str::IsEqualCount(lastLine, "Hardware", 8)) {
+                    const char* colon = Str::FindChar(lastLine, ':');
                     if (colon) {
-                        strCopy(info->cpuModel, sizeof(info->cpuModel), colon + 1);
-                        strTrim(info->cpuModel, sizeof(info->cpuModel), info->cpuModel, ' ');
+                        Str::Copy(info->cpuModel, sizeof(info->cpuModel), colon + 1);
+                        Str::Trim(info->cpuModel, sizeof(info->cpuModel), info->cpuModel, ' ');
                     }
                 }
             }
@@ -150,17 +151,17 @@ char* pathGetCurrentDir(char*, size_t)
     return nullptr;
 }
 
-void OS::AndroidPrintToLog(SysAndroidLogType logType, const char* tag, const char* text)
+void OS::AndroidPrintToLog(OSAndroidLogType logType, const char* tag, const char* text)
 {
-    static_assert(SysAndroidLogType::Unknown == static_cast<SysAndroidLogType>(ANDROID_LOG_UNKNOWN));
-    static_assert(SysAndroidLogType::Default == static_cast<SysAndroidLogType>(ANDROID_LOG_DEFAULT));
-    static_assert(SysAndroidLogType::Verbose == static_cast<SysAndroidLogType>(ANDROID_LOG_VERBOSE));
-    static_assert(SysAndroidLogType::Debug == static_cast<SysAndroidLogType>(ANDROID_LOG_DEBUG));
-    static_assert(SysAndroidLogType::Info == static_cast<SysAndroidLogType>(ANDROID_LOG_INFO));
-    static_assert(SysAndroidLogType::Warn == static_cast<SysAndroidLogType>(ANDROID_LOG_WARN));
-    static_assert(SysAndroidLogType::Error == static_cast<SysAndroidLogType>(ANDROID_LOG_ERROR));
-    static_assert(SysAndroidLogType::Fatal == static_cast<SysAndroidLogType>(ANDROID_LOG_FATAL));
-    static_assert(SysAndroidLogType::Silent == static_cast<SysAndroidLogType>(ANDROID_LOG_SILENT));
+    static_assert(OSAndroidLogType::Unknown == static_cast<OSAndroidLogType>(ANDROID_LOG_UNKNOWN));
+    static_assert(OSAndroidLogType::Default == static_cast<OSAndroidLogType>(ANDROID_LOG_DEFAULT));
+    static_assert(OSAndroidLogType::Verbose == static_cast<OSAndroidLogType>(ANDROID_LOG_VERBOSE));
+    static_assert(OSAndroidLogType::Debug == static_cast<OSAndroidLogType>(ANDROID_LOG_DEBUG));
+    static_assert(OSAndroidLogType::Info == static_cast<OSAndroidLogType>(ANDROID_LOG_INFO));
+    static_assert(OSAndroidLogType::Warn == static_cast<OSAndroidLogType>(ANDROID_LOG_WARN));
+    static_assert(OSAndroidLogType::Error == static_cast<OSAndroidLogType>(ANDROID_LOG_ERROR));
+    static_assert(OSAndroidLogType::Fatal == static_cast<OSAndroidLogType>(ANDROID_LOG_FATAL));
+    static_assert(OSAndroidLogType::Silent == static_cast<OSAndroidLogType>(ANDROID_LOG_SILENT));
 
     __android_log_write(static_cast<int>(logType), tag, text);
 }

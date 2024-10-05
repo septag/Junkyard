@@ -2,7 +2,6 @@
 
 #include "../Core/MathTypes.h"
 
-union Mat4;
 struct Camera;
 
 struct DebugDrawGridProperties

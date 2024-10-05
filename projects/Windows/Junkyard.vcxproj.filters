@@ -229,6 +229,9 @@
     <ClCompile Include="..\..\code\Core\SystemPosix.cpp">
       <Filter>Core</Filter>
     </ClCompile>
+    <ClCompile Include="..\..\code\Core\SystemAndroid.cpp">
+      <Filter>Core</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\..\code\External\slang\slang.h">
@@ -328,9 +331,6 @@
       <Filter>Core</Filter>
     </ClInclude>
     <ClInclude Include="..\..\code\Core\MathTypes.h">
-      <Filter>Core</Filter>
-    </ClInclude>
-    <ClInclude Include="..\..\code\Core\MathVector.h">
       <Filter>Core</Filter>
     </ClInclude>
     <ClInclude Include="..\..\code\Core\External\c89atomic\c89atomic.h">

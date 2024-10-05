@@ -270,7 +270,7 @@ struct AppImpl final : AppCallbacks
 
             gfxCmdSetViewports(0, 1, &viewport, true);
 
-            Recti scissor(0, 0, App::GetFramebufferWidth(), App::GetFramebufferHeight());
+            RectInt scissor(0, 0, App::GetFramebufferWidth(), App::GetFramebufferHeight());
             gfxCmdSetScissors(0, 1, &scissor, true);
 
             AssetObjPtrScope<Model> model(mModelAsset);
@@ -278,7 +278,7 @@ struct AppImpl final : AppCallbacks
             for (uint32 i = 0; i < model->numNodes; i++) {
                 const ModelNode& node = model->nodes[i];
                 if (node.meshId) {
-                    Mat4 worldMat = modelMat * transform3DToMat4(node.localTransform);
+                    Mat4 worldMat = modelMat * Transform3D::ToMat4(node.localTransform);
                     gfxCmdPushConstants(mPipeline, GfxShaderStage::Vertex, &worldMat, sizeof(worldMat));
 
                     const ModelMesh& mesh = model->meshes[IdToIndex(node.meshId)];
