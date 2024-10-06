@@ -169,7 +169,6 @@ namespace Remote
                         .userData = &gRemoteServices.serverPeerSock,
                         .name = "ServerSessionPipe"
                     });
-                    thrd.SetPriority(ThreadPriority::Low);
                     thrd.Stop(); // wait on the service to finish
                 }
             }
@@ -277,8 +276,6 @@ bool Remote::Initialize()
             .entryFn = _ServerThread,
             .name = "RemoteServicesServer"
         });
-        
-        gRemoteServices.serverThread.SetPriority(ThreadPriority::Low);
     }
     return true;
 }
@@ -345,7 +342,6 @@ bool Remote::Connect(const char* url, RemoteDisconnectCallback disconnectFn)
         .entryFn = _ClientThreadFn,
         .name = "RemoteServicesClient"
     });
-    gRemoteServices.clientThread.SetPriority(ThreadPriority::Low);
     
     LOG_INFO("(init) RemoteServices: Connected to remote server: %s", url);
     gRemoteServices.disconnectFn = disconnectFn;

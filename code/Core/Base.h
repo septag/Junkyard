@@ -148,7 +148,7 @@
 #endif    //
 
 // http://sourceforge.net/apps/mediawiki/predef/index.php?title=Architectures
-#if defined(__arm__) || defined(__aarch64__) || defined(_M_ARM)
+#if defined(__arm__) || defined(__aarch64__) || defined(_M_ARM) || defined(__arm64__)
     #undef CPU_ARM
     #define CPU_ARM 1
     #define CACHE_LINE_SIZE 64u
@@ -160,7 +160,7 @@
     #error "Cpu not supported"
 #endif    //
 
-#if defined(__x86_64__) || defined(_M_X64) || defined(__aarch64__) || defined(__64BIT__) || \
+#if defined(__x86_64__) || defined(_M_X64) || defined(__aarch64__) || defined(__arm64__) || defined(__64BIT__) || \
     defined(__mips64) || defined(__powerpc64__) || defined(__ppc64__) || defined(__LP64__)
     #undef ARCH_64BIT
     #define ARCH_64BIT 1

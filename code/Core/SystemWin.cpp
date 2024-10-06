@@ -635,7 +635,7 @@ FORCE_INLINE int64 timerInt64MulDiv(int64 value, int64 numer, int64 denom)
     return q * numer + r * numer / denom;
 }
 
-void _private::InitializeTimer() 
+void Timer::Initialize() 
 {
     gTimer.init = true;
     

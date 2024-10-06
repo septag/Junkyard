@@ -141,8 +141,6 @@ bool Engine::Initialize()
 {
     PROFILE_ZONE();
 
-    // Set main thread as `realtime` priority
-    Thread::SetCurrentThreadPriority(ThreadPriority::Realtime);
     Thread::SetCurrentThreadName("Main");
     gEng.mainThreadId = Thread::GetCurrentId();
 

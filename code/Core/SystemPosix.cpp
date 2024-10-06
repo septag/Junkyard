@@ -104,6 +104,40 @@ Thread::Thread()
     memset(mData, 0x0, sizeof(Thread));
 }
 
+static void _SetThreadPriority(pthread_t threadHandle, ThreadPriority prio)
+{
+    sched_param param {};
+    int policy;
+    
+    pthread_getschedparam(threadHandle, &policy, &param);
+    if (policy != SCHED_OTHER)
+        policy = SCHED_OTHER;
+    
+    int prioMax = sched_get_priority_max(policy);
+    int prioMin = sched_get_priority_min(policy);
+    int prioNormal = prioMin + (prioMax - prioMin) / 2;
+
+    #if PLATFORM_APPLE
+        int policyIdle = policy;
+        int prioIdle = prioMin;
+        prioMin = prioMin + (prioNormal - prioMin)/2;
+    #else
+        int policyIdle = SCHED_IDLE;
+        int prioIdle = 0;
+    #endif
+    
+    switch (prio) {
+    case ThreadPriority::Normal:    param.sched_priority = prioNormal; break;
+    case ThreadPriority::Idle:      policy = policyIdle; param.sched_priority = prioIdle; break;
+    case ThreadPriority::Realtime:  policy = SCHED_RR; param.sched_priority = prioMax; break;
+    case ThreadPriority::High:      param.sched_priority = prioNormal + (prioMax - prioNormal)/2; break;
+    case ThreadPriority::Low:       param.sched_priority = prioMin; break;
+    }
+
+    [[maybe_unused]] int r = pthread_setschedparam(threadHandle, policy, &param);
+    ASSERT_ALWAYS(r != -1, "pthread_setschedparam failed: %d", errno);
+}
+
 bool Thread::Start(const ThreadDesc& desc)
 {
     ThreadImpl* thrd = reinterpret_cast<ThreadImpl*>(mData);
@@ -131,7 +165,10 @@ bool Thread::Start(const ThreadDesc& desc)
         ASSERT_ALWAYS(r == 0, "pthread_create failed");
         thrd->sem.Release();
         return false;
-    }    
+    }
+    
+    if (desc.priority != ThreadPriority::Normal)
+        _SetThreadPriority(thrd->handle, desc.priority);
 
     // Ensure that thread callback is running
     thrd->sem.Wait();
@@ -170,39 +207,9 @@ bool Thread::IsRunning()
     return Atomic::LoadExplicit(&thrd->running, AtomicMemoryOrder::Acquire) == 1;
 }
 
-static void threadSetPriority(pthread_t threadHandle, ThreadPriority prio)
-{
-    sched_param param {};
-
-    int policy = SCHED_OTHER;
-    int prioMax = sched_get_priority_max(SCHED_RR);
-    int prioMin = sched_get_priority_min(SCHED_RR);
-    int prioNormal = prioMin + (prioMax - prioMin) / 2;
-
-    #if PLATFORM_APPLE
-        int policyIdle = SCHED_RR;
-        int prioIdle = prioMin;
-        prioMin = prioMin + (prioNormal - prioMin)/2;
-    #else
-        int policyIdle = SCHED_IDLE;
-        int prioIdle = 0;
-    #endif
-    
-    switch (prio) {
-    case ThreadPriority::Normal:    policy = SCHED_RR; param.sched_priority = prioNormal; break;
-    case ThreadPriority::Idle:      policy = policyIdle; param.sched_priority = prioIdle; break;
-    case ThreadPriority::Realtime:  policy = SCHED_RR; param.sched_priority = prioMax; break;
-    case ThreadPriority::High:      policy = SCHED_RR; param.sched_priority = prioNormal + (prioMax - prioNormal)/2; break;
-    case ThreadPriority::Low:       policy = SCHED_RR; param.sched_priority = prioMin; break;
-    }
-
-    [[maybe_unused]] int r = pthread_setschedparam(threadHandle, policy, &param);
-    ASSERT_ALWAYS(r != -1, "pthread_setschedparam failed: %d", errno);
-}
-
 void Thread::SetPriority(ThreadPriority prio)
 {
-    threadSetPriority(reinterpret_cast<ThreadImpl*>(mData)->handle, prio);
+    _SetThreadPriority(reinterpret_cast<ThreadImpl*>(mData)->handle, prio);
 }
 
 void Thread::SetCurrentThreadName(const char* name)
@@ -257,7 +264,7 @@ void Thread::Sleep(uint32 msecs)
 
 void Thread::SetCurrentThreadPriority(ThreadPriority prio)
 {
-    threadSetPriority(pthread_self(), prio);
+    _SetThreadPriority(pthread_self(), prio);
 }
 
 //    ███╗   ███╗██╗   ██╗████████╗███████╗██╗  ██╗
@@ -629,7 +636,7 @@ struct TimerState
 };
 static TimerState gTimer;
 
-void _private::InitializeTimer() 
+void Timer::Initialize() 
 {
     gTimer.init = true;
     struct timespec ts;

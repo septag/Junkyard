@@ -46,6 +46,7 @@ struct ThreadDesc
     const char* name;
     size_t stackSize = SIZE_MB;
     ThreadCreateFlags flags = ThreadCreateFlags::None;
+    ThreadPriority priority = ThreadPriority::Normal;
 };
 
 struct alignas(64) Thread
@@ -232,6 +233,7 @@ private:
 
 namespace Timer
 {
+    API void Initialize();
     API uint64 GetTicks();
     API uint64 LapTime(uint64* lastTime);
     INLINE uint64 Diff(uint64 newTick, uint64 oldTick);
@@ -731,8 +733,6 @@ namespace OS
 // Used internally by system platform source files. Defined in System.cpp
 namespace _private
 {
-    void InitializeTimer(); // Called by TimerInitializer
-
     void CountersAddThread(size_t stackSize);
     void CountersRemoveThread(size_t stackSize);
     void CountersAddMutex();
