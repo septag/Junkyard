@@ -80,16 +80,19 @@ bool Semaphore::Wait(uint32 msecs)
     return !dispatch_semaphore_wait(sem->handle, dt);
 }
 
-// Tip by johaness spohr
-// https://gist.github.com/jspohr/3dc4f00033d79ec5bdaf67bc46c813e3
-static inline int64_t timerInt64MulDiv(int64_t value, int64_t numer, int64_t denom)
+namespace Timer
 {
-    int64_t q = value / denom;
-    int64_t r = value % denom;
-    return q * numer + r * numer / denom;
-}
+    // Tip by johaness spohr
+    // https://gist.github.com/jspohr/3dc4f00033d79ec5bdaf67bc46c813e3
+    FORCE_INLINE int64_t _Int64MulDiv(int64_t value, int64_t numer, int64_t denom)
+    {
+        int64_t q = value / denom;
+        int64_t r = value % denom;
+        return q * numer + r * numer / denom;
+    }
+} // Timer
 
-void _private::InitializeTimer() 
+void Timer::Initialize() 
 {
     gTimer.init = true;
     mach_timebase_info(&gTimer.timebase);
@@ -98,9 +101,9 @@ void _private::InitializeTimer()
 
 uint64 Timer::GetTicks() 
 {
-    ASSERT_MSG(gTimer.init, "Timer not initialized. call timerInit()");
+    ASSERT_MSG(gTimer.init, "Timer not initialized. call Timer::Initialize()");
     const uint64 machNow = mach_absolute_time() - gTimer.start;
-    return timerInt64MulDiv(machNow, gTimer.timebase.numer, gTimer.timebase.denom);
+    return _Int64MulDiv(machNow, gTimer.timebase.numer, gTimer.timebase.denom);
 }
 
 char* OS::GetMyPath(char* dst, size_t dstSize)

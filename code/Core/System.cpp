@@ -56,11 +56,14 @@ struct SysCounters
 static SysCounters gSysCounters;
 
 // We are doing static initilization for timers
-// We don't do much of that because of many pitfalls of this approach. 
+// We don't do much of that because of many pitfalls of this approach in general. 
 // But here can be a safe exception for conveniency. Because timer initialization does not involve allocations or any sensitive init code
 struct TimerInitializer
 {
-    TimerInitializer() { _private::InitializeTimer(); }
+    TimerInitializer()
+    {
+        Timer::Initialize();
+    }
 };
 
 static TimerInitializer gTimerInit;

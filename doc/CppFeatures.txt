@@ -1,34 +1,37 @@
 https://github.com/AnthonyCalandra/modern-cpp-features
 
+Only these C++ features are allowed to be used in the code.
+Any stl/stdc++ code is prohibited and should be implemented in the core library instead
+No exceptions
+No RTTI
+
 c++20: 
     - Designated initializers
-    - [[likely]] in switch
     
 C++17:
 https://www.geeksforgeeks.org/features-of-c17-with-examples/
     - Variable declaration in if and switch. 
-    - if constexpr()
+    - if constexpr() - Rarely when makes it only makes calls to non-platform specific code
     - utf8 character literals
     - [[maybe_used]]
     - [[nodiscard]]
-    - [[fallthrough]]
     - [[deprecated]]
     - inline variables
 
 C++14:
-    - functors: https://www.geeksforgeeks.org/functors-in-cpp/?ref=lbp
+    - functors: https://www.geeksforgeeks.org/functors-in-cpp/?ref=lbp (Rarely)
     - generalized lambda expressions
     - Extended capturing in lambdas
     - static_assert
 
-C++11:
-	- constexpr for constants
-	- regular operators for math primitives
-	- Minimal templates (containers/some generic small functions)
-	- Default arguments
-	- Function overrides
-	- Limited use of ctor/dtor
-	- C++ ABI (return structs as value)
-	- "using" keyword
+C++11/98:
+    - constexpr for constants
+    - regular operators for math primitives
+    - Minimal templates (containers/some generic small functions)
+    - Default arguments
+    - Function overrides
+    - Limited use of ctor/dtor and default constructors
+    - C++ ABI (return structs as value)
+    - "using" keyword
 
 

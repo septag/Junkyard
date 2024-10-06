@@ -248,9 +248,11 @@ bool Run(const AppDesc& desc)
     Debug::SetCaptureStacktraceForFiberProtector(settings.debug.captureStacktraceForTempAllocator);
     Log::SetSettings((const LogLevel)settings.engine.logLevel, settings.engine.breakOnErrors, settings.engine.treatWarningsAsErrors);
     
+    Thread::SetCurrentThreadPriority(ThreadPriority::Low); // Experimental
+    
     // RemoteServices
     if (!Remote::Initialize()) {
-        ASSERT_MSG(0, "Initializing Server failed");
+        ASSERT_MSG(0, "Initializing RemoteServices failed");
         return false;
     }
     
@@ -259,6 +261,8 @@ bool Run(const AppDesc& desc)
         ASSERT_MSG(0, "Initializing VirtualFS failed");
         return false;
     }
+    
+    Thread::SetCurrentThreadPriority(ThreadPriority::Normal);
     
     gApp.app = [NSApplication sharedApplication];
     NSApp.activationPolicy = NSApplicationActivationPolicyRegular;
