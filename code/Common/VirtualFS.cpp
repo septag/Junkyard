@@ -1088,7 +1088,6 @@ bool Vfs::Initialize()
             .entryFn = _AsyncWorkerThread, 
             .name = "VfsAsyncWorkerThread"
         });
-        mgr->thread.SetPriority(ThreadPriority::Low);
     }
 
     // Remote IO
