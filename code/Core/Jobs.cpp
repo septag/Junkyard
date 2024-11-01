@@ -176,6 +176,12 @@ struct alignas(CACHE_LINE_SIZE) JobsAtomicPool
     uint8 _reserved2[CACHE_LINE_SIZE - sizeof(void*) * 2];
 };
 
+// Fiber memory is used to allocate running task item (fiber) header and stack-space memory
+// It's a fixed-size memory pool with the ability to expand up to some extra pools
+// running tasks, only means the tasks that are currently in the job queue or waited upon
+// so if you dispatch a ton of jobs without waiting on them, it might get overloaded and run out of memory
+// Currently, jobs system creates 3 of these allocators. One per stack-size enum
+// Each pool in an allocator can contain (NumShortTasks + NumLongTasks)*2 allocations and will grow up to 16 of these pools
 struct JobsFiberMemAllocator
 {
     struct Pool

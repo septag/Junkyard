@@ -547,24 +547,24 @@ static uint32 Asset::_MakeCacheFilepath(Path* outPath, const AssetDataHeader* he
 
             assetHash = hasher.Hash();
         }
-        else {
-            return 0;
-        }
     }
 
-    Path strippedPath;
-    Vfs::StripMountPath(strippedPath.Ptr(), strippedPath.Capacity(), assetFilepath.CStr());
+    if (assetHash) {
+        Path strippedPath;
+        Vfs::StripMountPath(strippedPath.Ptr(), strippedPath.Capacity(), assetFilepath.CStr());
 
-    char hashStr[64];
-    Str::PrintFmt(hashStr, sizeof(hashStr), "_%x", assetHash);
+        char hashStr[64];
+        Str::PrintFmt(hashStr, sizeof(hashStr), "_%x", assetHash);
 
-    *outPath = "/cache";
-    (*outPath).Append(strippedPath.GetDirectory())
-              .Append("/")
-              .Append(strippedPath.GetFileName())
-              .Append(hashStr)
-              .Append(".")
-              .Append(header->typeName);    
+        *outPath = "/cache";
+        (*outPath).Append(strippedPath.GetDirectory())
+                .Append("/")
+                .Append(strippedPath.GetFileName())
+                .Append(hashStr)
+                .Append(".")
+                .Append(header->typeName);    
+    }
+
     return assetHash;
 }
 
@@ -602,6 +602,7 @@ static Span<AssetMetaKeyValue> Asset::_LoadMetaData(const char* assetFilepath, A
     
     uint32 tempId = MemTempAllocator::PushId();
     MemTempAllocator tmpAlloc(tempId);
+    Span<AssetMetaKeyValue> r;
 
     Blob blob = Vfs::ReadFile(assetMetaPath.CStr(), VfsFlags::TextFile, &tmpAlloc);
     if (blob.IsValid()) {
@@ -651,19 +652,19 @@ static Span<AssetMetaKeyValue> Asset::_LoadMetaData(const char* assetFilepath, A
             MemTempAllocator::PopId(tempId);
             
             // At this point we have popped the current temp allocator and can safely allocate from whatever allocator is coming in
-            return Span<AssetMetaKeyValue>(Mem::AllocCopy<AssetMetaKeyValue>(keys.Ptr(), keys.Count(), alloc), keys.Count());
+            r = Span<AssetMetaKeyValue>(Mem::AllocCopy<AssetMetaKeyValue>(keys.Ptr(), keys.Count(), alloc), keys.Count());
         }
         else {
             blob.Free();
             LOG_WARNING("Invalid asset meta data: %s (Json syntax error at %u:%u)", assetMetaPath.CStr(), loc.line, loc.col);
             MemTempAllocator::PopId(tempId);
-            return Span<AssetMetaKeyValue>();
         }
     }
     else {
         MemTempAllocator::PopId(tempId);
-        return Span<AssetMetaKeyValue>();
     }
+
+    return r;
 }
 
 static AssetHandleResult Asset::_CreateOrFetchHandle(const AssetParams& params)
@@ -684,12 +685,11 @@ static AssetHandleResult Asset::_CreateOrFetchHandle(const AssetParams& params)
             r.header = gAssetMan.assetDb.Data(r.handle);
             ++r.header->refCount;
             r.newlyCreated = false;
-            return r;
         }
     }
 
     // create new asset header and handle 
-    {
+    if (!r.handle.IsValid()) {
         ReadWriteMutexWriteScope lock(gAssetMan.assetMutex);
             
         MemSingleShotMalloc<AssetParams> paramsMallocator;
