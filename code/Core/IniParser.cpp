@@ -56,6 +56,7 @@ INIFileContext INIFile::LoadFromString(const char* data, MemAllocator* alloc)
 
 bool INIFile::Save(const INIFileContext& ini, const char* filepath)
 {
+    bool saveDone = false;
     int size = ini_save(ini.ini, nullptr, 0);
     if (size > 0) {
         MemTempAllocator tmpAlloc;
@@ -66,29 +67,22 @@ bool INIFile::Save(const INIFileContext& ini, const char* filepath)
         if (f.Open(filepath, FileOpenFlags::Write)) {
             f.Write(data, size);
             f.Close();
-            return true;
+            saveDone = true;
         }
-        else {
-            return false;
-        }        
     }
-    else {
-        return false;
-    }
+    return saveDone;
 }
 
 Blob INIFile::SaveToMem(const INIFileContext& ini, MemAllocator* alloc)
 {
     int size = ini_save(ini.ini, nullptr, 0);
+    Blob blob(alloc);
     if (size > 0) {
-        Blob blob(alloc);
         blob.Reserve(size);
         ini_save(ini.ini, (char*)blob.Data(), (int)blob.Size());
         return blob;
     }
-    else {
-        return Blob {};
-    }
+    return blob;
 }
 
 uint32 INIFileContext::GetSectionCount() const
