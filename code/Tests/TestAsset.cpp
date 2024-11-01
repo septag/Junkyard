@@ -28,13 +28,19 @@
 inline constexpr uint32 NUM_CUBES = 10;
 inline constexpr uint32 CELL_SIZE = 50*SIZE_MB;
 
+struct CellItem
+{
+    AssetHandleModel modelHandle;
+    AssetHandleImage imageHandle;
+};
+
 struct Cell
 {
     String<32> name;
     uint32 row;
     uint32 col;
     Array<uint32> files;
-    AssetHandle* handles;   // count = files.Count
+    CellItem* items;
     uint32 selectedFile = uint32(-1);
     AssetGroup assetGroup;
 };
@@ -83,6 +89,7 @@ struct AppImpl : AppCallbacks
 
     void CreateGrid()
     {
+        using namespace M;
         ASSERT(mNumFilePaths);
 
         MemTempAllocator tempAlloc;
@@ -106,14 +113,14 @@ struct AppImpl : AppCallbacks
             }
         }
 
-        uint32 dimSize = (uint32)M::Ceil(M::Sqrt(float(cells.Count())));
+        uint32 dimSize = (uint32)Ceil(Sqrt(float(cells.Count())));
         for (uint32 i = 0; i < cells.Count(); i++) {
             cells[i].col = i % dimSize;    
             cells[i].row = i / dimSize;    
             cells[i].name = String32::Format("%02u,%02u", cells[i].row, cells[i].col);  // row, col
             cells[i].assetGroup = Asset::CreateGroup();
             if (!cells[i].files.IsEmpty()) 
-                cells[i].handles = Mem::AllocZeroTyped<AssetHandle>(cells[i].files.Count());
+                cells[i].items = Mem::AllocZeroTyped<CellItem>(cells[i].files.Count()); 
         }
 
         cells.Detach(&mGrid.cells, &mGrid.numCells);
@@ -127,9 +134,39 @@ struct AppImpl : AppCallbacks
     {
         for (uint32 i = 0; i < mGrid.numCells; i++) {
             mGrid.cells[i].assetGroup.Unload();
+            Mem::Free(mGrid.cells[i].items);
         }
     }
 
+    void LoadCell(uint32 index)
+    {
+        Cell& cell = mGrid.cells[index];
+
+        MemTempAllocator paramsAlloc;
+        ImageLoadParams imageParams {};
+
+        ModelLoadParams modelParams {
+            .layout = {
+                .vertexAttributes = {
+                    {"POSITION", 0, 0, GfxFormat::R32G32B32_SFLOAT, offsetof(Vertex, pos)},
+                    {"TEXCOORD", 0, 0, GfxFormat::R32G32_SFLOAT, offsetof(Vertex, uv)}
+                },
+                .vertexBufferStrides = {
+                    sizeof(Vertex)
+                }
+            },
+            .vertexBufferUsage = GfxBufferUsage::Immutable,
+            .indexBufferUsage = GfxBufferUsage::Immutable
+        };
+
+        Path imagePath;
+        for (uint32 i = 0; i < cell.files.Count(); i++) {
+            cell.items[i].modelHandle = Asset::LoadModel(mFilePaths[cell.files[i]].CStr(), modelParams, cell.assetGroup);
+            imagePath.FormatSelf("/data/TestAsset/%u.tga", i + 1);
+            cell.items[i].imageHandle = Asset::LoadImage(imagePath.CStr(), imageParams, cell.assetGroup);
+        }   
+        cell.assetGroup.Load();
+    }
 
     bool Initialize() override
     {
@@ -164,7 +201,7 @@ struct AppImpl : AppCallbacks
 
         LOG_INFO("Reading file list ...");
         MemTempAllocator tempAlloc;
-        Blob fileListBlob = Vfs::ReadFile("/data/file_list.txt", VfsFlags::TextFile, &tempAlloc);
+        Blob fileListBlob = Vfs::ReadFile("/data/TestAsset/file_list.txt", VfsFlags::TextFile, &tempAlloc);
         if (!fileListBlob.IsValid()) {
             LOG_ERROR("Could not load file_list.txt");
             return true;
@@ -174,7 +211,7 @@ struct AppImpl : AppCallbacks
         mNumFilePaths = filePaths.Count();
         mFilePaths = Mem::AllocZeroTyped<Path>(mNumFilePaths);
         for (uint32 i = 0; i < filePaths.Count(); i++) {
-            mFilePaths[i] = Path::JoinUnix("/data", filePaths[i] + 1);
+            mFilePaths[i] = Path::JoinUnix("/data/TestAsset/", filePaths[i]);
         }
         LOG_INFO("Ready. Total %u files", mNumFilePaths);
 
@@ -222,16 +259,7 @@ struct AppImpl : AppCallbacks
 
                             if (ImGui::IsItemClicked(ImGuiMouseButton_Left)) {
                                 if (state == AssetGroupState::Idle) {
-                                    MemTempAllocator paramsAlloc;
-                                    ImageLoadParams imageParams {};
-                                    AssetParams* params = paramsAlloc.MallocTyped<AssetParams>(cell.files.Count());
-                                    for (uint32 i = 0; i < cell.files.Count(); i++) {
-                                        params[i].typeId = IMAGE_ASSET_TYPE;
-                                        params[i].path = mFilePaths[cell.files[i]];
-                                        params[i].typeSpecificParams = &imageParams;
-                                    }   
-                                    cell.assetGroup.AddToLoadQueue(params, cell.files.Count(), cell.handles);
-                                    cell.assetGroup.Load();
+                                    LoadCell(index);
                                 }
                             }
                             else if (ImGui::IsItemClicked(ImGuiMouseButton_Right)) {
@@ -265,11 +293,7 @@ struct AppImpl : AppCallbacks
                     ImGui::TableSetColumnIndex(1);
 
                     if (cell.selectedFile != -1) {
-                        if (cell.handles[cell.selectedFile].IsValid()) {
-                            AssetObjPtrScope<GfxImage> image(cell.handles[cell.selectedFile]);
-                            if (image) 
-                                ImGui::Image((ImTextureID)IntToPtr(image->handle.mId), ImVec2(256, 256));
-                        }
+                        // TODO:
                     }
 
                     ImGui::EndTable();
@@ -423,22 +447,6 @@ struct AppImpl : AppCallbacks
                 .offset = offsetof(Vertex, uv)
             }
         };
-
-        {
-            ModelLoadParams loadParams {
-                .layout = {
-                    .vertexAttributes = {
-                        {"POSITION", 0, 0, GfxFormat::R32G32B32_SFLOAT, offsetof(Vertex, pos)},
-                        {"TEXCOORD", 0, 0, GfxFormat::R32G32_SFLOAT, offsetof(Vertex, uv)}
-                    },
-                    .vertexBufferStrides = {
-                        sizeof(Vertex)
-                    }
-                },
-                .vertexBufferUsage = GfxBufferUsage::Immutable,
-                .indexBufferUsage = GfxBufferUsage::Immutable
-            };
-        }
 
         {
             AssetObjPtrScope<GfxShader> shader(self->mUnlitShader);
