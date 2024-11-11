@@ -26,7 +26,8 @@
 #include "../Engine.h"
 
 inline constexpr uint32 NUM_CUBES = 10;
-inline constexpr uint32 CELL_SIZE = 50*SIZE_MB;
+inline constexpr uint32 CELL_SIZE_BYTES = 45*SIZE_MB;
+inline constexpr float CUBE_UNIT_SIZE = 1.1f;
 
 struct CellItem
 {
@@ -39,10 +40,12 @@ struct Cell
     String<32> name;
     uint32 row;
     uint32 col;
+    Float2 center;
     Array<uint32> files;
-    CellItem* items;
+    CellItem* items;    // count = files.Count()
     uint32 selectedFile = uint32(-1);
     AssetGroup assetGroup;
+    bool loaded;
 };
 
 struct Grid
@@ -51,13 +54,14 @@ struct Grid
     uint32 numCells;
     uint32 dim;
     uint32 selectedCell = uint32(-1);
+    float cellDim;      // in world units
 };
 
 struct AppImpl : AppCallbacks
 {
     GfxPipelineHandle mPipeline;
     GfxBufferHandle mUniformBuffer;
-    GfxDynamicUniformBuffer mTransformBuffer;
+    // GfxDynamicUniformBuffer mTransformBuffer;
     GfxDescriptorSetLayoutHandle mDSLayout;
     GfxDescriptorSetHandle mDescriptorSet;
     AssetHandleShader mUnlitShader;
@@ -92,39 +96,65 @@ struct AppImpl : AppCallbacks
         using namespace M;
         ASSERT(mNumFilePaths);
 
-        MemTempAllocator tempAlloc;
-        Array<Cell> cells(&tempAlloc);
+        Array<Cell> cells;
 
         // Calculate the total size of our assets and divide it up to cells
         uint64 totalAssetSize = 0;
         uint64 cellAssetSize = 0;
         Cell* curCell = cells.Push();
+        Path imagePath;
 
         for (uint32 i = 0; i < mNumFilePaths; i++) {
             uint64 fileSize = Vfs::GetFileSize(mFilePaths[i].CStr());
+
+            Path imageFilename = mFilePaths[i].GetFileName();
+            imagePath.FormatSelf("/data/Tex%s.tga", imageFilename.CStr());
+
+            fileSize += Vfs::GetFileSize(imagePath.CStr());
             cellAssetSize += fileSize;
             totalAssetSize += fileSize;
 
+
             curCell->files.Push(i);
 
-            if (cellAssetSize >= CELL_SIZE) {
+            if (cellAssetSize >= CELL_SIZE_BYTES) {
                 curCell = cells.Push();
                 cellAssetSize = 0;
             }
         }
 
-        uint32 dimSize = (uint32)Ceil(Sqrt(float(cells.Count())));
+        uint32 gridDim = (uint32)Ceil(Sqrt(float(cells.Count())));
+        float cellDim = 0;
         for (uint32 i = 0; i < cells.Count(); i++) {
-            cells[i].col = i % dimSize;    
-            cells[i].row = i / dimSize;    
+            cells[i].col = i % gridDim;    
+            cells[i].row = i / gridDim;    
             cells[i].name = String32::Format("%02u,%02u", cells[i].row, cells[i].col);  // row, col
             cells[i].assetGroup = Asset::CreateGroup();
-            if (!cells[i].files.IsEmpty()) 
+            if (!cells[i].files.IsEmpty()) {
                 cells[i].items = Mem::AllocZeroTyped<CellItem>(cells[i].files.Count()); 
+                float numCubesPerDim = Ceil(Sqrt(float(cells[i].files.Count())));
+                cellDim = Max(CUBE_UNIT_SIZE * numCubesPerDim, cellDim);
+            }
+        }
+
+        float start = float(gridDim) * cellDim * -0.5f + cellDim * 0.5f;
+        float y = start;
+        for (uint32 row = 0; row < gridDim; row++) {
+            float x = start;
+            for (uint32 col = 0; col < gridDim; col++) {
+                uint32 index = col + row*gridDim;
+                if (index < cells.Count()) {
+                    Cell& cell = cells[index];
+                    cell.center = Float2(x, y);
+                }
+                x += cellDim;
+            }
+            y += cellDim;
         }
 
         cells.Detach(&mGrid.cells, &mGrid.numCells);
-        mGrid.dim = dimSize;
+        mGrid.dim = gridDim;
+        mGrid.cellDim = cellDim;
 
         LOG_INFO("Total asset size: %$llu", totalAssetSize);        
         LOG_INFO("Total cells: %d", mGrid.numCells);
@@ -162,24 +192,91 @@ struct AppImpl : AppCallbacks
         Path imagePath;
         for (uint32 i = 0; i < cell.files.Count(); i++) {
             cell.items[i].modelHandle = Asset::LoadModel(mFilePaths[cell.files[i]].CStr(), modelParams, cell.assetGroup);
-            imagePath.FormatSelf("/data/TestAsset/%u.tga", i + 1);
+
+            Path imageFilename = mFilePaths[cell.files[i]].GetFileName();
+            imagePath.FormatSelf("/data/Tex%s.tga", imageFilename.CStr());
             cell.items[i].imageHandle = Asset::LoadImage(imagePath.CStr(), imageParams, cell.assetGroup);
         }   
         cell.assetGroup.Load();
+
+        cell.loaded = true;
+    }
+
+    void DrawCell(uint32 index)
+    {
+        Cell& cell = mGrid.cells[index];
+
+        float cellDim = mGrid.cellDim;
+        Float2 cellCenter = cell.center;
+        uint32 cubeIndex = 0;
+        Float2 startPt = Float2(cellCenter.x - cellDim*0.5f, cellCenter.y - cellDim*0.5f) + Float2(CUBE_UNIT_SIZE, CUBE_UNIT_SIZE)*0.5f;
+        Float2 endPt = Float2(cellCenter.x + cellDim*0.5f, cellCenter.y + cellDim*0.5f);
+        
+        for (float y = startPt.y; y <= endPt.y; y += CUBE_UNIT_SIZE) {
+            for (float x = startPt.x; x <= endPt.x; x += CUBE_UNIT_SIZE) {
+                if (cubeIndex >= cell.files.Count()) {
+                    return;
+                }
+                const CellItem& item = cell.items[cubeIndex++];
+               
+                AssetObjPtrScope<Model> model(item.modelHandle);
+                AssetObjPtrScope<GfxImage> image(item.imageHandle);
+                /*
+                    for (uint32 inst = 0; inst < NUM_CUBES; inst++) {
+                    Mat4 modelMat = Mat4::Translate(float(inst)*1.5f, 0, 0);
+                    *((Mat4*)mTransformBuffer.Data(inst)) = modelMat;
+                    }
+                    mTransformBuffer.Flush(0u, NUM_CUBES);
+                */
+
+                if (model.IsNull() || image.IsNull())
+                    continue;
+
+                for (uint32 i = 0; i < model->numNodes; i++) {
+                    const ModelNode& node = model->nodes[i];
+                    if (node.meshId) {
+                        const ModelMesh& mesh = model->meshes[IdToIndex(node.meshId)];
+    
+                        // Buffers
+                        uint64* offsets = (uint64*)alloca(sizeof(uint64)*mesh.numVertexBuffers);
+                        memset(offsets, 0x0, sizeof(uint64)*mesh.numVertexBuffers);
+                        gfxCmdBindVertexBuffers(0, mesh.numVertexBuffers, mesh.gpuBuffers.vertexBuffers, offsets);
+                        gfxCmdBindIndexBuffer(mesh.gpuBuffers.indexBuffer, 0, GfxIndexType::Uint32);
+
+                        Mat4 worldMat = Mat4::Translate(x, y, 0.5f);
+                        gfxCmdPushConstants(mPipeline, GfxShaderStage::Vertex, &worldMat, sizeof(worldMat));
+    
+                        GfxDescriptorBindingDesc bindings[] = {
+                            {
+                                .name = "FrameTransform",
+                                .type = GfxDescriptorType::UniformBuffer,
+                                .buffer = { mUniformBuffer, 0, sizeof(FrameTransform) }
+                            },
+                            {
+                                .name = "BaseColorTexture",
+                                .type = GfxDescriptorType::CombinedImageSampler,
+                                .image = image->handle
+                            }
+                        };
+                        gfxCmdPushDescriptorSet(mPipeline, GfxPipelineBindPoint::Graphics, 0, CountOf(bindings), bindings);
+                        gfxCmdDrawIndexed(mesh.numIndices, 1, 0, 0, 0);
+                    }  
+                }       // foreach (node)     
+            }
+        }
     }
 
     bool Initialize() override
     {
-        ASSERT_MSG(0, "Not fully implemented yet");
-
-        Vfs::HelperMountDataAndShaders(SettingsJunkyard::Get().engine.connectToServer, "data/AssetTest");
+        Vfs::HelperMountDataAndShaders(SettingsJunkyard::Get().engine.connectToServer, "data/TestAsset");
 
         if (!Engine::Initialize())
             return false;
 
         mFpsCam.SetLookAt(Float3(0, -2.0f, 3.0f), FLOAT3_ZERO);
+        mFpsCam.Setup(50.0f, 0.1f, 1000.0f);
         mOrbitCam.SetLookAt(Float3(0, -2.0f, 3.0f), FLOAT3_ZERO);
-        mCam = &mOrbitCam;
+        mCam = &mFpsCam;
 
         Engine::RegisterShortcut("TAB", [](void* userData) {
            AppImpl* app = reinterpret_cast<AppImpl*>(userData);
@@ -201,7 +298,7 @@ struct AppImpl : AppCallbacks
 
         LOG_INFO("Reading file list ...");
         MemTempAllocator tempAlloc;
-        Blob fileListBlob = Vfs::ReadFile("/data/TestAsset/file_list.txt", VfsFlags::TextFile, &tempAlloc);
+        Blob fileListBlob = Vfs::ReadFile("/data/file_list.txt", VfsFlags::TextFile, &tempAlloc);
         if (!fileListBlob.IsValid()) {
             LOG_ERROR("Could not load file_list.txt");
             return true;
@@ -211,7 +308,7 @@ struct AppImpl : AppCallbacks
         mNumFilePaths = filePaths.Count();
         mFilePaths = Mem::AllocZeroTyped<Path>(mNumFilePaths);
         for (uint32 i = 0; i < filePaths.Count(); i++) {
-            mFilePaths[i] = Path::JoinUnix("/data/TestAsset/", filePaths[i]);
+            mFilePaths[i] = Path::JoinUnix("/data/", filePaths[i]);
         }
         LOG_INFO("Ready. Total %u files", mNumFilePaths);
 
@@ -263,6 +360,7 @@ struct AppImpl : AppCallbacks
                                 }
                             }
                             else if (ImGui::IsItemClicked(ImGuiMouseButton_Right)) {
+                                cell.loaded = false;
                                 cell.assetGroup.Unload();
                             }
 
@@ -310,7 +408,7 @@ struct AppImpl : AppCallbacks
     {
         PROFILE_ZONE();
 
-        mCam->HandleMovementKeyboard(dt, 10.0f, 5.0f);
+        mCam->HandleMovementKeyboard(dt, 40.0f, 20.0f);
 
         Engine::BeginFrame(dt);
         
@@ -321,71 +419,35 @@ struct AppImpl : AppCallbacks
         float width = (float)App::GetFramebufferWidth();
         float height = (float)App::GetFramebufferHeight();
 
-        { // draw something
-            PROFILE_ZONE_NAME("DrawSomething");
-            PROFILE_GPU_ZONE_NAME("DrawSomething", true);
+        // Viewport
+        GfxViewport viewport {
+            .width = width,
+            .height = height,
+        };
 
-            // We are drawing to swapchain, so we need ClipSpaceTransform
-            FrameTransform ubo {
-                .viewMat = mCam->GetViewMat(),
-                .projMat = gfxGetClipspaceTransform() * mCam->GetPerspectiveMat(width, height)
-            };
+        gfxCmdSetViewports(0, 1, &viewport, true);
+        RectInt scissor(0, 0, App::GetFramebufferWidth(), App::GetFramebufferHeight());
+        gfxCmdSetScissors(0, 1, &scissor, true);
 
-            gfxCmdUpdateBuffer(mUniformBuffer, &ubo, sizeof(ubo));
-            gfxCmdBindPipeline(mPipeline);
+        // We are drawing to swapchain, so we need ClipSpaceTransform
+        FrameTransform ubo {
+            .viewMat = mCam->GetViewMat(),
+            .projMat = gfxGetClipspaceTransform() * mCam->GetPerspectiveMat(width, height)
+        };
 
-            // model transform
-            // Viewport
-            GfxViewport viewport {
-                .width = width,
-                .height = height,
-            };
+        gfxCmdUpdateBuffer(mUniformBuffer, &ubo, sizeof(ubo));
+        gfxCmdBindPipeline(mPipeline);
 
-            gfxCmdSetViewports(0, 1, &viewport, true);
-
-            RectInt scissor(0, 0, App::GetFramebufferWidth(), App::GetFramebufferHeight());
-            gfxCmdSetScissors(0, 1, &scissor, true);
-
-            Model* model = nullptr;
-            ASSERT(model);
-
-            for (uint32 inst = 0; inst < NUM_CUBES; inst++) {
-                Mat4 modelMat = Mat4::Translate(float(inst)*1.5f, 0, 0);
-                *((Mat4*)mTransformBuffer.Data(inst)) = modelMat;
-            }
-            mTransformBuffer.Flush(0u, NUM_CUBES);
-
-            for (uint32 inst = 0; inst < NUM_CUBES; inst++) {
-                for (uint32 i = 0; i < model->numNodes; i++) {
-                    const ModelNode& node = model->nodes[i];
-                    if (node.meshId) {
-                        const ModelMesh& mesh = model->meshes[IdToIndex(node.meshId)];
-    
-                        // Buffers
-                        uint64* offsets = (uint64*)alloca(sizeof(uint64)*mesh.numVertexBuffers);
-                        memset(offsets, 0x0, sizeof(uint64)*mesh.numVertexBuffers);
-                        gfxCmdBindVertexBuffers(0, mesh.numVertexBuffers, mesh.gpuBuffers.vertexBuffers, offsets);
-                        gfxCmdBindIndexBuffer(mesh.gpuBuffers.indexBuffer, 0, GfxIndexType::Uint32);
-
-                        uint32 materialData[] = {inst, 0, 0, 0};
-                        gfxCmdPushConstants(mPipeline, GfxShaderStage::Fragment, materialData, sizeof(materialData));
-    
-                        // DescriptorSets
-                        for (uint32 smi = 0; smi < mesh.numSubmeshes; smi++) {
-                            uint32 dynOffset = mTransformBuffer.Offset(inst);
-    
-                            gfxCmdBindDescriptorSets(mPipeline, 1, &mDescriptorSet, &dynOffset, 1);
-                            gfxCmdDrawIndexed(mesh.numIndices, 1, 0, 0, 0);
-                        }    
-                    }  
-                }       // foreach (node)     
-            }   // foreach (instance)
+        for (uint32 i = 0; i < mGrid.numCells; i++) {
+            if (mGrid.cells[i].loaded) 
+                DrawCell(i);
         }
 
         {
             DebugDraw::DrawGroundGrid(*mCam, width, height, DebugDrawGridProperties { 
+                .distance = 50.0f,
                 .lineColor = Color(0x565656), 
-                .boldLineColor = Color(0xd6d6d6) 
+                .boldLineColor = Color(0xd6d6d6)
             });
         }
 
@@ -400,6 +462,7 @@ struct AppImpl : AppCallbacks
             mFpsCam.SetViewMat(view);
             #endif
 
+            ShowGridGUI();
             ImGui::DrawFrame();
         }
 
@@ -452,24 +515,18 @@ struct AppImpl : AppCallbacks
             AssetObjPtrScope<GfxShader> shader(self->mUnlitShader);
             const GfxDescriptorSetLayoutBinding bindingLayout[] = {
                 {
-                    .name = "ModelTransform",
-                    .type = GfxDescriptorType::UniformBufferDynamic,
-                    .stages = GfxShaderStage::Vertex,
-                },
-                {
                     .name = "FrameTransform",
                     .type = GfxDescriptorType::UniformBuffer,
                     .stages = GfxShaderStage::Vertex
                 },
                 {
-                    .name = "BaseColorTextures",
+                    .name = "BaseColorTexture",
                     .type = GfxDescriptorType::CombinedImageSampler,
-                    .stages = GfxShaderStage::Fragment,
-                    .arrayCount = NUM_CUBES
+                    .stages = GfxShaderStage::Fragment
                 }
             };
 
-            self->mDSLayout = gfxCreateDescriptorSetLayout(*shader, bindingLayout, CountOf(bindingLayout), GfxDescriptorSetLayoutFlags::None);
+            self->mDSLayout = gfxCreateDescriptorSetLayout(*shader, bindingLayout, CountOf(bindingLayout), GfxDescriptorSetLayoutFlags::PushDescriptor);
         }
 
         GfxBufferDesc uniformBufferDesc {
@@ -480,12 +537,20 @@ struct AppImpl : AppCallbacks
 
         self->mUniformBuffer = gfxCreateBuffer(uniformBufferDesc);
 
-        self->mTransformBuffer = gfxCreateDynamicUniformBuffer(NUM_CUBES, sizeof(WorldTransform));
+        // self->mTransformBuffer = gfxCreateDynamicUniformBuffer(NUM_CUBES, sizeof(WorldTransform));
 
+        /*
         GfxPushConstantDesc pushConstant = {
             .name = "Material",
             .stages = GfxShaderStage::Fragment,
             .range = {0, sizeof(uint32)*4}
+        };
+        */
+
+        GfxPushConstantDesc pushConstant {
+            .name = "ModelTransform",
+            .stages = GfxShaderStage::Vertex,
+            .range = {0, sizeof(Mat4)}
         };
 
         AssetObjPtrScope<GfxShader> unlitShader(self->mUnlitShader);
@@ -516,6 +581,7 @@ struct AppImpl : AppCallbacks
 
         self->mPipeline = gfxCreatePipeline(pipelineDesc);
 
+        #if 0
         // TODO: TEMP create descriptor sets and assign them to material userData for later rendering
         GfxImageHandle images[NUM_CUBES];
         for (uint32 i = 0; i < NUM_CUBES; i++)
@@ -540,6 +606,7 @@ struct AppImpl : AppCallbacks
             }
         };
         gfxUpdateDescriptorSet(self->mDescriptorSet, CountOf(descBindings), descBindings);
+        #endif 
     }
 
     void ReleaseGraphicsObjects()
@@ -549,7 +616,7 @@ struct AppImpl : AppCallbacks
         gfxDestroyPipeline(mPipeline);
         gfxDestroyDescriptorSetLayout(mDSLayout);
         gfxDestroyBuffer(mUniformBuffer);
-        gfxDestroyDynamicUniformBuffer(mTransformBuffer);
+        // gfxDestroyDynamicUniformBuffer(mTransformBuffer);
     }
 };
 

@@ -527,7 +527,7 @@ static uint32 Asset::_MakeCacheFilepath(Path* outPath, const AssetDataHeader* he
     //  - Asset Params hash
     //  - If meta file exists, Modified Time + size of the meta file
     if (assetHash == 0) {
-        Path assetMetaPath = Path::JoinUnix(assetFilepath.GetDirectory(), assetFilepath.GetFileName());
+        Path assetMetaPath = assetFilepath;
         assetMetaPath.Append(".asset");
 
         PathInfo assetFileInfo = Vfs::GetFileInfo(assetFilepath.CStr());
@@ -596,8 +596,7 @@ static MemBumpAllocatorVM* Asset::_GetOrCreateScratchAllocator(AssetScratchMemAr
 
 static Span<AssetMetaKeyValue> Asset::_LoadMetaData(const char* assetFilepath, AssetPlatform::Enum platform, MemAllocator* alloc)
 {
-    Path path(assetFilepath);
-    Path assetMetaPath = Path::JoinUnix(path.GetDirectory(), path.GetFileName());
+    Path assetMetaPath(assetFilepath);
     assetMetaPath.Append(".asset");
     
     uint32 tempId = MemTempAllocator::PushId();
@@ -1846,7 +1845,7 @@ void* Asset::LockObjData(AssetHandle handle)
         const AssetTypeManager& typeMan = gAssetMan.typeManagers[typeManIdx];
         if (state == AssetState::Loading)           return typeMan.asyncObj;
         else if (state == AssetState::LoadFailed)   return typeMan.failedObj;
-        else                                        ASSERT(0);  return nullptr;
+        else                                        return nullptr;
     }
 
     while (Atomic::ExchangeExplicit(&header->state, uint32(AssetState::Locked), AtomicMemoryOrder::Acquire) == uint32(AssetState::Locked)) {

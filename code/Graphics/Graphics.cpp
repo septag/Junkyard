@@ -106,8 +106,8 @@ PRAGMA_DIAGNOSTIC_POP()
 //    ██║   ██║██║     ██║   ██║██╔══██╗██╔══██║██║     ╚════██║
 //    ╚██████╔╝███████╗╚██████╔╝██████╔╝██║  ██║███████╗███████║
 //     ╚═════╝ ╚══════╝ ╚═════╝ ╚═════╝ ╚═╝  ╚═╝╚══════╝╚══════╝
-static constexpr uint32 kMaxSwapchainImages = 3;
-static constexpr uint32 MAX_FRAMES_IN_FLIGHT = 2;
+static constexpr uint32 MAX_SWAP_CHAIN_IMAGES = 3;
+static constexpr uint32 MAX_FRAMES_IN_FLIGHT = 4;
 static constexpr uint32 kMaxDescriptorSetLayoutPerPipeline = 3;
 
 #ifdef TRACY_ENABLE
@@ -152,9 +152,9 @@ struct GfxSwapchain
     uint32 imageIdx;    // current image index that we are able to get in the running frame
     uint32 numImages;
     VkSwapchainKHR swapchain;
-    VkImage images[kMaxSwapchainImages];               // count: numImages
-    VkImageView imageViews[kMaxSwapchainImages];       // count: numImages
-    VkFramebuffer framebuffers[kMaxSwapchainImages];   // count: numImages
+    VkImage images[MAX_SWAP_CHAIN_IMAGES];               // count: numImages
+    VkImageView imageViews[MAX_SWAP_CHAIN_IMAGES];       // count: numImages
+    VkFramebuffer framebuffers[MAX_SWAP_CHAIN_IMAGES];   // count: numImages
     VkExtent2D extent;
     VkFormat colorFormat;
     VkRenderPass renderPass;
@@ -383,7 +383,7 @@ struct GfxContext
     VkSemaphore imageAvailSemaphores[MAX_FRAMES_IN_FLIGHT];
     VkSemaphore renderFinishedSemaphores[MAX_FRAMES_IN_FLIGHT];
     VkFence inflightFences[MAX_FRAMES_IN_FLIGHT];
-    VkFence inflightImageFences[kMaxSwapchainImages];  // count: Swapchain.numImages
+    VkFence inflightImageFences[MAX_SWAP_CHAIN_IMAGES];  // count: Swapchain.numImages
     Array<GfxGarbage> garbage;
 
     AtomicUint32 currentFrameIdx;
@@ -2225,7 +2225,7 @@ static GfxSwapchain gfxCreateSwapchain(VkSurfaceKHR surface, uint16 width, uint1
     }
 
     uint32 minImages = Min(Clamp(gVk.swapchainSupport.caps.minImageCount + 1, 1u, 
-                                 gVk.swapchainSupport.caps.maxImageCount), kMaxSwapchainImages);
+                                 gVk.swapchainSupport.caps.maxImageCount), MAX_SWAP_CHAIN_IMAGES);
     VkCompositeAlphaFlagBitsKHR compositeAlpha = 
         (gVk.swapchainSupport.caps.supportedCompositeAlpha & VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR) ?
         VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR : VK_COMPOSITE_ALPHA_INHERIT_BIT_KHR;
