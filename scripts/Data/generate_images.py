@@ -9,6 +9,7 @@ arg_parser = argparse.ArgumentParser(description='')
 arg_parser.add_argument('--outputdir', help='RootDir of generated images', default='./images')
 arg_parser.add_argument('--datasize', help='Total data size of the images in Gigabytes', default='1')
 arg_parser.add_argument('--imagedim', help='Dimension of the generated image in pixels', default='1024')
+arg_parser.add_argument('--prefix', help='Prefix of the image names', default='')
 args = arg_parser.parse_args(sys.argv[1:])
 
 IMAGE_W = int(args.imagedim)
@@ -43,7 +44,8 @@ meta_template = """
 }
 """
 
-if not os.path.exists(OUTPUT_DIR): os.makedirs(OUTPUT_DIR)
+if not os.path.exists(OUTPUT_DIR): 
+    os.makedirs(OUTPUT_DIR)
 cur_dir = os.curdir
 os.chdir(OUTPUT_DIR)
 
@@ -57,11 +59,12 @@ while True:
     canvas.rectangle([(0, 0), (IMAGE_W, IMAGE_H)], outline=STROKE_COLOR, fill=BG_COLOR, width=50)
     canvas.text(((IMAGE_W - text_width)/2, (IMAGE_H - text_height*1.5)/2), text, font=font, fill=STROKE_COLOR)
 
-    filename = text + "." + IMAGE_FORMAT
+    filename = args.prefix + text + "." + IMAGE_FORMAT
+    metaFilename = filename + '.asset'
     image.save(filename, bitmap_format=IMAGE_FORMAT)
     print(filename)
 
-    with open(text + '.asset', 'w') as meta_file:
+    with open(metaFilename, 'w') as meta_file:
         meta_file.write(meta_template)
         meta_file.close()
 

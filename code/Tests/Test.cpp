@@ -73,7 +73,7 @@ struct AppImpl final : AppCallbacks
             }
         };
 
-        GfxPushConstantDesc pushConstant = GfxPushConstantDesc {
+        GfxPushConstantDesc pushConstant = {
             .name = "ModelTransform",
             .stages = GfxShaderStage::Vertex,
             .range = { 0, sizeof(Mat4) }

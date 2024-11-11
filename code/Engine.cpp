@@ -324,12 +324,11 @@ void Engine::Release()
 
 void Engine::BeginFrame(float dt)
 {
+    PROFILE_ZONE();
     ASSERT(gEng.initialized);
     ASSERT_MSG(!gEng.beginFrameCalled, "Cannot call BeginFrame twice");
     gEng.beginFrameCalled = true;
     gEng.endFrameCalled = false;
-
-    TracyCPlot("FrameTime", dt*1000.0f);
 
     gEng.elapsedTime += dt;
 
@@ -375,6 +374,8 @@ void Engine::BeginFrame(float dt)
 
 void Engine::EndFrame()
 {
+    PROFILE_ZONE();
+
     ASSERT(gEng.initialized);
     ASSERT_MSG(!gEng.endFrameCalled, "Cannot call EndFrame twice");
     ASSERT_MSG(gEng.beginFrameCalled, "BeginFrame is not called");

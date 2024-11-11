@@ -213,6 +213,8 @@ MemTempContext::~MemTempContext()
 
 void MemTempAllocator::Reset()
 {
+    PROFILE_ZONE();
+
     // TODO: do some kind of heuristics to detect leaks if allocStack is not empty
 
     uint32 count;
@@ -221,12 +223,14 @@ void MemTempAllocator::Reset()
         gMemTemp.tempCtxs.CopyTo(&gMemTemp.tempCtxsCopy);
         count = gMemTemp.tempCtxs.Count();
     }
-    
+
     for (uint32 i = 0; i < gMemTemp.tempCtxsCopy.Count();) {
         MemTempContext* ctx = gMemTemp.tempCtxsCopy[i];
 
-        if (!ctx->inUseMtx.TryEnter())
+        if (!ctx->inUseMtx.TryEnter()) {
+            i++;
             continue;
+        }
 
         if (ctx->used && ctx->allocStack.IsEmpty()) {
             ctx->generationIdx = 0;
