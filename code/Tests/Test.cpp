@@ -331,9 +331,8 @@ struct AppImpl final : AppCallbacks
 
         if (ImGui::IsEnabled()) { // imgui test
             PROFILE_GPU_ZONE_NAME("ImGuiRender", true);
-            DebugHud::DrawQuickFrameInfo(dt);
+            DebugHud::DrawDebugHud(dt);
             DebugHud::DrawStatusBar(dt);
-            DebugHud::DrawMemBudgets(dt);
 
             #if 0
                 Mat4 view = mFpsCam.GetViewMat();
