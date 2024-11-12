@@ -910,8 +910,8 @@ struct GfxDescriptorBindingDesc
     union
     {
         GfxDescriptorBufferDesc buffer;
-        GfxImageHandle                image;
-        const GfxImageHandle*         imageArray;
+        GfxImageHandle          image;
+        const GfxImageHandle*   imageArray;
     };
 };
 
@@ -1250,10 +1250,10 @@ struct GfxDynamicUniformBuffer
     void Flush(const GfxDyanmicUniformBufferRange* ranges, uint32 numRanges);
     void Flush(uint32 index, uint32 _count);
 
-    GfxBufferHandle buffer;
-    uint8* bufferPtr;
-    uint32 stride;
-    uint32 count;
+    GfxBufferHandle mBufferHandle;
+    uint8* mBufferPtr;
+    uint32 mStride;
+    uint32 mCount;
 };
 
 GfxDynamicUniformBuffer gfxCreateDynamicUniformBuffer(uint32 count, uint32 stride);
@@ -1287,15 +1287,15 @@ namespace _private
 inline void* GfxDynamicUniformBuffer::Data(uint32 index)
 {
 #ifdef CONFIG_CHECK_OUTOFBOUNDS    
-    ASSERT_MSG(index < count, "Out of bounds access for dynamic buffer");
+    ASSERT_MSG(index < mCount, "Out of bounds access for dynamic buffer");
 #endif
     
-    return bufferPtr + stride*index;
+    return mBufferPtr + mStride*index;
 }
 
 inline uint32 GfxDynamicUniformBuffer::Offset(uint32 index)
 {
-    return stride*index;
+    return mStride*index;
 }
 
 inline void GfxDynamicUniformBuffer::Flush(uint32 index, uint32 _count)

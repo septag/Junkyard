@@ -209,7 +209,7 @@ void CameraFPS::HandleMovementKeyboard(float dt, float moveSpeed, float slowMove
         targetPos = mPos - mForward*(moveSpeed*dt);
 
     float h = -0.1f/Log2(0.01f);
-    mPos = Float3SmoothLerp(mPos, targetPos, dt, h);
+    mPos = Float3SmoothLerp(mPos, targetPos, 0.016f, h);
 }
 
 void CameraFPS::HandleRotationMouse(const AppEvent& ev, float rotateSpeed, float zoomStep)
