@@ -61,9 +61,7 @@ struct AppImpl : AppCallbacks
 {
     GfxPipelineHandle mPipeline;
     GfxBufferHandle mUniformBuffer;
-    // GfxDynamicUniformBuffer mTransformBuffer;
     GfxDescriptorSetLayoutHandle mDSLayout;
-    GfxDescriptorSetHandle mDescriptorSet;
     AssetHandleShader mUnlitShader;
     uint32 mNumFilePaths = 0;
     Path* mFilePaths = nullptr;
@@ -202,6 +200,32 @@ struct AppImpl : AppCallbacks
         cell.loaded = true;
     }
 
+    void LoadAll()
+    {
+        TimerStopWatch timer;
+        for (uint32 i = 0; i < mGrid.numCells; i++) {
+            LoadCell(i);            
+        }
+        Asset::Update();
+
+        while (true) {
+            uint32 numLoaded = 0;
+            for (uint32 i = 0; i < mGrid.numCells; i++) {
+                Cell& cell = mGrid.cells[i];
+                if (cell.assetGroup.IsLoadFinished()) 
+                    numLoaded++;
+            }
+
+            if (numLoaded == mGrid.numCells)
+                break;
+            else {
+                Asset::Update();
+            }
+        }
+
+        LOG_INFO("Load finished: %0.2f ms", timer.ElapsedMS());
+    }
+
     void DrawCell(uint32 index)
     {
         Cell& cell = mGrid.cells[index];
@@ -221,13 +245,6 @@ struct AppImpl : AppCallbacks
                
                 AssetObjPtrScope<Model> model(item.modelHandle);
                 AssetObjPtrScope<GfxImage> image(item.imageHandle);
-                /*
-                    for (uint32 inst = 0; inst < NUM_CUBES; inst++) {
-                    Mat4 modelMat = Mat4::Translate(float(inst)*1.5f, 0, 0);
-                    *((Mat4*)mTransformBuffer.Data(inst)) = modelMat;
-                    }
-                    mTransformBuffer.Flush(0u, NUM_CUBES);
-                */
 
                 if (model.IsNull() || image.IsNull())
                     continue;
@@ -261,7 +278,7 @@ struct AppImpl : AppCallbacks
                         gfxCmdPushDescriptorSet(mPipeline, GfxPipelineBindPoint::Graphics, 0, CountOf(bindings), bindings);
                         gfxCmdDrawIndexed(mesh.numIndices, 1, 0, 0, 0);
                     }  
-                }       // foreach (node)     
+                } // foreach (node)
             }
         }
     }
@@ -338,6 +355,9 @@ struct AppImpl : AppCallbacks
         };
 
         if (ImGui::Begin("Cells")) {
+            if (ImGui::Button("Load All")) 
+                LoadAll();
+
             if (ImGui::BeginTable("GridTable", mGrid.dim)) {
                 for (uint32 row = 0; row < mGrid.dim; row++) {
                     ImGui::TableNextRow();
@@ -537,16 +557,6 @@ struct AppImpl : AppCallbacks
 
         self->mUniformBuffer = gfxCreateBuffer(uniformBufferDesc);
 
-        // self->mTransformBuffer = gfxCreateDynamicUniformBuffer(NUM_CUBES, sizeof(WorldTransform));
-
-        /*
-        GfxPushConstantDesc pushConstant = {
-            .name = "Material",
-            .stages = GfxShaderStage::Fragment,
-            .range = {0, sizeof(uint32)*4}
-        };
-        */
-
         GfxPushConstantDesc pushConstant {
             .name = "ModelTransform",
             .stages = GfxShaderStage::Vertex,
@@ -580,43 +590,14 @@ struct AppImpl : AppCallbacks
         };
 
         self->mPipeline = gfxCreatePipeline(pipelineDesc);
-
-        #if 0
-        // TODO: TEMP create descriptor sets and assign them to material userData for later rendering
-        GfxImageHandle images[NUM_CUBES];
-        for (uint32 i = 0; i < NUM_CUBES; i++)
-            images[i] = GfxImageHandle();
-        self->mDescriptorSet = gfxCreateDescriptorSet(self->mDSLayout);
-        GfxDescriptorBindingDesc descBindings[] = {
-            {
-                .name = "ModelTransform",
-                .type = GfxDescriptorType::UniformBufferDynamic,
-                .buffer = {self->mTransformBuffer.buffer, 0, self->mTransformBuffer.stride}
-            },
-            {
-                .name = "FrameTransform",
-                .type = GfxDescriptorType::UniformBuffer,
-                .buffer = { self->mUniformBuffer, 0, sizeof(FrameTransform) }
-            },
-            {
-                .name = "BaseColorTextures",
-                .type = GfxDescriptorType::CombinedImageSampler,
-                .imageArrayCount = NUM_CUBES,
-                .imageArray = images
-            }
-        };
-        gfxUpdateDescriptorSet(self->mDescriptorSet, CountOf(descBindings), descBindings);
-        #endif 
     }
 
     void ReleaseGraphicsObjects()
     {
         gfxWaitForIdle();
-        gfxDestroyDescriptorSet(mDescriptorSet);
         gfxDestroyPipeline(mPipeline);
         gfxDestroyDescriptorSetLayout(mDSLayout);
         gfxDestroyBuffer(mUniformBuffer);
-        // gfxDestroyDynamicUniformBuffer(mTransformBuffer);
     }
 };
 

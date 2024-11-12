@@ -4713,35 +4713,37 @@ GfxDynamicUniformBuffer gfxCreateDynamicUniformBuffer(uint32 count, uint32 strid
 
     stride = AlignValue(stride, uint32(gVk.deviceProps.limits.minUniformBufferOffsetAlignment));
 
-    GfxBufferHandle buffer = gfxCreateBuffer(GfxBufferDesc {
+    GfxBufferHandle bufferHandle = gfxCreateBuffer(GfxBufferDesc {
         .size = stride * count,
         .type = GfxBufferType::Uniform,
         .usage = GfxBufferUsage::Stream
     });
 
-    if (!buffer.IsValid())
+    if (!bufferHandle.IsValid())
         return GfxDynamicUniformBuffer {};
 
     GFX_LOCK_POOL_TEMP(BUFFERS);
-    GfxBufferData& bufferData = gVk.pools.buffers.Data(buffer);
+    GfxBufferData& bufferData = gVk.pools.buffers.Data(bufferHandle);
 
-    return GfxDynamicUniformBuffer {
-        .buffer = buffer,
-        .bufferPtr = (uint8*)bufferData.mappedBuffer,
-        .stride = stride,
-        .count = count
+    GfxDynamicUniformBuffer r {
+        .mBufferHandle = bufferHandle,
+        .mBufferPtr = (uint8*)bufferData.mappedBuffer,
+        .mStride = stride,
+        .mCount = count
     };
+
+    return r;
 }
 
 void gfxDestroyDynamicUniformBuffer(GfxDynamicUniformBuffer& buffer)
 {
-    gfxDestroyBuffer(buffer.buffer);
+    gfxDestroyBuffer(buffer.mBufferHandle);
     memset(&buffer, 0x0, sizeof(buffer));
 }
 
 bool GfxDynamicUniformBuffer::IsValid() const
 {
-    return buffer.IsValid() && gVk.pools.buffers.IsValid(buffer);
+    return mBufferHandle.IsValid() && gVk.pools.buffers.IsValid(mBufferHandle);
 }
 
 void GfxDynamicUniformBuffer::Flush(const GfxDyanmicUniformBufferRange* ranges, uint32 numRanges)
@@ -4749,7 +4751,7 @@ void GfxDynamicUniformBuffer::Flush(const GfxDyanmicUniformBufferRange* ranges, 
     VmaAllocation allocation;
     {
         GFX_LOCK_POOL_TEMP(BUFFERS);
-        GfxBufferData& bufferData = gVk.pools.buffers.Data(this->buffer);
+        GfxBufferData& bufferData = gVk.pools.buffers.Data(mBufferHandle);
         allocation = bufferData.allocation;
 
         // TODO: we currently only assume that uniform buffers are created with HOST_VISIBLE bit.
@@ -4763,8 +4765,8 @@ void GfxDynamicUniformBuffer::Flush(const GfxDyanmicUniformBufferRange* ranges, 
     VkDeviceSize* sizes = tmpAlloc.MallocTyped<VkDeviceSize>(numRanges);
 
     for (uint32 i = 0; i < numRanges; i++) {
-        offsets[i] = ranges[i].index * this->stride;
-        sizes[i] = ranges[i].count * this->stride;
+        offsets[i] = ranges[i].index * mStride;
+        sizes[i] = ranges[i].count * mStride;
     }
     
     [[maybe_unused]] VkResult r = vmaFlushAllocations(gVk.vma, 1, &allocation, offsets, sizes);
