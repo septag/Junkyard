@@ -31,22 +31,187 @@ struct MemBudgetWindow
     bool imguiHeapValidate;
 };
 
-struct FrameInfoContext
+enum class DebugHudGraphType : uint32
 {
-    RingBlob frameTimes;
-    uint32 targetFps;
+    FrameTime = 0,
+    Fps,
+    CpuTime,
+    GpuTime,
+    _Count
+};
+
+static const char* DEBUGHUD_GRAPH_NAMES[uint32(DebugHudGraphType::_Count)] = {
+    "FrameTime",
+    "FPS",
+    "CpuTime",
+    "GpuTime"
+};
+
+struct DebugHudGraph
+{
+    RingBlob values;    // entry type = float
+    float minValue;
+    float avgValue;
+    float maxValue;
+    uint32 numSamples;
+};
+
+struct DebugHudContext
+{
+    SpinLockMutex statusLock;
+    DebugHudGraph graphs[uint32(DebugHudGraphType::_Count)];
+    bool enabledGraphs[uint32(DebugHudGraphType::_Count)];
+    bool showMemBudgets;
+
+    uint32 monitorRefreshRate;
+
     String<256> statusText;
     Color statusColor;
     float statusShowTime;
-    SpinLockMutex statusLock;
 };
 
 static MemBudgetWindow gMemBudget;
-static FrameInfoContext gQuickFrameInfo;
+static DebugHudContext gDebugHud;
 
 namespace DebugHud
 {
-void DrawMemBudgets(float dt, bool* pOpen)
+    static void _StatusBarLogCallback(const LogEntry& entry, void*)
+    {
+        SpinLockMutexScope lock(gDebugHud.statusLock);
+
+        gDebugHud.statusText = entry.text;  
+        gDebugHud.statusShowTime = 0;
+
+        switch (entry.type) {
+        case LogLevel::Info:	gDebugHud.statusColor = COLOR_WHITE; break;
+        case LogLevel::Debug:	gDebugHud.statusColor = Color(0, 200, 200); break;
+        case LogLevel::Verbose:	gDebugHud.statusColor = Color(128, 128, 128); break;
+        case LogLevel::Warning:	gDebugHud.statusColor = COLOR_YELLOW; break;
+        case LogLevel::Error:	gDebugHud.statusColor = COLOR_RED; break;
+        default:			    gDebugHud.statusColor = COLOR_WHITE; break;
+        }
+    }
+
+    static void _QuickFrameInfoEventCallback(const AppEvent& ev, [[maybe_unused]] void* userData)
+    {
+        if (ev.type == AppEventType::DisplayUpdated) {
+            for (uint32 i = 0; i < uint32(DebugHudGraphType::_Count); i++) {
+                gDebugHud.graphs[i].values.Free();
+            }
+
+            gDebugHud.monitorRefreshRate = App::GetDisplayInfo().refreshRate;
+
+            uint32 numSamples = gDebugHud.monitorRefreshRate;
+
+            for (uint32 i = 0; i < uint32(DebugHudGraphType::_Count); i++) {
+                gDebugHud.graphs[i] = {
+                    .numSamples = numSamples
+                };
+
+                gDebugHud.graphs[i].values.Reserve(numSamples*sizeof(float));
+            }
+        }
+    }
+
+    static void _UpdateGraph(float value, DebugHudGraphType type)
+    {
+        MemTempAllocator tmpAlloc;
+        DebugHudGraph& graph = gDebugHud.graphs[uint32(type)];
+        
+        if (graph.values.ExpectWrite() < sizeof(float))
+            graph.values.Read<float>(nullptr);
+        graph.values.Write<float>(value);
+
+        float* values = tmpAlloc.MallocTyped<float>(graph.numSamples);
+        uint32 numValues = uint32(graph.values.Peek(values, sizeof(float)*graph.numSamples)/sizeof(float));
+
+        float avg = 0;
+        float minVal = FLT_MAX;
+        float maxVal = -FLT_MAX;
+        for (uint32 i = 0; i < numValues; i++) {
+            avg += values[i];
+            if (values[i] < minVal)
+                minVal = values[i];
+            if (values[i] > maxVal)
+                maxVal = values[i];
+        }
+        avg /= float(numValues);
+
+        graph.minValue = minVal;
+        graph.maxValue = maxVal;
+        graph.avgValue = avg;
+    }
+
+    static void _DrawGraph(DebugHudGraphType type)
+    {
+        bool isFrameTime = (type == DebugHudGraphType::FrameTime || type == DebugHudGraphType::CpuTime || type == DebugHudGraphType::GpuTime);
+        bool isFps = type == DebugHudGraphType::Fps;
+
+        MemTempAllocator tmpAlloc;
+        DebugHudGraph& graph = gDebugHud.graphs[uint32(type)];
+        float* values = tmpAlloc.MallocTyped<float>(graph.numSamples);
+        uint32 numValues = uint32(graph.values.Peek(values, sizeof(float)*graph.numSamples)/sizeof(float));
+
+        if (isFrameTime) {
+            for (uint32 i = 0; i < numValues; i++)
+                values[i] = 33.0f - Min(values[i], 33.0f);
+        }
+
+        ImGui::PushStyleVar(ImGuiStyleVar_Alpha, 0.8f);
+        ImVec4 textColor = ImGui::GetStyleColorVec4(ImGuiCol_Text);
+         if (isFrameTime) {
+            if (graph.avgValue >= 33.0f)        
+                textColor = ImGui::ColorToImVec4(COLOR_RED);
+        }
+        else if (isFps) {
+            if (graph.avgValue < 30)            
+                textColor = ImGui::ColorToImVec4(COLOR_RED);
+        }
+        ImGui::PushStyleColor(ImGuiCol_Text, textColor);
+
+        const float kLineSize = ImGui::GetFrameHeightWithSpacing();
+
+        String32 overlay = String32::Format("%s%s: %.1f", DEBUGHUD_GRAPH_NAMES[uint32(type)], isFrameTime ? "(ms)" : "", graph.avgValue);
+
+        float plotMax = graph.maxValue;
+        if (isFrameTime)
+            plotMax = 33.0f;
+        else if (isFps && SettingsJunkyard::Get().graphics.enableVsync)
+            plotMax = float(gDebugHud.monitorRefreshRate);
+
+        ImGui::PlotLines("##dt", values, (int)numValues, 0, overlay.CStr(), 0, plotMax, ImVec2(0, kLineSize*2));
+
+        ImGui::PopStyleColor();
+        ImGui::PopStyleVar();
+
+    }
+
+    static void _DrawHudMenu()
+    {
+        if (ImGui::ArrowButton("OpenContextMenu", ImGuiDir_Down)) {
+            ImGui::OpenPopup("ContextMenu");
+        }
+
+        if (ImGui::BeginPopupContextItem("ContextMenu")) {
+            for (uint32 i = 0; i < uint32(DebugHudGraphType::_Count); i++) {
+                String64 graphItemMenuStr = String64::Format("Toggle %s", DEBUGHUD_GRAPH_NAMES[i]);
+                ImGui::MenuItem(graphItemMenuStr.CStr(), nullptr, &gDebugHud.enabledGraphs[i]);
+            }
+
+            ImGui::Separator();
+
+            ImGui::MenuItem("Memory Budgets", nullptr, &gDebugHud.showMemBudgets);
+
+            ImGui::EndPopup();
+        }
+    }
+
+    static void _DrawMemBudgets(float dt, bool* pOpen);
+
+} // DebugHud
+
+
+void DebugHud::_DrawMemBudgets(float dt, bool* pOpen)
 {
     auto DivideInt = [](uint32 a, uint32 b)->float { return float(double(a)/double(b)); };
     auto DivideSize = [](size_t a, size_t b)->float { return float(double(a)/double(b)); };
@@ -262,173 +427,73 @@ void DrawMemBudgets(float dt, bool* pOpen)
     ImGui::End();
 }
 
-void DrawQuickFrameInfo(float dt, bool *pOpen)
+void DebugHud::DrawDebugHud(float dt, bool *pOpen)
 {
-    const float kFontSize = ImGui::GetFontSize();
-    const float kLineSize = ImGui::GetFrameHeightWithSpacing();
-    const ImVec2 kDisplaySize = ImGui::GetIO().DisplaySize;
-    ImGuiStyle& kStyle = ImGui::GetStyle();
-
-    RingBlob& frameTimes = gQuickFrameInfo.frameTimes;
-
-    // First-time initialization
-    if (gQuickFrameInfo.targetFps == 0)
-        gQuickFrameInfo.targetFps = App::GetDisplayInfo().refreshRate;
-
-    if (frameTimes.Capacity() == 0) 
-        frameTimes.Reserve(sizeof(float)*gQuickFrameInfo.targetFps*2);
-    // 
-
-    if (frameTimes.ExpectWrite() < sizeof(float))
-        frameTimes.Read<float>(nullptr);
-    frameTimes.Write<float>(dt);
-
     ImGui::SetNextWindowPos(ImVec2(0, 0), ImGuiCond_Always);
-    ImGui::SetNextWindowSize(ImVec2(kDisplaySize.x*0.33f, kLineSize*5), ImGuiCond_Always);
     const uint32 kWndFlags = ImGuiWindowFlags_NoBackground|ImGuiWindowFlags_NoTitleBar|ImGuiWindowFlags_NoScrollbar|
-                             ImGuiWindowFlags_NoMove|ImGuiWindowFlags_NoResize|ImGuiWindowFlags_NoInputs;
+                             ImGuiWindowFlags_NoMove|ImGuiWindowFlags_NoResize;
     if (ImGui::Begin("Frame", pOpen, kWndFlags)) {
-        ImGui::BeginTable("FrameTable", 2, ImGuiTableFlags_SizingFixedFit);
-        ImGui::TableSetupColumn(nullptr, 0, kFontSize*10);
-        ImGui::TableNextColumn();
+        _UpdateGraph(dt*1000.0f, DebugHudGraphType::FrameTime);
+        _UpdateGraph(1.0f/dt, DebugHudGraphType::Fps);
+        _UpdateGraph(Engine::GetEngineTimeMS(), DebugHudGraphType::CpuTime);
+        _UpdateGraph(gfxGetRenderTimeNs()/1000000.0f, DebugHudGraphType::GpuTime);
 
-        MemTempAllocator tmpAlloc;
-        float* values = tmpAlloc.MallocTyped<float>(gQuickFrameInfo.targetFps*2);
-        uint32 valuesRead = (uint32)frameTimes.Peek(values, sizeof(float)*gQuickFrameInfo.targetFps*2)/sizeof(float);
+        _DrawHudMenu();
 
-        static float elapsed = 0;
-        static uint64 frameIdx = 0;
-        static uint32 fps = 0;
-        
-        if (frameIdx == 0)
-            frameIdx = Engine::GetFrameIndex();
-
-        elapsed += dt;
-        if (elapsed >= 1.0f) {
-            fps = uint32(Engine::GetFrameIndex() - frameIdx);
-            frameIdx = Engine::GetFrameIndex();
-            elapsed = 0;
+        for (uint32 i = 0; i < uint32(DebugHudGraphType::_Count); i++) {
+            if (gDebugHud.enabledGraphs[i])
+                _DrawGraph(DebugHudGraphType(i));
         }
 
-        float avgFt = 0;
-        float minFt = FLT_MAX;
-        float maxFt = -FLT_MAX;
-        for (uint32 i = 0; i < valuesRead; i++) {
-            avgFt += values[i];
-            if (values[i] < minFt)
-                minFt = values[i];
-            if (values[i] > maxFt)
-                maxFt = values[i];
-        }
-        avgFt /= float(valuesRead);
-
-        uint32 targetFps = SettingsJunkyard::Get().graphics.enableVsync ? gQuickFrameInfo.targetFps : uint32(1.0f / avgFt);
-        uint32 warningFps = uint32(float(targetFps) * 0.8f);
-        uint32 lowFps = targetFps / 2;
-
-        Color fpsColor, cpuColor, gpuColor;
-        if (fps <= lowFps)             fpsColor = COLOR_RED;
-        else if (fps <= warningFps)    fpsColor = COLOR_YELLOW;
-        else                           fpsColor = COLOR_GREEN;
-
-        float cpuTimeMs = Engine::GetEngineTimeMS();
-        float gpuTimeMs = gfxGetRenderTimeNs()/1000000.0f;
-        float warnTimeMs = 1000.0f / float(warningFps);
-        float lowTimeMs = 1000.0f / float(lowFps);
-
-        if (cpuTimeMs >= lowTimeMs)         cpuColor = COLOR_RED;
-        else if (cpuTimeMs >= warnTimeMs)   cpuColor = COLOR_YELLOW;
-        else                                cpuColor = COLOR_GREEN;
-
-        if (gpuTimeMs >= lowTimeMs)         gpuColor = COLOR_RED;
-        else if (gpuTimeMs >= warnTimeMs)   gpuColor = COLOR_YELLOW;
-        else                                gpuColor = COLOR_GREEN;
-                        
-        ImGui::TextColored(ImGui::ColorToImVec4(fpsColor), "Fps: %u", fps);
-        ImGui::TextColored(ImGui::ColorToImVec4(fpsColor), "AvgFt: %.1fms", avgFt*1000.0f);
-        ImGui::TextColored(ImGui::ColorToImVec4(fpsColor), "MinFt: %.1fms", minFt*1000.0f);
-        ImGui::TextColored(ImGui::ColorToImVec4(fpsColor), "MaxFt: %.1fms", maxFt*1000.0f);
-        ImGui::TextColored(ImGui::ColorToImVec4(cpuColor), "Cpu: %.1fms", cpuTimeMs);
-        ImGui::TextColored(ImGui::ColorToImVec4(gpuColor), "Gpu: %.1fms", gpuTimeMs);
-        
-        ImGui::TableNextColumn();
-        ImGui::PushItemWidth(ImGui::GetWindowWidth() - kStyle.WindowPadding.x*2 - ImGui::GetCursorPos().x);
-
-        float maxDt;
-        float minDt;
-        if (SettingsJunkyard::Get().graphics.enableVsync) {
-            maxDt = 1.0f / float(warningFps);
-            minDt = 1.0f / float(targetFps*2);
-        }
-        else {
-            maxDt = 2.0f / float(targetFps);
-            minDt = 0;
-        }
-
-        kStyle.Alpha = 0.7f;
-        ImGui::PlotHistogram("##dt", values, (int)valuesRead, 0, nullptr, minDt, maxDt, ImVec2(0, kLineSize*2));
-        kStyle.Alpha = 1.0f;
-        ImGui::PopItemWidth();
-
-        ImGui::EndTable();
+        if (gDebugHud.showMemBudgets)
+            _DrawMemBudgets(dt, nullptr);
     }
     ImGui::End();
 }
 
-static void StatusBarLogCallback(const LogEntry& entry, void*)
-{
-    SpinLockMutexScope lock(gQuickFrameInfo.statusLock);
-
-    gQuickFrameInfo.statusText = entry.text;  
-    gQuickFrameInfo.statusShowTime = 0;
-
-    switch (entry.type) {
-    case LogLevel::Info:	gQuickFrameInfo.statusColor = COLOR_WHITE; break;
-    case LogLevel::Debug:	gQuickFrameInfo.statusColor = Color(0, 200, 200); break;
-    case LogLevel::Verbose:	gQuickFrameInfo.statusColor = Color(128, 128, 128); break;
-    case LogLevel::Warning:	gQuickFrameInfo.statusColor = COLOR_YELLOW; break;
-    case LogLevel::Error:	gQuickFrameInfo.statusColor = COLOR_RED; break;
-    default:			    gQuickFrameInfo.statusColor = COLOR_WHITE; break;
-    }
-}
-
-void DrawStatusBar(float dt)
+void DebugHud::DrawStatusBar(float dt)
 {
     ImGuiStyle& kStyle = ImGui::GetStyle();
     const ImVec2 kDisplaySize = ImGui::GetIO().DisplaySize;
     const float kLineSize = ImGui::GetFrameHeightWithSpacing();
 
-    SpinLockMutexScope lock(gQuickFrameInfo.statusLock);
+    SpinLockMutexScope lock(gDebugHud.statusLock);
     ImDrawList* fgDrawList = ImGui::GetForegroundDrawList();
     float y = kDisplaySize.y - kLineSize;
-    gQuickFrameInfo.statusShowTime += dt;
-    float alpha = M::LinearStep(gQuickFrameInfo.statusShowTime, 0, 5.0f);
+    gDebugHud.statusShowTime += dt;
+    float alpha = M::LinearStep(gDebugHud.statusShowTime, 0, 5.0f);
     alpha = 1.0f - M::Gain(alpha, 0.05f);
-    gQuickFrameInfo.statusColor.a = uint8(alpha * 255.0f);
+    gDebugHud.statusColor.a = uint8(alpha * 255.0f);
 
-    fgDrawList->AddText(ImVec2(kStyle.WindowPadding.x, y), gQuickFrameInfo.statusColor.n, gQuickFrameInfo.statusText.CStr());
+    fgDrawList->AddText(ImVec2(kStyle.WindowPadding.x, y), gDebugHud.statusColor.n, gDebugHud.statusText.CStr());
 }
 
-static void QuickFrameInfoEventCallback(const AppEvent& ev, [[maybe_unused]] void* userData)
+void DebugHud::Initialize()
 {
-    if (ev.type == AppEventType::DisplayUpdated) {
-        gQuickFrameInfo.targetFps = App::GetDisplayInfo().refreshRate;
-        gQuickFrameInfo.frameTimes.Free();
-        gQuickFrameInfo.frameTimes.Reserve(gQuickFrameInfo.targetFps*sizeof(float)*2);
+    Log::RegisterCallback(_StatusBarLogCallback, nullptr);
+    App::RegisterEventsCallback(_QuickFrameInfoEventCallback);
+
+    gDebugHud.monitorRefreshRate = App::GetDisplayInfo().refreshRate;
+    uint32 numSamples = gDebugHud.monitorRefreshRate;
+
+    for (uint32 i = 0; i < uint32(DebugHudGraphType::_Count); i++) {
+        gDebugHud.graphs[i] = {
+            .numSamples = numSamples
+        };
+
+        gDebugHud.graphs[i].values.Reserve(numSamples*sizeof(float));
+    }
+
+    gDebugHud.enabledGraphs[uint32(DebugHudGraphType::FrameTime)] = true;
+}
+
+void DebugHud::Release()
+{
+    App::UnregisterEventsCallback(_QuickFrameInfoEventCallback);
+    Log::UnregisterCallback(_StatusBarLogCallback);
+
+    for (uint32 i = 0; i < uint32(DebugHudGraphType::_Count); i++) {
+        gDebugHud.graphs[i].values.Free();
     }
 }
 
-void Initialize()
-{
-    Log::RegisterCallback(StatusBarLogCallback, nullptr);
-    App::RegisterEventsCallback(QuickFrameInfoEventCallback);
-}
-
-void Release()
-{
-    App::UnregisterEventsCallback(QuickFrameInfoEventCallback);
-    Log::UnregisterCallback(StatusBarLogCallback);
-    gQuickFrameInfo.frameTimes.Free();
-}
-
-} // DebugHud

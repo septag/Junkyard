@@ -5,6 +5,7 @@
 #include "../Core/TracyHelper.h"
 #include "../Core/Jobs.h"
 #include "../Core/MathAll.h"
+#include "../Core/StringUtil.h"
 
 #include "../Common/VirtualFS.h"
 #include "../Common/Application.h"
@@ -473,14 +474,7 @@ struct AppImpl : AppCallbacks
 
         if (ImGui::IsEnabled()) { // imgui test
             PROFILE_GPU_ZONE_NAME("ImGuiRender", true);
-            DebugHud::DrawMemBudgets(dt);
-            DebugHud::DrawQuickFrameInfo(dt);
-
-            #if 0
-            Mat4 view = mFpsCam.GetViewMat();
-            ImGuizmo::ViewManipulate(view.f, 0.1f, ImVec2(5.0f, height - 128.0f - 5.0f), ImVec2(128, 128), 0xff000000);
-            mFpsCam.SetViewMat(view);
-            #endif
+            DebugHud::DrawDebugHud(dt);
 
             ShowGridGUI();
             ImGui::DrawFrame();
