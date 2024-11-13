@@ -16,7 +16,19 @@
 
 inline constexpr float DEBUG_HUD_FRAGMENTATION_INTERVAL = 1.0f;
 
-struct MemBudgetWindow
+struct DebugHudMemoryStatsItem
+{
+    String32 name;
+    DebugHudMemoryStatsCallback callback;
+    void* userData;
+};
+
+struct DebugHudMemStats
+{
+    Array<DebugHudMemoryStatsItem> items;
+};
+
+struct DebugHudMemoryView
 {
     float gfxLastFragTm;
     float assetLastFragTm;
@@ -33,16 +45,16 @@ struct MemBudgetWindow
 
 enum class DebugHudGraphType : uint32
 {
-    FrameTime = 0,
-    Fps,
+    Fps = 0,
+    FrameTime,
     CpuTime,
     GpuTime,
     _Count
 };
 
 static const char* DEBUGHUD_GRAPH_NAMES[uint32(DebugHudGraphType::_Count)] = {
-    "FrameTime",
     "FPS",
+    "FrameTime",
     "CpuTime",
     "GpuTime"
 };
@@ -59,9 +71,11 @@ struct DebugHudGraph
 struct DebugHudContext
 {
     SpinLockMutex statusLock;
+    DebugHudMemStats memStats;
+
     DebugHudGraph graphs[uint32(DebugHudGraphType::_Count)];
     bool enabledGraphs[uint32(DebugHudGraphType::_Count)];
-    bool showMemBudgets;
+    bool showMemStats;
 
     uint32 monitorRefreshRate;
 
@@ -70,7 +84,7 @@ struct DebugHudContext
     float statusShowTime;
 };
 
-static MemBudgetWindow gMemBudget;
+static DebugHudMemoryView gMemBudget;
 static DebugHudContext gDebugHud;
 
 namespace DebugHud
@@ -200,7 +214,7 @@ namespace DebugHud
 
             ImGui::Separator();
 
-            ImGui::MenuItem("Memory Budgets", nullptr, &gDebugHud.showMemBudgets);
+            ImGui::MenuItem("Memory Budgets", nullptr, &gDebugHud.showMemStats);
 
             ImGui::EndPopup();
         }
@@ -429,7 +443,9 @@ void DebugHud::_DrawMemBudgets(float dt, bool* pOpen)
 
 void DebugHud::DrawDebugHud(float dt, bool *pOpen)
 {
+    const ImVec2 kDisplaySize = ImGui::GetIO().DisplaySize;
     ImGui::SetNextWindowPos(ImVec2(0, 0), ImGuiCond_Always);
+    ImGui::SetNextWindowSize(ImVec2(kDisplaySize.x*0.33f, 0), ImGuiCond_Always);
     const uint32 kWndFlags = ImGuiWindowFlags_NoBackground|ImGuiWindowFlags_NoTitleBar|ImGuiWindowFlags_NoScrollbar|
                              ImGuiWindowFlags_NoMove|ImGuiWindowFlags_NoResize;
     if (ImGui::Begin("Frame", pOpen, kWndFlags)) {
@@ -445,7 +461,7 @@ void DebugHud::DrawDebugHud(float dt, bool *pOpen)
                 _DrawGraph(DebugHudGraphType(i));
         }
 
-        if (gDebugHud.showMemBudgets)
+        if (gDebugHud.showMemStats)
             _DrawMemBudgets(dt, nullptr);
     }
     ImGui::End();
@@ -482,9 +498,11 @@ void DebugHud::Initialize()
         };
 
         gDebugHud.graphs[i].values.Reserve(numSamples*sizeof(float));
+
+        gDebugHud.enabledGraphs[i] = Str::ToBool(ImGui::GetSetting(String32::Format("DebugHud.%s", DEBUGHUD_GRAPH_NAMES[i]).CStr()));
     }
 
-    gDebugHud.enabledGraphs[uint32(DebugHudGraphType::FrameTime)] = true;
+    gDebugHud.showMemStats = Str::ToBool(ImGui::GetSetting("DebugHud.MemStats"));
 }
 
 void DebugHud::Release()
@@ -493,7 +511,25 @@ void DebugHud::Release()
     Log::UnregisterCallback(_StatusBarLogCallback);
 
     for (uint32 i = 0; i < uint32(DebugHudGraphType::_Count); i++) {
+        ImGui::SetSetting(String32::Format("DebugHud.%s", DEBUGHUD_GRAPH_NAMES[i]).CStr(), gDebugHud.enabledGraphs[i]);
         gDebugHud.graphs[i].values.Free();
     }
+
+    ImGui::SetSetting("DebugHud.MemStats", gDebugHud.showMemStats);
 }
 
+void DebugHud::RegisterMemoryStats(const char* name, DebugHudMemoryStatsCallback callback, void* userData)
+{
+    uint32 index = gDebugHud.memStats.items.FindIf([name](const DebugHudMemoryStatsItem& i) { return i.name == name; });
+    if (index == -1) {
+        DebugHudMemoryStatsItem item {
+            .name = name,
+            .callback = callback,
+            .userData = userData
+        };
+        gDebugHud.memStats.items.Push(item);
+    }
+    else {
+        ASSERT_MSG(0, "Memory stats '%s' is already registered", name);
+    }
+}

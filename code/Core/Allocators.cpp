@@ -860,6 +860,12 @@ float MemTlsfAllocator::CalculateFragmentation()
 
 //----------------------------------------------------------------------------------------------------------------------
 // MemThreadSafeAllocator
+MemThreadSafeAllocator::MemThreadSafeAllocator()
+{
+    SpinLockMutex* lock = (SpinLockMutex*)mLock;
+    memset(lock, 0x0, sizeof(SpinLockMutex));
+}
+
 MemThreadSafeAllocator::MemThreadSafeAllocator(MemAllocator* alloc) : mAlloc(alloc)
 {
     SpinLockMutex* lock = (SpinLockMutex*)mLock;
@@ -899,5 +905,37 @@ MemAllocatorType MemThreadSafeAllocator::GetType() const
 {
     ASSERT(mAlloc);
     return mAlloc->GetType();
+}
+
+
+//----------------------------------------------------------------------------------------------------------------------
+// MemProxyAllocator
+MemProxyAllocator::MemProxyAllocator()
+{
+    SpinLockMutex* lock = (SpinLockMutex*)mLock;
+    memset(lock, 0x0, sizeof(SpinLockMutex));
+}
+
+void MemProxyAllocator::Initialize(const char* name, MemAllocator* baseAlloc)
+{
+
+}
+
+void MemProxyAllocator::Release()
+{
+}
+
+void* MemProxyAllocator::Malloc(size_t size, uint32 align)
+{
+    return nullptr;
+}
+
+void* MemProxyAllocator::Realloc(void* ptr, size_t size, uint32 align)
+{
+    return nullptr;
+}
+
+void MemProxyAllocator::Free(void* ptr, uint32 align)
+{
 }
 
