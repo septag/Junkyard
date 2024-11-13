@@ -20,11 +20,43 @@
 template <typename _T> struct Array; // Fwd from Array.h
 using SpinLockFake = uint8[CACHE_LINE_SIZE];
 
+template <typename _T> struct HashTable;
+
 struct MemDebugPointer
 {
     void* ptr;
     uint32 align;
 };
+
+struct MemProxyAllocatorItem
+{
+    void* ptr;
+    size_t size;
+};
+
+struct alignas(CACHE_LINE_SIZE) MemProxyAllocator final : MemAllocator
+{
+    MemProxyAllocator();
+
+    void Initialize(const char* name, MemAllocator* baseAlloc);
+    void Release();
+
+    [[nodiscard]] void* Malloc(size_t size, uint32 align = CONFIG_MACHINE_ALIGNMENT) override;
+    [[nodiscard]] void* Realloc(void* ptr, size_t size, uint32 align = CONFIG_MACHINE_ALIGNMENT) override;
+    void Free(void* ptr, uint32 align = CONFIG_MACHINE_ALIGNMENT) override;
+    MemAllocatorType GetType() const override { return MemAllocatorType::Proxy; }
+
+    const char* mName = nullptr;
+    MemAllocator* mBaseAlloc = nullptr;
+    uint64 mTotalSizeAllocated = 0;
+    HashTable<uint32>* allocTable; // points to pAllocItems
+    Array<MemProxyAllocatorItem>* allocItems;
+
+    uint8 _padding[CACHE_LINE_SIZE - sizeof(MemAllocator) - sizeof(void*)*4 - sizeof(uint64)];
+    SpinLockFake mLock;
+};
+
+
 
 //    ████████╗███████╗███╗   ███╗██████╗      █████╗ ██╗     ██╗      ██████╗  ██████╗
 //    ╚══██╔══╝██╔════╝████╗ ████║██╔══██╗    ██╔══██╗██║     ██║     ██╔═══██╗██╔════╝
@@ -146,7 +178,7 @@ private:
 
 struct alignas(CACHE_LINE_SIZE) MemThreadSafeAllocator final : MemAllocator
 {
-    MemThreadSafeAllocator() {}
+    MemThreadSafeAllocator();
     explicit MemThreadSafeAllocator(MemAllocator* alloc);
     void SetAllocator(MemAllocator* alloc);
 

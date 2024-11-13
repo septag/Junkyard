@@ -819,8 +819,9 @@ enum class MemAllocatorType
     Unknown,
     Heap,       // Normal malloc/free heap allocator
     Temp,       // Stack-based temp allocator. Grows by page. Only works within a single thread context and function scopes.
-    Bump,       // Bump/Linear-based allocator. Fixed capacity. Grows page by page. Can be backed by any kind of memory (VM/gpu/stack/heap/etc.)
-    Tlsf        // TLSF dynamic allocator. Fixed capacity. Persists in memory and usually used for subsystems with unknown memory allocation pattern.
+    Bump,       // Bump/Offset-based allocator. Fixed capacity. Grows page by page. Can be backed by any kind of memory (VM/gpu/stack/heap/etc.)
+    Tlsf,       // TLSF dynamic allocator. Fixed capacity. Persists in memory and usually used for subsystems with unknown memory allocation pattern.
+    Proxy       // Allocator that doesn't do anything except keeping track of allocs and references another allocator for actual allocs
 };
 
 struct NO_VTABLE MemAllocator

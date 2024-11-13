@@ -379,11 +379,6 @@ inline void MemHeapAllocator::Free(void* ptr, uint32 align)
     
         TracyCFree(ptr);
         Mem::TrackFree(ptr);
-
-        if constexpr (MEMPRO_ENABLED) {
-            if (gMemBase.enableMemPro) 
-                MEMPRO_TRACK_FREE(ptr);
-        }
     }
 }
 
