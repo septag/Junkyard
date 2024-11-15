@@ -605,106 +605,98 @@ bool ImGui::DrawFrame()
         return false;
 
     // Fill the buffers
-    uint32 numVerts = 0;
-    uint32 numIndices = 0;
-    ImDrawVert* vertices = gImGui.vertices;
-    uint16* indices = gImGui.indices;
+    if (drawData->TotalVtxCount) {
+        uint32 vertexSize = drawData->TotalVtxCount * sizeof(ImDrawVert);
+        uint32 indexSize = drawData->TotalIdxCount * sizeof(ImDrawIdx);
 
-    for (int drawListIdx = 0; drawListIdx < drawData->CmdListsCount; drawListIdx++) {
-        const ImDrawList* dlist = drawData->CmdLists[drawListIdx];
-        const uint32 dlistNumVerts = static_cast<uint32>(dlist->VtxBuffer.size());
-        const uint32 dlistNumIndices = static_cast<uint32>(dlist->IdxBuffer.size());
-        
-        if ((numVerts + dlistNumVerts) > _limits::IMGUI_MAX_VERTICES) {
-            LOG_WARNING("ImGui: maximum vertex count of '%u' exceeded", _limits::IMGUI_MAX_VERTICES);
-            numVerts = _limits::IMGUI_MAX_VERTICES - dlistNumVerts;
-            ASSERT(0);
+        ImDrawVert* vertices = gImGui.vertices;
+        ImDrawIdx* indices = gImGui.indices;
+
+        for (int i = 0; i < drawData->CmdListsCount; i++) {
+            const ImDrawList* cmdList = drawData->CmdLists[i];
+            memcpy(vertices, cmdList->VtxBuffer.Data, cmdList->VtxBuffer.Size * sizeof(ImDrawVert));
+            memcpy(indices, cmdList->IdxBuffer.Data, cmdList->IdxBuffer.Size * sizeof(ImDrawIdx));
+
+            vertices += cmdList->VtxBuffer.Size;
+            indices += cmdList->IdxBuffer.Size;
         }
 
-        if ((numIndices + dlistNumIndices) > _limits::IMGUI_MAX_INDICES) {
-            LOG_WARNING("ImGui: maximum index count of '%u' exceeded", _limits::IMGUI_MAX_INDICES);
-            numIndices = _limits::IMGUI_MAX_INDICES - dlistNumIndices;
-            ASSERT(0);
-        }
+        gfxCmdUpdateBuffer(gImGui.vertexBuffer, gImGui.vertices, vertexSize);
+        gfxCmdUpdateBuffer(gImGui.indexBuffer, gImGui.indices, indexSize);
 
-        memcpy(&vertices[numVerts], dlist->VtxBuffer.Data, dlistNumVerts * sizeof(ImDrawVert));
-
-        auto srcIndexPtr = (const ImDrawIdx*)dlist->IdxBuffer.Data;
-        ASSERT(numVerts <= UINT16_MAX);
-        const uint16 baseVertexIdx = static_cast<uint16>(numVerts);
-        for (uint32 i = 0; i < dlistNumIndices; i++) 
-            indices[numIndices++] = srcIndexPtr[i] + baseVertexIdx;
-        numVerts += dlistNumVerts;
+        gImGui.lastFrameVertices = drawData->TotalVtxCount;
+        gImGui.lastFrameIndices = drawData->TotalIdxCount;
     }
 
-
-    gfxCmdUpdateBuffer(gImGui.vertexBuffer, vertices, numVerts * sizeof(ImDrawVert));
-    gfxCmdUpdateBuffer(gImGui.indexBuffer, indices, numIndices * sizeof(uint16));
-    gImGui.lastFrameVertices = numVerts;
-    gImGui.lastFrameIndices = numIndices;
-
     // Draw
-    Float2 fbPos = Float2(drawData->DisplayPos.x, drawData->DisplayPos.y);
+    Float2 displayPos = Float2(drawData->DisplayPos.x, drawData->DisplayPos.y);
     Float2 displaySize = Float2(drawData->DisplaySize.x, drawData->DisplaySize.y);
     GfxViewport viewport {
-        .x = fbPos.x,
-        .y = fbPos.y,
+        .x = displayPos.x,
+        .y = displayPos.y,
         .width = displaySize.x,
         .height = displaySize.y
     };
 
-    Mat4 projMat = gfxGetClipspaceTransform() * Mat4::OrthoOffCenter(fbPos.x, fbPos.y + displaySize.y, 
-                                                                   fbPos.x + displaySize.x, fbPos.y,
-                                                                   -1.0f, 1.0f);
+    Mat4 projMat = gfxGetClipspaceTransform() * Mat4::OrthoOffCenter(displayPos.x, displayPos.y + displaySize.y, 
+                                                                     displayPos.x + displaySize.x, displayPos.y, 
+                                                                     -1.0f, 1.0f);
     
 
     uint64 offsets[] = {0};
-    gfxCmdBindVertexBuffers(0, 1, &gImGui.vertexBuffer, offsets);
-    gfxCmdBindIndexBuffer(gImGui.indexBuffer, 0, GfxIndexType::Uint16);
-
     gfxCmdBindPipeline(gImGui.pipeline);
     gfxCmdSetViewports(0, 1, &viewport, true);
-    gfxCmdPushConstants(gImGui.pipeline, GfxShaderStage::Vertex, &projMat, sizeof(projMat));
 
     GfxImageHandle prevImg {};
-    uint32 baseElem = 0;
-    for (int drawListIdx = 0; drawListIdx < drawData->CmdListsCount; drawListIdx++) {
-        const ImDrawList* dlist = drawData->CmdLists[drawListIdx];
-        for (const ImDrawCmd* drawCmd = (const ImDrawCmd*)dlist->CmdBuffer.Data;
-             drawCmd != (const ImDrawCmd*)dlist->CmdBuffer.Data + dlist->CmdBuffer.Size; ++drawCmd)
-        {
+    uint32 globalVertexOffset = 0;
+    uint32 globalIndexOffset = 0;
+    for (int i = 0; i < drawData->CmdListsCount; i++) {
+        const ImDrawList* cmdList = drawData->CmdLists[i];
+
+        for (int k = 0; k < cmdList->CmdBuffer.Size; k++) {
+            const ImDrawCmd* drawCmd = &cmdList->CmdBuffer[k];
+
             if (drawCmd->UserCallback) {
-                drawCmd->UserCallback(dlist, drawCmd);
-                continue;
+                drawCmd->UserCallback(cmdList, drawCmd);
             }
+            else {
+                ASSERT_MSG(drawCmd->UserCallback != ImDrawCallback_ResetRenderState, "Not implemented");
+                Float4 clipRect((drawCmd->ClipRect.x - displayPos.x), (drawCmd->ClipRect.y - displayPos.y),
+                                (drawCmd->ClipRect.z - displayPos.x), (drawCmd->ClipRect.w - displayPos.y));
 
-            ASSERT_MSG(drawCmd->UserCallback != ImDrawCallback_ResetRenderState, "Not implemented");
+                if (clipRect.x < 0.0f) { clipRect.x = 0.0f; }
+                if (clipRect.y < 0.0f) { clipRect.y = 0.0f; }
+                if (clipRect.z > displaySize.x) { clipRect.z = displaySize.x; }
+                if (clipRect.w > displaySize.y) { clipRect.w = displaySize.y; }
+                if (clipRect.z <= clipRect.x || clipRect.w <= clipRect.y)
+                    continue;
 
-            Float4 clipRect((drawCmd->ClipRect.x - fbPos.x), (drawCmd->ClipRect.y - fbPos.y),
-                            (drawCmd->ClipRect.z - fbPos.x), (drawCmd->ClipRect.w - fbPos.y));
-            if (clipRect.x < displaySize.x && clipRect.y < displaySize.y && clipRect.z >= 0.0f && clipRect.w >= 0.0f) {
                 RectInt scissor(int(clipRect.x), int(clipRect.y), int(clipRect.z), int(clipRect.w));
                 GfxImageHandle img(PtrToInt<uint32>(drawCmd->TextureId));
-                if (prevImg != img) {
-                    GfxDescriptorBindingDesc descriptorBindings[] = {
-                        {
-                            .name = "MainTexture",
-                            .type = GfxDescriptorType::CombinedImageSampler,
-                            .image = img
-                        }
-                    };
-                    gfxCmdPushDescriptorSet(gImGui.pipeline, GfxPipelineBindPoint::Graphics, 0, CountOf(descriptorBindings), descriptorBindings);
-
-                    prevImg = img;
-                }
+                GfxDescriptorBindingDesc descriptorBindings[] = {
+                    {
+                        .name = "MainTexture",
+                        .type = GfxDescriptorType::CombinedImageSampler,
+                        .image = img
+                    }
+                };
 
                 gfxCmdSetScissors(0, 1, &scissor, true);
-                gfxCmdDrawIndexed(drawCmd->ElemCount, 1, baseElem, 0, 0);
+                gfxCmdPushDescriptorSet(gImGui.pipeline, GfxPipelineBindPoint::Graphics, 0, CountOf(descriptorBindings), descriptorBindings);
+                gfxCmdBindVertexBuffers(0, 1, &gImGui.vertexBuffer, offsets);
+                gfxCmdBindIndexBuffer(gImGui.indexBuffer, 0, GfxIndexType::Uint16);
+                gfxCmdPushConstants(gImGui.pipeline, GfxShaderStage::Vertex, &projMat, sizeof(projMat));
+                
+                gfxCmdDrawIndexed(drawCmd->ElemCount, 1, drawCmd->IdxOffset + globalIndexOffset, drawCmd->VtxOffset + globalVertexOffset, 0);
             }
-
-            baseElem += drawCmd->ElemCount;
         }
+
+        globalIndexOffset += cmdList->IdxBuffer.Size;
+        globalVertexOffset += cmdList->VtxBuffer.Size;
     }
+
+    RectInt rc(0, 0, int(displaySize.x), int(displaySize.y));
+    gfxCmdSetScissors(0, 1, &rc, true);
 
     return true;
 }

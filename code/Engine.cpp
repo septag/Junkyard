@@ -38,9 +38,31 @@ struct EngineShortcutKeys
     void* userData;
 };
 
+struct EngineProxyAllocItem
+{
+    uint32 id;
+    const char* name;
+    size_t size;
+    uint32 count;
+};
+
+struct EngineDebugMemStats
+{
+    bool refreshProxyAllocList;
+    bool autoRefreshProxyAllocList;
+    float autoRefreshProxyAllocListElapsed;
+    float autoRefreshProxyAllocListInterval = 1.0f;
+    ImGuiID proxyAllocSortId;
+    ImGuiSortDirection proxyAllocSortDir = ImGuiSortDirection_Ascending;
+    EngineProxyAllocItem* items;
+    uint32 numItems;
+};
+
 struct EngineContext
 {
-    SysInfo    sysInfo = {};
+    MemProxyAllocator jobsAlloc;
+
+    SysInfo sysInfo = {};
 
     bool remoteReconnect;
     float remoteDisconnectTime;
@@ -63,6 +85,9 @@ struct EngineContext
 
     Array<EngineShortcutKeys> shortcuts;
     Array<EngineInitializeResourcesPair> initResourcesCallbacks;
+    Array<MemProxyAllocator*> proxyAllocs;
+
+    EngineDebugMemStats debugMemStats;
 };
 
 static EngineContext gEng;
@@ -130,6 +155,97 @@ namespace Engine
             App::OverrideUpdateCallback(nullptr);   // Switch back to the regular app update loop
         }
     }
+
+    static void _DrawMemStatsCallback(void*)
+    {
+        enum ProxyAllocColumnId
+        {
+            ProxyAllocColId_Row = 0,
+            ProxyAllocColId_Name,
+            ProxyAllocColId_AllocSize,
+            ProxyAllocColId_AllocCount,
+            ProxyAllocColId_Count
+        };
+
+        EngineDebugMemStats& mstats = gEng.debugMemStats;
+
+        if (ImGui::Button("Refresh"))
+            mstats.refreshProxyAllocList = true;
+        ImGui::SameLine();
+        ImGui::Checkbox("Auto refresh", &mstats.autoRefreshProxyAllocList);
+        ImGui::SameLine();
+        ImGui::InputFloat("Interval (secs)", &mstats.autoRefreshProxyAllocListInterval, 0.1f, 1.0f, "%.1f");
+
+        if (mstats.refreshProxyAllocList) {
+            mstats.refreshProxyAllocList = false;
+
+            if (mstats.numItems != gEng.proxyAllocs.Count()) {
+                mstats.items = Mem::ReallocTyped<EngineProxyAllocItem>(mstats.items, mstats.numItems);
+                mstats.numItems = gEng.proxyAllocs.Count();
+            }
+            
+            for (uint32 i = 0; i < mstats.numItems; i++) {
+                MemProxyAllocator* alloc = gEng.proxyAllocs[i];
+                EngineProxyAllocItem& item = mstats.items[i];
+                
+                item.id = i + 1;
+                item.name = alloc->mName;
+                item.size = alloc->mTotalSizeAllocated;
+                item.count = alloc->mNumAllocs;
+            }
+        }
+
+        const ImGuiTableFlags flags = ImGuiTableFlags_Resizable | ImGuiTableFlags_Reorderable | 
+            ImGuiTableFlags_Sortable | ImGuiTableFlags_SortMulti | ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersOuter | 
+            ImGuiTableFlags_BordersV  | ImGuiTableFlags_ScrollY;
+
+        ImVec2 outerSize = ImGui::GetContentRegionAvail();
+        if (mstats.numItems && ImGui::BeginTable("ProxyAllocatorList", ProxyAllocColId_Count, flags, outerSize)) {
+            ImGui::TableSetupColumn("Id", ImGuiTableColumnFlags_DefaultSort | ImGuiTableColumnFlags_WidthFixed, 0, ProxyAllocColId_Row);
+            ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthStretch, 0, ProxyAllocColId_Name);
+            ImGui::TableSetupColumn("Size", ImGuiTableColumnFlags_WidthFixed, 0, ProxyAllocColId_AllocSize);
+            ImGui::TableSetupColumn("Count", ImGuiTableColumnFlags_WidthFixed, 0, ProxyAllocColId_AllocCount);
+            ImGui::TableSetupScrollFreeze(0, 1);
+            ImGui::TableHeadersRow();
+
+            if (ImGuiTableSortSpecs* sortSpecs = ImGui::TableGetSortSpecs()) {
+                if (sortSpecs->SpecsDirty) {
+                    mstats.refreshProxyAllocList = true;
+                    mstats.proxyAllocSortId = sortSpecs->Specs->ColumnUserID;
+                    mstats.proxyAllocSortDir = sortSpecs->Specs->SortDirection;
+                    sortSpecs->SpecsDirty = false;
+                }
+            }
+
+            // TODO: use clipper if there are too many items
+            static constexpr uint32 ImGuiSelectableFlags_SelectOnNav = (1 << 21);    // imgui_internal.h
+
+            String<256> str;
+            for (uint32 i = 0; i < mstats.numItems; i++) {
+                const EngineProxyAllocItem& item = mstats.items[i];
+                ImGui::PushID(i);
+                ImGui::TableNextRow();
+
+                ImGui::TableNextColumn();
+                str.FormatSelf("%u", item.id);
+                ImGui::Selectable(str.CStr(), false, ImGuiSelectableFlags_SpanAllColumns|ImGuiSelectableFlags_SelectOnNav);
+
+                ImGui::TableNextColumn();
+                ImGui::TextUnformatted(item.name);
+
+                ImGui::TableNextColumn();
+                str.FormatSelf("%_$$$llu", item.size);
+                ImGui::TextUnformatted(str.CStr());
+
+                ImGui::TableNextColumn();
+                ImGui::Text("%u", item.count);
+
+                ImGui::PopID();
+            }
+
+            ImGui::EndTable();
+        }
+    }
 } // Engine
 
 bool Engine::IsMainThread()
@@ -184,12 +300,18 @@ bool Engine::Initialize()
     }
 
     Console::Initialize();
+
+    MemProxyAllocatorFlags proxyAllocFlags = SettingsJunkyard::Get().engine.trackAllocations ? 
+        MemProxyAllocatorFlags::EnableTracking : MemProxyAllocatorFlags::None;
+
+    gEng.jobsAlloc.Initialize("Jobs", &gEng.initHeap, proxyAllocFlags);
+    Engine::RegisterProxyAllocator(&gEng.jobsAlloc);
+
     Jobs::Initialize(JobsInitParams { 
-                   .alloc = &gEng.initHeap, 
+                   .alloc = &gEng.jobsAlloc, 
                    .numShortTaskThreads = SettingsJunkyard::Get().engine.jobsNumShortTaskThreads,
                    .numLongTaskThreads = SettingsJunkyard::Get().engine.jobsNumLongTaskThreads,
                    .debugAllocations = SettingsJunkyard::Get().engine.debugAllocations });
-    Async::Initialize();
 
     if (SettingsJunkyard::Get().engine.connectToServer) {
         if (!Remote::Connect(SettingsJunkyard::Get().engine.remoteServicesUrl.CStr(), _RemoteDisconnected)) {
@@ -238,6 +360,8 @@ bool Engine::Initialize()
                 }
                 
                 DebugHud::Initialize();
+
+                DebugHud::RegisterMemoryStats("Engine", _DrawMemStatsCallback);
             }
 
             if (!DebugDraw::Initialize()) {
@@ -311,13 +435,16 @@ void Engine::Release()
     if (SettingsJunkyard::Get().engine.connectToServer)
         Remote::Disconnect();
 
-    Async::Release();
     Jobs::Release();
+    gEng.jobsAlloc.Release();
+
     Console::Release();
 
     gEng.shortcuts.Free();
     gEng.initResourcesCallbacks.Free();
     gEng.initHeap.Release();
+
+    Mem::Free(gEng.debugMemStats.items);
 
     LOG_INFO("Engine released");
 }
@@ -513,4 +640,11 @@ const AssetGroup& Engine::RegisterInitializeResources(EngineInitializeResourcesC
     gEng.initResourcesCallbacks.Push(EngineInitializeResourcesPair(callback, userData));
 
     return gEng.initResourcesGroup;
+}
+
+void Engine::RegisterProxyAllocator(MemProxyAllocator* alloc)
+{
+    [[maybe_unused]] uint32 index = gEng.proxyAllocs.FindIf([alloc](const MemProxyAllocator* a) { return alloc == a; });
+    ASSERT(index == -1);
+    gEng.proxyAllocs.Push(alloc);
 }

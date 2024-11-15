@@ -68,6 +68,7 @@ struct SettingsEngine
     uint32 jobsNumShortTaskThreads = 0;         // Number of threads to spawn for short task jobs
     uint32 jobsNumLongTaskThreads = 0;          // Number of threads to spawn for long task jobs
     bool debugAllocations = false;              // Use heap allocator instead for major allocators, like temp/budget/etc.
+    bool trackAllocations = false;              // Use tracker in Proxy allocators
     bool breakOnErrors = false;                 // Break when LOG_ERROR happens
     bool treatWarningsAsErrors = false;         // Break when LOG_WARNING happens
     bool enableMemPro = false;                  // Enables MemPro instrumentation (https://www.puredevsoftware.com/mempro/index.htm)

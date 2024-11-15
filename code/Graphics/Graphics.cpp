@@ -1825,6 +1825,7 @@ void gfxCmdUpdateBuffer(GfxBufferHandle buffer, const void* data, uint32 size)
 
     if (bufferData.memFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) {
         memcpy(bufferData.mappedBuffer, data, size);
+        vmaFlushAllocation(gVk.vma, bufferData.allocation, 0, size);
     }
     else {
         ASSERT(bufferData.stagingBuffer);

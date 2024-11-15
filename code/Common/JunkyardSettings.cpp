@@ -95,6 +95,10 @@ bool SettingsJunkyardParser::ParseSetting(uint32 categoryId, const char* key, co
             engine->debugAllocations = Str::ToBool(value);
             return true;
         }
+        else if (Str::IsEqualNoCase(key, "trackAllocations")) {
+            engine->trackAllocations = Str::ToBool(value);
+            return true;
+        }
         else if (Str::IsEqualNoCase(key, "breakOnErrors")) {
             engine->breakOnErrors = Str::ToBool(value);
             return true;

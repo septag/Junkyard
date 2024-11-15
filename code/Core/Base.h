@@ -564,6 +564,8 @@ template<> inline uint32 IdToIndex(uint32 i)  { return i - 1; }
         return lhs; \
     }
 
+template <typename _T> bool IsBitsSet(_T flags, _T bits) { return (flags & bits) == bits; }
+
 template <typename _A, typename _B>
 struct Pair
 {

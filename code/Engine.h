@@ -4,6 +4,7 @@
 
 struct SysInfo;
 struct MemBumpAllocatorBase;
+struct MemProxyAllocator;
 struct AssetGroup;
 
 using EngineShortcutCallback = void(*)(void* userData);
@@ -31,6 +32,8 @@ namespace Engine
 
     // TODO: Proper error-handling within the callback
     API const AssetGroup& RegisterInitializeResources(EngineInitializeResourcesCallback callback, void* userData = nullptr);
+
+    API void RegisterProxyAllocator(MemProxyAllocator* alloc);
 
     namespace _private
     {

@@ -47,6 +47,8 @@ struct AppImpl final : AppCallbacks
     bool Initialize() override
     {
         Vfs::HelperMountDataAndShaders(SettingsJunkyard::Get().engine.connectToServer, "data/TestIO");
+
+        Async::Initialize();
         if (!Engine::Initialize())
             return false;
 
@@ -76,6 +78,7 @@ struct AppImpl final : AppCallbacks
     {
         mFileAlloc.Release();
         Mem::Free(mFilePaths);
+        Async::Release();
         Engine::Release();
     };
 

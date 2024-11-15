@@ -300,6 +300,11 @@ bool Str::IsEqualNoCaseCount(const char* a, const char* b, uint32 count)
     return true;
 }
 
+int Str::Compare(const char* a, const char* b)
+{
+    return strcmp(a, b);
+}
+
 uint32 Str::CountMatchingFirstChars(const char* s1, const char* s2)
 {
     uint32 count = 0;
