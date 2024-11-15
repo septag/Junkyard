@@ -3,6 +3,8 @@
 //
 // Allocators: includes some common allocators 
 //
+//      MemProxyAllocator: Proxy allocators are mainly used for memory tracking for each sub-system. 
+//                         They pass all allocations to their base allocator and if the flag is set, they track incoming allocations
 //      MemTempAllocator: This is a stack-like bump allocator. Covers all Temp allocations that happen within a small scope
 //                        https://septag.dev/blog/posts/junkyard-memory-01/#allocations/allocatortypes/tempallocator
 //      MemBumpAllocatorBase: This is a simple form of linear allocator. Like temp allocator, the logic is that all allocated memory is layed out continously in memory
@@ -10,7 +12,6 @@
 //                            Current implemented backends: MemBumpAllocatorVM
 //      MemTlsfAllocator: TLSF is a generic embeddable allocator (MemTlsfAllocator) using Two-Level Segregated Fit memory allocator implementation
 //                        https://septag.dev/blog/posts/junkyard-memory-01/#allocations/allocatortypes/tlsfallocator
-//      
 //      MemSingleShotMalloc: This helps me with allocating several buffers with one allocation call.
 //                           https://septag.dev/blog/posts/junkyard-memory-01/#buffersandcontainers/memsingleshotmalloc
 //                          
@@ -34,11 +35,21 @@ struct MemProxyAllocatorItem
     size_t size;
 };
 
+enum class MemProxyAllocatorFlags : uint32
+{
+    None = 0,
+    EnableTracking = 0x1,
+    EnableCaptureCallstacks = 0x2 // TODO
+};
+ENABLE_BITMASK(MemProxyAllocatorFlags);
+
+
 struct alignas(CACHE_LINE_SIZE) MemProxyAllocator final : MemAllocator
 {
     MemProxyAllocator();
 
-    void Initialize(const char* name, MemAllocator* baseAlloc);
+    // Note: `name` arg should be memory resident or in .text
+    void Initialize(const char* name, MemAllocator* baseAlloc, MemProxyAllocatorFlags flags);
     void Release();
 
     [[nodiscard]] void* Malloc(size_t size, uint32 align = CONFIG_MACHINE_ALIGNMENT) override;
@@ -48,15 +59,14 @@ struct alignas(CACHE_LINE_SIZE) MemProxyAllocator final : MemAllocator
 
     const char* mName = nullptr;
     MemAllocator* mBaseAlloc = nullptr;
+    HashTable<MemProxyAllocatorItem>* mAllocTable;
     uint64 mTotalSizeAllocated = 0;
-    HashTable<uint32>* allocTable; // points to pAllocItems
-    Array<MemProxyAllocatorItem>* allocItems;
+    uint32 mNumAllocs = 0;
+    MemProxyAllocatorFlags mFlags = MemProxyAllocatorFlags::None;
 
-    uint8 _padding[CACHE_LINE_SIZE - sizeof(MemAllocator) - sizeof(void*)*4 - sizeof(uint64)];
+    uint8 _padding[CACHE_LINE_SIZE - sizeof(MemAllocator) - sizeof(void*)*3 - sizeof(uint64) - sizeof(uint32)*2];
     SpinLockFake mLock;
 };
-
-
 
 //    ████████╗███████╗███╗   ███╗██████╗      █████╗ ██╗     ██╗      ██████╗  ██████╗
 //    ╚══██╔══╝██╔════╝████╗ ████║██╔══██╗    ██╔══██╗██║     ██║     ██╔═══██╗██╔════╝

@@ -421,7 +421,6 @@ struct AppImpl : AppCallbacks
             ImGui::EndChild();
         }
         ImGui::End();
-
     }
 
 

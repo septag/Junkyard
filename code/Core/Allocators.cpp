@@ -9,6 +9,7 @@
 #include "TracyHelper.h"
 #include "Debug.h"
 #include "Arrays.h"
+#include "Hash.h"
 
 #include "External/tlsf/tlsf.h"
 PRAGMA_DIAGNOSTIC_PUSH()
@@ -907,7 +908,6 @@ MemAllocatorType MemThreadSafeAllocator::GetType() const
     return mAlloc->GetType();
 }
 
-
 //----------------------------------------------------------------------------------------------------------------------
 // MemProxyAllocator
 MemProxyAllocator::MemProxyAllocator()
@@ -916,26 +916,107 @@ MemProxyAllocator::MemProxyAllocator()
     memset(lock, 0x0, sizeof(SpinLockMutex));
 }
 
-void MemProxyAllocator::Initialize(const char* name, MemAllocator* baseAlloc)
+void MemProxyAllocator::Initialize(const char* name, MemAllocator* baseAlloc, MemProxyAllocatorFlags flags)
 {
+    ASSERT_MSG(!mBaseAlloc, "ProxyAllocator already initialized?");
+    ASSERT(name);
+    ASSERT(baseAlloc);
+    ASSERT(baseAlloc->GetType() != MemAllocatorType::Proxy);
 
+    mName = name;
+    mBaseAlloc = baseAlloc;
+    mFlags = flags;
+
+    if (IsBitsSet<MemProxyAllocatorFlags>(flags, MemProxyAllocatorFlags::EnableTracking)) {
+        mAllocTable = NEW(Mem::GetDefaultAlloc(), HashTable<MemProxyAllocatorItem>);
+    }
 }
 
 void MemProxyAllocator::Release()
 {
+    if (IsBitsSet<MemProxyAllocatorFlags>(mFlags, MemProxyAllocatorFlags::EnableTracking)) {
+        mAllocTable->Free();
+        Mem::Free(mAllocTable);
+    }
 }
 
 void* MemProxyAllocator::Malloc(size_t size, uint32 align)
 {
-    return nullptr;
+    ASSERT(size);
+
+    void* ptr = mBaseAlloc->Malloc(size, align);
+    if (IsBitsSet<MemProxyAllocatorFlags>(mFlags, MemProxyAllocatorFlags::EnableTracking) && ptr) {
+        SpinLockMutex* lock = (SpinLockMutex*)mLock;
+        SpinLockMutexScope l(*lock);
+
+        MemProxyAllocatorItem item {
+            .ptr = ptr,
+            .size = size
+        };
+
+        mAllocTable->Add(Hash::Int64To32(uint64(ptr)), item);
+
+        mTotalSizeAllocated += size;
+        ++mNumAllocs;
+    }   
+    return ptr;
 }
 
 void* MemProxyAllocator::Realloc(void* ptr, size_t size, uint32 align)
 {
-    return nullptr;
+    ASSERT(size);
+
+    void* newPtr = mBaseAlloc->Realloc(ptr, size, align);
+    if (IsBitsSet<MemProxyAllocatorFlags>(mFlags, MemProxyAllocatorFlags::EnableTracking) && newPtr) {
+        SpinLockMutex* lock = (SpinLockMutex*)mLock;
+        SpinLockMutexScope l(*lock);
+
+        if (ptr) {
+            uint32 lookupIdx = mAllocTable->Find(Hash::Int64To32(uint64(ptr)));
+            ASSERT_MSG(lookupIdx != -1, "Invalid pointer. Pointer is not tracked in ProxyAllocator");
+            MemProxyAllocatorItem& item = mAllocTable->GetMutable(lookupIdx);
+
+            mTotalSizeAllocated -= item.size;
+            item.ptr = newPtr;
+            item.size = size;
+            mTotalSizeAllocated += size;
+
+            if (ptr != newPtr) {
+                mAllocTable->Remove(lookupIdx);
+                mAllocTable->Add(Hash::Int64To32(uint64(newPtr)), item);
+                mTotalSizeAllocated += item.size;
+            }
+        }
+        else {
+            MemProxyAllocatorItem item {
+                .ptr = newPtr,
+                .size = size
+            };
+
+            mAllocTable->Add(Hash::Int64To32(uint64(newPtr)), item);
+            mTotalSizeAllocated += size;
+            ++mNumAllocs;
+        }
+    }
+
+    return newPtr;
 }
 
 void MemProxyAllocator::Free(void* ptr, uint32 align)
 {
+    mBaseAlloc->Free(ptr, align);
+
+    if (IsBitsSet<MemProxyAllocatorFlags>(mFlags, MemProxyAllocatorFlags::EnableTracking) && ptr) {
+        SpinLockMutex* lock = (SpinLockMutex*)mLock;
+        SpinLockMutexScope l(*lock);
+
+        uint32 lookupIdx = mAllocTable->Find(Hash::Int64To32(uint64(ptr)));
+        ASSERT_MSG(lookupIdx != -1, "Pointer is not being tracked in ProxyAllocator");
+        const MemProxyAllocatorItem& item = mAllocTable->Get(lookupIdx);
+        mTotalSizeAllocated -= item.size;
+        --mNumAllocs;
+
+        mAllocTable->Remove(lookupIdx);
+    }
 }
 
