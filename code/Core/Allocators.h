@@ -149,6 +149,7 @@ struct MemBumpAllocatorBase : MemAllocator
     size_t GetCommitedSize() const { return mCommitSize; }
     size_t GetOffset() const { return mOffset; }
     void SetOffset(size_t offset);      // Only accepts lesser values than current offset. potentially harmful. Use with care!
+    bool IsDebugMode() const { return mDebugMode; }
 
 protected:
     virtual void* BackendReserve(size_t size) = 0;
@@ -177,8 +178,10 @@ private:
     void  BackendRelease(void* ptr, size_t size) override;
 };
 
-struct MemBumpAllocatorHeap final : MemBumpAllocatorBase
+struct MemBumpAllocatorCustom final : MemBumpAllocatorBase
 {
+    MemAllocator* mAlloc = Mem::GetDefaultAlloc();
+
 private:
     void* BackendReserve(size_t size) override;
     void* BackendCommit(void* ptr, size_t size) override;

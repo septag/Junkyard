@@ -193,13 +193,11 @@ struct JobsFiberMemAllocator
     };
 
     SpinLockMutex mLock;
-    MemBumpAllocatorVM mAlloc;
 
     size_t mAllocationSize;
-    size_t mPoolSize;
+    uint32 mBufferAlignment;
     Pool* mPools;
     uint32 mNumItemsInPool;
-    
 
     void Initialize(size_t allocationSize);
     void Release();
@@ -222,12 +220,6 @@ struct JobsContext
     Semaphore semaphores[uint32(JobsType::_Count)];
     JobsAtomicPool<JobsInstance, _limits::JOBS_MAX_INSTANCES>* instancePool;
     JobsAtomicPool<JobsFiberProperties, _limits::JOBS_MAX_PENDING>* fiberPropsPool;
-    StaticArray<Pair<void*, uint32>, 7> pointers;    // Storing memory pointers, For garbage collection at release
-
-    // Stats
-    size_t runtimeHeapTotal;
-    size_t initHeapStart;
-    size_t initHeapSize;
 
     AtomicUint32 numBusyShortThreads;
     AtomicUint32 numBusyLongThreads;
@@ -242,7 +234,6 @@ struct JobsContext
         uint32 numInstancesMax;
     };
 
-    uint32 fiberHeapAllocSize;
     MaxValues maxValues[2];     // Index: 0 = Write, 1 = Present
 
     AtomicUint32 quit;
@@ -708,12 +699,7 @@ void GetBudgetStats(JobsBudgetStats* stats)
     stats->maxJobs = _limits::JOBS_MAX_INSTANCES;
     stats->numJobs = m.numInstancesMax;
 
-    stats->initHeapStart = gJobs.initHeapStart;
-    stats->initHeapSize = gJobs.initHeapSize;
-
     size_t fibersAllocSize = 0;
-    for (uint32 i = 0; i < uint32(JobsStackSize::_Count); i++)
-        fibersAllocSize += gJobs.fiberAllocators[i].mAlloc.GetCommitedSize();
     stats->fibersMemoryPoolSize = fibersAllocSize;
 }
 
@@ -742,8 +728,6 @@ void Initialize(const JobsInitParams& initParams)
     ASSERT(initParams.alloc);
 
     gJobs.initParams = initParams;
-    if (initParams.alloc->GetType() == MemAllocatorType::Bump)
-        gJobs.initHeapStart = ((MemBumpAllocatorBase*)initParams.alloc)->GetOffset();
     
     SysInfo info {};
     OS::GetSysInfo(&info);
@@ -765,8 +749,6 @@ void Initialize(const JobsInitParams& initParams)
     #ifdef JOBS_USE_ANDERSON_LOCK
     uint32 numTotalThreads = gJobs.numThreads[0] + gJobs.numThreads[1] + 1;
     gJobs.waitingListLock.Initialize(numTotalThreads, Mem::AllocAlignedTyped<JobsAndersonLockThread>(numTotalThreads, alignof(JobsAndersonLockThread), initParams.alloc));
-    if (initParams.alloc->GetType() != MemAllocatorType::Bump)
-        gJobs.pointers.Push(Pair<void*, uint32>(gJobs.waitingListLock.mSlots, alignof(JobsAndersonLockThread)));
     #endif
 
     gJobs.semaphores[uint32(JobsType::ShortTask)].Initialize();
@@ -783,8 +765,6 @@ void Initialize(const JobsInitParams& initParams)
     // Initialize and start the threads
     // LongTasks
     gJobs.threads[uint32(JobsType::LongTask)] = NEW_ARRAY(initParams.alloc, Thread, gJobs.numThreads[uint32(JobsType::LongTask)]);
-    if (initParams.alloc->GetType() != MemAllocatorType::Bump)
-        gJobs.pointers.Push(Pair<void*, uint32>(gJobs.threads[uint32(JobsType::LongTask)], 0));
 
     for (uint32 i = 0; i < gJobs.numThreads[uint32(JobsType::LongTask)]; i++) {
         char name[32];
@@ -802,8 +782,6 @@ void Initialize(const JobsInitParams& initParams)
     
     // ShortTasks
     gJobs.threads[uint32(JobsType::ShortTask)] = NEW_ARRAY(initParams.alloc, Thread, gJobs.numThreads[uint32(JobsType::ShortTask)]);
-    if (initParams.alloc->GetType() != MemAllocatorType::Bump)
-        gJobs.pointers.Push(Pair<void*, uint32>(gJobs.threads[uint32(JobsType::ShortTask)], 0));
 
     for (uint32 i = 0; i < gJobs.numThreads[uint32(JobsType::ShortTask)]; i++) {
         char name[32];
@@ -820,9 +798,6 @@ void Initialize(const JobsInitParams& initParams)
     }
 
     Debug::FiberScopeProtector_RegisterCallback([](void*)->bool { return gIsInFiber; });
-
-    if (initParams.alloc->GetType() == MemAllocatorType::Bump)
-        gJobs.initHeapSize = ((MemBumpAllocatorBase*)initParams.alloc)->GetOffset() - gJobs.initHeapStart;
 
     #if TRACY_ENABLE
     auto TracyEnterZone = [](TracyCZoneCtx* ctx, const ___tracy_source_location_data* sourceLoc)
@@ -893,9 +868,6 @@ void Release()
 
     for (uint32 i = 0; i < uint32(JobsStackSize::_Count); i++)
         gJobs.fiberAllocators[i].Release();
-
-    for (Pair<void*, uint32> p : gJobs.pointers)
-        Mem::FreeAligned(p.first, p.second, gJobs.initParams.alloc);
 }
 
 } // Jobs
@@ -1171,20 +1143,24 @@ void JobsFiberMemAllocator::Initialize(size_t allocationSize)
     size_t pageSize = OS::GetPageSize();
     ASSERT(allocationSize % pageSize == 0);
     allocationSize = AlignValue(allocationSize + pageSize, pageSize);   // Leave some room for mco_coro
-    const size_t numItemsInPool = (size_t(gJobs.numThreads[uint32(JobsType::ShortTask)]) + 
-                                   size_t(gJobs.numThreads[uint32(JobsType::LongTask)])) * 2;  
 
-    mPoolSize = allocationSize * numItemsInPool + pageSize; // leave some room for Pool struct
+    mBufferAlignment = uint32(pageSize);
     mAllocationSize = allocationSize;
-    mNumItemsInPool = uint32(numItemsInPool);
-    mAlloc.Initialize(mPoolSize * 16, mPoolSize);    // Can raise this number in the future
-
+    mNumItemsInPool = (gJobs.numThreads[uint32(JobsType::ShortTask)] + gJobs.numThreads[uint32(JobsType::LongTask)]) * 2;
     mPools = nullptr;
 }
 
 void JobsFiberMemAllocator::Release()
 {
-    mAlloc.Release();
+    MemAllocator* alloc = gJobs.initParams.alloc;
+    Pool* pool = mPools;
+    while (pool) {
+        Pool* curPool = pool;
+        Mem::FreeAligned(curPool->buffer, mBufferAlignment, alloc);
+        Mem::Free(curPool->ptrs, alloc);
+        Mem::Free(curPool, alloc);
+        pool = pool->next;
+    }
 }
 
 void* JobsFiberMemAllocator::Allocate()
@@ -1235,9 +1211,10 @@ void JobsFiberMemAllocator::Free(void* ptr)
 
 JobsFiberMemAllocator::Pool* JobsFiberMemAllocator::CreatePool()
 {
-    Pool* pool = Mem::AllocTyped<Pool>(1, &mAlloc);
-    pool->ptrs = Mem::AllocTyped<uint8*>(mNumItemsInPool, &mAlloc);
-    pool->buffer = (uint8*)Mem::AllocAligned(mAllocationSize*size_t(mNumItemsInPool), 16, &mAlloc);
+    MemAllocator* alloc = gJobs.initParams.alloc;
+    Pool* pool = Mem::AllocTyped<Pool>(1, alloc);
+    pool->ptrs = Mem::AllocTyped<uint8*>(mNumItemsInPool, alloc);
+    pool->buffer = (uint8*)Mem::AllocAligned(mAllocationSize*size_t(mNumItemsInPool), mBufferAlignment, alloc);
     pool->index = mNumItemsInPool;
     pool->next = nullptr;
     for (uint32 i = 0; i < mNumItemsInPool; i++)

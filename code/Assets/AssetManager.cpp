@@ -242,6 +242,9 @@ struct AssetJobItem
 
 struct AssetMan
 {
+    MemProxyAllocator alloc;
+    MemProxyAllocator assetHeaderAlloc;
+    MemProxyAllocator assetDataAlloc;
     ReadWriteMutex assetMutex;
     ReadWriteMutex groupsMutex;
     ReadWriteMutex hashLookupMutex;
@@ -249,14 +252,14 @@ struct AssetMan
     Mutex hotReloadMutex;
 
     AssetScratchMemArena memArena;
-    MemBumpAllocatorVM tempAlloc;   // Used in LoadAssetGroup, because we cannot use regular temp allocators due to dispatching
+    MemBumpAllocatorCustom tempAlloc;   // Used in LoadAssetGroup, because we cannot use regular temp allocators due to dispatching
 
     Array<AssetTypeManager> typeManagers;
     HandlePool<AssetHandle, AssetDataHeader*> assetDb;
     HashTable<AssetHandle> assetLookup;     // Key: AssetParams hash. To check for availibility
     HashTableUint assetHashLookup;          // Key: AssetParams hash -> AssetHash
-    MemTlsfAllocator assetHeaderAlloc;
-    MemTlsfAllocator assetDataAlloc;
+    MemTlsfAllocator assetHeaderAllocBase;
+    MemTlsfAllocator assetDataAllocBase;
 
     HandlePool<AssetGroupHandle, AssetGroupInternal> groups;
 
@@ -948,7 +951,7 @@ static void Asset::_LoadGroupTask(uint32, void* userData)
     uint32 allCount = loadList.Count();
 
     // We cannot use the actual temp allocators here. Because we are dispatching jobs and might end up in a different thread
-    MemBumpAllocatorVM* tempAlloc = &gAssetMan.tempAlloc;
+    MemBumpAllocatorBase* tempAlloc = &gAssetMan.tempAlloc;
     Array<AssetQueuedItem> queuedAssets;
     queuedAssets.Reserve(loadList.Count());
 
@@ -1614,20 +1617,27 @@ void Asset::UnregisterType(uint32 fourcc)
 
 bool Asset::Initialize()
 {
+    Engine::HelperInitializeProxyAllocator(&gAssetMan.alloc, "AssetMan");
+    Engine::HelperInitializeProxyAllocator(&gAssetMan.assetDataAlloc, "AssetMan.Data", &gAssetMan.assetDataAllocBase);
+    Engine::HelperInitializeProxyAllocator(&gAssetMan.assetHeaderAlloc, "AssetMan.Headers", &gAssetMan.assetHeaderAllocBase);
+
+    Engine::RegisterProxyAllocator(&gAssetMan.alloc);
+    Engine::RegisterProxyAllocator(&gAssetMan.assetDataAlloc);
+    Engine::RegisterProxyAllocator(&gAssetMan.assetHeaderAlloc);
+
+    MemAllocator* alloc = &gAssetMan.alloc;
+
     gAssetMan.assetMutex.Initialize();
     gAssetMan.groupsMutex.Initialize();
     gAssetMan.hashLookupMutex.Initialize();
     gAssetMan.pendingJobsMutex.Initialize();
 
-    // TODO: set allocator (initHeap) for all main objects
-    MemAllocator* alloc = Mem::GetDefaultAlloc();
-
     gAssetMan.typeManagers.SetAllocator(alloc);
     gAssetMan.assetDb.SetAllocator(alloc);
     gAssetMan.assetLookup.SetAllocator(alloc);
     gAssetMan.assetLookup.Reserve(512);
-    gAssetMan.assetHeaderAlloc.Initialize(alloc, ASSET_HEADER_BUFFER_POOL_SIZE, false);
-    gAssetMan.assetDataAlloc.Initialize(alloc, ASSET_DATA_BUFFER_POOL_SIZE, false);
+    gAssetMan.assetHeaderAllocBase.Initialize(alloc, ASSET_HEADER_BUFFER_POOL_SIZE, false);
+    gAssetMan.assetDataAllocBase.Initialize(alloc, ASSET_DATA_BUFFER_POOL_SIZE, false);
     gAssetMan.groups.SetAllocator(alloc);
     gAssetMan.assetHashLookup.SetAllocator(alloc);
     gAssetMan.assetHashLookup.Reserve(512);
@@ -1638,7 +1648,8 @@ bool Asset::Initialize()
     gAssetMan.memArena.threadToAllocatorTable.SetAllocator(alloc);
     gAssetMan.memArena.threadToAllocatorTable.Reserve(gAssetMan.memArena.maxAllocators);
 
-    gAssetMan.tempAlloc.Initialize(SIZE_GB, 4*SIZE_MB);
+    gAssetMan.tempAlloc.mAlloc = alloc;
+    gAssetMan.tempAlloc.Initialize(SIZE_KB*512, SIZE_KB*64);
 
     RemoteCommandDesc loadRemoteDesc {
         .cmdFourCC = ASSET_LOAD_ASSET_REMOTE_CMD,
@@ -1729,7 +1740,7 @@ void Asset::Release()
         }
     }
 
-    MemAllocator* alloc = Mem::GetDefaultAlloc();
+    MemAllocator* alloc = &gAssetMan.alloc;
 
     if (gAssetMan.isServerEnabled) {
         for (AssetLoadTaskData* taskData : gAssetMan.server.pendingTasks)
@@ -1769,8 +1780,8 @@ void Asset::Release()
     gAssetMan.pendingJobs.Free();
     gAssetMan.typeManagers.Free();
 
-    gAssetMan.assetHeaderAlloc.Release();
-    gAssetMan.assetDataAlloc.Release();
+    gAssetMan.assetHeaderAllocBase.Release();
+    gAssetMan.assetDataAllocBase.Release();
 
     gAssetMan.hashLookupMutex.Release();
     gAssetMan.assetMutex.Release();

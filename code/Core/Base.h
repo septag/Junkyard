@@ -866,7 +866,7 @@ namespace Mem
     template<typename _T> _T* AllocZeroTyped(uint32 count = 1, MemAllocator* alloc = GetDefaultAlloc());
     template<typename _T> _T* AllocAlignedTyped(uint32 count = 1, uint32 align = CONFIG_MACHINE_ALIGNMENT, MemAllocator* alloc = GetDefaultAlloc());
     template<typename _T> _T* AllocAlignedZeroTyped(uint32 count = 1, uint32 align = CONFIG_MACHINE_ALIGNMENT, MemAllocator* alloc = GetDefaultAlloc());
-    template<typename _T> _T* ReallocTyped(void* ptr, uint32 count = 1, MemAllocator* alloc = GetDefaultAlloc());
+    template<typename _T> _T* ReallocTyped(_T* ptr, uint32 count = 1, MemAllocator* alloc = GetDefaultAlloc());
     template<typename _T> _T* AllocCopy(const _T* src, uint32 count = 1, MemAllocator* alloc = GetDefaultAlloc());
     template<typename _T> _T* AllocCopyRawBytes(const _T* src, size_t sizeBytes, MemAllocator* alloc = GetDefaultAlloc());
 }
@@ -999,7 +999,7 @@ template<typename _T>
 }
 
 template<typename _T>
-[[nodiscard]] inline _T* Mem::ReallocTyped(void* ptr, uint32 count, MemAllocator* alloc)
+[[nodiscard]] inline _T* Mem::ReallocTyped(_T* ptr, uint32 count, MemAllocator* alloc)
 {
     return reinterpret_cast<_T*>(Mem::Realloc(ptr, sizeof(_T)*count, alloc));
 }

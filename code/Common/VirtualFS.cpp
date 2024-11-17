@@ -11,24 +11,11 @@
 #include "../Core/Allocators.h"
 #include "../Core/Hash.h"
 
+#include "../Engine.h"
+
 #if PLATFORM_ANDROID
     #include "Application.h"    // appGetNativeAssetManagerHandle
     #include <android/asset_manager.h>
-#endif
-
-#if CONFIG_TOOLMODE
-    #define DMON_IMPL
-    #define DMON_MALLOC(size) Mem::Alloc(size)
-    #define DMON_FREE(ptr) Mem::Free(ptr)
-    #define DMON_REALLOC(ptr, size) Mem::Realloc(ptr, size)
-    #define DMON_LOG_ERROR(s) LOG_ERROR(s)
-    #define DMON_LOG_DEBUG(s) LOG_DEBUG(s)
-    
-    #include <stdio.h>  // snprintf 
-    PRAGMA_DIAGNOSTIC_PUSH()
-    PRAGMA_DIAGNOSTIC_IGNORED_MSVC(4505)
-    #include "../External/dmon/dmon.h"
-    PRAGMA_DIAGNOSTIC_POP()
 #endif
 
 
@@ -96,7 +83,7 @@ struct VfsRemoteManager
 
 struct VfsManager
 {
-    MemAllocator* alloc;
+    MemProxyAllocator alloc;
     Array<VfsMountPoint> mounts;
     uint8 _padding1[32];
 
@@ -112,6 +99,21 @@ struct VfsManager
 };
 
 static VfsManager gVfs;
+
+#if CONFIG_TOOLMODE
+    #define DMON_IMPL
+    #define DMON_MALLOC(size) Mem::Alloc(size, &gVfs.alloc)
+    #define DMON_FREE(ptr) Mem::Free(ptr, &gVfs.alloc)
+    #define DMON_REALLOC(ptr, size) Mem::Realloc(ptr, size, &gVfs.alloc)
+    #define DMON_LOG_ERROR(s) LOG_ERROR(s)
+    #define DMON_LOG_DEBUG(s) LOG_DEBUG(s)
+    
+    #include <stdio.h>  // snprintf 
+    PRAGMA_DIAGNOSTIC_PUSH()
+    PRAGMA_DIAGNOSTIC_IGNORED_MSVC(4505)
+    #include "../External/dmon/dmon.h"
+    PRAGMA_DIAGNOSTIC_POP()
+#endif
 
 // Fwd
 namespace Vfs
@@ -327,7 +329,7 @@ static Blob Vfs::_DiskReadFile(const char* path, VfsFlags flags, MemAllocator* a
 {
     auto LoadFromDisk = [](const char* path, VfsFlags flags, MemAllocator* alloc)->Blob {
         File f;
-        Blob blob(alloc ? alloc : gVfs.alloc);
+        Blob blob(alloc ? alloc : &gVfs.alloc);
 
         if (f.Open(path, FileOpenFlags::Read | FileOpenFlags::SeqScan)) {
             uint64 size = f.GetSize();
@@ -846,7 +848,7 @@ void Vfs::WriteFileAsync(const char* path, const Blob& blob, VfsFlags flags, Vfs
         MutexScope mtx(diskMgr->requestsMtx);
 
         if ((flags & VfsFlags::NoCopyWriteBlob) != VfsFlags::NoCopyWriteBlob) {
-            req.blob.SetAllocator(gVfs.alloc);
+            req.blob.SetAllocator(&gVfs.alloc);
             blob.CopyTo(&req.blob);
         }
         else {
@@ -923,7 +925,7 @@ static bool Vfs::_ReadFileHandlerServerFn(uint32 cmd, const Blob& incomingData, 
     incomingData.ReadStringBinary(filepath, sizeof(filepath));
 
     // The async process finished when the program returns into the callback `vfsRemoteReadFileComplete`
-    ReadFileAsync(filepath, VfsFlags::None, _RemoteReadFileComplete, nullptr, gVfs.alloc);
+    ReadFileAsync(filepath, VfsFlags::None, _RemoteReadFileComplete, nullptr, &gVfs.alloc);
     
     return true;
 }
@@ -982,7 +984,7 @@ static void Vfs::_ReadFileHandlerClientFn([[maybe_unused]] uint32 cmd, const Blo
         
         VfsRequest req;
         if (PopRequest(filepath, &req)) {
-            Blob blob(req.alloc ? req.alloc : gVfs.alloc);
+            Blob blob(req.alloc ? req.alloc : &gVfs.alloc);
 
             size_t fileSize = incomingData.Size() - incomingData.ReadOffset();
             blob.Reserve(fileSize);
@@ -1001,7 +1003,7 @@ static void Vfs::_ReadFileHandlerClientFn([[maybe_unused]] uint32 cmd, const Blo
         VfsRequest req;
         if (PopRequest(filepath, &req)) {
             ASSERT(req.callbacks.readFn);
-            Blob blob(req.alloc ? req.alloc : gVfs.alloc);  // empty blob
+            Blob blob(req.alloc ? req.alloc : &gVfs.alloc);  // empty blob
             req.callbacks.readFn(filepath, blob, req.user);
             blob.Free();
         }
@@ -1062,13 +1064,15 @@ static void Vfs::_WriteFileHandlerClientFn([[maybe_unused]] uint32 cmd, const Bl
 //    ╚═╝╚═╝  ╚═══╝╚═╝   ╚═╝╚═╝    ╚═════╝ ╚══════╝╚═╝╚═╝  ╚═══╝╚═╝   ╚═╝   
 bool Vfs::Initialize()
 {
-    gVfs.alloc = Mem::GetDefaultAlloc();
-    gVfs.mounts.SetAllocator(gVfs.alloc);
+    Engine::HelperInitializeProxyAllocator(&gVfs.alloc, "VirtualFS", Mem::GetDefaultAlloc());
+    Engine::RegisterProxyAllocator(&gVfs.alloc);
+
+    gVfs.mounts.SetAllocator(&gVfs.alloc);
 
     // Async IO
     {
         VfsAsyncManager* mgr = &gVfs.asyncMgr;
-        mgr->requests.SetAllocator(gVfs.alloc);
+        mgr->requests.SetAllocator(&gVfs.alloc);
 
         mgr->requestsMtx.Initialize();
         mgr->semaphore.Initialize();
@@ -1083,14 +1087,14 @@ bool Vfs::Initialize()
     {
         VfsRemoteManager* mgr = &gVfs.remoteMgr;
         mgr->requestsMtx.Initialize();
-        mgr->requests.SetAllocator(gVfs.alloc);
+        mgr->requests.SetAllocator(&gVfs.alloc);
     }
 
     // Hot-reload
     {
         gVfs.fileChangesMtx.Initialize();
-        gVfs.fileChanges.SetAllocator(gVfs.alloc);
-        gVfs.fileChangeCallbacks.SetAllocator(gVfs.alloc);
+        gVfs.fileChanges.SetAllocator(&gVfs.alloc);
+        gVfs.fileChangeCallbacks.SetAllocator(&gVfs.alloc);
         #if CONFIG_TOOLMODE
         dmon_init();
         #endif
