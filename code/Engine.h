@@ -19,6 +19,7 @@ namespace Engine
     API void EndFrame();
 
     API uint64 GetFrameIndex();
+    API float GetFrameTime();
     API const SysInfo& GetSysInfo();
     API float GetEngineTimeMS();
 
@@ -34,6 +35,7 @@ namespace Engine
     API const AssetGroup& RegisterInitializeResources(EngineInitializeResourcesCallback callback, void* userData = nullptr);
 
     API void RegisterProxyAllocator(MemProxyAllocator* alloc);
+    API void HelperInitializeProxyAllocator(MemProxyAllocator* alloc, const char* name, MemAllocator* baseAlloc = nullptr);
 
     namespace _private
     {

@@ -641,23 +641,23 @@ void MemBumpAllocatorVM::WarmUp()
 }
 
 //----------------------------------------------------------------------------------------------------------------------
-void* MemBumpAllocatorHeap::BackendReserve(size_t size)
+void* MemBumpAllocatorCustom::BackendReserve(size_t size)
 {
-    return Mem::GetDefaultAlloc()->Malloc(size);
+    return mAlloc->Malloc(size);
 }
 
-void* MemBumpAllocatorHeap::BackendCommit(void* ptr, size_t)
+void* MemBumpAllocatorCustom::BackendCommit(void* ptr, size_t)
 {
     return ptr;
 }
 
-void MemBumpAllocatorHeap::BackendDecommit(void*, size_t)
+void MemBumpAllocatorCustom::BackendDecommit(void*, size_t)
 {
 }
 
-void MemBumpAllocatorHeap::BackendRelease(void* ptr, size_t)
+void MemBumpAllocatorCustom::BackendRelease(void* ptr, size_t)
 {
-    Mem::GetDefaultAlloc()->Free(ptr);
+    mAlloc->Free(ptr);
 }
 
 //    ████████╗██╗     ███████╗███████╗     █████╗ ██╗     ██╗      ██████╗  ██████╗
@@ -958,7 +958,8 @@ void* MemProxyAllocator::Malloc(size_t size, uint32 align)
 
         mTotalSizeAllocated += size;
         ++mNumAllocs;
-    }   
+    }
+
     return ptr;
 }
 
@@ -976,7 +977,9 @@ void* MemProxyAllocator::Realloc(void* ptr, size_t size, uint32 align)
             ASSERT_MSG(lookupIdx != -1, "Invalid pointer. Pointer is not tracked in ProxyAllocator");
             MemProxyAllocatorItem& item = mAllocTable->GetMutable(lookupIdx);
 
-            mTotalSizeAllocated -= item.size;
+            size_t prevSize = item.size;
+
+            mTotalSizeAllocated -= prevSize;
             item.ptr = newPtr;
             item.size = size;
             mTotalSizeAllocated += size;
@@ -984,7 +987,10 @@ void* MemProxyAllocator::Realloc(void* ptr, size_t size, uint32 align)
             if (ptr != newPtr) {
                 mAllocTable->Remove(lookupIdx);
                 mAllocTable->Add(Hash::Int64To32(uint64(newPtr)), item);
-                mTotalSizeAllocated += item.size;
+
+                // Bump allocs do not free the last pointer when a new pointer is generated, so we still have the old size
+                if (mBaseAlloc->GetType() == MemAllocatorType::Bump && !((MemBumpAllocatorBase*)mBaseAlloc)->IsDebugMode())
+                    mTotalSizeAllocated -= prevSize;
             }
         }
         else {
@@ -1013,7 +1019,11 @@ void MemProxyAllocator::Free(void* ptr, uint32 align)
         uint32 lookupIdx = mAllocTable->Find(Hash::Int64To32(uint64(ptr)));
         ASSERT_MSG(lookupIdx != -1, "Pointer is not being tracked in ProxyAllocator");
         const MemProxyAllocatorItem& item = mAllocTable->Get(lookupIdx);
-        mTotalSizeAllocated -= item.size;
+
+        // Bump allocs does not have Free
+        if (mBaseAlloc->GetType() != MemAllocatorType::Bump || ((MemBumpAllocatorBase*)mBaseAlloc)->IsDebugMode())
+            mTotalSizeAllocated -= item.size;
+
         --mNumAllocs;
 
         mAllocTable->Remove(lookupIdx);

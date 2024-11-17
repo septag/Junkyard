@@ -42,6 +42,12 @@ enum ImGuiDescriptorSet : uint32
     _IMGUI_DESCRIPTORSET_COUNT
 };
 
+struct ImGuiBuffer
+{
+    GfxBufferHandle    vertexBuffer;
+    GfxBufferHandle    indexBuffer;
+};
+
 struct ImGuiState
 {
     MemTlsfAllocator runtimeHeap;
@@ -58,8 +64,7 @@ struct ImGuiState
     
     ImDrawVert*  vertices;
     uint16*      indices;
-    GfxBufferHandle    vertexBuffer;
-    GfxBufferHandle    indexBuffer;
+    ImGuiBuffer  buffers[4];
     GfxDescriptorSetLayoutHandle dsLayout;
     GfxPipelineHandle  pipeline;
     GfxImageHandle     fontImage;
@@ -72,6 +77,7 @@ struct ImGuiState
 
     HashTable<const char*> settingsCacheTable;
     INIFileContext settingsIni;
+    uint32 frameIdx;
 };
 
 ImGuiState gImGui;
@@ -483,23 +489,20 @@ bool ImGui::Initialize()
     gImGui.vertices = Mem::AllocTyped<ImDrawVert>(_limits::IMGUI_MAX_VERTICES, initHeap);
     gImGui.indices = Mem::AllocTyped<uint16>(_limits::IMGUI_MAX_INDICES, initHeap);
 
-    gImGui.vertexBuffer = gfxCreateBuffer({
-        .size = _limits::IMGUI_MAX_VERTICES*sizeof(ImDrawVert),
-        .type = GfxBufferType::Vertex,
-        .usage = GfxBufferUsage::Stream,
-    });
+    for (uint32 i = 0; i < 4; i++) {
+        gImGui.buffers[i].vertexBuffer = gfxCreateBuffer({
+            .size = _limits::IMGUI_MAX_VERTICES*sizeof(ImDrawVert),
+            .type = GfxBufferType::Vertex,
+            .usage = GfxBufferUsage::Stream,
+        });
 
-    gImGui.indexBuffer = gfxCreateBuffer({
-        .size = _limits::IMGUI_MAX_INDICES*sizeof(uint16),
-        .type = GfxBufferType::Index,
-        .usage = GfxBufferUsage::Stream
-    });
-
-    if (!gImGui.vertexBuffer.IsValid() || !gImGui.indexBuffer.IsValid()) {
-        LOG_ERROR("ImGui: Creating gpu buffers failed");
-        return false;
+        gImGui.buffers[i].indexBuffer = gfxCreateBuffer({
+            .size = _limits::IMGUI_MAX_INDICES*sizeof(ImDrawIdx),
+            .type = GfxBufferType::Index,
+            .usage = GfxBufferUsage::Stream
+        });
     }
-    
+
     // Application events
     App::RegisterEventsCallback(_OnEventCallback);
     
@@ -605,6 +608,7 @@ bool ImGui::DrawFrame()
         return false;
 
     // Fill the buffers
+    ImGuiBuffer& b = gImGui.buffers[(gImGui.frameIdx++) % 4];
     if (drawData->TotalVtxCount) {
         uint32 vertexSize = drawData->TotalVtxCount * sizeof(ImDrawVert);
         uint32 indexSize = drawData->TotalIdxCount * sizeof(ImDrawIdx);
@@ -612,6 +616,7 @@ bool ImGui::DrawFrame()
         ImDrawVert* vertices = gImGui.vertices;
         ImDrawIdx* indices = gImGui.indices;
 
+        uint32 numVerts = 0, numIndices = 0;
         for (int i = 0; i < drawData->CmdListsCount; i++) {
             const ImDrawList* cmdList = drawData->CmdLists[i];
             memcpy(vertices, cmdList->VtxBuffer.Data, cmdList->VtxBuffer.Size * sizeof(ImDrawVert));
@@ -619,10 +624,13 @@ bool ImGui::DrawFrame()
 
             vertices += cmdList->VtxBuffer.Size;
             indices += cmdList->IdxBuffer.Size;
+
+            numVerts += cmdList->VtxBuffer.Size;
+            numIndices += cmdList->IdxBuffer.Size;
         }
 
-        gfxCmdUpdateBuffer(gImGui.vertexBuffer, gImGui.vertices, vertexSize);
-        gfxCmdUpdateBuffer(gImGui.indexBuffer, gImGui.indices, indexSize);
+        gfxCmdUpdateBuffer(b.vertexBuffer, gImGui.vertices, vertexSize);
+        gfxCmdUpdateBuffer(b.indexBuffer, gImGui.indices, indexSize);
 
         gImGui.lastFrameVertices = drawData->TotalVtxCount;
         gImGui.lastFrameIndices = drawData->TotalIdxCount;
@@ -683,8 +691,8 @@ bool ImGui::DrawFrame()
 
                 gfxCmdSetScissors(0, 1, &scissor, true);
                 gfxCmdPushDescriptorSet(gImGui.pipeline, GfxPipelineBindPoint::Graphics, 0, CountOf(descriptorBindings), descriptorBindings);
-                gfxCmdBindVertexBuffers(0, 1, &gImGui.vertexBuffer, offsets);
-                gfxCmdBindIndexBuffer(gImGui.indexBuffer, 0, GfxIndexType::Uint16);
+                gfxCmdBindVertexBuffers(0, 1, &b.vertexBuffer, offsets);
+                gfxCmdBindIndexBuffer(b.indexBuffer, 0, GfxIndexType::Uint16);
                 gfxCmdPushConstants(gImGui.pipeline, GfxShaderStage::Vertex, &projMat, sizeof(projMat));
                 
                 gfxCmdDrawIndexed(drawCmd->ElemCount, 1, drawCmd->IdxOffset + globalIndexOffset, drawCmd->VtxOffset + globalVertexOffset, 0);
@@ -704,12 +712,10 @@ bool ImGui::DrawFrame()
 void ImGui::Release()
 {
     if (gImGui.ctx) {
-        gfxWaitForIdle();   // TODO: remove this
-
-        // assetUnload(gImGui.imguiShader);
-
-        gfxDestroyBuffer(gImGui.vertexBuffer);
-        gfxDestroyBuffer(gImGui.indexBuffer);
+        for (uint32 i = 0; i < 4; i++) {
+            gfxDestroyBuffer(gImGui.buffers[i].vertexBuffer);
+            gfxDestroyBuffer(gImGui.buffers[i].indexBuffer);
+        }
         gfxDestroyPipeline(gImGui.pipeline);
         gfxDestroyDescriptorSetLayout(gImGui.dsLayout);
         gfxDestroyImage(gImGui.fontImage);
