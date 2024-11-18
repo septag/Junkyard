@@ -1039,10 +1039,12 @@ API bool gfxIsRenderingToSwapchain();
 //----------------------------------------------------------------------------------------------------------------------
 // Create/Destroy resources
 API GfxBufferHandle gfxCreateBuffer(const GfxBufferDesc& desc);
-API void      gfxDestroyBuffer(GfxBufferHandle buffer);
+API void gfxDestroyBuffer(GfxBufferHandle buffer);
+API void gfxDestroyBufferDeferred(GfxBufferHandle buffer);
 
 API GfxImageHandle  gfxCreateImage(const GfxImageDesc& desc);
-API void      gfxDestroyImage(GfxImageHandle image);
+API void gfxDestroyImage(GfxImageHandle image);
+API void gfxDestroyImageDeferred(GfxImageHandle image);
 API GfxImageInfo gfxGetImageInfo(GfxImageHandle img);
 
 API GfxPipelineHandle gfxCreatePipeline(const GfxPipelineDesc& desc);

@@ -25,7 +25,7 @@ namespace Console
     API void RegisterCommand(const ConCommandDesc& desc);
     API void UnregisterCommand();
 
-    API bool Initialize();
+    API bool Initialize(MemAllocator* alloc);
     API void Release();
 }
 

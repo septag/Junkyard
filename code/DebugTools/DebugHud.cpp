@@ -106,7 +106,7 @@ namespace DebugHud
         }
     }
 
-    static void _QuickFrameInfoEventCallback(const AppEvent& ev, [[maybe_unused]] void* userData)
+    static void _EventCallback(const AppEvent& ev, [[maybe_unused]] void* userData)
     {
         if (ev.type == AppEventType::DisplayUpdated) {
             for (uint32 i = 0; i < uint32(DebugHudGraphType::_Count); i++) {
@@ -214,35 +214,32 @@ namespace DebugHud
 
             ImGui::Separator();
 
-            ImGui::MenuItem("Memory Budgets", nullptr, &gDebugHud.showMemStats);
+            ImGui::MenuItem("Memory Stats", nullptr, &gDebugHud.showMemStats);
 
             ImGui::EndPopup();
         }
     }
 
-    static void _DrawMemBudgets();
+    static void _DrawMemBudgets()
+    {
+        if (ImGui::Begin("Memory/Resource Stats")) {
+            ImGui::BeginTabBar("MemoryTabs");
 
+            DebugHudMemStats& mstats = gDebugHud.memStats;
+            for (uint32 i = 0; i < mstats.items.Count(); i++) {
+                DebugHudMemStatsItem& item = mstats.items[i];
+                if (ImGui::BeginTabItem(item.name.CStr())) {
+                    item.callback(item.userData);
+                    ImGui::EndTabItem();
+                }
+            
+            }
+            ImGui::EndTabBar();
+        }
+        ImGui::End();
+    }
 } // DebugHud
 
-
-void DebugHud::_DrawMemBudgets()
-{
-    if (ImGui::Begin("Memory/Resource Stats")) {
-        ImGui::BeginTabBar("MemoryTabs");
-
-        DebugHudMemStats& mstats = gDebugHud.memStats;
-        for (uint32 i = 0; i < mstats.items.Count(); i++) {
-            DebugHudMemStatsItem& item = mstats.items[i];
-            if (ImGui::BeginTabItem(item.name.CStr())) {
-                item.callback(item.userData);
-                ImGui::EndTabItem();
-            }
-            
-        }
-        ImGui::EndTabBar();
-    }
-    ImGui::End();
-}
 
 void DebugHud::DrawDebugHud(float dt, bool *pOpen)
 {
@@ -290,7 +287,7 @@ void DebugHud::DrawStatusBar(float dt)
 void DebugHud::Initialize()
 {
     Log::RegisterCallback(_StatusBarLogCallback, nullptr);
-    App::RegisterEventsCallback(_QuickFrameInfoEventCallback);
+    App::RegisterEventsCallback(_EventCallback);
 
     gDebugHud.monitorRefreshRate = App::GetDisplayInfo().refreshRate;
     uint32 numSamples = gDebugHud.monitorRefreshRate;
@@ -310,7 +307,7 @@ void DebugHud::Initialize()
 
 void DebugHud::Release()
 {
-    App::UnregisterEventsCallback(_QuickFrameInfoEventCallback);
+    App::UnregisterEventsCallback(_EventCallback);
     Log::UnregisterCallback(_StatusBarLogCallback);
 
     for (uint32 i = 0; i < uint32(DebugHudGraphType::_Count); i++) {

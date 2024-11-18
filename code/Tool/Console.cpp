@@ -22,7 +22,6 @@ struct ConCustomVar
 
 struct ConContext
 {
-    MemProxyAllocator alloc;
     Array<ConCommandDesc> commands;
     Array<ConCustomVar> vars;
 };
@@ -210,12 +209,10 @@ void Console::ExecuteRemote(const char* cmd)
     }
 }
 
-bool Console::Initialize()
+bool Console::Initialize(MemAllocator* alloc)
 {
-    Engine::HelperInitializeProxyAllocator(&gConsole.alloc, "Console");
-    Engine::RegisterProxyAllocator(&gConsole.alloc);
-    gConsole.commands.SetAllocator(&gConsole.alloc);
-    gConsole.vars.SetAllocator(&gConsole.alloc);
+    gConsole.commands.SetAllocator(alloc);
+    gConsole.vars.SetAllocator(alloc);
 
     // Custom variables that are used to be replaced with the value if they come in between {} sign
     {
@@ -292,7 +289,6 @@ void Console::Release()
 {
     gConsole.commands.Free();
     gConsole.vars.Free();
-    gConsole.alloc.Release();
 }
 
 void Console::RegisterCommand(const ConCommandDesc& desc)

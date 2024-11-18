@@ -110,6 +110,7 @@ static constexpr uint32 GFX_MAX_SWAP_CHAIN_IMAGES = 3;
 static constexpr uint32 GFX_MAX_FRAMES_IN_FLIGHT = 4;
 static constexpr uint32 GFX_MAX_DESCRIPTOR_SET_LAYOUT_PER_PIPELINE = 3;
 static constexpr uint32 GFX_MAX_DESCRIPTOR_SETS = 1024;
+static constexpr uint32 GFX_MAX_GARBAGE_COLLECT_PER_FRAME = 16;
 
 #ifdef TRACY_ENABLE
 static constexpr const char* kGfxAllocName = "Graphics";
@@ -292,7 +293,10 @@ struct GfxGarbage
     enum class Type
     {
         Pipeline,
-        Buffer
+        Buffer,
+        Image,
+        Sampler,
+        ImageView
     };
 
     Type type;
@@ -301,6 +305,9 @@ struct GfxGarbage
     union {
         VkPipeline pipeline;
         VkBuffer buffer;
+        VkImage image;
+        VkSampler sampler;
+        VkImageView imageView;
     };
 
     VmaAllocation allocation;
@@ -3255,6 +3262,42 @@ void gfxDestroyBuffer(GfxBufferHandle buffer)
     }
 }
 
+void gfxDestroyBufferDeferred(GfxBufferHandle buffer)
+{
+    if (!buffer.IsValid()) 
+        return;
+
+    ReadWriteMutexWriteScope lk(gVk.pools.mLocks[GfxObjectPools::BUFFERS]);
+    GfxBufferData& bufferData = gVk.pools.mBuffers.Data(buffer);
+
+    {
+        MutexScope mtxGarbage(gVk.garbageMtx);
+        if (bufferData.buffer) {
+            GfxGarbage garbage {
+                .type = GfxGarbage::Type::Buffer,
+                .frameIdx = Engine::GetFrameIndex(),
+                .buffer = bufferData.buffer,
+                .allocation = bufferData.allocation
+            };
+
+            gVk.garbage.Push(garbage);
+        }
+
+        if (bufferData.stagingBuffer) {
+            GfxGarbage garbage {
+                .type = GfxGarbage::Type::Buffer,
+                .frameIdx = Engine::GetFrameIndex(),
+                .buffer = bufferData.stagingBuffer,
+                .allocation = bufferData.stagingAllocation
+            };
+
+            gVk.garbage.Push(garbage);
+        }
+    }
+
+    gVk.pools.mBuffers.Remove(buffer);
+}
+
 //    ██╗███╗   ███╗ █████╗  ██████╗ ███████╗
 //    ██║████╗ ████║██╔══██╗██╔════╝ ██╔════╝
 //    ██║██╔████╔██║███████║██║  ███╗█████╗  
@@ -3561,8 +3604,12 @@ void gfxDestroyImage(GfxImageHandle image)
     if (!image.IsValid())
         return;
 
-    GfxImageData& imageData = gVk.pools.mImages.Data(image);
-    
+    GfxImageData imageData;
+    { 
+        GFX_LOCK_POOL_TEMP(IMAGES);
+        imageData = gVk.pools.mImages.Data(image);
+    }
+
     if (imageData.sizeBytes) {
         if (imageData.image) 
             vmaDestroyImage(gVk.vma, imageData.image, imageData.allocation);
@@ -3571,9 +3618,52 @@ void gfxDestroyImage(GfxImageHandle image)
         if (imageData.view)
             vkDestroyImageView(gVk.device, imageData.view, gVk.vkAlloc);
         memset(&imageData, 0x0, sizeof(imageData));
-    }    
+    }
 
     ReadWriteMutexWriteScope lk(gVk.pools.mLocks[GfxObjectPools::IMAGES]);
+    gVk.pools.mImages.Remove(image);
+}
+
+void gfxDestroyImageDeferred(GfxImageHandle image)
+{
+    if (!image.IsValid())
+        return;
+
+    ReadWriteMutexWriteScope lk(gVk.pools.mLocks[GfxObjectPools::IMAGES]);
+    GfxImageData& imageData = gVk.pools.mImages.Data(image);
+
+    {
+        uint64 frameIdx = Engine::GetFrameIndex();
+        MutexScope mtxGarbage(gVk.garbageMtx);
+        if (imageData.image) {
+            GfxGarbage garbage {
+                .type = GfxGarbage::Type::Image,
+                .frameIdx = frameIdx,
+                .image = imageData.image,
+                .allocation = imageData.allocation
+            };
+            gVk.garbage.Push(garbage);
+        }
+
+        if (imageData.sampler) {
+            GfxGarbage garbage {
+                .type = GfxGarbage::Type::Sampler,
+                .frameIdx = frameIdx,
+                .sampler = imageData.sampler
+            };
+            gVk.garbage.Push(garbage);
+        }
+
+        if (imageData.view) {
+            GfxGarbage garbage {
+                .type = GfxGarbage::Type::ImageView,
+                .frameIdx = frameIdx,
+                .imageView = imageData.view
+            };
+            gVk.garbage.Push(garbage);
+        }
+    }
+
     gVk.pools.mImages.Remove(image);
 }
 
@@ -4117,25 +4207,41 @@ static void gfxCollectGarbage(bool force)
     uint64 frameIdx = Engine::GetFrameIndex();
     const uint32 numFramesToWait = GFX_MAX_FRAMES_IN_FLIGHT;
 
-    for (uint32 i = 0; i < gVk.garbage.Count();) {
+    MutexScope lock(gVk.garbageMtx);
+    uint32 destroyCount = 0;
+    for (uint32 i = 0; i < gVk.garbage.Count() && (destroyCount < GFX_MAX_GARBAGE_COLLECT_PER_FRAME || force);) {
         const GfxGarbage& garbage = gVk.garbage[i];
         if (force || frameIdx > (garbage.frameIdx + numFramesToWait)) {
             switch (garbage.type) {
             case GfxGarbage::Type::Pipeline:
                 vkDestroyPipeline(gVk.device, garbage.pipeline, gVk.vkAlloc);
+                destroyCount++;
                 break;
             case GfxGarbage::Type::Buffer:
                 vmaDestroyBuffer(gVk.vma, garbage.buffer, garbage.allocation);
+                destroyCount++;
+                break;
+            case GfxGarbage::Type::Image:
+                vmaDestroyImage(gVk.vma, garbage.image, garbage.allocation);
+                destroyCount++;
+                break;
+            case GfxGarbage::Type::Sampler:
+                vkDestroySampler(gVk.device, garbage.sampler, gVk.vkAlloc);
+                destroyCount++;
+                break;
+            case GfxGarbage::Type::ImageView:
+                vkDestroyImageView(gVk.device, garbage.imageView, gVk.vkAlloc);
+                destroyCount++;
                 break;
             default:
                 break;
             }
 
             gVk.garbage.RemoveAndSwap(i);
-            continue;
         }
-
-        ++i;
+        else {
+            ++i;
+        }
     }
 }
 

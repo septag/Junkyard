@@ -51,24 +51,6 @@ enum class JobsStackSize : uint32
     _Count
 };
 
-struct JobsBudgetStats
-{
-    uint32 maxShortTaskThreads;
-    uint32 maxLongTaskThreads;
-    uint32 numBusyShortThreads;
-    uint32 numBusyLongThreads;
-
-    uint32 numActiveFibers;
-    uint32 numMaxActiveFibers;
-
-    uint32 numJobs;
-    uint32 maxJobs;
-    
-    size_t initHeapStart;
-    size_t initHeapSize;
-    size_t fibersMemoryPoolSize;
-};
-
 struct alignas(CACHE_LINE_SIZE) JobsSignal
 {
     JobsSignal();
@@ -115,8 +97,6 @@ namespace Jobs
                                uint32 groupSize = 1, JobsPriority prio = JobsPriority::Normal, 
                                JobsStackSize stackSize = JobsStackSize::Medium);
 
-    API void GetBudgetStats(JobsBudgetStats* stats);
-    API void ResetBudgetStats();
     API uint32 GetWorkerThreadsCount(JobsType type);
 }
 

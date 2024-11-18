@@ -26,8 +26,7 @@
 
 static constexpr float  ENGINE_REMOTE_RECONNECT_INTERVAL = 5.0f;
 static constexpr uint32 ENGINE_REMOTE_CONNECT_RETRIES = 3;
-static constexpr float  ENGINE_JOBS_REFRESH_STATS_INTERVAL = 0.2f;
-static constexpr size_t ENGINE_INIT_HEAP_MAX = 2*SIZE_GB;
+static constexpr size_t ENGINE_MAX_MEMORY_SIZE = 2*SIZE_GB;
 
 using EngineInitializeResourcesPair = Pair<EngineInitializeResourcesCallback, void*>;
 
@@ -62,7 +61,9 @@ struct EngineDebugMemStats
 
 struct EngineContext
 {
+    MemProxyAllocator alloc;
     MemProxyAllocator jobsAlloc;
+    MemBumpAllocatorVM mainAlloc;   // Virtual memory bump allocator that is used for initializing all sub-systems
 
     SysInfo sysInfo = {};
 
@@ -74,15 +75,12 @@ struct EngineContext
     double elapsedTime;
     AtomicUint64 frameIndex;
     uint64 rawFrameStartTime;
-    uint64 rawFrameTime;        
-
-    MemBumpAllocatorVM initHeap;
+    uint64 rawFrameTime;
 
     bool initialized;
     bool resourcesInitialized;
     bool beginFrameCalled;
     bool endFrameCalled;
-    float refreshStatsTime;
     uint32 mainThreadId;
     AssetGroup initResourcesGroup;
 
@@ -314,11 +312,18 @@ bool Engine::Initialize()
     Thread::SetCurrentThreadName("Main");
     gEng.mainThreadId = Thread::GetCurrentId();
 
-    // Initialize heaps
-    // TODO: make all heaps commit all memory upfront in RELEASE builds
-    gEng.shortcuts.SetAllocator(Mem::GetDefaultAlloc());
-    gEng.initResourcesCallbacks.SetAllocator(Mem::GetDefaultAlloc());
-    gEng.initHeap.Initialize(ENGINE_INIT_HEAP_MAX, SIZE_MB, SettingsJunkyard::Get().engine.debugAllocations);
+    // Setup allocators
+    // TODO: make main allocator commit all memory upfront in RELEASE builds (?)
+    gEng.mainAlloc.Initialize(ENGINE_MAX_MEMORY_SIZE, SIZE_MB, SettingsJunkyard::Get().engine.debugAllocations);
+
+    Engine::HelperInitializeProxyAllocator(&gEng.alloc, "Engine");
+    Engine::HelperInitializeProxyAllocator(&gEng.jobsAlloc, "Jobs");
+    Engine::RegisterProxyAllocator(&gEng.alloc);
+    Engine::RegisterProxyAllocator(&gEng.jobsAlloc);
+
+    // Note: We don't set any allocators for ProxyAllocs array because it will likely get populated before engine initialization
+    gEng.shortcuts.SetAllocator(&gEng.alloc);
+    gEng.initResourcesCallbacks.SetAllocator(&gEng.alloc);
 
     if (SettingsJunkyard::Get().engine.debugAllocations)
         MemTempAllocator::EnableDebugMode(true);
@@ -353,10 +358,7 @@ bool Engine::Initialize()
         LOG_INFO("(init) System memory: %_$$$llu", gEng.sysInfo.physicalMemorySize);
     }
 
-    Console::Initialize();
-
-    Engine::HelperInitializeProxyAllocator(&gEng.jobsAlloc, "Jobs");
-    Engine::RegisterProxyAllocator(&gEng.jobsAlloc);
+    Console::Initialize(&gEng.alloc);
 
     Jobs::Initialize(JobsInitParams { 
                    .alloc = &gEng.jobsAlloc, 
@@ -487,15 +489,16 @@ void Engine::Release()
         Remote::Disconnect();
 
     Jobs::Release();
-    gEng.jobsAlloc.Release();
-
     Console::Release();
 
     gEng.shortcuts.Free();
+    gEng.proxyAllocs.Free();
     gEng.initResourcesCallbacks.Free();
-    gEng.initHeap.Release();
-
     Mem::Free(gEng.debugMemStats.items);
+
+    gEng.jobsAlloc.Release();
+    gEng.alloc.Release();
+    gEng.mainAlloc.Release();
 
     LOG_INFO("Engine released");
 }
@@ -529,15 +532,6 @@ void Engine::BeginFrame(float dt)
                 LOG_WARNING("Failed to connect to server '%s' after %u retries", engineSettings.remoteServicesUrl.CStr(), 
                     ENGINE_REMOTE_CONNECT_RETRIES);
             }
-        }
-    }
-
-    // Reset jobs budget stats every `kRefreshStatsInterval`
-    {
-        gEng.refreshStatsTime += dt;
-        if (gEng.refreshStatsTime > ENGINE_JOBS_REFRESH_STATS_INTERVAL) {
-            Jobs::ResetBudgetStats();
-            gEng.refreshStatsTime = 0;
         }
     }
 
@@ -593,7 +587,7 @@ const SysInfo& Engine::GetSysInfo()
 
 MemBumpAllocatorBase* Engine::GetInitHeap()
 {
-    return &gEng.initHeap;
+    return &gEng.mainAlloc;
 }
 
 float Engine::GetEngineTimeMS()
@@ -711,5 +705,5 @@ void Engine::HelperInitializeProxyAllocator(MemProxyAllocator* alloc, const char
     MemProxyAllocatorFlags proxyAllocFlags = SettingsJunkyard::Get().engine.trackAllocations ? 
         MemProxyAllocatorFlags::EnableTracking : MemProxyAllocatorFlags::None;
 
-    alloc->Initialize(name, baseAlloc ? baseAlloc : &gEng.initHeap, proxyAllocFlags);
+    alloc->Initialize(name, baseAlloc ? baseAlloc : &gEng.mainAlloc, proxyAllocFlags);
 }

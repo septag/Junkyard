@@ -221,21 +221,6 @@ struct JobsContext
     JobsAtomicPool<JobsInstance, _limits::JOBS_MAX_INSTANCES>* instancePool;
     JobsAtomicPool<JobsFiberProperties, _limits::JOBS_MAX_PENDING>* fiberPropsPool;
 
-    AtomicUint32 numBusyShortThreads;
-    AtomicUint32 numBusyLongThreads;
-    AtomicUint32 numActiveFibers;
-    AtomicUint32 numInstances;
-    uint32 maxActiveFibers;
-
-    struct MaxValues
-    {
-        uint32 numBusyShortThreadsMax;
-        uint32 numBusyLongThreadsMax;
-        uint32 numInstancesMax;
-    };
-
-    MaxValues maxValues[2];     // Index: 0 = Write, 1 = Present
-
     AtomicUint32 quit;
 };
 
@@ -323,9 +308,6 @@ static JobsFiber* _CreateFiber(JobsFiberProperties* props)
 
     mco_push(co, &fiber, sizeof(fiber));
 
-    Atomic::FetchAddExplicit(&gJobs.numActiveFibers, 1, AtomicMemoryOrder::Relaxed);
-    gJobs.maxActiveFibers = Max<uint32>(gJobs.numActiveFibers, gJobs.maxActiveFibers);
-
     return reinterpret_cast<JobsFiber*>(co->storage);
 }
 
@@ -338,8 +320,6 @@ NO_INLINE static void _DestroyFiber(JobsFiber* fiber)
 
     ASSERT(fiber->co);
     mco_destroy(fiber->co);
-
-    Atomic::FetchSubExplicit(&gJobs.numActiveFibers, 1, AtomicMemoryOrder::Relaxed);
 }
 
 static void _SetFiberToCurrentThread(JobsFiber* fiber)
@@ -349,21 +329,11 @@ static void _SetFiberToCurrentThread(JobsFiber* fiber)
     ASSERT(_GetThreadData()->curFiber == nullptr);
 
     JobsThreadData* tdata = _GetThreadData();
-    JobsType type = tdata->type;
     fiber->ownerTid = 0;
     tdata->curFiber = fiber;
     gIsInFiber = true;
     
     ASSERT(fiber->props->next == nullptr);
-
-    if (type == JobsType::ShortTask) {
-        Atomic::FetchAddExplicit(&gJobs.numBusyShortThreads, 1, AtomicMemoryOrder::Relaxed);
-        gJobs.maxValues[0].numBusyShortThreadsMax = Max(gJobs.maxValues[0].numBusyShortThreadsMax, gJobs.numBusyShortThreads);
-    }
-    else if (type == JobsType::LongTask) {
-        Atomic::FetchAddExplicit(&gJobs.numBusyLongThreads, 1, AtomicMemoryOrder::Relaxed);
-        gJobs.maxValues[0].numBusyLongThreadsMax = Max(gJobs.maxValues[0].numBusyLongThreadsMax, gJobs.numBusyLongThreads);
-    }
 
     #ifdef TRACY_ENABLE
     if (!fiber->tracyZonesStack.IsEmpty()) {
@@ -405,11 +375,6 @@ static void _SetFiberToCurrentThread(JobsFiber* fiber)
     tdata->curFiber = nullptr;
     gIsInFiber = false;
     
-    if (type == JobsType::ShortTask)
-        Atomic::FetchSubExplicit(&gJobs.numBusyShortThreads, 1, AtomicMemoryOrder::Relaxed);
-    else if (type == JobsType::LongTask)
-        Atomic::FetchSubExplicit(&gJobs.numBusyLongThreads, 1, AtomicMemoryOrder::Relaxed);
-    
     JobsInstance* inst = fiber->props->instance;
     if (fiber->co->state == MCO_DEAD) {
         #ifdef TRACY_ENABLE
@@ -420,7 +385,6 @@ static void _SetFiberToCurrentThread(JobsFiber* fiber)
             // Delete the job instance automatically if only indicated by the API
             if (inst->isAutoDelete) {
                 gJobs.instancePool->Delete(inst);
-                Atomic::FetchSubExplicit(&gJobs.numInstances, 1, AtomicMemoryOrder::Relaxed);
             }
         }
 
@@ -528,8 +492,6 @@ static JobsInstance* _DispatchInternal(bool isAutoDelete, JobsType type, JobsCal
     JobsInstance* instance = gJobs.instancePool->New();
 
     memset(instance, 0x0, sizeof(*instance));
-    Atomic::FetchAddExplicit(&gJobs.numInstances, 1, AtomicMemoryOrder::Relaxed);
-    gJobs.maxValues[0].numInstancesMax = Max(gJobs.maxValues[0].numInstancesMax, gJobs.numInstances);
 
     Atomic::ExchangeExplicit(&instance->counter, numFibers, AtomicMemoryOrder::Release);
     instance->type = type;
@@ -620,7 +582,6 @@ void WaitForCompletionAndDelete(JobsHandle instance)
     }
 
     gJobs.instancePool->Delete(instance);
-    Atomic::FetchSubExplicit(&gJobs.numInstances, 1, AtomicMemoryOrder::Relaxed);
 }
 
 void Yield()
@@ -671,7 +632,6 @@ void Delete(JobsHandle handle)
     ASSERT_MSG(Atomic::LoadExplicit(&handle->counter, AtomicMemoryOrder::Acquire) == 0, "Job must be completed before deletion");
     
     gJobs.instancePool->Delete(handle);
-    Atomic::FetchSubExplicit(&gJobs.numInstances, 1, AtomicMemoryOrder::Relaxed);
 }
 
 JobsHandle Dispatch(JobsType type, JobsCallback callback, void* userData, uint32 groupSize, JobsPriority prio, JobsStackSize stackSize)
@@ -682,32 +642,6 @@ JobsHandle Dispatch(JobsType type, JobsCallback callback, void* userData, uint32
 void DispatchAndForget(JobsType type, JobsCallback callback, void* userData, uint32 groupSize, JobsPriority prio, JobsStackSize stackSize)
 {
     _DispatchInternal(true, type, callback, userData, groupSize, prio, stackSize);
-}
-
-void GetBudgetStats(JobsBudgetStats* stats)
-{
-    JobsContext::MaxValues m = gJobs.maxValues[1];
-
-    stats->maxShortTaskThreads = gJobs.numThreads[uint32(JobsType::ShortTask)];
-    stats->maxLongTaskThreads = gJobs.numThreads[uint32(JobsType::LongTask)];
-    stats->numBusyShortThreads = m.numBusyShortThreadsMax;
-    stats->numBusyLongThreads = m.numBusyLongThreadsMax;
-
-    stats->numMaxActiveFibers = gJobs.maxActiveFibers;
-    stats->numActiveFibers = gJobs.numActiveFibers;
-
-    stats->maxJobs = _limits::JOBS_MAX_INSTANCES;
-    stats->numJobs = m.numInstancesMax;
-
-    size_t fibersAllocSize = 0;
-    stats->fibersMemoryPoolSize = fibersAllocSize;
-}
-
-void ResetBudgetStats()
-{
-    JobsContext::MaxValues* m = &gJobs.maxValues[0];
-    gJobs.maxValues[1] = *m;
-    memset(m, 0x0, sizeof(*m));    
 }
 
 uint32 GetWorkerThreadsCount(JobsType type)
