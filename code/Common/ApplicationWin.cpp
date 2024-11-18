@@ -829,7 +829,7 @@ namespace App
 
         // RemoteServices
         if (!Remote::Initialize()) {
-            ASSERT_MSG(0, "Initializing Server failed");
+            ASSERT_MSG(0, "Initializing RemoteServices failed");
             return false;
         }
 

@@ -500,6 +500,8 @@ void* MemBumpAllocatorBase::Realloc(void* ptr, size_t size, uint32 align)
     ASSERT(size);
 
     if (!mDebugMode) {
+        ASSERT_MSG(mBuffer, "BumpAllocator is not initialized yet");
+        
         align = Max(align, CONFIG_MACHINE_ALIGNMENT);
         size = AlignValue<size_t>(size, align);
 

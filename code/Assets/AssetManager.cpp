@@ -1304,11 +1304,11 @@ static void Asset::_UnloadGroupTask(uint32, void* userData)
             switch (gpuObj->type) {
             case AssetDataInternal::GpuObjectType::Texture:
                 ASSERT(!gpuObj->textureDesc.bindToImage.IsNull());
-                gfxDestroyImage(*gpuObj->textureDesc.bindToImage.Get());
+                gfxDestroyImageDeferred(*gpuObj->textureDesc.bindToImage.Get());
                 break;
             case AssetDataInternal::GpuObjectType::Buffer:
                 ASSERT(!gpuObj->bufferDesc.bindToBuffer.IsNull());
-                gfxDestroyBuffer(*gpuObj->bufferDesc.bindToBuffer.Get());
+                gfxDestroyBufferDeferred(*gpuObj->bufferDesc.bindToBuffer.Get());
                 break;
             }
             gpuObj = gpuObj->next.Get();
