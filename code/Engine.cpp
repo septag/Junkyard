@@ -406,15 +406,9 @@ bool Engine::Initialize()
 
     if (gfxSettings.enable) {
         if (!gfxSettings.headless) {
-            if (gfxSettings.enableImGui) {
-                if (!ImGui::Initialize()) {
-                    LOG_ERROR("Initializing ImGui failed");
-                    return false;
-                }
-                
-                DebugHud::Initialize();
-
-                DebugHud::RegisterMemoryStats("Engine", _DrawMemStatsCallback);
+            if (gfxSettings.enableImGui && !ImGui::Initialize()) {
+                LOG_ERROR("Initializing ImGui failed");
+                return false;
             }
 
             if (!DebugDraw::Initialize()) {
@@ -422,6 +416,11 @@ bool Engine::Initialize()
                 return false;
             }
         }
+    }
+
+    if (ImGui::IsEnabled()) {
+        DebugHud::Initialize();
+        DebugHud::RegisterMemoryStats("Engine", _DrawMemStatsCallback);
     }
 
     App::RegisterEventsCallback(_OnEvent);
@@ -583,11 +582,6 @@ float Engine::GetFrameTime()
 const SysInfo& Engine::GetSysInfo()
 {
     return gEng.sysInfo;
-}
-
-MemBumpAllocatorBase* Engine::GetInitHeap()
-{
-    return &gEng.mainAlloc;
 }
 
 float Engine::GetEngineTimeMS()

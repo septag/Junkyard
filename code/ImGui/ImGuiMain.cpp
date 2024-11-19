@@ -28,12 +28,9 @@
 // Extra modules
 #include "ImGuizmo.h"
 
-namespace _limits 
-{
-    static constexpr uint32 IMGUI_MAX_VERTICES = 30000;
-    static constexpr uint32 IMGUI_MAX_INDICES =  IMGUI_MAX_VERTICES*3; 
-    static constexpr size_t IMGUI_RUNTIME_HEAP_SIZE = 2*SIZE_MB;
-}
+static constexpr size_t IMGUI_RUNTIME_HEAP_SIZE = SIZE_MB;
+static constexpr uint32 IMGUI_VERTICES_POOL_SIZE = 30*1000;
+static constexpr uint32 IMGUI_INDICES_POOL_SIZE =  IMGUI_VERTICES_POOL_SIZE*3; 
 
 enum ImGuiDescriptorSet : uint32
 {
@@ -50,7 +47,8 @@ struct ImGuiBuffer
 
 struct ImGuiState
 {
-    MemTlsfAllocator runtimeHeap;
+    MemProxyAllocator alloc;
+    MemTlsfAllocator runtimeAlloc;
 
     ImGuiContext* ctx;
 
@@ -62,18 +60,19 @@ struct ImGuiState
     StaticArray<ImWchar, 128> charInput;
     ImGuiMouseCursor lastCursor;
     
-    ImDrawVert*  vertices;
-    uint16*      indices;
+    ImDrawVert* vertices;
+    uint16* indices;
+    uint32 maxVertices;
+    uint32 maxIndices;
+
     ImGuiBuffer  buffers[4];
     GfxDescriptorSetLayoutHandle dsLayout;
-    GfxPipelineHandle  pipeline;
-    GfxImageHandle     fontImage;
+    GfxPipelineHandle pipeline;
+    GfxImageHandle fontImage;
     AssetHandleShader imguiShader;
-    size_t       initHeapStart;
-    size_t       initHeapSize;
-    uint32       lastFrameVertices;
-    uint32       lastFrameIndices;
-    float*       alphaControl;      // alpha value that will be modified by mouse-wheel + ALT
+    uint32 lastFrameVertices;
+    uint32 lastFrameIndices;
+    float* alphaControl;      // alpha value that will be modified by mouse-wheel + ALT
 
     HashTable<const char*> settingsCacheTable;
     INIFileContext settingsIni;
@@ -101,7 +100,7 @@ namespace ImGui
 
     static void _InitializeSettings()
     {
-        gImGui.settingsCacheTable.SetAllocator(&gImGui.runtimeHeap);
+        gImGui.settingsCacheTable.SetAllocator(&gImGui.runtimeAlloc);
         gImGui.settingsCacheTable.Reserve(256);
 
         // Load extra control settings
@@ -422,30 +421,54 @@ namespace ImGui
 
         INIFileProperty property = section.FindProperty(propertyName);
         if (!property.IsValid())
-        property = section.NewProperty(propertyName, value);
+            property = section.NewProperty(propertyName, value);
         else
-        property.SetValue(value);
+            property.SetValue(value);
     
         uint32 hash = Hash::Fnv32Str(key);
         gImGui.settingsCacheTable.AddIfNotFound(hash, property.GetValue());
     }
 
+    static void _GrowGeometryBuffers(uint32 numVertices, uint32 numIndices)
+    {
+        if (numVertices > gImGui.maxVertices) {
+            gImGui.maxVertices = AlignValue(numVertices, IMGUI_VERTICES_POOL_SIZE);
+            for (uint32 i = 0; i < CountOf(gImGui.buffers); i++) {
+                gfxDestroyBufferDeferred(gImGui.buffers[i].vertexBuffer);
+                gImGui.buffers[i].vertexBuffer = gfxCreateBuffer({
+                    .size = gImGui.maxVertices*sizeof(ImDrawVert),
+                    .type = GfxBufferType::Vertex,
+                    .usage = GfxBufferUsage::Stream,
+                });
+            }
+            LOG_VERBOSE("ImGui vertex capacity increased to maximum %u vertices", gImGui.maxVertices);
+        }
+
+        if (numIndices > gImGui.maxIndices) {
+            gImGui.maxIndices = AlignValue(numIndices, IMGUI_VERTICES_POOL_SIZE);
+            for (uint32 i = 0; i < CountOf(gImGui.buffers); i++) {
+                gfxDestroyBufferDeferred(gImGui.buffers[i].indexBuffer);
+                gImGui.buffers[i].indexBuffer = gfxCreateBuffer({
+                    .size = gImGui.maxIndices*sizeof(ImDrawIdx),
+                    .type = GfxBufferType::Index,
+                    .usage = GfxBufferUsage::Stream
+                });
+            }
+            LOG_VERBOSE("ImGui index capacity increased to maximum %u indices", gImGui.maxIndices);
+        }
+    }
 } // ImGui
 
 bool ImGui::Initialize()
 {
-    MemBumpAllocatorBase* initHeap = Engine::GetInitHeap();
-    gImGui.initHeapStart = initHeap->GetOffset();
+    Engine::HelperInitializeProxyAllocator(&gImGui.alloc, "ImGui");
+    Engine::RegisterProxyAllocator(&gImGui.alloc);
 
-    {
-        size_t poolSize = MemTlsfAllocator::GetMemoryRequirement(_limits::IMGUI_RUNTIME_HEAP_SIZE);
-        gImGui.runtimeHeap.Initialize(_limits::IMGUI_RUNTIME_HEAP_SIZE, Mem::Alloc(poolSize, initHeap), poolSize,
-                                      SettingsJunkyard::Get().engine.debugAllocations);
-    }
+    gImGui.runtimeAlloc.Initialize(&gImGui.alloc, IMGUI_RUNTIME_HEAP_SIZE, SettingsJunkyard::Get().engine.debugAllocations);
     
     SetAllocatorFunctions(
-        [](size_t size, void*)->void* { return Mem::Alloc(size, &gImGui.runtimeHeap); },
-        [](void* ptr, void*) { Mem::Free(ptr, &gImGui.runtimeHeap); });
+        [](size_t size, void*)->void* { return Mem::Alloc(size, &gImGui.runtimeAlloc); },
+        [](void* ptr, void*) { Mem::Free(ptr, &gImGui.runtimeAlloc); });
     
     gImGui.lastCursor = ImGuiMouseCursor_COUNT;
     gImGui.ctx = CreateContext();
@@ -486,18 +509,20 @@ bool ImGui::Initialize()
     conf.KeyMap[ImGuiKey_Y]             = static_cast<int>(InputKeycode::Y);
     conf.KeyMap[ImGuiKey_Z]             = static_cast<int>(InputKeycode::Z);
 
-    gImGui.vertices = Mem::AllocTyped<ImDrawVert>(_limits::IMGUI_MAX_VERTICES, initHeap);
-    gImGui.indices = Mem::AllocTyped<uint16>(_limits::IMGUI_MAX_INDICES, initHeap);
+    gImGui.vertices = Mem::AllocTyped<ImDrawVert>(IMGUI_VERTICES_POOL_SIZE, &gImGui.alloc);
+    gImGui.indices = Mem::AllocTyped<uint16>(IMGUI_INDICES_POOL_SIZE, &gImGui.alloc);
+    gImGui.maxVertices = IMGUI_VERTICES_POOL_SIZE;
+    gImGui.maxIndices = IMGUI_INDICES_POOL_SIZE;
 
     for (uint32 i = 0; i < 4; i++) {
         gImGui.buffers[i].vertexBuffer = gfxCreateBuffer({
-            .size = _limits::IMGUI_MAX_VERTICES*sizeof(ImDrawVert),
+            .size = IMGUI_VERTICES_POOL_SIZE*sizeof(ImDrawVert),
             .type = GfxBufferType::Vertex,
             .usage = GfxBufferUsage::Stream,
         });
 
         gImGui.buffers[i].indexBuffer = gfxCreateBuffer({
-            .size = _limits::IMGUI_MAX_INDICES*sizeof(ImDrawIdx),
+            .size = IMGUI_INDICES_POOL_SIZE*sizeof(ImDrawIdx),
             .type = GfxBufferType::Index,
             .usage = GfxBufferUsage::Stream
         });
@@ -534,13 +559,10 @@ bool ImGui::Initialize()
     _SetColorTheme();
     _InitializeSettings();
 
-    gImGui.initHeapSize = initHeap->GetOffset() - gImGui.initHeapStart;
-
     // Register graphics resources callback so we can continue when the resources are loaded
     gImGui.imguiShader = Asset::LoadShader("/shaders/ImGui.hlsl", ShaderLoadParams(),
                                            Engine::RegisterInitializeResources(_InitializeGraphicsResources));
 
-    
     return true;
 }
 
@@ -610,6 +632,8 @@ bool ImGui::DrawFrame()
     // Fill the buffers
     ImGuiBuffer& b = gImGui.buffers[(gImGui.frameIdx++) % 4];
     if (drawData->TotalVtxCount) {
+        _GrowGeometryBuffers(drawData->TotalVtxCount, drawData->TotalIdxCount);
+
         uint32 vertexSize = drawData->TotalVtxCount * sizeof(ImDrawVert);
         uint32 indexSize = drawData->TotalIdxCount * sizeof(ImDrawIdx);
 
@@ -725,7 +749,8 @@ void ImGui::Release()
     }
 
     _ReleaseSettings();
-    gImGui.runtimeHeap.Release();
+    gImGui.runtimeAlloc.Release();
+    gImGui.alloc.Release();
 }
 
 bool ImGui::IsEnabled()
@@ -748,19 +773,6 @@ void ImGui::SetSetting(const char* key, int i)
     char istr[32];
     Str::PrintFmt(istr, sizeof(istr), "%d", i);
     _SetSetting(key, istr);
-}
-
-void ImGui::GetBudgetStats(ImGuiBudgetStats* stats)
-{
-    stats->initHeapStart = gImGui.initHeapStart;
-    stats->initHeapSize = gImGui.initHeapSize;
-    stats->runtimeHeapSize = gImGui.runtimeHeap.GetAllocatedSize();
-    stats->runtimeHeapMax = _limits::IMGUI_RUNTIME_HEAP_SIZE;
-    stats->maxVertices = _limits::IMGUI_MAX_VERTICES;
-    stats->maxIndices = _limits::IMGUI_MAX_INDICES;
-    stats->lastFrameVertices = gImGui.lastFrameVertices;
-    stats->lastFrameIndices = gImGui.lastFrameIndices;
-    stats->runtimeHeap = &gImGui.runtimeHeap;
 }
 
 void ImGui::ControlAlphaWithScroll(float* alpha)

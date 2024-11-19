@@ -3,7 +3,6 @@
 #include "Core/Base.h"
 
 struct SysInfo;
-struct MemBumpAllocatorBase;
 struct MemProxyAllocator;
 struct AssetGroup;
 
@@ -22,8 +21,6 @@ namespace Engine
     API float GetFrameTime();
     API const SysInfo& GetSysInfo();
     API float GetEngineTimeMS();
-
-    API MemBumpAllocatorBase* GetInitHeap();
 
     API bool IsMainThread();
 
