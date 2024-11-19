@@ -15,19 +15,6 @@
 
 struct MemTlsfAllocator;
 
-struct ImGuiBudgetStats
-{
-    size_t initHeapStart;
-    size_t initHeapSize;
-    size_t runtimeHeapSize;
-    size_t runtimeHeapMax;
-    uint32 maxVertices;
-    uint32 maxIndices;
-    uint32 lastFrameVertices;
-    uint32 lastFrameIndices;
-    MemTlsfAllocator* runtimeHeap;
-};
-
 namespace ImGui
 {
     namespace _private
@@ -74,8 +61,6 @@ namespace ImGui
     API const char* GetSetting(const char* key);
     API void SetSetting(const char* key, bool b);
     API void SetSetting(const char* key, int i);
-
-    API void GetBudgetStats(ImGuiBudgetStats* stats);
 
     API bool IsEnabled();
     API void BeginFrame(float dt);
