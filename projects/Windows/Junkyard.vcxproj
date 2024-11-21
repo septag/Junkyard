@@ -178,7 +178,6 @@
     </ClCompile>
     <ClCompile Include="..\..\code\Common\ApplicationWin.cpp" />
     <ClCompile Include="..\..\code\Common\Camera.cpp" />
-    <ClCompile Include="..\..\code\Common\Clipboard.cpp" />
     <ClCompile Include="..\..\code\Common\JunkyardSettings.cpp" />
     <ClCompile Include="..\..\code\Common\RemoteServices.cpp" />
     <ClCompile Include="..\..\code\Common\VirtualFS.cpp" />
@@ -266,7 +265,6 @@
     <ClInclude Include="..\..\code\Assets\Shader.h" />
     <ClInclude Include="..\..\code\Common\Application.h" />
     <ClInclude Include="..\..\code\Common\Camera.h" />
-    <ClInclude Include="..\..\code\Common\Clipboard.h" />
     <ClInclude Include="..\..\code\Common\CommonTypes.h" />
     <ClInclude Include="..\..\code\Common\InputTypes.h" />
     <ClInclude Include="..\..\code\Common\JunkyardSettings.h" />

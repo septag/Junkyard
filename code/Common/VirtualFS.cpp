@@ -441,7 +441,7 @@ static Blob Vfs::_PackageBundleReadFile(const char* path, VfsFlags flags, MemAll
         AAsset* asset = AAssetManager_open(App::AndroidGetAssetManager(), path, AASSET_MODE_BUFFER);
         if (!asset)
             return Blob {};
-        Blob blob(alloc ? alloc : gVfs.alloc);
+        Blob blob(alloc ? alloc : &gVfs.alloc);
         off_t assetSize = AAsset_getLength(asset);
         if (assetSize > 0) {
             if ((flags & VfsFlags::TextFile) == VfsFlags::TextFile)

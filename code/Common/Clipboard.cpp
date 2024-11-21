@@ -4,11 +4,7 @@
 #include "../Core/StringUtil.h"
 #include "../Core/System.h"
 
-namespace _limits
-{
-    static constexpr uint32 CLIPBOARD_MAX_VARS = 512;
-    static constexpr uint32 CLIPBOARD_SCRAP_BUFFER_SIZE = SIZE_MB;
-}
+static constexpr uint32 CLIPBOARD_SCRAP_BUFFER_SIZE = 64*SIZE_KB;
 
 struct ClipboardContext
 {
@@ -18,33 +14,16 @@ struct ClipboardContext
 
     HashTable<ClipboardVarHandle> nameToHandle;
     HandlePool<ClipboardVarHandle, ClipboardVar> vars;
-    size_t initHeapStart;
-    size_t initHeapSize;
 };
 
 static ClipboardContext gClipboard;
 
-bool Clipboard::Initialize(MemBumpAllocatorBase* alloc, bool debugAllocations)
+bool Clipboard::Initialize(MemAllocator* alloc)
 {
-    gClipboard.initHeapStart = alloc->GetOffset();
-
-    {
-        size_t bufferSize = HashTable<ClipboardVarHandle>::GetMemoryRequirement(_limits::CLIPBOARD_MAX_VARS);
-        gClipboard.nameToHandle.Reserve(_limits::CLIPBOARD_MAX_VARS, Mem::Alloc(bufferSize, alloc), bufferSize);
-    }
-
-    {
-        size_t bufferSize = HandlePool<ClipboardVarHandle, ClipboardVar>::GetMemoryRequirement(_limits::CLIPBOARD_MAX_VARS);
-        gClipboard.vars.Reserve(_limits::CLIPBOARD_MAX_VARS, Mem::Alloc(bufferSize, alloc), bufferSize);
-    }
-
-    {
-        size_t bufferSize = MemTlsfAllocator::GetMemoryRequirement(_limits::CLIPBOARD_SCRAP_BUFFER_SIZE);
-        gClipboard.tlsfAlloc.Initialize(_limits::CLIPBOARD_SCRAP_BUFFER_SIZE, Mem::Alloc(bufferSize, alloc), bufferSize, debugAllocations);
-        gClipboard.scrapAlloc.SetAllocator(&gClipboard.tlsfAlloc);
-    }
-
-    gClipboard.initHeapSize = alloc->GetOffset() - gClipboard.initHeapSize;
+    gClipboard.nameToHandle.SetAllocator(alloc);
+    gClipboard.vars.SetAllocator(alloc);
+    gClipboard.tlsfAlloc.Initialize(alloc, CLIPBOARD_SCRAP_BUFFER_SIZE);
+    gClipboard.scrapAlloc.SetAllocator(&gClipboard.tlsfAlloc);
 
     return true;
 }

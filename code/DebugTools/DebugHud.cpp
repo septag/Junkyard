@@ -222,6 +222,7 @@ namespace DebugHud
 
     static void _DrawMemBudgets()
     {
+        ImGui::SetNextWindowSizeConstraints(ImVec2(400, 200), ImVec2(M_FLOAT32_MAX, M_FLOAT32_MAX));
         if (ImGui::Begin("Memory/Resource Stats")) {
             ImGui::BeginTabBar("MemoryTabs");
 

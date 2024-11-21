@@ -169,6 +169,16 @@ namespace Engine
         };
 
         EngineDebugMemStats& mstats = gEng.debugMemStats;
+    
+        {
+            MemVirtualStats stats = Mem::VirtualGetStats();
+            float progress = float(double(stats.commitedBytes)/double(stats.reservedBytes));
+            ImGui::TextUnformatted("VMem: ");
+            ImGui::SameLine();
+            ImGui::ProgressBar(progress, ImVec2(-1.0f, 0), String32::Format("%_$llu/%_$llu", stats.commitedBytes, stats.reservedBytes).CStr());
+        }
+
+        ImGui::SeparatorVertical();
 
         if (ImGui::Button("Refresh"))
             mstats.refreshProxyAllocList = true;

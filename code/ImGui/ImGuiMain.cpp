@@ -436,7 +436,7 @@ namespace ImGui
             for (uint32 i = 0; i < CountOf(gImGui.buffers); i++) {
                 gfxDestroyBufferDeferred(gImGui.buffers[i].vertexBuffer);
                 gImGui.buffers[i].vertexBuffer = gfxCreateBuffer({
-                    .size = gImGui.maxVertices*sizeof(ImDrawVert),
+                    .size = gImGui.maxVertices*uint32(sizeof(ImDrawVert)),
                     .type = GfxBufferType::Vertex,
                     .usage = GfxBufferUsage::Stream,
                 });
@@ -449,7 +449,7 @@ namespace ImGui
             for (uint32 i = 0; i < CountOf(gImGui.buffers); i++) {
                 gfxDestroyBufferDeferred(gImGui.buffers[i].indexBuffer);
                 gImGui.buffers[i].indexBuffer = gfxCreateBuffer({
-                    .size = gImGui.maxIndices*sizeof(ImDrawIdx),
+                    .size = gImGui.maxIndices*uint32(sizeof(ImDrawIdx)),
                     .type = GfxBufferType::Index,
                     .usage = GfxBufferUsage::Stream
                 });
@@ -678,8 +678,9 @@ bool ImGui::DrawFrame()
     uint64 offsets[] = {0};
     gfxCmdBindPipeline(gImGui.pipeline);
     gfxCmdSetViewports(0, 1, &viewport, true);
+    gfxCmdBindVertexBuffers(0, 1, &b.vertexBuffer, offsets);
+    gfxCmdBindIndexBuffer(b.indexBuffer, 0, GfxIndexType::Uint16);
 
-    GfxImageHandle prevImg {};
     uint32 globalVertexOffset = 0;
     uint32 globalIndexOffset = 0;
     for (int i = 0; i < drawData->CmdListsCount; i++) {
@@ -715,8 +716,6 @@ bool ImGui::DrawFrame()
 
                 gfxCmdSetScissors(0, 1, &scissor, true);
                 gfxCmdPushDescriptorSet(gImGui.pipeline, GfxPipelineBindPoint::Graphics, 0, CountOf(descriptorBindings), descriptorBindings);
-                gfxCmdBindVertexBuffers(0, 1, &b.vertexBuffer, offsets);
-                gfxCmdBindIndexBuffer(b.indexBuffer, 0, GfxIndexType::Uint16);
                 gfxCmdPushConstants(gImGui.pipeline, GfxShaderStage::Vertex, &projMat, sizeof(projMat));
                 
                 gfxCmdDrawIndexed(drawCmd->ElemCount, 1, drawCmd->IdxOffset + globalIndexOffset, drawCmd->VtxOffset + globalVertexOffset, 0);

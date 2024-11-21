@@ -208,9 +208,6 @@
     <ClCompile Include="..\..\code\Common\Camera.cpp">
       <Filter>Common</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\code\Common\Clipboard.cpp">
-      <Filter>Common</Filter>
-    </ClCompile>
     <ClCompile Include="..\..\code\Common\JunkyardSettings.cpp">
       <Filter>Common</Filter>
     </ClCompile>
@@ -404,9 +401,6 @@
       <Filter>Common</Filter>
     </ClInclude>
     <ClInclude Include="..\..\code\Common\Camera.h">
-      <Filter>Common</Filter>
-    </ClInclude>
-    <ClInclude Include="..\..\code\Common\Clipboard.h">
       <Filter>Common</Filter>
     </ClInclude>
     <ClInclude Include="..\..\code\Common\CommonTypes.h">

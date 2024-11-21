@@ -54,7 +54,7 @@ struct MemAllocator;
 
 namespace Clipboard
 {
-    API bool Initialize(MemBumpAllocatorBase* alloc, bool debugAllocators = false);
+    API bool Initialize(MemAllocator* alloc);
     API void Release();
 
     API ClipboardVarHandle Add(const char* name, const ClipboardVar* var = nullptr);
