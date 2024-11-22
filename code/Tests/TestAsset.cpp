@@ -286,7 +286,10 @@ struct AppImpl : AppCallbacks
 
     bool Initialize() override
     {
-        Vfs::HelperMountDataAndShaders(SettingsJunkyard::Get().engine.connectToServer, "data/TestAsset");
+        bool isRemote = SettingsJunkyard::Get().engine.connectToServer;
+
+        // For remote mode, you also have to use "-ToolingServerCustomDataMountDir=data/TestAsset" argument for the server tool
+        Vfs::HelperMountDataAndShaders(isRemote, isRemote ? "data" : "data/TestAsset");
 
         if (!Engine::Initialize())
             return false;

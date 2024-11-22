@@ -293,7 +293,7 @@ namespace Mem
 //    ██╔═══╝ ██╔══██║   ██║   ██╔══██║
 //    ██║     ██║  ██║   ██║   ██║  ██║
 //    ╚═╝     ╚═╝  ╚═╝   ╚═╝   ╚═╝  ╚═╝
-enum class PathType
+enum class PathType : uint32
 {
     Invalid = 0,
     File,

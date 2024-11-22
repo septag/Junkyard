@@ -1649,7 +1649,13 @@ bool Asset::Initialize()
     gAssetMan.memArena.threadToAllocatorTable.Reserve(gAssetMan.memArena.maxAllocators);
 
     gAssetMan.tempAlloc.mAlloc = alloc;
-    gAssetMan.tempAlloc.Initialize(SIZE_KB*512, SIZE_KB*64);
+
+    if (SettingsJunkyard::Get().engine.connectToServer) {
+        gAssetMan.tempAlloc.Initialize(SIZE_GB, SIZE_MB);
+    }
+    else {
+        gAssetMan.tempAlloc.Initialize(SIZE_KB*512, SIZE_KB*64);
+    }
 
     RemoteCommandDesc loadRemoteDesc {
         .cmdFourCC = ASSET_LOAD_ASSET_REMOTE_CMD,

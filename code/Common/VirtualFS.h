@@ -28,6 +28,7 @@ enum class VfsMountType
 //       So, care must be taken when implementing these callbacks. Make sure global data access is thread-safe
 using VfsReadAsyncCallback = void(*)(const char* path, const Blob& blob, void* user);
 using VfsWriteAsyncCallback = void(*)(const char* path, size_t bytesWritten, Blob& originalBlob, void* user);
+using VfsInfoAsyncCallback = void(*)(const char* path, const PathInfo& info, void* user);
 using VfsFileChangeCallback = void(*)(const char* path);
 
 namespace Vfs

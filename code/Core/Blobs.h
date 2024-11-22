@@ -56,6 +56,7 @@ struct Blob
     inline void Reset();
     inline void SetOffset(size_t offset);
     inline void CopyTo(Blob* otherBlob) const;
+    inline void MoveTo(Blob* otherBlob);
 
     inline size_t Write(const void* src, size_t size);
     inline size_t Read(void* dst, size_t size) const;
@@ -472,6 +473,17 @@ inline void Blob::CopyTo(Blob* otherBlob) const
     otherBlob->Reserve(mSize);
     otherBlob->SetSize(mSize);
     memcpy(otherBlob->mBuffer, mBuffer, mSize); 
+}
+
+inline void Blob::MoveTo(Blob* otherBlob)
+{
+    ASSERT(otherBlob->mBuffer == nullptr);
+
+    *otherBlob = *this;
+    
+    mBuffer = nullptr;
+    mSize = 0;
+    mCapacity = 0;
 }
 
 inline void Blob::SetAlignment(uint8 align)
