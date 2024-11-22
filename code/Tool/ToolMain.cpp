@@ -19,7 +19,9 @@ struct AppImpl final : AppCallbacks
 {
     bool Initialize() override
     {
-        Vfs::HelperMountDataAndShaders(SettingsJunkyard::Get().engine.connectToServer);
+        const char* customMountDir = SettingsJunkyard::Get().tooling.serverCustomDataMountDir.IsEmpty() ?
+            "data" : SettingsJunkyard::Get().tooling.serverCustomDataMountDir.CStr();
+        Vfs::HelperMountDataAndShaders(SettingsJunkyard::Get().engine.connectToServer, customMountDir);
 
         if (!Engine::Initialize())
             return false;

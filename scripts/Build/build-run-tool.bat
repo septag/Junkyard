@@ -9,7 +9,7 @@ popd
 if %errorlevel% neq 0 exit /b -1
 
 pushd %~dp0..\..\
-bin\Debug\JunkyardTool.exe -ToolingEnableServer=1
+bin\Debug\JunkyardTool.exe -ToolingEnableServer=1 %*
 popd
 
 

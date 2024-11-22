@@ -28,6 +28,7 @@
                                                               
 static constexpr uint32 VFS_REMOTE_READ_FILE_CMD = MakeFourCC('F', 'R', 'D', '0');
 static constexpr uint32 VFS_REMOTE_WRITE_FILE_CMD = MakeFourCC('F', 'W', 'T', '0');
+static constexpr uint32 VFS_REMOTE_READ_FILE_INFO_CMD = MakeFourCC('F', 'I', 'N', 'F');
 static constexpr uint32 VFS_REMOTE_MONITOR_CHANGES_CMD = MakeFourCC('D', 'M', 'O', 'N');
 static constexpr uint32 VFS_REMOTE_MONITOR_CHANGES_INTERVAL = 1000;
 
@@ -42,7 +43,8 @@ struct VfsMountPoint
 enum class VfsCommand
 {
     Read,
-    Write
+    Write,
+    Info
 };
 
 struct VfsFileChangeEvent
@@ -50,7 +52,7 @@ struct VfsFileChangeEvent
     Path filepath;
 };
 
-struct VfsRequest
+struct VfsFileReadWriteRequest
 {
     VfsMountType mountType;
     VfsCommand cmd;
@@ -63,13 +65,14 @@ struct VfsRequest
     {
         VfsReadAsyncCallback readFn;
         VfsWriteAsyncCallback writeFn;
+        VfsInfoAsyncCallback infoFn;
     } callbacks;
 };
 
 struct VfsAsyncManager
 {
     Thread thread;
-    Array<VfsRequest> requests;
+    Array<VfsFileReadWriteRequest> requests;
     uint8 _padding[40];
     Mutex requestsMtx;
     Semaphore semaphore;
@@ -78,7 +81,7 @@ struct VfsAsyncManager
 struct VfsRemoteManager
 {
     Mutex requestsMtx;
-    Array<VfsRequest> requests;
+    Array<VfsFileReadWriteRequest> requests;
 };
 
 struct VfsManager
@@ -123,23 +126,19 @@ namespace Vfs
     static Blob _DiskReadFile(const char* path, VfsFlags flags, MemAllocator* alloc, Path* outResolvedPath = nullptr);
     static size_t _DiskWriteFile(const char* path, VfsFlags flags, const Blob& blob);
     static void _MonitorChangesClientCallback(uint32 cmd, const Blob& incomingData, void*, bool error, const char* errorDesc);
-    static bool _MonitorChangesServerCallback([[maybe_unused]] uint32 cmd, const Blob& incomingData, Blob* outgoingData, 
-                                              void*, char outgoingErrorDesc[REMOTE_ERROR_SIZE]);
+    static bool _MonitorChangesServerCallback([[maybe_unused]] uint32 cmd, const Blob& incomingData, Blob* outgoingData, void*, char outgoingErrorDesc[REMOTE_ERROR_SIZE]);
     static int _AsyncWorkerThread(void*);
     static void _RemoteReadFileComplete(const char* path, const Blob& blob, void*);
     static void _RemoteWriteFileComplete(const char* path, size_t bytesWritten, Blob&, void*);
-    static bool _ReadFileHandlerServerFn(uint32 cmd, const Blob& incomingData, Blob* outgoingData, 
-                                         void*, char outgoingErrorDesc[REMOTE_ERROR_SIZE]);
-    static bool _WriteFileHandlerServerFn(uint32 cmd, const Blob& incomingData, Blob* outgoingData, 
-                                          void*, char outgoingErrorDesc[REMOTE_ERROR_SIZE]);
-    static void _ReadFileHandlerClientFn([[maybe_unused]] uint32 cmd, const Blob& incomingData, void* userData, 
-                                         bool error, const char* errorDesc);
-    static void _WriteFileHandlerClientFn([[maybe_unused]] uint32 cmd, const Blob& incomingData, void* userData, 
-                                          bool error, const char* errorDesc);
+    static bool _ReadFileHandlerServerFn(uint32 cmd, const Blob& incomingData, Blob* outgoingData, void*, char outgoingErrorDesc[REMOTE_ERROR_SIZE]);
+    static bool _ReadFileInfoHandlerServerFn(uint32 cmd, const Blob& incomingData, Blob* outgoingData, void*, char outgoingErrorDesc[REMOTE_ERROR_SIZE]);
+    static bool _WriteFileHandlerServerFn(uint32 cmd, const Blob& incomingData, Blob* outgoingData, void*, char outgoingErrorDesc[REMOTE_ERROR_SIZE]);
+    static void _ReadFileHandlerClientFn([[maybe_unused]] uint32 cmd, const Blob& incomingData, void* userData, bool error, const char* errorDesc);
+    static void _ReadFileInfoHandlerClientFn([[maybe_unused]] uint32 cmd, const Blob& incomingData, void* userData, bool error, const char* errorDesc);
+    static void _WriteFileHandlerClientFn([[maybe_unused]] uint32 cmd, const Blob& incomingData, void* userData, bool error, const char* errorDesc);
 
     #if CONFIG_TOOLMODE
-    static void _DmonCallback(dmon_watch_id watchId, dmon_action action, const char* rootDir, const char* filepath, 
-                              const char*, void*);
+    static void _DmonCallback(dmon_watch_id watchId, dmon_action action, const char* rootDir, const char* filepath, const char*, void*);
     #endif
 
     #if PLATFORM_ANDROID
@@ -487,12 +486,37 @@ Blob Vfs::ReadFile(const char* path, VfsFlags flags, MemAllocator* alloc, Path* 
     Blob blob;
     if (idx != UINT32_MAX) {
         VfsMountType type = gVfs.mounts[idx].type;
-        ASSERT_MSG(type != VfsMountType::Remote, "Remote file requests cannot be done in blocking mode, call vfsReadFileAsync");
-        if (type == VfsMountType::Local)
+        
+        if (type == VfsMountType::Local) {
             blob = _DiskReadFile(path, flags, alloc, outResolvedPath);
+        }
+        else if (type == VfsMountType::Remote) {
+            LOG_WARNING("Performance warning: Trying to load file '%s' synchronously on a remote mount", path);
+
+            struct SyncReadWorkaroundData
+            {
+                Signal sig;
+                Blob* blob;
+            };
+            SyncReadWorkaroundData data {};
+            data.sig.Initialize();
+            data.blob = &blob;
+
+            Vfs::ReadFileAsync(path, flags, [](const char*, const Blob& blob, void* userData) {
+                SyncReadWorkaroundData* data = (SyncReadWorkaroundData*)userData;
+                if (blob.IsValid()) 
+                    const_cast<Blob&>(blob).MoveTo(data->blob);
+                data->sig.Set();
+                data->sig.Raise();
+            }, &data, alloc);
+
+            data.sig.Wait();
+            data.sig.Release();
+        }
         #if PLATFORM_MOBILE
-        else if (type == VfsMountType::PackageBundle)
+        else if (type == VfsMountType::PackageBundle) {
             blob = _PackageBundleReadFile(path, flags, alloc);
+        }
         #endif
     }
     else {
@@ -530,35 +554,67 @@ size_t Vfs::WriteFile(const char* path, const Blob& blob, VfsFlags flags)
 
 uint64 Vfs::GetLastModified(const char* path)
 {
-    ASSERT_MSG(GetMountType(path) != VfsMountType::Remote, "Remote mounts cannot read files in blocking mode");
-
-    char resolvedPath[PATH_CHARS_MAX];
-    if (_ResolveDiskPath(resolvedPath, sizeof(resolvedPath), path, VfsFlags::None) != UINT32_MAX)
-        return OS::GetPathInfo(resolvedPath).lastModified;
-    else
-        return OS::GetPathInfo(path).lastModified;
+    return Vfs::GetFileInfo(path).lastModified;
 }
 
 uint64 Vfs::GetFileSize(const char* path)
 {
-    ASSERT_MSG(GetMountType(path) != VfsMountType::Remote, "Remote mounts cannot read files in blocking mode");
-
-    char resolvedPath[PATH_CHARS_MAX];
-    if (_ResolveDiskPath(resolvedPath, sizeof(resolvedPath), path, VfsFlags::None) != UINT32_MAX)
-        return OS::GetPathInfo(resolvedPath).size;
-    else
-        return OS::GetPathInfo(path).size;
+    return Vfs::GetFileInfo(path).size;
 }
 
 PathInfo Vfs::GetFileInfo(const char* path)
 {
-    ASSERT_MSG(GetMountType(path) != VfsMountType::Remote, "Remote mounts cannot read files in blocking mode");
+    if (GetMountType(path) != VfsMountType::Remote) {
+        char resolvedPath[PATH_CHARS_MAX];
+        if (_ResolveDiskPath(resolvedPath, sizeof(resolvedPath), path, VfsFlags::None) != UINT32_MAX)
+            return OS::GetPathInfo(resolvedPath);
+        else 
+            return OS::GetPathInfo(path);
+    }
+    else {
+        LOG_WARNING("Performance warning: Trying to get file info '%s' synchronously on a remote mount", path);
 
-    char resolvedPath[PATH_CHARS_MAX];
-    if (_ResolveDiskPath(resolvedPath, sizeof(resolvedPath), path, VfsFlags::None) != UINT32_MAX)
-        return OS::GetPathInfo(resolvedPath);
-    else
-        return OS::GetPathInfo(path);
+        struct SyncReadInfoWorkaroundData
+        {
+            Signal sig;
+            PathInfo pathInfo;
+        };
+        SyncReadInfoWorkaroundData data {};
+        data.sig.Initialize();
+
+        auto readInfoCallback = [](const char*, const PathInfo& info, void* userData) {
+            SyncReadInfoWorkaroundData* data = (SyncReadInfoWorkaroundData*)userData;
+            data->pathInfo = info;
+            data->sig.Set();
+            data->sig.Raise();
+        };
+
+        if (Remote::IsConnected()) {
+            VfsRemoteManager* mgr = &gVfs.remoteMgr;
+            MutexScope mtx(mgr->requestsMtx);
+            VfsFileReadWriteRequest req {
+                .mountType = VfsMountType::Remote,
+                .cmd = VfsCommand::Info,
+                .path = path,
+                .user = &data,
+                .callbacks {
+                    .infoFn = readInfoCallback
+                }
+            };
+            mgr->requests.Push(req);
+        }
+
+        // Make the remote request
+        MemTempAllocator tempAlloc;
+        Blob reqBlob(&tempAlloc);
+        reqBlob.WriteStringBinary(path);
+        Remote::ExecuteCommand(VFS_REMOTE_READ_FILE_INFO_CMD, reqBlob);
+
+        data.sig.Wait();
+        data.sig.Release();
+
+        return data.pathInfo;
+    }
 }
 
 Path Vfs::ResolveFilepath(const char* path)
@@ -706,7 +762,7 @@ static int Vfs::_AsyncWorkerThread(void*)
 
     while (!gVfs.quit) {
         // Read requests
-        VfsRequest req;
+        VfsFileReadWriteRequest req;
         bool haveReq = false;
         {
             MutexScope mtx(mgr->requestsMtx);
@@ -754,7 +810,7 @@ void Vfs::ReadFileAsync(const char* path, VfsFlags flags, VfsReadAsyncCallback r
 {
     ASSERT(gVfs.initialized);
 
-    VfsRequest req {
+    VfsFileReadWriteRequest req {
         .cmd = VfsCommand::Read,
         .flags = flags,
         .path = path,
@@ -802,7 +858,7 @@ void Vfs::WriteFileAsync(const char* path, const Blob& blob, VfsFlags flags, Vfs
 {
     ASSERT(gVfs.initialized);
 
-    VfsRequest req {
+    VfsFileReadWriteRequest req {
         .cmd = VfsCommand::Write,
         .flags = flags,
         .path = path,
@@ -930,6 +986,31 @@ static bool Vfs::_ReadFileHandlerServerFn(uint32 cmd, const Blob& incomingData, 
     return true;
 }
 
+static bool Vfs::_ReadFileInfoHandlerServerFn(uint32 cmd, const Blob& incomingData, Blob* outgoingData, void*, 
+                                              char outgoingErrorDesc[REMOTE_ERROR_SIZE])
+{
+    ASSERT(cmd == VFS_REMOTE_READ_FILE_INFO_CMD);
+
+    char filepath[PATH_CHARS_MAX];
+    incomingData.ReadStringBinary(filepath, sizeof(filepath));
+
+    ASSERT_MSG(GetMountType(filepath) != VfsMountType::Remote, "Remote mounts cannot read files in this mode");
+    PathInfo info = Vfs::GetFileInfo(filepath);
+
+    if (info.type != PathType::Invalid) {
+        outgoingData->WriteStringBinary(filepath, Str::Len(filepath));
+        outgoingData->Write<uint32>(uint32(info.type));
+        outgoingData->Write<uint64>(info.size);
+        outgoingData->Write<uint64>(info.lastModified);
+        
+        return true;
+    }
+    else {
+        Str::PrintFmt(outgoingErrorDesc, sizeof(outgoingErrorDesc), "Failed to fetch info for file: %s", filepath);
+        return false;
+    }
+}
+
 static bool Vfs::_WriteFileHandlerServerFn(uint32 cmd, const Blob& incomingData, Blob* outgoingData, 
                                            void*, char outgoingErrorDesc[REMOTE_ERROR_SIZE])
 {
@@ -963,10 +1044,10 @@ static void Vfs::_ReadFileHandlerClientFn([[maybe_unused]] uint32 cmd, const Blo
     ASSERT(cmd == VFS_REMOTE_READ_FILE_CMD);
     UNUSED(userData);
 
-    auto PopRequest = [](const char* filepath, VfsRequest* pReq)->bool {
+    auto PopRequest = [](const char* filepath, VfsFileReadWriteRequest* pReq)->bool {
         VfsRemoteManager* mgr = &gVfs.remoteMgr;
         MutexScope mtx(mgr->requestsMtx);
-        if (uint32 index = mgr->requests.FindIf([filepath](const VfsRequest& req)->bool 
+        if (uint32 index = mgr->requests.FindIf([filepath](const VfsFileReadWriteRequest& req)->bool 
             { return req.path.IsEqual(filepath); }); index != UINT32_MAX)
         {
             *pReq = mgr->requests.Pop(index);
@@ -982,7 +1063,7 @@ static void Vfs::_ReadFileHandlerClientFn([[maybe_unused]] uint32 cmd, const Blo
         char filepath[PATH_CHARS_MAX];
         incomingData.ReadStringBinary(filepath, sizeof(filepath));
         
-        VfsRequest req;
+        VfsFileReadWriteRequest req;
         if (PopRequest(filepath, &req)) {
             Blob blob(req.alloc ? req.alloc : &gVfs.alloc);
 
@@ -1000,7 +1081,7 @@ static void Vfs::_ReadFileHandlerClientFn([[maybe_unused]] uint32 cmd, const Blo
     else {
         const char* filepath = errorDesc;
 
-        VfsRequest req;
+        VfsFileReadWriteRequest req;
         if (PopRequest(filepath, &req)) {
             ASSERT(req.callbacks.readFn);
             Blob blob(req.alloc ? req.alloc : &gVfs.alloc);  // empty blob
@@ -1016,10 +1097,10 @@ static void Vfs::_WriteFileHandlerClientFn([[maybe_unused]] uint32 cmd, const Bl
     ASSERT(cmd == VFS_REMOTE_WRITE_FILE_CMD);
     UNUSED(userData);
 
-    auto PopRequest = [](const char* filepath, VfsRequest* pReq)->bool {
+    auto PopRequest = [](const char* filepath, VfsFileReadWriteRequest* pReq)->bool {
         VfsRemoteManager* mgr = &gVfs.remoteMgr;
         MutexScope mtx(mgr->requestsMtx);
-        if (uint32 index = mgr->requests.FindIf([filepath](const VfsRequest& req)->bool 
+        if (uint32 index = mgr->requests.FindIf([filepath](const VfsFileReadWriteRequest& req)->bool 
             { return req.path.IsEqual(filepath); }); index != UINT32_MAX)
         {
             *pReq = mgr->requests.Pop(index);
@@ -1037,7 +1118,7 @@ static void Vfs::_WriteFileHandlerClientFn([[maybe_unused]] uint32 cmd, const Bl
         incomingData.ReadStringBinary(filepath, sizeof(filepath));
         incomingData.Read<size_t>(&bytesWritten);
         
-        VfsRequest req;
+        VfsFileReadWriteRequest req;
         if (PopRequest(filepath, &req)) {
             ASSERT(req.callbacks.writeFn);
             Blob emptyBlob;
@@ -1047,11 +1128,57 @@ static void Vfs::_WriteFileHandlerClientFn([[maybe_unused]] uint32 cmd, const Bl
     else {
         const char* filepath = errorDesc;
 
-        VfsRequest req;
+        VfsFileReadWriteRequest req;
         if (PopRequest(filepath, &req)) {
             ASSERT(req.callbacks.writeFn);
             Blob emptyBlob;
             req.callbacks.writeFn(filepath, 0, emptyBlob, req.user);
+        }
+    }
+}
+
+static void Vfs::_ReadFileInfoHandlerClientFn([[maybe_unused]] uint32 cmd, const Blob& incomingData, void* userData, 
+                                              bool error, const char* errorDesc)
+{
+    ASSERT(cmd == VFS_REMOTE_READ_FILE_INFO_CMD);
+    UNUSED(userData);
+
+    auto PopRequest = [](const char* filepath, VfsFileReadWriteRequest* pReq)->bool {
+        VfsRemoteManager* mgr = &gVfs.remoteMgr;
+        MutexScope mtx(mgr->requestsMtx);
+        if (uint32 index = mgr->requests.FindIf([filepath](const VfsFileReadWriteRequest& req)->bool 
+            { return req.path.IsEqual(filepath); }); index != UINT32_MAX)
+        {
+            *pReq = mgr->requests.Pop(index);
+            return true;
+        }
+        else {
+            ASSERT_MSG(0, "Request '%s' not found", filepath);
+            return false;
+        }
+    };
+
+    PathInfo info {};
+    if (!error) {
+        char filepath[PATH_CHARS_MAX];
+        incomingData.ReadStringBinary(filepath, sizeof(filepath));
+        incomingData.Read<uint32>((uint32*)&info.type);
+        incomingData.Read<uint64>(&info.size);
+        incomingData.Read<uint64>(&info.lastModified);
+
+        VfsFileReadWriteRequest req;
+        if (PopRequest(filepath, &req)) {
+            ASSERT(req.callbacks.infoFn);
+            req.callbacks.infoFn(filepath, info, req.user);
+        }
+    }
+    else {
+        const char* filepath = errorDesc;
+
+        VfsFileReadWriteRequest req;
+        if (PopRequest(filepath, &req)) {
+            ASSERT(req.callbacks.infoFn);
+            req.callbacks.infoFn(filepath, info, req.user);
         }
     }
 }
@@ -1100,21 +1227,27 @@ bool Vfs::Initialize()
         #endif
     }
 
-    Remote::RegisterCommand(RemoteCommandDesc {
+    Remote::RegisterCommand({
         .cmdFourCC = VFS_REMOTE_READ_FILE_CMD,
         .serverFn = _ReadFileHandlerServerFn,
         .clientFn = _ReadFileHandlerClientFn,
         .async = true 
     });
 
-    Remote::RegisterCommand(RemoteCommandDesc {
+    Remote::RegisterCommand({
         .cmdFourCC = VFS_REMOTE_WRITE_FILE_CMD,
         .serverFn = _WriteFileHandlerServerFn,
         .clientFn = _WriteFileHandlerClientFn,
         .async = true
     });
 
-    Remote::RegisterCommand(RemoteCommandDesc {
+    Remote::RegisterCommand({
+        .cmdFourCC = VFS_REMOTE_READ_FILE_INFO_CMD,
+        .serverFn = _ReadFileInfoHandlerServerFn,
+        .clientFn = _ReadFileInfoHandlerClientFn,
+    });
+
+    Remote::RegisterCommand({
         .cmdFourCC = VFS_REMOTE_MONITOR_CHANGES_CMD,
         .serverFn = _MonitorChangesServerCallback,
         .clientFn = _MonitorChangesClientCallback

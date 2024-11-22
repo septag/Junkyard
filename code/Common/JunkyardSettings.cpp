@@ -185,6 +185,10 @@ bool SettingsJunkyardParser::ParseSetting(uint32 categoryId, const char* key, co
             tooling->serverPort = static_cast<uint16>(Str::ToInt(value));
             return true;
         }
+        else if (Str::IsEqualNoCase(key, "serverCustomDataMountDir")) {
+            tooling->serverCustomDataMountDir = value;
+            return true;
+        }
     }
     else if (category == SettingsCategory::Debug) {
         SettingsDebug* debug = &gSettingsJunkyard.settings.debug;

@@ -1,7 +1,7 @@
 #pragma once
 
 #include "../Core/Base.h"
-#include "../Core/StringUtil.h"
+#include "../Core/System.h"
 #include "../Core/Settings.h"
 
 #ifndef DEFAULT_LOG_LEVEL
@@ -41,7 +41,8 @@ struct SettingsGraphics
 struct SettingsTooling
 {
     bool enableServer = false;          // Starts server service (ShaderCompiler/Baking/etc.)
-    uint16 serverPort = 6006;           // Local server port number       
+    uint16 serverPort = 6006;           // Local server port number
+    Path serverCustomDataMountDir;      // Mount /data into a different directory 
 };
 
 struct SettingsApp
