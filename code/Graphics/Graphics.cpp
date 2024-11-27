@@ -6,15 +6,15 @@
 #endif
 
 #if !PLATFORM_APPLE
-    #include "../External/vulkan/include/vulkan.h"
+    #include <vulkan/vulkan.h>
 #endif
 
 // Vulkan platform headers
 #if PLATFORM_WINDOWS
     #include "../Core/IncludeWin.h"
-    #include "../External/vulkan/include/vulkan_win32.h"
+    #include <vulkan/vulkan_win32.h>
 #elif PLATFORM_ANDROID
-    #include "../External/vulkan/include/vulkan_android.h"
+    #include <vulkan/vulkan_android.h>
 #elif PLATFORM_APPLE
     #include <mvk_vulkan.h>
 #else
@@ -69,8 +69,10 @@ PRAGMA_DIAGNOSTIC_IGNORED_MSVC(4100)    // unreferenced formal parameter
 PRAGMA_DIAGNOSTIC_IGNORED_MSVC(4189)    // local variable is initialized but not referenced
 PRAGMA_DIAGNOSTIC_IGNORED_MSVC(4127)    // conditional expression is constant
 PRAGMA_DIAGNOSTIC_IGNORED_MSVC(4324)    // structure was padded due to alignment specifier
+PRAGMA_DIAGNOSTIC_IGNORED_MSVC(4505)    // Unreferenced function wiith internal linkage has been removed
 PRAGMA_DIAGNOSTIC_IGNORED_CLANG_GCC("-Wnullability-completeness")
 PRAGMA_DIAGNOSTIC_IGNORED_CLANG_GCC("-Wunused-variable")
+PRAGMA_DIAGNOSTIC_IGNORED_CLANG_GCC("-Wunused-function")
 #define VMA_ASSERT(expr) ASSERT(expr)
 #define VMA_HEAVY_ASSERT(expr) 
 #define VMA_CONFIGURATION_USER_INCLUDES_H "../../../Core/Base.h"

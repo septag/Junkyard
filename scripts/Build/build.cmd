@@ -17,6 +17,17 @@ if not exist %SOURCE_FILE% (
 set CONFIG=%2
 set CONFIG_KNOWN=0
 
+if defined VULKAN_SDK (
+    if not exist %VULKAN_SDK%\include (
+        echo Include directory doesn't exist in the VulkanSDK path. Run Setup.bat
+        goto Quit
+    )
+) else (
+    echo VULKAN_SDK env variable is missing. Seems like VulkanSDK is not installed. Run Setup.bat
+    goto Quit
+)
+
+
 if "%CONFIG%"=="" (
     echo No config is defined, setting to default 'debug'
     set CONFIG=debug
@@ -67,7 +78,7 @@ if %CONFIG_KNOWN% neq 1 (
 
 
 set DEFINES=%DEFINES% -D_MBCS -D_CRT_SECURE_NO_WARNINGS -DBUILD_UNITY 
-set COMPILE_FLAGS=%COMPILE_FLAGS% /std:c++20 /GR- /EHs-
+set COMPILE_FLAGS=%COMPILE_FLAGS% /std:c++20 /GR- /EHs- /I%VULKAN_SDK%\include
 set LINK_FLAGS=%LINK_FLAGS% /INCREMENTAL:NO
 set LIBS=%LIBS% "User32.lib"
 

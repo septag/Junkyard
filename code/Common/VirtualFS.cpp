@@ -774,7 +774,8 @@ static int Vfs::_AsyncWorkerThread(void*)
 
         if (haveReq) {
             switch (req.cmd) {
-            case VfsCommand::Read: {
+            case VfsCommand::Read: 
+            {
                 Blob blob;
                 if (req.mountType == VfsMountType::Local)
                     blob = _DiskReadFile(req.path.CStr(), req.flags, req.alloc);
@@ -788,7 +789,8 @@ static int Vfs::_AsyncWorkerThread(void*)
                 blob.Free();
                 break;
             }
-            case VfsCommand::Write: {
+            case VfsCommand::Write: 
+            {
                 ASSERT_MSG(req.mountType == VfsMountType::Local, "Write only supports local mounts");
                 ASSERT(req.callbacks.writeFn);
                 size_t bytesWritten = _DiskWriteFile(req.path.CStr(), req.flags, req.blob);
@@ -797,6 +799,8 @@ static int Vfs::_AsyncWorkerThread(void*)
                     req.blob.Free();
                 break; 
             }
+            case VfsCommand::Info:
+                break;
             }
         }
 
@@ -1006,7 +1010,7 @@ static bool Vfs::_ReadFileInfoHandlerServerFn(uint32 cmd, const Blob& incomingDa
         return true;
     }
     else {
-        Str::PrintFmt(outgoingErrorDesc, sizeof(outgoingErrorDesc), "Failed to fetch info for file: %s", filepath);
+        Str::PrintFmt(outgoingErrorDesc, REMOTE_ERROR_SIZE, "Failed to fetch info for file: %s", filepath);
         return false;
     }
 }

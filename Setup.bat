@@ -49,31 +49,34 @@ if errorlevel 1 (
         if %errorlevel% neq 1 goto :End
     )
     powershell Invoke-WebRequest -Uri "https://github.com/wolfpld/tracy/releases/download/v0.10/tracy.pdf" -OutFile .downloads\tracy.pdf
-    echo "Tracy client saved to '.downloads\Tracy-0.10.7z'"
+    echo Tracy client saved to '.downloads\Tracy-0.10.7z'
     call .downloads\Tracy-0.10.7z
 )
 
 :InstallVulkan
-choice /c YN /M "Install vulkan 1.3.29 "
+choice /c YN /M "Install vulkan 1.3.296 "
 if errorlevel 2 goto :InstallPython 
+
+set vulkanrt_filename=VulkanRT-1.3.296.0-Installer.exe
+set vulkansdk_filename=VulkanSDK-1.3.296.0-Installer.exe
 if errorlevel 1 (
     rem make sure to update the vulkan android layers (below) as well
     rem pc
-    echo "Installing Vulkan PC SDK runtime..."
-    if not exist .downloads\VulkanRT-1.3.290.0-Installer.exe (
-        powershell Invoke-WebRequest -Uri "https://sdk.lunarg.com/sdk/download/1.3.290.0/windows/VulkanRT-1.3.290.0-Installer.exe" -OutFile .downloads\VulkanRT-1.3.290.0-Installer.exe
+    echo Installing Vulkan PC SDK runtime...
+    if not exist .downloads\%vulkanrt_filename% (
+        powershell Invoke-WebRequest -Uri "https://sdk.lunarg.com/sdk/download/1.3.296.0/windows/%vulkanrt_filename%" -OutFile .downloads\%vulkanrt_filename%
         if %errorlevel% neq 1 goto :End
     )
 
-    call .downloads\VulkanRT-1.3.290.0-Installer.exe 
+    call .downloads\%vulkanrt_filename% 
 
-    echo "Installing Vulkan PC SDK tools and layers..."
-    if not exist .downloads\VulkanSDK-1.3.290.0-Installer.exe (
-        powershell Invoke-WebRequest -Uri "https://sdk.lunarg.com/sdk/download/1.3.290.0/windows/VulkanSDK-1.3.290.0-Installer.exe" -OutFile .downloads\VulkanSDK-1.3.290.0-Installer.exe
+    echo Installing Vulkan PC SDK tools and layers...
+    if not exist .downloads\%vulkansdk_filename% (
+        powershell Invoke-WebRequest -Uri "https://sdk.lunarg.com/sdk/download/1.3.296.0/windows/%vulkansdk_filename%  " -OutFile .downloads\%vulkansdk_filename%
         if %errorlevel% neq 1 goto :End
     )
 
-    call .downloads\VulkanSDK-1.3.290.0-Installer.exe
+    call .downloads\%vulkansdk_filename%
 )
 
 :InstallPython
@@ -136,12 +139,12 @@ if errorlevel 1 goto :AndroidLayersStart
 
 :AndroidLayersStart
 echo Installing Vulkan Android layers ...
-if not exist .downloads\android-binaries-1.3.231.1.zip (
-    powershell Invoke-WebRequest -Uri "https://github.com/KhronosGroup/Vulkan-ValidationLayers/releases/download/sdk-1.3.231.1/android-binaries-1.3.231.1.zip" -OutFile .downloads\android-binaries-1.3.231.1.zip
+if not exist .downloads\android-binaries-1.3.296.0.zip (
+    powershell Invoke-WebRequest -Uri "https://github.com/KhronosGroup/Vulkan-ValidationLayers/releases/download/vulkan-sdk-1.3.296.0/android-binaries-1.3.296.0.zip" -OutFile .downloads\android-binaries-1.3.231.1.zip
     if %errorlevel% neq 1 goto :End
 )
 
-powershell Expand-Archive -Force -Path .downloads\android-binaries-1.3.231.1.zip -DestinationPath code\External\vulkan\bin\android
+powershell Expand-Archive -Force -Path .downloads\android-binaries-1.3.296.0.zip -DestinationPath code\External\vulkan\bin\android
 if %errorlevel% neq 1 goto :End
 
 :AndroidScrCpy

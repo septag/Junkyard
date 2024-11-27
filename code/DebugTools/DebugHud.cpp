@@ -84,7 +84,6 @@ struct DebugHudContext
     float statusShowTime;
 };
 
-static DebugHudMemoryView gMemBudget;
 static DebugHudContext gDebugHud;
 
 namespace DebugHud
