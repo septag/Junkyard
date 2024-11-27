@@ -262,6 +262,7 @@
       <UndefinePreprocessorDefinitions>
       </UndefinePreprocessorDefinitions>
       <CLanguageStandard>c11</CLanguageStandard>
+      <AdditionalIncludeDirectories>%VULKAN_SDK%\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <LibraryDependencies>%(LibraryDependencies);m</LibraryDependencies>
@@ -289,6 +290,7 @@
       <PreprocessorDefinitions>
       </PreprocessorDefinitions>
       <CLanguageStandard>c11</CLanguageStandard>
+      <AdditionalIncludeDirectories>%VULKAN_SDK%\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <LibraryDependencies>%(LibraryDependencies);m</LibraryDependencies>
@@ -315,6 +317,7 @@
       <Optimization>Full</Optimization>
       <AdditionalOptions>-funwind-tables  -fno-omit-frame-pointer %(AdditionalOptions)</AdditionalOptions>
       <CLanguageStandard>c11</CLanguageStandard>
+      <AdditionalIncludeDirectories>%VULKAN_SDK%\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <LibraryDependencies>%(LibraryDependencies);m</LibraryDependencies>
