@@ -14,6 +14,7 @@
 #include "Common/JunkyardSettings.h"
 
 #include "Graphics/Graphics.h"
+#include "Graphics/GfxBackend.h"
 
 #include "DebugTools/DebugDraw.h"
 #include "DebugTools/DebugHud.h"
@@ -399,7 +400,14 @@ bool Engine::Initialize()
             LOG_INFO("(init) Display (%ux%u), DPI scale: %.2f, RefreshRate: %uhz", dinfo.width, dinfo.height, dinfo.dpiScale, dinfo.refreshRate);
         }
 
+        #if !TEST_NEW_GRAPHICS
         if (!::_private::gfxInitialize()) {
+            LOG_ERROR("Initializing Graphics failed");
+            return false;
+        }
+        #endif
+
+        if (!GfxBackend::Initialize()) {
             LOG_ERROR("Initializing Graphics failed");
             return false;
         }
@@ -414,6 +422,7 @@ bool Engine::Initialize()
     // Initialization resources
     gEng.initResourcesGroup = Asset::CreateGroup();
 
+    #if !TEST_NEW_GRAPHICS
     if (gfxSettings.enable) {
         if (!gfxSettings.headless) {
             if (gfxSettings.enableImGui && !ImGui::Initialize()) {
@@ -427,6 +436,7 @@ bool Engine::Initialize()
             }
         }
     }
+    #endif
 
     if (ImGui::IsEnabled()) {
         DebugHud::Initialize();
@@ -446,7 +456,11 @@ bool Engine::Initialize()
         .help = "Get VMem stats",
         .callback = GetVMemStats
     });
-    LOG_INFO("(init) Engine initialized (%.1f ms)", Timer::ToMS(Timer::GetTicks()));
+    LOG_INFO("(init) Engine v%u.%u.%u initialized (%.1f ms)", 
+             GetVersionMajor(JUNKYARD_VERSION),
+             GetVersionMinor(JUNKYARD_VERSION),
+             GetVersionPatch(JUNKYARD_VERSION),
+             Timer::ToMS(Timer::GetTicks()));
     gEng.initialized = true;
 
     return true;
@@ -467,10 +481,11 @@ void Engine::_private::PostInitialize()
 
 void Engine::Release()
 {
-    const SettingsGraphics& gfxSettings = SettingsJunkyard::Get().graphics;
     LOG_INFO("Releasing engine sub systems ...");
     gEng.initialized = false;
 
+    #if !TEST_NEW_GRAPHICS
+    const SettingsGraphics& gfxSettings = SettingsJunkyard::Get().graphics;
     if (gfxSettings.enable && !gfxSettings.headless) {
         if (gfxSettings.enableImGui) {
             DebugHud::Release();
@@ -478,6 +493,7 @@ void Engine::Release()
         }
         DebugDraw::Release();
     } 
+    #endif
 
     if (gEng.initResourcesGroup.mHandle.IsValid()) {
         gEng.initResourcesGroup.Unload();
@@ -491,8 +507,11 @@ void Engine::Release()
     Asset::DestroyGroup(gEng.initResourcesGroup);
     Asset::Release();
 
+    #if !TEST_NEW_GRAPHICS
     if (gfxSettings.enable)
         ::_private::gfxRelease();
+    #endif
+    GfxBackend::Release();
 
     if (SettingsJunkyard::Get().engine.connectToServer)
         Remote::Disconnect();
@@ -544,12 +563,17 @@ void Engine::BeginFrame(float dt)
         }
     }
 
+    #if !TEST_NEW_GRAPHICS
     // Begin graphics
-    if (!SettingsJunkyard::Get().graphics.headless) {
+    bool headless = SettingsJunkyard::Get().graphics.headless || !SettingsJunkyard::Get().graphics.enable;
+    if (!headless) {
         if (gEng.resourcesInitialized)
             ImGui::BeginFrame(dt);
         ::_private::gfxBeginFrame();
     }
+    #endif
+
+    GfxBackend::Begin();
 
     gEng.rawFrameStartTime = Timer::GetTicks();
 }
@@ -568,9 +592,13 @@ void Engine::EndFrame()
 
     gEng.rawFrameTime = Timer::Diff(Timer::GetTicks(), gEng.rawFrameStartTime);
 
-    if (!SettingsJunkyard::Get().graphics.headless) {
+    GfxBackend::End();
+    #if !TEST_NEW_GRAPHICS
+    bool headless = SettingsJunkyard::Get().graphics.headless || !SettingsJunkyard::Get().graphics.enable;
+    if (!headless) {
         ::_private::gfxEndFrame();
     }
+    #endif
 
     MemTempAllocator::Reset();
 

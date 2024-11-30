@@ -331,7 +331,7 @@ void Thread::SetCurrentThreadPriority(ThreadPriority prio)
 void Thread::SetCurrentThreadName(const char* name)
 {
     wchar_t namew[32];
-    Str::Ut8ToWide(name, namew, sizeof(namew));
+    Str::Utf8ToWide(name, namew, sizeof(namew));
     SetThreadDescription(GetCurrentThread(), namew);
 
     #if TRACY_ENABLE

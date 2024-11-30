@@ -246,6 +246,7 @@
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='ReleaseDev|x64'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
     </ClCompile>
+    <ClCompile Include="..\..\code\Graphics\GfxBackendVk.cpp" />
     <ClCompile Include="..\..\code\Graphics\Graphics.cpp">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">false</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='ReleaseDev|x64'">false</ExcludedFromBuild>
@@ -320,6 +321,8 @@
     <ClInclude Include="..\..\code\External\stb\stb_image_resize.h" />
     <ClInclude Include="..\..\code\External\vma\include\vk_mem_alloc.h" />
     <ClInclude Include="..\..\code\External\volk\volk.h" />
+    <ClInclude Include="..\..\code\Graphics\GfxBackend.h" />
+    <ClInclude Include="..\..\code\Graphics\GfxBackendTypes.h" />
     <ClInclude Include="..\..\code\Graphics\Graphics.h" />
     <ClInclude Include="..\..\code\ImGui\ImGuiMain.h" />
     <ClInclude Include="..\..\code\ImGui\ImGuizmo.h" />

@@ -38,6 +38,9 @@
 		1481D7BF2B77EFCA00D60379 /* VirtualFS.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 1481D7AD2B77EFCA00D60379 /* VirtualFS.cpp */; };
 		1481D7C02B77EFCA00D60379 /* VirtualFS.h in Headers */ = {isa = PBXBuildFile; fileRef = 1481D7AE2B77EFCA00D60379 /* VirtualFS.h */; };
 		1481D7C22B790F3A00D60379 /* SystemMac.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 1481D7C12B790F3900D60379 /* SystemMac.cpp */; };
+		14D960542CFB23220047AE08 /* GfxBackendTypes.h in Headers */ = {isa = PBXBuildFile; fileRef = 14D960522CFB23220047AE08 /* GfxBackendTypes.h */; };
+		14D960552CFB23220047AE08 /* GfxBackend.h in Headers */ = {isa = PBXBuildFile; fileRef = 14D960512CFB23220047AE08 /* GfxBackend.h */; };
+		14D960562CFB23220047AE08 /* GfxBackendVk.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 14D960532CFB23220047AE08 /* GfxBackendVk.cpp */; };
 		14E748C72C4FBD3B00F5644B /* DebugHud.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 14E748C52C4FBD3B00F5644B /* DebugHud.cpp */; };
 		14E748C82C4FBD3B00F5644B /* DebugHud.h in Headers */ = {isa = PBXBuildFile; fileRef = 14E748C62C4FBD3B00F5644B /* DebugHud.h */; };
 		14E748CB2C4FBD5800F5644B /* ImGuiMain.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 14E748C92C4FBD5800F5644B /* ImGuiMain.cpp */; };
@@ -166,12 +169,14 @@
 		1481D7AD2B77EFCA00D60379 /* VirtualFS.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = VirtualFS.cpp; path = ../../code/Common/VirtualFS.cpp; sourceTree = "<group>"; };
 		1481D7AE2B77EFCA00D60379 /* VirtualFS.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = VirtualFS.h; path = ../../code/Common/VirtualFS.h; sourceTree = "<group>"; };
 		1481D7C12B790F3900D60379 /* SystemMac.cpp */ = {isa = PBXFileReference; explicitFileType = sourcecode.cpp.cpp; fileEncoding = 4; name = SystemMac.cpp; path = ../../code/Core/SystemMac.cpp; sourceTree = "<group>"; };
+		14D960512CFB23220047AE08 /* GfxBackend.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = GfxBackend.h; path = /Users/sepul/Projects/Junkyard/code/Graphics/GfxBackend.h; sourceTree = "<absolute>"; };
+		14D960522CFB23220047AE08 /* GfxBackendTypes.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = GfxBackendTypes.h; path = /Users/sepul/Projects/Junkyard/code/Graphics/GfxBackendTypes.h; sourceTree = "<absolute>"; };
+		14D960532CFB23220047AE08 /* GfxBackendVk.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = GfxBackendVk.cpp; path = /Users/sepul/Projects/Junkyard/code/Graphics/GfxBackendVk.cpp; sourceTree = "<absolute>"; };
 		14E748C52C4FBD3B00F5644B /* DebugHud.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = DebugHud.cpp; path = ../../code/DebugTools/DebugHud.cpp; sourceTree = "<group>"; };
 		14E748C62C4FBD3B00F5644B /* DebugHud.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = DebugHud.h; path = ../../code/DebugTools/DebugHud.h; sourceTree = "<group>"; };
 		14E748C92C4FBD5800F5644B /* ImGuiMain.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = ImGuiMain.cpp; path = ../../code/ImGui/ImGuiMain.cpp; sourceTree = "<group>"; };
 		14E748CA2C4FBD5800F5644B /* ImGuiMain.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = ImGuiMain.h; path = ../../code/ImGui/ImGuiMain.h; sourceTree = "<group>"; };
 		14E748DB2C76360100F5644B /* TestIO.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = TestIO.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		14E748DC2C76360100F5644B /* Test1 copy-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; name = "Test1 copy-Info.plist"; path = "/Users/sepul/Projects/Junkyard/projects/MacOS/Test1 copy-Info.plist"; sourceTree = "<absolute>"; };
 		14E748DD2C7636FC00F5644B /* TestIO.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = TestIO.cpp; path = ../../code/Tests/TestIO.cpp; sourceTree = "<group>"; };
 		14FDA93F2A6D3A2500589F52 /* imgui_demo.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = imgui_demo.cpp; path = ../../code/External/imgui/imgui_demo.cpp; sourceTree = "<group>"; };
 		14FDA9402A6D3A2500589F52 /* imgui_draw.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = imgui_draw.cpp; path = ../../code/External/imgui/imgui_draw.cpp; sourceTree = "<group>"; };
@@ -368,7 +373,6 @@
 				ABF103AE2A64265B00D853CC /* Junkyard.entitlements */,
 				14B7EA9A2731921500CC6204 /* Products */,
 				14D768522733CA5600A21A65 /* Frameworks */,
-				14E748DC2C76360100F5644B /* Test1 copy-Info.plist */,
 			);
 			sourceTree = "<group>";
 			usesTabs = 0;
@@ -477,6 +481,9 @@
 		ABF104592A64377D00D853CC /* Graphics */ = {
 			isa = PBXGroup;
 			children = (
+				14D960512CFB23220047AE08 /* GfxBackend.h */,
+				14D960522CFB23220047AE08 /* GfxBackendTypes.h */,
+				14D960532CFB23220047AE08 /* GfxBackendVk.cpp */,
 				ABF1045B2A6437CB00D853CC /* Graphics.cpp */,
 				ABF104632A6437CB00D853CC /* Graphics.h */,
 			);
@@ -544,6 +551,8 @@
 				14E748C82C4FBD3B00F5644B /* DebugHud.h in Headers */,
 				14FDA9492A6D3A2500589F52 /* imgui.h in Headers */,
 				1481D7BB2B77EFCA00D60379 /* InputTypes.h in Headers */,
+				14D960542CFB23220047AE08 /* GfxBackendTypes.h in Headers */,
+				14D960552CFB23220047AE08 /* GfxBackend.h in Headers */,
 				ABF104532A642CB600D853CC /* Atomic.h in Headers */,
 				ABF104412A642CB600D853CC /* MathScalar.h in Headers */,
 				ABF1043A2A642CB600D853CC /* Log.h in Headers */,
@@ -634,7 +643,7 @@
 			isa = PBXProject;
 			attributes = {
 				BuildIndependentTargetsInParallel = 1;
-				LastUpgradeCheck = 1520;
+				LastUpgradeCheck = 1600;
 				TargetAttributes = {
 					ABF103DF2A6428C400D853CC = {
 						CreatedOnToolsVersion = 14.3.1;
@@ -720,6 +729,7 @@
 				ABF104552A642CB600D853CC /* StringUtilWin.cpp in Sources */,
 				1481D7882B77EF2B00D60379 /* Model.cpp in Sources */,
 				ABF1044A2A642CB600D853CC /* SystemWin.cpp in Sources */,
+				14D960562CFB23220047AE08 /* GfxBackendVk.cpp in Sources */,
 				ABF104302A642CB600D853CC /* DebugClang.cpp in Sources */,
 				1481D7AF2B77EFCA00D60379 /* Camera.cpp in Sources */,
 				ABF104B82A6449B900D853CC /* ShaderCompiler.cpp in Sources */,
@@ -840,7 +850,7 @@
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
 				SDKROOT = macosx;
-				SYSTEM_HEADER_SEARCH_PATHS = "$(PROJECT_DIR)/../../code/External/MoltenVK/include";
+				SYSTEM_HEADER_SEARCH_PATHS = /usr/local/include;
 				USE_HEADERMAP = NO;
 			};
 			name = Debug;
@@ -899,7 +909,7 @@
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				SDKROOT = macosx;
-				SYSTEM_HEADER_SEARCH_PATHS = "$(PROJECT_DIR)/../../code/External/MoltenVK/include";
+				SYSTEM_HEADER_SEARCH_PATHS = /usr/local/include;
 				USE_HEADERMAP = NO;
 			};
 			name = Release;
@@ -923,7 +933,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MACOSX_DEPLOYMENT_TARGET = "$(RECOMMENDED_MACOSX_DEPLOYMENT_TARGET)";
+				MACOSX_DEPLOYMENT_TARGET = 11.0;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.junkyard.TestIO;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -950,7 +960,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MACOSX_DEPLOYMENT_TARGET = "$(RECOMMENDED_MACOSX_DEPLOYMENT_TARGET)";
+				MACOSX_DEPLOYMENT_TARGET = 11.0;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.junkyard.TestIO;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -987,7 +997,7 @@
 					"@loader_path/Frameworks",
 				);
 				MACH_O_TYPE = staticlib;
-				MACOSX_DEPLOYMENT_TARGET = "$(RECOMMENDED_MACOSX_DEPLOYMENT_TARGET)";
+				MACOSX_DEPLOYMENT_TARGET = 11.0;
 				MARKETING_VERSION = 1.0;
 				MODULE_VERIFIER_SUPPORTED_LANGUAGES = "objective-c objective-c++";
 				MODULE_VERIFIER_SUPPORTED_LANGUAGE_STANDARDS = "gnu11 gnu++20";
@@ -1036,7 +1046,7 @@
 					"@loader_path/Frameworks",
 				);
 				MACH_O_TYPE = staticlib;
-				MACOSX_DEPLOYMENT_TARGET = "$(RECOMMENDED_MACOSX_DEPLOYMENT_TARGET)";
+				MACOSX_DEPLOYMENT_TARGET = 11.0;
 				MARKETING_VERSION = 1.0;
 				MODULE_VERIFIER_SUPPORTED_LANGUAGES = "objective-c objective-c++";
 				MODULE_VERIFIER_SUPPORTED_LANGUAGE_STANDARDS = "gnu11 gnu++20";
@@ -1075,11 +1085,12 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MACOSX_DEPLOYMENT_TARGET = "$(RECOMMENDED_MACOSX_DEPLOYMENT_TARGET)";
+				MACOSX_DEPLOYMENT_TARGET = 11.0;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.junkyard.Test1;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
+				SYSTEM_HEADER_SEARCH_PATHS = /usr/local/include;
 			};
 			name = Debug;
 		};
@@ -1102,11 +1113,12 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MACOSX_DEPLOYMENT_TARGET = "$(RECOMMENDED_MACOSX_DEPLOYMENT_TARGET)";
+				MACOSX_DEPLOYMENT_TARGET = 11.0;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.junkyard.Test1;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
+				SYSTEM_HEADER_SEARCH_PATHS = /usr/local/include;
 			};
 			name = Release;
 		};

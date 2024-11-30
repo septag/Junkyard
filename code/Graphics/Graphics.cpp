@@ -5,18 +5,16 @@
     #define VK_NO_PROTOTYPES
 #endif
 
-#if !PLATFORM_APPLE
-    #include <vulkan/vulkan.h>
-#endif
-
 // Vulkan platform headers
 #if PLATFORM_WINDOWS
     #include "../Core/IncludeWin.h"
+    #include <vulkan/vulkan.h>
     #include <vulkan/vulkan_win32.h>
 #elif PLATFORM_ANDROID
+    #include <vulkan/vulkan.h>
     #include <vulkan/vulkan_android.h>
 #elif PLATFORM_APPLE
-    #include <mvk_vulkan.h>
+    #include <MoltenVk/mvk_vulkan.h>
 #else
     #error "Not implemented"
 #endif

@@ -1,5 +1,3 @@
-#include <stdio.h>
-
 #include "../Core/Settings.h"
 #include "../Core/Log.h"
 #include "../Core/TracyHelper.h"
@@ -146,8 +144,6 @@ struct AppImpl final : AppCallbacks
 
     bool Initialize() override
     {
-        MemTempAllocator::EnableCallstackCapture(true);
-
         Vfs::HelperMountDataAndShaders(SettingsJunkyard::Get().engine.connectToServer);
 
         if (!Engine::Initialize())

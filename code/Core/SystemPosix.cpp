@@ -689,12 +689,12 @@ size_t OS::GetPageSize()
     return static_cast<size_t>(sysconf(_SC_PAGESIZE));
 }
 
-bool sysSetEnvVar(const char* name, const char* value)
+bool OS::SetEnvVar(const char* name, const char* value)
 {
     return value != nullptr ? setenv(name, value, 1) == 0 : unsetenv(name) == 0;
 }
 
-bool sysGetEnvVar(const char* name, char* outValue, uint32 valueSize)
+bool OS::GetEnvVar(const char* name, char* outValue, uint32 valueSize)
 {
     char* value = getenv(name);
     if (!value)

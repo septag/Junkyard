@@ -104,7 +104,7 @@ static AppWindowsState gApp;
 
 namespace App
 {
-    static void InitKeyTable()
+    static void _InitKeyTable()
     {
         gApp.keycodes[0x00B] = InputKeycode::NUM0;
         gApp.keycodes[0x002] = InputKeycode::NUM1;
@@ -226,7 +226,7 @@ namespace App
         gApp.keycodes[0x04A] = InputKeycode::KPSubtract;
     }
 
-    static void LoadInitRects()
+    static void _LoadInitRects()
     {
         ini_t* windowsIni = nullptr;
         char iniFilename[64];
@@ -267,7 +267,7 @@ namespace App
         }
     }
 
-    static void SaveInitRects()
+    static void _SaveInitRects()
     {
         auto PutWindowData = [](ini_t* ini, const char* name, const RECT& rc) {
             int id = ini_section_add(ini, name, Str::Len(name));
@@ -314,7 +314,7 @@ namespace App
     }
 
     // Returns true if window monitor has changed
-    static bool UpdateDisplayInfo()
+    static bool _UpdateDisplayInfo()
     {
         HMONITOR hm = gApp.hwnd ? 
             MonitorFromWindow(gApp.hwnd, MONITOR_DEFAULTTONEAREST) : 
@@ -367,7 +367,7 @@ namespace App
         return true;
     }
 
-    static void InitDPI()
+    static void _InitDPI()
     {
         using SetProcessDpiAwareFn = BOOL(WINAPI*)(void);
         using SetProcessDpiAwarenessFn = HRESULT(WINAPI*)(PROCESS_DPI_AWARENESS);
@@ -397,7 +397,7 @@ namespace App
             gApp.dpiAware = true;
         }
 
-        UpdateDisplayInfo();
+        _UpdateDisplayInfo();
 
         if (user32)
             FreeLibrary(user32);
@@ -424,7 +424,7 @@ namespace App
         wcharBuff = (wchar_t*)GlobalLock(object);
         if (!wcharBuff)
             goto error;
-        if (!Str::Ut8ToWide(str, wcharBuff, wcharBuffSize))
+        if (!Str::Utf8ToWide(str, wcharBuff, wcharBuffSize))
             goto error;
 
         GlobalUnlock(wcharBuff);
@@ -447,7 +447,7 @@ namespace App
         return false;
     }
 
-    static void CallEvent(const AppEvent& ev)
+    static void _CallEvent(const AppEvent& ev)
     {
         gApp.desc.callbacks->OnEvent(ev);
 
@@ -456,7 +456,7 @@ namespace App
             c.callback(ev, c.userData);
     }
 
-    static AppEvent NewEvent(AppEventType type)
+    static AppEvent _NewEvent(AppEventType type)
     {
         return AppEvent {
             .type = type,
@@ -482,55 +482,55 @@ namespace App
         return mods;
     }
 
-    static void DispatchMouseButtonEvent(AppEventType type, InputMouseButton btn)
+    static void _DispatchMouseButtonEvent(AppEventType type, InputMouseButton btn)
     {
-        AppEvent e = NewEvent(type);
+        AppEvent e = _NewEvent(type);
         e.keyMods = GetKeyMods();
         e.mouseButton = btn;
         e.mouseX = gApp.mouseX;
         e.mouseY = gApp.mouseY;
-        CallEvent(e);
+        _CallEvent(e);
     }    
     
-    static void DispatchMouseScrollEvent(float x, float y)
+    static void _DispatchMouseScrollEvent(float x, float y)
     {
-        AppEvent e = NewEvent(AppEventType::MouseScroll);
+        AppEvent e = _NewEvent(AppEventType::MouseScroll);
         e.keyMods = GetKeyMods();
         e.scrollX = -x / 30.0f;
         e.scrollY = y / 30.0f;
-        CallEvent(e);
+        _CallEvent(e);
     }
 
-    static void DispatchKeyboardEvent(AppEventType type, int vk, bool repeat)
+    static void _DispatchKeyboardEvent(AppEventType type, int vk, bool repeat)
     {
         if (vk < APP_MAX_KEY_CODES) {
-            AppEvent e = NewEvent(type);
+            AppEvent e = _NewEvent(type);
             e.keyMods = GetKeyMods();
             e.keycode = gApp.keycodes[vk];
             e.keyRepeat = repeat;
             gApp.keysPressed[uint32(gApp.keycodes[vk])] = (type == AppEventType::KeyDown);
 
-            CallEvent(e);
+            _CallEvent(e);
 
             // check if a CLIPBOARDPASTED event must be sent too
             if (gApp.clipboardEnabled && (type == AppEventType::KeyDown) && (e.keyMods == InputKeyModifiers::Ctrl) && (e.keycode == InputKeycode::V)) {
-                CallEvent(NewEvent(AppEventType::ClipboardPasted));
+                _CallEvent(_NewEvent(AppEventType::ClipboardPasted));
             }
         }
     }
 
-    static void DispatchCharEvent(uint32 c, bool repeat)
+    static void _DispatchCharEvent(uint32 c, bool repeat)
     {
         if (c >= 32) {
-            AppEvent e = NewEvent(AppEventType::Char);
+            AppEvent e = _NewEvent(AppEventType::Char);
             e.keyMods = GetKeyMods();
             e.charcode = c;
             e.keyRepeat = repeat;
-            CallEvent(e);
+            _CallEvent(e);
         }
     }
 
-    static LRESULT CALLBACK MessageHandlerCallback(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
+    static LRESULT CALLBACK _MessageHandlerCallback(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
     {
         if (!gApp.hwnd)
             return DefWindowProcW(hWnd, uMsg, wParam, lParam);
@@ -562,43 +562,43 @@ namespace App
                 if (iconified != gApp.iconified) {
                     gApp.iconified = iconified;
                     if (iconified)
-                        CallEvent(NewEvent(AppEventType::Iconified));
+                        _CallEvent(_NewEvent(AppEventType::Iconified));
                     else 
-                        CallEvent(NewEvent(AppEventType::Restored));
+                        _CallEvent(_NewEvent(AppEventType::Restored));
                 }
             }
             break;
             case WM_MOVE:
-                if (UpdateDisplayInfo())
-                    CallEvent(NewEvent(AppEventType::DisplayUpdated));
-                CallEvent(NewEvent(AppEventType::Moved));
+                if (_UpdateDisplayInfo())
+                    _CallEvent(_NewEvent(AppEventType::DisplayUpdated));
+                _CallEvent(_NewEvent(AppEventType::Moved));
                 gApp.windowModified = true;
                 break;
             case WM_SETCURSOR:
                 if (gApp.desc.userCursor) {
                     if (LOWORD(lParam) == HTCLIENT) {
-                        CallEvent(NewEvent(AppEventType::UpdateCursor));
+                        _CallEvent(_NewEvent(AppEventType::UpdateCursor));
                         return 1;
                     }
                 }
                 break;
             case WM_LBUTTONDOWN:
-                DispatchMouseButtonEvent(AppEventType::MouseDown, InputMouseButton::Left);
+                _DispatchMouseButtonEvent(AppEventType::MouseDown, InputMouseButton::Left);
                 break;
             case WM_RBUTTONDOWN:
-                DispatchMouseButtonEvent(AppEventType::MouseDown, InputMouseButton::Right);
+                _DispatchMouseButtonEvent(AppEventType::MouseDown, InputMouseButton::Right);
                 break;
             case WM_MBUTTONDOWN:
-                DispatchMouseButtonEvent(AppEventType::MouseDown, InputMouseButton::Middle);
+                _DispatchMouseButtonEvent(AppEventType::MouseDown, InputMouseButton::Middle);
                 break;
             case WM_LBUTTONUP:
-                DispatchMouseButtonEvent(AppEventType::MouseUp, InputMouseButton::Left);
+                _DispatchMouseButtonEvent(AppEventType::MouseUp, InputMouseButton::Left);
                 break;
             case WM_RBUTTONUP:
-                DispatchMouseButtonEvent(AppEventType::MouseUp, InputMouseButton::Right);
+                _DispatchMouseButtonEvent(AppEventType::MouseUp, InputMouseButton::Right);
                 break;
             case WM_MBUTTONUP:
-                DispatchMouseButtonEvent(AppEventType::MouseUp, InputMouseButton::Middle);
+                _DispatchMouseButtonEvent(AppEventType::MouseUp, InputMouseButton::Middle);
                 break;
             case WM_MOUSEMOVE:
                 gApp.mouseX = (fl32)GET_X_LPARAM(lParam) * gApp.mouseScale;
@@ -611,9 +611,9 @@ namespace App
                     tme.dwFlags = TME_LEAVE;
                     tme.hwndTrack = gApp.hwnd;
                     TrackMouseEvent(&tme);
-                    DispatchMouseButtonEvent(AppEventType::MouseEnter, InputMouseButton::Invalid);
+                    _DispatchMouseButtonEvent(AppEventType::MouseEnter, InputMouseButton::Invalid);
                 }
-                DispatchMouseButtonEvent(AppEventType::MouseMove, InputMouseButton::Invalid);
+                _DispatchMouseButtonEvent(AppEventType::MouseMove, InputMouseButton::Invalid);
                 break;
             case WM_MOUSEHOVER:
                 if (gApp.mouseCursor == AppMouseCursor::None)
@@ -622,28 +622,28 @@ namespace App
             case WM_MOUSELEAVE:
                 gApp.mouseTracked = false;
                 gApp.mouseCursor = AppMouseCursor::None;
-                DispatchMouseButtonEvent(AppEventType::MouseLeave, InputMouseButton::Invalid);
+                _DispatchMouseButtonEvent(AppEventType::MouseLeave, InputMouseButton::Invalid);
                 break;
             case WM_MOUSEWHEEL:
-                DispatchMouseScrollEvent(0.0f, float((SHORT)HIWORD(wParam)));
+                _DispatchMouseScrollEvent(0.0f, float((SHORT)HIWORD(wParam)));
                 break;
             case WM_MOUSEHWHEEL:
-                DispatchMouseScrollEvent(float((SHORT)HIWORD(wParam)), 0.0f);
+                _DispatchMouseScrollEvent(float((SHORT)HIWORD(wParam)), 0.0f);
                 break;
             case WM_CHAR:
-                DispatchCharEvent((uint32)wParam, !!(lParam & 0x40000000));
+                _DispatchCharEvent((uint32)wParam, !!(lParam & 0x40000000));
                 break;
             case WM_KEYDOWN:
             case WM_SYSKEYDOWN:
-                DispatchKeyboardEvent(AppEventType::KeyDown, (int)(HIWORD(lParam) & 0x1FF), !!(lParam & 0x40000000));
+                _DispatchKeyboardEvent(AppEventType::KeyDown, (int)(HIWORD(lParam) & 0x1FF), !!(lParam & 0x40000000));
                 break;
             case WM_KEYUP:
             case WM_SYSKEYUP:
-                DispatchKeyboardEvent(AppEventType::KeyUp, (int)(HIWORD(lParam) & 0x1FF), false);
+                _DispatchKeyboardEvent(AppEventType::KeyUp, (int)(HIWORD(lParam) & 0x1FF), false);
                 break;
             case WM_DISPLAYCHANGE:
-                UpdateDisplayInfo();
-                CallEvent(NewEvent(AppEventType::DisplayUpdated));
+                _UpdateDisplayInfo();
+                _CallEvent(_NewEvent(AppEventType::DisplayUpdated));
                 break;
 
             default:
@@ -652,7 +652,7 @@ namespace App
         return DefWindowProcW(hWnd, uMsg, wParam, lParam);
     }
 
-    static bool UpdateWindowDimensions(HWND hwnd)
+    static bool _UpdateWindowDimensions(HWND hwnd)
     {
         RECT rect;
         if (GetClientRect(hwnd, &rect)) {
@@ -678,7 +678,7 @@ namespace App
         return false;
     }
 
-    static void HandleConsoleInputEvents(HANDLE handle)
+    static void _HandleConsoleInputEvents(HANDLE handle)
     {
         INPUT_RECORD inputBuff[16];
         DWORD numInputs;
@@ -690,25 +690,31 @@ namespace App
                 if (inputBuff[inIdx].EventType == KEY_EVENT) {
                     const KEY_EVENT_RECORD& keyEvent = inputBuff[inIdx].Event.KeyEvent;
                     if (keyEvent.uChar.AsciiChar >= 32 && keyEvent.uChar.AsciiChar < 128) 
-                        DispatchCharEvent((char)keyEvent.uChar.AsciiChar, keyEvent.wRepeatCount > 1);
+                        _DispatchCharEvent((char)keyEvent.uChar.AsciiChar, keyEvent.wRepeatCount > 1);
 
                     AppEventType eventType = keyEvent.bKeyDown ? AppEventType::KeyDown : AppEventType::KeyUp;
-                    DispatchKeyboardEvent(eventType, keyEvent.wVirtualScanCode, keyEvent.wRepeatCount > 1);
+                    _DispatchKeyboardEvent(eventType, keyEvent.wVirtualScanCode, keyEvent.wRepeatCount > 1);
                 }
             }
         }
     }
 
-    static bool CreateMainWindow()
+    static bool _CreateMainWindow()
     {
+        const SettingsApp& settings = SettingsJunkyard::Get().app;
+        ASSERT(settings.appName && settings.appName[0]);
+
+        wchar_t className[128];
+        Str::Utf8ToWide(settings.appName, className, sizeof(className));
+
         WNDCLASSW wndclassw;
         memset(&wndclassw, 0, sizeof(wndclassw));
         wndclassw.style = CS_HREDRAW | CS_VREDRAW | CS_OWNDC;
-        wndclassw.lpfnWndProc = (WNDPROC)MessageHandlerCallback;
+        wndclassw.lpfnWndProc = (WNDPROC)_MessageHandlerCallback;
         wndclassw.hInstance = GetModuleHandleW(NULL);
         wndclassw.hCursor = LoadCursor(NULL, IDC_ARROW);
         wndclassw.hIcon = LoadIcon(NULL, IDI_WINLOGO);
-        wndclassw.lpszClassName = L"JunkyardApp";
+        wndclassw.lpszClassName = className;
         RegisterClassW(&wndclassw);
     
         DWORD winStyle;
@@ -731,12 +737,12 @@ namespace App
         const int winWidth = uint16(rect.right - rect.left);
         const int winHeight = uint16(rect.bottom - rect.top);
     
-        static wchar_t winTitleWide[128];
-        Str::Ut8ToWide(gApp.windowTitle, winTitleWide, sizeof(winTitleWide));
+        wchar_t winTitleWide[128];
+        Str::Utf8ToWide(gApp.windowTitle, winTitleWide, sizeof(winTitleWide));
 
         HWND hwnd = CreateWindowExW(
             winExStyle,               	/* dwExStyle */
-            L"JunkyardApp", 	        /* lpClassName */
+            className, 	                /* lpClassName */
             winTitleWide,             	/* lpWindowName */
             winStyle,                 	/* dwStyle */
             rect.left > 0 ? rect.left : CW_USEDEFAULT, /* X */
@@ -749,8 +755,8 @@ namespace App
             NULL);                      /* lParam */
         if (!hwnd)
             return false;
-        ShowWindow(hwnd, SettingsJunkyard::Get().app.launchMinimized ? SW_MINIMIZE : SW_SHOW);
-        UpdateWindowDimensions(hwnd);
+        ShowWindow(hwnd, settings.launchMinimized ? SW_MINIMIZE : SW_SHOW);
+        _UpdateWindowDimensions(hwnd);
         gApp.hwnd = hwnd;
 
         // Adjust console window
@@ -781,18 +787,10 @@ namespace App
         if (desc.enableClipboard)
             gApp.clipboard = Mem::AllocZeroTyped<char>((uint32)gApp.desc.clipboardSizeBytes);
 
-        if (desc.windowTitle)
-            Str::Copy(gApp.windowTitle, sizeof(gApp.windowTitle), desc.windowTitle);
-        else
-            Str::Copy(gApp.windowTitle, sizeof(gApp.windowTitle), "Junkyard");
-
         char moduleFilename[128];
         OS::GetMyPath(moduleFilename, sizeof(moduleFilename));
         PathUtils::GetFilename(moduleFilename, moduleFilename, sizeof(moduleFilename));
         Str::Copy(gApp.name, sizeof(gApp.name), moduleFilename);
-
-        if (SettingsJunkyard::Get().app.launchMinimized)
-            ShowWindow(GetConsoleWindow(), SW_MINIMIZE);
 
         gApp.hStdin = GetStdHandle(STD_INPUT_HANDLE);
         gApp.hStdOut = GetStdHandle(STD_OUTPUT_HANDLE);
@@ -821,11 +819,19 @@ namespace App
             SettingsJunkyard::Initialize({}); // initialize with default settings
         }
 
+        const SettingsJunkyard& settings = SettingsJunkyard::Get();
+
         // Set some initial settings
-        Mem::EnableMemPro(SettingsJunkyard::Get().engine.enableMemPro);
-        MemTempAllocator::EnableCallstackCapture(SettingsJunkyard::Get().debug.captureStacktraceForTempAllocator);
-        Debug::SetCaptureStacktraceForFiberProtector(SettingsJunkyard::Get().debug.captureStacktraceForFiberProtector);
-        Log::SetSettings(static_cast<LogLevel>(SettingsJunkyard::Get().engine.logLevel), SettingsJunkyard::Get().engine.breakOnErrors, SettingsJunkyard::Get().engine.treatWarningsAsErrors);
+        Mem::EnableMemPro(settings.engine.enableMemPro);
+        MemTempAllocator::EnableCallstackCapture(settings.debug.captureStacktraceForTempAllocator);
+        Debug::SetCaptureStacktraceForFiberProtector(settings.debug.captureStacktraceForFiberProtector);
+        Log::SetSettings(static_cast<LogLevel>(settings.engine.logLevel), SettingsJunkyard::Get().engine.breakOnErrors, SettingsJunkyard::Get().engine.treatWarningsAsErrors);
+
+        if (desc.windowTitle)
+            Str::Copy(gApp.windowTitle, sizeof(gApp.windowTitle), desc.windowTitle);
+        else
+            Str::Copy(gApp.windowTitle, sizeof(gApp.windowTitle), settings.app.appName);
+
 
         // RemoteServices
         if (!Remote::Initialize()) {
@@ -839,21 +845,26 @@ namespace App
             return false;
         }
 
-        LoadInitRects();  // may modify window/framebuffer dimensions 
-        InitKeyTable();
+        _LoadInitRects();  // may modify window/framebuffer dimensions 
+        _InitKeyTable();
 
         bool headless = SettingsJunkyard::Get().graphics.headless || !SettingsJunkyard::Get().graphics.enable;
         if (!headless) {
-            InitDPI();
-            if (!CreateMainWindow()) {
+            _InitDPI();
+            if (!_CreateMainWindow()) {
                 ASSERT_MSG(0, "Creating win32 window failed");
                 return false;
             }
-            UpdateDisplayInfo();
+            _UpdateDisplayInfo();
         }
         gApp.valid = true;
 
-        LOG_INFO("(init) App initialized (%.1f ms)", stopwatch.ElapsedMS());
+        LOG_INFO("(init) %s v%u.%u.%u initialized (%.1f ms)", 
+                 settings.app.appName,  
+                 GetVersionMajor(settings.app.appVersion),
+                 GetVersionMinor(settings.app.appVersion),
+                 GetVersionPatch(settings.app.appVersion),
+                 stopwatch.ElapsedMS());
 
         if (!desc.callbacks->Initialize()) {
             LOG_ERROR("Initialization failed");
@@ -893,13 +904,13 @@ namespace App
                     }
                 }
 
-                if (UpdateWindowDimensions(gApp.hwnd)) {
-                    CallEvent(NewEvent(AppEventType::Resized));
+                if (_UpdateWindowDimensions(gApp.hwnd)) {
+                    _CallEvent(_NewEvent(AppEventType::Resized));
                     gApp.windowModified = true;
                 }
             }
             else if (gApp.hStdin != INVALID_HANDLE_VALUE) {
-                HandleConsoleInputEvents(gApp.hStdin);
+                _HandleConsoleInputEvents(gApp.hStdin);
             }
 
             tmNow = Timer::GetTicks();
@@ -913,7 +924,7 @@ namespace App
         }
     
         // Cleanup
-        SaveInitRects();
+        _SaveInitRects();
         gApp.desc.callbacks->Cleanup();
 
         Remote::Release();
@@ -921,7 +932,11 @@ namespace App
     
         if (!headless) {
             DestroyWindow(gApp.hwnd);
-            UnregisterClassW(L"JunkyardApp", GetModuleHandleW(NULL));
+
+            wchar_t className[128];
+            Str::Utf8ToWide(SettingsJunkyard::Get().app.appName, className, sizeof(className));
+
+            UnregisterClassW(className, GetModuleHandleW(NULL));
         }
         gApp.hwnd = nullptr;
     

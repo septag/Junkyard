@@ -22,13 +22,13 @@
 
 struct SettingsGraphics
 {
-    bool enable = true;             // Enable graphics subsystem. (cmdline="enableGraphics")
-    bool validate = false;          // Enable validation layers. (cmdline="validateGraphics")
+    bool enable = true;             // Enable graphics subsystem. (cmdline="-GraphicsEnable=1")
+    bool validate = false;          // Enable validation layers. (cmdline="-GraphicsValidate=1")
     bool headless = false;          // Device is created, but with no views/swapchain/gfx-queue. only used for comput. (cmdline="headlessGraphics")
-    bool surfaceSRGB = false;       // SRGB surface for Swap-chain
+    bool surfaceSRGB = false;       // SRGB surface for Swap-chain (TODO: remove this, won't do on swapchain SRGB anyways)
     bool listExtensions = false;    // Show device extensions upon initialization
     bool validateBestPractices = false;   // see VK_EXT_validation_features
-    bool validateSynchronization = false;   // see VK_EXT_validation_features
+    bool validateSynchronization = true;   // see VK_EXT_validation_features
     bool shaderDumpIntermediates = false;   // Dumps all shader intermediates (glsl/spv/asm) in the current working dir
     bool shaderDumpProperties = false;      // Dumps all internal shader properties, if device supports VK_KHR_pipeline_executable_properties
     bool shaderDebug = false;               // Adds debugging information to all shaders
@@ -36,6 +36,7 @@ struct SettingsGraphics
     bool enableImGui = true;                // Enables ImGui GUI
     bool enableVsync = true;                // Enables Vsync. Some hardware doesn't support this feature
     bool trackResourceLeaks = false;        // Store buffers/image/etc. resource stacktraces and shows leakage information at exit
+    uint32 gpuIndex = uint32(-1);           // By default, graphics backend prefers the discrete GPUs
 };
 
 struct SettingsTooling
@@ -47,6 +48,8 @@ struct SettingsTooling
 
 struct SettingsApp
 {
+    const char* appName = "JunkyardApp";
+    uint32 appVersion = MakeVersion(1, 0, 0);
     bool launchMinimized = false;       // Launch application minimized (Desktop builds only)
 };
 
