@@ -229,6 +229,9 @@
     <ClCompile Include="..\..\code\Core\SystemAndroid.cpp">
       <Filter>Core</Filter>
     </ClCompile>
+    <ClCompile Include="..\..\code\Graphics\GfxBackendVk.cpp">
+      <Filter>Graphics</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\..\code\External\slang\slang.h">
@@ -432,6 +435,12 @@
     </ClInclude>
     <ClInclude Include="..\..\code\Common\Profiler.h">
       <Filter>Common</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\code\Graphics\GfxBackend.h">
+      <Filter>Graphics</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\code\Graphics\GfxBackendTypes.h">
+      <Filter>Graphics</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

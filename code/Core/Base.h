@@ -454,6 +454,12 @@ static inline constexpr size_t SIZE_KB = 1024;
 static inline constexpr size_t SIZE_MB = 1024*1024;
 static inline constexpr size_t SIZE_GB = 1024*1024*1024;
 
+// Versioning
+inline constexpr uint32 MakeVersion(uint32 major, uint32 minor, uint32 patch, uint32 variant = 0);
+inline constexpr uint32 GetVersionMajor(uint32 ver);
+inline constexpr uint32 GetVersionMinor(uint32 ver);
+inline constexpr uint32 GetVersionPatch(uint32 ver);
+
 // Minimal template min/max/clamp/Swap implementations
 template <typename T> T Max(T a, T b);
 template <typename T> T Min(T a, T b);
@@ -895,6 +901,31 @@ inline void  operator delete(void*, _private::PlacementNewTag, void*) throw() {}
 //    ██║██║╚██╗██║██║     ██║██║╚██╗██║██╔══╝  ╚════██║
 //    ██║██║ ╚████║███████╗██║██║ ╚████║███████╗███████║
 //    ╚═╝╚═╝  ╚═══╝╚══════╝╚═╝╚═╝  ╚═══╝╚══════╝╚══════╝
+inline constexpr uint32 MakeVersion(uint32 major, uint32 minor, uint32 patch, uint32 variant)
+{
+    return ((variant << 29U) | (major << 22U) | (minor << 12U) | patch);
+}
+
+inline constexpr uint32 GetVersionMajor(uint32 ver)
+{
+    return (ver >> 22U) & 0x7FU;
+}
+
+inline constexpr uint32 GetVersionMinor(uint32 ver)
+{
+    return (ver >> 12U) & 0x3FFU;
+}
+
+inline constexpr uint32 GetVersionPatch(uint32 ver)
+{
+    return ver & 0xFFFU;
+}
+
+inline constexpr uint32 GetVersionVariant(uint32 ver)
+{
+    return ver >> 29U;
+}
+
 [[nodiscard]] FORCE_INLINE void* Mem::Alloc(size_t size, MemAllocator* alloc)
 {
     ASSERT(alloc);

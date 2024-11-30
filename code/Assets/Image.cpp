@@ -76,6 +76,8 @@ bool Asset::InitializeImageManager()
     // - Asset loaders for the images
     // - Descriptor cache management for reloads
     static GfxImage whiteImage {};
+
+    #if TEST_NEW_GRAPHICS
     if (SettingsJunkyard::Get().graphics.enable && !SettingsJunkyard::Get().graphics.headless) {
         const uint32 kWhitePixel = 0xffffffff;
         GfxImageDesc imageDesc = GfxImageDesc {
@@ -99,6 +101,7 @@ bool Asset::InitializeImageManager()
             .format = GfxFormat::R8G8B8A8_UNORM
         };
     }
+    #endif
 
     Asset::RegisterType(AssetTypeDesc {
         .fourcc = IMAGE_ASSET_TYPE,

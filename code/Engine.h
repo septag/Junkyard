@@ -9,6 +9,10 @@ struct AssetGroup;
 using EngineShortcutCallback = void(*)(void* userData);
 using EngineInitializeResourcesCallback = void(*)(void* userData);
 
+#ifndef TEST_NEW_GRAPHICS
+#define TEST_NEW_GRAPHICS 1
+#endif
+
 namespace Engine
 {
     API bool Initialize();
