@@ -174,6 +174,10 @@ bool SettingsJunkyardParser::ParseSetting(uint32 categoryId, const char* key, co
             graphics->trackResourceLeaks = Str::ToBool(value);
             return true;
         }
+        else if (Str::IsEqualNoCase(key, "preferIntegratedGpu")) {
+            graphics->preferIntegratedGpu = Str::ToBool(value);
+            return true;
+        }
     }
     else if (category == SettingsCategory::Tooling) {
         SettingsTooling* tooling = &gSettingsJunkyard.settings.tooling;

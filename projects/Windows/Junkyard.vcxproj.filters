@@ -85,6 +85,9 @@
     <Filter Include="Common">
       <UniqueIdentifier>{1c623d04-7d5b-485c-901a-6c4284e57f4f}</UniqueIdentifier>
     </Filter>
+    <Filter Include="External\OffsetAllocator">
+      <UniqueIdentifier>{ecf972c0-9377-4d0d-8ee7-fc3c8a9ff538}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\..\code\External\imgui\imgui.cpp">
@@ -231,6 +234,9 @@
     </ClCompile>
     <ClCompile Include="..\..\code\Graphics\GfxBackendVk.cpp">
       <Filter>Graphics</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\code\External\OffsetAllocator\offsetAllocator.cpp">
+      <Filter>External\OffsetAllocator</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -441,6 +447,9 @@
     </ClInclude>
     <ClInclude Include="..\..\code\Graphics\GfxBackendTypes.h">
       <Filter>Graphics</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\code\External\OffsetAllocator\offsetAllocator.hpp">
+      <Filter>External\OffsetAllocator</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

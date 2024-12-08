@@ -241,6 +241,7 @@
     <ClCompile Include="..\..\code\External\imgui\imgui_widgets.cpp">
       <DisableSpecificWarnings Condition="'$(Configuration)|$(Platform)'=='Release|x64'">4390</DisableSpecificWarnings>
     </ClCompile>
+    <ClCompile Include="..\..\code\External\OffsetAllocator\offsetAllocator.cpp" />
     <ClCompile Include="..\..\code\External\volk\volk.c">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='ReleaseDev|x64'">true</ExcludedFromBuild>
@@ -316,6 +317,7 @@
     <ClInclude Include="..\..\code\External\imgui\imstb_truetype.h" />
     <ClInclude Include="..\..\code\External\ispc_texcomp\include\ispc_texcomp.h" />
     <ClInclude Include="..\..\code\External\meshoptimizer\include\meshoptimizer.h" />
+    <ClInclude Include="..\..\code\External\OffsetAllocator\offsetAllocator.hpp" />
     <ClInclude Include="..\..\code\External\slang\slang.h" />
     <ClInclude Include="..\..\code\External\stb\stb_image.h" />
     <ClInclude Include="..\..\code\External\stb\stb_image_resize.h" />

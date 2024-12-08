@@ -21,7 +21,10 @@
 #include "../Core/Allocators.h"
 #include "../Core/System.h"
 #include "../Core/Log.h"
-#include "../Core/MathTypes.h"
+#include "../Core/MathAll.h"
+#include "../Core/Arrays.h"
+#include "../Core/StringUtil.h"
+#include "../Core/Atomic.h"
 
 #include "../Common/Application.h"
 #include "../Common/JunkyardSettings.h"
@@ -29,12 +32,13 @@
 
 #include "../Engine.h"
 
+#include "../External/OffsetAllocator/offsetAllocator.hpp"
+
 #ifndef __10X__
     #include "../External/volk/volk.h"
 #endif
 
 static constexpr uint32 GFXBACKEND_MAX_SWAP_CHAIN_IMAGES = 3;
-static constexpr uint32 GFXBACKEND_MAX_FRAMES_IN_FLIGHT = 2;
 static constexpr uint32 GFXBACKEND_MAX_GARBAGE_COLLECT_PER_FRAME = 16;
 static constexpr uint32 GFXBACKEND_BACKBUFFER_COUNT = 3;
 static constexpr uint32 GFXBACKEND_FRAMES_IN_FLIGHT = 2;
@@ -75,6 +79,25 @@ struct GfxBackendVkAllocator
     VkAllocationCallbacks mCallbacks;
 };
 
+// This is for allocating device memory. Before use we should set mMemoryTypeIndex 
+// This type only grows memory
+struct GfxBackendGpuAllocatorBump : MemBumpAllocatorBase
+{
+    void PreInitialize(uint32 memoryTypeIndex);
+
+private:
+    void* BackendReserve(size_t) override {}
+    void* BackendCommit(void* ptr, size_t size) override;
+    void  BackendDecommit(void*, size_t) override {}
+    void  BackendRelease(void* ptr, size_t size) override;
+
+    uint32 mMemoryTypeIndex;
+    uint8 _padding[CACHE_LINE_SIZE - sizeof(uint32) - sizeof(MemAllocator*)];
+    SpinLockMutex mLock;
+    Array<VkDeviceMemory> mAllocatedItems;
+};
+static_assert(sizeof(VkDeviceMemory) == sizeof(void*), "For GfxBackendGpuAllocatorBump VkDeviceMemory should match void* size");
+
 struct GfxBackendSwapchain
 {
     uint32 backbufferIdx;
@@ -85,8 +108,14 @@ struct GfxBackendSwapchain
     VkSemaphore swapchainSemaphores[GFXBACKEND_BACKBUFFER_COUNT];
     VkSemaphore presentSemaphores[GFXBACKEND_BACKBUFFER_COUNT];
     VkExtent2D extent;
+    uint32 imageIndex;
 
     void GoNext() { backbufferIdx = (backbufferIdx + 1) % GFXBACKEND_BACKBUFFER_COUNT; }
+    VkSemaphore GetSwapchainSemaphore() { return swapchainSemaphores[backbufferIdx]; }
+    VkSemaphore GetPresentSemaphore() { return presentSemaphores[backbufferIdx]; }
+    VkImageView GetView() { return views[imageIndex]; }
+    VkImage GetImage() { return images[imageIndex]; }
+    void Acquire();
 };
 
 struct GfxBackendSwapchainInfo
@@ -98,20 +127,20 @@ struct GfxBackendSwapchainInfo
     VkPresentModeKHR* presentModes;
 };
 
-enum class GfxBackendQueueType : uint32
-{
-    None = 0,
-    Graphics = 0x1,
-    Compute = 0x2,
-    Transfer = 0x4,
-    Present = 0x8
-};
-ENABLE_BITMASK(GfxBackendQueueType);
-
 struct GfxBackendQueueFamily
 {
     GfxBackendQueueType type;
     uint32 count;
+};
+
+struct GfxBackendCommandBufferManager
+{
+    VkCommandPool pool;
+    Array<VkCommandBuffer> cmdBufferFreeList;   // Stale CmdBuffers. Ready to be reused
+    Array<VkCommandBuffer> cmdBuffers;  // Currently submitted or being recorded 
+
+    Array<VkFence> fenceFreeList;
+    Array<VkFence> fences;      // A fence will be created for each batch of submitted cmdBuffers
 };
 
 struct GfxBackendQueue
@@ -120,6 +149,9 @@ struct GfxBackendQueue
     GfxBackendQueueType type;
     uint32 familyIdx;
     float priority;
+    uint32 cmdBufferGeneration;
+    uint32 cmdBufferManagerIndex;
+    GfxBackendCommandBufferManager cmdBufferManagers[GFXBACKEND_FRAMES_IN_FLIGHT];
 };
 
 struct GfxBackendInstance
@@ -155,6 +187,54 @@ struct GfxBackendGpu
     uint32 numExtensions;
 };
 
+struct GfxBackendMemoryBumpAllocator
+{
+    bool Initialize(VkDeviceSize maxSize, uint32 memoryTypeIndex);
+    void Release();
+    VkDeviceSize Malloc(const VkMemoryRequirements& memReq);
+    void Reset() { mOffset = 0; }
+
+    SpinLockMutex mMutex;
+    VkDeviceMemory mDeviceMem;
+    VkDeviceSize mCapacity;
+    VkDeviceSize mOffset;
+    uint32 mMemTypeIndex;
+};
+
+struct GfxBackendMemoryContext
+{
+    VkPhysicalDeviceMemoryProperties props;
+    VkPhysicalDeviceMemoryBudgetPropertiesEXT budget;   // only valid with
+    
+    GfxBackendMemoryBumpAllocator arena;
+};
+
+struct GfxBackendGarbage
+{
+    enum class Type
+    {
+        Pipeline,
+        Buffer,
+        Image,
+        Sampler,
+        ImageView
+    };
+
+    Type type;
+    uint64 frameIdx;
+
+    union {
+        VkPipeline pipeline;
+        VkBuffer buffer;
+        VkImage image;
+        VkSampler sampler;
+        VkImageView imageView;
+    };
+
+    OffsetAllocator::Allocation allocation;
+};
+
+
 struct GfxBackendVk
 {
     MemProxyAllocator parentAlloc;
@@ -181,15 +261,40 @@ struct GfxBackendVk
     GfxBackendSwapchainInfo swapchainInfo;
     GfxBackendSwapchain swapchain;
 
-    // TEMP 
-    VkFence renderFences[GFXBACKEND_FRAMES_IN_FLIGHT];
-    uint32 renderIdx;
+    GfxBackendMemoryContext mem;
+
+    // TEMP
+    VkImage bgImg;
+    VkImageView bgImgView;
 };
 
 static GfxBackendVk gBackendVk;
 
 namespace GfxBackend
 {
+    void _ResetQueue(GfxBackendQueue& queue);
+
+    static inline uint32 _GetQueueIndex(GfxBackendQueueType type)
+    {
+        for (uint32 i = 0; i < gBackendVk.numQueues; i++) {
+            if (IsBitsSet(gBackendVk.queues[i].type, type))
+                return i;
+        }
+        
+        return uint32(-1);
+    }
+
+    static inline VkCommandBuffer _GetCommandBufferHandle(const GfxBackendCommandBuffer& cmdBuffer)
+    {
+        ASSERT(cmdBuffer.mQueueIndex < gBackendVk.numQueues);
+
+        const GfxBackendQueue& queue = gBackendVk.queues[cmdBuffer.mQueueIndex];
+        ASSERT_MSG(cmdBuffer.mGeneration == queue.cmdBufferGeneration, "EndCommandBuffer must be called before resetting the queue");
+
+        const GfxBackendCommandBufferManager& cmdBufferMan = queue.cmdBufferManagers[queue.cmdBufferManagerIndex];
+        return cmdBufferMan.cmdBuffers[cmdBuffer.mCmdBufferIndex];
+    }
+
     static bool _HasExtension(const VkExtensionProperties* extensions, uint32 numExtensions, const char* name)
     {
         for (uint32 i = 0; i < numExtensions; i++) {
@@ -198,6 +303,130 @@ namespace GfxBackend
         }
 
         return false;
+    }
+
+    static uint32 _FindDeviceMemoryType(VkMemoryPropertyFlags flags, bool localdeviceHeap, VkMemoryPropertyFlags fallbackFlags = 0)
+    {
+        GfxBackendMemoryContext& ctx = gBackendVk.mem;
+
+        // First look for the exact flag
+        for (uint32 i = 0; i < ctx.props.memoryTypeCount; i++) {
+            const VkMemoryType& type = ctx.props.memoryTypes[i];
+            if (localdeviceHeap && !(ctx.props.memoryHeaps[type.heapIndex].flags & VK_MEMORY_HEAP_DEVICE_LOCAL_BIT))
+                continue;
+
+            if (type.propertyFlags == flags)
+                return i;
+        }
+
+        // As the first fallback, choose the type that matches the flags
+        for (uint32 i = 0; i < ctx.props.memoryTypeCount; i++) {
+            const VkMemoryType& type = ctx.props.memoryTypes[i];
+            if (localdeviceHeap && (ctx.props.memoryHeaps[type.heapIndex].flags & VK_MEMORY_HEAP_DEVICE_LOCAL_BIT))
+                continue;
+
+            if (type.propertyFlags & flags)
+                return i;
+        }
+
+        // As the second fallback, do this all over again with the fallbackFlag
+        if (fallbackFlags)
+            return _FindDeviceMemoryType(fallbackFlags, localdeviceHeap);
+
+        return uint32(-1);
+    }
+
+    static inline const VkMemoryHeap& _GetDeviceMemoryHeap(uint32 typeIndex)
+    {
+        GfxBackendMemoryContext& ctx = gBackendVk.mem;
+        ASSERT(typeIndex != -1 && typeIndex < ctx.props.memoryTypeCount);
+        ASSERT(ctx.props.memoryTypes[typeIndex].heapIndex < ctx.props.memoryHeapCount);
+        return ctx.props.memoryHeaps[ctx.props.memoryTypes[typeIndex].heapIndex];
+    }
+
+    static inline VkDeviceSize& _GetDeviceMemoryBudget(uint32 typeIndex)
+    {
+        ASSERT(gBackendVk.extApi.hasMemoryBudget);
+        GfxBackendMemoryContext& ctx = gBackendVk.mem;
+        ASSERT(typeIndex != -1 && typeIndex < ctx.props.memoryTypeCount);
+        ASSERT(ctx.props.memoryTypes[typeIndex].heapIndex < ctx.props.memoryHeapCount);
+        return ctx.budget.heapBudget[ctx.props.memoryTypes[typeIndex].heapIndex];
+    }
+
+    static void _InitializeDeviceMemoryAllocators()
+    {
+        GfxBackendMemoryContext& mem = gBackendVk.mem;
+        
+        VkPhysicalDeviceMemoryBudgetPropertiesEXT budgetProps {
+            .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MEMORY_BUDGET_PROPERTIES_EXT
+        };
+
+        VkPhysicalDeviceMemoryProperties2 memProps {
+            .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MEMORY_PROPERTIES_2,
+            .pNext = gBackendVk.extApi.hasMemoryBudget ? &budgetProps : nullptr
+        };
+
+        vkGetPhysicalDeviceMemoryProperties2(gBackendVk.gpu.handle, &memProps);
+
+        mem.props = memProps.memoryProperties;
+        mem.budget = budgetProps;
+
+        auto GetTypeStr = [](VkMemoryPropertyFlags flags, uint32 index)->const char* 
+        {
+            static String<128> str;
+            str.FormatSelf("%u (", index);
+            if (flags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)
+                str.Append("DeviceLocal-");
+            if (flags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT)
+                str.Append("HostVisible-");
+            if (flags & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)
+                str.Append("HostCoherent-");
+            if (flags & VK_MEMORY_PROPERTY_HOST_CACHED_BIT)
+                str.Append("HostCached-");
+            if (flags & VK_MEMORY_PROPERTY_LAZILY_ALLOCATED_BIT)
+                str.Append("LazilyAllocated-");
+            if (flags & VK_MEMORY_PROPERTY_PROTECTED_BIT)
+                str.Append("Protected-");
+            if (flags & VK_MEMORY_PROPERTY_DEVICE_COHERENT_BIT_AMD)
+                str.Append("DeviceCoherent-");
+            if (flags & VK_MEMORY_PROPERTY_DEVICE_UNCACHED_BIT_AMD)
+                str.Append("DeviceCached-");
+            if (flags & VK_MEMORY_PROPERTY_RDMA_CAPABLE_BIT_NV)
+                str.Append("RDMA-");
+            str.Append(")");
+
+            return str.CStr();
+        };
+
+        LOG_VERBOSE("GPU memory overview:");
+        for (uint32 i = 0; i < memProps.memoryProperties.memoryHeapCount; i++) {
+            String<256> str;
+            bool first = true;
+            String<32> freeStr;
+
+            if (gBackendVk.extApi.hasMemoryBudget)
+                freeStr.FormatSelf("%_$$$llu/", mem.budget.heapBudget[i]);
+
+            str.FormatSelf("\tHeap #%u (%s%_$$$llu): ", i+1, freeStr.CStr(), memProps.memoryProperties.memoryHeaps[i].size);
+            for (uint32 k = 0; k < memProps.memoryProperties.memoryTypeCount; k++) {
+                if (memProps.memoryProperties.memoryTypes[k].heapIndex == i) {
+                    if (!first)
+                        str.Append(", ");
+                    str.Append(GetTypeStr(memProps.memoryProperties.memoryTypes[k].propertyFlags, k));
+                    first = false;
+                }   
+            }
+
+            LOG_VERBOSE(str.CStr());
+        }
+
+        mem.arena.Initialize(128*SIZE_MB, _FindDeviceMemoryType(VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, true));
+    }
+
+    static void _ReleaseDeviceMemoryAllocators()
+    {
+        GfxBackendMemoryContext& mem = gBackendVk.mem;
+        mem.arena.Release();
     }
 
     static VKAPI_ATTR VkBool32 VKAPI_CALL _DebugUtilsCallback(
@@ -451,11 +680,14 @@ namespace GfxBackend
         vkEnumeratePhysicalDevices(gBackendVk.instance.handle, &numGPUs, gpus);
 
         if (gpuIndex == -1) {
-            // Prefer discrete GPUs over integrated ones
+            // Prefer discrete GPUs over integrated ones by default unless we set preferIntegratedGpu setting
+            VkPhysicalDeviceType preferedType = settings.graphics.preferIntegratedGpu ? 
+                VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU : VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU;
+
             for (uint32 i = 0; i < numGPUs; i++) {
                 VkPhysicalDeviceProperties deviceProps {};
                 vkGetPhysicalDeviceProperties(gpus[i], &deviceProps);
-                if (deviceProps.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU) {
+                if (deviceProps.deviceType == preferedType) {
                     gpuIndex = i;
                     break;
                 }
@@ -483,8 +715,7 @@ namespace GfxBackend
         // Gather info and features
         vkGetPhysicalDeviceProperties(gpu.handle, &gpu.props);
 
-        // Estimate memory
-        // TODO: We can extend this with VK_EXT_memory_budget 
+        // Estimate GPU memory
         VkDeviceSize heapSize = 0;
         {
             VkPhysicalDeviceMemoryProperties memProps;
@@ -585,7 +816,8 @@ namespace GfxBackend
     static bool _InitializeDevice(const SettingsJunkyard& settings)
     {
         StaticArray<const char*, 32> enabledExtensions;
-        const GfxBackendGpu& gpu = gBackendVk.gpu;
+        StaticArray<const char*, 32> enabledFeatures;
+        GfxBackendGpu& gpu = gBackendVk.gpu;
 
         auto CheckAddExtension = [&gpu, &enabledExtensions](const char* name, bool required = false)->bool
         {
@@ -607,20 +839,29 @@ namespace GfxBackend
             LOG_ERROR("Gfx: Dynamic rendering feature is required (VK_KHR_dynamic_rendering)");
             return false;
         }
+        enabledFeatures.Push("DynamicRendering (VK_KHR_dynamic_rendering)");
 
         if (!gpu.features4.synchronization2) {
             LOG_ERROR("Gfx: Synchronization2 feature is required (VK_KHR_synchronization2)");
             return false;
         }
+        enabledFeatures.Push("Synchronization2 (VK_KHR_synchronization2)");
 
         if (!gpu.features3.descriptorIndexing) {
             LOG_ERROR("Gfx: descriptorIndexing feature is required (VK_EXT_descriptor_indexing)");
             return false;
         }
+        enabledFeatures.Push("DescriptorIndexing (VK_EXT_descriptor_indexing)");
 
         if (!gpu.features3.uniformBufferStandardLayout) {
             LOG_ERROR("Gfx: Standard uniform buffer layout feature is required (VK_KHR_uniform_buffer_standard_layout)");
             return false;
+        }
+        enabledFeatures.Push("UniformBufferStandardLayout (VK_KHR_uniform_buffer_standard_layout)");
+        if (enabledFeatures.Count()) {
+            LOG_VERBOSE("Check device features (%u):", enabledFeatures.Count());
+            for (const char* name : enabledFeatures) 
+                LOG_VERBOSE("\t%s", name);
         }
 
         // Required extensions
@@ -639,9 +880,8 @@ namespace GfxBackend
 
         if (enabledExtensions.Count()) {
             LOG_VERBOSE("Enabled device extensions (%u):", enabledExtensions.Count());
-            for (const char* ext : enabledExtensions) {
+            for (const char* ext : enabledExtensions)
                 LOG_VERBOSE("\t%s", ext);
-            }
         }
 
         // Gather Queues
@@ -669,8 +909,21 @@ namespace GfxBackend
             .ppEnabledExtensionNames = enabledExtensions.Ptr()
         };
 
-        // Enable extension features
+        // Enable extensions and features
         void** deviceNext = const_cast<void**>(&devCreateInfo.pNext);
+        {
+            // We already queried all the features in InitializeGPU
+            // Just use all the existing features. Unless we explicitly want to turn something off
+            VkPhysicalDeviceFeatures2 features {
+                .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
+                .pNext = &gpu.features2,
+                .features = gpu.features
+            };
+
+            *deviceNext = &features;
+            deviceNext = &gpu.features4.pNext;
+        }
+
         VkPhysicalDevicePipelineExecutablePropertiesFeaturesKHR enableExecProps {
             .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PIPELINE_EXECUTABLE_PROPERTIES_FEATURES_KHR,
             .pipelineExecutableInfo = VK_TRUE
@@ -744,7 +997,7 @@ namespace GfxBackend
             }
         }
 
-        LOG_VERBOSE("(init) Found %u queue families", gBackendVk.numQueueFamilies);
+        LOG_VERBOSE("(init) Found total %u queue families", gBackendVk.numQueueFamilies);
     }
 
     static uint32 _AssignQueueFamily(GfxBackendQueueType type, GfxBackendQueueType preferNotHave = GfxBackendQueueType::None)
@@ -767,13 +1020,49 @@ namespace GfxBackend
             }
         }
 
-        if (familyIndex != -1)
-            --gBackendVk.queueFamilies[familyIndex].count;
-
+        // If not found, try finding a queue without any exclusions
         if (familyIndex == -1 && preferNotHave != GfxBackendQueueType::None) 
             return _AssignQueueFamily(type);
         else
             return familyIndex;
+    }
+
+    static bool _InitializeCommandBufferManager(GfxBackendCommandBufferManager* mgr, uint32 queueFamilyIndex)
+    {
+        ASSERT(gBackendVk.device);
+
+        VkCommandPoolCreateInfo poolCreateInfo {
+            .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
+            .queueFamilyIndex = queueFamilyIndex
+        };
+
+        if (vkCreateCommandPool(gBackendVk.device, &poolCreateInfo, gBackendVk.vkAlloc, &mgr->pool) != VK_SUCCESS) {
+            LOG_ERROR("Gfx: Create command pool failed");
+            return false;
+        }
+
+        mgr->cmdBuffers.SetAllocator(&gBackendVk.runtimeAlloc);
+        mgr->cmdBufferFreeList.SetAllocator(&gBackendVk.runtimeAlloc);
+        mgr->fences.SetAllocator(&gBackendVk.runtimeAlloc);
+        mgr->fenceFreeList.SetAllocator(&gBackendVk.runtimeAlloc);
+
+        return true;
+    }
+
+    static void _ReleaseCommandBufferManager(GfxBackendCommandBufferManager* mgr)
+    {
+        if (mgr->pool)
+            vkDestroyCommandPool(gBackendVk.device, mgr->pool, gBackendVk.vkAlloc);
+
+        for (VkFence fence : mgr->fenceFreeList)
+            vkDestroyFence(gBackendVk.device, fence, gBackendVk.vkAlloc);
+        for (VkFence fence : mgr->fences)
+            vkDestroyFence(gBackendVk.device, fence, gBackendVk.vkAlloc);
+
+        mgr->cmdBuffers.Free();
+        mgr->cmdBufferFreeList.Free();
+        mgr->fences.Free();
+        mgr->fenceFreeList.Free();
     }
 
     static bool _SetupQueues()
@@ -787,7 +1076,7 @@ namespace GfxBackend
         //  (1) Compute: Preferebly exclusive
         gBackendVk.numQueues = 3;
         gBackendVk.queues = Mem::AllocZeroTyped<GfxBackendQueue>(gBackendVk.numQueues, alloc);
-        
+
         {
             gBackendVk.queues[0] = {
                 .type = GfxBackendQueueType::Graphics|GfxBackendQueueType::Present,
@@ -833,6 +1122,23 @@ namespace GfxBackend
             else {
                 LOG_ERROR("Gfx: Compute queue not found");
                 return false;
+            }
+        }
+
+
+        // Merge all the queues that has the same family index
+        for (uint32 i = 1; i < gBackendVk.numQueues; i++) {
+            GfxBackendQueue& queue = gBackendVk.queues[i];
+            for (uint32 k = 0; k < i; k++) {
+                if (gBackendVk.queues[k].familyIdx == queue.familyIdx) {
+                    queue.type |= gBackendVk.queues[k].type;
+                    if (k != gBackendVk.numQueues-1)
+                        Swap<GfxBackendQueue>(gBackendVk.queues[k], gBackendVk.queues[gBackendVk.numQueues-1]);
+
+                    --gBackendVk.numQueues;
+                    --i;
+                    break;
+                }
             }
         }
 
@@ -894,7 +1200,7 @@ namespace GfxBackend
             .imageColorSpace = chosenFormat.colorSpace,
             .imageExtent =  swapchain->extent,
             .imageArrayLayers = 1, // 2 for stereoscopic
-            .imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT, // TODO: VK_IMAGE_USAGE_TRANSFER_DST_BIT if we are postprocessing
+            .imageUsage = VK_IMAGE_USAGE_TRANSFER_DST_BIT, // Old: VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT
             .preTransform = info.caps.currentTransform,
             .compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
             .presentMode = presentMode,
@@ -919,6 +1225,8 @@ namespace GfxBackend
         vkGetSwapchainImagesKHR(gBackendVk.device, swapchain->handle, &numActualImages, swapchain->images);
         swapchain->numImages = numActualImages;
 
+        // We don't views. since we don't even use them anywhere right now
+        #if 0
         // Views
         VkImageViewCreateInfo viewCreateInfo {
             .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
@@ -938,6 +1246,7 @@ namespace GfxBackend
                 return false;
             }
         }
+        #endif
 
         // Semaphores
         VkSemaphoreCreateInfo semCreateInfo {
@@ -952,7 +1261,7 @@ namespace GfxBackend
         return true;
     }
 
-    void _ReleaseSwapchain(GfxBackendSwapchain* swapchain)
+    static void _ReleaseSwapchain(GfxBackendSwapchain* swapchain)
     {
         ASSERT(swapchain);
 
@@ -972,6 +1281,70 @@ namespace GfxBackend
         memset(swapchain, 0x0, sizeof(*swapchain));
     }
 
+
+    static void _TransitionImageTEMP(VkCommandBuffer cmd, VkImage image, VkImageLayout curLayout, VkImageLayout newLayout)
+    {
+        VkImageAspectFlags aspect = (newLayout == VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL) ? VK_IMAGE_ASPECT_DEPTH_BIT : VK_IMAGE_ASPECT_COLOR_BIT;
+        VkImageMemoryBarrier2 imageBarrier {
+            .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
+            .srcStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
+            .srcAccessMask = VK_ACCESS_2_MEMORY_WRITE_BIT,
+            .dstStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
+            .dstAccessMask = VK_ACCESS_2_MEMORY_WRITE_BIT|VK_ACCESS_2_MEMORY_READ_BIT,
+            .oldLayout = curLayout,
+            .newLayout = newLayout,
+            .image = image,
+            .subresourceRange = {
+                .aspectMask = aspect,
+                .levelCount = VK_REMAINING_MIP_LEVELS,
+                .layerCount = VK_REMAINING_ARRAY_LAYERS
+            }
+        };
+
+        VkDependencyInfo depInfo {
+            .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
+            .imageMemoryBarrierCount = 1,
+            .pImageMemoryBarriers = &imageBarrier
+        };
+
+        vkCmdPipelineBarrier2(cmd, &depInfo);
+    }
+
+    static void _CopyImageToImageTEMP(VkCommandBuffer cmd, VkImage source, VkImage dest, VkExtent2D srcExtent, VkExtent2D destExtent)
+    {
+        VkImageBlit2 blitRegion {
+            .sType = VK_STRUCTURE_TYPE_IMAGE_BLIT_2,
+            .srcSubresource = {
+                .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+                .layerCount = 1
+            },
+            .srcOffsets = {
+                {0, 0, 0},
+                {int(srcExtent.width), int(srcExtent.height), 1}
+            },
+            .dstSubresource = {
+                .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+                .layerCount = 1
+            },
+            .dstOffsets = {
+                {0, 0, 0},
+                {int(destExtent.width), int(destExtent.height), 1}
+            },
+        };
+
+        VkBlitImageInfo2 blitInfo {
+            .sType = VK_STRUCTURE_TYPE_BLIT_IMAGE_INFO_2,
+            .srcImage = source,
+            .srcImageLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+            .dstImage = dest,
+            .dstImageLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+            .regionCount = 1,
+            .pRegions = &blitRegion,
+            .filter = VK_FILTER_LINEAR
+        };
+
+        vkCmdBlitImage2(cmd, &blitInfo);
+    }
 } // GfxBackend
 
 bool GfxBackend::Initialize()
@@ -1057,6 +1430,8 @@ bool GfxBackend::Initialize()
     if (!_InitializeDevice(settings))
         return false;
 
+    _InitializeDeviceMemoryAllocators();
+
     // Swapchain and it's capabilities
     // We can only create this after device is created. 
     if (!settings.graphics.headless) {
@@ -1092,16 +1467,60 @@ bool GfxBackend::Initialize()
             return false;
     }
 
+    // Queues are setup and ready
+    // CommandBuffer managers for each queue
+    for (uint32 i = 0; i < gBackendVk.numQueues; i++) {
+        GfxBackendQueue& queue = gBackendVk.queues[i];
+        for (uint32 k = 0; k < GFXBACKEND_FRAMES_IN_FLIGHT; k++) {
+            if (!_InitializeCommandBufferManager(&queue.cmdBufferManagers[k], queue.familyIdx)) {
+                LOG_ERROR("Gfx: CommandBuffer manager init failed for queue %u", i);
+                return false;
+            }
+        }
+    }
+
     // TEMP
     {
-        VkFenceCreateInfo fenceInfo {
-            .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
-            .flags = VK_FENCE_CREATE_SIGNALED_BIT
+        VkImageCreateInfo imageCreateInfo {
+            .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+            .imageType = VK_IMAGE_TYPE_2D,
+            .format = VK_FORMAT_R16G16B16A16_SFLOAT,
+            .extent = {
+                .width = App::GetFramebufferWidth(),
+                .height = App::GetFramebufferHeight(),
+                .depth = 1
+            },
+            .mipLevels = 1,
+            .arrayLayers = 1,
+            .samples = VK_SAMPLE_COUNT_1_BIT,
+            .tiling = VK_IMAGE_TILING_OPTIMAL,
+            .usage = VK_IMAGE_USAGE_TRANSFER_SRC_BIT|VK_IMAGE_USAGE_TRANSFER_DST_BIT|
+                VK_IMAGE_USAGE_STORAGE_BIT|VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
         };
 
-        for (uint32 i = 0; i < GFXBACKEND_FRAMES_IN_FLIGHT; i++) 
-            vkCreateFence(gBackendVk.device, &fenceInfo, gBackendVk.vkAlloc, &gBackendVk.renderFences[i]);
+        vkCreateImage(gBackendVk.device, &imageCreateInfo, gBackendVk.vkAlloc, &gBackendVk.bgImg);
 
+        VkMemoryRequirements memReq;
+        vkGetImageMemoryRequirements(gBackendVk.device, gBackendVk.bgImg, &memReq);
+        
+        VkDeviceSize offset = gBackendVk.mem.arena.Malloc(memReq);
+        ASSERT(offset != -1);
+
+        vkBindImageMemory(gBackendVk.device, gBackendVk.bgImg, gBackendVk.mem.arena.mDeviceMem, offset);
+
+        VkImageViewCreateInfo viewCreateInfo {
+            .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+            .image = gBackendVk .bgImg,
+            .viewType = VK_IMAGE_VIEW_TYPE_2D,
+            .format = VK_FORMAT_R16G16B16A16_SFLOAT,
+            .subresourceRange = {
+                .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+                .levelCount = 1,
+                .layerCount = 1
+            }
+        };
+
+        vkCreateImageView(gBackendVk.device, &viewCreateInfo, gBackendVk.vkAlloc, &gBackendVk.bgImgView);
     }
 
     return true;
@@ -1109,41 +1528,85 @@ bool GfxBackend::Initialize()
 
 void GfxBackend::Begin()
 {
-    uint32 renderIdx = gBackendVk.renderIdx;
-    vkWaitForFences(gBackendVk.device, 1, &gBackendVk.renderFences[renderIdx], TRUE, UINT64_MAX);
-    vkResetFences(gBackendVk.device, 1, &gBackendVk.renderFences[renderIdx]);
+    for (uint32 i = 0; i < gBackendVk.numQueues; i++)
+        _ResetQueue(gBackendVk.queues[i]);
 
-    {
-        uint32 backbufferIndex = gBackendVk.swapchain.backbufferIdx;
-        uint32 imageIdx;
-        VkResult r = vkAcquireNextImageKHR(gBackendVk.device, gBackendVk.swapchain.handle, UINT64_MAX, 
-                                           gBackendVk.swapchain.swapchainSemaphores[backbufferIndex], nullptr, 
-                                           &imageIdx);
-        ASSERT(r == VK_SUCCESS);
-    }
+    gBackendVk.swapchain.Acquire();
+    VkImage swapchainImage = gBackendVk.swapchain.GetImage();
+    VkImage bgImage = gBackendVk.bgImg;
 
+    GfxBackendCommandBuffer cmd = GfxBackend::NewCommandBuffer(GfxBackendQueueType::Graphics);
+    VkCommandBuffer cmdVk = _GetCommandBufferHandle(cmd);
 
+    cmd.Begin();
+    _TransitionImageTEMP(cmdVk, bgImage, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL);
+
+    VkClearColorValue clearVal = {
+        {0, 0, M::Sin(float(Engine::GetFrameIndex()/120.0f)), 1.0f}
+    };
+    VkImageSubresourceRange clearRange = {
+        .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+        .levelCount = VK_REMAINING_MIP_LEVELS,
+        .layerCount = VK_REMAINING_ARRAY_LAYERS
+    };
+    vkCmdClearColorImage(cmdVk, bgImage, VK_IMAGE_LAYOUT_GENERAL, &clearVal, 1, &clearRange);
+    
+    _TransitionImageTEMP(cmdVk, bgImage, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
+    _TransitionImageTEMP(cmdVk, swapchainImage, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+
+    VkExtent2D bgExtent {
+        .width = App::GetFramebufferWidth(),
+        .height = App::GetFramebufferHeight()
+    };
+    _CopyImageToImageTEMP(cmdVk, bgImage, swapchainImage, bgExtent, gBackendVk.swapchain.extent);
+    _TransitionImageTEMP(cmdVk, swapchainImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
+    cmd.End();
+
+    GfxBackend::SubmitQueue(GfxBackendQueueType::Graphics);    
 }
 
 void GfxBackend::End()
 {
-    gBackendVk.renderIdx = (gBackendVk.renderIdx + 1) % GFXBACKEND_FRAMES_IN_FLIGHT;
+    // Present
+    {
+        VkSemaphore waitSemaphore = gBackendVk.swapchain.GetPresentSemaphore();
+        VkPresentInfoKHR presentInfo {
+            .sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
+            .waitSemaphoreCount = 1,
+            .pWaitSemaphores = &waitSemaphore,
+            .swapchainCount = 1,
+            .pSwapchains = &gBackendVk.swapchain.handle,
+            .pImageIndices = &gBackendVk.swapchain.imageIndex
+        };
+
+        uint32 queueIndex = _GetQueueIndex(GfxBackendQueueType::Present);
+        ASSERT(queueIndex != -1);
+        vkQueuePresentKHR(gBackendVk.queues[queueIndex].handle, &presentInfo);
+    }
+
     gBackendVk.swapchain.GoNext();
 }
-
 
 void GfxBackend::Release()
 {
     MemAllocator* alloc = &gBackendVk.parentAlloc;
 
-    for (uint32 i = 0; i < GFXBACKEND_FRAMES_IN_FLIGHT; i++) {
-        if (gBackendVk.renderFences[i])
-            vkDestroyFence(gBackendVk.device, gBackendVk.renderFences[i], gBackendVk.vkAlloc);
+    for (uint32 i = 0; i < gBackendVk.numQueues; i++) {
+        GfxBackendQueue& queue = gBackendVk.queues[i];
+        vkQueueWaitIdle(queue.handle);
+        for (uint32 k = 0; k < GFXBACKEND_FRAMES_IN_FLIGHT; k++)
+            _ReleaseCommandBufferManager(&queue.cmdBufferManagers[k]);
     }
 
+    if (gBackendVk.device)
+        vkDeviceWaitIdle(gBackendVk.device);        
+
+    vkDestroyImageView(gBackendVk.device, gBackendVk.bgImgView, gBackendVk.vkAlloc);
+    vkDestroyImage(gBackendVk.device, gBackendVk.bgImg, gBackendVk.vkAlloc);
+
+    _ReleaseDeviceMemoryAllocators();
     _ReleaseSwapchain(&gBackendVk.swapchain);
     _ReleaseDevice();
-
 
     if (gBackendVk.surface)
         vkDestroySurfaceKHR(gBackendVk.instance.handle, gBackendVk.surface, gBackendVk.vkAlloc);
@@ -1254,3 +1717,220 @@ void GfxBackendVkAllocator::VkInternalFreeFn(void*, size_t, VkInternalAllocation
 {
     // TODO
 }
+//----------------------------------------------------------------------------------------------------------------------
+
+bool GfxBackend::SubmitQueue(GfxBackendQueueType queueType)
+{
+    uint32 queueIndex = _GetQueueIndex(queueType);
+    ASSERT(queueIndex != -1);
+    GfxBackendQueue& queue = gBackendVk.queues[queueIndex];
+
+    ASSERT(queue.handle);
+    GfxBackendCommandBufferManager& cmdBufferMan = queue.cmdBufferManagers[queue.cmdBufferManagerIndex];
+
+    MemTempAllocator tempAlloc;
+    uint32 numCmdBuffers = cmdBufferMan.cmdBuffers.Count();
+    VkCommandBufferSubmitInfo* cmdBufferSubmitInfos = tempAlloc.MallocTyped<VkCommandBufferSubmitInfo>(numCmdBuffers);
+
+    for (uint32 i = 0; i < numCmdBuffers; i++) {
+        cmdBufferSubmitInfos[i] = {
+            .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO,
+            .commandBuffer = cmdBufferMan.cmdBuffers[i]
+        };
+    }
+
+    // TEMP
+    VkSemaphoreSubmitInfo semWaitInfo {
+        .sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
+        .semaphore = gBackendVk.swapchain.GetSwapchainSemaphore(),
+        .value = 1,
+        .stageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT_KHR
+    };
+
+    VkSemaphoreSubmitInfo semSignalInfo {
+        .sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
+        .semaphore = gBackendVk.swapchain.GetPresentSemaphore(),
+        .value = 1,
+        .stageMask = VK_PIPELINE_STAGE_2_ALL_GRAPHICS_BIT
+    };
+    
+    VkSubmitInfo2 submitInfo {
+        .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2,
+        .waitSemaphoreInfoCount = 1, // TODO
+        .pWaitSemaphoreInfos = &semWaitInfo, // TODO
+        .commandBufferInfoCount = numCmdBuffers,
+        .pCommandBufferInfos = cmdBufferSubmitInfos,
+        .signalSemaphoreInfoCount = 1, // TODO
+        .pSignalSemaphoreInfos = &semSignalInfo, // TODO
+    };
+
+    // Create a fence for each submission
+    VkFence fenceVk;
+    if (!cmdBufferMan.fenceFreeList.IsEmpty()) {
+        fenceVk = cmdBufferMan.fenceFreeList.PopLast();
+    }
+    else {
+        VkFenceCreateInfo fenceCreateInfo {
+            .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
+        };
+        [[maybe_unused]] VkResult r = vkCreateFence(gBackendVk.device, &fenceCreateInfo, gBackendVk.vkAlloc, &fenceVk);
+        ASSERT(r == VK_SUCCESS);
+    }
+    cmdBufferMan.fences.Push(fenceVk);
+
+    if (vkQueueSubmit2(queue.handle, 1, &submitInfo, fenceVk) != VK_SUCCESS) {
+        ASSERT_MSG(0, "Gfx: Submitting queue failed");
+        return false;
+    }
+
+    return true;
+}
+
+void GfxBackend::_ResetQueue(GfxBackendQueue& queue)
+{
+    ++queue.cmdBufferGeneration;
+    queue.cmdBufferManagerIndex = queue.cmdBufferGeneration % GFXBACKEND_FRAMES_IN_FLIGHT;
+    GfxBackendCommandBufferManager& cmdBufferMan = queue.cmdBufferManagers[queue.cmdBufferManagerIndex];
+    
+    if (!cmdBufferMan.fences.IsEmpty()) {
+        [[maybe_unused]] VkResult r = vkWaitForFences(gBackendVk.device, cmdBufferMan.fences.Count(), cmdBufferMan.fences.Ptr(), true, UINT64_MAX);
+        ASSERT(r == VK_SUCCESS);
+        vkResetFences(gBackendVk.device, cmdBufferMan.fences.Count(), cmdBufferMan.fences.Ptr());
+
+        cmdBufferMan.fenceFreeList.Extend(cmdBufferMan.fences);
+        cmdBufferMan.fences.Clear();
+    }
+
+    // Now we can safely reset the command-pool and free the CommandBuffers
+    vkResetCommandPool(gBackendVk.device, cmdBufferMan.pool, 0);
+    cmdBufferMan.cmdBufferFreeList.Extend(cmdBufferMan.cmdBuffers);
+    cmdBufferMan.cmdBuffers.Clear();
+}
+
+
+GfxBackendCommandBuffer GfxBackend::NewCommandBuffer(GfxBackendQueueType queueType)
+{
+    uint32 queueIndex = _GetQueueIndex(queueType);
+    ASSERT(queueIndex != -1);
+    GfxBackendQueue& queue = gBackendVk.queues[queueIndex];
+    ASSERT(queue.handle);
+    GfxBackendCommandBufferManager& cmdBufferMan = queue.cmdBufferManagers[queue.cmdBufferManagerIndex];
+
+    ASSERT(cmdBufferMan.cmdBuffers.Count() < UINT16_MAX);
+    GfxBackendCommandBuffer cmdBuffer {
+        .mGeneration = queue.cmdBufferGeneration,
+        .mCmdBufferIndex = uint16(cmdBufferMan.cmdBuffers.Count()),
+        .mQueueIndex = uint16(queueIndex)
+    };
+    
+    VkCommandBuffer cmdVk;
+    if (!cmdBufferMan.cmdBufferFreeList.IsEmpty()) {
+        cmdVk = cmdBufferMan.cmdBufferFreeList.PopLast();
+    }
+    else {
+        VkCommandBufferAllocateInfo cmdBufferAllocInfo {
+            .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+            .commandPool = cmdBufferMan.pool,
+            .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+            .commandBufferCount = 1
+        };
+
+        if (vkAllocateCommandBuffers(gBackendVk.device, &cmdBufferAllocInfo, &cmdVk) != VK_SUCCESS) {
+            ASSERT_ALWAYS(0, "AllocateCommandBuffers failed");
+            return {};
+        }
+    }
+
+    cmdBufferMan.cmdBuffers.Push(cmdVk);
+    return cmdBuffer;
+}
+
+void GfxBackendCommandBuffer::Begin()
+{
+    VkCommandBuffer handle = GfxBackend::_GetCommandBufferHandle(*this);
+    VkCommandBufferBeginInfo beginInfo {
+        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+        .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT 
+    };
+
+    [[maybe_unused]] VkResult r = vkBeginCommandBuffer(handle, &beginInfo);
+    ASSERT(r == VK_SUCCESS);
+}
+
+void GfxBackendCommandBuffer::End()
+{
+    VkCommandBuffer handle = GfxBackend::_GetCommandBufferHandle(*this);
+    [[maybe_unused]] VkResult r = vkEndCommandBuffer(handle);
+    ASSERT(r == VK_SUCCESS);
+}
+
+void GfxBackendSwapchain::Acquire()
+{
+    [[maybe_unused]] VkResult r;
+    r = vkAcquireNextImageKHR(gBackendVk.device, handle, UINT64_MAX, swapchainSemaphores[backbufferIdx], nullptr, &imageIndex);
+    ASSERT(r == VK_SUCCESS);
+}
+
+bool GfxBackendMemoryBumpAllocator::Initialize(VkDeviceSize maxSize, uint32 memoryTypeIndex)
+{
+    ASSERT(memoryTypeIndex != -1);
+    ASSERT(gBackendVk.device);
+    ASSERT(maxSize);
+
+    mMemTypeIndex = memoryTypeIndex;
+    mCapacity = maxSize;
+    mOffset = 0;
+
+    VkMemoryAllocateInfo allocInfo {
+        .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+        .allocationSize = maxSize,
+        .memoryTypeIndex = memoryTypeIndex
+    };
+
+    if (gBackendVk.extApi.hasMemoryBudget) 
+        ASSERT_MSG(GfxBackend::_GetDeviceMemoryBudget(mMemTypeIndex) >= maxSize, "Not enough GPU memory available in the specified heap");
+
+    VkResult r = vkAllocateMemory(gBackendVk.device, &allocInfo, gBackendVk.vkAlloc, &mDeviceMem);
+    if (r != VK_SUCCESS) {
+        MEM_FAIL();
+        return false;
+    }
+
+    if (gBackendVk.extApi.hasMemoryBudget) 
+        Atomic::FetchSub(&GfxBackend::_GetDeviceMemoryBudget(mMemTypeIndex), maxSize);
+
+    return true;
+}
+
+void GfxBackendMemoryBumpAllocator::Release()
+{
+    if (mDeviceMem)
+        vkFreeMemory(gBackendVk.device, mDeviceMem, gBackendVk.vkAlloc);
+    mDeviceMem = nullptr;
+    mOffset = 0;
+    mCapacity = 0;
+    mMemTypeIndex = 0;
+}
+
+VkDeviceSize GfxBackendMemoryBumpAllocator::Malloc(const VkMemoryRequirements& memReq)
+{
+    if (!((memReq.memoryTypeBits >> mMemTypeIndex) & 0x1)) {
+        ASSERT_MSG(0, "Allocation for this resource is not supported by this memory type");
+        return VkDeviceSize(-1);
+    }
+
+    ASSERT(memReq.alignment);
+
+    SpinLockMutexScope lock(mMutex);
+    VkDeviceSize offset = mOffset;
+    if (offset % memReq.alignment != 0)
+        offset = AlignValue<VkDeviceSize>(offset, memReq.alignment);
+    mOffset = offset + memReq.size;
+    if (mOffset > mCapacity) {
+        MEM_FAIL();
+        return VkDeviceSize(-1);
+    }
+
+    return offset;
+}
+
