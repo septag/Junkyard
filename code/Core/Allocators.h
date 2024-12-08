@@ -147,6 +147,7 @@ struct MemBumpAllocatorBase : MemAllocator
     size_t GetReservedSize() const { return mReserveSize; }
     size_t GetAllocatedSize() const { return mOffset; }
     size_t GetCommitedSize() const { return mCommitSize; }
+    size_t GetPointerOffset(void* ptr);
     size_t GetOffset() const { return mOffset; }
     void SetOffset(size_t offset);      // Only accepts lesser values than current offset. potentially harmful. Use with care!
     bool IsDebugMode() const { return mDebugMode; }

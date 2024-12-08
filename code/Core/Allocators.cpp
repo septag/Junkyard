@@ -603,6 +603,12 @@ void MemBumpAllocatorBase::Reset()
     }
 }
 
+size_t MemBumpAllocatorBase::GetPointerOffset(void* ptr)
+{
+    ASSERT(uintptr(ptr) >= uintptr(mBuffer) && uintptr(ptr) < uintptr(mBuffer + mCommitSize));
+    return uintptr(ptr) - uintptr(mBuffer);
+}
+
 void MemBumpAllocatorBase::SetOffset(size_t offset)
 {
     ASSERT(offset <= mOffset);

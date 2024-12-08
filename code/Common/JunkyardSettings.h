@@ -36,6 +36,7 @@ struct SettingsGraphics
     bool enableImGui = true;                // Enables ImGui GUI
     bool enableVsync = true;                // Enables Vsync. Some hardware doesn't support this feature
     bool trackResourceLeaks = false;        // Store buffers/image/etc. resource stacktraces and shows leakage information at exit
+    bool preferIntegratedGpu = false;       // By default, Backend prefers discrete GPUs but this setting defaults preference to integrated
     uint32 gpuIndex = uint32(-1);           // By default, graphics backend prefers the discrete GPUs
 };
 
