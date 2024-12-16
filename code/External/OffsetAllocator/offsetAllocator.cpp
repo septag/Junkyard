@@ -124,7 +124,7 @@ namespace OffsetAllocator
     }
 
     // Utility functions
-    uint32 findLowestSetBitAfter(uint32 bitMask, uint32 startBitIndex)
+    static uint32 findLowestSetBitAfter(uint32 bitMask, uint32 startBitIndex)
     {
         uint32 maskBeforeStartIndex = (1 << startBitIndex) - 1;
         uint32 maskAfterStartIndex = ~maskBeforeStartIndex;
@@ -133,8 +133,16 @@ namespace OffsetAllocator
         return tzcnt_nonzero(bitsAfter);
     }
 
+    static HeapAllocationOverride g_defaultHeapOverride
+    {
+        [](size_t size, void*) { return ::malloc(size); },
+        [](void* ptr, void*) { ::free(ptr); }
+    };
+
     // Allocator...
-    Allocator::Allocator(uint32 size, uint32 maxAllocs) :
+    Allocator::Allocator(uint32 size, uint32 maxAllocs, HeapAllocationOverride* heapOverride, void* heapOverrideUserData) :
+        m_heapOverride(heapOverride ? heapOverride : &g_defaultHeapOverride),
+        m_heapOverrideUserData(heapOverrideUserData),
         m_size(size),
         m_maxAllocs(maxAllocs),
         m_nodes(nullptr),
@@ -144,10 +152,13 @@ namespace OffsetAllocator
         {
             ASSERT(maxAllocs <= 65536);
         }
+
         reset();
     }
 
     Allocator::Allocator(Allocator &&other) :
+        m_heapOverride(other.m_heapOverride),
+        m_heapOverrideUserData(other.m_heapOverrideUserData),
         m_size(other.m_size),
         m_maxAllocs(other.m_maxAllocs),
         m_freeStorage(other.m_freeStorage),
@@ -176,17 +187,28 @@ namespace OffsetAllocator
             m_usedBins[i] = 0;
         
         for (uint32 i = 0 ; i < NUM_LEAF_BINS; i++)
-            m_binIndices[i] = Node::unused;
+            m_binIndices[i] = Node::UNUSED;
         
-        if (m_nodes) delete[] m_nodes;
-        if (m_freeNodes) delete[] m_freeNodes;
+        if (m_nodes) m_heapOverride->freeFn(m_nodes, m_heapOverrideUserData);
 
-        m_nodes = new Node[m_maxAllocs];
-        m_freeNodes = new NodeIndex[m_maxAllocs];
+        // Allocate all dynamic data with one big chunk
+        uint8* buffer = (uint8*)m_heapOverride->allocateFn((sizeof(Node) + sizeof(NodeIndex))*m_maxAllocs, m_heapOverrideUserData);
+        m_nodes = (Node*)buffer;
+        buffer += sizeof(Node)*m_maxAllocs;
+        m_freeNodes = (NodeIndex*)buffer;
         
         // Freelist is a stack. Nodes in inverse order so that [0] pops first.
         for (uint32 i = 0; i < m_maxAllocs; i++)
         {
+            Node& node = m_nodes[i];
+            node.dataOffset = 0;
+            node.dataSize = 0;
+            node.binListPrev = Node::UNUSED;
+            node.binListNext = Node::UNUSED;
+            node.neighborPrev = Node::UNUSED;
+            node.neighborNext = Node::UNUSED;
+            node.used = false;
+
             m_freeNodes[i] = m_maxAllocs - i - 1;
         }
         
@@ -197,8 +219,8 @@ namespace OffsetAllocator
 
     Allocator::~Allocator()
     {        
-        delete[] m_nodes;
-        delete[] m_freeNodes;
+        m_heapOverride->freeFn(m_nodes, m_heapOverrideUserData);
+        m_heapOverride->freeFn(m_freeNodes, m_heapOverrideUserData);
     }
     
     Allocation Allocator::allocate(uint32 size)
@@ -250,14 +272,14 @@ namespace OffsetAllocator
         node.dataSize = size;
         node.used = true;
         m_binIndices[binIndex] = node.binListNext;
-        if (node.binListNext != Node::unused) m_nodes[node.binListNext].binListPrev = Node::unused;
+        if (node.binListNext != Node::UNUSED) m_nodes[node.binListNext].binListPrev = Node::UNUSED;
         m_freeStorage -= nodeTotalSize;
 #ifdef DEBUG_VERBOSE
         printf("Free storage: %u (-%u) (allocate)\n", m_freeStorage, nodeTotalSize);
 #endif
 
         // Bin empty?
-        if (m_binIndices[binIndex] == Node::unused)
+        if (m_binIndices[binIndex] == Node::UNUSED)
         {
             // Remove a leaf bin mask bit
             m_usedBins[topBinIndex] &= ~(1 << leafBinIndex);
@@ -278,7 +300,7 @@ namespace OffsetAllocator
             
             // Link nodes next to each other so that we can merge them later if both are free
             // And update the old next neighbor to point to the new node (in middle)
-            if (node.neighborNext != Node::unused) m_nodes[node.neighborNext].neighborPrev = newNodeIndex;
+            if (node.neighborNext != Node::UNUSED) m_nodes[node.neighborNext].neighborPrev = newNodeIndex;
             m_nodes[newNodeIndex].neighborPrev = nodeIndex;
             m_nodes[newNodeIndex].neighborNext = node.neighborNext;
             node.neighborNext = newNodeIndex;
@@ -302,7 +324,7 @@ namespace OffsetAllocator
         uint32 offset = node.dataOffset;
         uint32 size = node.dataSize;
         
-        if ((node.neighborPrev != Node::unused) && (m_nodes[node.neighborPrev].used == false))
+        if ((node.neighborPrev != Node::UNUSED) && (m_nodes[node.neighborPrev].used == false))
         {
             // Previous (contiguous) free node: Change offset to previous node offset. Sum sizes
             Node& prevNode = m_nodes[node.neighborPrev];
@@ -316,7 +338,7 @@ namespace OffsetAllocator
             node.neighborPrev = prevNode.neighborPrev;
         }
         
-        if ((node.neighborNext != Node::unused) && (m_nodes[node.neighborNext].used == false))
+        if ((node.neighborNext != Node::UNUSED) && (m_nodes[node.neighborNext].used == false))
         {
             // Next (contiguous) free node: Offset remains the same. Sum sizes.
             Node& nextNode = m_nodes[node.neighborNext];
@@ -342,12 +364,12 @@ namespace OffsetAllocator
         uint32 combinedNodeIndex = insertNodeIntoBin(size, offset);
 
         // Connect neighbors with the new combined node
-        if (neighborNext != Node::unused)
+        if (neighborNext != Node::UNUSED)
         {
             m_nodes[combinedNodeIndex].neighborNext = neighborNext;
             m_nodes[neighborNext].neighborPrev = combinedNodeIndex;
         }
-        if (neighborPrev != Node::unused)
+        if (neighborPrev != Node::UNUSED)
         {
             m_nodes[combinedNodeIndex].neighborPrev = neighborPrev;
             m_nodes[neighborPrev].neighborNext = combinedNodeIndex;
@@ -363,7 +385,7 @@ namespace OffsetAllocator
         uint32 leafBinIndex = binIndex & LEAF_BINS_INDEX_MASK;
         
         // Bin was empty before?
-        if (m_binIndices[binIndex] == Node::unused)
+        if (m_binIndices[binIndex] == Node::UNUSED)
         {
             // Set bin mask bits
             m_usedBins[topBinIndex] |= 1 << leafBinIndex;
@@ -377,7 +399,7 @@ namespace OffsetAllocator
         printf("Getting node %u from freelist[%u]\n", nodeIndex, m_freeOffset + 1);
 #endif
         m_nodes[nodeIndex] = {.dataOffset = dataOffset, .dataSize = size, .binListNext = topNodeIndex};
-        if (topNodeIndex != Node::unused) m_nodes[topNodeIndex].binListPrev = nodeIndex;
+        if (topNodeIndex != Node::UNUSED) m_nodes[topNodeIndex].binListPrev = nodeIndex;
         m_binIndices[binIndex] = nodeIndex;
         
         m_freeStorage += size;
@@ -392,11 +414,11 @@ namespace OffsetAllocator
     {
         Node &node = m_nodes[nodeIndex];
         
-        if (node.binListPrev != Node::unused)
+        if (node.binListPrev != Node::UNUSED)
         {
             // Easy case: We have previous node. Just remove this node from the middle of the list.
             m_nodes[node.binListPrev].binListNext = node.binListNext;
-            if (node.binListNext != Node::unused) m_nodes[node.binListNext].binListPrev = node.binListPrev;
+            if (node.binListNext != Node::UNUSED) m_nodes[node.binListNext].binListPrev = node.binListPrev;
         }
         else
         {
@@ -409,10 +431,10 @@ namespace OffsetAllocator
             uint32 leafBinIndex = binIndex & LEAF_BINS_INDEX_MASK;
             
             m_binIndices[binIndex] = node.binListNext;
-            if (node.binListNext != Node::unused) m_nodes[node.binListNext].binListPrev = Node::unused;
+            if (node.binListNext != Node::UNUSED) m_nodes[node.binListNext].binListPrev = Node::UNUSED;
 
             // Bin empty?
-            if (m_binIndices[binIndex] == Node::unused)
+            if (m_binIndices[binIndex] == Node::UNUSED)
             {
                 // Remove a leaf bin mask bit
                 m_usedBins[topBinIndex] &= ~(1 << leafBinIndex);
@@ -474,7 +496,7 @@ namespace OffsetAllocator
         {
             uint32 count = 0;
             uint32 nodeIndex = m_binIndices[i];
-            while (nodeIndex != Node::unused)
+            while (nodeIndex != Node::UNUSED)
             {
                 nodeIndex = m_nodes[nodeIndex].binListNext;
                 count++;

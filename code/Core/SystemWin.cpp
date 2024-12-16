@@ -568,19 +568,19 @@ bool Signal::Wait(uint32 msecs)
     return !timedOut;
 }
 
-void Signal::Decrement()
+void Signal::Decrement(uint32 count)
 {
     SignalImpl* _sig = reinterpret_cast<SignalImpl*>(mData);
     EnterCriticalSection(&_sig->mutex);
-    --_sig->value;
+    _sig->value -= int(count);
     LeaveCriticalSection(&_sig->mutex);
 }
 
-void Signal::Increment()
+void Signal::Increment(uint32 count)
 {
     SignalImpl* _sig = reinterpret_cast<SignalImpl*>(mData);
     EnterCriticalSection(&_sig->mutex);
-    ++_sig->value;
+    _sig->value += int(count);
     LeaveCriticalSection(&_sig->mutex);
 }
 

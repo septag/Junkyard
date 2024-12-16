@@ -19,6 +19,7 @@
 #endif
 
 #include "../Graphics/Graphics.h"
+#include "../Graphics/GfxBackend.h"
 #include "../Engine.h"
 
 #define ASSET_ASYNC_EXPERIMENT 0
@@ -1304,11 +1305,17 @@ static void Asset::_UnloadGroupTask(uint32, void* userData)
             switch (gpuObj->type) {
             case AssetDataInternal::GpuObjectType::Texture:
                 ASSERT(!gpuObj->textureDesc.bindToImage.IsNull());
+                #if !TEST_NEW_GRAPHICS
                 gfxDestroyImageDeferred(*gpuObj->textureDesc.bindToImage.Get());
+                #else
+                GfxBackend::DestroyImage(*gpuObj->textureDesc.bindToImage.Get());
+                #endif
                 break;
             case AssetDataInternal::GpuObjectType::Buffer:
                 ASSERT(!gpuObj->bufferDesc.bindToBuffer.IsNull());
+                #if !TEST_NEW_GRAPHICS
                 gfxDestroyBufferDeferred(*gpuObj->bufferDesc.bindToBuffer.Get());
+                #endif
                 break;
             }
             gpuObj = gpuObj->next.Get();
@@ -1713,6 +1720,9 @@ bool Asset::Initialize()
     }
 
     LOG_INFO("(init) Asset Manager");
+    LOG_VERBOSE("Registered asset types:");
+    for (AssetTypeManager& tm : gAssetMan.typeManagers)
+        LOG_VERBOSE("\t%s", tm.name.CStr());
     return true;
 }
 
@@ -1923,13 +1933,11 @@ void Asset::Update()
 
             switch (item.type) {
             case AssetJobType::Load:
-                gAssetMan.curJob = Jobs::Dispatch(JobsType::LongTask, Asset::_LoadGroupTask, 
-                                                  IntToPtr<uint32>(item.groupHandle.mId), 1);
+                gAssetMan.curJob = Jobs::Dispatch(JobsType::LongTask, Asset::_LoadGroupTask, IntToPtr<uint32>(item.groupHandle.mId), 1);
                 break;
 
             case AssetJobType::Unload:
-                gAssetMan.curJob = Jobs::Dispatch(JobsType::LongTask, Asset::_UnloadGroupTask, 
-                                                  IntToPtr<uint32>(item.groupHandle.mId), 1);
+                gAssetMan.curJob = Jobs::Dispatch(JobsType::LongTask, Asset::_UnloadGroupTask, IntToPtr<uint32>(item.groupHandle.mId), 1);
                 break;
 
             case AssetJobType::Server: 

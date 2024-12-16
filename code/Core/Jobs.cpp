@@ -1154,3 +1154,8 @@ JobsFiberMemAllocator::Pool* JobsFiberMemAllocator::CreatePool()
     return pool;
 }
 
+bool Jobs::IsRunningOnCurrentThread()
+{
+    JobsThreadData* data = _GetThreadData();
+    return data && data->curFiber;
+}

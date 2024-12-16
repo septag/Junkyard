@@ -144,10 +144,19 @@ namespace Engine
     {
         // TODO: can show some cool anim or something
         BeginFrame(dt);
+
+        #if !TEST_NEW_GRAPHICS
         gfxBeginCommandBuffer();
         gfxCmdBeginSwapchainRenderPass();
         gfxCmdEndSwapchainRenderPass();
         gfxEndCommandBuffer();
+        #else
+        GfxBackendCommandBuffer cmd = GfxBackend::BeginCommandBuffer(GfxBackendQueueType::Graphics);
+        cmd.ClearSwapchainColor(FLOAT4_ZERO);
+        GfxBackend::EndCommandBuffer(cmd);
+        GfxBackend::SubmitQueue(GfxBackendQueueType::Graphics);
+        #endif
+
         EndFrame();
 
         if (gEng.initResourcesGroup.IsLoadFinished()) {

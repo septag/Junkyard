@@ -591,23 +591,23 @@ bool Signal::WaitOnCondition(bool(*condFn)(int value, int reference), int refere
     return !timedOut;
 }
 
-void Signal::Decrement()
+void Signal::Decrement(uint32 count)
 {
     SignalImpl* sig = reinterpret_cast<SignalImpl*>(mData);
 
     [[maybe_unused]] int r = pthread_mutex_lock(&sig->mutex);
     ASSERT(r == 0);
-    --sig->value;
+    sig->value -= int(count);
     pthread_mutex_unlock(&sig->mutex);
 }
 
-void Signal::Increment()
+void Signal::Increment(uint32 count)
 {
     SignalImpl* sig = reinterpret_cast<SignalImpl*>(mData);
 
     [[maybe_unused]] int r = pthread_mutex_lock(&sig->mutex);
     ASSERT(r == 0);
-    ++sig->value;
+    sig->value += int(count);
     pthread_mutex_unlock(&sig->mutex);
 }
 

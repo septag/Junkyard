@@ -23,6 +23,15 @@ namespace OffsetAllocator
     static constexpr uint32 LEAF_BINS_INDEX_MASK = 0x7;
     static constexpr uint32 NUM_LEAF_BINS = NUM_TOP_BINS * BINS_PER_LEAF;
 
+    struct HeapAllocationOverride
+    {
+        using AllocateCallback = void*(*)(size_t size, void* userData);
+        using FreeCallback = void(*)(void* ptr, void* userData);
+
+        AllocateCallback allocateFn;
+        FreeCallback freeFn;
+    };
+
     struct Allocation
     {
         static constexpr uint32 NO_SPACE = 0xffffffff;
@@ -51,7 +60,8 @@ namespace OffsetAllocator
     class Allocator
     {
     public:
-        Allocator(uint32 size, uint32 maxAllocs = 128 * 1024);
+        Allocator(uint32 size, uint32 maxAllocs = 128 * 1024, 
+                  HeapAllocationOverride* heapOverride = nullptr, void* heapOverrideUserData = nullptr);
         Allocator(Allocator &&other);
         ~Allocator();
         void reset();
@@ -69,17 +79,20 @@ namespace OffsetAllocator
 
         struct Node
         {
-            static constexpr NodeIndex unused = 0xffffffff;
+            static constexpr NodeIndex UNUSED = 0xffffffff;
             
-            uint32 dataOffset = 0;
-            uint32 dataSize = 0;
-            NodeIndex binListPrev = unused;
-            NodeIndex binListNext = unused;
-            NodeIndex neighborPrev = unused;
-            NodeIndex neighborNext = unused;
-            bool used = false; // TODO: Merge as bit flag
+            uint32 dataOffset;
+            uint32 dataSize;
+            NodeIndex binListPrev;
+            NodeIndex binListNext;
+            NodeIndex neighborPrev;
+            NodeIndex neighborNext;
+            bool used; // TODO: Merge as bit flag
         };
-    
+
+        HeapAllocationOverride* m_heapOverride;
+        void* m_heapOverrideUserData;
+
         uint32 m_size;
         uint32 m_maxAllocs;
         uint32 m_freeStorage;

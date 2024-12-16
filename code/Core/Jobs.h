@@ -89,6 +89,7 @@ namespace Jobs
     API void WaitForCompletionAndDelete(JobsHandle handle);
     API void YieldCurrent();
 
+    API bool IsRunningOnCurrentThread();
     API bool IsRunning(JobsHandle handle);
     API void Delete(JobsHandle handle);
 

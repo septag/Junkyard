@@ -214,8 +214,8 @@ struct alignas(16) Signal
     void Raise();
     void RaiseAll();
     bool Wait(uint32 msecs = UINT32_MAX);
-    void Decrement();
-    void Increment();
+    void Decrement(uint32 count = 1);
+    void Increment(uint32 count = 1);
     bool WaitOnCondition(bool(*condFn)(int value, int reference), int reference = 0, uint32 msecs = UINT32_MAX);
     void Set(int value = 1);
 

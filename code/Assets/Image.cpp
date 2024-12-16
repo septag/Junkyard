@@ -113,7 +113,6 @@ bool Asset::InitializeImageManager()
         .asyncObj = &whiteImage
     });
 
-    LOG_INFO("(init) Register Image asset type");
     return true;
 }
 
