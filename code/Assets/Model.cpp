@@ -813,8 +813,6 @@ bool Asset::InitializeModelManager()
     MeshOpt::Initialize();
     #endif
 
-    LOG_INFO("(init) Register Model asset type");
-
     return true;
 }
 

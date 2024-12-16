@@ -2629,7 +2629,6 @@ static void gfxSavePipelineBinaryProperties(const char* name, VkPipeline pip)
     } 
 
     if (info.Size()) {
-        // TODO: use async write 
         Path filepath(name);
         filepath.Append(".txt");
         Vfs::WriteFileAsync(filepath.CStr(), info, VfsFlags::AbsolutePath|VfsFlags::TextFile, 
@@ -3985,7 +3984,7 @@ void gfxCmdPushDescriptorSet(GfxPipelineHandle pipeline, GfxPipelineBindPoint bi
             GFX_LOCK_POOL_TEMP(IMAGES);
             if (!binding.imageArrayCount) {
                 const GfxImageData* imageData = binding.image.IsValid() ? &gVk.pools.mImages.Data(binding.image) : nullptr;
-                imageInfos[i] = VkDescriptorImageInfo {
+                imageInfos[i] = {
                     .sampler = imageData ? imageData->sampler : VK_NULL_HANDLE,
                     .imageView = imageData ? imageData->view : VK_NULL_HANDLE,
                     .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
@@ -3999,7 +3998,7 @@ void gfxCmdPushDescriptorSet(GfxPipelineHandle pipeline, GfxPipelineBindPoint bi
                 pImageInfo = tempAlloc.MallocTyped<VkDescriptorImageInfo>(binding.imageArrayCount);
                 for (uint32 img = 0; img < binding.imageArrayCount; img++) {
                     const GfxImageData* imageData = binding.imageArray[img].IsValid() ? &gVk.pools.mImages.Data(binding.imageArray[img]) : nullptr;
-                    pImageInfo[img] = VkDescriptorImageInfo {
+                    pImageInfo[img] = {
                         .sampler = imageData ? imageData->sampler : VK_NULL_HANDLE,
                         .imageView = imageData ? imageData->view : VK_NULL_HANDLE,
                         .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL

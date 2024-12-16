@@ -956,6 +956,11 @@ FORCE_INLINE void RectInt::AddPoint(RectInt* rc, Int2 pt)
     *rc = RectInt(Int2::Min(Int2(rc->vmin), pt), Int2::Max(Int2(rc->vmax), pt));
 }
 
+FORCE_INLINE bool RectInt::IsEmpty() const
+{
+    return xmin >= xmax || ymin >= ymax;
+}    
+
 FORCE_INLINE int RectInt::Width() const
 {
     return xmax - xmin;
@@ -977,15 +982,15 @@ FORCE_INLINE int RectInt::Height() const
 *   -----------------
 *   0 (min)         1
 */
-FORCE_INLINE Int2 rectiGetCorner(const RectInt* rc, int index)
+FORCE_INLINE Int2 RectInt::GetCorner(const RectInt* rc, int index)
 {
     return Int2((index & 1) ? rc->xmax : rc->xmin, (index & 2) ? rc->ymax : rc->ymin);
 }
 
-FORCE_INLINE void rectiGetCorners(Int2 corners[4], const RectInt* rc)
+FORCE_INLINE void RectInt::GetCorners(Int2 corners[4], const RectInt* rc)
 {
     for (int i = 0; i < 4; i++)
-        corners[0] = rectiGetCorner(rc, i);
+        corners[0] = GetCorner(rc, i);
 }
 
 //     █████╗  █████╗ ██████╗ ██████╗ 

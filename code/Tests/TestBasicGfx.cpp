@@ -28,15 +28,59 @@
 
 #include "../Engine.h"
 
+#include "../Graphics/GfxBackend.h"
+
 
 struct AppImpl final : AppCallbacks
 {
     CameraFPS   mFpsCam;
     CameraOrbit mOrbitCam;
     Camera*     mCam;
+    GfxImageHandle mImage;
+    GfxPipelineLayoutHandle mPipelineLayout;
+    GfxPipelineHandle mPipeline;
+    AssetHandleShader mShader;
+    GfxBufferHandle mBuffer;
 
     static void CreateGraphicsResources(void* userData)
     {
+        AppImpl* self = (AppImpl*)userData;
+
+        {
+            GfxBackendImageDesc desc {
+                .width = App::GetFramebufferWidth(),
+                .height = App::GetFramebufferHeight(),
+                .format = GfxFormat::R16G16B16A16_SFLOAT,
+                .usageFlags = GfxBackendImageUsageFlags::TransferSrc|GfxBackendImageUsageFlags::Storage|GfxBackendImageUsageFlags::TransferDst,
+            };
+            self->mImage = GfxBackend::CreateImage(desc);
+        }
+
+        {
+            GfxBackendBufferDesc desc {
+                .sizeBytes = 32*SIZE_KB,
+                .usageFlags = GfxBackendBufferUsageFlags::Vertex|GfxBackendBufferUsageFlags::TransferDst,
+                .arena = GfxBackendMemoryArena::PersistentGPU
+            };
+            self->mBuffer = GfxBackend::CreateBuffer(desc);
+        }
+
+        const GfxBackendPipelineLayoutDesc::Binding bindings[] {
+            {
+                .name = "MainImage",
+                .type = GfxDescriptorType::StorageImage,
+                .stagesUsed = GfxShaderStage::Compute,
+            }
+        };
+
+        const GfxBackendPipelineLayoutDesc layoutDesc {
+            .numBindings = 1,
+            .bindings = bindings
+        };
+
+        AssetObjPtrScope<GfxShader> shader(self->mShader);
+        self->mPipelineLayout = GfxBackend::CreatePipelineLayout(*shader, layoutDesc);
+        self->mPipeline = GfxBackend::CreateComputePipeline(*shader, self->mPipelineLayout);
     }
 
     bool Initialize() override
@@ -63,8 +107,19 @@ struct AppImpl final : AppCallbacks
 
         LOG_INFO("Use right mouse button to rotate camera. And [TAB] to switch between Orbital and FPS (WASD) camera");
 
+        AssetGroup assetGroup = Engine::RegisterInitializeResources(AppImpl::CreateGraphicsResources, this);
+        mShader = Asset::LoadShader("/shaders/Fill.hlsl", ShaderLoadParams {}, assetGroup);        
+
         return true;
     };
+
+    void ReleaseGraphicsResources()
+    {
+        GfxBackend::DestroyBuffer(mBuffer);
+        GfxBackend::DestroyPipeline(mPipeline);
+        GfxBackend::DestroyPipelineLayout(mPipelineLayout);
+        GfxBackend::DestroyImage(mImage);
+    }
     
     void Cleanup() override
     {
@@ -81,6 +136,51 @@ struct AppImpl final : AppCallbacks
 
         Engine::BeginFrame(dt);
 
+        GfxBackendCommandBuffer cmd = GfxBackend::BeginCommandBuffer(GfxBackendQueueType::Graphics);
+
+        {
+            GfxBackendBufferDesc bufferDesc {
+                .sizeBytes = 32*SIZE_KB,
+                .usageFlags = GfxBackendBufferUsageFlags::TransferSrc,
+                .arena = GfxBackendMemoryArena::TransientCPU
+            };
+            GfxBufferHandle stagingBuffer = GfxBackend::CreateBuffer(bufferDesc);
+        
+            void* bufferData;
+            size_t bufferSize;
+            cmd.MapBuffer(stagingBuffer, &bufferData, &bufferSize);
+            memset(bufferData, 0x1d, bufferSize);
+            cmd.FlushBuffer(stagingBuffer);
+
+            cmd.CopyBufferToBuffer(stagingBuffer, mBuffer, GfxShaderStage::Vertex);
+
+            GfxBackend::DestroyBuffer(stagingBuffer);
+        }
+
+        cmd.BindPipeline(mPipeline);
+
+        GfxBackendBindingDesc bindings[] {
+            {
+                .name = "MainImage",
+                .image = mImage
+            }
+        };
+
+        const GfxBackendImageDesc& imageDesc = GfxBackend::GetImageDesc(mImage);
+
+        cmd.TransitionImage(mImage, GfxBackendImageTransition::ComputeWrite);
+        cmd.PushBindings(mPipelineLayout, CountOf(bindings), bindings);
+        cmd.Dispatch((uint32)M::Ceil(float(imageDesc.width)/16.0f), (uint32)M::Ceil(float(imageDesc.height/16.0f)), 1);
+        cmd.TransitionImage(mImage, GfxBackendImageTransition::CopySource);
+        cmd.CopyImageToSwapchain(mImage);
+
+        // Finished working with mBuffer ?
+        cmd.TransitionBuffer(mBuffer, GfxBackendBufferTransition::TransferWrite);
+
+        GfxBackend::EndCommandBuffer(cmd);
+
+        GfxBackend::SubmitQueue(GfxBackendQueueType::Graphics);
+
         Engine::EndFrame();
     }
     
@@ -95,10 +195,6 @@ struct AppImpl final : AppCallbacks
 
         //if (!ImGui::IsAnyItemHovered() && !ImGui::GetIO().WantCaptureMouse && !ImGuizmo::IsOver())
         //    mCam->HandleRotationMouse(ev, 0.2f, 0.1f);
-    }
-
-    void ReleaseGraphicsResources()
-    {
     }
 };
 

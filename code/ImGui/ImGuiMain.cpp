@@ -23,6 +23,8 @@
 #include "../Common/VirtualFS.h"
 #include "../Common/JunkyardSettings.h"
 
+#include "../Graphics/GfxBackend.h"
+
 #include "../Engine.h"
 
 // Extra modules
@@ -66,10 +68,10 @@ struct ImGuiState
     uint32 maxIndices;
 
     ImGuiBuffer  buffers[4];
-    GfxDescriptorSetLayoutHandle dsLayout;
+    GfxPipelineLayoutHandle pipelineLayout;
     GfxPipelineHandle pipeline;
     GfxImageHandle fontImage;
-    AssetHandleShader imguiShader;
+    AssetHandleShader shader;
     uint32 lastFrameVertices;
     uint32 lastFrameIndices;
     float* alphaControl;      // alpha value that will be modified by mouse-wheel + ALT
@@ -335,20 +337,6 @@ namespace ImGui
     static void _InitializeGraphicsResources(void*)
     {
         // Graphics Objects
-        const GfxDescriptorSetLayoutBinding dsetBindings[] = {
-            {
-                .name = "MainTexture",
-                .type = GfxDescriptorType::CombinedImageSampler,
-                .stages = GfxShaderStage::Fragment
-            }
-        };
-
-        GfxPushConstantDesc pushConstant = {
-            .name = "Transform",
-            .stages = GfxShaderStage::Vertex,
-            .range = {0, sizeof(Mat4)}
-        };
-
         GfxVertexBufferBindingDesc vertexBufferBindingDesc {
             .binding = 0,
             .stride = sizeof(ImDrawVert),
@@ -376,31 +364,45 @@ namespace ImGui
             }
         };
 
-        AssetObjPtrScope<GfxShader> shader(gImGui.imguiShader);
+        AssetObjPtrScope<GfxShader> shader(gImGui.shader);
         ASSERT(shader);
+        const GfxBackendPipelineLayoutDesc::Binding layoutBindings[] {
+            {
+                .name = "MainTexture",
+                .type = GfxDescriptorType::CombinedImageSampler,
+                .stagesUsed = GfxShaderStage::Fragment
+            }
+        };
 
-        gImGui.dsLayout = gfxCreateDescriptorSetLayout(*shader, dsetBindings, CountOf(dsetBindings), GfxDescriptorSetLayoutFlags::PushDescriptor);
+        const GfxBackendPipelineLayoutDesc::PushConstant pushConstant {
+            .name = "Transform",
+            .stagesUsed = GfxShaderStage::Vertex
+        };
 
-        gImGui.pipeline = gfxCreatePipeline(GfxPipelineDesc {
-            .shader = shader,
-            .inputAssemblyTopology = GfxPrimitiveTopology::TriangleList,
-            .numDescriptorSetLayouts = 1,
-            .descriptorSetLayouts = &gImGui.dsLayout,
+        GfxBackendPipelineLayoutDesc layoutDesc {
+            .numBindings = 1,
+            .bindings = layoutBindings,
             .numPushConstants = 1,
-            .pushConstants = &pushConstant,
+            .pushConstants = &pushConstant
+        };
+        gImGui.pipelineLayout = GfxBackend::CreatePipelineLayout(*shader, layoutDesc);
+
+        GfxBackendGraphicsPipelineDesc pipelineDesc {
             .numVertexInputAttributes = CountOf(vertexInputAttDescs),
             .vertexInputAttributes = vertexInputAttDescs,
             .numVertexBufferBindings = 1,
             .vertexBufferBindings = &vertexBufferBindingDesc,
-            .rasterizer = GfxRasterizerDesc {
-                .cullMode = GfxCullModeFlags::None,
+            .rasterizer = {
                 .frontFace = GfxFrontFace::Clockwise
             },
-            .blend = {
+            .blend {
                 .numAttachments = 1,
                 .attachments = GfxBlendAttachmentDesc::GetAlphaBlending()
             }
-        });
+        };
+
+        gImGui.pipeline = GfxBackend::CreateGraphicsPipeline(*shader, gImGui.pipelineLayout, pipelineDesc);
+
         ASSERT(gImGui.pipeline.IsValid());
     }
 
@@ -560,7 +562,7 @@ bool ImGui::Initialize()
     _InitializeSettings();
 
     // Register graphics resources callback so we can continue when the resources are loaded
-    gImGui.imguiShader = Asset::LoadShader("/shaders/ImGui.hlsl", ShaderLoadParams(),
+    gImGui.shader = Asset::LoadShader("/shaders/ImGui.hlsl", ShaderLoadParams(),
                                            Engine::RegisterInitializeResources(_InitializeGraphicsResources));
 
     return true;
@@ -739,9 +741,9 @@ void ImGui::Release()
             gfxDestroyBuffer(gImGui.buffers[i].vertexBuffer);
             gfxDestroyBuffer(gImGui.buffers[i].indexBuffer);
         }
-        gfxDestroyPipeline(gImGui.pipeline);
-        gfxDestroyDescriptorSetLayout(gImGui.dsLayout);
-        gfxDestroyImage(gImGui.fontImage);
+        GfxBackend::DestroyPipeline(gImGui.pipeline);
+        GfxBackend::DestroyPipelineLayout(gImGui.pipelineLayout);
+        GfxBackend::DestroyImage(gImGui.fontImage);
         App::UnregisterEventsCallback(_OnEventCallback);
         DestroyContext(gImGui.ctx);
         gImGui.ctx = nullptr;

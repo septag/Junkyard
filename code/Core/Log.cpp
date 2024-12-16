@@ -64,7 +64,7 @@ namespace Log
         gLog.treatWarningsAsErrors = treatWarningsAsErrors;
     }
 
-    static void PrintToTerminal(const LogEntry& entry)
+    static void _PrintToTerminal(const LogEntry& entry)
     {
         uint32 newSize = entry.textLen + 128;
 
@@ -98,7 +98,7 @@ namespace Log
     }
 
     #if PLATFORM_ANDROID
-    static void PrintToAndroidLog(const LogEntry& entry)
+    static void _PrintToAndroidLog(const LogEntry& entry)
     {
         OSAndroidLogType androidLogType;
         switch (entry.type) {
@@ -114,7 +114,7 @@ namespace Log
     }
     #endif // PLATFORM_ANDROID
 
-    static void PrintToDebugger(const LogEntry& entry)
+    static void _PrintToDebugger(const LogEntry& entry)
     {
         #if PLATFORM_WINDOWS
             uint32 newSize = entry.textLen + 128;
@@ -139,7 +139,7 @@ namespace Log
     }
 
     #ifdef TRACY_ENABLE
-    static void PrintToTracy(const LogEntry& entry)
+    static void _PrintToTracy(const LogEntry& entry)
     {
         // terminal coloring
         uint32 color;
@@ -156,15 +156,15 @@ namespace Log
     }
     #endif
 
-    static void engineDispatchLogEntry(const LogEntry& entry)
+    static void _DispatchLogEntry(const LogEntry& entry)
     {
-        PrintToTerminal(entry); 
-        PrintToDebugger(entry);
+        _PrintToTerminal(entry); 
+        _PrintToDebugger(entry);
         #ifdef TRACY_ENABLE
-            PrintToTracy(entry);
+            _PrintToTracy(entry);
         #endif
         #if PLATFORM_ANDROID
-            PrintToAndroidLog(entry);
+            _PrintToAndroidLog(entry);
         #endif
 
         for (Pair<LogCallback, void*> c : gLog.callbacks)
@@ -189,7 +189,7 @@ namespace Log
         Str::PrintFmtArgs(text, fmtLen, fmt, args);
         va_end(args);
 
-        engineDispatchLogEntry({
+        _DispatchLogEntry({
             .type = LogLevel::Info,
             .channels = channels,
             .textLen = Str::Len(text),
@@ -216,7 +216,7 @@ namespace Log
             Str::PrintFmtArgs(text, fmtLen, fmt, args);
             va_end(args);
 
-            engineDispatchLogEntry({
+            _DispatchLogEntry({
                 .type = LogLevel::Debug,
                 .channels = channels,
                 .textLen = Str::Len(text),
@@ -247,7 +247,7 @@ namespace Log
         Str::PrintFmtArgs(text, fmtLen, fmt, args);
         va_end(args);
 
-        engineDispatchLogEntry({
+        _DispatchLogEntry({
             .type = LogLevel::Verbose,
             .channels = channels,
             .textLen = Str::Len(text),
@@ -272,7 +272,7 @@ namespace Log
         Str::PrintFmtArgs(text, fmtLen, fmt, args);
         va_end(args);
 
-        engineDispatchLogEntry({
+        _DispatchLogEntry({
             .type = !gLog.treatWarningsAsErrors ? LogLevel::Warning : LogLevel::Error,
             .channels = channels,
             .textLen = Str::Len(text),
@@ -297,7 +297,7 @@ namespace Log
         Str::PrintFmtArgs(text, fmtLen, fmt, args);
         va_end(args);
 
-        engineDispatchLogEntry({
+        _DispatchLogEntry({
             .type = LogLevel::Error,
             .channels = channels,
             .textLen = Str::Len(text),

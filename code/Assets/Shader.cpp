@@ -33,8 +33,6 @@ bool Asset::InitializeShaderManager()
         .asyncObj = nullptr
     });
 
-    LOG_INFO("(init) Register Shader asset type");
-
     return true;
 }
 
