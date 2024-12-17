@@ -41,10 +41,9 @@ enum ImGuiDescriptorSet : uint32
     _IMGUI_DESCRIPTORSET_COUNT
 };
 
-struct ImGuiBuffer
+struct ImGuiShaderTransform
 {
-    GfxBufferHandle    vertexBuffer;
-    GfxBufferHandle    indexBuffer;
+    Mat4 projMat;
 };
 
 struct ImGuiState
@@ -62,23 +61,19 @@ struct ImGuiState
     StaticArray<ImWchar, 128> charInput;
     ImGuiMouseCursor lastCursor;
     
-    ImDrawVert* vertices;
-    uint16* indices;
     uint32 maxVertices;
     uint32 maxIndices;
 
-    ImGuiBuffer  buffers[4];
+    GfxBufferHandle vertexBuffer;
+    GfxBufferHandle indexBuffer;
     GfxPipelineLayoutHandle pipelineLayout;
     GfxPipelineHandle pipeline;
     GfxImageHandle fontImage;
     AssetHandleShader shader;
-    uint32 lastFrameVertices;
-    uint32 lastFrameIndices;
     float* alphaControl;      // alpha value that will be modified by mouse-wheel + ALT
 
     HashTable<const char*> settingsCacheTable;
     INIFileContext settingsIni;
-    uint32 frameIdx;
 };
 
 ImGuiState gImGui;
@@ -376,7 +371,8 @@ namespace ImGui
 
         const GfxBackendPipelineLayoutDesc::PushConstant pushConstant {
             .name = "Transform",
-            .stagesUsed = GfxShaderStage::Vertex
+            .stagesUsed = GfxShaderStage::Vertex,
+            .size = sizeof(ImGuiShaderTransform)
         };
 
         GfxBackendPipelineLayoutDesc layoutDesc {
@@ -398,12 +394,74 @@ namespace ImGui
             .blend {
                 .numAttachments = 1,
                 .attachments = GfxBlendAttachmentDesc::GetAlphaBlending()
-            }
+            },
+            .numColorAttachments = 1,
+            .colorAttachmentFormats = {GfxBackend::GetSwapchainFormat()}
         };
 
         gImGui.pipeline = GfxBackend::CreateGraphicsPipeline(*shader, gImGui.pipelineLayout, pipelineDesc);
 
         ASSERT(gImGui.pipeline.IsValid());
+
+        // Geometry Buffers
+        {
+            GfxBackendBufferDesc vertexBufferDesc {
+                .sizeBytes = IMGUI_VERTICES_POOL_SIZE*sizeof(ImDrawVert),
+                .usageFlags = GfxBackendBufferUsageFlags::TransferDst|GfxBackendBufferUsageFlags::Vertex
+            };
+            gImGui.vertexBuffer = GfxBackend::CreateBuffer(vertexBufferDesc);
+
+            GfxBackendBufferDesc indexBufferDesc {
+                .sizeBytes = IMGUI_VERTICES_POOL_SIZE*sizeof(ImDrawIdx),
+                .usageFlags = GfxBackendBufferUsageFlags::TransferDst|GfxBackendBufferUsageFlags::Index
+            };
+            gImGui.indexBuffer = GfxBackend::CreateBuffer(indexBufferDesc);
+        }
+
+
+        // Default Font
+        {
+            ImGuiIO& conf = GetIO();
+
+            ImFontConfig fontConfig;
+            fontConfig.OversampleH = 3;
+            fontConfig.RasterizerMultiply = 1.5f;
+            conf.Fonts->AddFontFromMemoryCompressedTTF(kCousineFont_compressed_data, kCousineFont_compressed_size, 14.0f, &fontConfig, nullptr);
+
+            uint8* fontPixels;
+            int fontWidth, fontHeight, fontBpp;
+            conf.Fonts->GetTexDataAsRGBA32(&fontPixels, &fontWidth, &fontHeight, &fontBpp);
+
+            GfxBackendImageDesc imageDesc {
+                .width = uint16(fontWidth),
+                .height = uint16(fontHeight),
+                .format = GfxFormat::R8G8B8A8_UNORM,
+                .usageFlags = GfxBackendImageUsageFlags::TransferDst|GfxBackendImageUsageFlags::Sampled
+            };
+    
+            gImGui.fontImage = GfxBackend::CreateImage(imageDesc);
+
+            GfxBackendBufferDesc stagingBufferDesc {
+                .sizeBytes = size_t(fontWidth * fontHeight * 4),
+                .usageFlags = GfxBackendBufferUsageFlags::TransferSrc,
+                .arena = GfxBackendMemoryArena::TransientCPU
+            };
+            GfxBufferHandle stagingBuffer = GfxBackend::CreateBuffer(stagingBufferDesc);
+            
+            GfxBackendCommandBuffer cmd = GfxBackend::BeginCommandBuffer(GfxBackendQueueType::Transfer);
+            void* stagingData;
+            size_t stagingDataSize;
+            cmd.MapBuffer(stagingBuffer, &stagingData, &stagingDataSize);
+            memcpy(stagingData, fontPixels, stagingBufferDesc.sizeBytes);
+            cmd.FlushBuffer(stagingBuffer);
+            cmd.CopyBufferToImage(stagingBuffer, gImGui.fontImage, GfxShaderStage::Fragment);
+            GfxBackend::EndCommandBuffer(cmd);
+            GfxBackend::SubmitQueue(GfxBackendQueueType::Transfer);
+
+            GfxBackend::DestroyBuffer(stagingBuffer);
+
+            conf.Fonts->SetTexID( reinterpret_cast<ImTextureID>((uintptr_t)uint32(gImGui.fontImage)));
+        }
     }
 
     static void _SetSetting(const char* key, const char* value)
@@ -435,27 +493,13 @@ namespace ImGui
     {
         if (numVertices > gImGui.maxVertices) {
             gImGui.maxVertices = AlignValue(numVertices, IMGUI_VERTICES_POOL_SIZE);
-            for (uint32 i = 0; i < CountOf(gImGui.buffers); i++) {
-                gfxDestroyBufferDeferred(gImGui.buffers[i].vertexBuffer);
-                gImGui.buffers[i].vertexBuffer = gfxCreateBuffer({
-                    .size = gImGui.maxVertices*uint32(sizeof(ImDrawVert)),
-                    .type = GfxBufferType::Vertex,
-                    .usage = GfxBufferUsage::Stream,
-                });
-            }
+            // TODO:
             LOG_VERBOSE("ImGui vertex capacity increased to maximum %u vertices", gImGui.maxVertices);
         }
 
         if (numIndices > gImGui.maxIndices) {
             gImGui.maxIndices = AlignValue(numIndices, IMGUI_VERTICES_POOL_SIZE);
-            for (uint32 i = 0; i < CountOf(gImGui.buffers); i++) {
-                gfxDestroyBufferDeferred(gImGui.buffers[i].indexBuffer);
-                gImGui.buffers[i].indexBuffer = gfxCreateBuffer({
-                    .size = gImGui.maxIndices*uint32(sizeof(ImDrawIdx)),
-                    .type = GfxBufferType::Index,
-                    .usage = GfxBufferUsage::Stream
-                });
-            }
+            // TODO:
             LOG_VERBOSE("ImGui index capacity increased to maximum %u indices", gImGui.maxIndices);
         }
     }
@@ -511,59 +555,18 @@ bool ImGui::Initialize()
     conf.KeyMap[ImGuiKey_Y]             = static_cast<int>(InputKeycode::Y);
     conf.KeyMap[ImGuiKey_Z]             = static_cast<int>(InputKeycode::Z);
 
-    gImGui.vertices = Mem::AllocTyped<ImDrawVert>(IMGUI_VERTICES_POOL_SIZE, &gImGui.alloc);
-    gImGui.indices = Mem::AllocTyped<uint16>(IMGUI_INDICES_POOL_SIZE, &gImGui.alloc);
     gImGui.maxVertices = IMGUI_VERTICES_POOL_SIZE;
     gImGui.maxIndices = IMGUI_INDICES_POOL_SIZE;
-
-    for (uint32 i = 0; i < 4; i++) {
-        gImGui.buffers[i].vertexBuffer = gfxCreateBuffer({
-            .size = IMGUI_VERTICES_POOL_SIZE*sizeof(ImDrawVert),
-            .type = GfxBufferType::Vertex,
-            .usage = GfxBufferUsage::Stream,
-        });
-
-        gImGui.buffers[i].indexBuffer = gfxCreateBuffer({
-            .size = IMGUI_INDICES_POOL_SIZE*sizeof(ImDrawIdx),
-            .type = GfxBufferType::Index,
-            .usage = GfxBufferUsage::Stream
-        });
-    }
 
     // Application events
     App::RegisterEventsCallback(_OnEventCallback);
     
-    // Default Font
-    {
-        ImFontConfig fontConfig;
-        fontConfig.OversampleH = 3;
-        fontConfig.RasterizerMultiply = 1.5f;
-        conf.Fonts->AddFontFromMemoryCompressedTTF(kCousineFont_compressed_data, kCousineFont_compressed_size, 
-                                                   14.0f, &fontConfig, nullptr);
-
-        uint8* fontPixels;
-        int fontWidth, fontHeight, fontBpp;
-        conf.Fonts->GetTexDataAsRGBA32(&fontPixels, &fontWidth, &fontHeight, &fontBpp);
-    
-        gImGui.fontImage = gfxCreateImage(GfxImageDesc {
-            .width = static_cast<uint32>(fontWidth),
-            .height = static_cast<uint32>(fontHeight),
-            .format = GfxFormat::R8G8B8A8_UNORM,
-            .samplerFilter = GfxSamplerFilterMode::Linear,
-            .samplerWrap = GfxSamplerWrapMode::ClampToEdge,
-            .sampled = true,
-            .size = static_cast<uint32>(fontWidth)*static_cast<uint32>(fontHeight)*4,
-            .content = fontPixels 
-        });
-        conf.Fonts->SetTexID( reinterpret_cast<ImTextureID>((uintptr_t)uint32(gImGui.fontImage)));
-    }
-
     _SetColorTheme();
     _InitializeSettings();
 
     // Register graphics resources callback so we can continue when the resources are loaded
     gImGui.shader = Asset::LoadShader("/shaders/ImGui.hlsl", ShaderLoadParams(),
-                                           Engine::RegisterInitializeResources(_InitializeGraphicsResources));
+                                      Engine::RegisterInitializeResources(_InitializeGraphicsResources));
 
     return true;
 }
@@ -617,30 +620,46 @@ void ImGui::BeginFrame(float dt)
 
 bool ImGui::DrawFrame()
 {
-    if (gImGui.ctx == nullptr) 
-        return false;
+    return false;
+}
 
-    PROFILE_ZONE();
-    Render();
+void ImGui::Update(GfxBackendCommandBuffer cmd)
+{
+    if (gImGui.ctx == nullptr) 
+        return;
+
+    ImGui::Render();
 
     ImDrawData* drawData = GetDrawData();
     if (drawData->CmdListsCount == 0)
-        return false;
-
-    ASSERT_MSG(drawData->CmdListsCount, "Must call imguiRender and check if something is actually being rendered");
-    if (drawData->CmdListsCount == 0)
-        return false;
+        return;
 
     // Fill the buffers
-    ImGuiBuffer& b = gImGui.buffers[(gImGui.frameIdx++) % 4];
     if (drawData->TotalVtxCount) {
         _GrowGeometryBuffers(drawData->TotalVtxCount, drawData->TotalIdxCount);
 
         uint32 vertexSize = drawData->TotalVtxCount * sizeof(ImDrawVert);
         uint32 indexSize = drawData->TotalIdxCount * sizeof(ImDrawIdx);
 
-        ImDrawVert* vertices = gImGui.vertices;
-        ImDrawIdx* indices = gImGui.indices;
+        GfxBackendBufferDesc stagingVertexBufferDesc {
+            .sizeBytes = vertexSize,
+            .usageFlags = GfxBackendBufferUsageFlags::TransferSrc,
+            .arena = GfxBackendMemoryArena::TransientCPU
+        };
+        GfxBufferHandle stagingVertexBuffer = GfxBackend::CreateBuffer(stagingVertexBufferDesc);
+
+        GfxBackendBufferDesc stagingIndexBufferDesc {
+            .sizeBytes = indexSize,
+            .usageFlags = GfxBackendBufferUsageFlags::TransferSrc,
+            .arena = GfxBackendMemoryArena::TransientCPU
+        };
+        GfxBufferHandle stagingIndexBuffer = GfxBackend::CreateBuffer(stagingIndexBufferDesc);
+
+        ImDrawVert* vertices = nullptr;
+        ImDrawIdx* indices = nullptr;
+
+        cmd.MapBuffer(stagingVertexBuffer, (void**)&vertices);
+        cmd.MapBuffer(stagingIndexBuffer, (void**)&indices);
 
         uint32 numVerts = 0, numIndices = 0;
         for (int i = 0; i < drawData->CmdListsCount; i++) {
@@ -655,12 +674,26 @@ bool ImGui::DrawFrame()
             numIndices += cmdList->IdxBuffer.Size;
         }
 
-        gfxCmdUpdateBuffer(b.vertexBuffer, gImGui.vertices, vertexSize);
-        gfxCmdUpdateBuffer(b.indexBuffer, gImGui.indices, indexSize);
+        cmd.TransitionBuffer(gImGui.vertexBuffer, GfxBackendBufferTransition::TransferWrite);
+        cmd.TransitionBuffer(gImGui.indexBuffer, GfxBackendBufferTransition::TransferWrite);
 
-        gImGui.lastFrameVertices = drawData->TotalVtxCount;
-        gImGui.lastFrameIndices = drawData->TotalIdxCount;
+        cmd.CopyBufferToBuffer(stagingVertexBuffer, gImGui.vertexBuffer, GfxShaderStage::Vertex);
+        cmd.CopyBufferToBuffer(stagingIndexBuffer, gImGui.indexBuffer, GfxShaderStage::Vertex);
+
+        GfxBackend::DestroyBuffer(stagingIndexBuffer);
+        GfxBackend::DestroyBuffer(stagingVertexBuffer);
     }
+}
+
+bool ImGui::DrawFrame2(GfxBackendCommandBuffer cmd)
+{
+    if (gImGui.ctx == nullptr) 
+        return false;
+
+    PROFILE_ZONE();
+    ImDrawData* drawData = GetDrawData();
+    if (drawData->CmdListsCount == 0)
+        return false;
 
     // Draw
     Float2 displayPos = Float2(drawData->DisplayPos.x, drawData->DisplayPos.y);
@@ -672,16 +705,17 @@ bool ImGui::DrawFrame()
         .height = displaySize.y
     };
 
-    Mat4 projMat = gfxGetClipspaceTransform() * Mat4::OrthoOffCenter(displayPos.x, displayPos.y + displaySize.y, 
+    ImGuiShaderTransform transform {
+        .projMat = gfxGetClipspaceTransform() * Mat4::OrthoOffCenter(displayPos.x, displayPos.y + displaySize.y, 
                                                                      displayPos.x + displaySize.x, displayPos.y, 
-                                                                     -1.0f, 1.0f);
-    
+                                                                     -1.0f, 1.0f)
+    };
 
     uint64 offsets[] = {0};
-    gfxCmdBindPipeline(gImGui.pipeline);
-    gfxCmdSetViewports(0, 1, &viewport, true);
-    gfxCmdBindVertexBuffers(0, 1, &b.vertexBuffer, offsets);
-    gfxCmdBindIndexBuffer(b.indexBuffer, 0, GfxIndexType::Uint16);
+    cmd.BindPipeline(gImGui.pipeline);
+    cmd.SetViewports(0, 1, &viewport);
+    cmd.BindVertexBuffers(0, 1, &gImGui.vertexBuffer, offsets);
+    cmd.BindIndexBuffer(gImGui.indexBuffer, 0, GfxIndexType::Uint16);
 
     uint32 globalVertexOffset = 0;
     uint32 globalIndexOffset = 0;
@@ -708,19 +742,18 @@ bool ImGui::DrawFrame()
 
                 RectInt scissor(int(clipRect.x), int(clipRect.y), int(clipRect.z), int(clipRect.w));
                 GfxImageHandle img(PtrToInt<uint32>(drawCmd->TextureId));
-                GfxDescriptorBindingDesc descriptorBindings[] = {
+                GfxBackendBindingDesc bindings[] = {
                     {
                         .name = "MainTexture",
-                        .type = GfxDescriptorType::CombinedImageSampler,
                         .image = img
                     }
                 };
 
-                gfxCmdSetScissors(0, 1, &scissor, true);
-                gfxCmdPushDescriptorSet(gImGui.pipeline, GfxPipelineBindPoint::Graphics, 0, CountOf(descriptorBindings), descriptorBindings);
-                gfxCmdPushConstants(gImGui.pipeline, GfxShaderStage::Vertex, &projMat, sizeof(projMat));
+                cmd.SetScissors(0, 1, &scissor);
+                cmd.PushBindings(gImGui.pipelineLayout, CountOf(bindings), bindings);
+                cmd.PushConstants<ImGuiShaderTransform>(gImGui.pipelineLayout, "Transform", transform);
                 
-                gfxCmdDrawIndexed(drawCmd->ElemCount, 1, drawCmd->IdxOffset + globalIndexOffset, drawCmd->VtxOffset + globalVertexOffset, 0);
+                cmd.DrawIndexed(drawCmd->ElemCount, 1, drawCmd->IdxOffset + globalIndexOffset, drawCmd->VtxOffset + globalVertexOffset, 0);
             }
         }
 
@@ -729,7 +762,7 @@ bool ImGui::DrawFrame()
     }
 
     RectInt rc(0, 0, int(displaySize.x), int(displaySize.y));
-    gfxCmdSetScissors(0, 1, &rc, true);
+    cmd.SetScissors(0, 1, &rc);
 
     return true;
 }
@@ -737,10 +770,8 @@ bool ImGui::DrawFrame()
 void ImGui::Release()
 {
     if (gImGui.ctx) {
-        for (uint32 i = 0; i < 4; i++) {
-            gfxDestroyBuffer(gImGui.buffers[i].vertexBuffer);
-            gfxDestroyBuffer(gImGui.buffers[i].indexBuffer);
-        }
+        GfxBackend::DestroyBuffer(gImGui.vertexBuffer);
+        GfxBackend::DestroyBuffer(gImGui.indexBuffer);
         GfxBackend::DestroyPipeline(gImGui.pipeline);
         GfxBackend::DestroyPipelineLayout(gImGui.pipelineLayout);
         GfxBackend::DestroyImage(gImGui.fontImage);

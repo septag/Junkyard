@@ -404,6 +404,12 @@ struct GfxBackendPipeline
     // TODO: HotReload stuff
 };
 
+struct GfxBackendSampler
+{
+    VkSampler handle;
+    GfxBackendSamplerDesc desc;
+};
+
 struct GfxBackendVk
 {
     Mutex garbageMtx;
@@ -430,9 +436,12 @@ struct GfxBackendVk
     HandlePool<GfxBufferHandle, GfxBackendBuffer> buffers;
     HandlePool<GfxPipelineLayoutHandle, GfxBackendPipelineLayout*> pipelineLayouts;
     HandlePool<GfxPipelineHandle, GfxBackendPipeline> pipelines;
+    HandlePool<GfxSamplerHandle, GfxBackendSampler> samplers;
     
     Array<GfxBackendGarbage> garbage;
     uint64 presentFrame;
+
+    VkSampler samplerDefault;
 };
 
 static GfxBackendVk gBackendVk;
@@ -465,14 +474,25 @@ namespace GfxBackend
     }
 
     // Returns the proper vulkan stage based the destination queue type and the stage that buffer should be transitioned to
-    static inline VkPipelineStageFlags2 _GetBufferDestStageFlags(GfxBackendQueueType type, GfxShaderStage dstStages)
+    static inline VkPipelineStageFlags2 _GetBufferDestStageFlags(GfxBackendQueueType type, GfxShaderStage dstStages, 
+                                                                 GfxBackendBufferUsageFlags usageFlags)
     {
         VkPipelineStageFlags2 flags = 0;
         if (type == GfxBackendQueueType::Graphics) {
-            if (IsBitsSet<GfxShaderStage>(dstStages, GfxShaderStage::Vertex)) 
-                flags |= VK_PIPELINE_STAGE_2_VERTEX_ATTRIBUTE_INPUT_BIT;
-            if (IsBitsSet<GfxShaderStage>(dstStages, GfxShaderStage::Fragment)) 
+            if (IsBitsSet<GfxShaderStage>(dstStages, GfxShaderStage::Vertex)) {
+                if (IsBitsSet<GfxBackendBufferUsageFlags>(usageFlags, GfxBackendBufferUsageFlags::Vertex)) {
+                    flags |= VK_PIPELINE_STAGE_2_VERTEX_ATTRIBUTE_INPUT_BIT;
+                }
+                else if (IsBitsSet<GfxBackendBufferUsageFlags>(usageFlags, GfxBackendBufferUsageFlags::Index)) {
+                    flags |= VK_PIPELINE_STAGE_2_INDEX_INPUT_BIT;
+                }
+                else {
+                    flags |= VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT;
+                }
+            }
+            if (IsBitsSet<GfxShaderStage>(dstStages, GfxShaderStage::Fragment)) {
                 flags |= VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
+            }
         }
         else if (type == GfxBackendQueueType::Compute) {
             flags |= VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
@@ -481,14 +501,6 @@ namespace GfxBackend
         return flags;
     }
     
-    // Gets the stage that the buffer is currently transitioned to. And returns the stage that the buffer is suppose to be transitioned
-    static inline VkPipelineStageFlags2 _GetBufferSourceStageFlags(VkPipelineStageFlags2 curStageFlags)
-    {
-        if (curStageFlags & VK_PIPELINE_STAGE_2_VERTEX_ATTRIBUTE_INPUT_BIT) 
-            return VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT;
-        return VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT;
-    }
-
     static inline VkPipelineStageFlags2 _GetImageDestStageFlags(GfxBackendQueueType type, GfxShaderStage dstStages)
     {
         VkPipelineStageFlags2 flags = 0;
@@ -503,14 +515,6 @@ namespace GfxBackend
         }
 
         return flags;
-    }
-
-    // Gets the stage that the buffer is currently transitioned to. And returns the stage that the buffer is suppose to be transitioned
-    static inline VkPipelineStageFlags2 _GetImageSourceStageFlags(VkPipelineStageFlags2 curStageFlags)
-    {
-        if (curStageFlags & VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT) 
-            return VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
-        return curStageFlags;
     }
 
     static inline const GfxShaderParameterInfo* _FindShaderParam(const GfxShader& shader, const char* paramName)
@@ -530,6 +534,37 @@ namespace GfxBackend
 
         const GfxBackendCommandBufferContext& cmdBufferMan = queue.cmdBufferContexts[gBackendVk.queueMan.GetFrameIndex()];
         return cmdBufferMan.cmdBuffers[cmdBuffer.mCmdBufferIndex];
+    }
+
+    // https://android-developers.googleblog.com/2020/02/handling-device-orientation-efficiently.html
+    static Pair<Int2, Int2> _TransformRectangleBasedOnOrientation(int x, int y, int w, int h, bool isSwapchain)
+    {
+        int bufferWidth = App::GetFramebufferWidth();
+        int bufferHeight = App::GetFramebufferHeight();
+
+        if (!isSwapchain)
+            return Pair<Int2, Int2>(Int2(x, y), Int2(w, h));
+
+        switch (App::GetFramebufferTransform()) {
+        case AppFramebufferTransform::None:     
+            return Pair<Int2, Int2>(Int2(x, y), Int2(w, h));
+        case AppFramebufferTransform::Rotate90:
+            Swap(bufferWidth, bufferHeight);
+            return Pair<Int2, Int2>(
+                Int2(bufferWidth - h - y, x),
+                Int2(h, w));
+        case AppFramebufferTransform::Rotate180:
+            return Pair<Int2, Int2>(
+                Int2(bufferWidth - w - x, bufferHeight - h - y),
+                Int2(w, h));
+        case AppFramebufferTransform::Rotate270:
+            Swap(bufferWidth, bufferHeight);
+            return Pair<Int2, Int2>(
+                Int2(y, bufferHeight - w - x),
+                Int2(h, w));
+        }
+
+        return Pair<Int2, Int2>(Int2(x, y), Int2(w, h));
     }
 
     static void _CollectGarbage(bool force)
@@ -570,7 +605,7 @@ namespace GfxBackend
                     break;
                 }
 
-                gBackendVk.garbage.RemoveAndSwap(i);
+                gBackendVk.garbage.Pop(i);
             }
             else {
                 ++i;
@@ -1453,6 +1488,31 @@ bool GfxBackend::Initialize()
 
     gBackendVk.frameSyncSignal.Initialize();
 
+    // Make a trilinear sampler as default sampler
+    // TODO: Make a better sampler system
+    {
+        VkSamplerCreateInfo samplerInfo {
+            .sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
+            .magFilter = VK_FILTER_LINEAR,
+            .minFilter = VK_FILTER_LINEAR,
+            .mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR,
+            .addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+            .addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+            .addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+            .mipLodBias = 0.0f,
+            .anisotropyEnable = VK_FALSE,
+            .maxAnisotropy = 0,
+            .compareEnable = VK_FALSE,
+            .compareOp = VK_COMPARE_OP_ALWAYS,
+            .borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK,
+            .unnormalizedCoordinates = VK_FALSE, 
+        };
+
+        if (vkCreateSampler(gBackendVk.device, &samplerInfo, gBackendVk.vkAlloc, &gBackendVk.samplerDefault) != VK_SUCCESS) {
+            LOG_ERROR("Gfx: CreateSampler failed");
+        }
+    }
+
     return true;
 }
 
@@ -1576,9 +1636,13 @@ void GfxBackend::Release()
 {
     MemAllocator* alloc = &gBackendVk.parentAlloc;
 
+
     if (gBackendVk.device)
         vkDeviceWaitIdle(gBackendVk.device);
     gBackendVk.queueMan.Release();
+
+    if (gBackendVk.samplerDefault)
+        vkDestroySampler(gBackendVk.device, gBackendVk.samplerDefault, gBackendVk.vkAlloc);        
 
     _CollectGarbage(true);
 
@@ -2430,9 +2494,18 @@ GfxPipelineHandle GfxBackend::CreateGraphicsPipeline(const GfxShader& shader, Gf
         .maxDepthBounds = desc.depthStencil.maxDepthBounds
     };
 
+    ASSERT(desc.numColorAttachments);
+    VkPipelineRenderingCreateInfo renderCreateInfo {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO,
+        .colorAttachmentCount = desc.numColorAttachments,
+        .pColorAttachmentFormats = (const VkFormat*)desc.colorAttachmentFormats,
+        .depthAttachmentFormat = VkFormat(desc.depthAttachmentFormat),
+        .stencilAttachmentFormat = VkFormat(desc.stencilAttachmentFormat)
+    };
     
     VkGraphicsPipelineCreateInfo pipelineInfo {
         .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
+        .pNext = &renderCreateInfo,
         .flags = gBackendVk.extApi.hasPipelineExecutableProperties ? VK_PIPELINE_CREATE_CAPTURE_STATISTICS_BIT_KHR : (VkPipelineCreateFlags)0,
         .stageCount = CountOf(shaderStages),
         .pStages = shaderStages,
@@ -2570,7 +2643,6 @@ void GfxBackendCommandBuffer::PushConstants(GfxPipelineLayoutHandle layoutHandle
 
 void GfxBackendCommandBuffer::PushBindings(GfxPipelineLayoutHandle layoutHandle, uint32 numBindings, const GfxBackendBindingDesc* bindings)
 {
-    // TODO: remove stage argument
     ASSERT(numBindings);
     ASSERT(bindings);
 
@@ -2665,7 +2737,15 @@ void GfxBackendCommandBuffer::PushBindings(GfxPipelineLayoutHandle layoutHandle,
             }
             case VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER:
             {
-                ASSERT(0);
+                if (!imgLayout)
+                    imgLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+                pImageInfo = imageInfos.Push();
+                *pImageInfo = {
+                    .sampler = gBackendVk.samplerDefault,
+                    .imageView = binding.image.IsValid() ? gBackendVk.images.Data(binding.image).viewHandle : VK_NULL_HANDLE,
+                    .imageLayout = imgLayout
+                };
+                break;
                 /*
                 if (!binding.imageArrayCount) {
                     const GfxImageData* imageData = binding.image.IsValid() ? &gVk.pools.mImages.Data(binding.image) : nullptr;
@@ -3453,13 +3533,13 @@ void GfxBackendQueueManager::ReleaseCommandBufferContext(GfxBackendCommandBuffer
 void GfxBackendCommandBuffer::MapBuffer(GfxBufferHandle buffHandle, void** outPtr, size_t* outSizeBytes)
 {
     ASSERT(outPtr);
-    ASSERT(outSizeBytes);
 
     GfxBackendBuffer& buffer = gBackendVk.buffers.Data(buffHandle);
     ASSERT_MSG(buffer.mem.mappedData, "Buffer is not mappable");
 
     *outPtr = buffer.mem.mappedData;
-    *outSizeBytes = buffer.desc.sizeBytes;
+    if (outSizeBytes)
+        *outSizeBytes = buffer.desc.sizeBytes;
 }
 
 void GfxBackendCommandBuffer::FlushBuffer(GfxBufferHandle buffHandle)
@@ -3498,8 +3578,17 @@ void GfxBackendCommandBuffer::CopyBufferToBuffer(GfxBufferHandle srcHandle, GfxB
         .dstOffset = dstOffset,
         .size = sizeBytes
     };
-
     vkCmdCopyBuffer(cmdVk, srcBuffer.handle, dstBuffer.handle, 1, &copyRegion);
+
+    VkAccessFlags2 accessFlags;
+    if (IsBitsSet<GfxBackendBufferUsageFlags>(dstBuffer.desc.usageFlags, GfxBackendBufferUsageFlags::Index))
+        accessFlags = VK_ACCESS_2_INDEX_READ_BIT;
+    else if (IsBitsSet<GfxBackendBufferUsageFlags>(dstBuffer.desc.usageFlags, GfxBackendBufferUsageFlags::Vertex))
+        accessFlags = VK_ACCESS_2_VERTEX_ATTRIBUTE_READ_BIT;
+    else if (IsBitsSet<GfxBackendBufferUsageFlags>(dstBuffer.desc.usageFlags, GfxBackendBufferUsageFlags::Uniform))
+        accessFlags = VK_ACCESS_2_UNIFORM_READ_BIT;
+    else 
+        accessFlags = VK_ACCESS_2_MEMORY_READ_BIT;
 
     StaticArray<GfxBackendQueueType, 4> dstQueues;
     if (IsBitsSet<GfxShaderStage>(stagesUsed, GfxShaderStage::Vertex) ||
@@ -3521,8 +3610,8 @@ void GfxBackendCommandBuffer::CopyBufferToBuffer(GfxBufferHandle srcHandle, GfxB
                 .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2,
                 .srcStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT,
                 .srcAccessMask = VK_ACCESS_2_MEMORY_WRITE_BIT,
-                .dstStageMask = GfxBackend::_GetBufferDestStageFlags(dstQueueType, stagesUsed),
-                .dstAccessMask = VK_ACCESS_2_MEMORY_READ_BIT,
+                .dstStageMask = GfxBackend::_GetBufferDestStageFlags(dstQueueType, stagesUsed, dstBuffer.desc.usageFlags),
+                .dstAccessMask = accessFlags,
                 .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
                 .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
                 .buffer = dstBuffer.handle,
@@ -3570,8 +3659,10 @@ void GfxBackendCommandBuffer::CopyBufferToBuffer(GfxBufferHandle srcHandle, GfxB
                 .bufferHandle = dstHandle,
                 .bufferBarrier = {
                     .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2,
-                    .dstStageMask = GfxBackend::_GetBufferDestStageFlags(dstQueueType, stagesUsed),
-                    .dstAccessMask = VK_ACCESS_2_MEMORY_READ_BIT,
+                    .srcStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT,
+                    .srcAccessMask = VK_ACCESS_2_MEMORY_WRITE_BIT,
+                    .dstStageMask = GfxBackend::_GetBufferDestStageFlags(dstQueueType, stagesUsed, dstBuffer.desc.usageFlags),
+                    .dstAccessMask = accessFlags,
                     .srcQueueFamilyIndex = mQueueIndex,
                     .dstQueueFamilyIndex = dstQueueIndex,
                     .offset = dstOffset,
@@ -3617,7 +3708,7 @@ void GfxBackendCommandBuffer::CopyBufferToImage(GfxBufferHandle srcHandle, GfxIm
     }
 
     VkImageSubresourceRange subresourceRange {
-        .aspectMask = 0,
+        .aspectMask = aspect,
         .baseMipLevel = startMipIndex,
         .levelCount = mipCount,
         .baseArrayLayer = 0,
@@ -3646,8 +3737,8 @@ void GfxBackendCommandBuffer::CopyBufferToImage(GfxBufferHandle srcHandle, GfxIm
     VkBufferImageCopy imageCopies[GFXBACKEND_MAX_MIPS_PER_IMAGE];
     uint16 endMipIndex = startMipIndex + mipCount;
     for (uint16 i = startMipIndex; i < endMipIndex; i++) {
-        uint16 mipWidth = Min<uint16>(1, dstImage.desc.width >> i);
-        uint16 mipHeight = Min<uint16>(1, dstImage.desc.height >> i);
+        uint16 mipWidth = Max<uint16>(1, dstImage.desc.width >> i);
+        uint16 mipHeight = Max<uint16>(1, dstImage.desc.height >> i);
 
         imageCopies[i] = {
             .bufferOffset = dstImage.desc.mipOffsets[i],
@@ -3660,12 +3751,14 @@ void GfxBackendCommandBuffer::CopyBufferToImage(GfxBufferHandle srcHandle, GfxIm
                 .layerCount = 1
             },
             .imageOffset = {0, 0, 0},
-            .imageExtent = {mipWidth, mipHeight, 0}
+            .imageExtent = {mipWidth, mipHeight, 1}
         };
     }
 
     vkCmdCopyBufferToImage(cmdVk, srcBuffer.handle, dstImage.handle, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, mipCount, imageCopies);
 
+    // Put the post barriers
+    // Transition the image from Trasnsfer to 
     StaticArray<GfxBackendQueueType, 4> dstQueues;
     if (IsBitsSet<GfxShaderStage>(stagesUsed, GfxShaderStage::Vertex) ||
         IsBitsSet<GfxShaderStage>(stagesUsed, GfxShaderStage::Fragment))
@@ -3734,9 +3827,13 @@ void GfxBackendCommandBuffer::CopyBufferToImage(GfxBufferHandle srcHandle, GfxIm
                 .type = GfxBackendQueue::PendingBarrier::IMAGE,
                 .imageHandle = dstHandle,
                 .imageBarrier = {
-                    .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2,
-                    .dstStageMask = GfxBackend::_GetBufferDestStageFlags(dstQueueType, stagesUsed),
+                    .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
+                    .srcStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT,
+                    .srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT,
+                    .dstStageMask = GfxBackend::_GetImageDestStageFlags(dstQueueType, stagesUsed),
                     .dstAccessMask = VK_ACCESS_2_MEMORY_READ_BIT,
+                    .oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                    .newLayout = dstLayout,
                     .srcQueueFamilyIndex = mQueueIndex,
                     .dstQueueFamilyIndex = dstQueueIndex,
                     .subresourceRange = subresourceRange
@@ -3767,7 +3864,7 @@ void GfxBackendCommandBuffer::TransitionBuffer(GfxBufferHandle buffHandle, GfxBa
             ASSERT_MSG(IsBitsSet<GfxBackendQueueType>(queue.type, GfxBackendQueueType::Transfer) || queue.supportsTransfer,
                        "Cannot do transfer transitions on non-Transfer queues");
 
-            barrier.srcStageMask = GfxBackend::_GetBufferSourceStageFlags(buffer.transitionedStage);
+            barrier.srcStageMask = buffer.transitionedStage;
             barrier.srcAccessMask = buffer.transitionedAccess;
             barrier.dstStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
             barrier.dstAccessMask = VK_ACCESS_2_MEMORY_WRITE_BIT;
@@ -3813,7 +3910,7 @@ void GfxBackendCommandBuffer::TransitionImage(GfxImageHandle imgHandle, GfxBacke
 
     switch (transition) {
         case GfxBackendImageTransition::ComputeWrite:
-            barrier.srcStageMask = GfxBackend::_GetImageSourceStageFlags(image.transitionedStage);
+            barrier.srcStageMask = image.transitionedStage;
             barrier.srcAccessMask = image.transitionedAccess;
             barrier.dstStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
             barrier.dstAccessMask = VK_ACCESS_2_MEMORY_WRITE_BIT;
@@ -3821,7 +3918,7 @@ void GfxBackendCommandBuffer::TransitionImage(GfxImageHandle imgHandle, GfxBacke
             break;
 
         case GfxBackendImageTransition::CopySource:
-            barrier.srcStageMask = GfxBackend::_GetImageSourceStageFlags(image.transitionedStage);
+            barrier.srcStageMask = image.transitionedStage;
             barrier.srcAccessMask = image.transitionedAccess;
             barrier.dstStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
             barrier.dstAccessMask = VK_ACCESS_2_TRANSFER_READ_BIT;
@@ -3884,7 +3981,7 @@ void GfxBackendCommandBuffer::BeginRenderPass(const GfxBackendRenderPass& pass)
     ASSERT_MSG(!(pass.swapchain & (pass.hasDepth|pass.hasStencil)), "Swapchain doesn't have depth/stencil attachments");
     VkCommandBuffer cmdVk = GfxBackend::_GetCommandBufferHandle(*this);
 
-    uint32 numColorAttachments = pass.swapchain ? pass.numAttachments : 1;
+    uint32 numColorAttachments = !pass.swapchain ? pass.numAttachments : 1;
     ASSERT(numColorAttachments);
     ASSERT(numColorAttachments < GFXBACKEND_MAX_RENDERPASS_COLOR_ATTACHMENTS);
     VkRenderingAttachmentInfo colorAttachments[GFXBACKEND_MAX_RENDERPASS_COLOR_ATTACHMENTS];
@@ -3970,3 +4067,152 @@ void GfxBackendCommandBuffer::DrawIndexed(uint32 indexCount, uint32 instanceCoun
     vkCmdDrawIndexed(cmdVk, indexCount, instanceCount, firstIndex, vertexOffset, firstInstance);
 }
 
+GfxFormat GfxBackend::GetSwapchainFormat()
+{
+    return GfxFormat(gBackendVk.swapchain.format.format);
+}
+
+void GfxBackendCommandBuffer::SetScissors(uint32 firstScissor, uint32 numScissors, const RectInt* scissors)
+{
+    ASSERT(numScissors);
+    ASSERT(scissors);
+
+    VkCommandBuffer cmdVk = GfxBackend::_GetCommandBufferHandle(*this);
+
+    MemTempAllocator tmpAlloc;
+    VkRect2D* scissorsVk = tmpAlloc.MallocTyped<VkRect2D>(numScissors);
+
+    for (uint32 i = 0; i < numScissors; i++) {
+        const RectInt& scissor = scissors[i];
+        Pair<Int2, Int2> transformed = GfxBackend::_TransformRectangleBasedOnOrientation(scissor.xmin, scissor.ymin, 
+                                                                                         scissor.Width(), scissor.Height(), 
+                                                                                         mDrawsToSwapchain);
+        scissorsVk[i].offset.x = transformed.first.x;
+        scissorsVk[i].offset.y = transformed.first.y;
+        scissorsVk[i].extent.width = transformed.second.x;
+        scissorsVk[i].extent.height = transformed.second.y;
+    }
+
+    vkCmdSetScissor(cmdVk, firstScissor, numScissors, scissorsVk);
+}
+
+void GfxBackendCommandBuffer::SetViewports(uint32 firstViewport, uint32 numViewports, const GfxViewport* viewports)
+{
+    ASSERT(numViewports);
+    ASSERT(viewports);
+
+    VkCommandBuffer cmdVk = GfxBackend::_GetCommandBufferHandle(*this);
+
+    MemTempAllocator tmpAlloc;
+    VkViewport* viewportsVk = tmpAlloc.MallocTyped<VkViewport>(numViewports);
+
+    for (uint32 i = 0; i < numViewports; i++) {
+        Pair<Int2, Int2> transformed = GfxBackend::_TransformRectangleBasedOnOrientation(
+            int(viewports[i].x), int(viewports[i].y), 
+            int(viewports[i].width), int(viewports[i].height), 
+            mDrawsToSwapchain);
+
+        viewportsVk[i].x = float(transformed.first.x);
+        viewportsVk[i].y = float(transformed.first.y);
+        viewportsVk[i].width = float(transformed.second.x);
+        viewportsVk[i].height = float(transformed.second.y);
+        viewportsVk[i].minDepth = viewports[i].minDepth;
+        viewportsVk[i].maxDepth = viewports[i].maxDepth;        
+    }
+
+    vkCmdSetViewport(cmdVk, firstViewport, numViewports, viewportsVk);
+}
+
+void GfxBackendCommandBuffer::BindVertexBuffers(uint32 firstBinding, uint32 numBindings, const GfxBufferHandle* vertexBuffers, const uint64* offsets)
+{
+    static_assert(sizeof(uint64) == sizeof(VkDeviceSize));
+
+    VkCommandBuffer cmdVk = GfxBackend::_GetCommandBufferHandle(*this);
+
+    MemTempAllocator tempAlloc;
+    VkBuffer* buffersVk = tempAlloc.MallocTyped<VkBuffer>(numBindings);
+    for (uint32 i = 0; i < numBindings; i++) 
+        buffersVk[i] = gBackendVk.buffers.Data(vertexBuffers[i]).handle;
+    
+    vkCmdBindVertexBuffers(cmdVk, firstBinding, numBindings, buffersVk, reinterpret_cast<const VkDeviceSize*>(offsets));
+}
+
+void GfxBackendCommandBuffer::BindIndexBuffer(GfxBufferHandle indexBuffer, uint64 offset, GfxIndexType indexType)
+{
+    VkCommandBuffer cmdVk = GfxBackend::_GetCommandBufferHandle(*this);
+    GfxBackendBuffer& buffer = gBackendVk.buffers.Data(indexBuffer);
+
+    vkCmdBindIndexBuffer(cmdVk, buffer.handle, VkDeviceSize(offset), VkIndexType(indexType));
+}
+
+GfxSamplerHandle GfxBackend::CreateSampler(const GfxBackendSamplerDesc& desc)
+{
+    VkFilter minMagFilter = VK_FILTER_MAX_ENUM;
+    VkSamplerMipmapMode mipFilter = VK_SAMPLER_MIPMAP_MODE_MAX_ENUM;
+    VkSamplerAddressMode addressMode = VK_SAMPLER_ADDRESS_MODE_MAX_ENUM;
+    float anisotropy = desc.anisotropy <= 0 ? 1.0f : desc.anisotropy;
+
+    switch (desc.samplerFilter) {
+    case GfxSamplerFilterMode::Default:
+    case GfxSamplerFilterMode::Nearest:               minMagFilter = VK_FILTER_NEAREST; mipFilter = VK_SAMPLER_MIPMAP_MODE_NEAREST; break;
+    case GfxSamplerFilterMode::Linear:                minMagFilter = VK_FILTER_LINEAR;  mipFilter = VK_SAMPLER_MIPMAP_MODE_LINEAR;  break;
+    case GfxSamplerFilterMode::NearestMipmapNearest:  minMagFilter = VK_FILTER_NEAREST; mipFilter = VK_SAMPLER_MIPMAP_MODE_NEAREST; break;
+    case GfxSamplerFilterMode::NearestMipmapLinear:   minMagFilter = VK_FILTER_NEAREST; mipFilter = VK_SAMPLER_MIPMAP_MODE_LINEAR;  break;
+    case GfxSamplerFilterMode::LinearMipmapNearest:   minMagFilter = VK_FILTER_LINEAR;  mipFilter = VK_SAMPLER_MIPMAP_MODE_NEAREST; break;
+    case GfxSamplerFilterMode::LinearMipmapLinear:    minMagFilter = VK_FILTER_LINEAR;  mipFilter = VK_SAMPLER_MIPMAP_MODE_LINEAR;  break;
+    }
+
+    switch (desc.samplerWrap) {
+    case GfxSamplerWrapMode::Default:
+    case GfxSamplerWrapMode::Repeat:           addressMode = VK_SAMPLER_ADDRESS_MODE_REPEAT; break;
+    case GfxSamplerWrapMode::ClampToEdge:      addressMode = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE; break;
+    case GfxSamplerWrapMode::ClampToBorder:    addressMode = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER; break;
+    case GfxSamplerWrapMode::MirroredRepeat:   addressMode = VK_SAMPLER_ADDRESS_MODE_MIRRORED_REPEAT; break;
+    }
+
+    VkSamplerCreateInfo samplerInfo {
+        .sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
+        .magFilter = minMagFilter,
+        .minFilter = minMagFilter,
+        .mipmapMode = mipFilter,
+        .addressModeU = addressMode,
+        .addressModeV = addressMode,
+        .addressModeW = addressMode,
+        .mipLodBias = 0.0f,
+        .anisotropyEnable = anisotropy > 1.0f ? VK_TRUE : VK_FALSE,
+        .maxAnisotropy = Min(gBackendVk.gpu.props.limits.maxSamplerAnisotropy, anisotropy),
+        .compareEnable = VK_FALSE,
+        .compareOp = VK_COMPARE_OP_ALWAYS,
+        .minLod = 0.0f, 
+        .maxLod = 0.0f,
+        .borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK,
+        .unnormalizedCoordinates = VK_FALSE, 
+    };
+
+    VkSampler samplerVk;
+    if (vkCreateSampler(gBackendVk.device, &samplerInfo, gBackendVk.vkAlloc, &samplerVk) != VK_SUCCESS)
+        return {};
+
+    GfxBackendSampler sampler {
+        .handle = samplerVk,
+        .desc = desc
+    };
+
+    return gBackendVk.samplers.Add(sampler);
+}
+
+void GfxBackend::DestroySampler(GfxSamplerHandle handle)
+{
+    if (handle.IsValid()) {
+        GfxBackendSampler& sampler = gBackendVk.samplers.Data(handle);
+
+        MutexScope lock(gBackendVk.garbageMtx);
+        GfxBackendGarbage garbage {
+            .type = GfxBackendGarbage::Type::Sampler,
+            .frameIdx = gBackendVk.presentFrame,
+            .sampler = sampler.handle
+        };
+
+        gBackendVk.garbage.Push(garbage);
+    }
+}

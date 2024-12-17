@@ -16,6 +16,7 @@ DEFINE_HANDLE(GfxDescriptorSetLayoutHandle);
 DEFINE_HANDLE(GfxRenderPassHandle);
 DEFINE_HANDLE(GfxDescriptorSetHandle);
 DEFINE_HANDLE(GfxPipelineLayoutHandle);
+DEFINE_HANDLE(GfxSamplerHandle);
 
 // AssetManager
 DEFINE_HANDLE(AssetHandle);

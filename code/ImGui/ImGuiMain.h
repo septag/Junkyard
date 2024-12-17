@@ -6,6 +6,8 @@
 // Note: External dependency to imgui.h
 #include "../External/imgui/imgui.h"
 
+#include "../Graphics/GfxBackend.h"
+
 #define IMGUI_ALPHA_WINDOW(_id) \
     static float CONCAT(_id, _alpha) = 1.0f;   \
     ImGui::SetNextWindowBgAlpha(CONCAT(_id, _alpha));
@@ -65,6 +67,9 @@ namespace ImGui
     API bool IsEnabled();
     API void BeginFrame(float dt);
     API bool DrawFrame();
+
+    API void Update(GfxBackendCommandBuffer cmd);
+    API bool DrawFrame2(GfxBackendCommandBuffer cmd);
 
     API bool Initialize();
     API void Release();

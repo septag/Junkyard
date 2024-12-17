@@ -131,6 +131,11 @@ struct GfxBackendGraphicsPipelineDesc
     GfxRasterizerDesc rasterizer;
     GfxBlendDesc blend;
     GfxDepthStencilDesc depthStencil;
+
+    uint32 numColorAttachments;
+    GfxFormat colorAttachmentFormats[GFXBACKEND_MAX_RENDERPASS_COLOR_ATTACHMENTS];
+    GfxFormat depthAttachmentFormat;
+    GfxFormat stencilAttachmentFormat;
 };
 
 struct GfxBackendBindingDesc
@@ -197,6 +202,16 @@ struct GfxBackendRenderPass
     bool hasStencil;
 };
 
+struct GfxBackendSamplerDesc
+{
+    GfxSamplerFilterMode samplerFilter = GfxSamplerFilterMode::Nearest;
+    GfxSamplerWrapMode samplerWrap = GfxSamplerWrapMode::Repeat;
+    GfxSamplerBorderColor borderColor = GfxSamplerBorderColor::Default;
+    float anisotropy = 1.0f;
+    float mipLODBias = 0;
+    // TODO: Add compare and other options
+};
+
 struct GfxBackendCommandBuffer
 {
     uint32 mGeneration;
@@ -214,7 +229,7 @@ struct GfxBackendCommandBuffer
                            uint16 startMipIndex = 0, uint16 mipCount = UINT16_MAX);
 
 
-    void MapBuffer(GfxBufferHandle buffHandle, void** outPtr, size_t* outSizeBytes);
+    void MapBuffer(GfxBufferHandle buffHandle, void** outPtr, size_t* outSizeBytes = nullptr);
     void FlushBuffer(GfxBufferHandle buffHandle);
 
     void ClearImageColor(GfxImageHandle imgHandle, Color color);
@@ -227,6 +242,9 @@ struct GfxBackendCommandBuffer
     void PushBindings(GfxPipelineLayoutHandle layoutHandle, uint32 numBindings, const GfxBackendBindingDesc* bindings);
 
     void BindPipeline(GfxPipelineHandle pipeHandle);
+    void BindVertexBuffers(uint32 firstBinding, uint32 numBindings, const GfxBufferHandle* vertexBuffers, const uint64* offsets);
+    void BindIndexBuffer(GfxBufferHandle indexBuffer, uint64 offset, GfxIndexType indexType);
+
     void Dispatch(uint32 groupCountX, uint32 groupCountY, uint32 groupCountZ);
 
     void TransitionBuffer(GfxBufferHandle buffHandle, GfxBackendBufferTransition transition);
@@ -234,6 +252,9 @@ struct GfxBackendCommandBuffer
 
     void Draw(uint32 vertexCount, uint32 instanceCount, uint32 firstVertex, uint32 firstInstance);
     void DrawIndexed(uint32 indexCount, uint32 instanceCount, uint32 firstIndex, uint32 vertexOffset, uint32 firstInstance);
+
+    void SetScissors(uint32 firstScissor, uint32 numScissors, const RectInt* scissors);
+    void SetViewports(uint32 firstViewport, uint32 numViewports, const GfxViewport* viewports);
 };
 
 namespace GfxBackend
@@ -262,11 +283,16 @@ namespace GfxBackend
     GfxPipelineHandle CreateGraphicsPipeline(const GfxShader& shader, GfxPipelineLayoutHandle layoutHandle, const GfxBackendGraphicsPipelineDesc& desc);
     GfxPipelineHandle CreateComputePipeline(const GfxShader& shader, GfxPipelineLayoutHandle layoutHandle);
     void DestroyPipeline(GfxPipelineHandle handle);
+
+    GfxSamplerHandle CreateSampler(const GfxBackendSamplerDesc& desc);
+    void DestroySampler(GfxSamplerHandle handle);
+
+    GfxFormat GetSwapchainFormat();
 } // Gfx
 
 //----------------------------------------------------------------------------------------------------------------------
 template <typename _T>
 inline void GfxBackendCommandBuffer::PushConstants(GfxPipelineLayoutHandle layout, const char* name, const _T& data)
 {
-    PushConstants(layout, data, sizeof(data));
+    PushConstants(layout, name, &data, sizeof(data));
 }
