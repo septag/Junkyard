@@ -431,7 +431,6 @@ bool Engine::Initialize()
     // Initialization resources
     gEng.initResourcesGroup = Asset::CreateGroup();
 
-    #if !TEST_NEW_GRAPHICS
     if (gfxSettings.enable) {
         if (!gfxSettings.headless) {
             if (gfxSettings.enableImGui && !ImGui::Initialize()) {
@@ -439,13 +438,14 @@ bool Engine::Initialize()
                 return false;
             }
 
+            #if !TEST_NEW_GRAPHICS
             if (!DebugDraw::Initialize()) {
                 LOG_ERROR("Initializing DebugDraw failed");
                 return false;
             }
+            #endif
         }
     }
-    #endif
 
     if (ImGui::IsEnabled()) {
         DebugHud::Initialize();
@@ -492,6 +492,13 @@ void Engine::Release()
 {
     LOG_INFO("Releasing engine sub systems ...");
     gEng.initialized = false;
+
+    const SettingsGraphics& gfxSettings = SettingsJunkyard::Get().graphics;
+    if (gfxSettings.enable && !gfxSettings.headless) {
+        if (gfxSettings.enableImGui) {
+            ImGui::Release();
+        }
+    } 
 
     #if !TEST_NEW_GRAPHICS
     const SettingsGraphics& gfxSettings = SettingsJunkyard::Get().graphics;
@@ -582,6 +589,8 @@ void Engine::BeginFrame(float dt)
     }
     #endif
 
+    if (gEng.resourcesInitialized)
+        ImGui::BeginFrame(dt);
     GfxBackend::Begin();
 
     gEng.rawFrameStartTime = Timer::GetTicks();

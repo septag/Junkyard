@@ -40,7 +40,6 @@ struct AppImpl final : AppCallbacks
     GfxPipelineLayoutHandle mPipelineLayout;
     GfxPipelineHandle mPipeline;
     AssetHandleShader mShader;
-    GfxBufferHandle mBuffer;
 
     static void CreateGraphicsResources(void* userData)
     {
@@ -54,15 +53,6 @@ struct AppImpl final : AppCallbacks
                 .usageFlags = GfxBackendImageUsageFlags::TransferSrc|GfxBackendImageUsageFlags::Storage|GfxBackendImageUsageFlags::TransferDst,
             };
             self->mImage = GfxBackend::CreateImage(desc);
-        }
-
-        {
-            GfxBackendBufferDesc desc {
-                .sizeBytes = 32*SIZE_KB,
-                .usageFlags = GfxBackendBufferUsageFlags::Vertex|GfxBackendBufferUsageFlags::TransferDst,
-                .arena = GfxBackendMemoryArena::PersistentGPU
-            };
-            self->mBuffer = GfxBackend::CreateBuffer(desc);
         }
 
         const GfxBackendPipelineLayoutDesc::Binding bindings[] {
@@ -115,7 +105,6 @@ struct AppImpl final : AppCallbacks
 
     void ReleaseGraphicsResources()
     {
-        GfxBackend::DestroyBuffer(mBuffer);
         GfxBackend::DestroyPipeline(mPipeline);
         GfxBackend::DestroyPipelineLayout(mPipelineLayout);
         GfxBackend::DestroyImage(mImage);
@@ -134,28 +123,16 @@ struct AppImpl final : AppCallbacks
 
         mCam->HandleMovementKeyboard(dt, 100.0f, 5.0f);
 
+
         Engine::BeginFrame(dt);
 
-        GfxBackendCommandBuffer cmd = GfxBackend::BeginCommandBuffer(GfxBackendQueueType::Graphics);
-
-        {
-            GfxBackendBufferDesc bufferDesc {
-                .sizeBytes = 32*SIZE_KB,
-                .usageFlags = GfxBackendBufferUsageFlags::TransferSrc,
-                .arena = GfxBackendMemoryArena::TransientCPU
-            };
-            GfxBufferHandle stagingBuffer = GfxBackend::CreateBuffer(bufferDesc);
-        
-            void* bufferData;
-            size_t bufferSize;
-            cmd.MapBuffer(stagingBuffer, &bufferData, &bufferSize);
-            memset(bufferData, 0x1d, bufferSize);
-            cmd.FlushBuffer(stagingBuffer);
-
-            cmd.CopyBufferToBuffer(stagingBuffer, mBuffer, GfxShaderStage::Vertex);
-
-            GfxBackend::DestroyBuffer(stagingBuffer);
+        if (ImGui::IsEnabled()) {
+            DebugHud::DrawDebugHud(dt);
+            DebugHud::DrawStatusBar(dt);
         }
+
+
+        GfxBackendCommandBuffer cmd = GfxBackend::BeginCommandBuffer(GfxBackendQueueType::Graphics);
 
         cmd.BindPipeline(mPipeline);
 
@@ -175,7 +152,17 @@ struct AppImpl final : AppCallbacks
         cmd.CopyImageToSwapchain(mImage);
 
         // Finished working with mBuffer ?
-        cmd.TransitionBuffer(mBuffer, GfxBackendBufferTransition::TransferWrite);
+        // cmd.TransitionBuffer(mBuffer, GfxBackendBufferTransition::TransferWrite);
+
+        GfxBackendRenderPass pass { 
+            .colorAttachments = {{ .load = true }},
+            .swapchain = true
+        };
+
+        ImGui::Update(cmd);
+        cmd.BeginRenderPass(pass);
+        ImGui::DrawFrame2(cmd);
+        cmd.EndRenderPass();
 
         GfxBackend::EndCommandBuffer(cmd);
 
