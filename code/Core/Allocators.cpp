@@ -736,7 +736,7 @@ void* MemTlsfAllocator::Malloc(size_t size, uint32 align)
             return ptr;
         }
         else {
-            if (mAlloc) {
+            if (mAlloc && size <= mPoolSize) {
                 size_t poolBufferSize = tlsf_pool_overhead() + tlsf_align_size() + mPoolSize;
                 tlsf_add_pool(mTlsf, Mem::Alloc(poolBufferSize, mAlloc), mPoolSize);
                 return Malloc(size, align);

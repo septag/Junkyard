@@ -331,7 +331,7 @@ namespace ImGui
 
     static void _InitializeGraphicsResources(void*)
     {
-        // Graphics Objects
+        // Graphics pipeline
         GfxVertexBufferBindingDesc vertexBufferBindingDesc {
             .binding = 0,
             .stride = sizeof(ImDrawVert),
@@ -493,13 +493,25 @@ namespace ImGui
     {
         if (numVertices > gImGui.maxVertices) {
             gImGui.maxVertices = AlignValue(numVertices, IMGUI_VERTICES_POOL_SIZE);
-            // TODO:
+            GfxBackend::DestroyBuffer(gImGui.vertexBuffer);
+            GfxBackendBufferDesc vertexBufferDesc {
+                .sizeBytes = gImGui.maxVertices*sizeof(ImDrawVert),
+                .usageFlags = GfxBackendBufferUsageFlags::TransferDst|GfxBackendBufferUsageFlags::Vertex
+            };
+            gImGui.vertexBuffer = GfxBackend::CreateBuffer(vertexBufferDesc);
+
             LOG_VERBOSE("ImGui vertex capacity increased to maximum %u vertices", gImGui.maxVertices);
         }
 
         if (numIndices > gImGui.maxIndices) {
             gImGui.maxIndices = AlignValue(numIndices, IMGUI_VERTICES_POOL_SIZE);
-            // TODO:
+            GfxBackend::DestroyBuffer(gImGui.indexBuffer);            
+            GfxBackendBufferDesc indexBufferDesc {
+                .sizeBytes = gImGui.maxIndices*sizeof(ImDrawIdx),
+                .usageFlags = GfxBackendBufferUsageFlags::TransferDst|GfxBackendBufferUsageFlags::Index
+            };
+            gImGui.indexBuffer = GfxBackend::CreateBuffer(indexBufferDesc);
+
             LOG_VERBOSE("ImGui index capacity increased to maximum %u indices", gImGui.maxIndices);
         }
     }
@@ -623,16 +635,18 @@ bool ImGui::DrawFrame()
     return false;
 }
 
-void ImGui::Update(GfxBackendCommandBuffer cmd)
+bool ImGui::DrawFrame2(GfxBackendCommandBuffer cmd)
 {
     if (gImGui.ctx == nullptr) 
-        return;
+        return false;
+
+    ASSERT_MSG(cmd.mIsRecording && !cmd.mIsInRenderPass, "%s must be called while CommandBuffer is recording and not in the RenderPass", __FUNCTION__);
 
     ImGui::Render();
 
     ImDrawData* drawData = GetDrawData();
     if (drawData->CmdListsCount == 0)
-        return;
+        return false;
 
     // Fill the buffers
     if (drawData->TotalVtxCount) {
@@ -683,17 +697,14 @@ void ImGui::Update(GfxBackendCommandBuffer cmd)
         GfxBackend::DestroyBuffer(stagingIndexBuffer);
         GfxBackend::DestroyBuffer(stagingVertexBuffer);
     }
-}
 
-bool ImGui::DrawFrame2(GfxBackendCommandBuffer cmd)
-{
-    if (gImGui.ctx == nullptr) 
-        return false;
-
-    PROFILE_ZONE();
-    ImDrawData* drawData = GetDrawData();
-    if (drawData->CmdListsCount == 0)
-        return false;
+    // Begin Drawing to the swapchain 
+    // Note: We cannot BeginRenderPass while updating the buffers
+    GfxBackendRenderPass pass { 
+        .colorAttachments = {{ .load = true }},
+        .swapchain = true
+    };
+    cmd.BeginRenderPass(pass);
 
     // Draw
     Float2 displayPos = Float2(drawData->DisplayPos.x, drawData->DisplayPos.y);
@@ -764,6 +775,7 @@ bool ImGui::DrawFrame2(GfxBackendCommandBuffer cmd)
     RectInt rc(0, 0, int(displaySize.x), int(displaySize.y));
     cmd.SetScissors(0, 1, &rc);
 
+    cmd.EndRenderPass();
     return true;
 }
 

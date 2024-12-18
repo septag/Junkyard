@@ -13,7 +13,9 @@ enum class GfxBackendMemoryArena : uint8
 {
     PersistentGPU = 0,
     PersistentCPU,
-    TransientCPU
+    TransientCPU,
+    DynamicImageGPU,
+    DynamicBufferGPU
 };
 
 enum class GfxBackendQueueType : uint8
@@ -212,12 +214,40 @@ struct GfxBackendSamplerDesc
     // TODO: Add compare and other options
 };
 
+struct GfxBackendCopyBufferToBufferParams
+{
+    GfxBufferHandle srcHandle;
+    GfxBufferHandle dstHandle;
+    GfxShaderStage stagesUsed;
+    size_t srcOffset;
+    size_t dstOffset;
+    size_t sizeBytes;
+};
+
+struct GfxBackendCopyBufferToImageParams
+{
+    GfxBufferHandle srcHandle;
+    GfxImageHandle dstHandle;
+    GfxShaderStage stagesUsed;
+    uint16 startMipIndex;
+    uint16 mipCount;
+};
+
+struct GfxBackendMapBufferParams
+{
+    GfxBufferHandle handle;
+    void* dataPtr;
+    size_t dataSize;
+};
+
 struct GfxBackendCommandBuffer
 {
     uint32 mGeneration;
     uint16 mCmdBufferIndex;
     uint8 mQueueIndex;
     uint8 mDrawsToSwapchain : 1;
+    uint8 mIsRecording : 1;
+    uint8 mIsInRenderPass : 1;
 
     void BeginRenderPass(const GfxBackendRenderPass& pass);
     void EndRenderPass();
@@ -228,9 +258,14 @@ struct GfxBackendCommandBuffer
     void CopyBufferToImage(GfxBufferHandle srcHandle, GfxImageHandle dstHandle, GfxShaderStage stagesUsed = GfxShaderStage::All,
                            uint16 startMipIndex = 0, uint16 mipCount = UINT16_MAX);
 
+    void BatchedCopyBufferToBuffer(uint32 numParams, const GfxBackendCopyBufferToBufferParams* params);
+    void BatchedCopyBufferToImage(uint32 numParams, const GfxBackendCopyBufferToImageParams* params);
 
     void MapBuffer(GfxBufferHandle buffHandle, void** outPtr, size_t* outSizeBytes = nullptr);
     void FlushBuffer(GfxBufferHandle buffHandle);
+
+    void BatchedMapBuffer(uint32 numParams, const GfxBackendMapBufferParams* params);
+    void BatchFlushBuffer(uint32 numBuffers, const GfxBufferHandle* bufferHandles);
 
     void ClearImageColor(GfxImageHandle imgHandle, Color color);
     void ClearImageColor(GfxImageHandle imgHandle, Float4 color);
@@ -268,7 +303,7 @@ namespace GfxBackend
     void SubmitQueue(GfxBackendQueueType queueType, GfxBackendQueueType dependentQueues = GfxBackendQueueType::None);
 
     [[nodiscard]] GfxBackendCommandBuffer BeginCommandBuffer(GfxBackendQueueType queueType);
-    void EndCommandBuffer(GfxBackendCommandBuffer cmdBuffer);
+    void EndCommandBuffer(GfxBackendCommandBuffer& cmdBuffer);
 
     GfxImageHandle CreateImage(const GfxBackendImageDesc& desc);
     void DestroyImage(GfxImageHandle handle);
