@@ -68,7 +68,6 @@ namespace ImGui
     API void BeginFrame(float dt);
     API bool DrawFrame();
 
-    API void Update(GfxBackendCommandBuffer cmd);
     API bool DrawFrame2(GfxBackendCommandBuffer cmd);
 
     API bool Initialize();

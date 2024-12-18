@@ -220,7 +220,6 @@ namespace OffsetAllocator
     Allocator::~Allocator()
     {        
         m_heapOverride->freeFn(m_nodes, m_heapOverrideUserData);
-        m_heapOverride->freeFn(m_freeNodes, m_heapOverrideUserData);
     }
     
     Allocation Allocator::allocate(uint32 size)

@@ -154,19 +154,11 @@ struct AppImpl final : AppCallbacks
         // Finished working with mBuffer ?
         // cmd.TransitionBuffer(mBuffer, GfxBackendBufferTransition::TransferWrite);
 
-        GfxBackendRenderPass pass { 
-            .colorAttachments = {{ .load = true }},
-            .swapchain = true
-        };
-
-        ImGui::Update(cmd);
-        cmd.BeginRenderPass(pass);
         ImGui::DrawFrame2(cmd);
-        cmd.EndRenderPass();
 
         GfxBackend::EndCommandBuffer(cmd);
-
         GfxBackend::SubmitQueue(GfxBackendQueueType::Graphics);
+
 
         Engine::EndFrame();
     }
