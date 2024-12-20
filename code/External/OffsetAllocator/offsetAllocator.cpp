@@ -3,12 +3,16 @@
 
 #include "offsetAllocator.hpp"
 
-#ifdef DEBUG
+#if defined(DEBUG) || defined(_DEBUG)
 #include <assert.h>
-#define ASSERT(x) assert(x)
+    #ifndef ASSERT
+        #define ASSERT(x) assert(x)
+    #endif
 //#define DEBUG_VERBOSE
 #else
-#define ASSERT(x)
+    #ifndef ASSERT
+        #define ASSERT(x)
+    #endif
 #endif
 
 #ifdef DEBUG_VERBOSE

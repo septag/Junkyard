@@ -1,6 +1,8 @@
 // (C) Sebastian Aaltonen 2023
 // MIT License (see file: LICENSE)
 
+#pragma once
+
 //#define USE_16_BIT_OFFSETS
 
 namespace OffsetAllocator
@@ -17,11 +19,11 @@ namespace OffsetAllocator
     typedef uint32 NodeIndex;
 #endif
 
-    static constexpr uint32 NUM_TOP_BINS = 32;
-    static constexpr uint32 BINS_PER_LEAF = 8;
-    static constexpr uint32 TOP_BINS_INDEX_SHIFT = 3;
-    static constexpr uint32 LEAF_BINS_INDEX_MASK = 0x7;
-    static constexpr uint32 NUM_LEAF_BINS = NUM_TOP_BINS * BINS_PER_LEAF;
+    inline constexpr uint32 NUM_TOP_BINS = 32;
+    inline constexpr uint32 BINS_PER_LEAF = 8;
+    inline constexpr uint32 TOP_BINS_INDEX_SHIFT = 3;
+    inline constexpr uint32 LEAF_BINS_INDEX_MASK = 0x7;
+    inline constexpr uint32 NUM_LEAF_BINS = NUM_TOP_BINS * BINS_PER_LEAF;
 
     struct HeapAllocationOverride
     {

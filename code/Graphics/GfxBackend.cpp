@@ -18,6 +18,15 @@
     #error "Not implemented"
 #endif
 
+// Always include volk after vulkan.h
+#define VOLK_IMPLEMENTATION
+#if PLATFORM_WINDOWS
+    #define VK_USE_PLATFORM_WIN32_KHR
+#endif
+#ifndef __10X__
+#include "../External/volk/volk.h"
+#endif
+
 #include "../Core/Allocators.h"
 #include "../Core/System.h"
 #include "../Core/Log.h"
@@ -35,11 +44,8 @@
 
 #include "../Engine.h"
 
+// TODO: turn OffsetAllocator to single header C lib
 #include "../External/OffsetAllocator/offsetAllocator.hpp"
-
-#ifndef __10X__
-    #include "../External/volk/volk.h"
-#endif
 
 static constexpr uint32 GFXBACKEND_MAX_SWAP_CHAIN_IMAGES = 3;
 static constexpr uint32 GFXBACKEND_MAX_GARBAGE_COLLECT_PER_FRAME = 32;
