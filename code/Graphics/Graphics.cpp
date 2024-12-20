@@ -20,7 +20,6 @@
 #endif
 
 // Always include volk after vulkan.h
-#define VOLK_IMPLEMENTATION
 #if PLATFORM_WINDOWS
     #define VK_USE_PLATFORM_WIN32_KHR
 //#elif PLATFORM_APPLE
