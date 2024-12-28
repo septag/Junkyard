@@ -1,7 +1,5 @@
 #include "DebugDraw.h"
 
-#include "../Graphics/Graphics.h"
-
 #include "../Engine.h"
 #include "../Assets/Shader.h"
 #include "../Assets/AssetManager.h"
@@ -11,19 +9,39 @@
 
 #include "../Common/Camera.h"
 
-static constexpr uint32 kDebugDrawMaxVerts = 32*1000;
+static constexpr uint32 DEBUGDRAW_MAX_VERTICES = 32*1000;
+
+struct DebugDrawItem
+{
+    uint32 vertexCount;
+    uint32 firstVertex;
+};
+
+struct DebugDrawShaderTransform
+{
+    Mat4 viewProjMat;
+};
+
+struct DebugDrawShaderVertex
+{
+    Float3 pos;
+    Color color;
+};
 
 struct DebugDrawContext
 {
     GfxPipelineHandle pipeline;
+    GfxPipelineLayoutHandle pipelineLayout;
     AssetHandleShader shaderAsset;
     GfxBufferHandle vertexBuffer;
 
-    struct Vertex
-    {
-        Float3 pos;
-        Color color;
-    };
+    GfxBackendCommandBuffer cmd;
+    DebugDrawShaderVertex* mappedVertices;
+    uint32 vertexIndex;
+    Int2 viewExtents;
+    Array<DebugDrawItem> drawItems;
+    GfxBufferHandle stagingVertexBuffer;
+    bool isDrawing;
 };
 
 static DebugDrawContext gDebugDraw;
@@ -35,7 +53,7 @@ namespace DebugDraw
         // Wireframe 
         GfxVertexBufferBindingDesc vertexBufferBindingDesc = {
             .binding = 0,
-            .stride = sizeof(DebugDrawContext::Vertex),
+            .stride = sizeof(DebugDrawShaderVertex),
             .inputRate = GfxVertexInputRate::Vertex
         };
 
@@ -44,30 +62,34 @@ namespace DebugDraw
                 .semantic = "POSITION",
                 .binding = 0,
                 .format  = GfxFormat::R32G32B32_SFLOAT,
-                .offset = offsetof(DebugDrawContext::Vertex, pos)
+                .offset = offsetof(DebugDrawShaderVertex, pos)
             },
             {
                 .semantic = "COLOR",
                 .binding = 0,
                 .format = GfxFormat::R8G8B8A8_UNORM,
-                .offset = offsetof(DebugDrawContext::Vertex, color)
+                .offset = offsetof(DebugDrawShaderVertex, color)
             }
         };
 
-        GfxPushConstantDesc pushConstant = GfxPushConstantDesc {
+        GfxBackendPipelineLayoutDesc::PushConstant pushConstant {
             .name = "Transform",
-            .stages = GfxShaderStage::Vertex,
-            .range = { 0, sizeof(Mat4) }
+            .stagesUsed = GfxShaderStage::Vertex,
+            .size = sizeof(DebugDrawShaderTransform)
         };
 
         AssetObjPtrScope<GfxShader> shader(gDebugDraw.shaderAsset);
         ASSERT(shader);
 
-        gDebugDraw.pipeline = gfxCreatePipeline(GfxPipelineDesc {
-            .shader = shader.Get(),
-            .inputAssemblyTopology = GfxPrimitiveTopology::LineList,
+        GfxBackendPipelineLayoutDesc pipelineLayoutDesc {
             .numPushConstants = 1,
-            .pushConstants = &pushConstant,
+            .pushConstants = &pushConstant
+        };
+
+        gDebugDraw.pipelineLayout = GfxBackend::CreatePipelineLayout(*shader, pipelineLayoutDesc);
+
+        GfxBackendGraphicsPipelineDesc pipelineDesc {
+            .inputAssemblyTopology = GfxPrimitiveTopology::LineList,
             .numVertexInputAttributes = CountOf(vertexInputAttDescs),
             .vertexInputAttributes = vertexInputAttDescs,
             .numVertexBufferBindings = 1,
@@ -76,19 +98,110 @@ namespace DebugDraw
                 .numAttachments = 1,
                 .attachments = GfxBlendAttachmentDesc::GetDefault()
             },
-            .depthStencil = GfxDepthStencilDesc {
+            .depthStencil = {
                 .depthTestEnable = true,
                 .depthWriteEnable = false,
                 .depthCompareOp = GfxCompareOp::Less
-            }
-        });
-
+            },
+            .numColorAttachments = 1,
+            .colorAttachmentFormats = {GfxBackend::GetSwapchainFormat()},
+            .depthAttachmentFormat = GfxFormat::D24_UNORM_S8_UINT
+        };
+        
+        gDebugDraw.pipeline = GfxBackend::CreateGraphicsPipeline(*shader, gDebugDraw.pipelineLayout, pipelineDesc);
         ASSERT(gDebugDraw.pipeline.IsValid());
+
+        GfxBackendBufferDesc vertexBufferDesc {
+            .sizeBytes = sizeof(DebugDrawShaderVertex)*DEBUGDRAW_MAX_VERTICES,
+            .usageFlags = GfxBackendBufferUsageFlags::TransferDst | GfxBackendBufferUsageFlags::Vertex,
+            .arena = GfxBackendMemoryArena::PersistentGPU
+        };
+        gDebugDraw.vertexBuffer = GfxBackend::CreateBuffer(vertexBufferDesc);       
     }
 } // DebugDraw
 
-void DebugDraw::DrawGroundGrid(const Camera& cam, float viewWidth, float viewHeight, const DebugDrawGridProperties& props)
+void DebugDraw::BeginDraw(GfxBackendCommandBuffer cmd, uint16 viewWidth, uint16 viewHeight)
 {
+    ASSERT(viewWidth > 0);
+    ASSERT(viewHeight > 0);
+    ASSERT(!gDebugDraw.isDrawing);
+    ASSERT(!gDebugDraw.stagingVertexBuffer.IsValid());
+    ASSERT(gDebugDraw.drawItems.IsEmpty());
+    gDebugDraw.isDrawing = true;
+
+    gDebugDraw.viewExtents = Int2(viewWidth, viewHeight);
+    gDebugDraw.vertexIndex = 0;
+
+    size_t vertexBufferSize = sizeof(DebugDrawShaderVertex)*DEBUGDRAW_MAX_VERTICES;
+    GfxBackendBufferDesc stagingVertexBufferDesc {
+        .sizeBytes = vertexBufferSize,
+        .usageFlags = GfxBackendBufferUsageFlags::TransferSrc,
+        .arena = GfxBackendMemoryArena::TransientCPU
+    };
+    gDebugDraw.stagingVertexBuffer = GfxBackend::CreateBuffer(stagingVertexBufferDesc);
+    ASSERT(gDebugDraw.stagingVertexBuffer.IsValid());
+
+    cmd.MapBuffer(gDebugDraw.stagingVertexBuffer, (void**)&gDebugDraw.mappedVertices);
+}
+
+void DebugDraw::EndDraw(GfxBackendCommandBuffer cmd, const Camera& cam, GfxImageHandle depthImage)
+{
+    ASSERT_MSG(cmd.mIsRecording && !cmd.mIsInRenderPass, "%s must be called while CommandBuffer is recording and not in the RenderPass", __FUNCTION__);
+    ASSERT(gDebugDraw.isDrawing);
+    ASSERT(gDebugDraw.stagingVertexBuffer.IsValid());
+    ASSERT_MSG(!gDebugDraw.drawItems.IsEmpty(), "No DrawXXX commands are submitted");
+
+    cmd.FlushBuffer(gDebugDraw.stagingVertexBuffer);
+    cmd.TransitionBuffer(gDebugDraw.vertexBuffer, GfxBackendBufferTransition::TransferWrite);
+    cmd.CopyBufferToBuffer(gDebugDraw.stagingVertexBuffer, gDebugDraw.vertexBuffer, GfxShaderStage::Vertex);
+
+    Int2 viewExtents = gDebugDraw.viewExtents;
+    Mat4 viewProjMat = cam.GetPerspectiveMat(float(viewExtents.x), float(viewExtents.y)) * cam.GetViewMat();
+    DebugDrawShaderTransform transform {
+        .viewProjMat = cmd.mDrawsToSwapchain ? GfxBackend::GetSwapchainTransformMat()*viewProjMat : viewProjMat
+    };
+
+    GfxViewport viewport {
+        .width = float(viewExtents.x),
+        .height = float(viewExtents.y)
+    };
+
+    // Begin Drawing to the swapchain 
+    // Note: We cannot BeginRenderPass while updating the buffers
+    GfxBackendRenderPass pass { 
+        .colorAttachments = {{ .load = true }},
+        .depthAttachment = { 
+            .image = depthImage,
+            .load = true
+        },
+        .swapchain = true,
+        .hasDepth = true
+    };
+    cmd.BeginRenderPass(pass);
+
+    cmd.SetViewports(0, 1, &viewport);
+    cmd.BindPipeline(gDebugDraw.pipeline);
+    cmd.PushConstants(gDebugDraw.pipelineLayout, "Transform", &transform, sizeof(viewProjMat));
+
+    uint64 vertexBufferOffset = 0;
+    cmd.BindVertexBuffers(0, 1, &gDebugDraw.vertexBuffer, &vertexBufferOffset);
+
+    for (const DebugDrawItem& item : gDebugDraw.drawItems)
+        cmd.Draw(item.vertexCount, 1, item.firstVertex, 0);
+
+    cmd.EndRenderPass();
+    GfxBackend::DestroyBuffer(gDebugDraw.stagingVertexBuffer);
+
+    gDebugDraw.drawItems.Clear();
+
+    gDebugDraw.stagingVertexBuffer = {};
+    gDebugDraw.isDrawing = false;
+}
+
+void DebugDraw::DrawGroundGrid(const Camera& cam, const DebugDrawGridProperties& props)
+{
+    ASSERT(gDebugDraw.isDrawing);
+
     Color color = props.lineColor;
     Color boldColor = props.boldLineColor;
 
@@ -97,8 +210,8 @@ void DebugDraw::DrawGroundGrid(const Camera& cam, float viewWidth, float viewHei
     ASSERT(boldSpacing >= spacing);
     ASSERT(props.distance > 0);
 
-    CameraFrustumPoints frustumPts = cam.GetFrustumPoints(viewWidth, viewHeight, -props.distance, props.distance);
-    Mat4 viewProjMat = cam.GetPerspectiveMat(viewWidth, viewHeight) * cam.GetViewMat();
+    Int2 viewExtents = gDebugDraw.viewExtents;
+    CameraFrustumPoints frustumPts = cam.GetFrustumPoints(float(viewExtents.x), float(viewExtents.y), -props.distance, props.distance);
     AABB bb = AABB_EMPTY;
 
     // extrude near plane
@@ -131,8 +244,8 @@ void DebugDraw::DrawGroundGrid(const Camera& cam, float viewWidth, float viewHei
     uint32 ylines = (uint32)h / nspace + 1;
     uint32 numVerts = (xlines + ylines) * 2;
 
-    MemTempAllocator tmpAlloc;
-    DebugDrawContext::Vertex* vertices = tmpAlloc.MallocTyped<DebugDrawContext::Vertex>(numVerts);
+    DebugDrawShaderVertex* vertices = gDebugDraw.mappedVertices;
+    ASSERT(vertices);
 
     uint32 i = 0;
     for (float yoffset = snapbox.ymin; yoffset <= snapbox.ymax; yoffset += spacing, i += 2) {
@@ -166,27 +279,17 @@ void DebugDraw::DrawGroundGrid(const Camera& cam, float viewWidth, float viewHei
                 : COLOR_GREEN;
     }
 
-    uint64 vertexBufferOffset = 0;
-    Mat4 finalTransformMat = gfxIsRenderingToSwapchain() ? gfxGetClipspaceTransform()*viewProjMat : viewProjMat;
-
-    gfxCmdUpdateBuffer(gDebugDraw.vertexBuffer, vertices, sizeof(DebugDrawContext::Vertex)*numVerts);
-    gfxCmdBindPipeline(gDebugDraw.pipeline);
-    gfxCmdPushConstants(gDebugDraw.pipeline, GfxShaderStage::Vertex, &finalTransformMat, sizeof(viewProjMat));
-    gfxCmdBindVertexBuffers(0, 1, &gDebugDraw.vertexBuffer, &vertexBufferOffset);
-
-    gfxCmdDraw(numVerts, 1, 0, 0);
+    DebugDrawItem item {
+        .vertexCount = numVerts,
+        .firstVertex = gDebugDraw.vertexIndex
+    };
+    gDebugDraw.drawItems.Push(item);
+    gDebugDraw.vertexIndex += numVerts;
+    ASSERT(gDebugDraw.vertexIndex <= DEBUGDRAW_MAX_VERTICES);
 }
 
 bool DebugDraw::Initialize()
 {
-    gDebugDraw.vertexBuffer = gfxCreateBuffer(GfxBufferDesc {
-        .size = sizeof(DebugDrawContext::Vertex)*kDebugDrawMaxVerts,
-        .type = GfxBufferType::Vertex,
-        .usage = GfxBufferUsage::Stream
-    });
-    if (!gDebugDraw.vertexBuffer.IsValid())
-        return false;
-
     gDebugDraw.shaderAsset = Asset::LoadShader("/shaders/DebugDraw.hlsl", ShaderLoadParams(),
                                                Engine::RegisterInitializeResources(_InitializeGraphicsResources));
 
@@ -196,7 +299,8 @@ bool DebugDraw::Initialize()
 
 void DebugDraw::Release()
 {
-    gfxDestroyBuffer(gDebugDraw.vertexBuffer);
-    gfxDestroyPipeline(gDebugDraw.pipeline);
+    GfxBackend::DestroyBuffer(gDebugDraw.vertexBuffer);
+    GfxBackend::DestroyPipeline(gDebugDraw.pipeline);
+    GfxBackend::DestroyPipelineLayout(gDebugDraw.pipelineLayout);
 }
 

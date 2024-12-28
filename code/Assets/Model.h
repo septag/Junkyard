@@ -31,8 +31,9 @@
 
 #include "Image.h"
 
-inline constexpr uint32 MODEL_MAX_VERTEX_ATTRIBUTES = 16;
-inline constexpr uint32 MODEL_MAX_VERTEX_BUFFERS_PER_SHADER = 8;
+
+inline constexpr uint32 MODEL_MAX_VERTEX_ATTRIBUTES = 8;
+inline constexpr uint32 MODEL_MAX_VERTEX_BUFFERS_PER_SHADER = 4;
 
 //------------------------------------------------------------------------
 // Material
@@ -170,8 +171,6 @@ struct Model
 struct ModelLoadParams 
 {
     ModelGeometryLayout layout;
-    GfxBufferUsage vertexBufferUsage = GfxBufferUsage::Default;
-    GfxBufferUsage indexBufferUsage = GfxBufferUsage::Default;
 };
 
 namespace Asset

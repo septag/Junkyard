@@ -235,9 +235,6 @@
     <ClCompile Include="..\..\code\Graphics\GfxBackend.cpp">
       <Filter>Graphics</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\code\External\OffsetAllocator\offsetAllocator.cpp">
-      <Filter>External\OffsetAllocator</Filter>
-    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\..\code\External\slang\slang.h">
@@ -448,7 +445,7 @@
     <ClInclude Include="..\..\code\Graphics\GfxBackendTypes.h">
       <Filter>Graphics</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\code\External\OffsetAllocator\offsetAllocator.hpp">
+    <ClInclude Include="..\..\code\External\OffsetAllocator\offsetAllocator.h">
       <Filter>External\OffsetAllocator</Filter>
     </ClInclude>
   </ItemGroup>

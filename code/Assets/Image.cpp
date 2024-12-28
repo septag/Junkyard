@@ -9,6 +9,8 @@
 
 #include "../Tool/ImageEncoder.h"
 
+#include "../Graphics/GfxBackend.h"
+
 static thread_local MemAllocator* gStbIAlloc = nullptr;
 
 #define STB_IMAGE_IMPLEMENTATION
@@ -71,24 +73,17 @@ namespace Image
 
 bool Asset::InitializeImageManager()
 {
-    // These parts should not be used in headless mode:
-    // - placeholder images
-    // - Asset loaders for the images
-    // - Descriptor cache management for reloads
     static GfxImage whiteImage {};
 
-    #if TEST_NEW_GRAPHICS
-    if (SettingsJunkyard::Get().graphics.enable && !SettingsJunkyard::Get().graphics.headless) {
+    if (SettingsJunkyard::Get().graphics.IsGraphicsEnabled()) {
         const uint32 kWhitePixel = 0xffffffff;
-        GfxImageDesc imageDesc = GfxImageDesc {
+        GfxBackendImageDesc imageDesc {
             .width = 1,
             .height = 1,
             .format = GfxFormat::R8G8B8A8_UNORM,
-            .sampled = true,
-            .size = sizeof(kWhitePixel),
-            .content = &kWhitePixel
+            .usageFlags = GfxBackendImageUsageFlags::TransferDst|GfxBackendImageUsageFlags::Sampled
         };
-        gImageMgr.imageWhite = gfxCreateImage(imageDesc);
+        gImageMgr.imageWhite = GfxBackend::CreateImage(imageDesc);
         if (!gImageMgr.imageWhite.IsValid())
             return false;
 
@@ -100,10 +95,27 @@ bool Asset::InitializeImageManager()
             .numMips = 1,
             .format = GfxFormat::R8G8B8A8_UNORM
         };
-    }
-    #endif
 
-    Asset::RegisterType(AssetTypeDesc {
+        GfxBackendCommandBuffer cmd = GfxBackend::BeginCommandBuffer(GfxBackendQueueType::Transfer);
+        void* stagingData;
+        size_t stagingDataSize;
+        GfxBackendBufferDesc stagingBufferDesc {
+            .sizeBytes = 4,
+            .usageFlags = GfxBackendBufferUsageFlags::TransferSrc,
+            .arena = GfxBackendMemoryArena::TransientCPU
+        };
+        GfxBufferHandle stagingBuffer = GfxBackend::CreateBuffer(stagingBufferDesc);
+        cmd.MapBuffer(stagingBuffer, &stagingData, &stagingDataSize);
+        memcpy(stagingData, &kWhitePixel, stagingBufferDesc.sizeBytes);
+        cmd.FlushBuffer(stagingBuffer);
+        cmd.CopyBufferToImage(stagingBuffer, gImageMgr.imageWhite, GfxShaderStage::Fragment);
+        GfxBackend::EndCommandBuffer(cmd);
+        GfxBackend::SubmitQueue(GfxBackendQueueType::Transfer);
+
+        GfxBackend::DestroyBuffer(stagingBuffer);
+    }
+
+    AssetTypeDesc assetDesc {
         .fourcc = IMAGE_ASSET_TYPE,
         .name = "Image",
         .impl = &gImageMgr.imageImpl,
@@ -111,19 +123,19 @@ bool Asset::InitializeImageManager()
         .extraParamTypeSize = sizeof(ImageLoadParams),
         .failedObj = &whiteImage,
         .asyncObj = &whiteImage
-    });
+    };
+    Asset::RegisterType(assetDesc);
 
     return true;
 }
 
 void Asset::ReleaseImageManager()
 {
-    if (gImageMgr.imageWhite.IsValid())
-        gfxDestroyImage(gImageMgr.imageWhite);
+    GfxBackend::DestroyImage(gImageMgr.imageWhite);
     Asset::UnregisterType(IMAGE_ASSET_TYPE);
 }
 
-bool AssetImageImpl::Bake(const AssetParams& params, AssetData* data, const Span<uint8>& srcData, String<256>* outErrorDesc)
+bool AssetImageImpl::Bake(const AssetParams&, AssetData* data, const Span<uint8>& srcData, String<256>* outErrorDesc)
 {
     struct MipSurface
     {
@@ -132,7 +144,6 @@ bool AssetImageImpl::Bake(const AssetParams& params, AssetData* data, const Span
         uint32 offset;
     };
 
-    const ImageLoadParams* imageParams = (const ImageLoadParams*)params.typeSpecificParams;
     MemTempAllocator tmpAlloc;
     gStbIAlloc = &tmpAlloc;
 
@@ -147,7 +158,7 @@ bool AssetImageImpl::Bake(const AssetParams& params, AssetData* data, const Span
     uint32 imageSize = imgWidth * imgHeight * 4;
     uint32 numMips = 1;
 
-    MipSurface mips[GFX_MAX_MIPS];
+    MipSurface mips[GFXBACKEND_MAX_MIPS_PER_IMAGE];
     mips[0] = MipSurface { .width = static_cast<uint32>(imgWidth), .height = static_cast<uint32>(imgHeight) };
 
     Blob contentBlob(&tmpAlloc);
@@ -183,7 +194,7 @@ bool AssetImageImpl::Bake(const AssetParams& params, AssetData* data, const Span
                     STBIR_EDGE_CLAMP, STBIR_FILTER_MITCHELL, colorspace, 
                     &tmpAlloc))
                 {
-                    ASSERT(numMips < GFX_MAX_MIPS);
+                    ASSERT(numMips < GFXBACKEND_MAX_MIPS_PER_IMAGE);
                     mips[numMips++] = MipSurface { 
                         .width = mipWidth, 
                         .height = mipHeight, 
@@ -277,7 +288,7 @@ bool AssetImageImpl::Bake(const AssetParams& params, AssetData* data, const Span
     // Create image header and serialize memory. So header comes first, then re-copy the final contents at the end
     // We have to do this because there is also a lot of scratch work in between image buffers creation
     GfxImage* header = Mem::AllocZeroTyped<GfxImage>(1, &tmpAlloc);
-    *header = GfxImage {
+    *header = {
         .width = uint32(imgWidth),
         .height = uint32(imgHeight),
         .depth = 1, // TODO
@@ -286,28 +297,22 @@ bool AssetImageImpl::Bake(const AssetParams& params, AssetData* data, const Span
         .contentSize = uint32(contentBlob.Size()),
     };
 
-    uint32* mipOffsets = Mem::AllocTyped<uint32>(numMips, &tmpAlloc);
-    for (uint32 i = 0; i < numMips; i++)
-        mipOffsets[i] = mips[i].offset;
-
     size_t headerTotalSize = tmpAlloc.GetOffset() - tmpAlloc.GetPointerOffset(header);
     ASSERT(headerTotalSize <= UINT32_MAX);
     data->SetObjData(header, uint32(headerTotalSize));
 
-    GfxImageDesc imageDesc {
-        .width = header->width,
-        .height = header->height,
-        .numMips = header->numMips,
+    GfxBackendImageDesc imageDesc {
+        .width = uint16(header->width),
+        .height = uint16(header->height),
+        .numMips = uint16(header->numMips),
         .format = header->format,
-        .samplerFilter = imageParams->samplerFilter,
-        .samplerWrap = imageParams->samplerWrap,
-        .sampled = true,
-        .size = contentBlob.Size(),
-        .content = contentBlob.Data(),
-        .mipOffsets = mipOffsets
+        .usageFlags = GfxBackendImageUsageFlags::TransferDst|GfxBackendImageUsageFlags::Sampled,
+        .arena = GfxBackendMemoryArena::DynamicImageGPU,
     };
+    for (uint32 i = 0; i < numMips; i++)
+        imageDesc.mipOffsets[i] = mips[i].offset;
 
-    data->AddGpuTextureObject(&header->handle, imageDesc);
+    data->AddGpuTextureObject(&header->handle, imageDesc, uint32(contentBlob.Size()), contentBlob.Data());
 
     return true;
 }

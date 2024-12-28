@@ -66,9 +66,7 @@ namespace ImGui
 
     API bool IsEnabled();
     API void BeginFrame(float dt);
-    API bool DrawFrame();
-
-    API bool DrawFrame2(GfxBackendCommandBuffer cmd);
+    API bool DrawFrame(GfxBackendCommandBuffer cmd);
 
     API bool Initialize();
     API void Release();

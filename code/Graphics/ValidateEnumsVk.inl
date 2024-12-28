@@ -286,10 +286,10 @@ static_assert(GfxPolygonMode::Fill == static_cast<GfxPolygonMode>(VK_POLYGON_MOD
 static_assert(GfxPolygonMode::Line == static_cast<GfxPolygonMode>(VK_POLYGON_MODE_LINE));
 static_assert(GfxPolygonMode::Point == static_cast<GfxPolygonMode>(VK_POLYGON_MODE_POINT));
 
-static_assert(GfxCullModeFlags::None == static_cast<GfxCullModeFlags>(VK_CULL_MODE_NONE));
-static_assert(GfxCullModeFlags::Front == static_cast<GfxCullModeFlags>(VK_CULL_MODE_FRONT_BIT));
-static_assert(GfxCullModeFlags::Back == static_cast<GfxCullModeFlags>(VK_CULL_MODE_BACK_BIT));
-static_assert(GfxCullModeFlags::FrontAndBack == static_cast<GfxCullModeFlags>(VK_CULL_MODE_FRONT_AND_BACK));
+static_assert(GfxCullMode::None == static_cast<GfxCullMode>(VK_CULL_MODE_NONE));
+static_assert(GfxCullMode::Front == static_cast<GfxCullMode>(VK_CULL_MODE_FRONT_BIT));
+static_assert(GfxCullMode::Back == static_cast<GfxCullMode>(VK_CULL_MODE_BACK_BIT));
+static_assert(GfxCullMode::FrontAndBack == static_cast<GfxCullMode>(VK_CULL_MODE_FRONT_AND_BACK));
 
 static_assert(GfxFrontFace::CounterClockwise == static_cast<GfxFrontFace>(VK_FRONT_FACE_COUNTER_CLOCKWISE));
 static_assert(GfxFrontFace::Clockwise == static_cast<GfxFrontFace>(VK_FRONT_FACE_CLOCKWISE));
@@ -434,5 +434,21 @@ static_assert(GfxDescriptorType::AccelerationStructureKhr == static_cast<GfxDesc
 static_assert(GfxDescriptorType::AccelerationStructureNv == static_cast<GfxDescriptorType>(VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_NV));
 static_assert(GfxDescriptorType::MutableValve == static_cast<GfxDescriptorType>(VK_DESCRIPTOR_TYPE_MUTABLE_VALVE));
 
+static_assert(GfxBackendImageUsageFlags::TransferSrc == GfxBackendImageUsageFlags(VK_IMAGE_USAGE_TRANSFER_SRC_BIT));
+static_assert(GfxBackendImageUsageFlags::TransferDst == GfxBackendImageUsageFlags(VK_IMAGE_USAGE_TRANSFER_DST_BIT));
+static_assert(GfxBackendImageUsageFlags::Sampled == GfxBackendImageUsageFlags(VK_IMAGE_USAGE_SAMPLED_BIT));
+static_assert(GfxBackendImageUsageFlags::Storage == GfxBackendImageUsageFlags(VK_IMAGE_USAGE_STORAGE_BIT));
+static_assert(GfxBackendImageUsageFlags::ColorAttachment == GfxBackendImageUsageFlags(VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT));
+static_assert(GfxBackendImageUsageFlags::DepthStencilAttachment == GfxBackendImageUsageFlags(VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT));
+static_assert(GfxBackendImageUsageFlags::TransientAttachment == GfxBackendImageUsageFlags(VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT));
+static_assert(GfxBackendImageUsageFlags::InputAttachment == GfxBackendImageUsageFlags(VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT));
 
-
+static_assert(GfxBackendBufferUsageFlags::TransferSrc == GfxBackendBufferUsageFlags(VK_BUFFER_USAGE_TRANSFER_SRC_BIT));
+static_assert(GfxBackendBufferUsageFlags::TransferDst == GfxBackendBufferUsageFlags(VK_BUFFER_USAGE_TRANSFER_DST_BIT));
+static_assert(GfxBackendBufferUsageFlags::UniformTexel == GfxBackendBufferUsageFlags(VK_BUFFER_USAGE_UNIFORM_TEXEL_BUFFER_BIT));
+static_assert(GfxBackendBufferUsageFlags::StorageTexel == GfxBackendBufferUsageFlags(VK_BUFFER_USAGE_STORAGE_TEXEL_BUFFER_BIT));
+static_assert(GfxBackendBufferUsageFlags::Uniform == GfxBackendBufferUsageFlags(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT));
+static_assert(GfxBackendBufferUsageFlags::Storage == GfxBackendBufferUsageFlags(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT));
+static_assert(GfxBackendBufferUsageFlags::Index == GfxBackendBufferUsageFlags(VK_BUFFER_USAGE_INDEX_BUFFER_BIT));
+static_assert(GfxBackendBufferUsageFlags::Vertex == GfxBackendBufferUsageFlags(VK_BUFFER_USAGE_VERTEX_BUFFER_BIT));
+static_assert(GfxBackendBufferUsageFlags::Indirect == GfxBackendBufferUsageFlags(VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT));

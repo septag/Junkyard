@@ -113,11 +113,14 @@ struct NO_VTABLE AssetTypeImplBase
     virtual bool Reload(void* newData, void* oldData) = 0;
 };
 
+struct GfxBackendImageDesc;
+struct GfxBackendBufferDesc;
+
 struct AssetData
 {
     void AddDependency(AssetHandle* bindToHandle, const AssetParams& params);
-    void AddGpuTextureObject(GfxImageHandle* bindToImage, const GfxImageDesc& desc);
-    void AddGpuBufferObject(GfxBufferHandle* bindToBuffer, const GfxBufferDesc& desc);
+    void AddGpuTextureObject(GfxImageHandle* bindToImage, const GfxBackendImageDesc& desc, uint32 contentSize, const void* content);
+    void AddGpuBufferObject(GfxBufferHandle* bindToBuffer, const GfxBackendBufferDesc& desc, const void* content);
     void SetObjData(const void* data, uint32 dataSize);
 
     const char* GetMetaValue(const char* key, const char* defaultValue) const;

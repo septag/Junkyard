@@ -3,12 +3,12 @@
 #if CONFIG_TOOLMODE
 #include <stdio.h>
 
-#include "../Graphics/Graphics.h"
-
 #include "../External/slang/include/slang.h"
 
 #include "../Core/Log.h"
 #include "../Core/TracyHelper.h"
+
+#include "../Graphics/GfxBackendTypes.h"
 
 namespace ShaderCompiler
 {
