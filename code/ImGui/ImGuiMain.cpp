@@ -418,7 +418,6 @@ namespace ImGui
             gImGui.indexBuffer = GfxBackend::CreateBuffer(indexBufferDesc);
         }
 
-
         // Default Font
         {
             ImGuiIO& conf = GetIO();
@@ -630,12 +629,7 @@ void ImGui::BeginFrame(float dt)
     ImGuizmo::SetRect(0, 0, io.DisplaySize.x, io.DisplaySize.y);
 }
 
-bool ImGui::DrawFrame()
-{
-    return false;
-}
-
-bool ImGui::DrawFrame2(GfxBackendCommandBuffer cmd)
+bool ImGui::DrawFrame(GfxBackendCommandBuffer cmd)
 {
     if (gImGui.ctx == nullptr) 
         return false;
@@ -688,6 +682,9 @@ bool ImGui::DrawFrame2(GfxBackendCommandBuffer cmd)
             numIndices += cmdList->IdxBuffer.Size;
         }
 
+        cmd.FlushBuffer(stagingVertexBuffer);
+        cmd.FlushBuffer(stagingIndexBuffer);
+
         cmd.TransitionBuffer(gImGui.vertexBuffer, GfxBackendBufferTransition::TransferWrite);
         cmd.TransitionBuffer(gImGui.indexBuffer, GfxBackendBufferTransition::TransferWrite);
 
@@ -717,9 +714,9 @@ bool ImGui::DrawFrame2(GfxBackendCommandBuffer cmd)
     };
 
     ImGuiShaderTransform transform {
-        .projMat = gfxGetClipspaceTransform() * Mat4::OrthoOffCenter(displayPos.x, displayPos.y + displaySize.y, 
-                                                                     displayPos.x + displaySize.x, displayPos.y, 
-                                                                     -1.0f, 1.0f)
+        .projMat = GfxBackend::GetSwapchainTransformMat() * Mat4::OrthoOffCenter(displayPos.x, displayPos.y + displaySize.y, 
+                                                                                 displayPos.x + displaySize.x, displayPos.y, 
+                                                                                 -1.0f, 1.0f)
     };
 
     uint64 offsets[] = {0};

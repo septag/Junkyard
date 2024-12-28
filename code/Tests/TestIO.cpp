@@ -13,8 +13,6 @@
 
 #include "../ImGui/ImGuiMain.h"
 
-#include "../Graphics/Graphics.h"
-
 #include "../Assets/AssetManager.h"
 #include "../Assets/Image.h"
 
@@ -199,9 +197,6 @@ struct AppImpl final : AppCallbacks
             mReadFinished = true;
         }
 
-        gfxBeginCommandBuffer();
-        gfxCmdBeginSwapchainRenderPass();
-
         if (ImGui::Begin("TestIO")) {
             if (ImGui::Button("Start")) {
                 Start();
@@ -236,11 +231,11 @@ struct AppImpl final : AppCallbacks
         }
         ImGui::End();
 
-        ImGui::DrawFrame();
+        GfxBackendCommandBuffer cmd = GfxBackend::BeginCommandBuffer(GfxBackendQueueType::Graphics);
+        ImGui::DrawFrame(cmd);
+        GfxBackend::EndCommandBuffer(cmd);
 
-        gfxCmdEndSwapchainRenderPass();
-
-        gfxEndCommandBuffer();
+        GfxBackend::SubmitQueue(GfxBackendQueueType::Graphics);
 
         Engine::EndFrame();
     }

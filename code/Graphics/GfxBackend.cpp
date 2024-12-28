@@ -27,6 +27,9 @@
 #include "../External/volk/volk.h"
 #endif
 
+// Validate our enums matching Vulkan's
+#include "ValidateEnumsVk.inl"
+
 #include "../Core/Allocators.h"
 #include "../Core/System.h"
 #include "../Core/Log.h"
@@ -44,14 +47,20 @@
 
 #include "../Engine.h"
 
-// TODO: turn OffsetAllocator to single header C lib
-#include "../External/OffsetAllocator/offsetAllocator.hpp"
+#define OFFSET_ALLOCATOR_API_DECL static
+#define OFFSET_ALLOCATOR_ASSERT(x) ASSERT(x)
+#define OFFSET_ALLOCATOR_IMPLEMENT
+PRAGMA_DIAGNOSTIC_PUSH()
+PRAGMA_DIAGNOSTIC_IGNORED_MSVC(4505)    // unreferenced shader linkage removed
+#include "../External/OffsetAllocator/offsetAllocator.h"
+PRAGMA_DIAGNOSTIC_POP()
 
 static constexpr uint32 GFXBACKEND_MAX_SWAP_CHAIN_IMAGES = 3;
 static constexpr uint32 GFXBACKEND_MAX_GARBAGE_COLLECT_PER_FRAME = 32;
 static constexpr uint32 GFXBACKEND_BACKBUFFER_COUNT = 3;
 static constexpr uint32 GFXBACKEND_FRAMES_IN_FLIGHT = 2;
 static constexpr uint32 GFXBACKEND_MAX_SETS_PER_PIPELINE = 4;
+static constexpr uint32 GFXBACKEND_MAX_ENTRIES_IN_OFFSET_ALLOCATOR = 64*1024;
 
 #if PLATFORM_WINDOWS
 static const char* GFXBACKEND_DEFAULT_INSTANCE_EXTENSIONS[] = {"VK_KHR_surface", "VK_KHR_win32_surface"};
@@ -132,6 +141,7 @@ struct GfxBackendQueueSubmitRequest
     GfxBackendQueueType dependents;
     VkCommandBuffer* cmdBuffers;
     VkFence fence;
+    VkSemaphore semaphore;
     uint32 numCmdBuffers;
 };
 
@@ -145,6 +155,18 @@ struct GfxBackendCommandBufferContext
     Array<VkFence> fences;      // A fence will be created for each batch of submitted cmdBuffers
 
     uint32 cmdBufferIndex;    // index until the last submit call
+};
+
+struct GfxBackendQueueSemaphoreBank
+{
+    SpinLockMutex mMutex;
+    Array<VkSemaphore> mSemaphores;
+    Array<VkSemaphore> mSemaphoreFreeList;
+
+    void Initialize();
+    void Release();
+    VkSemaphore GetSemaphore();
+    void Reset();
 };
 
 struct GfxBackendQueue
@@ -164,6 +186,9 @@ struct GfxBackendQueue
         };
 
         Type type;
+        uint32 targetQueueIndex;
+        GfxBackendResourceTransferCallback resourceTransferedCallback;
+        void* resourceTransferedUserData;
 
         union {
             GfxBufferHandle bufferHandle;
@@ -176,17 +201,23 @@ struct GfxBackendQueue
         };
     };
 
+    ReadWriteMutex cmdBufferCtxMutex;   
+    SpinLockMutex barriersMutex;
+
     VkQueue handle;
     GfxBackendQueueType type;
     uint32 familyIdx;
     float priority;
     bool supportsTransfer;
     GfxBackendCommandBufferContext cmdBufferContexts[GFXBACKEND_FRAMES_IN_FLIGHT];
-    VkSemaphore mySemaphore;
+    GfxBackendQueueSemaphoreBank semaphoreBanks[GFXBACKEND_FRAMES_IN_FLIGHT];
     Array<WaitSemaphore> waitSemaphores;
     Array<VkSemaphore> signalSemaphores;
     Array<PendingBarrier> pendingBarriers;  // Buffers transfers coming into this queue
+    Array<PendingBarrier> dependentBarriers; // Barriers that needs to be submitted for dependent queues (after current submission)
     GfxBackendQueueType internalDependents;
+    AtomicUint32 numCmdBuffersInRecording;
+    AtomicUint32 numPendingCmdBuffers;
 };
 
 struct GfxBackendQueueManager
@@ -271,7 +302,7 @@ struct GfxBackendDeviceMemory
     VkDeviceMemory handle;
     VkDeviceSize offset = VkDeviceSize(-1);
     void* mappedData;       // optional: only available when heap is HOST_VISIBLE
-    OffsetAllocator::NodeIndex offsetAllocMetaData = OffsetAllocator::Allocation::NO_SPACE;
+    OffsetAllocatorNodeIndex offsetAllocMetaData = OFFSET_ALLOCATOR_NO_SPACE;
     uint16 offsetAllocPadding;      // We need this calculate the offset returned by the OffsetAllocator. Main offset is aligned.
     GfxBackendMemoryArena arena;
 
@@ -287,25 +318,34 @@ static_assert(sizeof(GfxBackendDeviceMemory) <= 32);
 
 struct GfxBackendMemoryBumpAllocator
 {
-    bool Initialize(VkDeviceSize maxSize, uint32 memoryTypeIndex);
+    bool Initialize(VkDeviceSize blockSize, uint32 memoryTypeIndex);
     void Release();
     GfxBackendDeviceMemory Malloc(const VkMemoryRequirements& memReq);
-    void Reset() { mOffset = 0; }
+    void Reset();
 
 private:
+    struct Block
+    {
+        VkDeviceMemory deviceMem;
+        VkDeviceSize offset;
+        void* mappedData;      // Only for HOST_VISIBLE memory where we can map the entire buffer upfront
+    };
+
+    bool CreateBlock(Block* block);
+    void DestroyBlock(Block* block);
+
     SpinLockMutex mMutex;
-    VkDeviceMemory mDeviceMem;
+    VkDeviceSize mBlockSize;
     VkDeviceSize mCapacity;
-    VkDeviceSize mOffset;
-    void* mMappedData;      // Only for HOST_VISIBLE memory where we can map the entire buffer upfront
     uint32 mMemTypeIndex;
     VkMemoryPropertyFlags mTypeFlags;
     VkMemoryHeapFlags mHeapFlags;
+    Array<Block> mBlocks;
 };
 
 struct GfxBackendMemoryOffsetAllocator
 {
-    bool Initialize(VkDeviceSize maxSize, uint32 memoryTypeIndex);
+    bool Initialize(VkDeviceSize blockSize, uint32 memoryTypeIndex);
     void Release();
     void Reset();
 
@@ -313,14 +353,23 @@ struct GfxBackendMemoryOffsetAllocator
     void Free(GfxBackendDeviceMemory mem);
 
 private:
+    struct Block
+    {
+        VkDeviceMemory deviceMem;
+        void* mappedData;
+        OffsetAllocator* offsetAlloc;
+    };
+
+    Block* CreateBlock();
+    void DestroyBlock(Block* block);
+
     SpinLockMutex mMutex;
-    VkDeviceMemory mDeviceMem;
     VkDeviceSize mCapacity;
+    uint32 mBlockSize;
     uint32 mMemTypeIndex;
-    OffsetAllocator::Allocator* mOffsetAlloc;
-    void* mMappedData; // Only for HOST_VISIBLE memory where we can map the entire buffer upfront
     VkMemoryPropertyFlags mTypeFlags;
     VkMemoryHeapFlags mHeapFlags;
+    Array<Block*> mBlocks;
 };
 
 // TODO: For memory management, we can improve the initial allocation methods
@@ -340,8 +389,6 @@ struct GfxBackendDeviceMemoryManager
 
     inline VkDeviceSize& GetDeviceMemoryBudget(uint32 typeIndex);
     inline const VkPhysicalDeviceMemoryProperties& GetProps() const { return mProps; }
-
-    static OffsetAllocator::HeapAllocationOverride mOffsetAllocHeapOverride;
 
 private:
     uint32 FindDeviceMemoryType(VkMemoryPropertyFlags flags, bool localdeviceHeap, VkMemoryPropertyFlags fallbackFlags = 0);
@@ -450,6 +497,7 @@ struct GfxBackendSampler
 
 struct GfxBackendVk
 {
+    ReadWriteMutex objectPoolsMutex;
     Mutex garbageMtx;
     MemProxyAllocator parentAlloc;
     MemProxyAllocator runtimeAlloc;
@@ -458,6 +506,9 @@ struct GfxBackendVk
     GfxBackendAllocator driverAllocBase;
     GfxBackendVkAllocator vkAlloc;
     Signal frameSyncSignal;
+    Signal externalFrameSyncSignal;
+    AtomicUint32 numTransientResroucesInUse;
+    AtomicUint32 numOpenExternalFrameSyncs;
     
     GfxBackendInstance instance;
     VkDebugUtilsMessengerEXT debugMessenger;
@@ -566,11 +617,13 @@ namespace GfxBackend
 
     inline VkCommandBuffer _GetCommandBufferHandle(const GfxBackendCommandBuffer& cmdBuffer)
     {
-        const GfxBackendQueue& queue = gBackendVk.queueMan.GetQueue(cmdBuffer.mQueueIndex);
+        GfxBackendQueue& queue = gBackendVk.queueMan.GetQueue(cmdBuffer.mQueueIndex);
         ASSERT_MSG(cmdBuffer.mGeneration == gBackendVk.queueMan.GetGeneration(), 
                    "EndCommandBuffer must be called before resetting the queue");
-
+        
         const GfxBackendCommandBufferContext& cmdBufferMan = queue.cmdBufferContexts[gBackendVk.queueMan.GetFrameIndex()];
+
+        ReadWriteMutexReadScope lock(queue.cmdBufferCtxMutex);
         return cmdBufferMan.cmdBuffers[cmdBuffer.mCmdBufferIndex];
     }
 
@@ -1141,18 +1194,17 @@ namespace GfxBackend
 
         // Enable extensions and features
         void** deviceNext = const_cast<void**>(&devCreateInfo.pNext);
-        {
-            // We already queried all the features in InitializeGPU
-            // Just use all the existing features. Unless we explicitly want to turn something off
-            VkPhysicalDeviceFeatures2 features {
-                .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
-                .pNext = &gpu.features2,
-                .features = gpu.features
-            };
+        // We already queried all the features in InitializeGPU
+        // Just use all the existing features. Unless we explicitly want to turn something off
+        // TODO: Can turn on selected set of features
+        VkPhysicalDeviceFeatures2 features {
+            .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
+            .pNext = &gpu.features2,
+            .features = gpu.features
+        };
 
-            *deviceNext = &features;
-            deviceNext = &gpu.features4.pNext;
-        }
+        *deviceNext = &features;
+        deviceNext = &gpu.features4.pNext;
 
         VkPhysicalDevicePipelineExecutablePropertiesFeaturesKHR enableExecProps {
             .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PIPELINE_EXECUTABLE_PROPERTIES_FEATURES_KHR,
@@ -1521,10 +1573,17 @@ bool GfxBackend::Initialize()
 
     gBackendVk.images.SetAllocator(&gBackendVk.runtimeAlloc);
     gBackendVk.pipelineLayouts.SetAllocator(&gBackendVk.runtimeAlloc);
+    gBackendVk.pipelines.SetAllocator(&gBackendVk.runtimeAlloc);
+    gBackendVk.samplers.SetAllocator(&gBackendVk.runtimeAlloc);
+    gBackendVk.buffers.SetAllocator(&gBackendVk.runtimeAlloc);
+    gBackendVk.objectPoolsMutex.Initialize();
+
     gBackendVk.garbage.SetAllocator(&gBackendVk.runtimeAlloc);
     gBackendVk.garbageMtx.Initialize();
 
     gBackendVk.frameSyncSignal.Initialize();
+    gBackendVk.externalFrameSyncSignal.Initialize();
+    gBackendVk.externalFrameSyncSignal.Increment();
 
     // Make a trilinear sampler as default sampler
     // TODO: Make a better sampler system
@@ -1561,6 +1620,10 @@ void GfxBackend::Begin()
     // GPU -> CPU sync
     gBackendVk.queueMan.BeginFrame();
 
+    // Unlock external systems to use and submit command-buffers
+    gBackendVk.externalFrameSyncSignal.Decrement();
+    gBackendVk.externalFrameSyncSignal.Raise();
+
     gBackendVk.swapchain.AcquireImage();
 }
 
@@ -1571,6 +1634,8 @@ void GfxBackendCommandBuffer::ClearImageColor(GfxImageHandle imgHandle, Color co
 
 void GfxBackendCommandBuffer::ClearImageColor(GfxImageHandle imgHandle, Float4 color)
 {
+    mShouldSubmit = true;
+
     VkCommandBuffer cmdVk = GfxBackend::_GetCommandBufferHandle(*this);
     GfxBackendImage& image = gBackendVk.images.Data(imgHandle);
 
@@ -1590,6 +1655,8 @@ void GfxBackendCommandBuffer::ClearImageColor(GfxImageHandle imgHandle, Float4 c
 
 void GfxBackendCommandBuffer::ClearSwapchainColor(Float4 color)
 {
+    mShouldSubmit = true;
+
     VkCommandBuffer cmdVk = GfxBackend::_GetCommandBufferHandle(*this);
 
     VkImage imageVk = gBackendVk.swapchain.GetImage();
@@ -1622,18 +1689,39 @@ void GfxBackendCommandBuffer::CopyImageToSwapchain(GfxImageHandle imgHandle)
     GfxBackend::_TransitionImageTEMP(cmdVk, swapchainImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
 
     mDrawsToSwapchain = true;
+    mShouldSubmit = true;
+
     gBackendVk.queueMan.GetQueue(mQueueIndex).internalDependents |= GfxBackendQueueType::Present;
 }
 
 void GfxBackend::End()
 {
+    // Lock external systems to wait until Begin() call ends
+    gBackendVk.externalFrameSyncSignal.Increment();
+
     // CPU <-> CPU sync: Transient memory and CommandBuffers
     // Before we move on to the next frame, we must make sure that no transient memory allocation or CommandBuffer creation is left out and leaked to next frame
     // Locked when a CommandBuffer is created or Transient memory is created
     // Unlocked when all CommandBuffers are submitted and objects binded to Transient memory are destroyed
-    if (!gBackendVk.frameSyncSignal.WaitOnCondition([](int value, int ref) { return value > ref; }, 0, UINT32_MAX)) {
-        LOG_WARNING("Either some transient resources are not destroyed. Or CommandBuffers are not submitted in the current frame");
+    if (!gBackendVk.frameSyncSignal.WaitOnCondition([](int value, int ref) { return value > ref; }, 0, 500)) {
+        for (uint32 i = 0; i < gBackendVk.queueMan.GetQueueCount(); i++) {
+            GfxBackendQueue& queue = gBackendVk.queueMan.GetQueue(i);
+            ASSERT_MSG(Atomic::Load(&queue.numPendingCmdBuffers) == 0, 
+                       "Queue index %u still has %u pending CommandBuffers that aren't submitted", i, queue.numPendingCmdBuffers);
+        }
+
+        ASSERT_MSG(Atomic::Load(&gBackendVk.numOpenExternalFrameSyncs) == 0, 
+                   "There are %u BeginRenderFrameSync() calls that are not closed with EndRenderFrameSync()", 
+                   gBackendVk.numOpenExternalFrameSyncs);
+
+        ASSERT_MSG(Atomic::Load(&gBackendVk.numTransientResroucesInUse) == 0,
+                   "There are %u Transient resources (Buffer/Image) that are not Destroyed in the frame yet", 
+                   gBackendVk.numTransientResroucesInUse);
+
+        LOG_WARNING("Gfx: Waiting too long for backend CPU syncing. Enforcing device wait");
+        vkDeviceWaitIdle(gBackendVk.device);
     }
+
 
     // Present
     {
@@ -1688,6 +1776,11 @@ void GfxBackend::Release()
 
     gBackendVk.pipelineLayouts.Free();
     gBackendVk.images.Free();
+    gBackendVk.samplers.Free();
+    gBackendVk.buffers.Free();
+    gBackendVk.pipelines.Free();
+    gBackendVk.objectPoolsMutex.Release();
+
     gBackendVk.garbage.Free();
     gBackendVk.garbageMtx.Release();
 
@@ -1706,6 +1799,7 @@ void GfxBackend::Release()
 
     _ReleaseInstance();
     gBackendVk.frameSyncSignal.Release();
+    gBackendVk.externalFrameSyncSignal.Release();
 
     gBackendVk.runtimeAllocBase.Release();
     gBackendVk.driverAllocBase.Release();
@@ -1807,8 +1901,6 @@ void GfxBackendVkAllocator::VkInternalFreeFn(void*, size_t, VkInternalAllocation
 
 GfxBackendCommandBuffer GfxBackend::BeginCommandBuffer(GfxBackendQueueType queueType)
 {
-    ASSERT_MSG(!Jobs::IsRunningOnCurrentThread(), "BeginCommandBuffer cannot be called on Task threads");
-
     gBackendVk.frameSyncSignal.Increment();
 
     uint32 queueIndex = gBackendVk.queueMan.FindQueue(queueType);
@@ -1817,7 +1909,8 @@ GfxBackendCommandBuffer GfxBackend::BeginCommandBuffer(GfxBackendQueueType queue
     ASSERT(queue.handle);
     GfxBackendCommandBufferContext& cmdBufferCtx = queue.cmdBufferContexts[gBackendVk.queueMan.GetFrameIndex()];
     VkCommandBuffer cmdVk;
-    
+
+    queue.cmdBufferCtxMutex.EnterWrite();
     uint32 cmdBufferIndex = cmdBufferCtx.cmdBuffers.Count();
     ASSERT(cmdBufferIndex < UINT16_MAX);
 
@@ -1839,6 +1932,7 @@ GfxBackendCommandBuffer GfxBackend::BeginCommandBuffer(GfxBackendQueueType queue
 
     ASSERT(cmdVk);
     cmdBufferCtx.cmdBuffers.Push(cmdVk);
+    queue.cmdBufferCtxMutex.ExitWrite();
 
     VkCommandBufferBeginInfo beginInfo {
         .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
@@ -1855,16 +1949,27 @@ GfxBackendCommandBuffer GfxBackend::BeginCommandBuffer(GfxBackendQueueType queue
     };
 
     // Record all pending buffer memory barriers
+    queue.barriersMutex.Enter();
     if (!queue.pendingBarriers.IsEmpty()) {
-        MemTempAllocator tempAlloc;
+        using ResourceTransferCallbackPair = Pair<GfxBackendResourceTransferCallback, void*>;
 
-        VkBufferMemoryBarrier2* bufferBarriers = tempAlloc.MallocTyped<VkBufferMemoryBarrier2>(queue.pendingBarriers.Count());
-        VkImageMemoryBarrier2* imageBarriers = tempAlloc.MallocTyped<VkImageMemoryBarrier2>(queue.pendingBarriers.Count());
+        MemTempAllocator tempAlloc;
+        uint32 numPendingBarriers = queue.pendingBarriers.Count();
+        GfxBackendQueue::PendingBarrier* pendingBarriers = 
+            Mem::AllocCopy<GfxBackendQueue::PendingBarrier>(queue.pendingBarriers.Ptr(), numPendingBarriers, &tempAlloc);
+        queue.pendingBarriers.Clear();
+        queue.barriersMutex.Exit();
+
+        VkBufferMemoryBarrier2* bufferBarriers = tempAlloc.MallocTyped<VkBufferMemoryBarrier2>(numPendingBarriers);
+        VkImageMemoryBarrier2* imageBarriers = tempAlloc.MallocTyped<VkImageMemoryBarrier2>(numPendingBarriers);
+        Array<ResourceTransferCallbackPair> transferFinishedCallbacks(&tempAlloc);
+        transferFinishedCallbacks.Reserve(numPendingBarriers);
         uint32 numBufferBarriers = 0;
         uint32 numImageBarriers = 0;
 
-        for (uint32 i = 0; i < queue.pendingBarriers.Count(); i++) {
-            const GfxBackendQueue::PendingBarrier& b = queue.pendingBarriers[i];
+        gBackendVk.objectPoolsMutex.EnterRead();
+        for (uint32 i = 0; i < numPendingBarriers; i++) {
+            const GfxBackendQueue::PendingBarrier& b = pendingBarriers[i];
             if (b.type == GfxBackendQueue::PendingBarrier::BUFFER) {
                 GfxBackendBuffer& buffer = gBackendVk.buffers.Data(b.bufferHandle);
                 uint32 index = numBufferBarriers++;
@@ -1878,10 +1983,15 @@ GfxBackendCommandBuffer GfxBackend::BeginCommandBuffer(GfxBackendQueueType queue
                 uint32 index = numImageBarriers++;
                 imageBarriers[index] = b.imageBarrier;
                 imageBarriers[index].image = img.handle;
+                img.layout = imageBarriers[index].newLayout;
                 img.transitionedStage = imageBarriers[index].dstStageMask;
                 img.transitionedAccess = imageBarriers[index].dstAccessMask;
             }
+
+            if (b.resourceTransferedCallback)
+                transferFinishedCallbacks.Push(ResourceTransferCallbackPair(b.resourceTransferedCallback, b.resourceTransferedUserData));
         }
+        gBackendVk.objectPoolsMutex.ExitRead();
 
         VkDependencyInfo depInfo {
             .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
@@ -1892,20 +2002,33 @@ GfxBackendCommandBuffer GfxBackend::BeginCommandBuffer(GfxBackendQueueType queue
         };
         
         vkCmdPipelineBarrier2(cmdVk, &depInfo);
-        queue.pendingBarriers.Clear();
+
+        // Trigger all the resource finished uploading callbacks
+        for (ResourceTransferCallbackPair& c : transferFinishedCallbacks) 
+            c.first(c.second);
+    }
+    else {
+        queue.barriersMutex.Exit();
     }
 
     cmdBuffer.mIsRecording = true;
+
+    Atomic::FetchAdd(&queue.numCmdBuffersInRecording, 1);
+    Atomic::FetchAdd(&queue.numPendingCmdBuffers, 1);
     return cmdBuffer;
 }
 
 void GfxBackend::EndCommandBuffer(GfxBackendCommandBuffer& cmdBuffer)
 {
     ASSERT(cmdBuffer.mIsRecording && !cmdBuffer.mIsInRenderPass);
+
     VkCommandBuffer handle = GfxBackend::_GetCommandBufferHandle(cmdBuffer);
     [[maybe_unused]] VkResult r = vkEndCommandBuffer(handle);
     ASSERT(r == VK_SUCCESS);
     cmdBuffer.mIsRecording = false;
+
+    GfxBackendQueue& queue = gBackendVk.queueMan.GetQueue(cmdBuffer.mQueueIndex);
+    Atomic::FetchSub(&queue.numCmdBuffersInRecording, 1);
 }
 
 void GfxBackendSwapchain::AcquireImage()
@@ -1918,58 +2041,74 @@ void GfxBackendSwapchain::AcquireImage()
         ASSERT_ALWAYS(0, "Gfx: AcquireSwapchain failed");
 }
 
-bool GfxBackendMemoryBumpAllocator::Initialize(VkDeviceSize maxSize, uint32 memoryTypeIndex)
+bool GfxBackendMemoryBumpAllocator::Initialize(VkDeviceSize blockSize, uint32 memoryTypeIndex)
 {
     ASSERT(memoryTypeIndex != -1);
     ASSERT(gBackendVk.device);
-    ASSERT(maxSize);
+    ASSERT(blockSize);
 
     mMemTypeIndex = memoryTypeIndex;
-    mCapacity = maxSize;
-    mOffset = 0;
+    mBlockSize = blockSize;
+    mBlocks.SetAllocator(&gBackendVk.runtimeAlloc);
+
+    const VkMemoryType& memType = gBackendVk.memMan.GetProps().memoryTypes[memoryTypeIndex];
+    mTypeFlags = memType.propertyFlags;
+    mHeapFlags = gBackendVk.memMan.GetProps().memoryHeaps[memType.heapIndex].flags;
+
+    return CreateBlock(mBlocks.Push());
+}
+
+void GfxBackendMemoryBumpAllocator::Release()
+{
+    for (GfxBackendMemoryBumpAllocator::Block& block : mBlocks)
+        DestroyBlock(&block);
+
+    mBlocks.Free();    
+    mCapacity = 0;
+    mBlockSize = 0;
+    mMemTypeIndex = 0;
+}
+
+bool GfxBackendMemoryBumpAllocator::CreateBlock(Block* block)
+{
+    *block = {};
+
+    if (gBackendVk.extApi.hasMemoryBudget) {
+        ASSERT_MSG(gBackendVk.memMan.GetDeviceMemoryBudget(mMemTypeIndex) >= mBlockSize, 
+                   "Not enough GPU memory available in the specified heap");
+    }
 
     VkMemoryAllocateInfo allocInfo {
         .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
-        .allocationSize = maxSize,
-        .memoryTypeIndex = memoryTypeIndex
+        .allocationSize = mBlockSize,
+        .memoryTypeIndex = mMemTypeIndex
     };
-
-    if (gBackendVk.extApi.hasMemoryBudget) 
-        ASSERT_MSG(gBackendVk.memMan.GetDeviceMemoryBudget(mMemTypeIndex) >= maxSize, "Not enough GPU memory available in the specified heap");
-
-    VkResult r = vkAllocateMemory(gBackendVk.device, &allocInfo, gBackendVk.vkAlloc, &mDeviceMem);
+    VkResult r = vkAllocateMemory(gBackendVk.device, &allocInfo, gBackendVk.vkAlloc, &block->deviceMem);
     if (r != VK_SUCCESS) {
         MEM_FAIL();
         return false;
     }
 
     if (gBackendVk.extApi.hasMemoryBudget)
-        Atomic::FetchSub(&gBackendVk.memMan.GetDeviceMemoryBudget(mMemTypeIndex), maxSize);
-
-    const VkMemoryType& memType = gBackendVk.memMan.GetProps().memoryTypes[memoryTypeIndex];
-    mTypeFlags = memType.propertyFlags;
-    mHeapFlags = gBackendVk.memMan.GetProps().memoryHeaps[memType.heapIndex].flags;
+        Atomic::FetchSub(&gBackendVk.memMan.GetDeviceMemoryBudget(mMemTypeIndex), mBlockSize);
 
     if (mTypeFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) {
-        r = vkMapMemory(gBackendVk.device, mDeviceMem, 0, VK_WHOLE_SIZE, 0, &mMappedData);
+        r = vkMapMemory(gBackendVk.device, block->deviceMem, 0, VK_WHOLE_SIZE, 0, &block->mappedData);
         ASSERT(r == VK_SUCCESS);
     }
 
+    mCapacity += mBlockSize;
     return true;
 }
 
-void GfxBackendMemoryBumpAllocator::Release()
+void GfxBackendMemoryBumpAllocator::DestroyBlock(Block* block)
 {
-    if (mDeviceMem) {
-        if (mMappedData)
-            vkUnmapMemory(gBackendVk.device, mDeviceMem);
-        vkFreeMemory(gBackendVk.device, mDeviceMem, gBackendVk.vkAlloc);
+    if (block->deviceMem) {
+        if (block->mappedData)
+            vkUnmapMemory(gBackendVk.device, block->deviceMem);
+        vkFreeMemory(gBackendVk.device, block->deviceMem, gBackendVk.vkAlloc);
     }
-    mDeviceMem = nullptr;
-    mOffset = 0;
-    mCapacity = 0;
-    mMemTypeIndex = 0;
-    mMappedData = nullptr;
+    *block = {};
 }
 
 GfxBackendDeviceMemory GfxBackendMemoryBumpAllocator::Malloc(const VkMemoryRequirements& memReq)
@@ -1981,20 +2120,42 @@ GfxBackendDeviceMemory GfxBackendMemoryBumpAllocator::Malloc(const VkMemoryRequi
 
     ASSERT(memReq.alignment);
 
-    SpinLockMutexScope lock(mMutex);
-    VkDeviceSize offset = mOffset;
-    if (offset % memReq.alignment != 0)
-        offset = AlignValue<VkDeviceSize>(offset, memReq.alignment);
-    mOffset = offset + memReq.size;
-    if (mOffset > mCapacity) {
+    if (memReq.size > mBlockSize) {
+        ASSERT_MSG(0, "GpuMemoryAllocator block size (%_$$$llu) is smaller than requested size (%_$$$llu)", mBlockSize, memReq.size);
         MEM_FAIL();
         return GfxBackendDeviceMemory {};
     }
 
+    SpinLockMutexScope lock(mMutex);
+
+    // Start trying from the last block to first
+    // So there's a higher chance that we hit what we want earlier
+    Block* block = nullptr;
+    VkDeviceSize offset = 0;
+    for (uint32 i = mBlocks.Count(); i-- > 0;) {
+        Block& b = mBlocks[i];
+        offset = b.offset;
+        if (offset % memReq.alignment != 0)
+            offset = AlignValue<VkDeviceSize>(offset, memReq.alignment);
+        if (offset + memReq.size <= mBlockSize) {
+            block = &b;
+            break;
+        }         
+    }
+
+    if (!block) {
+        if (!CreateBlock(mBlocks.Push()))
+            return GfxBackendDeviceMemory {};
+        block = &mBlocks.Last();
+        offset = 0;
+    }
+
+    block->offset = offset + memReq.size;
+
     GfxBackendDeviceMemory mem {
-        .handle = mDeviceMem,
+        .handle = block->deviceMem,
         .offset = offset,
-        .mappedData = mMappedData ? ((uint8*)mMappedData + offset) : nullptr,
+        .mappedData = block->mappedData ? ((uint8*)block->mappedData + offset) : nullptr,
         .isHeapDeviceLocal = (mHeapFlags & VK_MEMORY_HEAP_DEVICE_LOCAL_BIT) == VK_MEMORY_HEAP_DEVICE_LOCAL_BIT,
         .isCpuVisible = (mTypeFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) == VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
         .isCached = (mTypeFlags & VK_MEMORY_PROPERTY_HOST_CACHED_BIT) == VK_MEMORY_PROPERTY_HOST_CACHED_BIT,
@@ -2005,114 +2166,182 @@ GfxBackendDeviceMemory GfxBackendMemoryBumpAllocator::Malloc(const VkMemoryRequi
     return mem;
 }
 
+void GfxBackendMemoryBumpAllocator::Reset()
+{
+    for (Block& block : mBlocks)
+        block.offset = 0;
+}
+
 GfxImageHandle GfxBackend::CreateImage(const GfxBackendImageDesc& desc)
 {
-    ASSERT(desc.numMips <= GFXBACKEND_MAX_MIPS_PER_IMAGE);
+    GfxImageHandle handle {};
+    GfxBackend::BatchCreateImage(1, &desc, &handle);
+    return handle;    
+}
 
-    VkImageCreateInfo imageCreateInfo {
-        .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
-        .imageType = VkImageType(desc.type),
-        .format = VkFormat(desc.format),
-        .extent = {
-            .width = desc.width,
-            .height = desc.height,
-            .depth = desc.depth
-        },
-        .mipLevels = desc.numMips,
-        .arrayLayers = desc.numArrayLayers,
-        .samples = VkSampleCountFlagBits(desc.multisampleFlags),
-        .tiling = VK_IMAGE_TILING_OPTIMAL,
-        .usage = VkImageUsageFlags(desc.usageFlags)
-    };
+void GfxBackend::BatchCreateImage(uint32 numImages, const GfxBackendImageDesc* descs, GfxImageHandle* outHandles)
+{
+    ASSERT(numImages);
+    ASSERT(descs);
+    ASSERT(outHandles);
 
-    VkImage imageVk;
-    VkResult r = vkCreateImage(gBackendVk.device, &imageCreateInfo, gBackendVk.vkAlloc, &imageVk);
-    if (r != VK_SUCCESS)
-        return GfxImageHandle();
+    MemTempAllocator tempAlloc;
+    GfxBackendImage* images = tempAlloc.MallocTyped<GfxBackendImage>(numImages);
+    uint32 numTransientIncrements = 0;
+    for (uint32 i = 0; i < numImages; i++) {
+        const GfxBackendImageDesc& desc = descs[i];
+        ASSERT(desc.numMips <= GFXBACKEND_MAX_MIPS_PER_IMAGE);
 
-    VkMemoryRequirements memReq;
-    vkGetImageMemoryRequirements(gBackendVk.device, imageVk, &memReq);
-    GfxBackendDeviceMemory mem = gBackendVk.memMan.Malloc(memReq, desc.arena);
-    vkBindImageMemory(gBackendVk.device, imageVk, mem.handle, mem.offset);
+        VkImageCreateInfo imageCreateInfo {
+            .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+            .imageType = VkImageType(desc.type),
+            .format = VkFormat(desc.format),
+            .extent = {
+                .width = desc.width,
+                .height = desc.height,
+                .depth = desc.depth
+            },
+            .mipLevels = desc.numMips,
+            .arrayLayers = desc.numArrayLayers,
+            .samples = VkSampleCountFlagBits(desc.multisampleFlags),
+            .tiling = VK_IMAGE_TILING_OPTIMAL,
+            .usage = VkImageUsageFlags(desc.usageFlags)
+        };
 
-    // View
-    VkImageView imageViewVk;
-    {
-        // TEMP: view type can be cube / array / etc.
-        VkImageViewType viewType = VK_IMAGE_VIEW_TYPE_2D;
-        switch (desc.type) {
+        VkImage imageVk;
+        [[maybe_unused]] VkResult r = vkCreateImage(gBackendVk.device, &imageCreateInfo, gBackendVk.vkAlloc, &imageVk);
+        ASSERT_ALWAYS(r == VK_SUCCESS, "vkCreateImage failed");
+ 
+        VkMemoryRequirements memReq;
+        vkGetImageMemoryRequirements(gBackendVk.device, imageVk, &memReq);
+        GfxBackendDeviceMemory mem = gBackendVk.memMan.Malloc(memReq, desc.arena);
+        vkBindImageMemory(gBackendVk.device, imageVk, mem.handle, mem.offset);
+
+        if (desc.arena == GfxBackendMemoryArena::TransientCPU)
+            ++numTransientIncrements;
+
+        // View
+        VkImageAspectFlags aspect = 0;
+        if (GfxBackend::_FormatHasDepth(desc.format))
+            aspect |= VK_IMAGE_ASPECT_DEPTH_BIT;
+        if (GfxBackend::_FormatHasStencil(desc.format))
+            aspect |= VK_IMAGE_ASPECT_STENCIL_BIT;
+        if (aspect == 0) 
+            aspect = VK_IMAGE_ASPECT_COLOR_BIT;
+
+        VkImageView imageViewVk = nullptr;
+        {
+            // TEMP: view type can be cube / array / etc.
+            VkImageViewType viewType = VK_IMAGE_VIEW_TYPE_2D;
+            switch (desc.type) {
             case GfxBackendImageType::Image1D: viewType = VK_IMAGE_VIEW_TYPE_1D; break;
             case GfxBackendImageType::Image2D: viewType = VK_IMAGE_VIEW_TYPE_2D; break;
             case GfxBackendImageType::Image3D: viewType = VK_IMAGE_VIEW_TYPE_3D; break;
-        }
-
-        VkImageViewCreateInfo viewCreateInfo {
-            .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
-            .image = imageVk,
-            .viewType = viewType,
-            .format = VkFormat(desc.format),
-            .subresourceRange {
-                .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-                .levelCount = desc.numMips,
-                .layerCount = desc.numArrayLayers
             }
-        };
 
-        r = vkCreateImageView(gBackendVk.device, &viewCreateInfo, gBackendVk.vkAlloc, &imageViewVk);
-        if (r != VK_SUCCESS) {
-            vkDestroyImage(gBackendVk.device, imageVk, gBackendVk.vkAlloc);
-            return GfxImageHandle();
+            VkImageViewCreateInfo viewCreateInfo {
+                .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+                .image = imageVk,
+                .viewType = viewType,
+                .format = VkFormat(desc.format),
+                .subresourceRange {
+                    .aspectMask = aspect,
+                    .levelCount = desc.numMips,
+                    .layerCount = desc.numArrayLayers
+                }
+            };
+
+            r = vkCreateImageView(gBackendVk.device, &viewCreateInfo, gBackendVk.vkAlloc, &imageViewVk);
+            ASSERT_ALWAYS(r == VK_SUCCESS, "vkCreateImageView failed");
         }
+
+        images[i] = {
+            .handle = imageVk,
+            .viewHandle = imageViewVk,
+            .desc = desc,
+            .mem = mem
+        };
     }
 
-    GfxBackendImage image {
-        .handle = imageVk,
-        .viewHandle = imageViewVk,
-        .desc = desc,
-        .mem = mem
-    };
-    return gBackendVk.images.Add(image);
+    if (numTransientIncrements) {
+        gBackendVk.frameSyncSignal.Increment(numTransientIncrements);
+        Atomic::FetchAdd(&gBackendVk.numTransientResroucesInUse, numTransientIncrements);
+    }
+
+    ReadWriteMutexWriteScope objPoolLock(gBackendVk.objectPoolsMutex);
+    for (uint32 i = 0; i < numImages; i++)
+        outHandles[i] = gBackendVk.images.Add(images[i]);
 }
 
 void GfxBackend::DestroyImage(GfxImageHandle handle)
 {
-    if (handle.IsValid()) {
-        GfxBackendImage& image = gBackendVk.images.Data(handle);
+    if (handle.IsValid())
+        GfxBackend::BatchDestroyImage(1, &handle);
+}
 
-        {
-            MutexScope lock(gBackendVk.garbageMtx);
-            if (image.handle) {
-                gBackendVk.garbage.Push({
-                    .type = GfxBackendGarbage::Type::Image,
-                    .frameIdx = gBackendVk.presentFrame,
-                    .image = image.handle
-                });
-            }
+void GfxBackend::BatchDestroyImage(uint32 numImages, const GfxImageHandle* handles)
+{
+    ASSERT(numImages);
+    ASSERT(handles);
 
-            if (image.viewHandle) {
-                gBackendVk.garbage.Push({
-                    .type = GfxBackendGarbage::Type::ImageView,
-                    .frameIdx = gBackendVk.presentFrame,
-                    .imageView = image.viewHandle
-                });
+    MemTempAllocator tempAlloc;
+    Array<GfxBackendGarbage> garbages(&tempAlloc);
+    uint32 numTransientDecrements = 0;
+
+    {
+        ReadWriteMutexWriteScope objPoolLock(gBackendVk.objectPoolsMutex);
+
+        for (uint32 i = 0; i < numImages; i++) {
+            GfxImageHandle handle = handles[i];
+            if (handle.IsValid()) {
+                GfxBackendImage& image = gBackendVk.images.Data(handle);
+
+                {
+                    if (image.handle) {
+                        garbages.Push({
+                            .type = GfxBackendGarbage::Type::Image,
+                            .frameIdx = gBackendVk.presentFrame,
+                            .image = image.handle
+                        });
+                    }
+
+                    if (image.viewHandle) {
+                        garbages.Push({
+                            .type = GfxBackendGarbage::Type::ImageView,
+                            .frameIdx = gBackendVk.presentFrame,
+                            .imageView = image.viewHandle
+                        });
+                    }
+                }
+
+                gBackendVk.images.Remove(handle);
+
+                if (image.mem.arena == GfxBackendMemoryArena::TransientCPU)
+                    numTransientDecrements++;
             }
         }
-
-        gBackendVk.images.Remove(handle);
     }
+
+    if (numTransientDecrements) {
+        Atomic::FetchSub(&gBackendVk.numTransientResroucesInUse, numTransientDecrements);
+
+        gBackendVk.frameSyncSignal.Decrement(numTransientDecrements);
+        gBackendVk.frameSyncSignal.Raise();
+    }
+
+    MutexScope lock(gBackendVk.garbageMtx);
+    gBackendVk.garbage.Extend(garbages);
 }
 
 const GfxBackendImageDesc& GfxBackend::GetImageDesc(GfxImageHandle handle)
 {
+    ReadWriteMutexReadScope objPoolLock(gBackendVk.objectPoolsMutex);
     const GfxBackendImage& image = gBackendVk.images.Data(handle);
     return image.desc;
 }
 
 GfxPipelineLayoutHandle GfxBackend::CreatePipelineLayout(const GfxShader& shader, const GfxBackendPipelineLayoutDesc& desc)
 {
-    ASSERT(desc.numBindings);
-    ASSERT(desc.bindings);
-
     struct DescriptorSetRef
     {
         uint32 startIndex;
@@ -2122,55 +2351,62 @@ GfxPipelineLayoutHandle GfxBackend::CreatePipelineLayout(const GfxShader& shader
     MemTempAllocator tempAlloc;
     
     // Construct Vulkan-specific structs for bindings and their names
-    VkDescriptorSetLayoutBinding* bindingsVk = tempAlloc.MallocTyped<VkDescriptorSetLayoutBinding>(desc.numBindings);
+    VkDescriptorSetLayoutBinding* bindingsVk = nullptr;
     Array<const char*> names(&tempAlloc);
     Array<GfxBackendPipelineLayoutDesc::Binding> bindings(&tempAlloc);
     StaticArray<DescriptorSetRef, GFXBACKEND_MAX_SETS_PER_PIPELINE> sets;
 
-    bindings.Reserve(desc.numBindings);
-    names.Reserve(desc.numBindings + desc.numPushConstants);
-    
-    // Sort all bindings by their set index
-    for (uint32 i = 0; i < desc.numBindings; i++)  {
-        ASSERT(desc.bindings[i].setIndex < GFXBACKEND_MAX_SETS_PER_PIPELINE);
-        bindings.PushAndSort(desc.bindings[i], [](const GfxBackendPipelineLayoutDesc::Binding& a, GfxBackendPipelineLayoutDesc::Binding& b) {
-            return int(a.setIndex) - int(b.setIndex);
-        });
-    }
+    if (desc.numBindings) {
+        bindingsVk = tempAlloc.MallocTyped<VkDescriptorSetLayoutBinding>(desc.numBindings);
+        bindings.Reserve(desc.numBindings);
+        names.Reserve(desc.numBindings + desc.numPushConstants);
 
-    uint32 setBindingStartIndex = 0;
-    uint32 setBindingCount = 0;
-    uint8 setIndex = bindings[0].setIndex;
-    for (uint32 i = 0; i < bindings.Count(); i++) {
-        const GfxBackendPipelineLayoutDesc::Binding& binding = bindings[i];
-        ASSERT(binding.arrayCount > 0);
-        ASSERT(binding.name && binding.name[0]);
-
-        const GfxShaderParameterInfo* shaderParam = _FindShaderParam(shader, binding.name);
-        ASSERT_MSG(shaderParam != nullptr, "Shader parameter '%s' does not exist in shader '%s'", binding.name, shader.name);
-        ASSERT_MSG(!shaderParam->isPushConstant, "Shader parameter '%s' is a push-constant in shader '%s'. cannot be used as regular uniform", 
-                   binding.name, shader.name);
-        if (!shaderParam)
-            continue;
-
-        names.Push(binding.name);
-        bindingsVk[i] = {
-            .binding = shaderParam->bindingIdx,
-            .descriptorType = VkDescriptorType(binding.type),
-            .descriptorCount = binding.arrayCount,
-            .stageFlags = VkShaderStageFlags(binding.stagesUsed)
-        };
-
-        if (binding.setIndex != setIndex) {
-            sets.Push({setBindingStartIndex, setBindingCount});
-            setBindingCount = 1;
-            setBindingStartIndex = i;
+        // Sort all bindings by their set index
+        for (uint32 i = 0; i < desc.numBindings; i++)  {
+            ASSERT(desc.bindings[i].setIndex < GFXBACKEND_MAX_SETS_PER_PIPELINE);
+            bindings.PushAndSort(desc.bindings[i], 
+                                 [](const GfxBackendPipelineLayoutDesc::Binding& a, GfxBackendPipelineLayoutDesc::Binding& b) 
+            {
+                return int(a.setIndex) - int(b.setIndex);
+            });
         }
-        else {
-            ++setBindingCount;
+
+        // Create descriptor sets
+        uint32 setBindingStartIndex = 0;
+        uint32 setBindingCount = 0;
+        uint8 setIndex = bindings[0].setIndex;
+        for (uint32 i = 0; i < bindings.Count(); i++) {
+            const GfxBackendPipelineLayoutDesc::Binding& binding = bindings[i];
+            ASSERT(binding.arrayCount > 0);
+            ASSERT(binding.name && binding.name[0]);
+
+            const GfxShaderParameterInfo* shaderParam = _FindShaderParam(shader, binding.name);
+            ASSERT_MSG(shaderParam != nullptr, "Shader parameter '%s' does not exist in shader '%s'", binding.name, shader.name);
+            ASSERT_MSG(!shaderParam->isPushConstant, "Shader parameter '%s' is a push-constant in shader '%s'. cannot be used as regular uniform", 
+                       binding.name, shader.name);
+            if (!shaderParam)
+                continue;
+
+            names.Push(binding.name);
+            bindingsVk[i] = {
+                .binding = shaderParam->bindingIdx,
+                .descriptorType = VkDescriptorType(binding.type),
+                .descriptorCount = binding.arrayCount,
+                .stageFlags = VkShaderStageFlags(binding.stagesUsed)
+            };
+
+            if (binding.setIndex != setIndex) {
+                sets.Push({setBindingStartIndex, setBindingCount});
+                setBindingCount = 1;
+                setBindingStartIndex = i;
+            }
+            else {
+                ++setBindingCount;
+            }
         }
-    }
-    sets.Push({setBindingStartIndex, setBindingCount});
+        sets.Push({setBindingStartIndex, setBindingCount});
+    }    
+
 
     VkPushConstantRange* pushConstantsVk = nullptr;
     if (desc.numPushConstants)
@@ -2201,14 +2437,17 @@ GfxPipelineLayoutHandle GfxBackend::CreatePipelineLayout(const GfxShader& shader
     if (desc.numPushConstants)
         hasher.Add<VkPushConstantRange>(pushConstantsVk, desc.numPushConstants);
     uint32 hash = hasher.Hash();
-    
-    if (GfxPipelineLayoutHandle layoutHandle = gBackendVk.pipelineLayouts.FindIf(
-        [hash](const GfxBackendPipelineLayout* item)->bool { return item->hash == hash; }); 
-        layoutHandle.IsValid())
+
     {
-        GfxBackendPipelineLayout* item = gBackendVk.pipelineLayouts.Data(layoutHandle);
-        ++item->refCount;
-        return layoutHandle;
+        ReadWriteMutexReadScope objPoolLock(gBackendVk.objectPoolsMutex);
+        if (GfxPipelineLayoutHandle layoutHandle = gBackendVk.pipelineLayouts.FindIf(
+            [hash](const GfxBackendPipelineLayout* item)->bool { return item->hash == hash; }); 
+            layoutHandle.IsValid())
+        {
+            GfxBackendPipelineLayout* item = gBackendVk.pipelineLayouts.Data(layoutHandle);
+            ++item->refCount;
+            return layoutHandle;
+        }
     }
 
     // Create pipeline data
@@ -2297,12 +2536,14 @@ GfxPipelineLayoutHandle GfxBackend::CreatePipelineLayout(const GfxShader& shader
         return GfxPipelineLayoutHandle();
     }
 
+    ReadWriteMutexWriteScope objPoolLock(gBackendVk.objectPoolsMutex);
     return gBackendVk.pipelineLayouts.Add(layout);
 }
 
 void GfxBackend::DestroyPipelineLayout(GfxPipelineLayoutHandle handle)
 {
     if (handle.IsValid()) {
+        ReadWriteMutexReadScope objPoolLock(gBackendVk.objectPoolsMutex);
         GfxBackendPipelineLayout* pipelineLayout = gBackendVk.pipelineLayouts.Data(handle);
     
         MutexScope lock(gBackendVk.garbageMtx);
@@ -2324,6 +2565,7 @@ void GfxBackend::DestroyPipelineLayout(GfxPipelineLayoutHandle handle)
         }
 
         MemSingleShotMalloc<GfxBackendPipelineLayout>::Free(pipelineLayout, &gBackendVk.runtimeAlloc);
+
         gBackendVk.pipelineLayouts.Remove(handle);
     }
 }
@@ -2345,7 +2587,13 @@ GfxPipelineHandle GfxBackend::CreateGraphicsPipeline(const GfxShader& shader, Gf
     ASSERT_MSG(vsInfo, "Shader '%s' is missing Vertex shader program", shader.name);
     ASSERT_MSG(psInfo, "Shader '%s' is missing Pixel shader program", shader.name);
 
-    VkPipelineLayout layoutVk = gBackendVk.pipelineLayouts.Data(layoutHandle)->handle;
+    VkPipelineLayout layoutVk;
+    
+    {
+        ReadWriteMutexReadScope objPoolLock(gBackendVk.objectPoolsMutex);
+        layoutVk = gBackendVk.pipelineLayouts.Data(layoutHandle)->handle;
+    }
+
     VkShaderModule psShaderModule;
     VkShaderModule vsShaderModule;
     {
@@ -2584,6 +2832,7 @@ GfxPipelineHandle GfxBackend::CreateGraphicsPipeline(const GfxShader& shader, Gf
         .type = GfxBackendPipeline::PipelineTypeGraphics
     };
 
+    ReadWriteMutexWriteScope objPoolLock(gBackendVk.objectPoolsMutex);
     return gBackendVk.pipelines.Add(pipeline);
 }
 
@@ -2599,7 +2848,11 @@ GfxPipelineHandle GfxBackend::CreateComputePipeline(const GfxShader& shader, Gfx
     }
     ASSERT_MSG(csInfo, "Shader '%s' is missing Compute shader program", shader.name);
 
-    VkPipelineLayout layoutVk = gBackendVk.pipelineLayouts.Data(layoutHandle)->handle;
+    VkPipelineLayout layoutVk;
+    {
+        ReadWriteMutexReadScope objPoolLock(gBackendVk.objectPoolsMutex);
+        layoutVk = gBackendVk.pipelineLayouts.Data(layoutHandle)->handle;
+    }
     VkShaderModule csShaderModule;
 
     VkShaderModuleCreateInfo shaderStageCreateInfo {
@@ -2639,6 +2892,7 @@ GfxPipelineHandle GfxBackend::CreateComputePipeline(const GfxShader& shader, Gfx
         .type = GfxBackendPipeline::PipelineTypeCompute
     };
 
+    ReadWriteMutexWriteScope objPoolLock(gBackendVk.objectPoolsMutex);
     return gBackendVk.pipelines.Add(pipeline);
 }
 
@@ -2646,6 +2900,7 @@ GfxPipelineHandle GfxBackend::CreateComputePipeline(const GfxShader& shader, Gfx
 void GfxBackend::DestroyPipeline(GfxPipelineHandle handle)
 {
     if (handle.IsValid()) {
+        ReadWriteMutexWriteScope objPoolLock(gBackendVk.objectPoolsMutex);
         GfxBackendPipeline& pipeline = gBackendVk.pipelines.Data(handle);
         if (pipeline.handle) {
             MutexScope lock(gBackendVk.garbageMtx);
@@ -2655,6 +2910,7 @@ void GfxBackend::DestroyPipeline(GfxPipelineHandle handle)
                 .pipeline = pipeline.handle
             });
         }
+
         gBackendVk.pipelines.Remove(handle);
     }
 }
@@ -2666,6 +2922,7 @@ void GfxBackendCommandBuffer::PushConstants(GfxPipelineLayoutHandle layoutHandle
     ASSERT(dataSize);
     ASSERT(name);
 
+    ReadWriteMutexReadScope objPoolLock(gBackendVk.objectPoolsMutex);
     GfxBackendPipelineLayout& layout = *gBackendVk.pipelineLayouts.Data(layoutHandle);
     VkPipelineLayout layoutVk = layout.handle;
     ASSERT(layoutVk);
@@ -2692,6 +2949,7 @@ void GfxBackendCommandBuffer::PushBindings(GfxPipelineLayoutHandle layoutHandle,
     ASSERT(numBindings);
     ASSERT(bindings);
 
+    ReadWriteMutexReadScope objPoolLock(gBackendVk.objectPoolsMutex);
     GfxBackendPipelineLayout& layout = *gBackendVk.pipelineLayouts.Data(layoutHandle);
     VkPipelineLayout layoutVk = layout.handle;
     ASSERT(layoutVk);
@@ -2754,7 +3012,7 @@ void GfxBackendCommandBuffer::PushBindings(GfxPipelineLayoutHandle layoutHandle,
             VkDescriptorImageInfo* pImageInfo = nullptr;
             VkImageLayout imgLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 
-            VkDescriptorBufferInfo* pBufferInfo;
+            VkDescriptorBufferInfo* pBufferInfo = nullptr;
 
             switch (bindingVk.descriptorType) {
             case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER: 
@@ -2785,6 +3043,8 @@ void GfxBackendCommandBuffer::PushBindings(GfxPipelineLayoutHandle layoutHandle,
             {
                 if (!imgLayout)
                     imgLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+                GfxBackendImage& img = gBackendVk.images.Data(binding.image);
+                ASSERT(imgLayout == img.layout);
                 pImageInfo = imageInfos.Push();
                 *pImageInfo = {
                     .sampler = gBackendVk.samplerDefault,
@@ -2844,7 +3104,7 @@ void GfxBackendCommandBuffer::PushBindings(GfxPipelineLayoutHandle layoutHandle,
                 .descriptorCount = 1,
                 .descriptorType = VkDescriptorType(bindingVk.descriptorType),
                 .pImageInfo = pImageInfo,
-                .pBufferInfo = nullptr,
+                .pBufferInfo = pBufferInfo,
                 .pTexelBufferView = nullptr
             };
         } // foreach binding
@@ -2857,6 +3117,8 @@ void GfxBackendCommandBuffer::BindPipeline(GfxPipelineHandle pipeHandle)
 {
     ASSERT(mIsRecording);
     VkCommandBuffer cmdVk = GfxBackend::_GetCommandBufferHandle(*this);
+
+    ReadWriteMutexReadScope objPoolLock(gBackendVk.objectPoolsMutex);
     GfxBackendPipeline& pipe = gBackendVk.pipelines.Data(pipeHandle);
 
     VkPipelineBindPoint bindPoint = pipe.type == GfxBackendPipeline::PipelineTypeCompute ? 
@@ -2867,59 +3129,113 @@ void GfxBackendCommandBuffer::BindPipeline(GfxPipelineHandle pipeHandle)
 void GfxBackendCommandBuffer::Dispatch(uint32 groupCountX, uint32 groupCountY, uint32 groupCountZ)
 {
     ASSERT(mIsRecording);
+    mShouldSubmit = true;
+
     VkCommandBuffer cmdVk = GfxBackend::_GetCommandBufferHandle(*this);
     vkCmdDispatch(cmdVk, groupCountX, groupCountY, groupCountZ);
 }
 
-
 GfxBufferHandle GfxBackend::CreateBuffer(const GfxBackendBufferDesc& desc)
 {
-    ASSERT(desc.sizeBytes);
+    GfxBufferHandle handle;
+    GfxBackend::BatchCreateBuffer(1, &desc, &handle);
+    return handle;
+}
 
-    VkBufferCreateInfo bufferCreateInfo {
-        .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
-        .size = desc.sizeBytes,
-        .usage = VkBufferUsageFlags(desc.usageFlags)
-    };
+void GfxBackend::BatchCreateBuffer(uint32 numBuffers, const GfxBackendBufferDesc* descs, GfxBufferHandle* outHandles)
+{
+    ASSERT(numBuffers);
+    ASSERT(descs);
+    ASSERT(outHandles);
 
-    VkBuffer bufferVk;
-    VkResult r = vkCreateBuffer(gBackendVk.device, &bufferCreateInfo, gBackendVk.vkAlloc, &bufferVk);
-    if (r != VK_SUCCESS)
-        return GfxBufferHandle();
+    MemTempAllocator tempAlloc;
+    GfxBackendBuffer* buffers = tempAlloc.MallocTyped<GfxBackendBuffer>(numBuffers); 
+    uint32 numTransientIncrements = 0;
+    for (uint32 i = 0; i < numBuffers; i++) {
+        const GfxBackendBufferDesc& desc = descs[i];
+        ASSERT(desc.sizeBytes);
 
-    VkMemoryRequirements memReq;
-    vkGetBufferMemoryRequirements(gBackendVk.device, bufferVk, &memReq);
-    GfxBackendDeviceMemory mem = gBackendVk.memMan.Malloc(memReq, desc.arena);
-    vkBindBufferMemory(gBackendVk.device, bufferVk, mem.handle, mem.offset);
+        VkBufferCreateInfo bufferCreateInfo {
+            .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+            .size = desc.sizeBytes,
+            .usage = VkBufferUsageFlags(desc.usageFlags)
+        };
 
-    GfxBackendBuffer buffer {
-        .handle = bufferVk,
-        .desc = desc,
-        .mem = mem
-    };
+        VkBuffer bufferVk;
+        [[maybe_unused]] VkResult r = vkCreateBuffer(gBackendVk.device, &bufferCreateInfo, gBackendVk.vkAlloc, &bufferVk);
+        ASSERT_ALWAYS(r == VK_SUCCESS, "vkCreateBuffer failed");
 
-    return gBackendVk.buffers.Add(buffer);
+        VkMemoryRequirements memReq;
+        vkGetBufferMemoryRequirements(gBackendVk.device, bufferVk, &memReq);
+        GfxBackendDeviceMemory mem = gBackendVk.memMan.Malloc(memReq, desc.arena);
+        vkBindBufferMemory(gBackendVk.device, bufferVk, mem.handle, mem.offset);
+
+        if (desc.arena == GfxBackendMemoryArena::TransientCPU)
+            ++numTransientIncrements;
+
+        buffers[i] = {
+            .handle = bufferVk,
+            .desc = desc,
+            .mem = mem
+        };
+    }
+
+    if (numTransientIncrements) {
+        gBackendVk.frameSyncSignal.Increment(numTransientIncrements);
+        Atomic::FetchAdd(&gBackendVk.numTransientResroucesInUse, numTransientIncrements);
+    }
+
+    ReadWriteMutexWriteScope objPoolLock(gBackendVk.objectPoolsMutex);
+    for (uint32 i = 0; i < numBuffers; i++) 
+        outHandles[i] = gBackendVk.buffers.Add(buffers[i]);
 }
 
 void GfxBackend::DestroyBuffer(GfxBufferHandle handle)
 {
-    if (handle.IsValid()) {
-        GfxBackendBuffer& buffer = gBackendVk.buffers.Data(handle);
+    if (handle.IsValid())
+        GfxBackend::BatchDestroyBuffer(1, &handle);
+}
 
-        MutexScope lock(gBackendVk.garbageMtx);
-        gBackendVk.garbage.Push({
-            .type = GfxBackendGarbage::Type::Buffer,
-            .frameIdx = gBackendVk.presentFrame,
-            .buffer = buffer.handle
-        });
+void GfxBackend::BatchDestroyBuffer(uint32 numBuffers, const GfxBufferHandle* handles)
+{
+    ASSERT(numBuffers);
+    ASSERT(handles);
 
-        gBackendVk.buffers.Remove(handle);
+    MemTempAllocator tempAlloc;
+    Array<GfxBackendGarbage> garbages(&tempAlloc);
+    uint32 numTransientDecrements = 0;
 
-        if (buffer.mem.arena == GfxBackendMemoryArena::TransientCPU) {
-            gBackendVk.frameSyncSignal.Decrement();
-            gBackendVk.frameSyncSignal.Raise();
+    {
+        ReadWriteMutexWriteScope objPoolLock(gBackendVk.objectPoolsMutex);
+        for (uint32 i = 0; i < numBuffers; i++) {
+            GfxBufferHandle handle = handles[i];
+            if (!handle.IsValid())
+                continue;
+
+            GfxBackendBuffer& buffer = gBackendVk.buffers.Data(handle);
+
+            garbages.Push({
+                .type = GfxBackendGarbage::Type::Buffer,
+                .frameIdx = gBackendVk.presentFrame,
+                .buffer = buffer.handle
+            });
+
+            gBackendVk.buffers.Remove(handle);
+
+            if (buffer.mem.arena == GfxBackendMemoryArena::TransientCPU)
+                numTransientDecrements++;
         }
     }
+
+    if (numTransientDecrements) {
+        Atomic::FetchSub(&gBackendVk.numTransientResroucesInUse, numTransientDecrements);
+
+        gBackendVk.frameSyncSignal.Decrement(numTransientDecrements);
+        gBackendVk.frameSyncSignal.Raise();
+    }
+
+    MutexScope lock(gBackendVk.garbageMtx);
+    gBackendVk.garbage.Extend(garbages);
 }
 
 GfxBackendDeviceMemory GfxBackendDeviceMemoryManager::Malloc(const VkMemoryRequirements& memReq, GfxBackendMemoryArena arena)
@@ -2938,8 +3254,15 @@ GfxBackendDeviceMemory GfxBackendDeviceMemoryManager::Malloc(const VkMemoryRequi
             break;
 
         case GfxBackendMemoryArena::TransientCPU:
-            gBackendVk.frameSyncSignal.Increment();
             mem = mTransientCPU[mStagingIndex].Malloc(memReq);
+            break;
+
+        case GfxBackendMemoryArena::DynamicImageGPU:
+            mem = mDynamicImageGPU.Malloc(memReq);
+            break;
+
+        case GfxBackendMemoryArena::DynamicBufferGPU:
+            mem = mDynamicBufferGPU.Malloc(memReq);
             break;
 
         default:
@@ -2962,11 +3285,6 @@ void GfxBackendDeviceMemoryManager::ResetTransientAllocators(uint32 frameIndex)
     mTransientCPU[frameIndex].Reset();
     mStagingIndex = frameIndex;
 }
-
-OffsetAllocator::HeapAllocationOverride GfxBackendDeviceMemoryManager::mOffsetAllocHeapOverride = {
-    .allocateFn = [](size_t size, void*) {  return gBackendVk.parentAlloc.Malloc(size); },
-    .freeFn = [](void* ptr, void*) { gBackendVk.parentAlloc.Free(ptr); }
-};
 
 bool GfxBackendDeviceMemoryManager::Initialize()
 {
@@ -3170,34 +3488,30 @@ void GfxBackendQueueManager::PostInitialize()
 {
     ASSERT(gBackendVk.device);
 
-    // Fetch queues from the device
+    // Fetch queues from the device and initialize other data structures 
     for (uint32 i = 0; i < mNumQueues; i++) {
         GfxBackendQueue& queue = mQueues[i];
-        ASSERT(queue.handle == nullptr);
 
+        queue.cmdBufferCtxMutex.Initialize();
+
+        ASSERT(queue.handle == nullptr);
         vkGetDeviceQueue(gBackendVk.device, queue.familyIdx, 0, &queue.handle);
         ASSERT_ALWAYS(queue.handle, "Something went wrong! Cannot fetch device queue. Invalid queue family");
 
         queue.waitSemaphores.SetAllocator(&gBackendVk.runtimeAlloc);
         queue.signalSemaphores.SetAllocator(&gBackendVk.runtimeAlloc);
         queue.pendingBarriers.SetAllocator(&gBackendVk.runtimeAlloc);
+        queue.dependentBarriers.SetAllocator(&gBackendVk.runtimeAlloc);
 
-        VkSemaphoreCreateInfo semCreateInfo { .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO };
-        vkCreateSemaphore(gBackendVk.device, &semCreateInfo, gBackendVk.vkAlloc, &queue.mySemaphore);
-    }
-
-    // Queues are setup and ready
-    // CommandBuffer managers for each queue
-    for (uint32 i = 0; i < mNumQueues; i++) {
-        GfxBackendQueue& queue = mQueues[i];
         for (uint32 k = 0; k < GFXBACKEND_FRAMES_IN_FLIGHT; k++) {
             if (!InitializeCommandBufferContext(queue.cmdBufferContexts[k], queue.familyIdx)) {
                 LOG_WARNING("Gfx: CommandBuffer manager init failed for queue %u", i);
                 ASSERT(0);
             }
+
+            queue.semaphoreBanks[k].Initialize();
         }
     }
-
 }
 
 void GfxBackendQueueManager::Release()
@@ -3212,13 +3526,16 @@ void GfxBackendQueueManager::Release()
     for (uint32 i = 0; i < mNumQueues; i++) {
         GfxBackendQueue& queue = mQueues[i];
 
-        for (uint32 k = 0; k < GFXBACKEND_FRAMES_IN_FLIGHT; k++) 
+        for (uint32 k = 0; k < GFXBACKEND_FRAMES_IN_FLIGHT; k++) {
             ReleaseCommandBufferContext(queue.cmdBufferContexts[k]);
+            queue.semaphoreBanks[k].Release();            
+        }
 
-        vkDestroySemaphore(gBackendVk.device, queue.mySemaphore, gBackendVk.vkAlloc);
         queue.waitSemaphores.Free();
         queue.signalSemaphores.Free();
         queue.pendingBarriers.Free();
+        queue.dependentBarriers.Free();
+        queue.cmdBufferCtxMutex.Release();
     }
 
     Mem::Free(mQueueFamilies, &gBackendVk.parentAlloc);
@@ -3236,7 +3553,7 @@ void GfxBackendQueueManager::SetupQueuesForDiscreteDevice()
     mNumQueues = 3;
     mQueues = Mem::AllocZeroTyped<GfxBackendQueue>(mNumQueues, alloc);
 
-    {
+    if (SettingsJunkyard::Get().graphics.IsGraphicsEnabled()) {
         // Note that we also require Transfer for the first Graphics queue in order to do frequent buffer updates
         mQueues[0] = {
             .type = GfxBackendQueueType::Graphics|GfxBackendQueueType::Present,
@@ -3355,8 +3672,6 @@ inline uint32 GfxBackendQueueManager::FindQueue(GfxBackendQueueType type) const
 
 void GfxBackend::SubmitQueue(GfxBackendQueueType queueType, GfxBackendQueueType dependentQueues)
 {
-    ASSERT_MSG(!Jobs::IsRunningOnCurrentThread(), "Submit cannot be called on Task threads");
-
     gBackendVk.queueMan.SubmitQueue(queueType, dependentQueues);
 }
 
@@ -3391,19 +3706,26 @@ void GfxBackendQueueManager::SubmitQueue(GfxBackendQueueType queueType, GfxBacke
     ASSERT(queueIndex != -1);
     GfxBackendQueue& queue = GetQueue(queueIndex);
 
+    ASSERT_MSG(Atomic::Load(&queue.numCmdBuffersInRecording) == 0, "Cannot submit: CommandBuffers are still in recording");
+
     // Take all the command-buffers since last Submit call and pass it to the submission thread
     GfxBackendCommandBufferContext& cmdBufferCtx = queue.cmdBufferContexts[mFrameIndex];
+
+    queue.cmdBufferCtxMutex.EnterWrite();
     uint32 numCmdBuffers = cmdBufferCtx.cmdBuffers.Count() - cmdBufferCtx.cmdBufferIndex;
-    if (!numCmdBuffers)
+    if (!numCmdBuffers) {
+        queue.cmdBufferCtxMutex.ExitWrite();
         return;
+    }
 
     MemSingleShotMalloc<GfxBackendQueueSubmitRequest> mallocator;
     mallocator.AddMemberArray<VkCommandBuffer>(offsetof(GfxBackendQueueSubmitRequest, cmdBuffers), numCmdBuffers);
     GfxBackendQueueSubmitRequest* req = mallocator.Calloc(&gBackendVk.runtimeAlloc);
     req->type = queueType;
     req->numCmdBuffers = numCmdBuffers;
-    for (uint32 i = cmdBufferCtx.cmdBufferIndex; i < cmdBufferCtx.cmdBuffers.Count(); i++)
+    for (uint32 i = cmdBufferCtx.cmdBufferIndex; i < cmdBufferCtx.cmdBuffers.Count(); i++) {
         req->cmdBuffers[i - cmdBufferCtx.cmdBufferIndex] = cmdBufferCtx.cmdBuffers[i];
+    }
 
     cmdBufferCtx.cmdBufferIndex = cmdBufferCtx.cmdBuffers.Count();
 
@@ -3420,7 +3742,10 @@ void GfxBackendQueueManager::SubmitQueue(GfxBackendQueueType queueType, GfxBacke
         [[maybe_unused]] VkResult r = vkCreateFence(gBackendVk.device, &fenceCreateInfo, gBackendVk.vkAlloc, &req->fence);
         ASSERT_ALWAYS(r == VK_SUCCESS, "vkCreateFence failed");
     }
-    cmdBufferCtx.fences.Push(req->fence);        
+    cmdBufferCtx.fences.Push(req->fence);
+    queue.cmdBufferCtxMutex.ExitWrite();
+
+    req->semaphore = queue.semaphoreBanks[mFrameIndex].GetSemaphore();
 
     {
         SpinLockMutexScope lock(mRequestMutex);
@@ -3428,6 +3753,7 @@ void GfxBackendQueueManager::SubmitQueue(GfxBackendQueueType queueType, GfxBacke
     }
 
     mRequestsSemaphore.Post();
+    Atomic::StoreExplicit(&queue.numPendingCmdBuffers, 0, AtomicMemoryOrder::Release);
 }
 
 bool GfxBackendQueueManager::SubmitQueueInternal(GfxBackendQueueSubmitRequest& req)
@@ -3436,7 +3762,7 @@ bool GfxBackendQueueManager::SubmitQueueInternal(GfxBackendQueueSubmitRequest& r
     ASSERT(queueIndex != -1);
     GfxBackendQueue& queue = mQueues[queueIndex];
 
-    // Connecte dependencies
+    // Connect dependencies
     // Each queue has it's own signal semaphore
     // When we have dependents, then add the current queue's signal semaphore to the dependent's wait semaphore
     // This forms a dependency chain
@@ -3464,22 +3790,22 @@ bool GfxBackendQueueManager::SubmitQueueInternal(GfxBackendQueueSubmitRequest& r
     if (IsBitsSet<GfxBackendQueueType>(req.dependents, GfxBackendQueueType::Graphics)) {
         ASSERT(req.type != GfxBackendQueueType::Graphics);
         GfxBackendQueue& graphicsQueue = mQueues[FindQueue(GfxBackendQueueType::Graphics)];
-        graphicsQueue.waitSemaphores.Push({queue.mySemaphore, GetStageFlag(req.type)});
-        queue.signalSemaphores.Push(queue.mySemaphore);
+        graphicsQueue.waitSemaphores.Push({req.semaphore, GetStageFlag(req.type)});
+        queue.signalSemaphores.Push(req.semaphore);
     }
 
     if (IsBitsSet<GfxBackendQueueType>(req.dependents, GfxBackendQueueType::Compute)) {
         ASSERT(req.type != GfxBackendQueueType::Compute);
         GfxBackendQueue& computeQueue = mQueues[FindQueue(GfxBackendQueueType::Compute)];
-        computeQueue.waitSemaphores.Push({queue.mySemaphore, GetStageFlag(req.type)});
-        queue.signalSemaphores.Push(queue.mySemaphore);
+        computeQueue.waitSemaphores.Push({req.semaphore, GetStageFlag(req.type)});
+        queue.signalSemaphores.Push(req.semaphore);
     }
 
     if (IsBitsSet<GfxBackendQueueType>(req.dependents, GfxBackendQueueType::Transfer)) {
         ASSERT(req.type != GfxBackendQueueType::Transfer);
         GfxBackendQueue& transferQueue = mQueues[FindQueue(GfxBackendQueueType::Transfer)];
-        transferQueue.waitSemaphores.Push({queue.mySemaphore, GetStageFlag(req.type)});
-        queue.signalSemaphores.Push(queue.mySemaphore);
+        transferQueue.waitSemaphores.Push({req.semaphore, GetStageFlag(req.type)});
+        queue.signalSemaphores.Push(req.semaphore);
     }
 
     // Submit
@@ -3507,11 +3833,33 @@ bool GfxBackendQueueManager::SubmitQueueInternal(GfxBackendQueueSubmitRequest& r
         .pSignalSemaphores = queue.signalSemaphores.Ptr(),
     };
 
-
     // TODO: maybe implement synchronization2 (more granual control?) with vkQueueSubmit
     if (vkQueueSubmit(queue.handle, 1, &submitInfo, req.fence) != VK_SUCCESS) {
         ASSERT_MSG(0, "Gfx: Submitting queue failed");
         return false;
+    }
+
+    queue.barriersMutex.Enter();
+    if (!queue.dependentBarriers.IsEmpty()) {
+        uint32 targetQueueIndex = queue.dependentBarriers[0].targetQueueIndex;
+        ASSERT(targetQueueIndex != queueIndex);
+        for (uint32 i = 1; i < queue.dependentBarriers.Count(); i++) {
+            // This just makes sure we are sending all barriers to a single target queue
+            // If this is not always the case, then we should implement something else here
+            ASSERT(targetQueueIndex == queue.dependentBarriers[i].targetQueueIndex);
+        }
+        
+        {
+            GfxBackendQueue& targetQueue = gBackendVk.queueMan.GetQueue(targetQueueIndex);
+            SpinLockMutexScope lock(targetQueue.barriersMutex);
+            targetQueue.pendingBarriers.Extend(queue.dependentBarriers);
+        }
+        
+        queue.dependentBarriers.Clear();
+        queue.barriersMutex.Exit();
+    }
+    else {
+        queue.barriersMutex.Exit();
     }
 
     queue.waitSemaphores.Clear();
@@ -3532,6 +3880,10 @@ void GfxBackendQueueManager::BeginFrame()
         GfxBackendQueue& queue = mQueues[i];
         GfxBackendCommandBufferContext& cmdBufferCtx = queue.cmdBufferContexts[mFrameIndex];
     
+        // NOTE: We are making sure that no other thread is submitting when BeginFrame() is called (See frameSyncSignal/externalFrameSyncSignal)
+        //       So we this mutex should have no contention and is just here for safety
+        queue.cmdBufferCtxMutex.EnterWrite();
+
         // Wait for all submitted command-buffers to finish in the queue
         if (!cmdBufferCtx.fences.IsEmpty()) {
             [[maybe_unused]] VkResult r = vkWaitForFences(gBackendVk.device, cmdBufferCtx.fences.Count(), cmdBufferCtx.fences.Ptr(), true, UINT64_MAX);
@@ -3547,6 +3899,10 @@ void GfxBackendQueueManager::BeginFrame()
         cmdBufferCtx.cmdBufferFreeList.Extend(cmdBufferCtx.cmdBuffers);
         cmdBufferCtx.cmdBuffers.Clear();
         cmdBufferCtx.cmdBufferIndex = 0;
+
+        queue.cmdBufferCtxMutex.ExitWrite();
+
+        queue.semaphoreBanks[mFrameIndex].Reset();
     }
 
     gBackendVk.memMan.ResetTransientAllocators(mFrameIndex);
@@ -3592,113 +3948,172 @@ void GfxBackendQueueManager::ReleaseCommandBufferContext(GfxBackendCommandBuffer
 
 void GfxBackendCommandBuffer::MapBuffer(GfxBufferHandle buffHandle, void** outPtr, size_t* outSizeBytes)
 {
-    ASSERT(mIsRecording);
     ASSERT(outPtr);
 
-    GfxBackendBuffer& buffer = gBackendVk.buffers.Data(buffHandle);
-    ASSERT_MSG(buffer.mem.mappedData, "Buffer is not mappable");
-
-    *outPtr = buffer.mem.mappedData;
+    GfxBackendMapResult r;
+    BatchMapBuffer(1, &buffHandle, &r);
+    *outPtr = r.dataPtr;
     if (outSizeBytes)
-        *outSizeBytes = buffer.desc.sizeBytes;
+        *outSizeBytes = r.dataSize;
+}
+
+void GfxBackendCommandBuffer::BatchMapBuffer(uint32 numParams, const GfxBufferHandle* handles, GfxBackendMapResult* mapResults)
+{
+    ASSERT(mIsRecording);
+    ASSERT(handles);
+    ASSERT(mapResults);
+    ASSERT(numParams);
+
+    ReadWriteMutexReadScope objPoolLock(gBackendVk.objectPoolsMutex);
+
+    for (uint32 i = 0; i < numParams; i++) {
+        GfxBackendBuffer& buffer = gBackendVk.buffers.Data(handles[i]);
+        ASSERT_MSG(buffer.mem.mappedData, "Buffer is not mappable");
+
+        mapResults[i].dataPtr = buffer.mem.mappedData;
+        mapResults[i].dataSize = buffer.desc.sizeBytes;
+    }
 }
 
 void GfxBackendCommandBuffer::FlushBuffer(GfxBufferHandle buffHandle)
 {
+    BatchFlushBuffer(1, &buffHandle);
+}
+
+void GfxBackendCommandBuffer::BatchFlushBuffer(uint32 numBuffers, const GfxBufferHandle* bufferHandles)
+{
     ASSERT(mIsRecording);
 
-    GfxBackendBuffer& buffer = gBackendVk.buffers.Data(buffHandle);
-    if (!buffer.mem.isCoherent) {
-        size_t alignedSize = AlignValue(buffer.desc.sizeBytes, gBackendVk.gpu.props.limits.nonCoherentAtomSize);
-        VkMappedMemoryRange memRange {
-            .sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,
-            .memory = buffer.mem.handle,
-            .offset = buffer.mem.offset,
-            .size = alignedSize
-        };
-        vkFlushMappedMemoryRanges(gBackendVk.device, 1, &memRange);
+    MemTempAllocator tempAlloc;
+    Array<VkMappedMemoryRange> memRanges(&tempAlloc);
+
+    gBackendVk.objectPoolsMutex.EnterRead();
+
+    for (uint32 i = 0; i < numBuffers; i++) {
+        GfxBackendBuffer& buffer = gBackendVk.buffers.Data(bufferHandles[i]);
+        if (!buffer.mem.isCoherent) {
+            size_t alignedSize = AlignValue(buffer.desc.sizeBytes, gBackendVk.gpu.props.limits.nonCoherentAtomSize);
+            VkMappedMemoryRange memRange {
+                .sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,
+                .memory = buffer.mem.handle,
+                .offset = buffer.mem.offset,
+                .size = alignedSize
+            };
+            memRanges.Push(memRange);
+        }
     }
+
+    gBackendVk.objectPoolsMutex.ExitRead();
+
+    if (!memRanges.IsEmpty())
+        vkFlushMappedMemoryRanges(gBackendVk.device, memRanges.Count(), memRanges.Ptr());
 }
 
 void GfxBackendCommandBuffer::CopyBufferToBuffer(GfxBufferHandle srcHandle, GfxBufferHandle dstHandle, GfxShaderStage stagesUsed, 
                                                  size_t srcOffset, size_t dstOffset, size_t sizeBytes)
 {
+    GfxBackendCopyBufferToBufferParams param {
+        .srcHandle = srcHandle,
+        .dstHandle = dstHandle,
+        .stagesUsed = stagesUsed,
+        .srcOffset = srcOffset,
+        .dstOffset = dstOffset,
+        .sizeBytes = sizeBytes
+    };
+
+    BatchCopyBufferToBuffer(1, &param);
+}
+
+void GfxBackendCommandBuffer::BatchCopyBufferToBuffer(uint32 numParams, const GfxBackendCopyBufferToBufferParams* params)
+{
+    ASSERT(numParams);
+    ASSERT(params);
     ASSERT(mIsRecording);
+    mShouldSubmit = true;
+
+    struct CopyBufferToBufferData
+    {
+        VkBuffer srcBuffer;
+        VkBuffer dstBuffer;
+        VkBufferCopy region;
+    };
 
     GfxBackendQueue& queue = gBackendVk.queueMan.GetQueue(mQueueIndex);
     ASSERT_MSG(IsBitsSet<GfxBackendQueueType>(queue.type, GfxBackendQueueType::Transfer) || queue.supportsTransfer,
                "Cannot do buffer copies on non-Transfer queues");
 
+    MemTempAllocator tempAlloc;
+    Array<VkBufferMemoryBarrier2> bufferBarriers(&tempAlloc);
+    Array<GfxBackendQueue::PendingBarrier> pendingBarriers(&tempAlloc);
     VkCommandBuffer cmdVk = GfxBackend::_GetCommandBufferHandle(*this);
-    GfxBackendBuffer& srcBuffer = gBackendVk.buffers.Data(srcHandle);
-    GfxBackendBuffer& dstBuffer = gBackendVk.buffers.Data(dstHandle);
 
-    if (sizeBytes == 0)
-        sizeBytes = Min(srcBuffer.desc.sizeBytes, dstBuffer.desc.sizeBytes);
-    ASSERT(sizeBytes <= srcBuffer.desc.sizeBytes);
-    ASSERT(sizeBytes <= dstBuffer.desc.sizeBytes);
+    gBackendVk.objectPoolsMutex.EnterRead();
+    for (uint32 i = 0; i < numParams; i++) {
+        const GfxBackendCopyBufferToBufferParams& copyParams = params[i];
 
-    VkBufferCopy copyRegion {
-        .srcOffset = srcOffset,
-        .dstOffset = dstOffset,
-        .size = sizeBytes
-    };
-    vkCmdCopyBuffer(cmdVk, srcBuffer.handle, dstBuffer.handle, 1, &copyRegion);
+        GfxBackendBuffer& srcBuffer = gBackendVk.buffers.Data(copyParams.srcHandle);
+        GfxBackendBuffer& dstBuffer = gBackendVk.buffers.Data(copyParams.dstHandle);
 
-    VkAccessFlags2 accessFlags;
-    if (IsBitsSet<GfxBackendBufferUsageFlags>(dstBuffer.desc.usageFlags, GfxBackendBufferUsageFlags::Index))
-        accessFlags = VK_ACCESS_2_INDEX_READ_BIT;
-    else if (IsBitsSet<GfxBackendBufferUsageFlags>(dstBuffer.desc.usageFlags, GfxBackendBufferUsageFlags::Vertex))
-        accessFlags = VK_ACCESS_2_VERTEX_ATTRIBUTE_READ_BIT;
-    else if (IsBitsSet<GfxBackendBufferUsageFlags>(dstBuffer.desc.usageFlags, GfxBackendBufferUsageFlags::Uniform))
-        accessFlags = VK_ACCESS_2_UNIFORM_READ_BIT;
-    else 
-        accessFlags = VK_ACCESS_2_MEMORY_READ_BIT;
+        size_t sizeBytes = copyParams.sizeBytes;
+        if (sizeBytes == 0)
+            sizeBytes = Min(srcBuffer.desc.sizeBytes, dstBuffer.desc.sizeBytes);
+        ASSERT(sizeBytes <= srcBuffer.desc.sizeBytes);
+        ASSERT(sizeBytes <= dstBuffer.desc.sizeBytes);
 
-    StaticArray<GfxBackendQueueType, 4> dstQueues;
-    if (IsBitsSet<GfxShaderStage>(stagesUsed, GfxShaderStage::Vertex) ||
-        IsBitsSet<GfxShaderStage>(stagesUsed, GfxShaderStage::Fragment))
-    {
-        dstQueues.Push(GfxBackendQueueType::Graphics);
-    }
+        VkBufferCopy copyRegion {
+            .srcOffset = copyParams.srcOffset,
+            .dstOffset = copyParams.dstOffset,
+            .size = sizeBytes
+        };
+        vkCmdCopyBuffer(cmdVk, srcBuffer.handle, dstBuffer.handle, 1, &copyRegion);
 
-    if (IsBitsSet<GfxShaderStage>(stagesUsed, GfxShaderStage::Compute))
-        dstQueues.Push(GfxBackendQueueType::Compute);
+        VkAccessFlags2 accessFlags;
+        if (IsBitsSet<GfxBackendBufferUsageFlags>(dstBuffer.desc.usageFlags, GfxBackendBufferUsageFlags::Index))
+            accessFlags = VK_ACCESS_2_INDEX_READ_BIT;
+        else if (IsBitsSet<GfxBackendBufferUsageFlags>(dstBuffer.desc.usageFlags, GfxBackendBufferUsageFlags::Vertex))
+            accessFlags = VK_ACCESS_2_VERTEX_ATTRIBUTE_READ_BIT;
+        else if (IsBitsSet<GfxBackendBufferUsageFlags>(dstBuffer.desc.usageFlags, GfxBackendBufferUsageFlags::Uniform))
+            accessFlags = VK_ACCESS_2_UNIFORM_READ_BIT;
+        else 
+            accessFlags = VK_ACCESS_2_MEMORY_READ_BIT;
 
-    for (GfxBackendQueueType dstQueueType : dstQueues) {
+        GfxBackendQueueType dstQueueType = GfxBackendQueueType::None;
+        if (IsBitsSet<GfxShaderStage>(copyParams.stagesUsed, GfxShaderStage::Vertex) ||
+            IsBitsSet<GfxShaderStage>(copyParams.stagesUsed, GfxShaderStage::Fragment))
+        {
+            dstQueueType = GfxBackendQueueType::Graphics;
+        }
+        else if (IsBitsSet<GfxShaderStage>(copyParams.stagesUsed, GfxShaderStage::Compute))
+        {
+            dstQueueType = GfxBackendQueueType::Compute;
+        }
+        ASSERT(dstQueueType != GfxBackendQueueType::None);
+
         uint32 dstQueueIndex = gBackendVk.queueMan.FindQueue(dstQueueType);
         ASSERT(dstQueueIndex != -1);
-
         if (mQueueIndex == dstQueueIndex) {
             // Unified queue
             VkBufferMemoryBarrier2 barrier {
                 .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2,
                 .srcStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT,
                 .srcAccessMask = VK_ACCESS_2_MEMORY_WRITE_BIT,
-                .dstStageMask = GfxBackend::_GetBufferDestStageFlags(dstQueueType, stagesUsed, dstBuffer.desc.usageFlags),
+                .dstStageMask = GfxBackend::_GetBufferDestStageFlags(dstQueueType, copyParams.stagesUsed, dstBuffer.desc.usageFlags),
                 .dstAccessMask = accessFlags,
                 .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
                 .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
                 .buffer = dstBuffer.handle,
-                .offset = dstOffset,
+                .offset = copyParams.dstOffset,
                 .size = sizeBytes
-            };
-
-            VkDependencyInfo depInfo {
-                .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
-                .bufferMemoryBarrierCount = 1,
-                .pBufferMemoryBarriers = &barrier
             };
 
             dstBuffer.transitionedStage = barrier.dstStageMask;
             dstBuffer.transitionedAccess = barrier.dstAccessMask;
-            vkCmdPipelineBarrier2(cmdVk, &depInfo);
+
+            bufferBarriers.Push(barrier);
         }
         else {
             // Separate queue
             // We have to do queue ownership transfer first
-            GfxBackendQueue& dstQueue = gBackendVk.queueMan.GetQueue(dstQueueIndex);
-
             VkBufferMemoryBarrier2 barrier {
                 .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2,
                 .srcStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT,
@@ -3706,136 +4121,177 @@ void GfxBackendCommandBuffer::CopyBufferToBuffer(GfxBufferHandle srcHandle, GfxB
                 .srcQueueFamilyIndex = mQueueIndex,
                 .dstQueueFamilyIndex = dstQueueIndex,
                 .buffer = dstBuffer.handle,
-                .offset = dstOffset,
+                .offset = copyParams.dstOffset,
                 .size = sizeBytes
             };
-
-            VkDependencyInfo depInfo {
-                .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
-                .bufferMemoryBarrierCount = 1,
-                .pBufferMemoryBarriers = &barrier
-            };
-
-            vkCmdPipelineBarrier2(cmdVk, &depInfo);
+            bufferBarriers.Push(barrier);
 
             // TODO: Assert that dstQueue is not being recorded
             GfxBackendQueue::PendingBarrier dstBarrier {
                 .type = GfxBackendQueue::PendingBarrier::BUFFER,
-                .bufferHandle = dstHandle,
+                .targetQueueIndex = dstQueueIndex,
+                .resourceTransferedCallback = copyParams.resourceTransferedCallback,
+                .resourceTransferedUserData = copyParams.resourceTransferedUserData,
+                .bufferHandle = copyParams.dstHandle,
                 .bufferBarrier = {
                     .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2,
                     .srcStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT,
                     .srcAccessMask = VK_ACCESS_2_MEMORY_WRITE_BIT,
-                    .dstStageMask = GfxBackend::_GetBufferDestStageFlags(dstQueueType, stagesUsed, dstBuffer.desc.usageFlags),
+                    .dstStageMask = GfxBackend::_GetBufferDestStageFlags(dstQueueType, copyParams.stagesUsed, dstBuffer.desc.usageFlags),
                     .dstAccessMask = accessFlags,
                     .srcQueueFamilyIndex = mQueueIndex,
                     .dstQueueFamilyIndex = dstQueueIndex,
-                    .offset = dstOffset,
+                    .offset = copyParams.dstOffset,
                     .size = sizeBytes
                 }
             };
 
             queue.internalDependents |= dstQueueType;
-            dstQueue.pendingBarriers.Push(dstBarrier);
+            pendingBarriers.Push(dstBarrier);
         }
     }
+    gBackendVk.objectPoolsMutex.ExitRead();
+
+    // Submit actual pipeline barriers
+    ASSERT(!bufferBarriers.IsEmpty());
+    VkDependencyInfo depInfo {
+        .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
+        .bufferMemoryBarrierCount = bufferBarriers.Count(),
+        .pBufferMemoryBarriers = bufferBarriers.Ptr()
+    };
+    vkCmdPipelineBarrier2(cmdVk, &depInfo);
+
+    // Send all pending barriers to the queue. After the next Submit, all of those barriers will be passed on to target queue
+    SpinLockMutexScope lock(queue.barriersMutex);
+    queue.dependentBarriers.Extend(pendingBarriers);
 }
 
 void GfxBackendCommandBuffer::CopyBufferToImage(GfxBufferHandle srcHandle, GfxImageHandle dstHandle, GfxShaderStage stagesUsed, 
                                                 uint16 startMipIndex, uint16 mipCount)
 {
+    GfxBackendCopyBufferToImageParams params {
+        .srcHandle = srcHandle,
+        .dstHandle = dstHandle,
+        .stagesUsed = stagesUsed,
+        .startMipIndex = startMipIndex,
+        .mipCount = mipCount
+    };
+
+    BatchCopyBufferToImage(1, &params);
+}
+
+void GfxBackendCommandBuffer::BatchCopyBufferToImage(uint32 numParams, const GfxBackendCopyBufferToImageParams* params)
+{
+    ASSERT(numParams);
+    ASSERT(params);
     ASSERT(mIsRecording);
-    ASSERT(mipCount);
+
+    mShouldSubmit = true;
+
+    struct CopyBufferToImageData
+    {
+        VkBufferImageCopy imageCopies[GFXBACKEND_MAX_MIPS_PER_IMAGE];
+        uint32 numMips;
+        VkBuffer bufferHandle;
+        VkImage imageHandle;
+    };
+
+    MemTempAllocator tempAlloc;
+    Array<VkImageMemoryBarrier2> preBarriers(&tempAlloc);
+    Array<VkImageMemoryBarrier2> barriers(&tempAlloc);
+    Array<CopyBufferToImageData> copies(&tempAlloc);
+    Array<GfxBackendQueue::PendingBarrier> pendingBarriers(&tempAlloc);
 
     GfxBackendQueue& queue = gBackendVk.queueMan.GetQueue(mQueueIndex);
     ASSERT_MSG(IsBitsSet<GfxBackendQueueType>(queue.type, GfxBackendQueueType::Transfer) || queue.supportsTransfer,
                "Cannot do buffer copies on non-Transfer queues");
 
-    VkCommandBuffer cmdVk = GfxBackend::_GetCommandBufferHandle(*this);
-    GfxBackendBuffer& srcBuffer = gBackendVk.buffers.Data(srcHandle);
-    GfxBackendImage& dstImage = gBackendVk.images.Data(dstHandle);
+    gBackendVk.objectPoolsMutex.EnterRead();
+    for (uint32 i = 0; i < numParams; i++) {
+        const GfxBackendCopyBufferToImageParams& copyParams = params[i];
 
-    ASSERT(startMipIndex < dstImage.desc.numMips);
-    mipCount = Min<uint16>(mipCount, dstImage.desc.numMips - startMipIndex);
+        ASSERT(copyParams.mipCount);
+        GfxBackendBuffer& srcBuffer = gBackendVk.buffers.Data(copyParams.srcHandle);
+        GfxBackendImage& dstImage = gBackendVk.images.Data(copyParams.dstHandle);
 
-    VkImageAspectFlags aspect = 0;
-    VkImageLayout dstLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    if (GfxBackend::_FormatHasDepth(dstImage.desc.format)) {
-        aspect |= VK_IMAGE_ASPECT_DEPTH_BIT;
-        dstLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
-    }
-    if (GfxBackend::_FormatHasStencil(dstImage.desc.format)) {
-        aspect |= VK_IMAGE_ASPECT_STENCIL_BIT;
-        dstLayout = VK_IMAGE_LAYOUT_STENCIL_READ_ONLY_OPTIMAL;
-    }
-    if (aspect == 0) {
-        aspect = VK_IMAGE_ASPECT_COLOR_BIT;
-        dstLayout = VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL;
-    }
+        ASSERT(copyParams.startMipIndex < dstImage.desc.numMips);
+        uint16 mipCount = Min<uint16>(copyParams.mipCount, dstImage.desc.numMips - copyParams.startMipIndex);
 
-    VkImageSubresourceRange subresourceRange {
-        .aspectMask = aspect,
-        .baseMipLevel = startMipIndex,
-        .levelCount = mipCount,
-        .baseArrayLayer = 0,
-        .layerCount = 1
-    };
+        VkImageAspectFlags aspect = 0;
+        VkImageLayout dstLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        if (GfxBackend::_FormatHasDepth(dstImage.desc.format)) {
+            aspect |= VK_IMAGE_ASPECT_DEPTH_BIT;
+            dstLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+        }
+        if (GfxBackend::_FormatHasStencil(dstImage.desc.format)) {
+            aspect |= VK_IMAGE_ASPECT_STENCIL_BIT;
+            dstLayout = VK_IMAGE_LAYOUT_STENCIL_READ_ONLY_OPTIMAL;
+        }
+        if (aspect == 0) {
+            aspect = VK_IMAGE_ASPECT_COLOR_BIT;
+            dstLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        }
 
-    VkImageMemoryBarrier2 preCopyBarrier {
-        .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
-        .dstStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT,
-        .dstAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT,
-        .oldLayout = dstImage.layout,
-        .newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-        .image = dstImage.handle,
-        .subresourceRange = subresourceRange
-    };
-    VkDependencyInfo preCopyDepInfo {
-        .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
-        .imageMemoryBarrierCount = 1,
-        .pImageMemoryBarriers = &preCopyBarrier
-    };
-    vkCmdPipelineBarrier2(cmdVk, &preCopyDepInfo);
-
-    // Perform copy
-    VkBufferImageCopy imageCopies[GFXBACKEND_MAX_MIPS_PER_IMAGE];
-    uint16 endMipIndex = startMipIndex + mipCount;
-    for (uint16 i = startMipIndex; i < endMipIndex; i++) {
-        uint16 mipWidth = Max<uint16>(1, dstImage.desc.width >> i);
-        uint16 mipHeight = Max<uint16>(1, dstImage.desc.height >> i);
-
-        imageCopies[i] = {
-            .bufferOffset = dstImage.desc.mipOffsets[i],
-            .bufferRowLength = 0,   
-            .bufferImageHeight = 0,
-            .imageSubresource = {
-                .aspectMask = aspect,
-                .mipLevel = i, 
-                .baseArrayLayer = 0,
-                .layerCount = 1
-            },
-            .imageOffset = {0, 0, 0},
-            .imageExtent = {mipWidth, mipHeight, 1}
+        VkImageSubresourceRange subresourceRange {
+            .aspectMask = aspect,
+            .baseMipLevel = copyParams.startMipIndex,
+            .levelCount = mipCount,
+            .baseArrayLayer = 0,
+            .layerCount = 1
         };
-    }
 
-    vkCmdCopyBufferToImage(cmdVk, srcBuffer.handle, dstImage.handle, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, mipCount, imageCopies);
+        VkImageMemoryBarrier2 preCopyBarrier {
+            .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
+            .dstStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT,
+            .dstAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT,
+            .oldLayout = dstImage.layout,
+            .newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+            .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .image = dstImage.handle,
+            .subresourceRange = subresourceRange
+        };
 
-    // Put the post barriers
-    // Transition the image from Trasnsfer to 
-    StaticArray<GfxBackendQueueType, 4> dstQueues;
-    if (IsBitsSet<GfxShaderStage>(stagesUsed, GfxShaderStage::Vertex) ||
-        IsBitsSet<GfxShaderStage>(stagesUsed, GfxShaderStage::Fragment))
-    {
-        dstQueues.Push(GfxBackendQueueType::Graphics);
-    }
+        preBarriers.Push(preCopyBarrier);
 
-    if (IsBitsSet<GfxShaderStage>(stagesUsed, GfxShaderStage::Compute))
-        dstQueues.Push(GfxBackendQueueType::Compute);
+        // Perform copy
+        CopyBufferToImageData* copy = copies.Push();
+        copy->numMips = mipCount;
+        copy->bufferHandle = srcBuffer.handle;
+        copy->imageHandle = dstImage.handle;
+        uint16 endMipIndex = copyParams.startMipIndex + mipCount;
+        for (uint16 mipIdx = copyParams.startMipIndex; mipIdx < endMipIndex; mipIdx++) {
+            uint16 mipWidth = Max<uint16>(1, dstImage.desc.width >> mipIdx);
+            uint16 mipHeight = Max<uint16>(1, dstImage.desc.height >> mipIdx);
+            uint16 imageCopyIdx = mipIdx - copyParams.startMipIndex;
 
-    for (GfxBackendQueueType dstQueueType : dstQueues) {
+            copy->imageCopies[imageCopyIdx] = {
+                .bufferOffset = dstImage.desc.mipOffsets[mipIdx],
+                .bufferRowLength = 0,   
+                .bufferImageHeight = 0,
+                .imageSubresource = {
+                    .aspectMask = aspect,
+                    .mipLevel = mipIdx, 
+                    .baseArrayLayer = 0,
+                    .layerCount = 1
+                },
+                .imageOffset = {0, 0, 0},
+                .imageExtent = {mipWidth, mipHeight, 1}
+            };
+        }
+
+        // Put the post barriers
+        // Transition the image from Trasnsfer to 
+        GfxBackendQueueType dstQueueType = GfxBackendQueueType::None;
+        if (IsBitsSet<GfxShaderStage>(copyParams.stagesUsed, GfxShaderStage::Vertex) ||
+            IsBitsSet<GfxShaderStage>(copyParams.stagesUsed, GfxShaderStage::Fragment))
+        {
+            dstQueueType = GfxBackendQueueType::Graphics;
+        }
+        else if (IsBitsSet<GfxShaderStage>(copyParams.stagesUsed, GfxShaderStage::Compute))
+            dstQueueType = GfxBackendQueueType::Compute;
+        ASSERT(dstQueueType != GfxBackendQueueType::None);
+
         uint32 dstQueueIndex = gBackendVk.queueMan.FindQueue(dstQueueType);
         ASSERT(dstQueueIndex != -1);
 
@@ -3845,7 +4301,7 @@ void GfxBackendCommandBuffer::CopyBufferToImage(GfxBufferHandle srcHandle, GfxIm
                 .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
                 .srcStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT,
                 .srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT,
-                .dstStageMask = GfxBackend::_GetImageDestStageFlags(dstQueueType, stagesUsed),
+                .dstStageMask = GfxBackend::_GetImageDestStageFlags(dstQueueType, copyParams.stagesUsed),
                 .dstAccessMask = VK_ACCESS_2_MEMORY_READ_BIT,
                 .oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                 .newLayout = dstLayout,
@@ -3854,21 +4310,14 @@ void GfxBackendCommandBuffer::CopyBufferToImage(GfxBufferHandle srcHandle, GfxIm
                 .image = dstImage.handle,
                 .subresourceRange = subresourceRange
             };
-            VkDependencyInfo depInfo {
-                .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
-                .imageMemoryBarrierCount = 1,
-                .pImageMemoryBarriers = &barrier
-            };
 
-            vkCmdPipelineBarrier2(cmdVk, &depInfo);
-
+            dstImage.layout = dstLayout;
             dstImage.transitionedStage = barrier.dstStageMask;
             dstImage.transitionedAccess = barrier.dstAccessMask;
+            barriers.Push(barrier);
         }
         else {
             // Separate queue
-            GfxBackendQueue& dstQueue = gBackendVk.queueMan.GetQueue(dstQueueIndex);
-
             VkImageMemoryBarrier2 barrier {
                 .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
                 .srcStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT,
@@ -3880,23 +4329,20 @@ void GfxBackendCommandBuffer::CopyBufferToImage(GfxBufferHandle srcHandle, GfxIm
                 .image = dstImage.handle,
                 .subresourceRange = subresourceRange
             };
-            VkDependencyInfo depInfo {
-                .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
-                .imageMemoryBarrierCount = 1,
-                .pImageMemoryBarriers = &barrier
-            };
 
-            vkCmdPipelineBarrier2(cmdVk, &depInfo);
+            barriers.Push(barrier);
 
             // TODO: Assert that dstQueue is not being recorded
             GfxBackendQueue::PendingBarrier dstBarrier {
                 .type = GfxBackendQueue::PendingBarrier::IMAGE,
-                .imageHandle = dstHandle,
+                .resourceTransferedCallback = copyParams.resourceTransferedCallback,
+                .resourceTransferedUserData = copyParams.resourceTransferedUserData,
+                .imageHandle = copyParams.dstHandle,
                 .imageBarrier = {
                     .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
                     .srcStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT,
                     .srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT,
-                    .dstStageMask = GfxBackend::_GetImageDestStageFlags(dstQueueType, stagesUsed),
+                    .dstStageMask = GfxBackend::_GetImageDestStageFlags(dstQueueType, copyParams.stagesUsed),
                     .dstAccessMask = VK_ACCESS_2_MEMORY_READ_BIT,
                     .oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                     .newLayout = dstLayout,
@@ -3907,16 +4353,50 @@ void GfxBackendCommandBuffer::CopyBufferToImage(GfxBufferHandle srcHandle, GfxIm
             };
 
             queue.internalDependents |= dstQueueType;
-            dstQueue.pendingBarriers.Push(dstBarrier);
+            pendingBarriers.Push(dstBarrier);
         }
     }
-}
+    gBackendVk.objectPoolsMutex.ExitRead();
 
+    // Pre barriers
+    VkCommandBuffer cmdVk = GfxBackend::_GetCommandBufferHandle(*this);
+    ASSERT(!barriers.IsEmpty());
+    ASSERT(!preBarriers.IsEmpty());
+    VkDependencyInfo preDepInfo {
+        .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
+        .imageMemoryBarrierCount = preBarriers.Count(),
+        .pImageMemoryBarriers = preBarriers.Ptr()
+    };
+    vkCmdPipelineBarrier2(cmdVk, &preDepInfo);
+
+    // Copy ops
+    for (CopyBufferToImageData& copyParams : copies) {
+        vkCmdCopyBufferToImage(cmdVk, copyParams.bufferHandle, copyParams.imageHandle, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 
+                               copyParams.numMips, copyParams.imageCopies);
+    }
+
+    // Post barriers
+    VkDependencyInfo postDepInfo {
+        .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
+        .imageMemoryBarrierCount = barriers.Count(),
+        .pImageMemoryBarriers = barriers.Ptr()
+    };
+    vkCmdPipelineBarrier2(cmdVk, &postDepInfo);
+
+    // Pass on all the barriers that should be submitted to the targetQueue
+    // These will be added to target pending after the first submission
+    SpinLockMutexScope lock(queue.barriersMutex);
+    queue.dependentBarriers.Extend(pendingBarriers);
+}
 
 void GfxBackendCommandBuffer::TransitionBuffer(GfxBufferHandle buffHandle, GfxBackendBufferTransition transition)
 {
     ASSERT(mIsRecording);
+    mShouldSubmit = true;
+
     VkCommandBuffer cmdVk = GfxBackend::_GetCommandBufferHandle(*this);
+
+    gBackendVk.objectPoolsMutex.EnterRead();
     GfxBackendBuffer& buffer = gBackendVk.buffers.Data(buffHandle);
     GfxBackendQueue& queue = gBackendVk.queueMan.GetQueue(mQueueIndex);
 
@@ -3939,6 +4419,9 @@ void GfxBackendCommandBuffer::TransitionBuffer(GfxBufferHandle buffHandle, GfxBa
         default:
             break;
     }
+    buffer.transitionedStage = barrier.dstStageMask;
+    buffer.transitionedAccess = barrier.dstAccessMask;
+    gBackendVk.objectPoolsMutex.ExitRead();
 
     VkDependencyInfo depInfo {
         .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
@@ -3946,21 +4429,23 @@ void GfxBackendCommandBuffer::TransitionBuffer(GfxBufferHandle buffHandle, GfxBa
         .pBufferMemoryBarriers = &barrier
     };
 
-    buffer.transitionedStage = barrier.dstStageMask;
-    buffer.transitionedAccess = barrier.dstAccessMask;
     vkCmdPipelineBarrier2(cmdVk, &depInfo);
 }
 
 void GfxBackendCommandBuffer::TransitionImage(GfxImageHandle imgHandle, GfxBackendImageTransition transition)
 {
     ASSERT(mIsRecording);
+    mShouldSubmit = true;
+
     VkCommandBuffer cmdVk = GfxBackend::_GetCommandBufferHandle(*this);
+
+    gBackendVk.objectPoolsMutex.EnterRead();
     GfxBackendImage& image = gBackendVk.images.Data(imgHandle);
 
     VkImageAspectFlags aspect = 0;
     if (GfxBackend::_FormatHasDepth(image.desc.format))
         aspect |= VK_IMAGE_ASPECT_DEPTH_BIT;
-    if (GfxBackend::_FormatHasStencil(image.desc.format)) 
+    if (GfxBackend::_FormatHasStencil(image.desc.format))
         aspect |= VK_IMAGE_ASPECT_STENCIL_BIT;
     if (aspect == 0)
         aspect = VK_IMAGE_ASPECT_COLOR_BIT;
@@ -3977,6 +4462,15 @@ void GfxBackendCommandBuffer::TransitionImage(GfxImageHandle imgHandle, GfxBacke
     };
 
     switch (transition) {
+        case GfxBackendImageTransition::ShaderRead:
+            barrier.srcStageMask = image.transitionedStage;
+            barrier.srcAccessMask = image.transitionedAccess;
+            barrier.dstStageMask = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
+            barrier.dstAccessMask = VK_ACCESS_2_MEMORY_READ_BIT;
+            barrier.newLayout = VK_IMAGE_LAYOUT_GENERAL;
+            barrier.srcQueueFamilyIndex = 1;    // TEMP
+            break;
+
         case GfxBackendImageTransition::ComputeWrite:
             barrier.srcStageMask = image.transitionedStage;
             barrier.srcAccessMask = image.transitionedAccess;
@@ -3992,7 +4486,37 @@ void GfxBackendCommandBuffer::TransitionImage(GfxImageHandle imgHandle, GfxBacke
             barrier.dstAccessMask = VK_ACCESS_2_TRANSFER_READ_BIT;
             barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
             break;
+
+        case GfxBackendImageTransition::RenderTarget:
+            {
+                VkImageLayout layout;
+                VkPipelineStageFlags2 dstStage;
+                VkAccessFlags2 accessFlags;
+                if (GfxBackend::_FormatIsDepthStencil(image.desc.format)) {
+                    layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+                    dstStage = VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT;
+                    accessFlags = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT|VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT;
+                }
+                else {
+                    layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+                    dstStage = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
+                    accessFlags = VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT|VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
+                }
+                barrier.srcStageMask = image.transitionedStage;
+                barrier.srcAccessMask = image.transitionedAccess;
+                barrier.dstStageMask = dstStage;
+                barrier.dstAccessMask = accessFlags;
+                barrier.newLayout = layout;
+                break;
+            }
+        default:
+            ASSERT(0);
+            break;
     }
+    image.layout = barrier.newLayout;
+    image.transitionedStage = barrier.dstStageMask;
+    image.transitionedAccess = barrier.dstAccessMask;
+    gBackendVk.objectPoolsMutex.ExitRead();
 
     VkDependencyInfo depInfo {
         .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
@@ -4002,9 +4526,6 @@ void GfxBackendCommandBuffer::TransitionImage(GfxImageHandle imgHandle, GfxBacke
 
     vkCmdPipelineBarrier2(cmdVk, &depInfo);
 
-    image.layout = barrier.newLayout;
-    image.transitionedStage = barrier.dstStageMask;
-    image.transitionedAccess = barrier.dstAccessMask;
 }
 
 void GfxBackendCommandBuffer::BeginRenderPass(const GfxBackendRenderPass& pass)
@@ -4024,13 +4545,14 @@ void GfxBackendCommandBuffer::BeginRenderPass(const GfxBackendRenderPass& pass)
 
         VkClearValue clearValue {};
         if (layout == VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL) {
-            clearValue.color = {srcAttachment.clearColor.x, srcAttachment.clearColor.y, srcAttachment.clearColor.z, srcAttachment.clearColor.w};
+            clearValue.color = {srcAttachment.clearValue.color.x, srcAttachment.clearValue.color.y, 
+                                srcAttachment.clearValue.color.z, srcAttachment.clearValue.color.w};
         }
         else if (layout == VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL || 
                  layout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL ||
-                layout == VK_IMAGE_LAYOUT_STENCIL_ATTACHMENT_OPTIMAL)
+                 layout == VK_IMAGE_LAYOUT_STENCIL_ATTACHMENT_OPTIMAL)
         {
-            clearValue.depthStencil = {.depth = srcAttachment.clearDepth, .stencil = srcAttachment.clearStencil};
+            clearValue.depthStencil = {.depth = srcAttachment.clearValue.depth, .stencil = srcAttachment.clearValue.stencil};
         }
         else {
             ASSERT(0);
@@ -4048,13 +4570,23 @@ void GfxBackendCommandBuffer::BeginRenderPass(const GfxBackendRenderPass& pass)
         return info;
     };
 
-    ASSERT_MSG(!(pass.swapchain & (pass.hasDepth|pass.hasStencil)), "Swapchain doesn't have depth/stencil attachments");
     VkCommandBuffer cmdVk = GfxBackend::_GetCommandBufferHandle(*this);
 
     uint32 numColorAttachments = !pass.swapchain ? pass.numAttachments : 1;
     ASSERT(numColorAttachments);
     ASSERT(numColorAttachments < GFXBACKEND_MAX_RENDERPASS_COLOR_ATTACHMENTS);
     VkRenderingAttachmentInfo colorAttachments[GFXBACKEND_MAX_RENDERPASS_COLOR_ATTACHMENTS];
+
+    gBackendVk.objectPoolsMutex.EnterRead();
+    VkImageView colorViews[GFXBACKEND_MAX_RENDERPASS_COLOR_ATTACHMENTS];
+    if (!pass.swapchain) {
+        for (uint32 i = 0; i < numColorAttachments; i++) 
+            colorViews[i] = gBackendVk.images.Data(pass.colorAttachments[i].image).viewHandle;
+    }
+
+    VkImageView depthView = pass.hasDepth ? gBackendVk.images.Data(pass.depthAttachment.image).viewHandle : nullptr;
+    [[maybe_unused]] VkImageView stencilView = pass.hasStencil ? gBackendVk.images.Data(pass.stencilAttachment.image).viewHandle : nullptr;
+    gBackendVk.objectPoolsMutex.ExitRead();
 
     uint16 width = 0;
     uint16 height = 0;
@@ -4078,7 +4610,7 @@ void GfxBackendCommandBuffer::BeginRenderPass(const GfxBackendRenderPass& pass)
                        "All attachments in the renderpass should have equal dimensions");
         }
 
-        VkImageView view = pass.swapchain ? gBackendVk.swapchain.GetImageView() : gBackendVk.images.Data(srcAttachment.image).viewHandle;
+        VkImageView view = pass.swapchain ? gBackendVk.swapchain.GetImageView() : colorViews[i];
         colorAttachments[i] = MakeRenderingAttachmentInfo(srcAttachment, view, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
     }
 
@@ -4096,10 +4628,10 @@ void GfxBackendCommandBuffer::BeginRenderPass(const GfxBackendRenderPass& pass)
         };
     }
 
-    VkRenderingAttachmentInfo* depthAttachment = nullptr;
-    VkRenderingAttachmentInfo* stencilAttachment = nullptr;
-    // TODO: depth/stencil
-    ASSERT(!pass.hasDepth && !pass.hasStencil);
+    ASSERT_MSG(!pass.hasStencil, "Not implemented yet");
+    VkRenderingAttachmentInfo depthAttachment;
+    if (pass.hasDepth)
+        depthAttachment = MakeRenderingAttachmentInfo(pass.depthAttachment, depthView, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
 
     VkRenderingInfo renderInfo {
         .sType = VK_STRUCTURE_TYPE_RENDERING_INFO,
@@ -4108,8 +4640,8 @@ void GfxBackendCommandBuffer::BeginRenderPass(const GfxBackendRenderPass& pass)
         .viewMask = 0,
         .colorAttachmentCount = numColorAttachments,
         .pColorAttachments = colorAttachments,
-        .pDepthAttachment = depthAttachment,
-        .pStencilAttachment = stencilAttachment
+        .pDepthAttachment = pass.hasDepth ? &depthAttachment : nullptr,
+        .pStencilAttachment = nullptr // TODO
     };
     vkCmdBeginRendering(cmdVk, &renderInfo);
 
@@ -4133,6 +4665,8 @@ void GfxBackendCommandBuffer::EndRenderPass()
 void GfxBackendCommandBuffer::Draw(uint32 vertexCount, uint32 instanceCount, uint32 firstVertex, uint32 firstInstance)
 {
     ASSERT(mIsRecording);
+    mShouldSubmit = true;
+
     VkCommandBuffer cmdVk = GfxBackend::_GetCommandBufferHandle(*this);
     vkCmdDraw(cmdVk, vertexCount, instanceCount, firstVertex, firstInstance);
 }
@@ -4140,6 +4674,8 @@ void GfxBackendCommandBuffer::Draw(uint32 vertexCount, uint32 instanceCount, uin
 void GfxBackendCommandBuffer::DrawIndexed(uint32 indexCount, uint32 instanceCount, uint32 firstIndex, uint32 vertexOffset, uint32 firstInstance)
 {
     ASSERT(mIsRecording);
+    mShouldSubmit = true;
+
     VkCommandBuffer cmdVk = GfxBackend::_GetCommandBufferHandle(*this);
     vkCmdDrawIndexed(cmdVk, indexCount, instanceCount, firstIndex, vertexOffset, firstInstance);
 }
@@ -4279,12 +4815,14 @@ GfxSamplerHandle GfxBackend::CreateSampler(const GfxBackendSamplerDesc& desc)
         .desc = desc
     };
 
+    ReadWriteMutexWriteScope objPoolLock(gBackendVk.objectPoolsMutex);
     return gBackendVk.samplers.Add(sampler);
 }
 
 void GfxBackend::DestroySampler(GfxSamplerHandle handle)
 {
     if (handle.IsValid()) {
+        ReadWriteMutexWriteScope objPoolLock(gBackendVk.objectPoolsMutex);
         GfxBackendSampler& sampler = gBackendVk.samplers.Data(handle);
 
         MutexScope lock(gBackendVk.garbageMtx);
@@ -4295,82 +4833,108 @@ void GfxBackend::DestroySampler(GfxSamplerHandle handle)
         };
 
         gBackendVk.garbage.Push(garbage);
+
+        gBackendVk.samplers.Remove(handle);
     }
 }
 
-bool GfxBackendMemoryOffsetAllocator::Initialize(VkDeviceSize maxSize, uint32 memoryTypeIndex)
+bool GfxBackendMemoryOffsetAllocator::Initialize(VkDeviceSize blockSize, uint32 memoryTypeIndex)
 {
     ASSERT(memoryTypeIndex != -1);
     ASSERT(gBackendVk.device);
-    ASSERT(maxSize);
-    ASSERT_MSG(maxSize < UINT32_MAX, "Our OffsetAllocator doesn't support 64bit address space");
+    ASSERT(blockSize);
+    ASSERT_MSG(blockSize < UINT32_MAX, "Our OffsetAllocator doesn't support 64bit address space");
 
     mMemTypeIndex = memoryTypeIndex;
-    mCapacity = maxSize;
-
-    VkMemoryAllocateInfo allocInfo {
-        .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
-        .allocationSize = maxSize,
-        .memoryTypeIndex = memoryTypeIndex
-    };
-
-    if (gBackendVk.extApi.hasMemoryBudget) 
-        ASSERT_MSG(gBackendVk.memMan.GetDeviceMemoryBudget(mMemTypeIndex) >= maxSize, "Not enough GPU memory available in the specified heap");
-
-    VkResult r = vkAllocateMemory(gBackendVk.device, &allocInfo, gBackendVk.vkAlloc, &mDeviceMem);
-    if (r != VK_SUCCESS) {
-        MEM_FAIL();
-        return false;
-    }
-
-    if (gBackendVk.extApi.hasMemoryBudget)
-        Atomic::FetchSub(&gBackendVk.memMan.GetDeviceMemoryBudget(mMemTypeIndex), maxSize);
+    mBlockSize = uint32(blockSize);
+    mBlocks.SetAllocator(&gBackendVk.runtimeAlloc);
 
     const VkMemoryType& memType = gBackendVk.memMan.GetProps().memoryTypes[memoryTypeIndex];
     mTypeFlags = memType.propertyFlags;
     mHeapFlags = gBackendVk.memMan.GetProps().memoryHeaps[memType.heapIndex].flags;
 
-    if (mTypeFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) {
-        r = vkMapMemory(gBackendVk.device, mDeviceMem, 0, VK_WHOLE_SIZE, 0, &mMappedData);
-        ASSERT(r == VK_SUCCESS);
-    }
+    Block* block = CreateBlock();
+    if (!block)
+        return false;
+    mBlocks.Push(block);
 
-    mOffsetAlloc = NEW(&gBackendVk.parentAlloc, OffsetAllocator::Allocator)(uint32(maxSize), 64*1024, 
-        &GfxBackendDeviceMemoryManager::mOffsetAllocHeapOverride);
-    
     return true;
 }
 
+// Calling this will reallocate the buffers in the OffsetAlloc. not recmmended
 void GfxBackendMemoryOffsetAllocator::Reset()
 {
-    // Calling this will reallocate the buffers in the OffsetAlloc. not recmmended
-    ASSERT(mOffsetAlloc);
-    mOffsetAlloc->reset();
+    for (Block* block : mBlocks)
+        OffsetAllocator_Reset(block->offsetAlloc);
 }
 
 
 void GfxBackendMemoryOffsetAllocator::Release()
 {
-    if (mDeviceMem) {
-        if (mMappedData)
-            vkUnmapMemory(gBackendVk.device, mDeviceMem);
-        vkFreeMemory(gBackendVk.device, mDeviceMem, gBackendVk.vkAlloc);
-    }
-
-    if (mOffsetAlloc) {
-        mOffsetAlloc->OffsetAllocator::Allocator::~Allocator();
-        Mem::Free(mOffsetAlloc, &gBackendVk.parentAlloc);
-    }
-        
-    mDeviceMem = nullptr;
+    for (Block* block : mBlocks)
+        DestroyBlock(block);
+    mBlocks.Free();
     mCapacity = 0;
     mMemTypeIndex = 0;
-    mMappedData = nullptr;
+}
+
+GfxBackendMemoryOffsetAllocator::Block* GfxBackendMemoryOffsetAllocator::CreateBlock()
+{
+    uint8* offsetAllocMem;
+    size_t offsetAllocMemSize = OffsetAllocator_GetRequiredBytes(GFXBACKEND_MAX_ENTRIES_IN_OFFSET_ALLOCATOR);
+    MemSingleShotMalloc<GfxBackendMemoryOffsetAllocator::Block> mallocator;
+    mallocator.AddExternalPointerField<uint8>(&offsetAllocMem, offsetAllocMemSize);
+    Block* block = mallocator.Malloc(&gBackendVk.runtimeAlloc);
+    memset(block, 0x0, sizeof(Block));
+    block->offsetAlloc = OffsetAllocator_Create(mBlockSize, GFXBACKEND_MAX_ENTRIES_IN_OFFSET_ALLOCATOR, 
+                                                offsetAllocMem, offsetAllocMemSize);
+
+    if (gBackendVk.extApi.hasMemoryBudget) {
+        ASSERT_MSG(gBackendVk.memMan.GetDeviceMemoryBudget(mMemTypeIndex) >= mBlockSize, 
+                   "Not enough GPU memory available in the specified heap");
+    }
+
+    VkMemoryAllocateInfo allocInfo {
+        .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+        .allocationSize = mBlockSize,
+        .memoryTypeIndex = mMemTypeIndex
+    };
+
+    VkResult r = vkAllocateMemory(gBackendVk.device, &allocInfo, gBackendVk.vkAlloc, &block->deviceMem);
+    if (r != VK_SUCCESS) {
+        MEM_FAIL();
+        return nullptr;
+    }
+
+    if (gBackendVk.extApi.hasMemoryBudget)
+        Atomic::FetchSub(&gBackendVk.memMan.GetDeviceMemoryBudget(mMemTypeIndex), mBlockSize);
+
+
+    if (mTypeFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) {
+        r = vkMapMemory(gBackendVk.device, block->deviceMem, 0, VK_WHOLE_SIZE, 0, &block->mappedData);
+        ASSERT(r == VK_SUCCESS);
+    }
+
+    mCapacity += mBlockSize;
+    return block;
+}
+
+void GfxBackendMemoryOffsetAllocator::DestroyBlock(Block* block)
+{
+    if (block->deviceMem) {
+        if (block->mappedData)
+            vkUnmapMemory(gBackendVk.device, block->deviceMem);
+        vkFreeMemory(gBackendVk.device, block->deviceMem, gBackendVk.vkAlloc);
+    }
+
+    if (block->offsetAlloc)
+        OffsetAllocator_Destroy(block->offsetAlloc);
+
+    MemSingleShotMalloc<GfxBackendMemoryOffsetAllocator::Block>::Free(block, &gBackendVk.runtimeAlloc);
 }
 
 GfxBackendDeviceMemory GfxBackendMemoryOffsetAllocator::Malloc(const VkMemoryRequirements& memReq)
 {
-    ASSERT(mOffsetAlloc);
     ASSERT(memReq.size <= UINT32_MAX);
     ASSERT(memReq.alignment);
 
@@ -4379,16 +4943,36 @@ GfxBackendDeviceMemory GfxBackendMemoryOffsetAllocator::Malloc(const VkMemoryReq
         return GfxBackendDeviceMemory {};
     }
 
+    if (memReq.size > mBlockSize) {
+        ASSERT_MSG(0, "GpuMemoryAllocator block size (%_$$$llu) is smaller than requested size (%_$$$llu)", mBlockSize, memReq.size);
+        MEM_FAIL();
+        return GfxBackendDeviceMemory {};
+    }
 
     SpinLockMutexScope lock(mMutex);
 
     // We have to over-allocate then pad to the alignment value
     uint32 totalSize = uint32(memReq.size + memReq.alignment);
     ASSERT(totalSize <= UINT32_MAX);
-    OffsetAllocator::Allocation alloc = mOffsetAlloc->allocate(totalSize);
-    if (alloc.offset == OffsetAllocator::Allocation::NO_SPACE) {
-        MEM_FAIL();
-        return GfxBackendDeviceMemory {};
+
+    // Start trying from the last block to first
+    // So there's a higher chance that we hit what we want earlier
+    Block* block = nullptr;
+    OffsetAllocatorAllocation alloc {OFFSET_ALLOCATOR_NO_SPACE, OFFSET_ALLOCATOR_NO_SPACE};
+    for (uint32 i = mBlocks.Count(); i-- > 0;) {
+        Block* b = mBlocks[i];
+        OffsetAllocator_Allocate(b->offsetAlloc, totalSize, &alloc);
+        if (alloc.offset != OFFSET_ALLOCATOR_NO_SPACE) {
+            block = b;
+            break;
+        }
+    }
+
+    if (!block) {
+        block = CreateBlock();
+        if (!block) 
+            return GfxBackendDeviceMemory {};
+        mBlocks.Push(block);
     }
 
     // Align the offset
@@ -4402,9 +4986,9 @@ GfxBackendDeviceMemory GfxBackendMemoryOffsetAllocator::Malloc(const VkMemoryReq
     }
 
     GfxBackendDeviceMemory mem {
-        .handle = mDeviceMem,
+        .handle = block->deviceMem,
         .offset = alignedOffset,
-        .mappedData = mMappedData ? ((uint8*)mMappedData + alignedOffset) : nullptr,
+        .mappedData = block->mappedData ? ((uint8*)block->mappedData + alignedOffset) : nullptr,
         .offsetAllocMetaData = alloc.metadata,
         .offsetAllocPadding = uint16(padding),
         .isHeapDeviceLocal = (mHeapFlags & VK_MEMORY_HEAP_DEVICE_LOCAL_BIT) == VK_MEMORY_HEAP_DEVICE_LOCAL_BIT,
@@ -4419,13 +5003,128 @@ GfxBackendDeviceMemory GfxBackendMemoryOffsetAllocator::Malloc(const VkMemoryReq
 
 void GfxBackendMemoryOffsetAllocator::Free(GfxBackendDeviceMemory mem)
 {
-    ASSERT(mOffsetAlloc);
-
     SpinLockMutexScope lock(mMutex);
 
-    OffsetAllocator::Allocation alloc {
-        .offset = uint32(mem.offset - mem.offsetAllocPadding),
-        .metadata = mem.offsetAllocMetaData
+    bool freed = false;
+    for (Block* block : mBlocks) {
+        if (block->deviceMem == mem.handle) {
+            OffsetAllocatorAllocation alloc {
+                .offset = uint32(mem.offset - mem.offsetAllocPadding),
+                .metadata = mem.offsetAllocMetaData
+            };
+            OffsetAllocator_Free(block->offsetAlloc, &alloc);
+
+            freed = true;
+            break;
+        }
+    }
+
+    ASSERT_MSG(freed, "Doesn't seem to be belonging to this arena ?!");
+}
+
+void GfxBackend::BeginRenderFrameSync()
+{
+    // External CPU <-> CPU sync
+    // Used by external systems like AssetManager to wait until it's time to start uploading resources
+    if (!gBackendVk.externalFrameSyncSignal.WaitOnCondition([](int value, int ref) { return value > ref; }, 0, UINT32_MAX)) {
+        LOG_WARNING("External systems should wait for GfxBackend::BeginFrame");
+    }
+    
+    gBackendVk.frameSyncSignal.Increment();
+    Atomic::FetchAdd(&gBackendVk.numOpenExternalFrameSyncs, 1);
+}
+
+void GfxBackend::EndRenderFrameSync()
+{
+    Atomic::FetchSub(&gBackendVk.numOpenExternalFrameSyncs, 1);
+
+    gBackendVk.frameSyncSignal.Decrement();
+    gBackendVk.frameSyncSignal.Raise();
+}
+
+void GfxBackendQueueSemaphoreBank::Initialize()
+{
+    mSemaphores.SetAllocator(&gBackendVk.runtimeAlloc);
+    mSemaphoreFreeList.SetAllocator(&gBackendVk.runtimeAlloc);
+}
+
+void GfxBackendQueueSemaphoreBank::Release()
+{
+    mSemaphores.Extend(mSemaphoreFreeList);
+    for (VkSemaphore sem : mSemaphores)
+        vkDestroySemaphore(gBackendVk.device, sem, gBackendVk.vkAlloc);
+    mSemaphores.Free();
+    mSemaphoreFreeList.Free();            
+}
+
+VkSemaphore GfxBackendQueueSemaphoreBank::GetSemaphore()
+{
+    VkSemaphore sem;
+
+    SpinLockMutexScope lock(mMutex);
+    if (!mSemaphoreFreeList.IsEmpty()) {
+        sem = mSemaphoreFreeList.PopLast();
+    }
+    else {
+        VkSemaphoreCreateInfo semCreateInfo { .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO };
+        vkCreateSemaphore(gBackendVk.device, &semCreateInfo, gBackendVk.vkAlloc, &sem);
+    }
+    mSemaphores.Push(sem);
+    return sem;
+}
+
+void GfxBackendQueueSemaphoreBank::Reset()
+{
+    SpinLockMutexScope lock(mMutex);
+
+    mSemaphoreFreeList.Extend(mSemaphores);
+    mSemaphores.Clear();
+}
+
+Mat4 GfxBackend::GetSwapchainTransformMat()
+{
+    switch (App::GetFramebufferTransform()) {
+    case AppFramebufferTransform::None:           return MAT4_IDENT;
+    case AppFramebufferTransform::Rotate90:       return Mat4::RotateZ(M_HALFPI);
+    case AppFramebufferTransform::Rotate180:      return Mat4::RotateZ(M_PI);
+    case AppFramebufferTransform::Rotate270:      return Mat4::RotateZ(M_PI + M_HALFPI);
+    }
+
+    return MAT4_IDENT;
+}
+
+float GfxBackend::GetRenderTimeNS()
+{
+    // TODO
+    return 0;
+}
+
+const GfxBlendAttachmentDesc* GfxBlendAttachmentDesc::GetDefault()
+{
+    static GfxBlendAttachmentDesc desc {
+        .enable = true,
+        .srcColorBlendFactor = GfxBlendFactor::One,
+        .dstColorBlendFactor = GfxBlendFactor::Zero,
+        .blendOp = GfxBlendOp::Add,
+        .srcAlphaBlendFactor = GfxBlendFactor::One,
+        .dstAlphaBlendFactor = GfxBlendFactor::Zero,
+        .alphaBlendOp = GfxBlendOp::Add,
+        .colorWriteMask = GfxColorComponentFlags::All
     };
-    mOffsetAlloc->free(alloc);
+    return &desc;
+}
+
+const GfxBlendAttachmentDesc* GfxBlendAttachmentDesc::GetAlphaBlending()
+{
+    static GfxBlendAttachmentDesc desc {
+        .enable = true,
+        .srcColorBlendFactor = GfxBlendFactor::SrcAlpha,
+        .dstColorBlendFactor = GfxBlendFactor::OneMinusSrcAlpha,
+        .blendOp = GfxBlendOp::Add,
+        .srcAlphaBlendFactor = GfxBlendFactor::One,
+        .dstAlphaBlendFactor = GfxBlendFactor::Zero,
+        .alphaBlendOp = GfxBlendOp::Add,
+        .colorWriteMask = GfxColorComponentFlags::RGB
+    };
+    return &desc;
 }

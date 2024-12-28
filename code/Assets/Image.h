@@ -1,6 +1,8 @@
 #pragma once
 
-#include "../Graphics/Graphics.h"
+#include "../Core/Base.h"
+
+#include "../Graphics/GfxBackendTypes.h"
 
 // Freaking windows.h with it's Macros! In unity builds, it causes LoadImage to be converted to LoadImageA/W
 #if PLATFORM_WINDOWS
@@ -13,19 +15,6 @@
 struct AssetGroup;
 
 inline constexpr uint32 IMAGE_ASSET_TYPE = MakeFourCC('I', 'M', 'A', 'G');
-
-struct GfxImage
-{
-    GfxImageHandle handle;
-    uint32 width;
-    uint32 height;
-    uint32 depth;
-    uint32 numMips;
-    GfxFormat format;
-    uint32 contentSize;
-    uint32 mipOffsets[GFX_MAX_MIPS];
-    RelativePtr<uint8> content;
-};
 
 struct ImageLoadParams
 {

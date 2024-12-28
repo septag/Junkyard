@@ -26,6 +26,8 @@
 
 #include "../Engine.h"
 
+#include "../Graphics/GfxBackend.h"
+
 inline constexpr uint32 NUM_CUBES = 10;
 inline constexpr uint32 CELL_SIZE_BYTES = 45*SIZE_MB;
 inline constexpr float CUBE_UNIT_SIZE = 1.1f;
@@ -61,8 +63,10 @@ struct Grid
 struct AppImpl : AppCallbacks
 {
     GfxPipelineHandle mPipeline;
+    GfxPipelineLayoutHandle mPipelineLayout;
     GfxBufferHandle mUniformBuffer;
-    GfxDescriptorSetLayoutHandle mDSLayout;
+    GfxImageHandle mRenderTargetDepth;
+
     AssetHandleShader mUnlitShader;
     uint32 mNumFilePaths = 0;
     Path* mFilePaths = nullptr;
@@ -79,9 +83,9 @@ struct AppImpl : AppCallbacks
         Float2 uv;
     };
 
-    struct WorldTransform
+    struct ModelTransform
     {
-        Mat4 worldMat;
+        Mat4 modelMat;
     };
 
     struct FrameTransform 
@@ -183,9 +187,7 @@ struct AppImpl : AppCallbacks
                 .vertexBufferStrides = {
                     sizeof(Vertex)
                 }
-            },
-            .vertexBufferUsage = GfxBufferUsage::Immutable,
-            .indexBufferUsage = GfxBufferUsage::Immutable
+            }
         };
 
         Path imagePath;
@@ -227,7 +229,7 @@ struct AppImpl : AppCallbacks
         LOG_INFO("Load finished: %0.2f ms", timer.ElapsedMS());
     }
 
-    void DrawCell(uint32 index)
+    void DrawCell(GfxBackendCommandBuffer cmd, uint32 index)
     {
         Cell& cell = mGrid.cells[index];
 
@@ -258,26 +260,24 @@ struct AppImpl : AppCallbacks
                         // Buffers
                         uint64* offsets = (uint64*)alloca(sizeof(uint64)*mesh.numVertexBuffers);
                         memset(offsets, 0x0, sizeof(uint64)*mesh.numVertexBuffers);
-                        gfxCmdBindVertexBuffers(0, mesh.numVertexBuffers, mesh.gpuBuffers.vertexBuffers, offsets);
-                        gfxCmdBindIndexBuffer(mesh.gpuBuffers.indexBuffer, 0, GfxIndexType::Uint32);
+                        cmd.BindVertexBuffers(0, mesh.numVertexBuffers, mesh.gpuBuffers.vertexBuffers, offsets);
+                        cmd.BindIndexBuffer(mesh.gpuBuffers.indexBuffer, 0, GfxIndexType::Uint32);
 
                         Mat4 worldMat = Mat4::Translate(x, y, 0.5f);
-                        gfxCmdPushConstants(mPipeline, GfxShaderStage::Vertex, &worldMat, sizeof(worldMat));
+                        cmd.PushConstants(mPipelineLayout, "ModelTransform", &worldMat, sizeof(worldMat));
     
-                        GfxDescriptorBindingDesc bindings[] = {
+                        GfxBackendBindingDesc bindings[] = {
                             {
                                 .name = "FrameTransform",
-                                .type = GfxDescriptorType::UniformBuffer,
-                                .buffer = { mUniformBuffer, 0, sizeof(FrameTransform) }
+                                .buffer = mUniformBuffer,
                             },
                             {
                                 .name = "BaseColorTexture",
-                                .type = GfxDescriptorType::CombinedImageSampler,
                                 .image = image->handle
                             }
                         };
-                        gfxCmdPushDescriptorSet(mPipeline, GfxPipelineBindPoint::Graphics, 0, CountOf(bindings), bindings);
-                        gfxCmdDrawIndexed(mesh.numIndices, 1, 0, 0, 0);
+                        cmd.PushBindings(mPipelineLayout, CountOf(bindings), bindings);
+                        cmd.DrawIndexed(mesh.numIndices, 1, 0, 0, 0);
                     }  
                 } // foreach (node)
             }
@@ -434,70 +434,93 @@ struct AppImpl : AppCallbacks
         mCam->HandleMovementKeyboard(dt, 40.0f, 20.0f);
 
         Engine::BeginFrame(dt);
+        GfxBackendCommandBuffer cmd = GfxBackend::BeginCommandBuffer(GfxBackendQueueType::Graphics);
         
-        gfxBeginCommandBuffer();
-        
-        gfxCmdBeginSwapchainRenderPass(Color(100, 100, 100));
+        uint16 width = App::GetFramebufferWidth();
+        uint16 height = App::GetFramebufferHeight();
 
-        float width = (float)App::GetFramebufferWidth();
-        float height = (float)App::GetFramebufferHeight();
+        {
+            FrameTransform ubo {
+                .viewMat = mCam->GetViewMat(),
+                .projMat = GfxBackend::GetSwapchainTransformMat() * mCam->GetPerspectiveMat(width, height)
+            };
 
-        // Viewport
+            GfxBackendBufferDesc stagingDesc {
+                .sizeBytes = sizeof(ubo),
+                .usageFlags = GfxBackendBufferUsageFlags::TransferSrc,
+                .arena = GfxBackendMemoryArena::TransientCPU
+            };
+            GfxBufferHandle stagingBuff = GfxBackend::CreateBuffer(stagingDesc);
+
+            FrameTransform* dstUbo;
+            cmd.MapBuffer(stagingBuff, (void**)&dstUbo);
+            *dstUbo = ubo;
+            cmd.FlushBuffer(stagingBuff);
+
+            cmd.TransitionBuffer(mUniformBuffer, GfxBackendBufferTransition::TransferWrite);
+            cmd.CopyBufferToBuffer(stagingBuff, mUniformBuffer, GfxShaderStage::Vertex);
+
+            GfxBackend::DestroyBuffer(stagingBuff);
+        }
+
+        GfxBackendRenderPass pass { 
+            .numAttachments = 1,
+            .colorAttachments = {{ 
+                .clear = true,
+                .clearValue = {
+                    .color = Float4(0.35f, 0.35f, 0.35f, 1.0f)
+                }
+            }},
+            .depthAttachment = {
+                .image = mRenderTargetDepth,
+                .clear = true,
+                .clearValue = {
+                    .depth = 1.0f
+                }
+            },
+            .swapchain = true,
+            .hasDepth = true
+        };
+
+        cmd.TransitionImage(mRenderTargetDepth, GfxBackendImageTransition::RenderTarget);
+        cmd.BeginRenderPass(pass);
+
         GfxViewport viewport {
-            .width = width,
-            .height = height,
+            .width = float(width),
+            .height = float(height),
         };
+        RectInt scissor(0, 0, width, height);
 
-        gfxCmdSetViewports(0, 1, &viewport, true);
-        RectInt scissor(0, 0, App::GetFramebufferWidth(), App::GetFramebufferHeight());
-        gfxCmdSetScissors(0, 1, &scissor, true);
-
-        // We are drawing to swapchain, so we need ClipSpaceTransform
-        FrameTransform ubo {
-            .viewMat = mCam->GetViewMat(),
-            .projMat = gfxGetClipspaceTransform() * mCam->GetPerspectiveMat(width, height)
-        };
-
-        gfxCmdUpdateBuffer(mUniformBuffer, &ubo, sizeof(ubo));
-        gfxCmdBindPipeline(mPipeline);
+        cmd.SetViewports(0, 1, &viewport);
+        cmd.SetScissors(0, 1, &scissor);
+        cmd.BindPipeline(mPipeline);
 
         for (uint32 i = 0; i < mGrid.numCells; i++) {
             if (mGrid.cells[i].loaded) 
-                DrawCell(i);
+                DrawCell(cmd, i);
         }
 
-        {
-            DebugDraw::DrawGroundGrid(*mCam, width, height, DebugDrawGridProperties { 
-                .distance = 50.0f,
-                .lineColor = Color(0x565656), 
-                .boldLineColor = Color(0xd6d6d6)
-            });
-        }
+        cmd.EndRenderPass();
+
+        DebugDraw::BeginDraw(cmd, width, height);
+        DebugDraw::DrawGroundGrid(*mCam, { .distance = 50.0f, .lineColor = Color(0x565656), .boldLineColor = Color(0xd6d6d6) });
+        DebugDraw::EndDraw(cmd, *mCam, mRenderTargetDepth);
 
         if (ImGui::IsEnabled()) { // imgui test
             PROFILE_GPU_ZONE_NAME("ImGuiRender", true);
             DebugHud::DrawDebugHud(dt);
 
             ShowGridGUI();
-            ImGui::DrawFrame();
+            ImGui::DrawFrame(cmd);
         }
 
-        gfxCmdEndSwapchainRenderPass();
-        gfxEndCommandBuffer();        
-
+        GfxBackend::EndCommandBuffer(cmd);
+        GfxBackend::SubmitQueue(GfxBackendQueueType::Graphics);
         Engine::EndFrame();
     }
     
     void OnEvent(const AppEvent& ev) override
     {
-        switch (ev.type) {
-        case AppEventType::Resized:
-            gfxResizeSwapchain(ev.framebufferWidth, ev.framebufferHeight);
-            break;
-        default:
-            break;
-        }
-
         if (!ImGui::IsAnyItemHovered() && !ImGui::GetIO().WantCaptureMouse && !ImGuizmo::IsOver())
             mCam->HandleRotationMouse(ev, 0.2f, 0.1f);
     }
@@ -527,73 +550,87 @@ struct AppImpl : AppCallbacks
             }
         };
 
-        {
-            AssetObjPtrScope<GfxShader> shader(self->mUnlitShader);
-            const GfxDescriptorSetLayoutBinding bindingLayout[] = {
-                {
-                    .name = "FrameTransform",
-                    .type = GfxDescriptorType::UniformBuffer,
-                    .stages = GfxShaderStage::Vertex
-                },
-                {
-                    .name = "BaseColorTexture",
-                    .type = GfxDescriptorType::CombinedImageSampler,
-                    .stages = GfxShaderStage::Fragment
-                }
-            };
+        AssetObjPtrScope<GfxShader> shader(self->mUnlitShader);
 
-            self->mDSLayout = gfxCreateDescriptorSetLayout(*shader, bindingLayout, CountOf(bindingLayout), GfxDescriptorSetLayoutFlags::PushDescriptor);
-        }
-
-        GfxBufferDesc uniformBufferDesc {
-            .size = sizeof(FrameTransform),
-            .type = GfxBufferType::Uniform,
-            .usage = GfxBufferUsage::Stream
-        };
-
-        self->mUniformBuffer = gfxCreateBuffer(uniformBufferDesc);
-
-        GfxPushConstantDesc pushConstant {
+        GfxBackendPipelineLayoutDesc::PushConstant pushConstant {
             .name = "ModelTransform",
-            .stages = GfxShaderStage::Vertex,
-            .range = {0, sizeof(Mat4)}
+            .stagesUsed = GfxShaderStage::Vertex,
+            .size = sizeof(ModelTransform)
         };
 
-        AssetObjPtrScope<GfxShader> unlitShader(self->mUnlitShader);
-        GfxPipelineDesc pipelineDesc {
-            .shader = unlitShader,
-            .inputAssemblyTopology = GfxPrimitiveTopology::TriangleList,
-            .numDescriptorSetLayouts = 1,
-            .descriptorSetLayouts = &self->mDSLayout,
+        const GfxBackendPipelineLayoutDesc::Binding bindingLayout[] = {
+            {
+                .name = "FrameTransform",
+                .type = GfxDescriptorType::UniformBuffer,
+                .stagesUsed = GfxShaderStage::Vertex
+            },
+            {
+                .name = "BaseColorTexture",
+                .type = GfxDescriptorType::CombinedImageSampler,
+                .stagesUsed = GfxShaderStage::Fragment
+            }
+        };
+
+        GfxBackendPipelineLayoutDesc pipelineLayoutDesc {
+            .numBindings = CountOf(bindingLayout),
+            .bindings = bindingLayout,
             .numPushConstants = 1,
             .pushConstants = &pushConstant,
+        };
+
+        self->mPipelineLayout = GfxBackend::CreatePipelineLayout(*shader, pipelineLayoutDesc);
+
+        GfxBackendBufferDesc uniformBufferDesc {
+            .sizeBytes = sizeof(FrameTransform),
+            .usageFlags = GfxBackendBufferUsageFlags::TransferDst|GfxBackendBufferUsageFlags::Uniform,
+            .arena = GfxBackendMemoryArena::PersistentGPU
+        };
+
+        self->mUniformBuffer = GfxBackend::CreateBuffer(uniformBufferDesc);
+
+        GfxBackendGraphicsPipelineDesc pipelineDesc {
+            .inputAssemblyTopology = GfxPrimitiveTopology::TriangleList,
             .numVertexInputAttributes = CountOf(vertexInputAttDescs),
             .vertexInputAttributes = vertexInputAttDescs,
             .numVertexBufferBindings = 1,
             .vertexBufferBindings = &vertexBufferBindingDesc,
-            .rasterizer = GfxRasterizerDesc {
-                .cullMode = GfxCullModeFlags::Back
+            .rasterizer = {
+                .cullMode = GfxCullMode::Back
             },
             .blend = {
                 .numAttachments = 1,
                 .attachments = GfxBlendAttachmentDesc::GetDefault()
             },
-            .depthStencil = GfxDepthStencilDesc {
+            .depthStencil = {
                 .depthTestEnable = true,
                 .depthWriteEnable = true,
                 .depthCompareOp = GfxCompareOp::Less
-            }
+            },
+            .numColorAttachments = 1,
+            .colorAttachmentFormats = {GfxBackend::GetSwapchainFormat()},
+            .depthAttachmentFormat = GfxFormat::D24_UNORM_S8_UINT
         };
 
-        self->mPipeline = gfxCreatePipeline(pipelineDesc);
+        self->mPipeline = GfxBackend::CreateGraphicsPipeline(*shader, self->mPipelineLayout, pipelineDesc);
+
+        GfxBackendImageDesc desc {
+            .width = App::GetFramebufferWidth(),
+            .height = App::GetFramebufferHeight(),
+            .multisampleFlags = GfxBackendSampleCountFlags::SampleCount1,
+            .format = GfxFormat::D24_UNORM_S8_UINT,
+            .usageFlags = GfxBackendImageUsageFlags::DepthStencilAttachment,
+            .arena = GfxBackendMemoryArena::PersistentGPU
+        };
+
+        self->mRenderTargetDepth = GfxBackend::CreateImage(desc);
     }
 
     void ReleaseGraphicsObjects()
     {
-        gfxWaitForIdle();
-        gfxDestroyPipeline(mPipeline);
-        gfxDestroyDescriptorSetLayout(mDSLayout);
-        gfxDestroyBuffer(mUniformBuffer);
+        GfxBackend::DestroyPipeline(mPipeline);
+        GfxBackend::DestroyPipelineLayout(mPipelineLayout);
+        GfxBackend::DestroyBuffer(mUniformBuffer);
+        GfxBackend::DestroyImage(mRenderTargetDepth);
     }
 };
 

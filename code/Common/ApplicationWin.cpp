@@ -848,8 +848,7 @@ namespace App
         _LoadInitRects();  // may modify window/framebuffer dimensions 
         _InitKeyTable();
 
-        bool headless = SettingsJunkyard::Get().graphics.headless || !SettingsJunkyard::Get().graphics.enable;
-        if (!headless) {
+        if (settings.graphics.IsGraphicsEnabled()) {
             _InitDPI();
             if (!_CreateMainWindow()) {
                 ASSERT_MSG(0, "Creating win32 window failed");
@@ -878,7 +877,7 @@ namespace App
         uint64 tmPrev = tmNow;
         bool quit = false;
         while (!quit && !gApp.quitFromConsole) {
-            if (!headless) {
+            if (settings.graphics.IsGraphicsEnabled()) {
                 MSG msg;
 
                 // Block when window is minimized
@@ -930,7 +929,7 @@ namespace App
         Remote::Release();
         Vfs::Release();
     
-        if (!headless) {
+        if (settings.graphics.IsGraphicsEnabled()) {
             DestroyWindow(gApp.hwnd);
 
             wchar_t className[128];

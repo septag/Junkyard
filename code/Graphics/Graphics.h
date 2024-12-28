@@ -16,7 +16,7 @@ struct MemTlsfAllocator;
 //       ██║      ██║   ██║     ███████╗███████║
 //       ╚═╝      ╚═╝   ╚═╝     ╚══════╝╚══════╝
                                               
-// 1-1 to vulkan
+// VkFormat
 enum class GfxFormat: uint32
 {
     Undefined = 0,
@@ -426,7 +426,7 @@ enum class GfxShaderStage: uint32
 };
 ENABLE_BITMASK(GfxShaderStage);
 
-// 1-1->vulkan
+// VkDescriptorType
 enum class GfxDescriptorType : uint32
 {
     Sampler                   = 0,

@@ -689,18 +689,6 @@ namespace GLTF
             ASSERT_ALWAYS(numVertices && numIndices, "Mesh %s: doesn't have any vertices", mesh->name);
             dstMesh->numVertices = numVertices;
             dstMesh->numIndices = numIndices;
-
-            // Buffers
-            uint32 bufferIdx = 0;
-            while (layout.vertexBufferStrides[bufferIdx]) {
-                uint32 vertexSize = layout.vertexBufferStrides[bufferIdx];
-                dstMesh->cpuBuffers.vertexBuffers[bufferIdx] = tmpAlloc->MallocTyped<uint8>(vertexSize*numVertices);
-                bufferIdx++;
-            }
-            dstMesh->numVertexBuffers = bufferIdx;
-
-            dstMesh->cpuBuffers.indexBuffer = tmpAlloc->MallocTyped<uint32>(numIndices);
-            _SetupBuffers(dstMesh, layout, mesh);
         } // foreach (mesh)
 
 
@@ -749,20 +737,6 @@ namespace GLTF
                     break;
                 }
             }
-
-            // Bounds
-            AABB bounds = AABB_EMPTY;
-            if (dstNode->meshId) {
-                const ModelMesh& mesh = model->meshes[IdToIndex(dstNode->meshId)];
-                const GfxVertexInputAttributeDesc* attr = ModelUtil::_FindAttribute(layout, "POSITION", 0);
-                uint32 vertexStride = layout.vertexBufferStrides[attr->binding];
-                uint8* vbuffu8 = mesh.cpuBuffers.vertexBuffers[attr->binding].Get();
-                for (uint32 v = 0; v < mesh.numVertices; v++) {
-                    Float3 pos = *((Float3*)(vbuffu8 + v*vertexStride + attr->offset));
-                    AABB::AddPoint(&bounds, pos);
-                }
-            }
-            dstNode->bounds = bounds;
         }
 
         // Build Node Hierarchy
@@ -792,6 +766,42 @@ namespace GLTF
 
         // Allocate one big chunk and copy the temp data over to it
         uint32 modelBufferSize = uint32(tmpAlloc->GetOffset() - tmpAlloc->GetPointerOffset(model));
+
+        // Buffers
+        for (uint32 i = 0; i < (uint32)data->meshes_count; i++) {
+            cgltf_mesh* mesh = &data->meshes[i];
+            ModelMesh* dstMesh = &model->meshes[i];
+
+            uint32 bufferIdx = 0;
+            while (layout.vertexBufferStrides[bufferIdx]) {
+                uint32 vertexSize = layout.vertexBufferStrides[bufferIdx];
+                dstMesh->cpuBuffers.vertexBuffers[bufferIdx] = tmpAlloc->MallocTyped<uint8>(vertexSize*dstMesh->numVertices);
+                bufferIdx++;
+            }
+            dstMesh->numVertexBuffers = bufferIdx;
+
+            dstMesh->cpuBuffers.indexBuffer = tmpAlloc->MallocTyped<uint32>(dstMesh->numIndices);
+            _SetupBuffers(dstMesh, layout, mesh);
+        }
+
+        // Bounds
+        for (uint32 i = 0; i < (uint32)data->nodes_count; i++) {
+            ModelNode* dstNode = &model->nodes[i];
+
+            AABB bounds = AABB_EMPTY;
+            if (dstNode->meshId) {
+                const ModelMesh& mesh = model->meshes[IdToIndex(dstNode->meshId)];
+                const GfxVertexInputAttributeDesc* attr = ModelUtil::_FindAttribute(layout, "POSITION", 0);
+                uint32 vertexStride = layout.vertexBufferStrides[attr->binding];
+                uint8* vbuffu8 = mesh.cpuBuffers.vertexBuffers[attr->binding].Get();
+                for (uint32 v = 0; v < mesh.numVertices; v++) {
+                    Float3 pos = *((Float3*)(vbuffu8 + v*vertexStride + attr->offset));
+                    AABB::AddPoint(&bounds, pos);
+                }
+            }
+            dstNode->bounds = bounds;
+        }
+
         return Pair<Model*, uint32>(model, modelBufferSize);
     }
 
@@ -799,7 +809,7 @@ namespace GLTF
 
 bool Asset::InitializeModelManager()
 {
-    Asset::RegisterType(AssetTypeDesc {
+    AssetTypeDesc desc {
         .fourcc = MODEL_ASSET_TYPE,
         .name = "Model",
         .impl = &gModelImpl,
@@ -807,7 +817,9 @@ bool Asset::InitializeModelManager()
         .extraParamTypeSize = sizeof(ModelLoadParams),
         .failedObj = nullptr,
         .asyncObj = nullptr
-    });
+    };
+
+    Asset::RegisterType(desc);
 
     #if CONFIG_TOOLMODE
     MeshOpt::Initialize();
@@ -843,40 +855,6 @@ bool AssetModelImpl::Bake(const AssetParams& params, AssetData* data, const Span
 
     ASSERT(modelBufferSize <= UINT32_MAX);
     data->SetObjData(model, modelBufferSize);
-
-    // GPU Buffers
-    if (modelParams->vertexBufferUsage != GfxBufferUsage::Default || modelParams->indexBufferUsage != GfxBufferUsage::Default) {
-        ModelGeometryLayout* layout = &model->layout;
-
-        for (uint32 i = 0; i < model->numMeshes; i++) {
-            ModelMesh& mesh = model->meshes[i];
-            if (modelParams->vertexBufferUsage != GfxBufferUsage::Default) {
-                uint32 bufferIndex = 0;
-                while (layout->vertexBufferStrides[bufferIndex]) {
-                    GfxBufferDesc desc {
-                        .size = layout->vertexBufferStrides[bufferIndex]*mesh.numVertices,
-                        .type = GfxBufferType::Vertex,
-                        .usage = modelParams->vertexBufferUsage,
-                        .content = mesh.cpuBuffers.vertexBuffers[bufferIndex].Get()
-                    };
-
-                    data->AddGpuBufferObject(&mesh.gpuBuffers.vertexBuffers[bufferIndex], desc);
-                    bufferIndex++;
-                }
-            }
-
-            if (modelParams->indexBufferUsage != GfxBufferUsage::Default) {
-                GfxBufferDesc desc {
-                    .size = uint32(sizeof(uint32)*mesh.numIndices),
-                    .type = GfxBufferType::Index,
-                    .usage = modelParams->indexBufferUsage,
-                    .content = mesh.cpuBuffers.indexBuffer.Get(),
-                };
-
-                data->AddGpuBufferObject(&mesh.gpuBuffers.indexBuffer, desc);
-            }
-        }
-    }
 
     // Dependencies (Textures)
     if (model->numMaterialTextures) {
@@ -917,6 +895,37 @@ bool AssetModelImpl::Bake(const AssetParams& params, AssetData* data, const Span
             }
         }
     } // we have textures 
+
+    // GPU Buffers
+    ModelGeometryLayout* layout = &model->layout;
+
+    for (uint32 i = 0; i < model->numMeshes; i++) {
+        ModelMesh& mesh = model->meshes[i];
+        {
+            uint32 bufferIndex = 0;
+            while (layout->vertexBufferStrides[bufferIndex]) {
+                GfxBackendBufferDesc desc {
+                    .sizeBytes = layout->vertexBufferStrides[bufferIndex]*mesh.numVertices,
+                    .usageFlags = GfxBackendBufferUsageFlags::TransferDst|GfxBackendBufferUsageFlags::Vertex,
+                    .arena = GfxBackendMemoryArena::DynamicBufferGPU
+                };
+
+                data->AddGpuBufferObject(&mesh.gpuBuffers.vertexBuffers[bufferIndex], desc, 
+                                        mesh.cpuBuffers.vertexBuffers[bufferIndex].Get());
+                bufferIndex++;
+            }
+        }
+
+        {
+            GfxBackendBufferDesc desc {
+                .sizeBytes = uint32(sizeof(uint32)*mesh.numIndices),
+                .usageFlags = GfxBackendBufferUsageFlags::TransferDst|GfxBackendBufferUsageFlags::Index,
+                .arena = GfxBackendMemoryArena::DynamicBufferGPU
+            };
+
+            data->AddGpuBufferObject(&mesh.gpuBuffers.indexBuffer, desc, mesh.cpuBuffers.indexBuffer.Get());
+        }
+    }
 
     return true;
 }

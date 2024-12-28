@@ -327,7 +327,7 @@ inline void Array<_T>::Reserve(uint32 capacity)
 {
     ASSERT(mAlloc);
     if (capacity > mCapacity) {
-        mCapacity = capacity;
+        mCapacity = Max(capacity, 8u);
         mBuffer = Mem::ReallocTyped<_T>(mBuffer, mCapacity, mAlloc);
         ASSERT(mBuffer);
     }

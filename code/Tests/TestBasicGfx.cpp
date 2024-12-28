@@ -40,6 +40,14 @@ struct AppImpl final : AppCallbacks
     GfxPipelineLayoutHandle mPipelineLayout;
     GfxPipelineHandle mPipeline;
     AssetHandleShader mShader;
+    AssetHandleModel mModel;
+
+    struct Vertex 
+    {
+        Float3 pos;
+        Float3 normal;
+        Float2 uv;
+    };
 
     static void CreateGraphicsResources(void* userData)
     {
@@ -100,6 +108,20 @@ struct AppImpl final : AppCallbacks
         AssetGroup assetGroup = Engine::RegisterInitializeResources(AppImpl::CreateGraphicsResources, this);
         mShader = Asset::LoadShader("/shaders/Fill.hlsl", ShaderLoadParams {}, assetGroup);        
 
+        ModelLoadParams loadParams {
+            .layout = {
+                .vertexAttributes = {
+                    {"POSITION", 0, 0, GfxFormat::R32G32B32_SFLOAT, offsetof(Vertex, pos)},
+                    {"NORMAL", 0, 0, GfxFormat::R32G32B32_SFLOAT, offsetof(Vertex, normal)},
+                    {"TEXCOORD", 0, 0, GfxFormat::R32G32_SFLOAT, offsetof(Vertex, uv)}
+                },
+                .vertexBufferStrides = {
+                    sizeof(Vertex)
+                }
+            }
+        };
+        mModel = Asset::LoadModel("/data/models/Duck/Duck.gltf", loadParams, assetGroup);
+
         return true;
     };
 
@@ -112,6 +134,7 @@ struct AppImpl final : AppCallbacks
     
     void Cleanup() override
     {
+        
         ReleaseGraphicsResources();
 
         Engine::Release();
@@ -154,7 +177,7 @@ struct AppImpl final : AppCallbacks
         // Finished working with mBuffer ?
         // cmd.TransitionBuffer(mBuffer, GfxBackendBufferTransition::TransferWrite);
 
-        ImGui::DrawFrame2(cmd);
+        ImGui::DrawFrame(cmd);
 
         GfxBackend::EndCommandBuffer(cmd);
         GfxBackend::SubmitQueue(GfxBackendQueueType::Graphics);

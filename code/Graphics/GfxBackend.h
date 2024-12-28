@@ -1,244 +1,8 @@
 #pragma once
 
 #include "../Core/Base.h"
-#include "../Core/MathTypes.h"
-#include "../Common/CommonTypes.h"
 
-#include "Graphics.h"
-
-inline constexpr uint32 GFXBACKEND_MAX_RENDERPASS_COLOR_ATTACHMENTS = 8;
-inline constexpr uint32 GFXBACKEND_MAX_MIPS_PER_IMAGE = 12;  // up to 4096
-
-enum class GfxBackendMemoryArena : uint8 
-{
-    PersistentGPU = 0,
-    PersistentCPU,
-    TransientCPU,
-    DynamicImageGPU,
-    DynamicBufferGPU
-};
-
-enum class GfxBackendQueueType : uint8
-{
-    None = 0,
-    Graphics = 0x1,
-    Compute = 0x2,
-    Transfer = 0x4,
-    Present = 0x8
-};
-ENABLE_BITMASK(GfxBackendQueueType);
-
-// VkImageUsageFlagBits
-enum class GfxBackendImageUsageFlags : uint32
-{
-    TransferSrc = 0x00000001,
-    TransferDst = 0x00000002,
-    Sampled = 0x00000004,
-    Storage = 0x00000008,
-    ColorAttachment = 0x00000010,
-    DepthStencilAttachment = 0x00000020,
-    TransientAttachment = 0x00000040,
-    InputAttachment = 0x00000080
-};
-ENABLE_BITMASK(GfxBackendImageUsageFlags);
-
-// VkBufferUsageFlagBits
-enum class GfxBackendBufferUsageFlags : uint32
-{
-    TransferSrc = 0x00000001,
-    TransferDst = 0x00000002,
-    UniformTexel = 0x00000004,
-    StorageTexel = 0x00000008,
-    Uniform = 0x00000010,
-    Storage = 0x00000020,
-    Index = 0x00000040,
-    Vertex = 0x00000080,
-    Indirect = 0x00000100
-};
-ENABLE_BITMASK(GfxBackendBufferUsageFlags);
-
-// VkImageType
-enum class GfxBackendImageType : uint32
-{
-    Image1D = 0,
-    Image2D,
-    Image3D
-};
-ENABLE_BITMASK(GfxBackendImageType);
-
-// VkSampleCountFlagBits
-enum class GfxBackendSampleCountFlags : uint32
-{
-    SampleCount1 = 0x00000001,
-    SampleCount2 = 0x00000002,
-    SampleCount4 = 0x00000004,
-    SampleCount8 = 0x00000008,
-    SampleCount16 = 0x00000010,
-    SampleCount32 = 0x00000020,
-    SampleCount64 = 0x00000040
-};
-ENABLE_BITMASK(GfxBackendSampleCountFlags);
-
-struct GfxBackendImageDesc
-{
-    uint16 width;
-    uint16 height;
-    uint16 depth = 1;
-    uint16 numMips = 1;
-    uint16 numArrayLayers = 1;
-    GfxBackendSampleCountFlags multisampleFlags = GfxBackendSampleCountFlags::SampleCount1;
-    GfxBackendImageType type = GfxBackendImageType::Image2D;
-    GfxFormat format;
-    GfxBackendImageUsageFlags usageFlags = GfxBackendImageUsageFlags::Sampled;
-    GfxBackendMemoryArena arena;
-    uint32 mipOffsets[GFXBACKEND_MAX_MIPS_PER_IMAGE];
-};
-
-struct GfxBackendPipelineLayoutDesc
-{
-    struct Binding 
-    {
-        const char* name;
-        GfxDescriptorType type;
-        GfxShaderStage stagesUsed;
-        uint32 arrayCount = 1;
-        uint8 setIndex = 0;        // DescriptorSet Id
-    };
-
-    struct PushConstant
-    {
-        const char* name;
-        GfxShaderStage stagesUsed;
-        uint32 offset;
-        uint32 size;
-    };
-    
-    uint32 numBindings;
-    const Binding* bindings;
-    uint32 numPushConstants;
-    const PushConstant* pushConstants;
-    bool usePushDescriptors = true;    
-};
-
-struct GfxBackendGraphicsPipelineDesc
-{
-    GfxPrimitiveTopology inputAssemblyTopology = GfxPrimitiveTopology::TriangleList;
-    
-    uint32 numVertexInputAttributes;
-    const GfxVertexInputAttributeDesc* vertexInputAttributes;
-
-    uint32 numVertexBufferBindings;
-    const GfxVertexBufferBindingDesc* vertexBufferBindings;
-
-    GfxRasterizerDesc rasterizer;
-    GfxBlendDesc blend;
-    GfxDepthStencilDesc depthStencil;
-
-    uint32 numColorAttachments;
-    GfxFormat colorAttachmentFormats[GFXBACKEND_MAX_RENDERPASS_COLOR_ATTACHMENTS];
-    GfxFormat depthAttachmentFormat;
-    GfxFormat stencilAttachmentFormat;
-};
-
-struct GfxBackendBindingDesc
-{   
-    const char* name;
-
-    union {
-        uint32 imageArrayCount = 1;
-
-        struct {
-            uint32 offset = 0;
-            uint32 size = 0;
-        } bufferRange;
-    };
-
-    union
-    {
-        GfxBufferHandle buffer;
-        GfxImageHandle image;
-        const GfxImageHandle* imageArray;
-    };
-};
-
-struct GfxBackendBufferDesc
-{
-    size_t sizeBytes;
-    GfxBackendBufferUsageFlags usageFlags;
-    GfxBackendMemoryArena arena;
-};
-
-enum class GfxBackendBufferTransition
-{
-    TransferWrite
-};
-
-enum class GfxBackendImageTransition
-{
-    ComputeWrite,
-    CopySource
-};
-
-struct GfxBackendRenderPassAttachment
-{
-    GfxImageHandle image;
-    bool load;
-    bool clear;
-
-    union {
-        Float4 clearColor;
-        float clearDepth;
-        uint32 clearStencil;
-    };
-};
-
-struct GfxBackendRenderPass
-{
-    RectInt cropRect = RECTINT_EMPTY;
-    uint32 numAttachments;
-    GfxBackendRenderPassAttachment colorAttachments[GFXBACKEND_MAX_RENDERPASS_COLOR_ATTACHMENTS];
-    GfxBackendRenderPassAttachment depthAttachment;
-    GfxBackendRenderPassAttachment stencilAttachment;
-    bool swapchain;
-    bool hasDepth;
-    bool hasStencil;
-};
-
-struct GfxBackendSamplerDesc
-{
-    GfxSamplerFilterMode samplerFilter = GfxSamplerFilterMode::Nearest;
-    GfxSamplerWrapMode samplerWrap = GfxSamplerWrapMode::Repeat;
-    GfxSamplerBorderColor borderColor = GfxSamplerBorderColor::Default;
-    float anisotropy = 1.0f;
-    float mipLODBias = 0;
-    // TODO: Add compare and other options
-};
-
-struct GfxBackendCopyBufferToBufferParams
-{
-    GfxBufferHandle srcHandle;
-    GfxBufferHandle dstHandle;
-    GfxShaderStage stagesUsed;
-    size_t srcOffset;
-    size_t dstOffset;
-    size_t sizeBytes;
-};
-
-struct GfxBackendCopyBufferToImageParams
-{
-    GfxBufferHandle srcHandle;
-    GfxImageHandle dstHandle;
-    GfxShaderStage stagesUsed;
-    uint16 startMipIndex;
-    uint16 mipCount;
-};
-
-struct GfxBackendMapBufferParams
-{
-    GfxBufferHandle handle;
-    void* dataPtr;
-    size_t dataSize;
-};
+#include "GfxBackendTypes.h"
 
 struct GfxBackendCommandBuffer
 {
@@ -248,6 +12,7 @@ struct GfxBackendCommandBuffer
     uint8 mDrawsToSwapchain : 1;
     uint8 mIsRecording : 1;
     uint8 mIsInRenderPass : 1;
+    uint8 mShouldSubmit : 1;
 
     void BeginRenderPass(const GfxBackendRenderPass& pass);
     void EndRenderPass();
@@ -258,13 +23,13 @@ struct GfxBackendCommandBuffer
     void CopyBufferToImage(GfxBufferHandle srcHandle, GfxImageHandle dstHandle, GfxShaderStage stagesUsed = GfxShaderStage::All,
                            uint16 startMipIndex = 0, uint16 mipCount = UINT16_MAX);
 
-    void BatchedCopyBufferToBuffer(uint32 numParams, const GfxBackendCopyBufferToBufferParams* params);
-    void BatchedCopyBufferToImage(uint32 numParams, const GfxBackendCopyBufferToImageParams* params);
+    void BatchCopyBufferToBuffer(uint32 numParams, const GfxBackendCopyBufferToBufferParams* params);
+    void BatchCopyBufferToImage(uint32 numParams, const GfxBackendCopyBufferToImageParams* params);
 
     void MapBuffer(GfxBufferHandle buffHandle, void** outPtr, size_t* outSizeBytes = nullptr);
     void FlushBuffer(GfxBufferHandle buffHandle);
 
-    void BatchedMapBuffer(uint32 numParams, const GfxBackendMapBufferParams* params);
+    void BatchMapBuffer(uint32 numParams, const GfxBufferHandle* handles, GfxBackendMapResult* mapResults);
     void BatchFlushBuffer(uint32 numBuffers, const GfxBufferHandle* bufferHandles);
 
     void ClearImageColor(GfxImageHandle imgHandle, Color color);
@@ -307,6 +72,8 @@ namespace GfxBackend
 
     GfxImageHandle CreateImage(const GfxBackendImageDesc& desc);
     void DestroyImage(GfxImageHandle handle);
+    void BatchCreateImage(uint32 numImages, const GfxBackendImageDesc* descs, GfxImageHandle* outHandles);
+    void BatchDestroyImage(uint32 numImages, const GfxImageHandle* handles);
     const GfxBackendImageDesc& GetImageDesc(GfxImageHandle handle);
 
     GfxPipelineLayoutHandle CreatePipelineLayout(const GfxShader& shader, const GfxBackendPipelineLayoutDesc& desc);
@@ -314,6 +81,8 @@ namespace GfxBackend
 
     GfxBufferHandle CreateBuffer(const GfxBackendBufferDesc& desc);
     void DestroyBuffer(GfxBufferHandle handle);
+    void BatchCreateBuffer(uint32 numBuffers, const GfxBackendBufferDesc* descs, GfxBufferHandle* outHandles);
+    void BatchDestroyBuffer(uint32 numBuffers, const GfxBufferHandle* handles);
 
     GfxPipelineHandle CreateGraphicsPipeline(const GfxShader& shader, GfxPipelineLayoutHandle layoutHandle, const GfxBackendGraphicsPipelineDesc& desc);
     GfxPipelineHandle CreateComputePipeline(const GfxShader& shader, GfxPipelineLayoutHandle layoutHandle);
@@ -323,7 +92,64 @@ namespace GfxBackend
     void DestroySampler(GfxSamplerHandle handle);
 
     GfxFormat GetSwapchainFormat();
+    Mat4 GetSwapchainTransformMat();
+
+    void BeginRenderFrameSync();
+    void EndRenderFrameSync();
+
+    float GetRenderTimeNS();
+
 } // Gfx
+
+//----------------------------------------------------------------------------------------------------------------------
+// TODO: Profiling
+#ifdef TRACY_ENABLE_TODO
+    #include "../Core/TracyHelper.h"
+
+    namespace Tracy 
+    {
+        namespace _private
+        {
+            API void ProfileZoneBegin(uint64 srcloc);
+            API void ProfileZoneEnd();
+
+            struct TracyGpuZoneScope
+            {
+                bool _active;
+
+                TracyGpuZoneScope() = delete;
+                explicit TracyGpuZoneScope(bool active, uint64 srcloc) : _active(active) 
+                {
+                    if (active)
+                        ProfileZoneBegin(srcloc);
+                }
+            
+                ~TracyGpuZoneScope()
+                {
+                    if (_active)
+                        ProfileZoneEnd();
+                }
+            };
+        }   // _private
+    } // Tracy
+
+    #define PROFILE_GPU_ZONE(active) \
+        Tracy::_private::TracyGpuZoneScope(active, Tracy::_private::__tracy_alloc_source_loc(__LINE__, __FILE__, __func__))
+    #define PROFILE_GPU_ZONE_NAME(name, active) \
+        Tracy::_private::TracyGpuZoneScope(active, Tracy::_private::__tracy_alloc_source_loc(__LINE__, __FILE__, __func__, name))
+    #define PROFILE_GPU_ZONE_BEGIN(active) \
+        do { if (active) Tracy::_private::profileGpuZoneBegin(Tracy::_private::__tracy_alloc_source_loc(__LINE__, __FILE__, __func__));  } while(0)
+    #define PROFILE_GPU_ZONE_NAME_BEGIN(name, active) \
+        do { if (active) Tracy::_private::profileGpuZoneBegin(Tracy::_private::__tracy_alloc_source_loc(__LINE__, __FILE__, __func__, name));  } while(0)
+    #define PROFILE_GPU_ZONE_END(active)  \
+        do { if (active) Tracy::_private::profileGpuZoneEnd();  } while(0)
+#else
+    #define PROFILE_GPU_ZONE(active)
+    #define PROFILE_GPU_ZONE_NAME(name, active)
+    #define PROFILE_GPU_ZONE_BEGIN(active)
+    #define PROFILE_GPU_ZONE_END(active)
+#endif // TRACY_ENABLE
+
 
 //----------------------------------------------------------------------------------------------------------------------
 template <typename _T>

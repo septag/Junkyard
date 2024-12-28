@@ -8,7 +8,6 @@
 #include "../Common/JunkyardSettings.h"
 #include "../Common/Application.h"
 
-#include "../Graphics/Graphics.h"
 #include "../Assets/AssetManager.h"
 #include "../ImGui/ImGuiMain.h"
 
@@ -252,7 +251,7 @@ void DebugHud::DrawDebugHud(float dt, bool *pOpen)
         _UpdateGraph(dt*1000.0f, DebugHudGraphType::FrameTime);
         _UpdateGraph(1.0f/dt, DebugHudGraphType::Fps);
         _UpdateGraph(Engine::GetEngineTimeMS(), DebugHudGraphType::CpuTime);
-        _UpdateGraph(gfxGetRenderTimeNs()/1000000.0f, DebugHudGraphType::GpuTime);
+        _UpdateGraph(GfxBackend::GetRenderTimeNS()/1000000.0f, DebugHudGraphType::GpuTime);
 
         _DrawHudMenu();
 

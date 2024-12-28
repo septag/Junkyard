@@ -2,6 +2,8 @@
 
 #include "../Core/MathTypes.h"
 
+#include "../Graphics/GfxBackend.h"
+
 struct Camera;
 
 struct DebugDrawGridProperties
@@ -18,5 +20,7 @@ namespace DebugDraw
     bool Initialize();
     void Release();
 
-    API void DrawGroundGrid(const Camera& cam, float viewWidth, float viewHeight, const DebugDrawGridProperties& props);
+    API void BeginDraw(GfxBackendCommandBuffer cmd, uint16 viewWidth, uint16 viewHeight);
+    API void DrawGroundGrid(const Camera& cam, const DebugDrawGridProperties& props);
+    API void EndDraw(GfxBackendCommandBuffer cmd, const Camera& cam, GfxImageHandle depthImage);
 }

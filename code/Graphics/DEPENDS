@@ -3,5 +3,5 @@ Common
 External/stb
 External/vulkan
 External/volk
-External/vma
 External/cgltf
+External/OffsetAllocator

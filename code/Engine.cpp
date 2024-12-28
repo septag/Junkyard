@@ -13,7 +13,6 @@
 #include "Common/Application.h"
 #include "Common/JunkyardSettings.h"
 
-#include "Graphics/Graphics.h"
 #include "Graphics/GfxBackend.h"
 
 #include "DebugTools/DebugDraw.h"
@@ -143,20 +142,13 @@ namespace Engine
     static void _InitResourcesUpdate(float dt, void*)
     {
         // TODO: can show some cool anim or something
-        BeginFrame(dt);
-
-        #if !TEST_NEW_GRAPHICS
-        gfxBeginCommandBuffer();
-        gfxCmdBeginSwapchainRenderPass();
-        gfxCmdEndSwapchainRenderPass();
-        gfxEndCommandBuffer();
-        #else
-        GfxBackendCommandBuffer cmd = GfxBackend::BeginCommandBuffer(GfxBackendQueueType::Graphics);
-        cmd.ClearSwapchainColor(FLOAT4_ZERO);
-        GfxBackend::EndCommandBuffer(cmd);
-        GfxBackend::SubmitQueue(GfxBackendQueueType::Graphics);
-        #endif
-
+        BeginFrame(dt); 
+        {
+            GfxBackendCommandBuffer cmd = GfxBackend::BeginCommandBuffer(GfxBackendQueueType::Graphics);
+            cmd.ClearSwapchainColor(FLOAT4_ZERO);
+            GfxBackend::EndCommandBuffer(cmd);
+            GfxBackend::SubmitQueue(GfxBackendQueueType::Graphics);
+        }
         EndFrame();
 
         if (gEng.initResourcesGroup.IsLoadFinished()) {
@@ -409,13 +401,6 @@ bool Engine::Initialize()
             LOG_INFO("(init) Display (%ux%u), DPI scale: %.2f, RefreshRate: %uhz", dinfo.width, dinfo.height, dinfo.dpiScale, dinfo.refreshRate);
         }
 
-        #if !TEST_NEW_GRAPHICS
-        if (!::_private::gfxInitialize()) {
-            LOG_ERROR("Initializing Graphics failed");
-            return false;
-        }
-        #endif
-
         if (!GfxBackend::Initialize()) {
             LOG_ERROR("Initializing Graphics failed");
             return false;
@@ -428,22 +413,18 @@ bool Engine::Initialize()
         return false;
     }
 
-    // Initialization resources
+    // Initialization time resources
     gEng.initResourcesGroup = Asset::CreateGroup();
 
-    if (gfxSettings.enable) {
-        if (!gfxSettings.headless) {
-            if (gfxSettings.enableImGui && !ImGui::Initialize()) {
-                LOG_ERROR("Initializing ImGui failed");
-                return false;
-            }
+    if (gfxSettings.IsGraphicsEnabled()) {
+        if (gfxSettings.enableImGui && !ImGui::Initialize()) {
+            LOG_ERROR("Initializing ImGui failed");
+            return false;
+        }
 
-            #if !TEST_NEW_GRAPHICS
-            if (!DebugDraw::Initialize()) {
-                LOG_ERROR("Initializing DebugDraw failed");
-                return false;
-            }
-            #endif
+        if (!DebugDraw::Initialize()) {
+            LOG_ERROR("Initializing DebugDraw failed");
+            return false;
         }
     }
 
@@ -454,17 +435,22 @@ bool Engine::Initialize()
 
     App::RegisterEventsCallback(_OnEvent);
 
-    auto GetVMemStats = [](int, const char**, char* outResponse, uint32 responseSize, void*)->bool {
-        MemVirtualStats stats = Mem::VirtualGetStats();
-        Str::PrintFmt(outResponse, responseSize, "Reserverd: %_$$$llu, Commited: %_$$$llu", stats.reservedBytes, stats.commitedBytes);
-        return true;
-    };
+    // Console commands
+    {
+        auto GetVMemStats = [](int, const char**, char* outResponse, uint32 responseSize, void*)->bool {
+            MemVirtualStats stats = Mem::VirtualGetStats();
+            Str::PrintFmt(outResponse, responseSize, "Reserverd: %_$$$llu, Commited: %_$$$llu", stats.reservedBytes, stats.commitedBytes);
+            return true;
+        };
 
-    Console::RegisterCommand(ConCommandDesc {
-        .name = "vmem",
-        .help = "Get VMem stats",
-        .callback = GetVMemStats
-    });
+        ConCommandDesc cmdVmem {
+            .name = "vmem",
+            .help = "Get VMem stats",
+            .callback = GetVMemStats
+        };
+        Console::RegisterCommand(cmdVmem);
+    }
+
     LOG_INFO("(init) Engine v%u.%u.%u initialized (%.1f ms)", 
              GetVersionMajor(JUNKYARD_VERSION),
              GetVersionMinor(JUNKYARD_VERSION),
@@ -494,22 +480,13 @@ void Engine::Release()
     gEng.initialized = false;
 
     const SettingsGraphics& gfxSettings = SettingsJunkyard::Get().graphics;
-    if (gfxSettings.enable && !gfxSettings.headless) {
-        if (gfxSettings.enableImGui) {
-            ImGui::Release();
-        }
-    } 
-
-    #if !TEST_NEW_GRAPHICS
-    const SettingsGraphics& gfxSettings = SettingsJunkyard::Get().graphics;
-    if (gfxSettings.enable && !gfxSettings.headless) {
-        if (gfxSettings.enableImGui) {
+    if (gfxSettings.IsGraphicsEnabled()) {
+        if (ImGui::IsEnabled()) {
             DebugHud::Release();
             ImGui::Release();
         }
         DebugDraw::Release();
     } 
-    #endif
 
     if (gEng.initResourcesGroup.mHandle.IsValid()) {
         gEng.initResourcesGroup.Unload();
@@ -523,11 +500,8 @@ void Engine::Release()
     Asset::DestroyGroup(gEng.initResourcesGroup);
     Asset::Release();
 
-    #if !TEST_NEW_GRAPHICS
     if (gfxSettings.enable)
-        ::_private::gfxRelease();
-    #endif
-    GfxBackend::Release();
+        GfxBackend::Release();
 
     if (SettingsJunkyard::Get().engine.connectToServer)
         Remote::Disconnect();
@@ -558,40 +532,33 @@ void Engine::BeginFrame(float dt)
     gEng.frameTime = dt;
     gEng.elapsedTime += dt;
 
-    const SettingsEngine& engineSettings = SettingsJunkyard::Get().engine;
+    const SettingsJunkyard& settings = SettingsJunkyard::Get();
 
     // Reconnect to remote server if it's disconnected
-    if (engineSettings.connectToServer && gEng.remoteReconnect) {
+    if (settings.engine.connectToServer && gEng.remoteReconnect) {
         gEng.remoteDisconnectTime += dt;
         if (gEng.remoteDisconnectTime >= ENGINE_REMOTE_RECONNECT_INTERVAL) {
             gEng.remoteDisconnectTime = 0;
             gEng.remoteReconnect = false;
             if (++gEng.remoteRetryCount <= ENGINE_REMOTE_CONNECT_RETRIES) {
-                if (Remote::Connect(engineSettings.remoteServicesUrl.CStr(), _RemoteDisconnected))
+                if (Remote::Connect(settings.engine.remoteServicesUrl.CStr(), _RemoteDisconnected))
                     gEng.remoteRetryCount = 0;
                 else
-                    _RemoteDisconnected(engineSettings.remoteServicesUrl.CStr(), false, SocketErrorCode::None);
+                    _RemoteDisconnected(settings.engine.remoteServicesUrl.CStr(), false, SocketErrorCode::None);
             }
             else {
-                LOG_WARNING("Failed to connect to server '%s' after %u retries", engineSettings.remoteServicesUrl.CStr(), 
+                LOG_WARNING("Failed to connect to server '%s' after %u retries", settings.engine.remoteServicesUrl.CStr(), 
                     ENGINE_REMOTE_CONNECT_RETRIES);
             }
         }
     }
 
-    #if !TEST_NEW_GRAPHICS
-    // Begin graphics
-    bool headless = SettingsJunkyard::Get().graphics.headless || !SettingsJunkyard::Get().graphics.enable;
-    if (!headless) {
+    // Graphics
+    if (settings.graphics.IsGraphicsEnabled()) {
         if (gEng.resourcesInitialized)
             ImGui::BeginFrame(dt);
-        ::_private::gfxBeginFrame();
+        GfxBackend::Begin();
     }
-    #endif
-
-    if (gEng.resourcesInitialized)
-        ImGui::BeginFrame(dt);
-    GfxBackend::Begin();
 
     gEng.rawFrameStartTime = Timer::GetTicks();
 }
@@ -610,13 +577,9 @@ void Engine::EndFrame()
 
     gEng.rawFrameTime = Timer::Diff(Timer::GetTicks(), gEng.rawFrameStartTime);
 
-    GfxBackend::End();
-    #if !TEST_NEW_GRAPHICS
-    bool headless = SettingsJunkyard::Get().graphics.headless || !SettingsJunkyard::Get().graphics.enable;
-    if (!headless) {
-        ::_private::gfxEndFrame();
-    }
-    #endif
+    // Graphics
+    if (SettingsJunkyard::Get().graphics.IsGraphicsEnabled())
+        GfxBackend::End();
 
     MemTempAllocator::Reset();
 

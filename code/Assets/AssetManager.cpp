@@ -18,7 +18,6 @@
 #include "../Common/Application.h"
 #endif
 
-#include "../Graphics/Graphics.h"
 #include "../Graphics/GfxBackend.h"
 #include "../Engine.h"
 
@@ -68,33 +67,22 @@ struct AssetDataInternal
     enum class GpuObjectType : uint32
     {
         Buffer = 0,
-        Texture
+        Image
     };
 
     struct GpuBufferDesc
     {
         RelativePtr<GfxBufferHandle> bindToBuffer;
-        uint32 size;
-        GfxBufferType type;
-        GfxBufferUsage usage;
+        GfxBackendBufferDesc createDesc;
         RelativePtr<uint8> content;
     };
 
-    struct GpuTextureDesc
+    struct GpuImageDesc
     {
         RelativePtr<GfxImageHandle> bindToImage;
-        uint32 width;
-        uint32 height;
-        uint32 numMips;
-        GfxFormat format;
-        GfxBufferUsage usage;
-        float anisotropy;
-        GfxSamplerFilterMode samplerFilter;
-        GfxSamplerWrapMode samplerWrap;
-        GfxSamplerBorderColor borderColor;
-        size_t size;
+        GfxBackendImageDesc createDesc;
         RelativePtr<uint8> content;
-        RelativePtr<uint32> mipOffsets;
+        uint32 contentSize;
     };
 
     struct GpuObject
@@ -102,7 +90,7 @@ struct AssetDataInternal
         GpuObjectType type;
         union {
             GpuBufferDesc bufferDesc;
-            GpuTextureDesc textureDesc;
+            GpuImageDesc imageDesc;
         };
         RelativePtr<GpuObject> next;
     };
@@ -113,8 +101,8 @@ struct AssetDataInternal
     uint32 numGpuObjects;
 
     RelativePtr<AssetMetaKeyValue> metaData;
-    RelativePtr<Dependency> deps;
     RelativePtr<uint8> objData;
+    RelativePtr<Dependency> deps;
     RelativePtr<GpuObject> gpuObjects;
 };
 using AssetDataPair = Pair<AssetDataInternal*, uint32>; // second=dataSize
@@ -179,14 +167,6 @@ struct AssetLoadTaskData
     AssetLoadTaskOutputs outputs;
 };
 
-struct AssetDataCopyTaskData
-{
-    AssetDataHeader* header;
-    AssetDataInternal* destData;
-    const AssetDataInternal* sourceData;
-    uint32 sourceDataSize;
-};
-
 struct AssetHandleResult
 {
     AssetDataHeader* header;
@@ -211,6 +191,7 @@ struct AssetQueuedItem
     AssetDataInternal* data;
     Path bakedFilepath;
     bool saveBaked;
+    bool hasPendingGpuResource;
 };
 
 enum class AssetServerBlobType : uint32
@@ -318,7 +299,6 @@ namespace Asset
     template <typename _T> _T* _TranslatePointer(_T* ptr, const void* origPtr, void* newPtr);
     static void _LoadGroupTask(uint32, void* userData);
     static void _UnloadGroupTask(uint32, void* userData);
-    static void _DataCopyTask(uint32, void* userData);
     static uint32 _MakeCacheFilepath(Path* outPath, const AssetDataHeader* header, uint32 overrideAssetHash = 0);
     static uint32 _MakeParamsHash(const AssetParams& params, uint32 typeSpecificParamsSize);
     static bool _RemoteServerCallback(uint32 cmd, const Blob& incomingData, Blob*, void*, char outErrorDesc[REMOTE_ERROR_SIZE]);
@@ -329,6 +309,7 @@ namespace Asset
     static void _LoadAssetHashLookup();
     static void _OnFileChanged(const char* filepath);
     static void _UnloadDatasManually(Span<AssetDataPair> datas);
+    static void _GpuResourceFinishedCallback(void* userData);
 } // Asset
 
 constexpr AssetPlatform::Enum Asset::_GetCurrentPlatform()
@@ -340,6 +321,20 @@ constexpr AssetPlatform::Enum Asset::_GetCurrentPlatform()
     else {
         ASSERT(0);
         return AssetPlatform::Auto;
+    }
+}
+
+static void Asset::_GpuResourceFinishedCallback(void* userData)
+{
+    AssetHandle handle = AssetHandle(PtrToInt<uint32>(userData));
+    ASSERT(handle.IsValid());
+
+    ReadWriteMutexReadScope rdlock(gAssetMan.assetMutex);
+    if (gAssetMan.assetDb.IsValid(handle)) {
+        AssetDataHeader* header = gAssetMan.assetDb.Data(handle);
+
+        AtomicUint32 expected = uint32(AssetState::Loading);
+        Atomic::CompareExchange_Weak(&header->state, &expected, uint32(AssetState::Loaded));
     }
 }
 
@@ -383,13 +378,13 @@ static void Asset::_UnloadDatasManually(Span<AssetDataPair> datas)
         AssetDataInternal::GpuObject* gpuObj = data.first->gpuObjects.Get();
         while (gpuObj) {
             switch (gpuObj->type) {
-            case AssetDataInternal::GpuObjectType::Texture:
-                ASSERT(!gpuObj->textureDesc.bindToImage.IsNull());
-                gfxDestroyImage(*gpuObj->textureDesc.bindToImage.Get());
+            case AssetDataInternal::GpuObjectType::Image:
+                ASSERT(!gpuObj->imageDesc.bindToImage.IsNull());
+                GfxBackend::DestroyImage(*gpuObj->imageDesc.bindToImage.Get());
                 break;
             case AssetDataInternal::GpuObjectType::Buffer:
                 ASSERT(!gpuObj->bufferDesc.bindToBuffer.IsNull());
-                gfxDestroyBuffer(*gpuObj->bufferDesc.bindToBuffer.Get());
+                GfxBackend::DestroyBuffer(*gpuObj->bufferDesc.bindToBuffer.Get());
                 break;
             }
             gpuObj = gpuObj->next.Get();
@@ -722,18 +717,6 @@ static AssetHandleResult Asset::_CreateOrFetchHandle(const AssetParams& params)
     return r;
 }
 
-static void Asset::_DataCopyTask(uint32 groupIdx, void* userData)
-{
-    PROFILE_ZONE_COLOR(PROFILE_COLOR_ASSET2);
-    AssetDataCopyTaskData& taskData = ((AssetDataCopyTaskData*)userData)[groupIdx];
-
-    memcpy(taskData.destData, taskData.sourceData, taskData.sourceDataSize);
-
-    ASSERT(taskData.header->data == nullptr);   // Data should be already null
-    taskData.header->data = taskData.destData;
-    taskData.header->dataSize = taskData.sourceDataSize;
-}
-
 static void Asset::_LoadAssetTask(uint32 groupIdx, void* userData)
 {
     PROFILE_ZONE_COLOR(PROFILE_COLOR_ASSET2);
@@ -757,7 +740,8 @@ static void Asset::_LoadAssetTask(uint32 groupIdx, void* userData)
         };
 
         // Load metadata
-        Span<AssetMetaKeyValue> metaData = _LoadMetaData(params.path.CStr(), params.platform, alloc);
+        AssetPlatform::Enum platform = params.platform != AssetPlatform::Auto ? params.platform : _GetCurrentPlatform();
+        Span<AssetMetaKeyValue> metaData = _LoadMetaData(params.path.CStr(), platform, alloc);
         assetData.mData->metaData = metaData.Ptr();
         assetData.mData->numMetaData = metaData.Count();
 
@@ -856,58 +840,6 @@ static void Asset::_LoadAssetTask(uint32 groupIdx, void* userData)
     LOG_VERBOSE("(load) %s: %s%s", typeMan.name.CStr(), params.path.CStr(), taskData.inputs.type == AssetLoadTaskInputType::Baked ? " (baked)" : "");
 }
 
-static void Asset::_CreateGpuObjectTask(uint32 groupIdx, void* userData)
-{
-    PROFILE_ZONE_COLOR(PROFILE_COLOR_ASSET2);
-    AssetDataInternal::GpuObject* gpuObj = ((AssetDataInternal::GpuObject**)userData)[groupIdx];
-
-    switch (gpuObj->type) {
-    case AssetDataInternal::GpuObjectType::Buffer:
-        {
-            GfxBufferDesc desc {
-                .size = gpuObj->bufferDesc.size,
-                .type = gpuObj->bufferDesc.type,
-                .usage = gpuObj->bufferDesc.usage,
-                .content = gpuObj->bufferDesc.content.Get()
-            };
-        
-            GfxBufferHandle buffer = gfxCreateBuffer(desc);
-            if (buffer.IsValid()) {
-                GfxBufferHandle* targetBuffer = gpuObj->bufferDesc.bindToBuffer.Get();
-                *targetBuffer = buffer;
-            }
-
-            break;
-        }
-    case AssetDataInternal::GpuObjectType::Texture:
-        {
-            GfxImageDesc desc {
-                .width = gpuObj->textureDesc.width,
-                .height = gpuObj->textureDesc.height,
-                .numMips = gpuObj->textureDesc.numMips,
-                .format = gpuObj->textureDesc.format,
-                .usage = gpuObj->textureDesc.usage,
-                .anisotropy = gpuObj->textureDesc.anisotropy,
-                .samplerFilter = gpuObj->textureDesc.samplerFilter,
-                .samplerWrap = gpuObj->textureDesc.samplerWrap,
-                .borderColor = gpuObj->textureDesc.borderColor,
-                .sampled = true,
-                .size = gpuObj->textureDesc.size,
-                .content = gpuObj->textureDesc.content.Get(),
-                .mipOffsets = gpuObj->textureDesc.mipOffsets.Get()
-            };
-
-            GfxImageHandle image = gfxCreateImage(desc);
-            if (image.IsValid()) {
-                GfxImageHandle* targetImage = gpuObj->textureDesc.bindToImage.Get();
-                *targetImage = image;
-            }
-
-            break;
-        }
-    }
-}
-
 static void Asset::_LoadGroupTask(uint32, void* userData)
 {
     PROFILE_ZONE_COLOR(PROFILE_COLOR_ASSET1);
@@ -927,6 +859,7 @@ static void Asset::_LoadGroupTask(uint32, void* userData)
     // Fetch load list (pointers in the loadList are persistant through the lifetime of the group)
     AssetGroupHandle groupHandle(PtrToInt<uint32>(userData));
     Array<AssetDataHeader*> loadList;
+    Array<AssetHandle> loadListHandles;
     bool isHotReloadGroup;
 
     {
@@ -937,10 +870,13 @@ static void Asset::_LoadGroupTask(uint32, void* userData)
 
         ReadWriteMutexReadScope rdlockAsset(gAssetMan.assetMutex);
         loadList.Reserve(group.loadList.Count());
+        loadListHandles.Reserve(group.loadList.Count());
 
         for (AssetHandle handle : group.loadList) {
-            if (gAssetMan.assetDb.IsValid(handle))
+            if (gAssetMan.assetDb.IsValid(handle)) {
                 loadList.Push(gAssetMan.assetDb.Data(handle));
+                loadListHandles.Push(handle);
+            }
         }
 
         group.loadList.Clear();
@@ -1102,6 +1038,7 @@ static void Asset::_LoadGroupTask(uint32, void* userData)
                         i = loadList.Count();
 
                     loadList.Push(depHandleResult.header);
+                    loadListHandles.Push(depHandleResult.handle);
                     ++allCount;
                 }
 
@@ -1115,45 +1052,150 @@ static void Asset::_LoadGroupTask(uint32, void* userData)
     // Save to cache
     Array<AssetQueuedItem*> saveItems(tempAlloc);
     saveItems.Reserve(queuedAssets.Count());
-    for (uint32 i = 0; i < queuedAssets.Count(); i += batchCount) {
-        uint32 sliceCount = Min(batchCount, loadList.Count() - i);
+    JobsHandle saveItemsJob = nullptr;
 
-        for (uint32 k = 0; k < sliceCount; k++) {
-            AssetQueuedItem& qa = queuedAssets[i + k];
-            if (qa.saveBaked)
-                saveItems.Push(&qa);
-        }
-        
-        if (!saveItems.IsEmpty()) {
-            JobsHandle batchJob = Jobs::Dispatch(JobsType::LongTask, _SaveBakedTask, saveItems.Ptr(), saveItems.Count());
-            Jobs::WaitForCompletionAndDelete(batchJob);
-            saveItems.Clear();
-        }
+    for (uint32 i = 0; i < queuedAssets.Count(); i++) {
+        AssetQueuedItem& qa = queuedAssets[i];
+        if (qa.saveBaked)
+            saveItems.Push(&qa);
     }
-    tempAlloc->Reset();
+
+    if (!saveItems.IsEmpty())
+        saveItemsJob = Jobs::Dispatch(JobsType::LongTask, _SaveBakedTask, saveItems.Ptr(), saveItems.Count());
 
     // Create GPU objects
-    for (uint32 i = 0; i < queuedAssets.Count(); i += batchCount) {
-        uint32 sliceCount = Min(batchCount, loadList.Count() - i);
+    {
+        GfxBackend::BeginRenderFrameSync();
+        GfxBackendCommandBuffer cmd = GfxBackend::BeginCommandBuffer(GfxBackendQueueType::Transfer);
 
-        Array<AssetDataInternal::GpuObject*> gpuObjs(tempAlloc);
-        for (uint32 k = 0; k < sliceCount; k++) {
-            AssetQueuedItem& qa = queuedAssets[i + k];
-            AssetDataInternal* data = qa.data;            
-            AssetDataInternal::GpuObject* gpuObj = data->gpuObjects.Get();
+        using GpuImageDescHandlePair = Pair<AssetDataInternal::GpuImageDesc*, AssetHandle>;
+        using GpuBufferDescHandlePair = Pair<AssetDataInternal::GpuBufferDesc*, AssetHandle>;
+        Array<GpuImageDescHandlePair> images(tempAlloc);
+        Array<GpuBufferDescHandlePair> buffers(tempAlloc);
+
+        for (uint32 i = 0; i < queuedAssets.Count(); i++) {
+            AssetQueuedItem& qa = queuedAssets[i];
+            AssetDataInternal::GpuObject* gpuObj = qa.data->gpuObjects.Get();
             while (gpuObj) {
-                gpuObjs.Push(gpuObj);
+                if (gpuObj->type == AssetDataInternal::GpuObjectType::Buffer) {
+                    buffers.Push(GpuBufferDescHandlePair(&gpuObj->bufferDesc, loadListHandles[qa.indexInLoadList]));
+                    qa.hasPendingGpuResource = true;
+                }
+                else if (gpuObj->type == AssetDataInternal::GpuObjectType::Image) {
+                    images.Push(GpuImageDescHandlePair(&gpuObj->imageDesc, loadListHandles[qa.indexInLoadList]));
+                    qa.hasPendingGpuResource = true;
+                }
+
                 gpuObj = gpuObj->next.Get();
             }
         }
 
-        if (!gpuObjs.IsEmpty()) {
-            JobsHandle batchJob = Jobs::Dispatch(JobsType::LongTask, _CreateGpuObjectTask, gpuObjs.Ptr(), gpuObjs.Count());
-            Jobs::WaitForCompletionAndDelete(batchJob);
+        if (!images.IsEmpty()) {
+            uint32 numImages = images.Count();
+            GfxBackendImageDesc* descs = Mem::AllocTyped<GfxBackendImageDesc>(numImages, tempAlloc);
+            GfxBackendBufferDesc* stagingBufferDescs = Mem::AllocTyped<GfxBackendBufferDesc>(numImages, tempAlloc);
+            GfxImageHandle* handles = Mem::AllocZeroTyped<GfxImageHandle>(numImages, tempAlloc);
+            GfxBufferHandle* bufferHandles = Mem::AllocZeroTyped<GfxBufferHandle>(numImages, tempAlloc);
+
+            for (uint32 i = 0; i < numImages; i++)  {
+                descs[i] = images[i].first->createDesc;
+                stagingBufferDescs[i] = {
+                    .sizeBytes = images[i].first->contentSize,
+                    .usageFlags = GfxBackendBufferUsageFlags::TransferSrc,
+                    .arena = GfxBackendMemoryArena::TransientCPU
+                };
+            }
+
+            GfxBackend::BatchCreateImage(numImages, descs, handles);
+            GfxBackend::BatchCreateBuffer(numImages, stagingBufferDescs, bufferHandles);
+
+            GfxBackendMapResult* mapResults = Mem::AllocZeroTyped<GfxBackendMapResult>(numImages, tempAlloc);
+            cmd.BatchMapBuffer(numImages, bufferHandles, mapResults);
+
+            for (uint32 i = 0; i < numImages; i++) {
+                ASSERT(mapResults[i].dataSize == images[i].first->contentSize);
+                memcpy(mapResults[i].dataPtr, images[i].first->content.Get(), mapResults[i].dataSize);
+            }
+
+            cmd.BatchFlushBuffer(numImages, bufferHandles);
+
+            GfxBackendCopyBufferToImageParams* copyParams = Mem::AllocTyped<GfxBackendCopyBufferToImageParams>(numImages, tempAlloc);
+            for (uint32 i = 0; i < numImages; i++) {
+                copyParams[i] = {
+                    .srcHandle = bufferHandles[i],
+                    .dstHandle = handles[i],
+                    .stagesUsed = GfxShaderStage::Fragment,
+                    .mipCount = UINT16_MAX,
+                    .resourceTransferedCallback = _GpuResourceFinishedCallback,
+                    .resourceTransferedUserData = IntToPtr(images[i].second.mId)
+                };
+            }
+
+            cmd.BatchCopyBufferToImage(numImages, copyParams);            
+            GfxBackend::BatchDestroyBuffer(numImages, bufferHandles);
+
+            for (uint32 i = 0; i < numImages; i++) {
+                GfxImageHandle* targetImage = images[i].first->bindToImage.Get();
+                *targetImage = handles[i];
+            }
         }
 
-        tempAlloc->Reset();
+        if (!buffers.IsEmpty()) {
+            uint32 numBuffers = buffers.Count();
+            GfxBackendBufferDesc* descs = Mem::AllocTyped<GfxBackendBufferDesc>(numBuffers, tempAlloc);
+            GfxBackendBufferDesc* stagingBufferDescs = Mem::AllocTyped<GfxBackendBufferDesc>(numBuffers, tempAlloc);
+            GfxBufferHandle* handles = Mem::AllocZeroTyped<GfxBufferHandle>(numBuffers, tempAlloc);
+            GfxBufferHandle* stagingHandles = Mem::AllocZeroTyped<GfxBufferHandle>(numBuffers, tempAlloc);
+
+            for (uint32 i = 0; i < numBuffers; i++) {
+                descs[i] = buffers[i].first->createDesc;
+                stagingBufferDescs[i] = {
+                    .sizeBytes = buffers[i].first->createDesc.sizeBytes,
+                    .usageFlags = GfxBackendBufferUsageFlags::TransferSrc,
+                    .arena = GfxBackendMemoryArena::TransientCPU
+                };
+            }
+
+            GfxBackend::BatchCreateBuffer(numBuffers, descs, handles);
+            GfxBackend::BatchCreateBuffer(numBuffers, stagingBufferDescs, stagingHandles);
+
+            GfxBackendMapResult* mapResults = Mem::AllocZeroTyped<GfxBackendMapResult>(numBuffers, tempAlloc);
+            cmd.BatchMapBuffer(numBuffers, stagingHandles, mapResults);
+
+            for (uint32 i = 0; i < numBuffers; i++) {
+                ASSERT(mapResults[i].dataSize == buffers[i].first->createDesc.sizeBytes);
+                memcpy(mapResults[i].dataPtr, buffers[i].first->content.Get(), mapResults[i].dataSize);
+            }
+            cmd.BatchFlushBuffer(numBuffers, stagingHandles);
+
+            GfxBackendCopyBufferToBufferParams* copyParams = Mem::AllocTyped<GfxBackendCopyBufferToBufferParams>(numBuffers, tempAlloc);
+            for (uint32 i = 0; i < numBuffers; i++) {
+                copyParams[i] = {
+                    .srcHandle = stagingHandles[i],
+                    .dstHandle = handles[i],
+                    .stagesUsed = GfxShaderStage::Vertex,
+                    .resourceTransferedCallback = _GpuResourceFinishedCallback,
+                    .resourceTransferedUserData = IntToPtr(buffers[i].second.mId)
+                };
+            }
+
+            cmd.BatchCopyBufferToBuffer(numBuffers, copyParams);            
+            GfxBackend::BatchDestroyBuffer(numBuffers, stagingHandles);
+
+            for (uint32 i = 0; i < numBuffers; i++) {
+                GfxBufferHandle* targetBuffer = buffers[i].first->bindToBuffer.Get();
+                *targetBuffer = handles[i];
+            }
+        }
+
+        GfxBackend::EndCommandBuffer(cmd);
+        GfxBackend::SubmitQueue(GfxBackendQueueType::Transfer, GfxBackendQueueType::Graphics);
+        GfxBackend::EndRenderFrameSync();
     }
+
+    if (saveItemsJob)
+        Jobs::WaitForCompletionAndDelete(saveItemsJob);
+    tempAlloc->Reset();
 
     // HOT-RELOAD: Before finalizing the data, we get all the current data pointers
     AssetDataPair* oldDatas = nullptr;
@@ -1170,30 +1212,74 @@ static void Asset::_LoadGroupTask(uint32, void* userData)
     
     // Strip unwanted stuff and save it to persistent memory
     // Note: 'AssetDataAlloc' doesn't need any thread protection, because it is guaranteed that only one thread uses it at a time 
-    // Use the magic number 4 for now. Because it's a good balance with quad-channel RAM (seems to be)
-    // TODO: maybe skipe smaller memcpys because they don't worth creating a task for ? (profile)
-    uint32 numCopyDispatches = Min(4u, batchCount);
-    for (uint32 i = 0; i < queuedAssets.Count(); i += numCopyDispatches) {
-        uint32 sliceCount = Min(numCopyDispatches, loadList.Count() - i);
-        AssetDataCopyTaskData* dataCopyItems = Mem::AllocTyped<AssetDataCopyTaskData>(sliceCount, tempAlloc);
+    for (uint32 i = 0; i < queuedAssets.Count(); i++) {
+        AssetQueuedItem& qa = queuedAssets[i];
+        AssetDataInternal* srcData = qa.data;
 
-        for (uint32 k = 0; k < sliceCount; k++) {
-            const AssetQueuedItem& qa = queuedAssets[i + k];
-            dataCopyItems[k].header = loadList[qa.indexInLoadList];
-            dataCopyItems[k].destData = (AssetDataInternal*)Mem::Alloc(qa.dataSize, &gAssetMan.assetDataAlloc);
-            dataCopyItems[k].sourceData = qa.data;
-            dataCopyItems[k].sourceDataSize = qa.dataSize;
+        // Make a copy of GPU objects, but strip their content
+        if (srcData->numGpuObjects) {
+            AssetDataInternal::GpuObject* firstGpuObj = srcData->gpuObjects.Get();
+            AssetDataInternal::GpuObject* srcGpuObj = firstGpuObj;
+            AssetDataInternal::GpuObject* dstGpuObjs = Mem::AllocTyped<AssetDataInternal::GpuObject>(srcData->numGpuObjects, tempAlloc);
+            void** handlePointers = Mem::AllocTyped<void*>(srcData->numGpuObjects, tempAlloc);
+            uint32 gpuObjIdx = 0;
+            while (srcGpuObj) {
+                switch (srcGpuObj->type) {
+                case AssetDataInternal::GpuObjectType::Buffer:
+                    handlePointers[gpuObjIdx] = srcGpuObj->bufferDesc.bindToBuffer.Get();
+                    break;
+                case AssetDataInternal::GpuObjectType::Image:
+                    handlePointers[gpuObjIdx] = srcGpuObj->imageDesc.bindToImage.Get();
+                    break;
+                }
+
+                dstGpuObjs[gpuObjIdx] = *srcGpuObj;
+                if (gpuObjIdx > 0)
+                    dstGpuObjs[gpuObjIdx-1].next = &dstGpuObjs[gpuObjIdx];
+                ++gpuObjIdx;
+
+                srcGpuObj = srcGpuObj->next.Get();
+            }
+
+            // Overwrite the gpu objects on the source data
+            // It's garanteed that our data is smaller than the original GPU data because we stripped all content
+            uint32 newGpuObjsSize = uint32(tempAlloc->GetOffset() - tempAlloc->GetPointerOffset(dstGpuObjs));
+            memcpy(firstGpuObj, dstGpuObjs, newGpuObjsSize);
+            uint32 dataSize = uint32(uintptr(firstGpuObj) - uintptr(srcData)) + newGpuObjsSize;
+            ASSERT(dataSize <= qa.dataSize);
+            qa.dataSize = dataSize;
+
+            // Now that we have the new data, Re-assign all handle pointers
+            srcGpuObj = firstGpuObj;
+            gpuObjIdx = 0;
+            while (srcGpuObj) {
+                switch (srcGpuObj->type) {
+                case AssetDataInternal::GpuObjectType::Buffer:
+                    srcGpuObj->bufferDesc.bindToBuffer = (GfxBufferHandle*)handlePointers[gpuObjIdx];
+                    srcGpuObj->bufferDesc.content.SetNull();
+                    break;
+                case AssetDataInternal::GpuObjectType::Image:
+                    srcGpuObj->imageDesc.bindToImage = (GfxImageHandle*)handlePointers[gpuObjIdx];
+                    srcGpuObj->imageDesc.content.SetNull();
+                    break;
+                }
+                srcGpuObj = srcGpuObj->next.Get();
+                ++gpuObjIdx;
+            }
         }
 
-        JobsHandle batchJob = Jobs::Dispatch(JobsType::LongTask, _DataCopyTask, dataCopyItems, sliceCount);
-        Jobs::WaitForCompletionAndDelete(batchJob);
-
-        tempAlloc->Reset();
-    }
-
-    for (AssetQueuedItem& qa : queuedAssets) {
         AssetDataHeader* header = loadList[qa.indexInLoadList];
-        Atomic::StoreExplicit(&header->state, uint32(AssetState::Loaded), AtomicMemoryOrder::Relaxed);
+        header->data = Mem::AllocCopyRawBytes<AssetDataInternal>(srcData, qa.dataSize, &gAssetMan.assetDataAlloc);
+    }
+    tempAlloc->Reset();
+
+    // Set loaded flag to all newly loaded assets, so we can fetch and lock their data by the user
+    // Note that we have to wait for GPU data upload to finish submission
+    for (AssetQueuedItem& qa : queuedAssets) {
+        if (!qa.hasPendingGpuResource) {
+            AssetDataHeader* header = loadList[qa.indexInLoadList];
+            Atomic::StoreExplicit(&header->state, uint32(AssetState::Loaded), AtomicMemoryOrder::Relaxed);
+        }
     }
 
     // HOT-RELOAD: now we have the previous data and newly loaded asset. Run the callbacks to do asset post-processing 
@@ -1222,6 +1308,7 @@ static void Asset::_LoadGroupTask(uint32, void* userData)
 
     queuedAssets.Free();
     loadList.Free();
+    loadListHandles.Free();
 
     // Reset arena allocators, getting ready for the next group
     for (uint32 i = 0; i < gAssetMan.memArena.numAllocators; i++) {
@@ -1303,19 +1390,13 @@ static void Asset::_UnloadGroupTask(uint32, void* userData)
         AssetDataInternal::GpuObject* gpuObj = data->gpuObjects.Get();
         while (gpuObj) {
             switch (gpuObj->type) {
-            case AssetDataInternal::GpuObjectType::Texture:
-                ASSERT(!gpuObj->textureDesc.bindToImage.IsNull());
-                #if !TEST_NEW_GRAPHICS
-                gfxDestroyImageDeferred(*gpuObj->textureDesc.bindToImage.Get());
-                #else
-                GfxBackend::DestroyImage(*gpuObj->textureDesc.bindToImage.Get());
-                #endif
+            case AssetDataInternal::GpuObjectType::Image:
+                ASSERT(!gpuObj->imageDesc.bindToImage.IsNull());
+                GfxBackend::DestroyImage(*gpuObj->imageDesc.bindToImage.Get());
                 break;
             case AssetDataInternal::GpuObjectType::Buffer:
                 ASSERT(!gpuObj->bufferDesc.bindToBuffer.IsNull());
-                #if !TEST_NEW_GRAPHICS
-                gfxDestroyBufferDeferred(*gpuObj->bufferDesc.bindToBuffer.Get());
-                #endif
+                GfxBackend::DestroyBuffer(*gpuObj->bufferDesc.bindToBuffer.Get());
                 break;
             }
             gpuObj = gpuObj->next.Get();
@@ -2027,6 +2108,7 @@ void Asset::Update()
 void AssetData::AddDependency(AssetHandle* bindToHandle, const AssetParams& params)
 {
     ASSERT_MSG(!mData->objData.IsNull(), "You must SetObjData before adding dependencies");
+    ASSERT_MSG(mData->numGpuObjects == 0, "AddDependency must be called before adding Gpu objects");
 
     uint32 typeManIdx = gAssetMan.typeManagers.FindIf(
         [typeId = params.typeId](const AssetTypeManager& typeMgr) { return typeMgr.fourcc == typeId; });
@@ -2050,29 +2132,18 @@ void AssetData::AddDependency(AssetHandle* bindToHandle, const AssetParams& para
     ++mData->numDependencies;
 }
 
-void AssetData::AddGpuTextureObject(GfxImageHandle* bindToImage, const GfxImageDesc& desc)
+void AssetData::AddGpuTextureObject(GfxImageHandle* bindToImage, const GfxBackendImageDesc& desc, uint32 contentSize, const void* content)
 {
     ASSERT_MSG(!mData->objData.IsNull(), "You must SetObjData before adding texture objects");
 
     AssetDataInternal::GpuObject* gpuObj = Mem::AllocZeroTyped<AssetDataInternal::GpuObject>(1, mAlloc);
 
-    gpuObj->type = AssetDataInternal::GpuObjectType::Texture;
-    gpuObj->textureDesc.bindToImage = Asset::_TranslatePointer<GfxImageHandle>(bindToImage, mOrigObjPtr, mData->objData.Get());
-    gpuObj->textureDesc.width = desc.width;
-    gpuObj->textureDesc.height = desc.height;
-    gpuObj->textureDesc.numMips = desc.numMips;
-    gpuObj->textureDesc.format = desc.format;
-    gpuObj->textureDesc.usage = desc.usage;
-    gpuObj->textureDesc.anisotropy = desc.anisotropy;
-    gpuObj->textureDesc.samplerFilter = desc.samplerFilter;
-    gpuObj->textureDesc.samplerWrap = desc.samplerWrap;
-    gpuObj->textureDesc.borderColor = desc.borderColor;
-    gpuObj->textureDesc.size = desc.size;
-    ASSERT(desc.content);
-    ASSERT(desc.size <= UINT32_MAX);
-    gpuObj->textureDesc.content = Mem::AllocCopy<uint8>((const uint8*)desc.content, (uint32)desc.size, mAlloc);
-    if (desc.mipOffsets)
-        gpuObj->textureDesc.mipOffsets = Mem::AllocCopy<uint32>(desc.mipOffsets, desc.numMips,mAlloc);
+    gpuObj->type = AssetDataInternal::GpuObjectType::Image;
+    gpuObj->imageDesc.bindToImage = Asset::_TranslatePointer<GfxImageHandle>(bindToImage, mOrigObjPtr, mData->objData.Get());
+    gpuObj->imageDesc.createDesc = desc;
+    ASSERT(content);
+    gpuObj->imageDesc.contentSize = contentSize;
+    gpuObj->imageDesc.content = Mem::AllocCopy<uint8>((const uint8*)content, contentSize, mAlloc);
     
     if (mLastGpuObjectPtr) 
         ((AssetDataInternal::GpuObject*)mLastGpuObjectPtr)->next = gpuObj;
@@ -2084,7 +2155,7 @@ void AssetData::AddGpuTextureObject(GfxImageHandle* bindToImage, const GfxImageD
     ++mData->numGpuObjects;
 }
 
-void AssetData::AddGpuBufferObject(GfxBufferHandle* bindToBuffer, const GfxBufferDesc& desc)
+void AssetData::AddGpuBufferObject(GfxBufferHandle* bindToBuffer, const GfxBackendBufferDesc& desc, const void * content)
 {
     ASSERT_MSG(!mData->objData.IsNull(), "You must SetObjData before adding buffer objects");
 
@@ -2092,12 +2163,10 @@ void AssetData::AddGpuBufferObject(GfxBufferHandle* bindToBuffer, const GfxBuffe
 
     gpuObj->type = AssetDataInternal::GpuObjectType::Buffer;
     gpuObj->bufferDesc.bindToBuffer = Asset::_TranslatePointer<GfxBufferHandle>(bindToBuffer, mOrigObjPtr, mData->objData.Get());
-    gpuObj->bufferDesc.size = desc.size;
-    gpuObj->bufferDesc.type = desc.type;
-    gpuObj->bufferDesc.usage = desc.usage;
-    ASSERT(desc.content);
-    ASSERT(desc.size <= UINT32_MAX);
-    gpuObj->bufferDesc.content = Mem::AllocCopy<uint8>((const uint8*)desc.content, uint32(desc.size), mAlloc);
+    gpuObj->bufferDesc.createDesc = desc;
+    ASSERT(content);
+    ASSERT(desc.sizeBytes <= UINT32_MAX);
+    gpuObj->bufferDesc.content = Mem::AllocCopy<uint8>((const uint8*)content, uint32(desc.sizeBytes), mAlloc);
     
     if (mLastGpuObjectPtr) 
         ((AssetDataInternal::GpuObject*)mLastGpuObjectPtr)->next = gpuObj;
