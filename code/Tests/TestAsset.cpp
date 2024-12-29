@@ -266,7 +266,7 @@ struct AppImpl : AppCallbacks
                         Mat4 worldMat = Mat4::Translate(x, y, 0.5f);
                         cmd.PushConstants(mPipelineLayout, "ModelTransform", &worldMat, sizeof(worldMat));
     
-                        GfxBackendBindingDesc bindings[] = {
+                        GfxBindingDesc bindings[] = {
                             {
                                 .name = "FrameTransform",
                                 .buffer = mUniformBuffer,
@@ -434,7 +434,7 @@ struct AppImpl : AppCallbacks
         mCam->HandleMovementKeyboard(dt, 40.0f, 20.0f);
 
         Engine::BeginFrame(dt);
-        GfxBackendCommandBuffer cmd = GfxBackend::BeginCommandBuffer(GfxBackendQueueType::Graphics);
+        GfxBackendCommandBuffer cmd = GfxBackend::BeginCommandBuffer(GfxQueueType::Graphics);
         
         uint16 width = App::GetFramebufferWidth();
         uint16 height = App::GetFramebufferHeight();
@@ -445,10 +445,10 @@ struct AppImpl : AppCallbacks
                 .projMat = GfxBackend::GetSwapchainTransformMat() * mCam->GetPerspectiveMat(width, height)
             };
 
-            GfxBackendBufferDesc stagingDesc {
+            GfxBufferDesc stagingDesc {
                 .sizeBytes = sizeof(ubo),
-                .usageFlags = GfxBackendBufferUsageFlags::TransferSrc,
-                .arena = GfxBackendMemoryArena::TransientCPU
+                .usageFlags = GfxBufferUsageFlags::TransferSrc,
+                .arena = GfxMemoryArena::TransientCPU
             };
             GfxBufferHandle stagingBuff = GfxBackend::CreateBuffer(stagingDesc);
 
@@ -457,7 +457,7 @@ struct AppImpl : AppCallbacks
             *dstUbo = ubo;
             cmd.FlushBuffer(stagingBuff);
 
-            cmd.TransitionBuffer(mUniformBuffer, GfxBackendBufferTransition::TransferWrite);
+            cmd.TransitionBuffer(mUniformBuffer, GfxBufferTransition::TransferWrite);
             cmd.CopyBufferToBuffer(stagingBuff, mUniformBuffer, GfxShaderStage::Vertex);
 
             GfxBackend::DestroyBuffer(stagingBuff);
@@ -482,7 +482,7 @@ struct AppImpl : AppCallbacks
             .hasDepth = true
         };
 
-        cmd.TransitionImage(mRenderTargetDepth, GfxBackendImageTransition::RenderTarget);
+        cmd.TransitionImage(mRenderTargetDepth, GfxImageTransition::RenderTarget);
         cmd.BeginRenderPass(pass);
 
         GfxViewport viewport {
@@ -515,7 +515,7 @@ struct AppImpl : AppCallbacks
         }
 
         GfxBackend::EndCommandBuffer(cmd);
-        GfxBackend::SubmitQueue(GfxBackendQueueType::Graphics);
+        GfxBackend::SubmitQueue(GfxQueueType::Graphics);
         Engine::EndFrame();
     }
     
@@ -552,13 +552,13 @@ struct AppImpl : AppCallbacks
 
         AssetObjPtrScope<GfxShader> shader(self->mUnlitShader);
 
-        GfxBackendPipelineLayoutDesc::PushConstant pushConstant {
+        GfxPipelineLayoutDesc::PushConstant pushConstant {
             .name = "ModelTransform",
             .stagesUsed = GfxShaderStage::Vertex,
             .size = sizeof(ModelTransform)
         };
 
-        const GfxBackendPipelineLayoutDesc::Binding bindingLayout[] = {
+        const GfxPipelineLayoutDesc::Binding bindingLayout[] = {
             {
                 .name = "FrameTransform",
                 .type = GfxDescriptorType::UniformBuffer,
@@ -571,7 +571,7 @@ struct AppImpl : AppCallbacks
             }
         };
 
-        GfxBackendPipelineLayoutDesc pipelineLayoutDesc {
+        GfxPipelineLayoutDesc pipelineLayoutDesc {
             .numBindings = CountOf(bindingLayout),
             .bindings = bindingLayout,
             .numPushConstants = 1,
@@ -580,15 +580,15 @@ struct AppImpl : AppCallbacks
 
         self->mPipelineLayout = GfxBackend::CreatePipelineLayout(*shader, pipelineLayoutDesc);
 
-        GfxBackendBufferDesc uniformBufferDesc {
+        GfxBufferDesc uniformBufferDesc {
             .sizeBytes = sizeof(FrameTransform),
-            .usageFlags = GfxBackendBufferUsageFlags::TransferDst|GfxBackendBufferUsageFlags::Uniform,
-            .arena = GfxBackendMemoryArena::PersistentGPU
+            .usageFlags = GfxBufferUsageFlags::TransferDst|GfxBufferUsageFlags::Uniform,
+            .arena = GfxMemoryArena::PersistentGPU
         };
 
         self->mUniformBuffer = GfxBackend::CreateBuffer(uniformBufferDesc);
 
-        GfxBackendGraphicsPipelineDesc pipelineDesc {
+        GfxGraphicsPipelineDesc pipelineDesc {
             .inputAssemblyTopology = GfxPrimitiveTopology::TriangleList,
             .numVertexInputAttributes = CountOf(vertexInputAttDescs),
             .vertexInputAttributes = vertexInputAttDescs,
@@ -613,13 +613,13 @@ struct AppImpl : AppCallbacks
 
         self->mPipeline = GfxBackend::CreateGraphicsPipeline(*shader, self->mPipelineLayout, pipelineDesc);
 
-        GfxBackendImageDesc desc {
+        GfxImageDesc desc {
             .width = App::GetFramebufferWidth(),
             .height = App::GetFramebufferHeight(),
-            .multisampleFlags = GfxBackendSampleCountFlags::SampleCount1,
+            .multisampleFlags = GfxSampleCountFlags::SampleCount1,
             .format = GfxFormat::D24_UNORM_S8_UINT,
-            .usageFlags = GfxBackendImageUsageFlags::DepthStencilAttachment,
-            .arena = GfxBackendMemoryArena::PersistentGPU
+            .usageFlags = GfxImageUsageFlags::DepthStencilAttachment,
+            .arena = GfxMemoryArena::PersistentGPU
         };
 
         self->mRenderTargetDepth = GfxBackend::CreateImage(desc);
