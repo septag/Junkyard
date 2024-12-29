@@ -73,14 +73,14 @@ struct AssetDataInternal
     struct GpuBufferDesc
     {
         RelativePtr<GfxBufferHandle> bindToBuffer;
-        GfxBackendBufferDesc createDesc;
+        GfxBufferDesc createDesc;
         RelativePtr<uint8> content;
     };
 
     struct GpuImageDesc
     {
         RelativePtr<GfxImageHandle> bindToImage;
-        GfxBackendImageDesc createDesc;
+        GfxImageDesc createDesc;
         RelativePtr<uint8> content;
         uint32 contentSize;
     };
@@ -1066,7 +1066,7 @@ static void Asset::_LoadGroupTask(uint32, void* userData)
     // Create GPU objects
     {
         GfxBackend::BeginRenderFrameSync();
-        GfxBackendCommandBuffer cmd = GfxBackend::BeginCommandBuffer(GfxBackendQueueType::Transfer);
+        GfxBackendCommandBuffer cmd = GfxBackend::BeginCommandBuffer(GfxQueueType::Transfer);
 
         using GpuImageDescHandlePair = Pair<AssetDataInternal::GpuImageDesc*, AssetHandle>;
         using GpuBufferDescHandlePair = Pair<AssetDataInternal::GpuBufferDesc*, AssetHandle>;
@@ -1092,8 +1092,8 @@ static void Asset::_LoadGroupTask(uint32, void* userData)
 
         if (!images.IsEmpty()) {
             uint32 numImages = images.Count();
-            GfxBackendImageDesc* descs = Mem::AllocTyped<GfxBackendImageDesc>(numImages, tempAlloc);
-            GfxBackendBufferDesc* stagingBufferDescs = Mem::AllocTyped<GfxBackendBufferDesc>(numImages, tempAlloc);
+            GfxImageDesc* descs = Mem::AllocTyped<GfxImageDesc>(numImages, tempAlloc);
+            GfxBufferDesc* stagingBufferDescs = Mem::AllocTyped<GfxBufferDesc>(numImages, tempAlloc);
             GfxImageHandle* handles = Mem::AllocZeroTyped<GfxImageHandle>(numImages, tempAlloc);
             GfxBufferHandle* bufferHandles = Mem::AllocZeroTyped<GfxBufferHandle>(numImages, tempAlloc);
 
@@ -1101,15 +1101,15 @@ static void Asset::_LoadGroupTask(uint32, void* userData)
                 descs[i] = images[i].first->createDesc;
                 stagingBufferDescs[i] = {
                     .sizeBytes = images[i].first->contentSize,
-                    .usageFlags = GfxBackendBufferUsageFlags::TransferSrc,
-                    .arena = GfxBackendMemoryArena::TransientCPU
+                    .usageFlags = GfxBufferUsageFlags::TransferSrc,
+                    .arena = GfxMemoryArena::TransientCPU
                 };
             }
 
             GfxBackend::BatchCreateImage(numImages, descs, handles);
             GfxBackend::BatchCreateBuffer(numImages, stagingBufferDescs, bufferHandles);
 
-            GfxBackendMapResult* mapResults = Mem::AllocZeroTyped<GfxBackendMapResult>(numImages, tempAlloc);
+            GfxMapResult* mapResults = Mem::AllocZeroTyped<GfxMapResult>(numImages, tempAlloc);
             cmd.BatchMapBuffer(numImages, bufferHandles, mapResults);
 
             for (uint32 i = 0; i < numImages; i++) {
@@ -1119,7 +1119,7 @@ static void Asset::_LoadGroupTask(uint32, void* userData)
 
             cmd.BatchFlushBuffer(numImages, bufferHandles);
 
-            GfxBackendCopyBufferToImageParams* copyParams = Mem::AllocTyped<GfxBackendCopyBufferToImageParams>(numImages, tempAlloc);
+            GfxCopyBufferToImageParams* copyParams = Mem::AllocTyped<GfxCopyBufferToImageParams>(numImages, tempAlloc);
             for (uint32 i = 0; i < numImages; i++) {
                 copyParams[i] = {
                     .srcHandle = bufferHandles[i],
@@ -1142,8 +1142,8 @@ static void Asset::_LoadGroupTask(uint32, void* userData)
 
         if (!buffers.IsEmpty()) {
             uint32 numBuffers = buffers.Count();
-            GfxBackendBufferDesc* descs = Mem::AllocTyped<GfxBackendBufferDesc>(numBuffers, tempAlloc);
-            GfxBackendBufferDesc* stagingBufferDescs = Mem::AllocTyped<GfxBackendBufferDesc>(numBuffers, tempAlloc);
+            GfxBufferDesc* descs = Mem::AllocTyped<GfxBufferDesc>(numBuffers, tempAlloc);
+            GfxBufferDesc* stagingBufferDescs = Mem::AllocTyped<GfxBufferDesc>(numBuffers, tempAlloc);
             GfxBufferHandle* handles = Mem::AllocZeroTyped<GfxBufferHandle>(numBuffers, tempAlloc);
             GfxBufferHandle* stagingHandles = Mem::AllocZeroTyped<GfxBufferHandle>(numBuffers, tempAlloc);
 
@@ -1151,15 +1151,15 @@ static void Asset::_LoadGroupTask(uint32, void* userData)
                 descs[i] = buffers[i].first->createDesc;
                 stagingBufferDescs[i] = {
                     .sizeBytes = buffers[i].first->createDesc.sizeBytes,
-                    .usageFlags = GfxBackendBufferUsageFlags::TransferSrc,
-                    .arena = GfxBackendMemoryArena::TransientCPU
+                    .usageFlags = GfxBufferUsageFlags::TransferSrc,
+                    .arena = GfxMemoryArena::TransientCPU
                 };
             }
 
             GfxBackend::BatchCreateBuffer(numBuffers, descs, handles);
             GfxBackend::BatchCreateBuffer(numBuffers, stagingBufferDescs, stagingHandles);
 
-            GfxBackendMapResult* mapResults = Mem::AllocZeroTyped<GfxBackendMapResult>(numBuffers, tempAlloc);
+            GfxMapResult* mapResults = Mem::AllocZeroTyped<GfxMapResult>(numBuffers, tempAlloc);
             cmd.BatchMapBuffer(numBuffers, stagingHandles, mapResults);
 
             for (uint32 i = 0; i < numBuffers; i++) {
@@ -1168,7 +1168,7 @@ static void Asset::_LoadGroupTask(uint32, void* userData)
             }
             cmd.BatchFlushBuffer(numBuffers, stagingHandles);
 
-            GfxBackendCopyBufferToBufferParams* copyParams = Mem::AllocTyped<GfxBackendCopyBufferToBufferParams>(numBuffers, tempAlloc);
+            GfxCopyBufferToBufferParams* copyParams = Mem::AllocTyped<GfxCopyBufferToBufferParams>(numBuffers, tempAlloc);
             for (uint32 i = 0; i < numBuffers; i++) {
                 copyParams[i] = {
                     .srcHandle = stagingHandles[i],
@@ -1189,7 +1189,7 @@ static void Asset::_LoadGroupTask(uint32, void* userData)
         }
 
         GfxBackend::EndCommandBuffer(cmd);
-        GfxBackend::SubmitQueue(GfxBackendQueueType::Transfer, GfxBackendQueueType::Graphics);
+        GfxBackend::SubmitQueue(GfxQueueType::Transfer, GfxQueueType::Graphics);
         GfxBackend::EndRenderFrameSync();
     }
 
@@ -2132,7 +2132,7 @@ void AssetData::AddDependency(AssetHandle* bindToHandle, const AssetParams& para
     ++mData->numDependencies;
 }
 
-void AssetData::AddGpuTextureObject(GfxImageHandle* bindToImage, const GfxBackendImageDesc& desc, uint32 contentSize, const void* content)
+void AssetData::AddGpuTextureObject(GfxImageHandle* bindToImage, const GfxImageDesc& desc, uint32 contentSize, const void* content)
 {
     ASSERT_MSG(!mData->objData.IsNull(), "You must SetObjData before adding texture objects");
 
@@ -2155,7 +2155,7 @@ void AssetData::AddGpuTextureObject(GfxImageHandle* bindToImage, const GfxBacken
     ++mData->numGpuObjects;
 }
 
-void AssetData::AddGpuBufferObject(GfxBufferHandle* bindToBuffer, const GfxBackendBufferDesc& desc, const void * content)
+void AssetData::AddGpuBufferObject(GfxBufferHandle* bindToBuffer, const GfxBufferDesc& desc, const void * content)
 {
     ASSERT_MSG(!mData->objData.IsNull(), "You must SetObjData before adding buffer objects");
 

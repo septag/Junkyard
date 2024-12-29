@@ -72,7 +72,7 @@ namespace DebugDraw
             }
         };
 
-        GfxBackendPipelineLayoutDesc::PushConstant pushConstant {
+        GfxPipelineLayoutDesc::PushConstant pushConstant {
             .name = "Transform",
             .stagesUsed = GfxShaderStage::Vertex,
             .size = sizeof(DebugDrawShaderTransform)
@@ -81,14 +81,14 @@ namespace DebugDraw
         AssetObjPtrScope<GfxShader> shader(gDebugDraw.shaderAsset);
         ASSERT(shader);
 
-        GfxBackendPipelineLayoutDesc pipelineLayoutDesc {
+        GfxPipelineLayoutDesc pipelineLayoutDesc {
             .numPushConstants = 1,
             .pushConstants = &pushConstant
         };
 
         gDebugDraw.pipelineLayout = GfxBackend::CreatePipelineLayout(*shader, pipelineLayoutDesc);
 
-        GfxBackendGraphicsPipelineDesc pipelineDesc {
+        GfxGraphicsPipelineDesc pipelineDesc {
             .inputAssemblyTopology = GfxPrimitiveTopology::LineList,
             .numVertexInputAttributes = CountOf(vertexInputAttDescs),
             .vertexInputAttributes = vertexInputAttDescs,
@@ -111,10 +111,10 @@ namespace DebugDraw
         gDebugDraw.pipeline = GfxBackend::CreateGraphicsPipeline(*shader, gDebugDraw.pipelineLayout, pipelineDesc);
         ASSERT(gDebugDraw.pipeline.IsValid());
 
-        GfxBackendBufferDesc vertexBufferDesc {
+        GfxBufferDesc vertexBufferDesc {
             .sizeBytes = sizeof(DebugDrawShaderVertex)*DEBUGDRAW_MAX_VERTICES,
-            .usageFlags = GfxBackendBufferUsageFlags::TransferDst | GfxBackendBufferUsageFlags::Vertex,
-            .arena = GfxBackendMemoryArena::PersistentGPU
+            .usageFlags = GfxBufferUsageFlags::TransferDst | GfxBufferUsageFlags::Vertex,
+            .arena = GfxMemoryArena::PersistentGPU
         };
         gDebugDraw.vertexBuffer = GfxBackend::CreateBuffer(vertexBufferDesc);       
     }
@@ -133,10 +133,10 @@ void DebugDraw::BeginDraw(GfxBackendCommandBuffer cmd, uint16 viewWidth, uint16 
     gDebugDraw.vertexIndex = 0;
 
     size_t vertexBufferSize = sizeof(DebugDrawShaderVertex)*DEBUGDRAW_MAX_VERTICES;
-    GfxBackendBufferDesc stagingVertexBufferDesc {
+    GfxBufferDesc stagingVertexBufferDesc {
         .sizeBytes = vertexBufferSize,
-        .usageFlags = GfxBackendBufferUsageFlags::TransferSrc,
-        .arena = GfxBackendMemoryArena::TransientCPU
+        .usageFlags = GfxBufferUsageFlags::TransferSrc,
+        .arena = GfxMemoryArena::TransientCPU
     };
     gDebugDraw.stagingVertexBuffer = GfxBackend::CreateBuffer(stagingVertexBufferDesc);
     ASSERT(gDebugDraw.stagingVertexBuffer.IsValid());
@@ -152,7 +152,7 @@ void DebugDraw::EndDraw(GfxBackendCommandBuffer cmd, const Camera& cam, GfxImage
     ASSERT_MSG(!gDebugDraw.drawItems.IsEmpty(), "No DrawXXX commands are submitted");
 
     cmd.FlushBuffer(gDebugDraw.stagingVertexBuffer);
-    cmd.TransitionBuffer(gDebugDraw.vertexBuffer, GfxBackendBufferTransition::TransferWrite);
+    cmd.TransitionBuffer(gDebugDraw.vertexBuffer, GfxBufferTransition::TransferWrite);
     cmd.CopyBufferToBuffer(gDebugDraw.stagingVertexBuffer, gDebugDraw.vertexBuffer, GfxShaderStage::Vertex);
 
     Int2 viewExtents = gDebugDraw.viewExtents;

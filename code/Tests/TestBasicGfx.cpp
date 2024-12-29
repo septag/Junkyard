@@ -54,16 +54,16 @@ struct AppImpl final : AppCallbacks
         AppImpl* self = (AppImpl*)userData;
 
         {
-            GfxBackendImageDesc desc {
+            GfxImageDesc desc {
                 .width = App::GetFramebufferWidth(),
                 .height = App::GetFramebufferHeight(),
                 .format = GfxFormat::R16G16B16A16_SFLOAT,
-                .usageFlags = GfxBackendImageUsageFlags::TransferSrc|GfxBackendImageUsageFlags::Storage|GfxBackendImageUsageFlags::TransferDst,
+                .usageFlags = GfxImageUsageFlags::TransferSrc|GfxImageUsageFlags::Storage|GfxImageUsageFlags::TransferDst,
             };
             self->mImage = GfxBackend::CreateImage(desc);
         }
 
-        const GfxBackendPipelineLayoutDesc::Binding bindings[] {
+        const GfxPipelineLayoutDesc::Binding bindings[] {
             {
                 .name = "MainImage",
                 .type = GfxDescriptorType::StorageImage,
@@ -71,7 +71,7 @@ struct AppImpl final : AppCallbacks
             }
         };
 
-        const GfxBackendPipelineLayoutDesc layoutDesc {
+        const GfxPipelineLayoutDesc layoutDesc {
             .numBindings = 1,
             .bindings = bindings
         };
@@ -155,23 +155,23 @@ struct AppImpl final : AppCallbacks
         }
 
 
-        GfxBackendCommandBuffer cmd = GfxBackend::BeginCommandBuffer(GfxBackendQueueType::Graphics);
+        GfxBackendCommandBuffer cmd = GfxBackend::BeginCommandBuffer(GfxQueueType::Graphics|GfxQueueType::Compute);
 
         cmd.BindPipeline(mPipeline);
 
-        GfxBackendBindingDesc bindings[] {
+        GfxBindingDesc bindings[] {
             {
                 .name = "MainImage",
                 .image = mImage
             }
         };
 
-        const GfxBackendImageDesc& imageDesc = GfxBackend::GetImageDesc(mImage);
+        const GfxImageDesc& imageDesc = GfxBackend::GetImageDesc(mImage);
 
-        cmd.TransitionImage(mImage, GfxBackendImageTransition::ComputeWrite);
+        cmd.TransitionImage(mImage, GfxImageTransition::ComputeWrite);
         cmd.PushBindings(mPipelineLayout, CountOf(bindings), bindings);
         cmd.Dispatch((uint32)M::Ceil(float(imageDesc.width)/16.0f), (uint32)M::Ceil(float(imageDesc.height/16.0f)), 1);
-        cmd.TransitionImage(mImage, GfxBackendImageTransition::CopySource);
+        cmd.TransitionImage(mImage, GfxImageTransition::CopySource);
         cmd.CopyImageToSwapchain(mImage);
 
         // Finished working with mBuffer ?
@@ -180,7 +180,7 @@ struct AppImpl final : AppCallbacks
         ImGui::DrawFrame(cmd);
 
         GfxBackend::EndCommandBuffer(cmd);
-        GfxBackend::SubmitQueue(GfxBackendQueueType::Graphics);
+        GfxBackend::SubmitQueue(GfxQueueType::Graphics);
 
 
         Engine::EndFrame();

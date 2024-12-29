@@ -23,13 +23,13 @@ struct GfxBackendCommandBuffer
     void CopyBufferToImage(GfxBufferHandle srcHandle, GfxImageHandle dstHandle, GfxShaderStage stagesUsed = GfxShaderStage::All,
                            uint16 startMipIndex = 0, uint16 mipCount = UINT16_MAX);
 
-    void BatchCopyBufferToBuffer(uint32 numParams, const GfxBackendCopyBufferToBufferParams* params);
-    void BatchCopyBufferToImage(uint32 numParams, const GfxBackendCopyBufferToImageParams* params);
+    void BatchCopyBufferToBuffer(uint32 numParams, const GfxCopyBufferToBufferParams* params);
+    void BatchCopyBufferToImage(uint32 numParams, const GfxCopyBufferToImageParams* params);
 
     void MapBuffer(GfxBufferHandle buffHandle, void** outPtr, size_t* outSizeBytes = nullptr);
     void FlushBuffer(GfxBufferHandle buffHandle);
 
-    void BatchMapBuffer(uint32 numParams, const GfxBufferHandle* handles, GfxBackendMapResult* mapResults);
+    void BatchMapBuffer(uint32 numParams, const GfxBufferHandle* handles, GfxMapResult* mapResults);
     void BatchFlushBuffer(uint32 numBuffers, const GfxBufferHandle* bufferHandles);
 
     void ClearImageColor(GfxImageHandle imgHandle, Color color);
@@ -39,7 +39,7 @@ struct GfxBackendCommandBuffer
     void PushConstants(GfxPipelineLayoutHandle layoutHandle, const char* name, const void* data, uint32 dataSize);
     template <typename _T> void PushConstants(GfxPipelineLayoutHandle layout, const char* name, const _T& data);
 
-    void PushBindings(GfxPipelineLayoutHandle layoutHandle, uint32 numBindings, const GfxBackendBindingDesc* bindings);
+    void PushBindings(GfxPipelineLayoutHandle layoutHandle, uint32 numBindings, const GfxBindingDesc* bindings);
 
     void BindPipeline(GfxPipelineHandle pipeHandle);
     void BindVertexBuffers(uint32 firstBinding, uint32 numBindings, const GfxBufferHandle* vertexBuffers, const uint64* offsets);
@@ -47,8 +47,8 @@ struct GfxBackendCommandBuffer
 
     void Dispatch(uint32 groupCountX, uint32 groupCountY, uint32 groupCountZ);
 
-    void TransitionBuffer(GfxBufferHandle buffHandle, GfxBackendBufferTransition transition);
-    void TransitionImage(GfxImageHandle imgHandle, GfxBackendImageTransition transition);
+    void TransitionBuffer(GfxBufferHandle buffHandle, GfxBufferTransition transition);
+    void TransitionImage(GfxImageHandle imgHandle, GfxImageTransition transition);
 
     void Draw(uint32 vertexCount, uint32 instanceCount, uint32 firstVertex, uint32 firstInstance);
     void DrawIndexed(uint32 indexCount, uint32 instanceCount, uint32 firstIndex, uint32 vertexOffset, uint32 firstInstance);
@@ -65,30 +65,30 @@ namespace GfxBackend
     void Begin();
     void End();
 
-    void SubmitQueue(GfxBackendQueueType queueType, GfxBackendQueueType dependentQueues = GfxBackendQueueType::None);
+    void SubmitQueue(GfxQueueType queueType, GfxQueueType dependentQueues = GfxQueueType::None);
 
-    [[nodiscard]] GfxBackendCommandBuffer BeginCommandBuffer(GfxBackendQueueType queueType);
+    [[nodiscard]] GfxBackendCommandBuffer BeginCommandBuffer(GfxQueueType queueType);
     void EndCommandBuffer(GfxBackendCommandBuffer& cmdBuffer);
 
-    GfxImageHandle CreateImage(const GfxBackendImageDesc& desc);
+    GfxImageHandle CreateImage(const GfxImageDesc& desc);
     void DestroyImage(GfxImageHandle handle);
-    void BatchCreateImage(uint32 numImages, const GfxBackendImageDesc* descs, GfxImageHandle* outHandles);
+    void BatchCreateImage(uint32 numImages, const GfxImageDesc* descs, GfxImageHandle* outHandles);
     void BatchDestroyImage(uint32 numImages, const GfxImageHandle* handles);
-    const GfxBackendImageDesc& GetImageDesc(GfxImageHandle handle);
+    const GfxImageDesc& GetImageDesc(GfxImageHandle handle);
 
-    GfxPipelineLayoutHandle CreatePipelineLayout(const GfxShader& shader, const GfxBackendPipelineLayoutDesc& desc);
+    GfxPipelineLayoutHandle CreatePipelineLayout(const GfxShader& shader, const GfxPipelineLayoutDesc& desc);
     void DestroyPipelineLayout(GfxPipelineLayoutHandle handle);
 
-    GfxBufferHandle CreateBuffer(const GfxBackendBufferDesc& desc);
+    GfxBufferHandle CreateBuffer(const GfxBufferDesc& desc);
     void DestroyBuffer(GfxBufferHandle handle);
-    void BatchCreateBuffer(uint32 numBuffers, const GfxBackendBufferDesc* descs, GfxBufferHandle* outHandles);
+    void BatchCreateBuffer(uint32 numBuffers, const GfxBufferDesc* descs, GfxBufferHandle* outHandles);
     void BatchDestroyBuffer(uint32 numBuffers, const GfxBufferHandle* handles);
 
-    GfxPipelineHandle CreateGraphicsPipeline(const GfxShader& shader, GfxPipelineLayoutHandle layoutHandle, const GfxBackendGraphicsPipelineDesc& desc);
+    GfxPipelineHandle CreateGraphicsPipeline(const GfxShader& shader, GfxPipelineLayoutHandle layoutHandle, const GfxGraphicsPipelineDesc& desc);
     GfxPipelineHandle CreateComputePipeline(const GfxShader& shader, GfxPipelineLayoutHandle layoutHandle);
     void DestroyPipeline(GfxPipelineHandle handle);
 
-    GfxSamplerHandle CreateSampler(const GfxBackendSamplerDesc& desc);
+    GfxSamplerHandle CreateSampler(const GfxSamplerDesc& desc);
     void DestroySampler(GfxSamplerHandle handle);
 
     GfxFormat GetSwapchainFormat();

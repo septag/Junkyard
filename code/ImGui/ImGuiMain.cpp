@@ -361,7 +361,7 @@ namespace ImGui
 
         AssetObjPtrScope<GfxShader> shader(gImGui.shader);
         ASSERT(shader);
-        const GfxBackendPipelineLayoutDesc::Binding layoutBindings[] {
+        const GfxPipelineLayoutDesc::Binding layoutBindings[] {
             {
                 .name = "MainTexture",
                 .type = GfxDescriptorType::CombinedImageSampler,
@@ -369,13 +369,13 @@ namespace ImGui
             }
         };
 
-        const GfxBackendPipelineLayoutDesc::PushConstant pushConstant {
+        const GfxPipelineLayoutDesc::PushConstant pushConstant {
             .name = "Transform",
             .stagesUsed = GfxShaderStage::Vertex,
             .size = sizeof(ImGuiShaderTransform)
         };
 
-        GfxBackendPipelineLayoutDesc layoutDesc {
+        GfxPipelineLayoutDesc layoutDesc {
             .numBindings = 1,
             .bindings = layoutBindings,
             .numPushConstants = 1,
@@ -383,7 +383,7 @@ namespace ImGui
         };
         gImGui.pipelineLayout = GfxBackend::CreatePipelineLayout(*shader, layoutDesc);
 
-        GfxBackendGraphicsPipelineDesc pipelineDesc {
+        GfxGraphicsPipelineDesc pipelineDesc {
             .numVertexInputAttributes = CountOf(vertexInputAttDescs),
             .vertexInputAttributes = vertexInputAttDescs,
             .numVertexBufferBindings = 1,
@@ -405,15 +405,15 @@ namespace ImGui
 
         // Geometry Buffers
         {
-            GfxBackendBufferDesc vertexBufferDesc {
+            GfxBufferDesc vertexBufferDesc {
                 .sizeBytes = IMGUI_VERTICES_POOL_SIZE*sizeof(ImDrawVert),
-                .usageFlags = GfxBackendBufferUsageFlags::TransferDst|GfxBackendBufferUsageFlags::Vertex
+                .usageFlags = GfxBufferUsageFlags::TransferDst|GfxBufferUsageFlags::Vertex
             };
             gImGui.vertexBuffer = GfxBackend::CreateBuffer(vertexBufferDesc);
 
-            GfxBackendBufferDesc indexBufferDesc {
+            GfxBufferDesc indexBufferDesc {
                 .sizeBytes = IMGUI_VERTICES_POOL_SIZE*sizeof(ImDrawIdx),
-                .usageFlags = GfxBackendBufferUsageFlags::TransferDst|GfxBackendBufferUsageFlags::Index
+                .usageFlags = GfxBufferUsageFlags::TransferDst|GfxBufferUsageFlags::Index
             };
             gImGui.indexBuffer = GfxBackend::CreateBuffer(indexBufferDesc);
         }
@@ -431,23 +431,23 @@ namespace ImGui
             int fontWidth, fontHeight, fontBpp;
             conf.Fonts->GetTexDataAsRGBA32(&fontPixels, &fontWidth, &fontHeight, &fontBpp);
 
-            GfxBackendImageDesc imageDesc {
+            GfxImageDesc imageDesc {
                 .width = uint16(fontWidth),
                 .height = uint16(fontHeight),
                 .format = GfxFormat::R8G8B8A8_UNORM,
-                .usageFlags = GfxBackendImageUsageFlags::TransferDst|GfxBackendImageUsageFlags::Sampled
+                .usageFlags = GfxImageUsageFlags::TransferDst|GfxImageUsageFlags::Sampled
             };
     
             gImGui.fontImage = GfxBackend::CreateImage(imageDesc);
 
-            GfxBackendBufferDesc stagingBufferDesc {
+            GfxBufferDesc stagingBufferDesc {
                 .sizeBytes = size_t(fontWidth * fontHeight * 4),
-                .usageFlags = GfxBackendBufferUsageFlags::TransferSrc,
-                .arena = GfxBackendMemoryArena::TransientCPU
+                .usageFlags = GfxBufferUsageFlags::TransferSrc,
+                .arena = GfxMemoryArena::TransientCPU
             };
             GfxBufferHandle stagingBuffer = GfxBackend::CreateBuffer(stagingBufferDesc);
             
-            GfxBackendCommandBuffer cmd = GfxBackend::BeginCommandBuffer(GfxBackendQueueType::Transfer);
+            GfxBackendCommandBuffer cmd = GfxBackend::BeginCommandBuffer(GfxQueueType::Transfer);
             void* stagingData;
             size_t stagingDataSize;
             cmd.MapBuffer(stagingBuffer, &stagingData, &stagingDataSize);
@@ -455,7 +455,7 @@ namespace ImGui
             cmd.FlushBuffer(stagingBuffer);
             cmd.CopyBufferToImage(stagingBuffer, gImGui.fontImage, GfxShaderStage::Fragment);
             GfxBackend::EndCommandBuffer(cmd);
-            GfxBackend::SubmitQueue(GfxBackendQueueType::Transfer);
+            GfxBackend::SubmitQueue(GfxQueueType::Transfer);
 
             GfxBackend::DestroyBuffer(stagingBuffer);
 
@@ -493,9 +493,9 @@ namespace ImGui
         if (numVertices > gImGui.maxVertices) {
             gImGui.maxVertices = AlignValue(numVertices, IMGUI_VERTICES_POOL_SIZE);
             GfxBackend::DestroyBuffer(gImGui.vertexBuffer);
-            GfxBackendBufferDesc vertexBufferDesc {
+            GfxBufferDesc vertexBufferDesc {
                 .sizeBytes = gImGui.maxVertices*sizeof(ImDrawVert),
-                .usageFlags = GfxBackendBufferUsageFlags::TransferDst|GfxBackendBufferUsageFlags::Vertex
+                .usageFlags = GfxBufferUsageFlags::TransferDst|GfxBufferUsageFlags::Vertex
             };
             gImGui.vertexBuffer = GfxBackend::CreateBuffer(vertexBufferDesc);
 
@@ -505,9 +505,9 @@ namespace ImGui
         if (numIndices > gImGui.maxIndices) {
             gImGui.maxIndices = AlignValue(numIndices, IMGUI_VERTICES_POOL_SIZE);
             GfxBackend::DestroyBuffer(gImGui.indexBuffer);            
-            GfxBackendBufferDesc indexBufferDesc {
+            GfxBufferDesc indexBufferDesc {
                 .sizeBytes = gImGui.maxIndices*sizeof(ImDrawIdx),
-                .usageFlags = GfxBackendBufferUsageFlags::TransferDst|GfxBackendBufferUsageFlags::Index
+                .usageFlags = GfxBufferUsageFlags::TransferDst|GfxBufferUsageFlags::Index
             };
             gImGui.indexBuffer = GfxBackend::CreateBuffer(indexBufferDesc);
 
@@ -649,17 +649,17 @@ bool ImGui::DrawFrame(GfxBackendCommandBuffer cmd)
         uint32 vertexSize = drawData->TotalVtxCount * sizeof(ImDrawVert);
         uint32 indexSize = drawData->TotalIdxCount * sizeof(ImDrawIdx);
 
-        GfxBackendBufferDesc stagingVertexBufferDesc {
+        GfxBufferDesc stagingVertexBufferDesc {
             .sizeBytes = vertexSize,
-            .usageFlags = GfxBackendBufferUsageFlags::TransferSrc,
-            .arena = GfxBackendMemoryArena::TransientCPU
+            .usageFlags = GfxBufferUsageFlags::TransferSrc,
+            .arena = GfxMemoryArena::TransientCPU
         };
         GfxBufferHandle stagingVertexBuffer = GfxBackend::CreateBuffer(stagingVertexBufferDesc);
 
-        GfxBackendBufferDesc stagingIndexBufferDesc {
+        GfxBufferDesc stagingIndexBufferDesc {
             .sizeBytes = indexSize,
-            .usageFlags = GfxBackendBufferUsageFlags::TransferSrc,
-            .arena = GfxBackendMemoryArena::TransientCPU
+            .usageFlags = GfxBufferUsageFlags::TransferSrc,
+            .arena = GfxMemoryArena::TransientCPU
         };
         GfxBufferHandle stagingIndexBuffer = GfxBackend::CreateBuffer(stagingIndexBufferDesc);
 
@@ -685,8 +685,8 @@ bool ImGui::DrawFrame(GfxBackendCommandBuffer cmd)
         cmd.FlushBuffer(stagingVertexBuffer);
         cmd.FlushBuffer(stagingIndexBuffer);
 
-        cmd.TransitionBuffer(gImGui.vertexBuffer, GfxBackendBufferTransition::TransferWrite);
-        cmd.TransitionBuffer(gImGui.indexBuffer, GfxBackendBufferTransition::TransferWrite);
+        cmd.TransitionBuffer(gImGui.vertexBuffer, GfxBufferTransition::TransferWrite);
+        cmd.TransitionBuffer(gImGui.indexBuffer, GfxBufferTransition::TransferWrite);
 
         cmd.CopyBufferToBuffer(stagingVertexBuffer, gImGui.vertexBuffer, GfxShaderStage::Vertex);
         cmd.CopyBufferToBuffer(stagingIndexBuffer, gImGui.indexBuffer, GfxShaderStage::Vertex);
@@ -750,7 +750,7 @@ bool ImGui::DrawFrame(GfxBackendCommandBuffer cmd)
 
                 RectInt scissor(int(clipRect.x), int(clipRect.y), int(clipRect.z), int(clipRect.w));
                 GfxImageHandle img(PtrToInt<uint32>(drawCmd->TextureId));
-                GfxBackendBindingDesc bindings[] = {
+                GfxBindingDesc bindings[] = {
                     {
                         .name = "MainTexture",
                         .image = img

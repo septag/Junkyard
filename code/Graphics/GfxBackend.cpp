@@ -131,14 +131,14 @@ struct GfxBackendSwapchainInfo
 
 struct GfxBackendQueueFamily
 {
-    GfxBackendQueueType type;
+    GfxQueueType type;
     uint32 count;
 };
 
 struct GfxBackendQueueSubmitRequest
 {
-    GfxBackendQueueType type;
-    GfxBackendQueueType dependents;
+    GfxQueueType type;
+    GfxQueueType dependents;
     VkCommandBuffer* cmdBuffers;
     VkFence fence;
     VkSemaphore semaphore;
@@ -187,7 +187,7 @@ struct GfxBackendQueue
 
         Type type;
         uint32 targetQueueIndex;
-        GfxBackendResourceTransferCallback resourceTransferedCallback;
+        GfxResourceTransferCallback resourceTransferedCallback;
         void* resourceTransferedUserData;
 
         union {
@@ -205,7 +205,7 @@ struct GfxBackendQueue
     SpinLockMutex barriersMutex;
 
     VkQueue handle;
-    GfxBackendQueueType type;
+    GfxQueueType type;
     uint32 familyIdx;
     float priority;
     bool supportsTransfer;
@@ -215,7 +215,7 @@ struct GfxBackendQueue
     Array<VkSemaphore> signalSemaphores;
     Array<PendingBarrier> pendingBarriers;  // Buffers transfers coming into this queue
     Array<PendingBarrier> dependentBarriers; // Barriers that needs to be submitted for dependent queues (after current submission)
-    GfxBackendQueueType internalDependents;
+    GfxQueueType internalDependents;
     AtomicUint32 numCmdBuffersInRecording;
     AtomicUint32 numPendingCmdBuffers;
 };
@@ -228,9 +228,9 @@ struct GfxBackendQueueManager
 
     void BeginFrame();
 
-    void SubmitQueue(GfxBackendQueueType queueType, GfxBackendQueueType dependentQueues);
+    void SubmitQueue(GfxQueueType queueType, GfxQueueType dependentQueues);
 
-    inline uint32 FindQueue(GfxBackendQueueType type) const;
+    inline uint32 FindQueue(GfxQueueType type) const;
     inline uint32 GetQueueCount() const { return mNumQueues; }
     inline GfxBackendQueue& GetQueue(uint32 index) const { ASSERT(index < mNumQueues); return mQueues[index]; }
     inline VkCommandBuffer GetCommandBufferHandle(const GfxBackendCommandBuffer& cmdBuffer);
@@ -243,7 +243,8 @@ private:
     void SetupQueuesForDiscreteDevice();
     void SetupQueuesForItegratedDevice();
     void MergeQueues();
-    uint32 AssignQueueFamily(GfxBackendQueueType type, GfxBackendQueueType preferNotHave = GfxBackendQueueType::None);
+    uint32 AssignQueueFamily(GfxQueueType type, GfxQueueType preferNotHave = GfxQueueType::None, 
+                             uint32 numExcludes = 0, const uint32* excludeList = nullptr);
     bool InitializeCommandBufferContext(GfxBackendCommandBufferContext& ctx, uint32 queueFamilyIndex);
     void ReleaseCommandBufferContext(GfxBackendCommandBufferContext& ctx);
 
@@ -304,7 +305,7 @@ struct GfxBackendDeviceMemory
     void* mappedData;       // optional: only available when heap is HOST_VISIBLE
     OffsetAllocatorNodeIndex offsetAllocMetaData = OFFSET_ALLOCATOR_NO_SPACE;
     uint16 offsetAllocPadding;      // We need this calculate the offset returned by the OffsetAllocator. Main offset is aligned.
-    GfxBackendMemoryArena arena;
+    GfxMemoryArena arena;
 
     uint8 isHeapDeviceLocal : 1;   // Accessible by GPU (fast) 
     uint8 isCpuVisible : 1;        // Can be written by CPU
@@ -382,7 +383,7 @@ struct GfxBackendDeviceMemoryManager
     bool Initialize();
     void Release();
 
-    GfxBackendDeviceMemory Malloc(const VkMemoryRequirements& memReq, GfxBackendMemoryArena arena);
+    GfxBackendDeviceMemory Malloc(const VkMemoryRequirements& memReq, GfxMemoryArena arena);
     void Free(GfxBackendDeviceMemory mem);
 
     void ResetTransientAllocators(uint32 frameIndex);
@@ -436,7 +437,7 @@ struct GfxBackendImage
 {
     VkImage handle;
     VkImageView viewHandle;
-    GfxBackendImageDesc desc;
+    GfxImageDesc desc;
     GfxBackendDeviceMemory mem;
     VkImageLayout layout;
     VkPipelineStageFlags2 transitionedStage;
@@ -446,7 +447,7 @@ struct GfxBackendImage
 struct GfxBackendBuffer
 {
     VkBuffer handle;
-    GfxBackendBufferDesc desc;
+    GfxBufferDesc desc;
     GfxBackendDeviceMemory mem;
     VkPipelineStageFlags2 transitionedStage;
     VkAccessFlagBits2 transitionedAccess;
@@ -492,7 +493,7 @@ struct GfxBackendPipeline
 struct GfxBackendSampler
 {
     VkSampler handle;
-    GfxBackendSamplerDesc desc;
+    GfxSamplerDesc desc;
 };
 
 struct GfxBackendVk
@@ -563,16 +564,16 @@ namespace GfxBackend
     }
 
     // Returns the proper vulkan stage based the destination queue type and the stage that buffer should be transitioned to
-    static inline VkPipelineStageFlags2 _GetBufferDestStageFlags(GfxBackendQueueType type, GfxShaderStage dstStages, 
-                                                                 GfxBackendBufferUsageFlags usageFlags)
+    static inline VkPipelineStageFlags2 _GetBufferDestStageFlags(GfxQueueType type, GfxShaderStage dstStages, 
+                                                                 GfxBufferUsageFlags usageFlags)
     {
         VkPipelineStageFlags2 flags = 0;
-        if (type == GfxBackendQueueType::Graphics) {
+        if (type == GfxQueueType::Graphics) {
             if (IsBitsSet<GfxShaderStage>(dstStages, GfxShaderStage::Vertex)) {
-                if (IsBitsSet<GfxBackendBufferUsageFlags>(usageFlags, GfxBackendBufferUsageFlags::Vertex)) {
+                if (IsBitsSet<GfxBufferUsageFlags>(usageFlags, GfxBufferUsageFlags::Vertex)) {
                     flags |= VK_PIPELINE_STAGE_2_VERTEX_ATTRIBUTE_INPUT_BIT;
                 }
-                else if (IsBitsSet<GfxBackendBufferUsageFlags>(usageFlags, GfxBackendBufferUsageFlags::Index)) {
+                else if (IsBitsSet<GfxBufferUsageFlags>(usageFlags, GfxBufferUsageFlags::Index)) {
                     flags |= VK_PIPELINE_STAGE_2_INDEX_INPUT_BIT;
                 }
                 else {
@@ -583,23 +584,23 @@ namespace GfxBackend
                 flags |= VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
             }
         }
-        else if (type == GfxBackendQueueType::Compute) {
+        else if (type == GfxQueueType::Compute) {
             flags |= VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
         }
 
         return flags;
     }
     
-    static inline VkPipelineStageFlags2 _GetImageDestStageFlags(GfxBackendQueueType type, GfxShaderStage dstStages)
+    static inline VkPipelineStageFlags2 _GetImageDestStageFlags(GfxQueueType type, GfxShaderStage dstStages)
     {
         VkPipelineStageFlags2 flags = 0;
-        if (type == GfxBackendQueueType::Graphics) {
+        if (type == GfxQueueType::Graphics) {
             if (IsBitsSet<GfxShaderStage>(dstStages, GfxShaderStage::Vertex)) 
                 flags |= VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT;
             if (IsBitsSet<GfxShaderStage>(dstStages, GfxShaderStage::Fragment)) 
                 flags |= VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
         }
-        else if (type == GfxBackendQueueType::Compute) {
+        else if (type == GfxQueueType::Compute) {
             flags |= VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
         }
 
@@ -1171,7 +1172,7 @@ namespace GfxBackend
         StaticArray<VkDeviceQueueCreateInfo, 4> queueCreateInfos;
         for (uint32 i = 0; i < gBackendVk.queueMan.GetQueueCount(); i++) {
             const GfxBackendQueue& queue = gBackendVk.queueMan.GetQueue(i);
-            if (settings.graphics.headless && IsBitsSet(queue.type, GfxBackendQueueType::Graphics|GfxBackendQueueType::Present))
+            if (settings.graphics.headless && IsBitsSet(queue.type, GfxQueueType::Graphics|GfxQueueType::Present))
                 continue;
 
             VkDeviceQueueCreateInfo createInfo {
@@ -1672,7 +1673,7 @@ void GfxBackendCommandBuffer::ClearSwapchainColor(Float4 color)
     GfxBackend::_TransitionImageTEMP(cmdVk, imageVk, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
 
     mDrawsToSwapchain = true;
-    gBackendVk.queueMan.GetQueue(mQueueIndex).internalDependents |= GfxBackendQueueType::Present;
+    gBackendVk.queueMan.GetQueue(mQueueIndex).internalDependents |= GfxQueueType::Present;
 }
 
 void GfxBackendCommandBuffer::CopyImageToSwapchain(GfxImageHandle imgHandle)
@@ -1691,7 +1692,7 @@ void GfxBackendCommandBuffer::CopyImageToSwapchain(GfxImageHandle imgHandle)
     mDrawsToSwapchain = true;
     mShouldSubmit = true;
 
-    gBackendVk.queueMan.GetQueue(mQueueIndex).internalDependents |= GfxBackendQueueType::Present;
+    gBackendVk.queueMan.GetQueue(mQueueIndex).internalDependents |= GfxQueueType::Present;
 }
 
 void GfxBackend::End()
@@ -1735,7 +1736,7 @@ void GfxBackend::End()
             .pImageIndices = &gBackendVk.swapchain.imageIndex
         };
 
-        uint32 queueIndex = gBackendVk.queueMan.FindQueue(GfxBackendQueueType::Present);
+        uint32 queueIndex = gBackendVk.queueMan.FindQueue(GfxQueueType::Present);
         ASSERT(queueIndex != -1);
         VkResult r = vkQueuePresentKHR(gBackendVk.queueMan.GetQueue(queueIndex).handle, &presentInfo);
         if (r == VK_ERROR_OUT_OF_DATE_KHR) {
@@ -1899,7 +1900,7 @@ void GfxBackendVkAllocator::VkInternalFreeFn(void*, size_t, VkInternalAllocation
 }
 //----------------------------------------------------------------------------------------------------------------------
 
-GfxBackendCommandBuffer GfxBackend::BeginCommandBuffer(GfxBackendQueueType queueType)
+GfxBackendCommandBuffer GfxBackend::BeginCommandBuffer(GfxQueueType queueType)
 {
     gBackendVk.frameSyncSignal.Increment();
 
@@ -1951,7 +1952,7 @@ GfxBackendCommandBuffer GfxBackend::BeginCommandBuffer(GfxBackendQueueType queue
     // Record all pending buffer memory barriers
     queue.barriersMutex.Enter();
     if (!queue.pendingBarriers.IsEmpty()) {
-        using ResourceTransferCallbackPair = Pair<GfxBackendResourceTransferCallback, void*>;
+        using ResourceTransferCallbackPair = Pair<GfxResourceTransferCallback, void*>;
 
         MemTempAllocator tempAlloc;
         uint32 numPendingBarriers = queue.pendingBarriers.Count();
@@ -2172,14 +2173,14 @@ void GfxBackendMemoryBumpAllocator::Reset()
         block.offset = 0;
 }
 
-GfxImageHandle GfxBackend::CreateImage(const GfxBackendImageDesc& desc)
+GfxImageHandle GfxBackend::CreateImage(const GfxImageDesc& desc)
 {
     GfxImageHandle handle {};
     GfxBackend::BatchCreateImage(1, &desc, &handle);
     return handle;    
 }
 
-void GfxBackend::BatchCreateImage(uint32 numImages, const GfxBackendImageDesc* descs, GfxImageHandle* outHandles)
+void GfxBackend::BatchCreateImage(uint32 numImages, const GfxImageDesc* descs, GfxImageHandle* outHandles)
 {
     ASSERT(numImages);
     ASSERT(descs);
@@ -2189,7 +2190,7 @@ void GfxBackend::BatchCreateImage(uint32 numImages, const GfxBackendImageDesc* d
     GfxBackendImage* images = tempAlloc.MallocTyped<GfxBackendImage>(numImages);
     uint32 numTransientIncrements = 0;
     for (uint32 i = 0; i < numImages; i++) {
-        const GfxBackendImageDesc& desc = descs[i];
+        const GfxImageDesc& desc = descs[i];
         ASSERT(desc.numMips <= GFXBACKEND_MAX_MIPS_PER_IMAGE);
 
         VkImageCreateInfo imageCreateInfo {
@@ -2217,7 +2218,7 @@ void GfxBackend::BatchCreateImage(uint32 numImages, const GfxBackendImageDesc* d
         GfxBackendDeviceMemory mem = gBackendVk.memMan.Malloc(memReq, desc.arena);
         vkBindImageMemory(gBackendVk.device, imageVk, mem.handle, mem.offset);
 
-        if (desc.arena == GfxBackendMemoryArena::TransientCPU)
+        if (desc.arena == GfxMemoryArena::TransientCPU)
             ++numTransientIncrements;
 
         // View
@@ -2234,9 +2235,9 @@ void GfxBackend::BatchCreateImage(uint32 numImages, const GfxBackendImageDesc* d
             // TEMP: view type can be cube / array / etc.
             VkImageViewType viewType = VK_IMAGE_VIEW_TYPE_2D;
             switch (desc.type) {
-            case GfxBackendImageType::Image1D: viewType = VK_IMAGE_VIEW_TYPE_1D; break;
-            case GfxBackendImageType::Image2D: viewType = VK_IMAGE_VIEW_TYPE_2D; break;
-            case GfxBackendImageType::Image3D: viewType = VK_IMAGE_VIEW_TYPE_3D; break;
+            case GfxImageType::Image1D: viewType = VK_IMAGE_VIEW_TYPE_1D; break;
+            case GfxImageType::Image2D: viewType = VK_IMAGE_VIEW_TYPE_2D; break;
+            case GfxImageType::Image3D: viewType = VK_IMAGE_VIEW_TYPE_3D; break;
             }
 
             VkImageViewCreateInfo viewCreateInfo {
@@ -2316,7 +2317,7 @@ void GfxBackend::BatchDestroyImage(uint32 numImages, const GfxImageHandle* handl
 
                 gBackendVk.images.Remove(handle);
 
-                if (image.mem.arena == GfxBackendMemoryArena::TransientCPU)
+                if (image.mem.arena == GfxMemoryArena::TransientCPU)
                     numTransientDecrements++;
             }
         }
@@ -2333,14 +2334,14 @@ void GfxBackend::BatchDestroyImage(uint32 numImages, const GfxImageHandle* handl
     gBackendVk.garbage.Extend(garbages);
 }
 
-const GfxBackendImageDesc& GfxBackend::GetImageDesc(GfxImageHandle handle)
+const GfxImageDesc& GfxBackend::GetImageDesc(GfxImageHandle handle)
 {
     ReadWriteMutexReadScope objPoolLock(gBackendVk.objectPoolsMutex);
     const GfxBackendImage& image = gBackendVk.images.Data(handle);
     return image.desc;
 }
 
-GfxPipelineLayoutHandle GfxBackend::CreatePipelineLayout(const GfxShader& shader, const GfxBackendPipelineLayoutDesc& desc)
+GfxPipelineLayoutHandle GfxBackend::CreatePipelineLayout(const GfxShader& shader, const GfxPipelineLayoutDesc& desc)
 {
     struct DescriptorSetRef
     {
@@ -2353,7 +2354,7 @@ GfxPipelineLayoutHandle GfxBackend::CreatePipelineLayout(const GfxShader& shader
     // Construct Vulkan-specific structs for bindings and their names
     VkDescriptorSetLayoutBinding* bindingsVk = nullptr;
     Array<const char*> names(&tempAlloc);
-    Array<GfxBackendPipelineLayoutDesc::Binding> bindings(&tempAlloc);
+    Array<GfxPipelineLayoutDesc::Binding> bindings(&tempAlloc);
     StaticArray<DescriptorSetRef, GFXBACKEND_MAX_SETS_PER_PIPELINE> sets;
 
     if (desc.numBindings) {
@@ -2365,7 +2366,7 @@ GfxPipelineLayoutHandle GfxBackend::CreatePipelineLayout(const GfxShader& shader
         for (uint32 i = 0; i < desc.numBindings; i++)  {
             ASSERT(desc.bindings[i].setIndex < GFXBACKEND_MAX_SETS_PER_PIPELINE);
             bindings.PushAndSort(desc.bindings[i], 
-                                 [](const GfxBackendPipelineLayoutDesc::Binding& a, GfxBackendPipelineLayoutDesc::Binding& b) 
+                                 [](const GfxPipelineLayoutDesc::Binding& a, GfxPipelineLayoutDesc::Binding& b) 
             {
                 return int(a.setIndex) - int(b.setIndex);
             });
@@ -2376,7 +2377,7 @@ GfxPipelineLayoutHandle GfxBackend::CreatePipelineLayout(const GfxShader& shader
         uint32 setBindingCount = 0;
         uint8 setIndex = bindings[0].setIndex;
         for (uint32 i = 0; i < bindings.Count(); i++) {
-            const GfxBackendPipelineLayoutDesc::Binding& binding = bindings[i];
+            const GfxPipelineLayoutDesc::Binding& binding = bindings[i];
             ASSERT(binding.arrayCount > 0);
             ASSERT(binding.name && binding.name[0]);
 
@@ -2471,7 +2472,7 @@ GfxPipelineLayoutHandle GfxBackend::CreatePipelineLayout(const GfxShader& shader
     // Binding meta data
     memcpy(layout->bindingsVk, bindingsVk, bindings.Count()*sizeof(VkDescriptorSetLayoutBinding));
     for (uint32 i = 0; i < bindings.Count(); i++) {
-        const GfxBackendPipelineLayoutDesc::Binding& srcBinding = bindings[i];
+        const GfxPipelineLayoutDesc::Binding& srcBinding = bindings[i];
         GfxBackendPipelineLayout::Binding& dstBinding = layout->bindings[i];
 
         dstBinding.name = srcBinding.name;
@@ -2571,7 +2572,7 @@ void GfxBackend::DestroyPipelineLayout(GfxPipelineLayoutHandle handle)
 }
 
 GfxPipelineHandle GfxBackend::CreateGraphicsPipeline(const GfxShader& shader, GfxPipelineLayoutHandle layoutHandle, 
-                                                     const GfxBackendGraphicsPipelineDesc& desc)
+                                                     const GfxGraphicsPipelineDesc& desc)
 {
     MemTempAllocator tempAlloc;
 
@@ -2943,7 +2944,7 @@ void GfxBackendCommandBuffer::PushConstants(GfxPipelineLayoutHandle layoutHandle
     vkCmdPushConstants(cmdVk, layoutVk, range->stageFlags, range->offset, range->size, data);
 }
 
-void GfxBackendCommandBuffer::PushBindings(GfxPipelineLayoutHandle layoutHandle, uint32 numBindings, const GfxBackendBindingDesc* bindings)
+void GfxBackendCommandBuffer::PushBindings(GfxPipelineLayoutHandle layoutHandle, uint32 numBindings, const GfxBindingDesc* bindings)
 {
     ASSERT(mIsRecording);
     ASSERT(numBindings);
@@ -2966,7 +2967,7 @@ void GfxBackendCommandBuffer::PushBindings(GfxPipelineLayoutHandle layoutHandle,
         bindMappings->SetAllocator(&tempAlloc);
 
     for (uint32 i = 0; i < numBindings; i++) {
-        const GfxBackendBindingDesc& binding = bindings[i];
+        const GfxBindingDesc& binding = bindings[i];
         uint32 nameHash = Hash::Fnv32Str(binding.name);
         uint32 foundBinding = uint32(-1);
         for (uint32 k = 0; k < layout.numBindings; k++) {
@@ -3006,7 +3007,7 @@ void GfxBackendCommandBuffer::PushBindings(GfxPipelineLayoutHandle layoutHandle,
         for (uint32 i = 0; i < numSetBindings; i++) {
             uint32 layoutBindingIdx = bindMappings[setIdx][i].first;
             uint32 idx = bindMappings[setIdx][i].second;
-            const GfxBackendBindingDesc& binding = bindings[idx];
+            const GfxBindingDesc& binding = bindings[idx];
             const VkDescriptorSetLayoutBinding& bindingVk = layout.bindingsVk[layoutBindingIdx];
 
             VkDescriptorImageInfo* pImageInfo = nullptr;
@@ -3135,14 +3136,14 @@ void GfxBackendCommandBuffer::Dispatch(uint32 groupCountX, uint32 groupCountY, u
     vkCmdDispatch(cmdVk, groupCountX, groupCountY, groupCountZ);
 }
 
-GfxBufferHandle GfxBackend::CreateBuffer(const GfxBackendBufferDesc& desc)
+GfxBufferHandle GfxBackend::CreateBuffer(const GfxBufferDesc& desc)
 {
     GfxBufferHandle handle;
     GfxBackend::BatchCreateBuffer(1, &desc, &handle);
     return handle;
 }
 
-void GfxBackend::BatchCreateBuffer(uint32 numBuffers, const GfxBackendBufferDesc* descs, GfxBufferHandle* outHandles)
+void GfxBackend::BatchCreateBuffer(uint32 numBuffers, const GfxBufferDesc* descs, GfxBufferHandle* outHandles)
 {
     ASSERT(numBuffers);
     ASSERT(descs);
@@ -3152,7 +3153,7 @@ void GfxBackend::BatchCreateBuffer(uint32 numBuffers, const GfxBackendBufferDesc
     GfxBackendBuffer* buffers = tempAlloc.MallocTyped<GfxBackendBuffer>(numBuffers); 
     uint32 numTransientIncrements = 0;
     for (uint32 i = 0; i < numBuffers; i++) {
-        const GfxBackendBufferDesc& desc = descs[i];
+        const GfxBufferDesc& desc = descs[i];
         ASSERT(desc.sizeBytes);
 
         VkBufferCreateInfo bufferCreateInfo {
@@ -3170,7 +3171,7 @@ void GfxBackend::BatchCreateBuffer(uint32 numBuffers, const GfxBackendBufferDesc
         GfxBackendDeviceMemory mem = gBackendVk.memMan.Malloc(memReq, desc.arena);
         vkBindBufferMemory(gBackendVk.device, bufferVk, mem.handle, mem.offset);
 
-        if (desc.arena == GfxBackendMemoryArena::TransientCPU)
+        if (desc.arena == GfxMemoryArena::TransientCPU)
             ++numTransientIncrements;
 
         buffers[i] = {
@@ -3222,7 +3223,7 @@ void GfxBackend::BatchDestroyBuffer(uint32 numBuffers, const GfxBufferHandle* ha
 
             gBackendVk.buffers.Remove(handle);
 
-            if (buffer.mem.arena == GfxBackendMemoryArena::TransientCPU)
+            if (buffer.mem.arena == GfxMemoryArena::TransientCPU)
                 numTransientDecrements++;
         }
     }
@@ -3238,30 +3239,30 @@ void GfxBackend::BatchDestroyBuffer(uint32 numBuffers, const GfxBufferHandle* ha
     gBackendVk.garbage.Extend(garbages);
 }
 
-GfxBackendDeviceMemory GfxBackendDeviceMemoryManager::Malloc(const VkMemoryRequirements& memReq, GfxBackendMemoryArena arena)
+GfxBackendDeviceMemory GfxBackendDeviceMemoryManager::Malloc(const VkMemoryRequirements& memReq, GfxMemoryArena arena)
 {
     GfxBackendDeviceMemory mem {
         .arena = arena
     };
 
     switch (arena) {
-        case GfxBackendMemoryArena::PersistentGPU:
+        case GfxMemoryArena::PersistentGPU:
             mem = mPersistentGPU.Malloc(memReq);
             break;
 
-        case GfxBackendMemoryArena::PersistentCPU:
+        case GfxMemoryArena::PersistentCPU:
             mem = mPersistentCPU.Malloc(memReq);
             break;
 
-        case GfxBackendMemoryArena::TransientCPU:
+        case GfxMemoryArena::TransientCPU:
             mem = mTransientCPU[mStagingIndex].Malloc(memReq);
             break;
 
-        case GfxBackendMemoryArena::DynamicImageGPU:
+        case GfxMemoryArena::DynamicImageGPU:
             mem = mDynamicImageGPU.Malloc(memReq);
             break;
 
-        case GfxBackendMemoryArena::DynamicBufferGPU:
+        case GfxMemoryArena::DynamicBufferGPU:
             mem = mDynamicBufferGPU.Malloc(memReq);
             break;
 
@@ -3449,11 +3450,11 @@ bool GfxBackendQueueManager::Initialize()
         const VkQueueFamilyProperties& props = families[i];
 
         if (props.queueFlags & VK_QUEUE_GRAPHICS_BIT)
-            fam.type |= GfxBackendQueueType::Graphics;
+            fam.type |= GfxQueueType::Graphics;
         if (props.queueFlags & VK_QUEUE_COMPUTE_BIT)
-            fam.type |= GfxBackendQueueType::Compute;
+            fam.type |= GfxQueueType::Compute;
         if (props.queueFlags & VK_QUEUE_TRANSFER_BIT)
-            fam.type |= GfxBackendQueueType::Transfer;
+            fam.type |= GfxQueueType::Transfer;
 
         fam.count = props.queueCount;
 
@@ -3461,7 +3462,7 @@ bool GfxBackendQueueManager::Initialize()
             VkBool32 supportsPresentation = false;
             vkGetPhysicalDeviceSurfaceSupportKHR(gpu.handle, i, gBackendVk.surface, &supportsPresentation);
             if (supportsPresentation)
-                fam.type |= GfxBackendQueueType::Present;
+                fam.type |= GfxQueueType::Present;
         }
     }
 
@@ -3547,61 +3548,100 @@ void GfxBackendQueueManager::SetupQueuesForDiscreteDevice()
     MemAllocator* alloc = &gBackendVk.parentAlloc;
 
     // Discrete GPUs:
-    //  (1) Graphics + Present 
-    //  (1) Transfer: Preferebly exclusive 
-    //  (1) Compute: Preferebly exclusive
-    mNumQueues = 3;
-    mQueues = Mem::AllocZeroTyped<GfxBackendQueue>(mNumQueues, alloc);
+    //  Graphics + Present + Compute. We also have an implicit Transfer to do frequent buffer updates and whatnot
+    //  Transfer: Preferebly exclusive 
+    //  ComputeAsync: Preferebly exclusive
+    mQueues = Mem::AllocZeroTyped<GfxBackendQueue>(4, alloc);
+    StaticArray<uint32, 4> queueFamilyIndices;
 
     if (SettingsJunkyard::Get().graphics.IsGraphicsEnabled()) {
-        // Note that we also require Transfer for the first Graphics queue in order to do frequent buffer updates
-        mQueues[0] = {
-            .type = GfxBackendQueueType::Graphics|GfxBackendQueueType::Present,
-            .familyIdx = AssignQueueFamily(GfxBackendQueueType::Graphics|GfxBackendQueueType::Present|GfxBackendQueueType::Transfer),
+        uint32 familyIdx = AssignQueueFamily(GfxQueueType::Graphics|GfxQueueType::Present|GfxQueueType::Transfer|GfxQueueType::Compute);
+        mQueues[mNumQueues++] = {
+            .type = GfxQueueType::Graphics|GfxQueueType::Present|GfxQueueType::Compute,
+            .familyIdx = familyIdx,
             .priority = 1.0f,
             .supportsTransfer = true
         }; 
 
-        if (mQueues[0].familyIdx != -1) {
-            LOG_VERBOSE("\tGraphics queue from index: %u", mQueues[0].familyIdx);
+        if (familyIdx != -1) {
+            LOG_VERBOSE("\tGraphics/Compute queue from index: %u", familyIdx);
+            queueFamilyIndices.Push(familyIdx);
         }
         else {
             LOG_ERROR("Gfx: Graphics queue not found");
-            ASSERT(0);
+            ASSERT_MSG(0, "Cannot continue without a valid Graphics|Trasnfer|Compute queue");
         }
     }
 
     {
-        // TODO: Make this optional since graphics queue should also have Transfer capability
-        mQueues[1] = {
-            .type = GfxBackendQueueType::Transfer,
-            .familyIdx = AssignQueueFamily(GfxBackendQueueType::Transfer, GfxBackendQueueType::Graphics|GfxBackendQueueType::Compute),
-            .priority = 1.0f,
-            .supportsTransfer = true
-        };
+        uint32 familyIdx = AssignQueueFamily(GfxQueueType::Transfer, GfxQueueType::Graphics|GfxQueueType::Compute, 
+                                             queueFamilyIndices.Count(), queueFamilyIndices.Ptr());
+        if (familyIdx == -1) {
+            familyIdx = AssignQueueFamily(GfxQueueType::Transfer, GfxQueueType::Graphics, 
+                                          queueFamilyIndices.Count(), queueFamilyIndices.Ptr());
 
-        if (mQueues[1].familyIdx != -1) {
-            LOG_VERBOSE("\tTransfer queue from index: %u", mQueues[1].familyIdx);
+            if (familyIdx == -1) {
+                familyIdx = AssignQueueFamily(GfxQueueType::Transfer, GfxQueueType::None, 
+                                              queueFamilyIndices.Count(), queueFamilyIndices.Ptr());
+            }
+        }
+
+        if (familyIdx != -1) {
+            mQueues[mNumQueues++] = {
+                .type = GfxQueueType::Transfer,
+                .familyIdx = familyIdx,
+                .priority = 1.0f,
+                .supportsTransfer = true
+            };
+            LOG_VERBOSE("\tTransfer queue from index: %u", familyIdx);
+            queueFamilyIndices.Push(familyIdx);
         }
         else {
-            LOG_ERROR("Gfx: Transfer queue not found");
-            ASSERT(0);
+            // Assign the first one to TRANSFER as well
+            if (mNumQueues)
+                mQueues[0].type |= GfxQueueType::Transfer;
+            LOG_WARNING("Gfx: Performance warning: Separate transfer queue not found. Using unified queue family (%u) for transfers", mQueues[0].familyIdx);
         }
     }
 
     {
-        mQueues[2] = {
-            .type = GfxBackendQueueType::Compute,
-            .familyIdx = AssignQueueFamily(GfxBackendQueueType::Compute, GfxBackendQueueType::Graphics|GfxBackendQueueType::Transfer),
-            .priority = 1.0f
-        };
+        uint32 familyIdx = AssignQueueFamily(GfxQueueType::Compute|GfxQueueType::Transfer, GfxQueueType::Graphics,
+                                             queueFamilyIndices.Count(), queueFamilyIndices.Ptr());
+        if (familyIdx == -1) {
+            familyIdx = AssignQueueFamily(GfxQueueType::Compute|GfxQueueType::Transfer, GfxQueueType::Graphics,
+                                          queueFamilyIndices.Count(), queueFamilyIndices.Ptr());
+        }
 
-        if (mQueues[2].familyIdx != -1) {
-            LOG_VERBOSE("\tCompute queue from index: %u", mQueues[2].familyIdx);
+        if (familyIdx != -1) {
+            GfxQueueType extraCompute = SettingsJunkyard::Get().graphics.IsGraphicsEnabled() ? GfxQueueType::None : GfxQueueType::Compute;
+
+            mQueues[mNumQueues++] = {
+                .type = GfxQueueType::ComputeAsync | extraCompute,
+                .familyIdx = familyIdx,
+                .priority = 1.0f
+            };
+
+            LOG_VERBOSE("\tComputeAsync queue from index: %u", familyIdx);
+        }
+        else if (mNumQueues && IsBitsSet<GfxQueueType>(mQueues[0].type, GfxQueueType::Compute)) {
+            mQueues[0].type |= GfxQueueType::ComputeAsync;
+            LOG_WARNING("Gfx: Performance warning: Separate compute queue not found. Using unified queue family (%d) for async compute", mQueues[0].familyIdx);
         }
         else {
-            LOG_ERROR("Gfx: Compute queue not found");
-            ASSERT(0);
+            familyIdx = AssignQueueFamily(GfxQueueType::Compute|GfxQueueType::Transfer);
+            if (familyIdx != -1) {
+                mQueues[mNumQueues++] = {
+                    .type = GfxQueueType::ComputeAsync | GfxQueueType::Compute,
+                    .familyIdx = familyIdx,
+                    .priority = 1.0f
+                };
+
+                LOG_WARNING("Gfx: Performance warning: Separate compute queue not found. Using unified queue family (%d) for async compute", familyIdx);
+            }
+            else {
+                LOG_ERROR("Gfx: Cannot find Compute|Transfer queue on this GPU");
+                ASSERT(0);
+            }
         }
     }
 }
@@ -3633,14 +3673,27 @@ void GfxBackendQueueManager::MergeQueues()
     }
 }
 
-uint32 GfxBackendQueueManager::AssignQueueFamily(GfxBackendQueueType type, GfxBackendQueueType preferNotHave)
+uint32 GfxBackendQueueManager::AssignQueueFamily(GfxQueueType type, GfxQueueType preferNotHave, 
+                                                 uint32 numExcludes, const uint32* excludes)
 {
     ASSERT(mNumQueueFamilies);
 
     uint32 familyIndex = uint32(-1);
+
     for (uint32 i = 0; i < mNumQueueFamilies; i++) {
-        if (IsBitsSet<GfxBackendQueueType>(mQueueFamilies[i].type, type) && mQueueFamilies[i].count) {
-            if (preferNotHave != GfxBackendQueueType::None) {
+        if (IsBitsSet<GfxQueueType>(mQueueFamilies[i].type, type) && mQueueFamilies[i].count) {
+            bool isExcluded = false;
+            for (uint32 k = 0; k < numExcludes; k++) {
+                if (excludes[k] == i) {
+                    isExcluded = true;
+                    break;
+                }
+            }
+
+            if (isExcluded)
+                continue;
+
+            if (preferNotHave != GfxQueueType::None) {
                 if (!IsBitsSet(mQueueFamilies[i].type, preferNotHave)) {
                     familyIndex = i;
                     break;
@@ -3653,14 +3706,10 @@ uint32 GfxBackendQueueManager::AssignQueueFamily(GfxBackendQueueType type, GfxBa
         }
     }
 
-    // If not found, try finding a queue without any exclusions
-    if (familyIndex == -1 && preferNotHave != GfxBackendQueueType::None) 
-        return AssignQueueFamily(type);
-    else
-        return familyIndex;
+    return familyIndex;
 }
 
-inline uint32 GfxBackendQueueManager::FindQueue(GfxBackendQueueType type) const
+inline uint32 GfxBackendQueueManager::FindQueue(GfxQueueType type) const
 {
     for (uint32 i = 0; i < mNumQueues; i++) {
         if (IsBitsSet(mQueues[i].type, type))
@@ -3670,7 +3719,7 @@ inline uint32 GfxBackendQueueManager::FindQueue(GfxBackendQueueType type) const
     return uint32(-1);
 }
 
-void GfxBackend::SubmitQueue(GfxBackendQueueType queueType, GfxBackendQueueType dependentQueues)
+void GfxBackend::SubmitQueue(GfxQueueType queueType, GfxQueueType dependentQueues)
 {
     gBackendVk.queueMan.SubmitQueue(queueType, dependentQueues);
 }
@@ -3690,7 +3739,7 @@ int GfxBackendQueueManager::SubmitThread(void* userData)
         }
 
         if (req) {
-            if (req->type != GfxBackendQueueType::None)
+            if (req->type != GfxQueueType::None)
                 self->SubmitQueueInternal(*req);
 
             MemSingleShotMalloc<GfxBackendQueueSubmitRequest>::Free(req, &gBackendVk.runtimeAlloc);
@@ -3700,7 +3749,7 @@ int GfxBackendQueueManager::SubmitThread(void* userData)
     return 0;
 }
 
-void GfxBackendQueueManager::SubmitQueue(GfxBackendQueueType queueType, GfxBackendQueueType dependentQueues)
+void GfxBackendQueueManager::SubmitQueue(GfxQueueType queueType, GfxQueueType dependentQueues)
 {
     uint32 queueIndex = FindQueue(queueType);
     ASSERT(queueIndex != -1);
@@ -3731,7 +3780,7 @@ void GfxBackendQueueManager::SubmitQueue(GfxBackendQueueType queueType, GfxBacke
 
     // Also add injected dependent queues
     req->dependents = dependentQueues | queue.internalDependents;
-    queue.internalDependents = GfxBackendQueueType::None;
+    queue.internalDependents = GfxQueueType::None;
 
     // Create a fence for each submission
     if (!cmdBufferCtx.fenceFreeList.IsEmpty()) {
@@ -3768,42 +3817,42 @@ bool GfxBackendQueueManager::SubmitQueueInternal(GfxBackendQueueSubmitRequest& r
     // This forms a dependency chain
 
     // TODO: We can have tune this to be more specific
-    auto GetStageFlag = [](GfxBackendQueueType type)->VkPipelineStageFlags
+    auto GetStageFlag = [](GfxQueueType type)->VkPipelineStageFlags
     {
         switch (type) {
-        case GfxBackendQueueType::Graphics: return VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-        case GfxBackendQueueType::Compute:  return VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
-        case GfxBackendQueueType::Transfer: return VK_PIPELINE_STAGE_TRANSFER_BIT;
+        case GfxQueueType::Graphics: return VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+        case GfxQueueType::Compute:  return VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
+        case GfxQueueType::Transfer: return VK_PIPELINE_STAGE_TRANSFER_BIT;
         default: return VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
         }
     };
 
     // Check for swapchain draw within command-buffers
-    if (IsBitsSet<GfxBackendQueueType>(req.dependents, GfxBackendQueueType::Present)) 
+    if (IsBitsSet<GfxQueueType>(req.dependents, GfxQueueType::Present)) 
     {
-        ASSERT(req.type == GfxBackendQueueType::Graphics);
+        ASSERT(req.type == GfxQueueType::Graphics);
         // Notify the queue that the next Submit is gonna depend on swapchain
         queue.waitSemaphores.Push({gBackendVk.swapchain.GetSwapchainSemaphore(), VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT});
         queue.signalSemaphores.Push(gBackendVk.swapchain.GetPresentSemaphore());
     }
 
-    if (IsBitsSet<GfxBackendQueueType>(req.dependents, GfxBackendQueueType::Graphics)) {
-        ASSERT(req.type != GfxBackendQueueType::Graphics);
-        GfxBackendQueue& graphicsQueue = mQueues[FindQueue(GfxBackendQueueType::Graphics)];
+    if (IsBitsSet<GfxQueueType>(req.dependents, GfxQueueType::Graphics)) {
+        ASSERT(req.type != GfxQueueType::Graphics);
+        GfxBackendQueue& graphicsQueue = mQueues[FindQueue(GfxQueueType::Graphics)];
         graphicsQueue.waitSemaphores.Push({req.semaphore, GetStageFlag(req.type)});
         queue.signalSemaphores.Push(req.semaphore);
     }
 
-    if (IsBitsSet<GfxBackendQueueType>(req.dependents, GfxBackendQueueType::Compute)) {
-        ASSERT(req.type != GfxBackendQueueType::Compute);
-        GfxBackendQueue& computeQueue = mQueues[FindQueue(GfxBackendQueueType::Compute)];
+    if (IsBitsSet<GfxQueueType>(req.dependents, GfxQueueType::Compute)) {
+        ASSERT(req.type != GfxQueueType::Compute);
+        GfxBackendQueue& computeQueue = mQueues[FindQueue(GfxQueueType::Compute)];
         computeQueue.waitSemaphores.Push({req.semaphore, GetStageFlag(req.type)});
         queue.signalSemaphores.Push(req.semaphore);
     }
 
-    if (IsBitsSet<GfxBackendQueueType>(req.dependents, GfxBackendQueueType::Transfer)) {
-        ASSERT(req.type != GfxBackendQueueType::Transfer);
-        GfxBackendQueue& transferQueue = mQueues[FindQueue(GfxBackendQueueType::Transfer)];
+    if (IsBitsSet<GfxQueueType>(req.dependents, GfxQueueType::Transfer)) {
+        ASSERT(req.type != GfxQueueType::Transfer);
+        GfxBackendQueue& transferQueue = mQueues[FindQueue(GfxQueueType::Transfer)];
         transferQueue.waitSemaphores.Push({req.semaphore, GetStageFlag(req.type)});
         queue.signalSemaphores.Push(req.semaphore);
     }
@@ -3950,14 +3999,14 @@ void GfxBackendCommandBuffer::MapBuffer(GfxBufferHandle buffHandle, void** outPt
 {
     ASSERT(outPtr);
 
-    GfxBackendMapResult r;
+    GfxMapResult r;
     BatchMapBuffer(1, &buffHandle, &r);
     *outPtr = r.dataPtr;
     if (outSizeBytes)
         *outSizeBytes = r.dataSize;
 }
 
-void GfxBackendCommandBuffer::BatchMapBuffer(uint32 numParams, const GfxBufferHandle* handles, GfxBackendMapResult* mapResults)
+void GfxBackendCommandBuffer::BatchMapBuffer(uint32 numParams, const GfxBufferHandle* handles, GfxMapResult* mapResults)
 {
     ASSERT(mIsRecording);
     ASSERT(handles);
@@ -4012,7 +4061,7 @@ void GfxBackendCommandBuffer::BatchFlushBuffer(uint32 numBuffers, const GfxBuffe
 void GfxBackendCommandBuffer::CopyBufferToBuffer(GfxBufferHandle srcHandle, GfxBufferHandle dstHandle, GfxShaderStage stagesUsed, 
                                                  size_t srcOffset, size_t dstOffset, size_t sizeBytes)
 {
-    GfxBackendCopyBufferToBufferParams param {
+    GfxCopyBufferToBufferParams param {
         .srcHandle = srcHandle,
         .dstHandle = dstHandle,
         .stagesUsed = stagesUsed,
@@ -4024,7 +4073,7 @@ void GfxBackendCommandBuffer::CopyBufferToBuffer(GfxBufferHandle srcHandle, GfxB
     BatchCopyBufferToBuffer(1, &param);
 }
 
-void GfxBackendCommandBuffer::BatchCopyBufferToBuffer(uint32 numParams, const GfxBackendCopyBufferToBufferParams* params)
+void GfxBackendCommandBuffer::BatchCopyBufferToBuffer(uint32 numParams, const GfxCopyBufferToBufferParams* params)
 {
     ASSERT(numParams);
     ASSERT(params);
@@ -4039,7 +4088,7 @@ void GfxBackendCommandBuffer::BatchCopyBufferToBuffer(uint32 numParams, const Gf
     };
 
     GfxBackendQueue& queue = gBackendVk.queueMan.GetQueue(mQueueIndex);
-    ASSERT_MSG(IsBitsSet<GfxBackendQueueType>(queue.type, GfxBackendQueueType::Transfer) || queue.supportsTransfer,
+    ASSERT_MSG(IsBitsSet<GfxQueueType>(queue.type, GfxQueueType::Transfer) || queue.supportsTransfer,
                "Cannot do buffer copies on non-Transfer queues");
 
     MemTempAllocator tempAlloc;
@@ -4049,7 +4098,7 @@ void GfxBackendCommandBuffer::BatchCopyBufferToBuffer(uint32 numParams, const Gf
 
     gBackendVk.objectPoolsMutex.EnterRead();
     for (uint32 i = 0; i < numParams; i++) {
-        const GfxBackendCopyBufferToBufferParams& copyParams = params[i];
+        const GfxCopyBufferToBufferParams& copyParams = params[i];
 
         GfxBackendBuffer& srcBuffer = gBackendVk.buffers.Data(copyParams.srcHandle);
         GfxBackendBuffer& dstBuffer = gBackendVk.buffers.Data(copyParams.dstHandle);
@@ -4068,26 +4117,26 @@ void GfxBackendCommandBuffer::BatchCopyBufferToBuffer(uint32 numParams, const Gf
         vkCmdCopyBuffer(cmdVk, srcBuffer.handle, dstBuffer.handle, 1, &copyRegion);
 
         VkAccessFlags2 accessFlags;
-        if (IsBitsSet<GfxBackendBufferUsageFlags>(dstBuffer.desc.usageFlags, GfxBackendBufferUsageFlags::Index))
+        if (IsBitsSet<GfxBufferUsageFlags>(dstBuffer.desc.usageFlags, GfxBufferUsageFlags::Index))
             accessFlags = VK_ACCESS_2_INDEX_READ_BIT;
-        else if (IsBitsSet<GfxBackendBufferUsageFlags>(dstBuffer.desc.usageFlags, GfxBackendBufferUsageFlags::Vertex))
+        else if (IsBitsSet<GfxBufferUsageFlags>(dstBuffer.desc.usageFlags, GfxBufferUsageFlags::Vertex))
             accessFlags = VK_ACCESS_2_VERTEX_ATTRIBUTE_READ_BIT;
-        else if (IsBitsSet<GfxBackendBufferUsageFlags>(dstBuffer.desc.usageFlags, GfxBackendBufferUsageFlags::Uniform))
+        else if (IsBitsSet<GfxBufferUsageFlags>(dstBuffer.desc.usageFlags, GfxBufferUsageFlags::Uniform))
             accessFlags = VK_ACCESS_2_UNIFORM_READ_BIT;
         else 
             accessFlags = VK_ACCESS_2_MEMORY_READ_BIT;
 
-        GfxBackendQueueType dstQueueType = GfxBackendQueueType::None;
+        GfxQueueType dstQueueType = GfxQueueType::None;
         if (IsBitsSet<GfxShaderStage>(copyParams.stagesUsed, GfxShaderStage::Vertex) ||
             IsBitsSet<GfxShaderStage>(copyParams.stagesUsed, GfxShaderStage::Fragment))
         {
-            dstQueueType = GfxBackendQueueType::Graphics;
+            dstQueueType = GfxQueueType::Graphics;
         }
         else if (IsBitsSet<GfxShaderStage>(copyParams.stagesUsed, GfxShaderStage::Compute))
         {
-            dstQueueType = GfxBackendQueueType::Compute;
+            dstQueueType = GfxQueueType::Compute;
         }
-        ASSERT(dstQueueType != GfxBackendQueueType::None);
+        ASSERT(dstQueueType != GfxQueueType::None);
 
         uint32 dstQueueIndex = gBackendVk.queueMan.FindQueue(dstQueueType);
         ASSERT(dstQueueIndex != -1);
@@ -4169,7 +4218,7 @@ void GfxBackendCommandBuffer::BatchCopyBufferToBuffer(uint32 numParams, const Gf
 void GfxBackendCommandBuffer::CopyBufferToImage(GfxBufferHandle srcHandle, GfxImageHandle dstHandle, GfxShaderStage stagesUsed, 
                                                 uint16 startMipIndex, uint16 mipCount)
 {
-    GfxBackendCopyBufferToImageParams params {
+    GfxCopyBufferToImageParams params {
         .srcHandle = srcHandle,
         .dstHandle = dstHandle,
         .stagesUsed = stagesUsed,
@@ -4180,7 +4229,7 @@ void GfxBackendCommandBuffer::CopyBufferToImage(GfxBufferHandle srcHandle, GfxIm
     BatchCopyBufferToImage(1, &params);
 }
 
-void GfxBackendCommandBuffer::BatchCopyBufferToImage(uint32 numParams, const GfxBackendCopyBufferToImageParams* params)
+void GfxBackendCommandBuffer::BatchCopyBufferToImage(uint32 numParams, const GfxCopyBufferToImageParams* params)
 {
     ASSERT(numParams);
     ASSERT(params);
@@ -4203,12 +4252,12 @@ void GfxBackendCommandBuffer::BatchCopyBufferToImage(uint32 numParams, const Gfx
     Array<GfxBackendQueue::PendingBarrier> pendingBarriers(&tempAlloc);
 
     GfxBackendQueue& queue = gBackendVk.queueMan.GetQueue(mQueueIndex);
-    ASSERT_MSG(IsBitsSet<GfxBackendQueueType>(queue.type, GfxBackendQueueType::Transfer) || queue.supportsTransfer,
+    ASSERT_MSG(IsBitsSet<GfxQueueType>(queue.type, GfxQueueType::Transfer) || queue.supportsTransfer,
                "Cannot do buffer copies on non-Transfer queues");
 
     gBackendVk.objectPoolsMutex.EnterRead();
     for (uint32 i = 0; i < numParams; i++) {
-        const GfxBackendCopyBufferToImageParams& copyParams = params[i];
+        const GfxCopyBufferToImageParams& copyParams = params[i];
 
         ASSERT(copyParams.mipCount);
         GfxBackendBuffer& srcBuffer = gBackendVk.buffers.Data(copyParams.srcHandle);
@@ -4282,15 +4331,15 @@ void GfxBackendCommandBuffer::BatchCopyBufferToImage(uint32 numParams, const Gfx
 
         // Put the post barriers
         // Transition the image from Trasnsfer to 
-        GfxBackendQueueType dstQueueType = GfxBackendQueueType::None;
+        GfxQueueType dstQueueType = GfxQueueType::None;
         if (IsBitsSet<GfxShaderStage>(copyParams.stagesUsed, GfxShaderStage::Vertex) ||
             IsBitsSet<GfxShaderStage>(copyParams.stagesUsed, GfxShaderStage::Fragment))
         {
-            dstQueueType = GfxBackendQueueType::Graphics;
+            dstQueueType = GfxQueueType::Graphics;
         }
         else if (IsBitsSet<GfxShaderStage>(copyParams.stagesUsed, GfxShaderStage::Compute))
-            dstQueueType = GfxBackendQueueType::Compute;
-        ASSERT(dstQueueType != GfxBackendQueueType::None);
+            dstQueueType = GfxQueueType::Compute;
+        ASSERT(dstQueueType != GfxQueueType::None);
 
         uint32 dstQueueIndex = gBackendVk.queueMan.FindQueue(dstQueueType);
         ASSERT(dstQueueIndex != -1);
@@ -4389,7 +4438,7 @@ void GfxBackendCommandBuffer::BatchCopyBufferToImage(uint32 numParams, const Gfx
     queue.dependentBarriers.Extend(pendingBarriers);
 }
 
-void GfxBackendCommandBuffer::TransitionBuffer(GfxBufferHandle buffHandle, GfxBackendBufferTransition transition)
+void GfxBackendCommandBuffer::TransitionBuffer(GfxBufferHandle buffHandle, GfxBufferTransition transition)
 {
     ASSERT(mIsRecording);
     mShouldSubmit = true;
@@ -4407,8 +4456,8 @@ void GfxBackendCommandBuffer::TransitionBuffer(GfxBufferHandle buffHandle, GfxBa
     };
     
     switch (transition) {
-        case GfxBackendBufferTransition::TransferWrite:
-            ASSERT_MSG(IsBitsSet<GfxBackendQueueType>(queue.type, GfxBackendQueueType::Transfer) || queue.supportsTransfer,
+        case GfxBufferTransition::TransferWrite:
+            ASSERT_MSG(IsBitsSet<GfxQueueType>(queue.type, GfxQueueType::Transfer) || queue.supportsTransfer,
                        "Cannot do transfer transitions on non-Transfer queues");
 
             barrier.srcStageMask = buffer.transitionedStage;
@@ -4432,7 +4481,7 @@ void GfxBackendCommandBuffer::TransitionBuffer(GfxBufferHandle buffHandle, GfxBa
     vkCmdPipelineBarrier2(cmdVk, &depInfo);
 }
 
-void GfxBackendCommandBuffer::TransitionImage(GfxImageHandle imgHandle, GfxBackendImageTransition transition)
+void GfxBackendCommandBuffer::TransitionImage(GfxImageHandle imgHandle, GfxImageTransition transition)
 {
     ASSERT(mIsRecording);
     mShouldSubmit = true;
@@ -4462,7 +4511,7 @@ void GfxBackendCommandBuffer::TransitionImage(GfxImageHandle imgHandle, GfxBacke
     };
 
     switch (transition) {
-        case GfxBackendImageTransition::ShaderRead:
+        case GfxImageTransition::ShaderRead:
             barrier.srcStageMask = image.transitionedStage;
             barrier.srcAccessMask = image.transitionedAccess;
             barrier.dstStageMask = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
@@ -4471,7 +4520,7 @@ void GfxBackendCommandBuffer::TransitionImage(GfxImageHandle imgHandle, GfxBacke
             barrier.srcQueueFamilyIndex = 1;    // TEMP
             break;
 
-        case GfxBackendImageTransition::ComputeWrite:
+        case GfxImageTransition::ComputeWrite:
             barrier.srcStageMask = image.transitionedStage;
             barrier.srcAccessMask = image.transitionedAccess;
             barrier.dstStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
@@ -4479,7 +4528,7 @@ void GfxBackendCommandBuffer::TransitionImage(GfxImageHandle imgHandle, GfxBacke
             barrier.newLayout = VK_IMAGE_LAYOUT_GENERAL;
             break;
 
-        case GfxBackendImageTransition::CopySource:
+        case GfxImageTransition::CopySource:
             barrier.srcStageMask = image.transitionedStage;
             barrier.srcAccessMask = image.transitionedAccess;
             barrier.dstStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
@@ -4487,7 +4536,7 @@ void GfxBackendCommandBuffer::TransitionImage(GfxImageHandle imgHandle, GfxBacke
             barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
             break;
 
-        case GfxBackendImageTransition::RenderTarget:
+        case GfxImageTransition::RenderTarget:
             {
                 VkImageLayout layout;
                 VkPipelineStageFlags2 dstStage;
@@ -4532,7 +4581,7 @@ void GfxBackendCommandBuffer::BeginRenderPass(const GfxBackendRenderPass& pass)
 {
     ASSERT(mIsRecording);
 
-    auto MakeRenderingAttachmentInfo = [](const GfxBackendRenderPassAttachment& srcAttachment, VkImageView view, VkImageLayout layout)
+    auto MakeRenderingAttachmentInfo = [](const GfxRenderPassAttachment& srcAttachment, VkImageView view, VkImageLayout layout)
     {
         ASSERT(view);
         ASSERT_MSG(!(srcAttachment.load & srcAttachment.clear), "Cannot have both load/clear ops on color attachment");
@@ -4591,7 +4640,7 @@ void GfxBackendCommandBuffer::BeginRenderPass(const GfxBackendRenderPass& pass)
     uint16 width = 0;
     uint16 height = 0;
     for (uint32 i = 0; i < numColorAttachments; i++) {
-        const GfxBackendRenderPassAttachment& srcAttachment = pass.colorAttachments[i];
+        const GfxRenderPassAttachment& srcAttachment = pass.colorAttachments[i];
         if (width == 0 && height == 0) {
             if (pass.swapchain) {
                 width = uint16(gBackendVk.swapchain.extent.width);
@@ -4657,7 +4706,7 @@ void GfxBackendCommandBuffer::EndRenderPass()
     vkCmdEndRendering(cmdVk);
 
     if (mDrawsToSwapchain) 
-        gBackendVk.queueMan.GetQueue(mQueueIndex).internalDependents |= GfxBackendQueueType::Present;
+        gBackendVk.queueMan.GetQueue(mQueueIndex).internalDependents |= GfxQueueType::Present;
 
     mIsInRenderPass = false;
 }
@@ -4762,7 +4811,7 @@ void GfxBackendCommandBuffer::BindIndexBuffer(GfxBufferHandle indexBuffer, uint6
     vkCmdBindIndexBuffer(cmdVk, buffer.handle, VkDeviceSize(offset), VkIndexType(indexType));
 }
 
-GfxSamplerHandle GfxBackend::CreateSampler(const GfxBackendSamplerDesc& desc)
+GfxSamplerHandle GfxBackend::CreateSampler(const GfxSamplerDesc& desc)
 {
     VkFilter minMagFilter = VK_FILTER_MAX_ENUM;
     VkSamplerMipmapMode mipFilter = VK_SAMPLER_MIPMAP_MODE_MAX_ENUM;

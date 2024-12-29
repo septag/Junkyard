@@ -300,7 +300,7 @@ enum class GfxFormat: uint32
     G16_B16_R16_3PLANE_444_UNORM_KHR = G16_B16_R16_3PLANE_444_UNORM,
 };
 
-enum class GfxBackendMemoryArena : uint8 
+enum class GfxMemoryArena : uint8 
 {
     PersistentGPU = 0,
     PersistentCPU,
@@ -309,17 +309,18 @@ enum class GfxBackendMemoryArena : uint8
     DynamicBufferGPU
 };
 
-enum class GfxBackendQueueType : uint8
+enum class GfxQueueType : uint8
 {
     None = 0,
     Graphics = 0x1,
     Compute = 0x2,
-    Transfer = 0x4,
-    Present = 0x8
+    ComputeAsync = 0x4,
+    Transfer = 0x8,
+    Present = 0x10
 };
-ENABLE_BITMASK(GfxBackendQueueType);
+ENABLE_BITMASK(GfxQueueType);
 
-struct GfxBackendMapResult
+struct GfxMapResult
 {
     void* dataPtr;
     size_t dataSize;
@@ -335,7 +336,7 @@ struct GfxViewport
     float maxDepth = 1.0f;
 };
 
-using GfxBackendResourceTransferCallback = void(*)(void* userData);
+using GfxResourceTransferCallback = void(*)(void* userData);
 
 // VkShaderStageFlags
 enum class GfxShaderStage: uint32
@@ -376,7 +377,7 @@ enum class GfxIndexType: uint32
 };
 
 // VkBufferUsageFlagBits
-enum class GfxBackendBufferUsageFlags : uint32
+enum class GfxBufferUsageFlags : uint32
 {
     TransferSrc = 0x00000001,
     TransferDst = 0x00000002,
@@ -388,23 +389,23 @@ enum class GfxBackendBufferUsageFlags : uint32
     Vertex = 0x00000080,
     Indirect = 0x00000100
 };
-ENABLE_BITMASK(GfxBackendBufferUsageFlags);
+ENABLE_BITMASK(GfxBufferUsageFlags);
 
 // Note: Serialized for asset data. Changing this will affect cache data
 // TODO: Probably should remove this dependency to AssetManager and use AssetManager internals instead
-struct GfxBackendBufferDesc
+struct GfxBufferDesc
 {
     uint64 sizeBytes;
-    GfxBackendBufferUsageFlags usageFlags;
-    GfxBackendMemoryArena arena = GfxBackendMemoryArena::PersistentGPU;
+    GfxBufferUsageFlags usageFlags;
+    GfxMemoryArena arena = GfxMemoryArena::PersistentGPU;
 };
 
-enum class GfxBackendBufferTransition
+enum class GfxBufferTransition
 {
     TransferWrite
 };
 
-struct GfxBackendCopyBufferToBufferParams
+struct GfxCopyBufferToBufferParams
 {
     GfxBufferHandle srcHandle;
     GfxBufferHandle dstHandle;
@@ -412,7 +413,7 @@ struct GfxBackendCopyBufferToBufferParams
     size_t srcOffset;
     size_t dstOffset;
     size_t sizeBytes;
-    GfxBackendResourceTransferCallback resourceTransferedCallback;
+    GfxResourceTransferCallback resourceTransferedCallback;
     void* resourceTransferedUserData;
 };
 
@@ -424,7 +425,7 @@ struct GfxBackendCopyBufferToBufferParams
 //
 
 // VkImageUsageFlagBits
-enum class GfxBackendImageUsageFlags : uint32
+enum class GfxImageUsageFlags : uint32
 {
     TransferSrc = 0x00000001,
     TransferDst = 0x00000002,
@@ -435,19 +436,19 @@ enum class GfxBackendImageUsageFlags : uint32
     TransientAttachment = 0x00000040,
     InputAttachment = 0x00000080
 };
-ENABLE_BITMASK(GfxBackendImageUsageFlags);
+ENABLE_BITMASK(GfxImageUsageFlags);
 
 // VkImageType
-enum class GfxBackendImageType : uint32
+enum class GfxImageType : uint32
 {
     Image1D = 0,
     Image2D = 1,
     Image3D = 2
 };
-ENABLE_BITMASK(GfxBackendImageType);
+ENABLE_BITMASK(GfxImageType);
 
 // VkSampleCountFlagBits
-enum class GfxBackendSampleCountFlags : uint32
+enum class GfxSampleCountFlags : uint32
 {
     SampleCount1 = 0x00000001,
     SampleCount2 = 0x00000002,
@@ -457,36 +458,36 @@ enum class GfxBackendSampleCountFlags : uint32
     SampleCount32 = 0x00000020,
     SampleCount64 = 0x00000040
 };
-ENABLE_BITMASK(GfxBackendSampleCountFlags);
+ENABLE_BITMASK(GfxSampleCountFlags);
 
 // Serialized for asset cache. Changing this will affect asset data
-struct GfxBackendImageDesc
+struct GfxImageDesc
 {
     uint16 width;
     uint16 height;
     uint16 depth = 1;
     uint16 numMips = 1;
     uint16 numArrayLayers = 1;
-    GfxBackendSampleCountFlags multisampleFlags = GfxBackendSampleCountFlags::SampleCount1;
-    GfxBackendImageType type = GfxBackendImageType::Image2D;
+    GfxSampleCountFlags multisampleFlags = GfxSampleCountFlags::SampleCount1;
+    GfxImageType type = GfxImageType::Image2D;
     GfxFormat format;
-    GfxBackendImageUsageFlags usageFlags = GfxBackendImageUsageFlags::Sampled;
-    GfxBackendMemoryArena arena = GfxBackendMemoryArena::PersistentGPU;
+    GfxImageUsageFlags usageFlags = GfxImageUsageFlags::Sampled;
+    GfxMemoryArena arena = GfxMemoryArena::PersistentGPU;
     uint32 mipOffsets[GFXBACKEND_MAX_MIPS_PER_IMAGE];
 };
 
-struct GfxBackendCopyBufferToImageParams
+struct GfxCopyBufferToImageParams
 {
     GfxBufferHandle srcHandle;
     GfxImageHandle dstHandle;
     GfxShaderStage stagesUsed;
     uint16 startMipIndex;
     uint16 mipCount;
-    GfxBackendResourceTransferCallback resourceTransferedCallback;
+    GfxResourceTransferCallback resourceTransferedCallback;
     void* resourceTransferedUserData;
 };
 
-enum class GfxBackendImageTransition
+enum class GfxImageTransition
 {
     ShaderRead,
     ComputeWrite,
@@ -541,7 +542,7 @@ enum class GfxSamplerBorderColor: uint32
     OpaqueWhite
 };
 
-struct GfxBackendSamplerDesc
+struct GfxSamplerDesc
 {
     GfxSamplerFilterMode samplerFilter = GfxSamplerFilterMode::Nearest;
     GfxSamplerWrapMode samplerWrap = GfxSamplerWrapMode::Repeat;
@@ -854,7 +855,7 @@ enum class GfxDescriptorType : uint32
     MutableValve              = 1000351000,
 };
 
-struct GfxBackendPipelineLayoutDesc
+struct GfxPipelineLayoutDesc
 {
     struct Binding 
     {
@@ -903,7 +904,7 @@ typedef struct GfxVertexBufferBindingDesc
     GfxVertexInputRate   inputRate;
 } GfxVertexBufferBindingDesc;
 
-struct GfxBackendGraphicsPipelineDesc
+struct GfxGraphicsPipelineDesc
 {
     GfxPrimitiveTopology inputAssemblyTopology = GfxPrimitiveTopology::TriangleList;
     
@@ -923,7 +924,7 @@ struct GfxBackendGraphicsPipelineDesc
     GfxFormat stencilAttachmentFormat;
 };
 
-struct GfxBackendBindingDesc
+struct GfxBindingDesc
 {   
     const char* name;
 
@@ -951,7 +952,7 @@ struct GfxBackendBindingDesc
 //  |_| \_\___|_| |_|\__,_|\___|_|  |_|   \__,_|___/___/
 //
 
-struct GfxBackendRenderPassAttachment
+struct GfxRenderPassAttachment
 {
     GfxImageHandle image;
     bool load;
@@ -968,9 +969,9 @@ struct GfxBackendRenderPass
 {
     RectInt cropRect = RECTINT_EMPTY;
     uint32 numAttachments;
-    GfxBackendRenderPassAttachment colorAttachments[GFXBACKEND_MAX_RENDERPASS_COLOR_ATTACHMENTS];
-    GfxBackendRenderPassAttachment depthAttachment;
-    GfxBackendRenderPassAttachment stencilAttachment;
+    GfxRenderPassAttachment colorAttachments[GFXBACKEND_MAX_RENDERPASS_COLOR_ATTACHMENTS];
+    GfxRenderPassAttachment depthAttachment;
+    GfxRenderPassAttachment stencilAttachment;
     bool swapchain;
     bool hasDepth;
     bool hasStencil;

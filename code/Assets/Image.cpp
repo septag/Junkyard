@@ -77,11 +77,11 @@ bool Asset::InitializeImageManager()
 
     if (SettingsJunkyard::Get().graphics.IsGraphicsEnabled()) {
         const uint32 kWhitePixel = 0xffffffff;
-        GfxBackendImageDesc imageDesc {
+        GfxImageDesc imageDesc {
             .width = 1,
             .height = 1,
             .format = GfxFormat::R8G8B8A8_UNORM,
-            .usageFlags = GfxBackendImageUsageFlags::TransferDst|GfxBackendImageUsageFlags::Sampled
+            .usageFlags = GfxImageUsageFlags::TransferDst|GfxImageUsageFlags::Sampled
         };
         gImageMgr.imageWhite = GfxBackend::CreateImage(imageDesc);
         if (!gImageMgr.imageWhite.IsValid())
@@ -96,13 +96,13 @@ bool Asset::InitializeImageManager()
             .format = GfxFormat::R8G8B8A8_UNORM
         };
 
-        GfxBackendCommandBuffer cmd = GfxBackend::BeginCommandBuffer(GfxBackendQueueType::Transfer);
+        GfxBackendCommandBuffer cmd = GfxBackend::BeginCommandBuffer(GfxQueueType::Transfer);
         void* stagingData;
         size_t stagingDataSize;
-        GfxBackendBufferDesc stagingBufferDesc {
+        GfxBufferDesc stagingBufferDesc {
             .sizeBytes = 4,
-            .usageFlags = GfxBackendBufferUsageFlags::TransferSrc,
-            .arena = GfxBackendMemoryArena::TransientCPU
+            .usageFlags = GfxBufferUsageFlags::TransferSrc,
+            .arena = GfxMemoryArena::TransientCPU
         };
         GfxBufferHandle stagingBuffer = GfxBackend::CreateBuffer(stagingBufferDesc);
         cmd.MapBuffer(stagingBuffer, &stagingData, &stagingDataSize);
@@ -110,7 +110,7 @@ bool Asset::InitializeImageManager()
         cmd.FlushBuffer(stagingBuffer);
         cmd.CopyBufferToImage(stagingBuffer, gImageMgr.imageWhite, GfxShaderStage::Fragment);
         GfxBackend::EndCommandBuffer(cmd);
-        GfxBackend::SubmitQueue(GfxBackendQueueType::Transfer);
+        GfxBackend::SubmitQueue(GfxQueueType::Transfer);
 
         GfxBackend::DestroyBuffer(stagingBuffer);
     }
@@ -301,13 +301,13 @@ bool AssetImageImpl::Bake(const AssetParams&, AssetData* data, const Span<uint8>
     ASSERT(headerTotalSize <= UINT32_MAX);
     data->SetObjData(header, uint32(headerTotalSize));
 
-    GfxBackendImageDesc imageDesc {
+    GfxImageDesc imageDesc {
         .width = uint16(header->width),
         .height = uint16(header->height),
         .numMips = uint16(header->numMips),
         .format = header->format,
-        .usageFlags = GfxBackendImageUsageFlags::TransferDst|GfxBackendImageUsageFlags::Sampled,
-        .arena = GfxBackendMemoryArena::DynamicImageGPU,
+        .usageFlags = GfxImageUsageFlags::TransferDst|GfxImageUsageFlags::Sampled,
+        .arena = GfxMemoryArena::DynamicImageGPU,
     };
     for (uint32 i = 0; i < numMips; i++)
         imageDesc.mipOffsets[i] = mips[i].offset;

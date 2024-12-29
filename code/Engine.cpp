@@ -144,10 +144,10 @@ namespace Engine
         // TODO: can show some cool anim or something
         BeginFrame(dt); 
         {
-            GfxBackendCommandBuffer cmd = GfxBackend::BeginCommandBuffer(GfxBackendQueueType::Graphics);
+            GfxBackendCommandBuffer cmd = GfxBackend::BeginCommandBuffer(GfxQueueType::Graphics);
             cmd.ClearSwapchainColor(FLOAT4_ZERO);
             GfxBackend::EndCommandBuffer(cmd);
-            GfxBackend::SubmitQueue(GfxBackendQueueType::Graphics);
+            GfxBackend::SubmitQueue(GfxQueueType::Graphics);
         }
         EndFrame();
 

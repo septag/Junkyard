@@ -904,10 +904,10 @@ bool AssetModelImpl::Bake(const AssetParams& params, AssetData* data, const Span
         {
             uint32 bufferIndex = 0;
             while (layout->vertexBufferStrides[bufferIndex]) {
-                GfxBackendBufferDesc desc {
+                GfxBufferDesc desc {
                     .sizeBytes = layout->vertexBufferStrides[bufferIndex]*mesh.numVertices,
-                    .usageFlags = GfxBackendBufferUsageFlags::TransferDst|GfxBackendBufferUsageFlags::Vertex,
-                    .arena = GfxBackendMemoryArena::DynamicBufferGPU
+                    .usageFlags = GfxBufferUsageFlags::TransferDst|GfxBufferUsageFlags::Vertex,
+                    .arena = GfxMemoryArena::DynamicBufferGPU
                 };
 
                 data->AddGpuBufferObject(&mesh.gpuBuffers.vertexBuffers[bufferIndex], desc, 
@@ -917,10 +917,10 @@ bool AssetModelImpl::Bake(const AssetParams& params, AssetData* data, const Span
         }
 
         {
-            GfxBackendBufferDesc desc {
+            GfxBufferDesc desc {
                 .sizeBytes = uint32(sizeof(uint32)*mesh.numIndices),
-                .usageFlags = GfxBackendBufferUsageFlags::TransferDst|GfxBackendBufferUsageFlags::Index,
-                .arena = GfxBackendMemoryArena::DynamicBufferGPU
+                .usageFlags = GfxBufferUsageFlags::TransferDst|GfxBufferUsageFlags::Index,
+                .arena = GfxMemoryArena::DynamicBufferGPU
             };
 
             data->AddGpuBufferObject(&mesh.gpuBuffers.indexBuffer, desc, mesh.cpuBuffers.indexBuffer.Get());
