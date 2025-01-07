@@ -19,10 +19,11 @@ cbuffer ModelTransform
     float4x4 ModelMat;
 };
 
-cbuffer FrameTransform
+cbuffer FrameInfo
 {
     float4x4 ViewMat;
     float4x4 ProjMat;
+    float3 LightDir;
 };
 
 Sampler2D BaseColorTexture;
@@ -41,13 +42,12 @@ Psinput VsMain(VsInput input)
 [shader("fragment")]
 float4 PsMain(Psinput input) : SV_Target
 {
-    const float3 lightDir = float3(-0.5, 0.5, -1.0);
     const float3 ambient = float3(0.05, 0.04, 0.065);
 
-    float3 lv = -normalize(lightDir);
+    float3 lv = -normalize(LightDir);
     float3 n = normalize((float3)input.normal);
     float NdotL = max(0.0, dot(n, lv));
 
     float4 albedo = BaseColorTexture.Sample(input.uv);
-    return float4(NdotL*albedo.xyz + ambient, 1.0f);
+    return float4(NdotL*albedo.xyz + ambient*albedo.xyz, 1.0f);
 }

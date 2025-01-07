@@ -30,17 +30,44 @@
 
 #include "../Graphics/GfxBackend.h"
 
+#include <stdio.h>
 
-struct AppImpl final : AppCallbacks
+static const char* TESTBASICGFX_MODELS[] = {
+    "/data/Duck/Duck.gltf",
+    "/data/DamagedHelmet/DamagedHelmet.gltf",
+    "/data/FlightHelmet/FlightHelmet.gltf",
+    "/data/Sponza/Sponza.gltf"
+};
+
+struct ModelScene
 {
-    CameraFPS   mFpsCam;
-    CameraOrbit mOrbitCam;
-    Camera*     mCam;
-    GfxImageHandle mImage;
-    GfxPipelineLayoutHandle mPipelineLayout;
-    GfxPipelineHandle mPipeline;
-    AssetHandleShader mShader;
+    String32 mName;
+    Path mModelFilepath;
+
+    CameraFPS mCam;
+
     AssetHandleModel mModel;
+    AssetHandleShader mShader;
+
+    GfxPipelineHandle mPipeline;
+    GfxPipelineLayoutHandle mPipelineLayout;
+    GfxBufferHandle mUniformBuffer;
+
+    AssetGroup mAssetGroup;
+
+    float mLightAngle = M_HALFPI;
+
+    struct FrameInfo 
+    {
+        Mat4 viewMat;
+        Mat4 projMat;
+        Float3 lightDir;
+    };
+
+    struct ModelTransform
+    {
+        Mat4 modelMat;
+    };
 
     struct Vertex 
     {
@@ -49,66 +76,135 @@ struct AppImpl final : AppCallbacks
         Float2 uv;
     };
 
-    static void CreateGraphicsResources(void* userData)
+    void Initialize(AssetGroup initAssetGroup, const char* modelFilepath)
     {
-        AppImpl* self = (AppImpl*)userData;
+        ASSERT(mModelFilepath.IsEmpty());
 
-        {
-            GfxImageDesc desc {
-                .width = App::GetFramebufferWidth(),
-                .height = App::GetFramebufferHeight(),
-                .format = GfxFormat::R16G16B16A16_SFLOAT,
-                .usageFlags = GfxImageUsageFlags::TransferSrc|GfxImageUsageFlags::Storage|GfxImageUsageFlags::TransferDst,
-            };
-            self->mImage = GfxBackend::CreateImage(desc);
-        }
+        mModelFilepath = modelFilepath;
+        mName = mModelFilepath.GetFileName().CStr();
 
-        const GfxPipelineLayoutDesc::Binding bindings[] {
-            {
-                .name = "MainImage",
-                .type = GfxDescriptorType::StorageImage,
-                .stagesUsed = GfxShaderStage::Compute,
-            }
+        String32 posSetting = String32::Format("%s.CamPos", mName.CStr());
+        String32 targetSetting = String32::Format("%s.CamTarget", mName.CStr());
+
+        const char* posStr = Settings::GetValue(posSetting.CStr(), "0,-2.0,3.0");
+        const char* targetStr = Settings::GetValue(targetSetting.CStr(), "0,0,0");
+        Float3 camPos;
+        Float3 camTarget;
+        sscanf(posStr, "%f,%f,%f", &camPos.x, &camPos.y, &camPos.z);
+        sscanf(targetStr, "%f,%f,%f", &camTarget.x, &camTarget.y, &camTarget.z);
+        mCam.SetLookAt(camPos, camTarget);
+
+        GfxBufferDesc bufferDesc {
+            .sizeBytes = sizeof(FrameInfo),
+            .usageFlags = GfxBufferUsageFlags::TransferDst | GfxBufferUsageFlags::Uniform,
+            .arena = GfxMemoryArena::PersistentGPU
         };
+        mUniformBuffer = GfxBackend::CreateBuffer(bufferDesc);
 
-        const GfxPipelineLayoutDesc layoutDesc {
-            .numBindings = 1,
-            .bindings = bindings
-        };
+        mShader = Asset::LoadShader("/shaders/Model.hlsl", ShaderLoadParams{}, initAssetGroup);
 
-        AssetObjPtrScope<GfxShader> shader(self->mShader);
-        self->mPipelineLayout = GfxBackend::CreatePipelineLayout(*shader, layoutDesc);
-        self->mPipeline = GfxBackend::CreateComputePipeline(*shader, self->mPipelineLayout);
+        mAssetGroup = Asset::CreateGroup();
     }
 
-    bool Initialize() override
+    void Release()
     {
-        Vfs::HelperMountDataAndShaders(SettingsJunkyard::Get().engine.connectToServer);
+        String32 posSetting = String32::Format("%s.CamPos", mName.CStr());
+        String32 targetSetting = String32::Format("%s.CamTarget", mName.CStr());
 
-        if (!Engine::Initialize())
-            return false;
+        Settings::SetValue(posSetting.CStr(), 
+                           String64::Format("%.2f,%.2f,%.2f", mCam.Position().x, mCam.Position().y, mCam.Position().z).CStr());
 
-        mFpsCam.SetLookAt(Float3(0, -2.0f, 3.0f), FLOAT3_ZERO);
-        mOrbitCam.SetLookAt(Float3(0, -2.0f, 3.0f), FLOAT3_ZERO);
-        mCam = &mFpsCam;
+        Float3 target = mCam.Position() + mCam.Forward();
+        Settings::SetValue(targetSetting.CStr(), String64::Format("%.2f,%.2f,%.2f", target.x, target.y, target.z).CStr());
 
-        Engine::RegisterShortcut("TAB", [](void* userData) {
-            AppImpl* app = reinterpret_cast<AppImpl*>(userData);
-            if (app->mCam == &app->mOrbitCam) {
-                app->mFpsCam.SetViewMat(app->mCam->GetViewMat());
-                app->mCam = &app->mFpsCam;
+        Unload();
+        GfxBackend::DestroyBuffer(mUniformBuffer);
+    }
+
+    void Load()
+    {
+        AssetObjPtrScope<GfxShader> shader(mShader);
+
+        GfxVertexBufferBindingDesc vertexBufferBindingDesc {
+            .binding = 0,
+            .stride = sizeof(Vertex),
+            .inputRate = GfxVertexInputRate::Vertex
+        };
+
+        GfxVertexInputAttributeDesc vertexInputAttDescs[] = {
+            {
+                .semantic = "POSITION",
+                .binding = 0,
+                .format = GfxFormat::R32G32B32_SFLOAT,
+                .offset = offsetof(Vertex, pos)
+            },
+            {
+                .semantic = "NORMAL",
+                .binding = 0,
+                .format = GfxFormat::R32G32B32_SFLOAT,
+                .offset = offsetof(Vertex, normal)
+            },
+            {
+                .semantic = "TEXCOORD",
+                .binding = 0,
+                .format = GfxFormat::R32G32_SFLOAT,
+                .offset = offsetof(Vertex, uv)
             }
-            else {
-                app->mCam = &app->mOrbitCam;
+        };
+
+        GfxPipelineLayoutDesc::Binding bindings[] = {
+            {
+                .name = "FrameInfo",
+                .type = GfxDescriptorType::UniformBuffer,
+                .stagesUsed = GfxShaderStage::Vertex|GfxShaderStage::Fragment
+            },
+            {
+                .name = "BaseColorTexture",
+                .type = GfxDescriptorType::CombinedImageSampler,
+                .stagesUsed = GfxShaderStage::Fragment
             }
-        }, this);
+        };
 
-        LOG_INFO("Use right mouse button to rotate camera. And [TAB] to switch between Orbital and FPS (WASD) camera");
+        GfxPipelineLayoutDesc::PushConstant pushConstant {
+            .name = "ModelTransform",
+            .stagesUsed = GfxShaderStage::Vertex,
+            .size = sizeof(ModelTransform)
+        };
 
-        AssetGroup assetGroup = Engine::RegisterInitializeResources(AppImpl::CreateGraphicsResources, this);
-        mShader = Asset::LoadShader("/shaders/Fill.hlsl", ShaderLoadParams {}, assetGroup);        
+        GfxPipelineLayoutDesc pipelineLayoutDesc {
+            .numBindings = CountOf(bindings),
+            .bindings = bindings,
+            .numPushConstants = 1,
+            .pushConstants = &pushConstant
+        };
 
-        ModelLoadParams loadParams {
+        mPipelineLayout = GfxBackend::CreatePipelineLayout(*shader, pipelineLayoutDesc);
+
+        GfxGraphicsPipelineDesc pipelineDesc {
+            .numVertexInputAttributes = CountOf(vertexInputAttDescs),
+            .vertexInputAttributes = vertexInputAttDescs,
+            .numVertexBufferBindings = 1,
+            .vertexBufferBindings = &vertexBufferBindingDesc,
+            .rasterizer = {
+                .cullMode = GfxCullMode::Back
+            },
+            .blend = {
+                .numAttachments = 1,
+                .attachments = GfxBlendAttachmentDesc::GetDefault()
+            },
+            .depthStencil = {
+                .depthTestEnable = true,
+                .depthWriteEnable = true,
+                .depthCompareOp = GfxCompareOp::Less
+            },
+            .numColorAttachments = 1,
+            .colorAttachmentFormats = {GfxBackend::GetSwapchainFormat()},
+            .depthAttachmentFormat = GfxFormat::D24_UNORM_S8_UINT
+        };
+
+        mPipeline = GfxBackend::CreateGraphicsPipeline(*shader, mPipelineLayout, pipelineDesc);
+
+        ModelLoadParams modelParams {
             .layout = {
                 .vertexAttributes = {
                     {"POSITION", 0, 0, GfxFormat::R32G32B32_SFLOAT, offsetof(Vertex, pos)},
@@ -120,22 +216,184 @@ struct AppImpl final : AppCallbacks
                 }
             }
         };
-        mModel = Asset::LoadModel("/data/models/Duck/Duck.gltf", loadParams, assetGroup);
+
+        mModel = Asset::LoadModel(mModelFilepath.CStr(), modelParams, mAssetGroup);
+        mAssetGroup.Load();
+    }
+
+    void Unload()
+    {
+        mAssetGroup.Unload();
+
+        GfxBackend::DestroyPipeline(mPipeline);
+        GfxBackend::DestroyPipelineLayout(mPipelineLayout);
+    }
+
+    void Update(GfxCommandBuffer cmd)
+    {
+        if (!mAssetGroup.IsValid() || !mAssetGroup.IsLoadFinished())
+            return;
+
+        float vwidth = (float)App::GetFramebufferWidth();
+        float vheight = (float)App::GetFramebufferHeight();
+        FrameInfo ubo {
+            .viewMat = mCam.GetViewMat(),
+            .projMat = GfxBackend::GetSwapchainTransformMat() * mCam.GetPerspectiveMat(vwidth, vheight),
+            .lightDir = Float3(-0.2f, M::Cos(mLightAngle), -M::Sin(mLightAngle))
+        };
+
+        GfxBufferDesc stagingDesc {
+            .sizeBytes = sizeof(ubo),
+            .usageFlags = GfxBufferUsageFlags::TransferSrc,
+            .arena = GfxMemoryArena::TransientCPU
+        };
+        GfxBufferHandle stagingBuff = GfxBackend::CreateBuffer(stagingDesc);
+
+        FrameInfo* dstUbo;
+        cmd.MapBuffer(stagingBuff, (void**)&dstUbo);
+        *dstUbo = ubo;
+        cmd.FlushBuffer(stagingBuff);
+
+        cmd.TransitionBuffer(mUniformBuffer, GfxBufferTransition::TransferWrite);
+        cmd.CopyBufferToBuffer(stagingBuff, mUniformBuffer, GfxShaderStage::Vertex);
+
+        GfxBackend::DestroyBuffer(stagingBuff);
+    }
+
+    void UpdateImGui()
+    {
+        ImGui::SliderFloat("LightAngle", &mLightAngle, 0, M_PI, "%0.1f");
+    }
+
+    void Render(GfxCommandBuffer cmd)
+    {
+        if (!mAssetGroup.IsValid() || !mAssetGroup.IsLoadFinished())
+            return;
+
+        cmd.BindPipeline(mPipeline);
+        
+        // Viewport
+        float vwidth = (float)App::GetFramebufferWidth();
+        float vheight = (float)App::GetFramebufferHeight();
+
+        GfxViewport viewport {
+            .width = vwidth,
+            .height = vheight,
+        };
+
+        cmd.SetViewports(0, 1, &viewport);
+
+        RectInt scissor(0, 0, int(vwidth), int(vheight));
+        cmd.SetScissors(0, 1, &scissor);
+
+        AssetObjPtrScope<Model> model(mModel);
+
+        for (uint32 i = 0; i < model->numNodes; i++) {
+            const ModelNode& node = model->nodes[i];
+            if (node.meshId == 0)
+            continue;
+
+            ModelTransform transform {
+                .modelMat = Transform3D::ToMat4(node.localTransform)
+            };
+            cmd.PushConstants(mPipelineLayout, "ModelTransform", &transform, sizeof(transform));
+
+            const ModelMesh& mesh = model->meshes[IdToIndex(node.meshId)];
+
+            // Buffers
+            uint64 offsets[MODEL_MAX_VERTEX_BUFFERS_PER_SHADER] = {};
+            cmd.BindVertexBuffers(0, mesh.numVertexBuffers, mesh.gpuBuffers.vertexBuffers, offsets);
+            cmd.BindIndexBuffer(mesh.gpuBuffers.indexBuffer, 0, GfxIndexType::Uint32);
+
+            for (uint32 smi = 0; smi < mesh.numSubmeshes; smi++) {
+                const ModelSubmesh& submesh = mesh.submeshes[smi];
+                const ModelMaterial* mtl = model->materials[IdToIndex(submesh.materialId)].Get();
+                        
+                GfxImageHandle imgHandle {};
+
+                if (mtl->pbrMetallicRoughness.baseColorTex.texture.IsValid()) {
+                    AssetObjPtrScope<GfxImage> img(mtl->pbrMetallicRoughness.baseColorTex.texture);
+                    if (!img.IsNull())
+                    imgHandle = img->handle;
+                }
+
+                GfxBindingDesc bindings[] = {
+                    {
+                        .name = "FrameInfo",
+                        .buffer = mUniformBuffer
+                    },
+                    {
+                        .name = "BaseColorTexture",
+                        .image = imgHandle.IsValid() ? imgHandle : Asset::GetWhiteImage()
+                    }
+                };
+                cmd.PushBindings(mPipelineLayout, CountOf(bindings), bindings);
+
+                cmd.DrawIndexed(submesh.numIndices, 1, submesh.startIndex, 0, 0);
+            }
+        }
+    }
+
+};
+
+struct AppImpl final : AppCallbacks
+{
+    Camera* mCam = nullptr;
+    ModelScene mModelScenes[CountOf(TESTBASICGFX_MODELS)];
+    GfxImageHandle mRenderTargetDepth;
+    uint32 mSelectedSceneIdx;
+    bool mFirstTime = true;
+
+    static void InitializeResources(void* userData)
+    {
+        AppImpl* self = (AppImpl*)userData;
+
+        {
+            Int2 extent = GfxBackend::GetSwapchainExtent();
+            GfxImageDesc desc {
+                .width = uint16(extent.x),
+                .height = uint16(extent.y),
+                .multisampleFlags = GfxSampleCountFlags::SampleCount1,
+                .format = GfxFormat::D24_UNORM_S8_UINT,
+                .usageFlags = GfxImageUsageFlags::DepthStencilAttachment,
+                .arena = GfxMemoryArena::PersistentGPU
+            };
+
+            self->mRenderTargetDepth = GfxBackend::CreateImage(desc);
+        }
+    }
+
+    bool Initialize() override
+    {
+        bool isRemote = SettingsJunkyard::Get().engine.connectToServer;
+
+        // For remote mode, you also have to use "-ToolingServerCustomDataMountDir=data/TestAsset" argument for the server tool
+        Vfs::HelperMountDataAndShaders(isRemote, isRemote ? "data" : "data/TestBasicGfx");
+
+        if (!Engine::Initialize())
+            return false;
+
+
+        AssetGroup initAssetGroup = Engine::RegisterInitializeResources(InitializeResources, this);
+        for (uint32 i = 0; i < CountOf(TESTBASICGFX_MODELS); i++)
+            mModelScenes[i].Initialize(initAssetGroup, TESTBASICGFX_MODELS[i]);
+
+        mSelectedSceneIdx = (uint32)Str::ToInt(Settings::GetValue("TestBasicGfx.SelectedScene", "0"));
+        mSelectedSceneIdx = Clamp(mSelectedSceneIdx, 0u, CountOf(TESTBASICGFX_MODELS)-1);
+
+        mCam = &mModelScenes[mSelectedSceneIdx].mCam;
 
         return true;
     };
 
-    void ReleaseGraphicsResources()
-    {
-        GfxBackend::DestroyPipeline(mPipeline);
-        GfxBackend::DestroyPipelineLayout(mPipelineLayout);
-        GfxBackend::DestroyImage(mImage);
-    }
-    
     void Cleanup() override
     {
-        
-        ReleaseGraphicsResources();
+        Settings::SetValue("TestBasicGfx.SelectedScene", String32::Format("%u", mSelectedSceneIdx).CStr());
+
+        for (uint32 i = 0; i < CountOf(TESTBASICGFX_MODELS); i++)
+            mModelScenes[i].Release();
+
+        GfxBackend::DestroyImage(mRenderTargetDepth);
 
         Engine::Release();
     };
@@ -144,59 +402,98 @@ struct AppImpl final : AppCallbacks
     {
         PROFILE_ZONE();
 
-        mCam->HandleMovementKeyboard(dt, 100.0f, 5.0f);
+        if (mFirstTime) {
+            mModelScenes[mSelectedSceneIdx].Load();
+            mCam = &mModelScenes[mSelectedSceneIdx].mCam;
+            mFirstTime = false;
+        }
 
+        mCam->HandleMovementKeyboard(dt, 20.0f, 5.0f);
 
         Engine::BeginFrame(dt);
 
-        if (ImGui::IsEnabled()) {
-            DebugHud::DrawDebugHud(dt);
-            DebugHud::DrawStatusBar(dt);
-        }
+        GfxCommandBuffer cmd = GfxBackend::BeginCommandBuffer(GfxQueueType::Graphics);
 
+        // Update
+        mModelScenes[mSelectedSceneIdx].Update(cmd);
 
-        GfxBackendCommandBuffer cmd = GfxBackend::BeginCommandBuffer(GfxQueueType::Graphics|GfxQueueType::Compute);
-
-        cmd.BindPipeline(mPipeline);
-
-        GfxBindingDesc bindings[] {
-            {
-                .name = "MainImage",
-                .image = mImage
-            }
+        // Render
+        GfxBackendRenderPass pass { 
+            .colorAttachments = {{ 
+                .clear = true,
+                .clearValue = {
+                    .color = Color::ToFloat4(COLOR_BLACK)
+                }
+            }},
+            .depthAttachment = {
+                .image = mRenderTargetDepth,
+                .clear = true,
+                .clearValue = {
+                    .depth = 1.0f
+                }
+            },
+            .swapchain = true,
+            .hasDepth = true
         };
 
-        const GfxImageDesc& imageDesc = GfxBackend::GetImageDesc(mImage);
+        cmd.TransitionImage(mRenderTargetDepth, GfxImageTransition::RenderTarget);
+        cmd.BeginRenderPass(pass);
+        {
+            mModelScenes[mSelectedSceneIdx].Render(cmd);            
+        }
+        cmd.EndRenderPass();
 
-        cmd.TransitionImage(mImage, GfxImageTransition::ComputeWrite);
-        cmd.PushBindings(mPipelineLayout, CountOf(bindings), bindings);
-        cmd.Dispatch((uint32)M::Ceil(float(imageDesc.width)/16.0f), (uint32)M::Ceil(float(imageDesc.height/16.0f)), 1);
-        cmd.TransitionImage(mImage, GfxImageTransition::CopySource);
-        cmd.CopyImageToSwapchain(mImage);
+        DebugDraw::BeginDraw(cmd, App::GetFramebufferWidth(), App::GetFramebufferHeight());
+        DebugDrawGridProperties gridProps {
+            .distance = 200,
+            .lineColor = Color(0x565656), 
+            .boldLineColor = Color(0xd6d6d6)            
+        };
 
-        // Finished working with mBuffer ?
-        // cmd.TransitionBuffer(mBuffer, GfxBackendBufferTransition::TransferWrite);
+        DebugDraw::DrawGroundGrid(*mCam, gridProps);
+        DebugDraw::EndDraw(cmd, *mCam, mRenderTargetDepth);
 
-        ImGui::DrawFrame(cmd);
+        if (ImGui::IsEnabled()) {
+            DebugHud::DrawDebugHud(dt, 20);
+            DebugHud::DrawStatusBar(dt);
+
+            ImGui::BeginMainMenuBar();
+            {
+                if (ImGui::BeginMenu("Scenes")) {
+                    for (uint32 i = 0; i < CountOf(TESTBASICGFX_MODELS); i++) {
+                        if (ImGui::MenuItem(mModelScenes[i].mName.CStr(), nullptr, mSelectedSceneIdx == i)) {
+                            if (i != mSelectedSceneIdx) {
+                                mModelScenes[mSelectedSceneIdx].Unload();
+                                mSelectedSceneIdx = i;
+                                mModelScenes[i].Load();
+                                mCam = &mModelScenes[i].mCam;
+                            }
+                        }
+                    }
+                    ImGui::EndMenu();
+                }
+            }        
+            ImGui::EndMainMenuBar();
+
+            ImGui::SetNextWindowSize(ImVec2(300, 200), ImGuiCond_FirstUseEver);
+            if (ImGui::Begin("Scene")) {
+                mModelScenes[mSelectedSceneIdx].UpdateImGui();
+            }
+            ImGui::End();
+
+            ImGui::DrawFrame(cmd);
+        }
 
         GfxBackend::EndCommandBuffer(cmd);
         GfxBackend::SubmitQueue(GfxQueueType::Graphics);
-
 
         Engine::EndFrame();
     }
     
     void OnEvent(const AppEvent& ev) override
     {
-        switch (ev.type) {
-        case AppEventType::Resized:
-            break;
-        default:
-            break;
-        }
-
-        //if (!ImGui::IsAnyItemHovered() && !ImGui::GetIO().WantCaptureMouse && !ImGuizmo::IsOver())
-        //    mCam->HandleRotationMouse(ev, 0.2f, 0.1f);
+        if (mCam && !ImGui::IsAnyItemHovered() && !ImGui::GetIO().WantCaptureMouse && !ImGuizmo::IsOver())
+            mCam->HandleRotationMouse(ev, 0.2f, 0.1f);
     }
 };
 
@@ -209,18 +506,16 @@ int Main(int argc, char* argv[])
     };
     SettingsJunkyard::Initialize(initSettings);
 
-    #if PLATFORM_ANDROID
-    Settings::InitializeFromAndroidAsset(App::AndroidGetAssetManager(), "Settings.ini");
-    #else
+    Settings::InitializeFromINI("TestBasicGfx.ini");
     Settings::InitializeFromCommandLine(argc, argv);
-    #endif
 
     static AppImpl impl;
     App::Run(AppDesc { 
         .callbacks = &impl, 
-        .windowTitle = "Junkyard: Basic Graphics Backend test"
+        .windowTitle = "Junkyard: Basic Graphics test"
     });
 
+    Settings::SaveToINI("TestBasicGfx.ini");
     Settings::Release();
     return 0;
 }

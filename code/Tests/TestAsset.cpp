@@ -229,7 +229,7 @@ struct AppImpl : AppCallbacks
         LOG_INFO("Load finished: %0.2f ms", timer.ElapsedMS());
     }
 
-    void DrawCell(GfxBackendCommandBuffer cmd, uint32 index)
+    void DrawCell(GfxCommandBuffer cmd, uint32 index)
     {
         Cell& cell = mGrid.cells[index];
 
@@ -434,7 +434,7 @@ struct AppImpl : AppCallbacks
         mCam->HandleMovementKeyboard(dt, 40.0f, 20.0f);
 
         Engine::BeginFrame(dt);
-        GfxBackendCommandBuffer cmd = GfxBackend::BeginCommandBuffer(GfxQueueType::Graphics);
+        GfxCommandBuffer cmd = GfxBackend::BeginCommandBuffer(GfxQueueType::Graphics);
         
         uint16 width = App::GetFramebufferWidth();
         uint16 height = App::GetFramebufferHeight();

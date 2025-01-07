@@ -319,7 +319,7 @@ namespace GLTF
         }
 
         ModelMaterial* mtl = Mem::AllocTyped<ModelMaterial>(1, alloc);
-        *mtl = ModelMaterial {
+        *mtl = {
             .hasMetalRoughness = (bool)gltfMtl->has_pbr_metallic_roughness,
             .hasSpecularGlossiness = (bool)gltfMtl->has_pbr_specular_glossiness,
             .hasClearcoat = (bool)gltfMtl->has_clearcoat,
@@ -401,40 +401,40 @@ namespace GLTF
     static ModelVertexAttribute _ConvertVertexAttribute(cgltf_attribute_type type, uint32 index)
     {
         if (type == cgltf_attribute_type_position && index == 0)  {
-            return ModelVertexAttribute { .semantic = "POSITION", .index = 0 };
+            return { .semantic = "POSITION", .index = 0 };
         } 
         else if (type == cgltf_attribute_type_normal && index == 0) {
-            return ModelVertexAttribute { .semantic = "NORMAL", .index = 0 };
+            return { .semantic = "NORMAL", .index = 0 };
         } 
         else if (type == cgltf_attribute_type_tangent && index == 0) {
-            return ModelVertexAttribute { .semantic = "TANGENT", .index = 0 };
+            return { .semantic = "TANGENT", .index = 0 };
         } 
         else if (type == cgltf_attribute_type_texcoord) {
             switch (index) {
-            case 0:     return ModelVertexAttribute { .semantic = "TEXCOORD", .index = 0 };
-            case 1:     return ModelVertexAttribute { .semantic = "TEXCOORD", .index = 1 };
-            case 2:     return ModelVertexAttribute { .semantic = "TEXCOORD", .index = 2 };
-            case 3:     return ModelVertexAttribute { .semantic = "TEXCOORD", .index = 3 };
-            default:    return ModelVertexAttribute {};
+            case 0:     return { .semantic = "TEXCOORD", .index = 0 };
+            case 1:     return { .semantic = "TEXCOORD", .index = 1 };
+            case 2:     return { .semantic = "TEXCOORD", .index = 2 };
+            case 3:     return { .semantic = "TEXCOORD", .index = 3 };
+            default:    return {};
             }
         } 
         else if (type == cgltf_attribute_type_color) {
             switch (index) {
-            case 0:     return ModelVertexAttribute { .semantic = "COLOR", .index = 0 };
-            case 1:     return ModelVertexAttribute { .semantic = "COLOR", .index = 0 };
-            case 2:     return ModelVertexAttribute { .semantic = "COLOR", .index = 0 };
-            case 3:     return ModelVertexAttribute { .semantic = "COLOR", .index = 0 };
-            default:    return ModelVertexAttribute {};
+            case 0:     return { .semantic = "COLOR", .index = 0 };
+            case 1:     return { .semantic = "COLOR", .index = 0 };
+            case 2:     return { .semantic = "COLOR", .index = 0 };
+            case 3:     return { .semantic = "COLOR", .index = 0 };
+            default:    return {};
             }
         } 
         else if (type == cgltf_attribute_type_joints && index == 0) {
-            return ModelVertexAttribute { .semantic = "BLENDINDICES", .index = 0 };
+            return { .semantic = "BLENDINDICES", .index = 0 };
         } 
         else if (type == cgltf_attribute_type_weights && index == 0) {
-            return ModelVertexAttribute { .semantic = "BLENDWEIGHT", .index = 0 };
+            return { .semantic = "BLENDWEIGHT", .index = 0 };
         } 
         else {
-            return ModelVertexAttribute {};
+            return {};
         }
     }
 
@@ -724,7 +724,7 @@ namespace GLTF
                             "Node setup will likely have errors", srcNode->name);
             }
 
-            ASSERT_ALWAYS(!srcNode->has_scale, "Node: %s: Node scaling not supported yet", srcNode->name);
+            // ASSERT_ALWAYS(!srcNode->has_scale, "Node: %s: Node scaling not supported yet", srcNode->name);
 
             if (srcNode->has_rotation) 
                 dstNode->localTransform.rot = Mat3::FromQuat(Quat(srcNode->rotation));
@@ -733,7 +733,7 @@ namespace GLTF
 
             for (cgltf_size mi = 0; mi < data->meshes_count; mi++) {
                 if (&data->meshes[mi] == srcNode->mesh) {
-                    dstNode->meshId = IndexToId((uint32)mi);
+                    dstNode->meshId = IndexToId(uint32(mi));
                     break;
                 }
             }

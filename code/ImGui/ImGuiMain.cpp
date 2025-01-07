@@ -447,7 +447,7 @@ namespace ImGui
             };
             GfxBufferHandle stagingBuffer = GfxBackend::CreateBuffer(stagingBufferDesc);
             
-            GfxBackendCommandBuffer cmd = GfxBackend::BeginCommandBuffer(GfxQueueType::Transfer);
+            GfxCommandBuffer cmd = GfxBackend::BeginCommandBuffer(GfxQueueType::Transfer);
             void* stagingData;
             size_t stagingDataSize;
             cmd.MapBuffer(stagingBuffer, &stagingData, &stagingDataSize);
@@ -629,7 +629,7 @@ void ImGui::BeginFrame(float dt)
     ImGuizmo::SetRect(0, 0, io.DisplaySize.x, io.DisplaySize.y);
 }
 
-bool ImGui::DrawFrame(GfxBackendCommandBuffer cmd)
+bool ImGui::DrawFrame(GfxCommandBuffer cmd)
 {
     if (gImGui.ctx == nullptr) 
         return false;

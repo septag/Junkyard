@@ -4,7 +4,7 @@
 
 #include "GfxBackendTypes.h"
 
-struct GfxBackendCommandBuffer
+struct GfxCommandBuffer
 {
     uint32 mGeneration;
     uint16 mCmdBufferIndex;
@@ -67,32 +67,33 @@ namespace GfxBackend
 
     void SubmitQueue(GfxQueueType queueType, GfxQueueType dependentQueues = GfxQueueType::None);
 
-    [[nodiscard]] GfxBackendCommandBuffer BeginCommandBuffer(GfxQueueType queueType);
-    void EndCommandBuffer(GfxBackendCommandBuffer& cmdBuffer);
+    [[nodiscard]] GfxCommandBuffer BeginCommandBuffer(GfxQueueType queueType);
+    void EndCommandBuffer(GfxCommandBuffer& cmdBuffer);
 
     GfxImageHandle CreateImage(const GfxImageDesc& desc);
-    void DestroyImage(GfxImageHandle handle);
+    void DestroyImage(GfxImageHandle& handle);
     void BatchCreateImage(uint32 numImages, const GfxImageDesc* descs, GfxImageHandle* outHandles);
-    void BatchDestroyImage(uint32 numImages, const GfxImageHandle* handles);
+    void BatchDestroyImage(uint32 numImages, GfxImageHandle* handles);
     const GfxImageDesc& GetImageDesc(GfxImageHandle handle);
 
     GfxPipelineLayoutHandle CreatePipelineLayout(const GfxShader& shader, const GfxPipelineLayoutDesc& desc);
-    void DestroyPipelineLayout(GfxPipelineLayoutHandle handle);
+    void DestroyPipelineLayout(GfxPipelineLayoutHandle& handle);
 
     GfxBufferHandle CreateBuffer(const GfxBufferDesc& desc);
-    void DestroyBuffer(GfxBufferHandle handle);
+    void DestroyBuffer(GfxBufferHandle& handle);
     void BatchCreateBuffer(uint32 numBuffers, const GfxBufferDesc* descs, GfxBufferHandle* outHandles);
-    void BatchDestroyBuffer(uint32 numBuffers, const GfxBufferHandle* handles);
+    void BatchDestroyBuffer(uint32 numBuffers, GfxBufferHandle* handles);
 
     GfxPipelineHandle CreateGraphicsPipeline(const GfxShader& shader, GfxPipelineLayoutHandle layoutHandle, const GfxGraphicsPipelineDesc& desc);
     GfxPipelineHandle CreateComputePipeline(const GfxShader& shader, GfxPipelineLayoutHandle layoutHandle);
-    void DestroyPipeline(GfxPipelineHandle handle);
+    void DestroyPipeline(GfxPipelineHandle& handle);
 
     GfxSamplerHandle CreateSampler(const GfxSamplerDesc& desc);
-    void DestroySampler(GfxSamplerHandle handle);
+    void DestroySampler(GfxSamplerHandle& handle);
 
     GfxFormat GetSwapchainFormat();
     Mat4 GetSwapchainTransformMat();
+    Int2 GetSwapchainExtent();
 
     void BeginRenderFrameSync();
     void EndRenderFrameSync();
@@ -153,7 +154,7 @@ namespace GfxBackend
 
 //----------------------------------------------------------------------------------------------------------------------
 template <typename _T>
-inline void GfxBackendCommandBuffer::PushConstants(GfxPipelineLayoutHandle layout, const char* name, const _T& data)
+inline void GfxCommandBuffer::PushConstants(GfxPipelineLayoutHandle layout, const char* name, const _T& data)
 {
     PushConstants(layout, name, &data, sizeof(data));
 }

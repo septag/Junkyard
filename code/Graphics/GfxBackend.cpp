@@ -233,7 +233,7 @@ struct GfxBackendQueueManager
     inline uint32 FindQueue(GfxQueueType type) const;
     inline uint32 GetQueueCount() const { return mNumQueues; }
     inline GfxBackendQueue& GetQueue(uint32 index) const { ASSERT(index < mNumQueues); return mQueues[index]; }
-    inline VkCommandBuffer GetCommandBufferHandle(const GfxBackendCommandBuffer& cmdBuffer);
+    inline VkCommandBuffer GetCommandBufferHandle(const GfxCommandBuffer& cmdBuffer);
     inline uint32 GetGeneration() const { return mGeneration; }
     inline uint32 GetFrameIndex() const { return mFrameIndex; }
 
@@ -616,7 +616,7 @@ namespace GfxBackend
         return nullptr;
     }
 
-    inline VkCommandBuffer _GetCommandBufferHandle(const GfxBackendCommandBuffer& cmdBuffer)
+    inline VkCommandBuffer _GetCommandBufferHandle(const GfxCommandBuffer& cmdBuffer)
     {
         GfxBackendQueue& queue = gBackendVk.queueMan.GetQueue(cmdBuffer.mQueueIndex);
         ASSERT_MSG(cmdBuffer.mGeneration == gBackendVk.queueMan.GetGeneration(), 
@@ -1628,12 +1628,12 @@ void GfxBackend::Begin()
     gBackendVk.swapchain.AcquireImage();
 }
 
-void GfxBackendCommandBuffer::ClearImageColor(GfxImageHandle imgHandle, Color color)
+void GfxCommandBuffer::ClearImageColor(GfxImageHandle imgHandle, Color color)
 {
     ClearImageColor(imgHandle, Color::ToFloat4(color));
 }
 
-void GfxBackendCommandBuffer::ClearImageColor(GfxImageHandle imgHandle, Float4 color)
+void GfxCommandBuffer::ClearImageColor(GfxImageHandle imgHandle, Float4 color)
 {
     mShouldSubmit = true;
 
@@ -1654,7 +1654,7 @@ void GfxBackendCommandBuffer::ClearImageColor(GfxImageHandle imgHandle, Float4 c
     vkCmdClearColorImage(cmdVk, image.handle, image.layout, &clearVal, 1, &clearRange);
 }
 
-void GfxBackendCommandBuffer::ClearSwapchainColor(Float4 color)
+void GfxCommandBuffer::ClearSwapchainColor(Float4 color)
 {
     mShouldSubmit = true;
 
@@ -1676,7 +1676,7 @@ void GfxBackendCommandBuffer::ClearSwapchainColor(Float4 color)
     gBackendVk.queueMan.GetQueue(mQueueIndex).internalDependents |= GfxQueueType::Present;
 }
 
-void GfxBackendCommandBuffer::CopyImageToSwapchain(GfxImageHandle imgHandle)
+void GfxCommandBuffer::CopyImageToSwapchain(GfxImageHandle imgHandle)
 {
     ASSERT(mIsRecording);
 
@@ -1900,7 +1900,7 @@ void GfxBackendVkAllocator::VkInternalFreeFn(void*, size_t, VkInternalAllocation
 }
 //----------------------------------------------------------------------------------------------------------------------
 
-GfxBackendCommandBuffer GfxBackend::BeginCommandBuffer(GfxQueueType queueType)
+GfxCommandBuffer GfxBackend::BeginCommandBuffer(GfxQueueType queueType)
 {
     gBackendVk.frameSyncSignal.Increment();
 
@@ -1943,7 +1943,7 @@ GfxBackendCommandBuffer GfxBackend::BeginCommandBuffer(GfxQueueType queueType)
     [[maybe_unused]] VkResult r = vkBeginCommandBuffer(cmdVk, &beginInfo);
     ASSERT(r == VK_SUCCESS);
 
-    GfxBackendCommandBuffer cmdBuffer {
+    GfxCommandBuffer cmdBuffer {
         .mGeneration = gBackendVk.queueMan.GetGeneration(),
         .mCmdBufferIndex = uint16(cmdBufferIndex),
         .mQueueIndex = uint8(queueIndex)
@@ -2019,7 +2019,7 @@ GfxBackendCommandBuffer GfxBackend::BeginCommandBuffer(GfxQueueType queueType)
     return cmdBuffer;
 }
 
-void GfxBackend::EndCommandBuffer(GfxBackendCommandBuffer& cmdBuffer)
+void GfxBackend::EndCommandBuffer(GfxCommandBuffer& cmdBuffer)
 {
     ASSERT(cmdBuffer.mIsRecording && !cmdBuffer.mIsInRenderPass);
 
@@ -2274,13 +2274,13 @@ void GfxBackend::BatchCreateImage(uint32 numImages, const GfxImageDesc* descs, G
         outHandles[i] = gBackendVk.images.Add(images[i]);
 }
 
-void GfxBackend::DestroyImage(GfxImageHandle handle)
+void GfxBackend::DestroyImage(GfxImageHandle& handle)
 {
-    if (handle.IsValid())
+    if (handle.IsValid()) 
         GfxBackend::BatchDestroyImage(1, &handle);
 }
 
-void GfxBackend::BatchDestroyImage(uint32 numImages, const GfxImageHandle* handles)
+void GfxBackend::BatchDestroyImage(uint32 numImages, GfxImageHandle* handles)
 {
     ASSERT(numImages);
     ASSERT(handles);
@@ -2319,6 +2319,8 @@ void GfxBackend::BatchDestroyImage(uint32 numImages, const GfxImageHandle* handl
 
                 if (image.mem.arena == GfxMemoryArena::TransientCPU)
                     numTransientDecrements++;
+
+                handles[i] = {};
             }
         }
     }
@@ -2541,7 +2543,7 @@ GfxPipelineLayoutHandle GfxBackend::CreatePipelineLayout(const GfxShader& shader
     return gBackendVk.pipelineLayouts.Add(layout);
 }
 
-void GfxBackend::DestroyPipelineLayout(GfxPipelineLayoutHandle handle)
+void GfxBackend::DestroyPipelineLayout(GfxPipelineLayoutHandle& handle)
 {
     if (handle.IsValid()) {
         ReadWriteMutexReadScope objPoolLock(gBackendVk.objectPoolsMutex);
@@ -2568,6 +2570,8 @@ void GfxBackend::DestroyPipelineLayout(GfxPipelineLayoutHandle handle)
         MemSingleShotMalloc<GfxBackendPipelineLayout>::Free(pipelineLayout, &gBackendVk.runtimeAlloc);
 
         gBackendVk.pipelineLayouts.Remove(handle);
+
+        handle = {};
     }
 }
 
@@ -2898,7 +2902,7 @@ GfxPipelineHandle GfxBackend::CreateComputePipeline(const GfxShader& shader, Gfx
 }
 
 
-void GfxBackend::DestroyPipeline(GfxPipelineHandle handle)
+void GfxBackend::DestroyPipeline(GfxPipelineHandle& handle)
 {
     if (handle.IsValid()) {
         ReadWriteMutexWriteScope objPoolLock(gBackendVk.objectPoolsMutex);
@@ -2913,10 +2917,11 @@ void GfxBackend::DestroyPipeline(GfxPipelineHandle handle)
         }
 
         gBackendVk.pipelines.Remove(handle);
+        handle = {};
     }
 }
 
-void GfxBackendCommandBuffer::PushConstants(GfxPipelineLayoutHandle layoutHandle, const char* name, const void* data, uint32 dataSize)
+void GfxCommandBuffer::PushConstants(GfxPipelineLayoutHandle layoutHandle, const char* name, const void* data, uint32 dataSize)
 {
     ASSERT(mIsRecording);
     ASSERT(data);
@@ -2944,7 +2949,7 @@ void GfxBackendCommandBuffer::PushConstants(GfxPipelineLayoutHandle layoutHandle
     vkCmdPushConstants(cmdVk, layoutVk, range->stageFlags, range->offset, range->size, data);
 }
 
-void GfxBackendCommandBuffer::PushBindings(GfxPipelineLayoutHandle layoutHandle, uint32 numBindings, const GfxBindingDesc* bindings)
+void GfxCommandBuffer::PushBindings(GfxPipelineLayoutHandle layoutHandle, uint32 numBindings, const GfxBindingDesc* bindings)
 {
     ASSERT(mIsRecording);
     ASSERT(numBindings);
@@ -3044,8 +3049,6 @@ void GfxBackendCommandBuffer::PushBindings(GfxPipelineLayoutHandle layoutHandle,
             {
                 if (!imgLayout)
                     imgLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-                GfxBackendImage& img = gBackendVk.images.Data(binding.image);
-                ASSERT(imgLayout == img.layout);
                 pImageInfo = imageInfos.Push();
                 *pImageInfo = {
                     .sampler = gBackendVk.samplerDefault,
@@ -3114,7 +3117,7 @@ void GfxBackendCommandBuffer::PushBindings(GfxPipelineLayoutHandle layoutHandle,
     } // foreach descriptor set
 }
 
-void GfxBackendCommandBuffer::BindPipeline(GfxPipelineHandle pipeHandle)
+void GfxCommandBuffer::BindPipeline(GfxPipelineHandle pipeHandle)
 {
     ASSERT(mIsRecording);
     VkCommandBuffer cmdVk = GfxBackend::_GetCommandBufferHandle(*this);
@@ -3127,7 +3130,7 @@ void GfxBackendCommandBuffer::BindPipeline(GfxPipelineHandle pipeHandle)
     vkCmdBindPipeline(cmdVk, bindPoint, pipe.handle);
 }
 
-void GfxBackendCommandBuffer::Dispatch(uint32 groupCountX, uint32 groupCountY, uint32 groupCountZ)
+void GfxCommandBuffer::Dispatch(uint32 groupCountX, uint32 groupCountY, uint32 groupCountZ)
 {
     ASSERT(mIsRecording);
     mShouldSubmit = true;
@@ -3191,13 +3194,13 @@ void GfxBackend::BatchCreateBuffer(uint32 numBuffers, const GfxBufferDesc* descs
         outHandles[i] = gBackendVk.buffers.Add(buffers[i]);
 }
 
-void GfxBackend::DestroyBuffer(GfxBufferHandle handle)
+void GfxBackend::DestroyBuffer(GfxBufferHandle& handle)
 {
     if (handle.IsValid())
         GfxBackend::BatchDestroyBuffer(1, &handle);
 }
 
-void GfxBackend::BatchDestroyBuffer(uint32 numBuffers, const GfxBufferHandle* handles)
+void GfxBackend::BatchDestroyBuffer(uint32 numBuffers, GfxBufferHandle* handles)
 {
     ASSERT(numBuffers);
     ASSERT(handles);
@@ -3225,6 +3228,8 @@ void GfxBackend::BatchDestroyBuffer(uint32 numBuffers, const GfxBufferHandle* ha
 
             if (buffer.mem.arena == GfxMemoryArena::TransientCPU)
                 numTransientDecrements++;
+
+            handles[i] = {};
         }
     }
 
@@ -3995,7 +4000,7 @@ void GfxBackendQueueManager::ReleaseCommandBufferContext(GfxBackendCommandBuffer
     ctx.fenceFreeList.Free();
 }
 
-void GfxBackendCommandBuffer::MapBuffer(GfxBufferHandle buffHandle, void** outPtr, size_t* outSizeBytes)
+void GfxCommandBuffer::MapBuffer(GfxBufferHandle buffHandle, void** outPtr, size_t* outSizeBytes)
 {
     ASSERT(outPtr);
 
@@ -4006,7 +4011,7 @@ void GfxBackendCommandBuffer::MapBuffer(GfxBufferHandle buffHandle, void** outPt
         *outSizeBytes = r.dataSize;
 }
 
-void GfxBackendCommandBuffer::BatchMapBuffer(uint32 numParams, const GfxBufferHandle* handles, GfxMapResult* mapResults)
+void GfxCommandBuffer::BatchMapBuffer(uint32 numParams, const GfxBufferHandle* handles, GfxMapResult* mapResults)
 {
     ASSERT(mIsRecording);
     ASSERT(handles);
@@ -4024,12 +4029,12 @@ void GfxBackendCommandBuffer::BatchMapBuffer(uint32 numParams, const GfxBufferHa
     }
 }
 
-void GfxBackendCommandBuffer::FlushBuffer(GfxBufferHandle buffHandle)
+void GfxCommandBuffer::FlushBuffer(GfxBufferHandle buffHandle)
 {
     BatchFlushBuffer(1, &buffHandle);
 }
 
-void GfxBackendCommandBuffer::BatchFlushBuffer(uint32 numBuffers, const GfxBufferHandle* bufferHandles)
+void GfxCommandBuffer::BatchFlushBuffer(uint32 numBuffers, const GfxBufferHandle* bufferHandles)
 {
     ASSERT(mIsRecording);
 
@@ -4058,7 +4063,7 @@ void GfxBackendCommandBuffer::BatchFlushBuffer(uint32 numBuffers, const GfxBuffe
         vkFlushMappedMemoryRanges(gBackendVk.device, memRanges.Count(), memRanges.Ptr());
 }
 
-void GfxBackendCommandBuffer::CopyBufferToBuffer(GfxBufferHandle srcHandle, GfxBufferHandle dstHandle, GfxShaderStage stagesUsed, 
+void GfxCommandBuffer::CopyBufferToBuffer(GfxBufferHandle srcHandle, GfxBufferHandle dstHandle, GfxShaderStage stagesUsed, 
                                                  size_t srcOffset, size_t dstOffset, size_t sizeBytes)
 {
     GfxCopyBufferToBufferParams param {
@@ -4073,7 +4078,7 @@ void GfxBackendCommandBuffer::CopyBufferToBuffer(GfxBufferHandle srcHandle, GfxB
     BatchCopyBufferToBuffer(1, &param);
 }
 
-void GfxBackendCommandBuffer::BatchCopyBufferToBuffer(uint32 numParams, const GfxCopyBufferToBufferParams* params)
+void GfxCommandBuffer::BatchCopyBufferToBuffer(uint32 numParams, const GfxCopyBufferToBufferParams* params)
 {
     ASSERT(numParams);
     ASSERT(params);
@@ -4215,7 +4220,7 @@ void GfxBackendCommandBuffer::BatchCopyBufferToBuffer(uint32 numParams, const Gf
     queue.dependentBarriers.Extend(pendingBarriers);
 }
 
-void GfxBackendCommandBuffer::CopyBufferToImage(GfxBufferHandle srcHandle, GfxImageHandle dstHandle, GfxShaderStage stagesUsed, 
+void GfxCommandBuffer::CopyBufferToImage(GfxBufferHandle srcHandle, GfxImageHandle dstHandle, GfxShaderStage stagesUsed, 
                                                 uint16 startMipIndex, uint16 mipCount)
 {
     GfxCopyBufferToImageParams params {
@@ -4229,7 +4234,7 @@ void GfxBackendCommandBuffer::CopyBufferToImage(GfxBufferHandle srcHandle, GfxIm
     BatchCopyBufferToImage(1, &params);
 }
 
-void GfxBackendCommandBuffer::BatchCopyBufferToImage(uint32 numParams, const GfxCopyBufferToImageParams* params)
+void GfxCommandBuffer::BatchCopyBufferToImage(uint32 numParams, const GfxCopyBufferToImageParams* params)
 {
     ASSERT(numParams);
     ASSERT(params);
@@ -4438,7 +4443,7 @@ void GfxBackendCommandBuffer::BatchCopyBufferToImage(uint32 numParams, const Gfx
     queue.dependentBarriers.Extend(pendingBarriers);
 }
 
-void GfxBackendCommandBuffer::TransitionBuffer(GfxBufferHandle buffHandle, GfxBufferTransition transition)
+void GfxCommandBuffer::TransitionBuffer(GfxBufferHandle buffHandle, GfxBufferTransition transition)
 {
     ASSERT(mIsRecording);
     mShouldSubmit = true;
@@ -4481,7 +4486,7 @@ void GfxBackendCommandBuffer::TransitionBuffer(GfxBufferHandle buffHandle, GfxBu
     vkCmdPipelineBarrier2(cmdVk, &depInfo);
 }
 
-void GfxBackendCommandBuffer::TransitionImage(GfxImageHandle imgHandle, GfxImageTransition transition)
+void GfxCommandBuffer::TransitionImage(GfxImageHandle imgHandle, GfxImageTransition transition)
 {
     ASSERT(mIsRecording);
     mShouldSubmit = true;
@@ -4577,7 +4582,7 @@ void GfxBackendCommandBuffer::TransitionImage(GfxImageHandle imgHandle, GfxImage
 
 }
 
-void GfxBackendCommandBuffer::BeginRenderPass(const GfxBackendRenderPass& pass)
+void GfxCommandBuffer::BeginRenderPass(const GfxBackendRenderPass& pass)
 {
     ASSERT(mIsRecording);
 
@@ -4698,7 +4703,7 @@ void GfxBackendCommandBuffer::BeginRenderPass(const GfxBackendRenderPass& pass)
     mIsInRenderPass = true;
 }
 
-void GfxBackendCommandBuffer::EndRenderPass()
+void GfxCommandBuffer::EndRenderPass()
 {
     ASSERT(mIsRecording);
 
@@ -4711,7 +4716,7 @@ void GfxBackendCommandBuffer::EndRenderPass()
     mIsInRenderPass = false;
 }
 
-void GfxBackendCommandBuffer::Draw(uint32 vertexCount, uint32 instanceCount, uint32 firstVertex, uint32 firstInstance)
+void GfxCommandBuffer::Draw(uint32 vertexCount, uint32 instanceCount, uint32 firstVertex, uint32 firstInstance)
 {
     ASSERT(mIsRecording);
     mShouldSubmit = true;
@@ -4720,7 +4725,7 @@ void GfxBackendCommandBuffer::Draw(uint32 vertexCount, uint32 instanceCount, uin
     vkCmdDraw(cmdVk, vertexCount, instanceCount, firstVertex, firstInstance);
 }
 
-void GfxBackendCommandBuffer::DrawIndexed(uint32 indexCount, uint32 instanceCount, uint32 firstIndex, uint32 vertexOffset, uint32 firstInstance)
+void GfxCommandBuffer::DrawIndexed(uint32 indexCount, uint32 instanceCount, uint32 firstIndex, uint32 vertexOffset, uint32 firstInstance)
 {
     ASSERT(mIsRecording);
     mShouldSubmit = true;
@@ -4734,7 +4739,12 @@ GfxFormat GfxBackend::GetSwapchainFormat()
     return GfxFormat(gBackendVk.swapchain.format.format);
 }
 
-void GfxBackendCommandBuffer::SetScissors(uint32 firstScissor, uint32 numScissors, const RectInt* scissors)
+Int2 GfxBackend::GetSwapchainExtent()
+{
+    return Int2(int(gBackendVk.swapchain.extent.width), int(gBackendVk.swapchain.extent.height));
+}
+
+void GfxCommandBuffer::SetScissors(uint32 firstScissor, uint32 numScissors, const RectInt* scissors)
 {
     ASSERT(mIsRecording);
     ASSERT(numScissors);
@@ -4759,7 +4769,7 @@ void GfxBackendCommandBuffer::SetScissors(uint32 firstScissor, uint32 numScissor
     vkCmdSetScissor(cmdVk, firstScissor, numScissors, scissorsVk);
 }
 
-void GfxBackendCommandBuffer::SetViewports(uint32 firstViewport, uint32 numViewports, const GfxViewport* viewports)
+void GfxCommandBuffer::SetViewports(uint32 firstViewport, uint32 numViewports, const GfxViewport* viewports)
 {
     ASSERT(mIsRecording);
     ASSERT(numViewports);
@@ -4787,7 +4797,7 @@ void GfxBackendCommandBuffer::SetViewports(uint32 firstViewport, uint32 numViewp
     vkCmdSetViewport(cmdVk, firstViewport, numViewports, viewportsVk);
 }
 
-void GfxBackendCommandBuffer::BindVertexBuffers(uint32 firstBinding, uint32 numBindings, const GfxBufferHandle* vertexBuffers, const uint64* offsets)
+void GfxCommandBuffer::BindVertexBuffers(uint32 firstBinding, uint32 numBindings, const GfxBufferHandle* vertexBuffers, const uint64* offsets)
 {
     ASSERT(mIsRecording);
     static_assert(sizeof(uint64) == sizeof(VkDeviceSize));
@@ -4802,7 +4812,7 @@ void GfxBackendCommandBuffer::BindVertexBuffers(uint32 firstBinding, uint32 numB
     vkCmdBindVertexBuffers(cmdVk, firstBinding, numBindings, buffersVk, reinterpret_cast<const VkDeviceSize*>(offsets));
 }
 
-void GfxBackendCommandBuffer::BindIndexBuffer(GfxBufferHandle indexBuffer, uint64 offset, GfxIndexType indexType)
+void GfxCommandBuffer::BindIndexBuffer(GfxBufferHandle indexBuffer, uint64 offset, GfxIndexType indexType)
 {
     ASSERT(mIsRecording);
     VkCommandBuffer cmdVk = GfxBackend::_GetCommandBufferHandle(*this);
@@ -4868,7 +4878,7 @@ GfxSamplerHandle GfxBackend::CreateSampler(const GfxSamplerDesc& desc)
     return gBackendVk.samplers.Add(sampler);
 }
 
-void GfxBackend::DestroySampler(GfxSamplerHandle handle)
+void GfxBackend::DestroySampler(GfxSamplerHandle& handle)
 {
     if (handle.IsValid()) {
         ReadWriteMutexWriteScope objPoolLock(gBackendVk.objectPoolsMutex);
@@ -4884,6 +4894,8 @@ void GfxBackend::DestroySampler(GfxSamplerHandle handle)
         gBackendVk.garbage.Push(garbage);
 
         gBackendVk.samplers.Remove(handle);
+
+        handle = {};
     }
 }
 

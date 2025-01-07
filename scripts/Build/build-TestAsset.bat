@@ -5,4 +5,4 @@ set DEFINES=
 set COMPILE_FLAGS=
 set LINK_FLAGS=
 
-call build.cmd code\Tests\Test.cpp %1
+call build.cmd code\Tests\TestAsset.cpp %1

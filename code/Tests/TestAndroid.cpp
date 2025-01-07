@@ -1,4 +1,4 @@
 // Choose a test by commenting and uncommenting includes here:
 
-#include "Test.cpp"
+#include "TestBasicGfx.cpp"
 // #include "AssetTest.cpp"
