@@ -294,7 +294,6 @@ namespace Asset
     static Span<AssetMetaKeyValue> _LoadMetaData(const char* assetFilepath, AssetPlatform::Enum platform, MemAllocator* alloc);
     static AssetHandleResult _CreateOrFetchHandle(const AssetParams& params);
     static void _LoadAssetTask(uint32 groupIdx, void* userData);
-    static void _CreateGpuObjectTask(uint32 groupIdx, void* userData);
     static void _SaveBakedTask(uint32 groupIdx, void* userData);
     template <typename _T> _T* _TranslatePointer(_T* ptr, const void* origPtr, void* newPtr);
     static void _LoadGroupTask(uint32, void* userData);
@@ -1066,7 +1065,7 @@ static void Asset::_LoadGroupTask(uint32, void* userData)
     // Create GPU objects
     {
         GfxBackend::BeginRenderFrameSync();
-        GfxBackendCommandBuffer cmd = GfxBackend::BeginCommandBuffer(GfxQueueType::Transfer);
+        GfxCommandBuffer cmd = GfxBackend::BeginCommandBuffer(GfxQueueType::Transfer);
 
         using GpuImageDescHandlePair = Pair<AssetDataInternal::GpuImageDesc*, AssetHandle>;
         using GpuBufferDescHandlePair = Pair<AssetDataInternal::GpuBufferDesc*, AssetHandle>;
@@ -2298,6 +2297,11 @@ void AssetGroup::Wait()
         if (Engine::IsMainThread())
             Asset::Update();
     }
+}
+
+bool AssetGroup::IsValid() const
+{
+    return mHandle.IsValid();
 }
 
 bool AssetGroup::IsLoadFinished() const

@@ -240,14 +240,14 @@ namespace DebugHud
 } // DebugHud
 
 
-void DebugHud::DrawDebugHud(float dt, bool *pOpen)
+void DebugHud::DrawDebugHud(float dt, float yOffset)
 {
     const ImVec2 kDisplaySize = ImGui::GetIO().DisplaySize;
-    ImGui::SetNextWindowPos(ImVec2(0, 0), ImGuiCond_Always);
+    ImGui::SetNextWindowPos(ImVec2(0, yOffset), ImGuiCond_Always);
     ImGui::SetNextWindowSize(ImVec2(kDisplaySize.x*0.33f, 0), ImGuiCond_Always);
     const uint32 kWndFlags = ImGuiWindowFlags_NoBackground|ImGuiWindowFlags_NoTitleBar|ImGuiWindowFlags_NoScrollbar|
                              ImGuiWindowFlags_NoMove|ImGuiWindowFlags_NoResize;
-    if (ImGui::Begin("Frame", pOpen, kWndFlags)) {
+    if (ImGui::Begin("Frame", nullptr, kWndFlags)) {
         _UpdateGraph(dt*1000.0f, DebugHudGraphType::FrameTime);
         _UpdateGraph(1.0f/dt, DebugHudGraphType::Fps);
         _UpdateGraph(Engine::GetEngineTimeMS(), DebugHudGraphType::CpuTime);

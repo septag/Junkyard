@@ -231,7 +231,7 @@ struct AppImpl final : AppCallbacks
         }
         ImGui::End();
 
-        GfxBackendCommandBuffer cmd = GfxBackend::BeginCommandBuffer(GfxQueueType::Graphics);
+        GfxCommandBuffer cmd = GfxBackend::BeginCommandBuffer(GfxQueueType::Graphics);
         ImGui::DrawFrame(cmd);
         GfxBackend::EndCommandBuffer(cmd);
 

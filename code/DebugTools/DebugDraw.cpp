@@ -35,7 +35,7 @@ struct DebugDrawContext
     AssetHandleShader shaderAsset;
     GfxBufferHandle vertexBuffer;
 
-    GfxBackendCommandBuffer cmd;
+    GfxCommandBuffer cmd;
     DebugDrawShaderVertex* mappedVertices;
     uint32 vertexIndex;
     Int2 viewExtents;
@@ -120,7 +120,7 @@ namespace DebugDraw
     }
 } // DebugDraw
 
-void DebugDraw::BeginDraw(GfxBackendCommandBuffer cmd, uint16 viewWidth, uint16 viewHeight)
+void DebugDraw::BeginDraw(GfxCommandBuffer cmd, uint16 viewWidth, uint16 viewHeight)
 {
     ASSERT(viewWidth > 0);
     ASSERT(viewHeight > 0);
@@ -144,7 +144,7 @@ void DebugDraw::BeginDraw(GfxBackendCommandBuffer cmd, uint16 viewWidth, uint16 
     cmd.MapBuffer(gDebugDraw.stagingVertexBuffer, (void**)&gDebugDraw.mappedVertices);
 }
 
-void DebugDraw::EndDraw(GfxBackendCommandBuffer cmd, const Camera& cam, GfxImageHandle depthImage)
+void DebugDraw::EndDraw(GfxCommandBuffer cmd, const Camera& cam, GfxImageHandle depthImage)
 {
     ASSERT_MSG(cmd.mIsRecording && !cmd.mIsInRenderPass, "%s must be called while CommandBuffer is recording and not in the RenderPass", __FUNCTION__);
     ASSERT(gDebugDraw.isDrawing);
@@ -180,6 +180,10 @@ void DebugDraw::EndDraw(GfxBackendCommandBuffer cmd, const Camera& cam, GfxImage
     cmd.BeginRenderPass(pass);
 
     cmd.SetViewports(0, 1, &viewport);
+
+    RectInt scissor(0, 0, viewExtents.x, viewExtents.y);
+    cmd.SetScissors(0, 1, &scissor);
+
     cmd.BindPipeline(gDebugDraw.pipeline);
     cmd.PushConstants(gDebugDraw.pipelineLayout, "Transform", &transform, sizeof(viewProjMat));
 

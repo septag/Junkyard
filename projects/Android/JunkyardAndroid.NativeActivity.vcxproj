@@ -68,7 +68,7 @@
     <ClInclude Include="..\..\code\External\stb\stb_image.h" />
     <ClInclude Include="..\..\code\External\stb\stb_image_resize.h" />
     <ClInclude Include="..\..\code\External\vma\include\vk_mem_alloc.h" />
-    <ClInclude Include="..\..\code\Graphics\Graphics.h" />
+    <ClInclude Include="..\..\code\Graphics\GfxBackend.h" />
     <ClInclude Include="..\..\code\ImGui\ImGuiMain.h" />
     <ClInclude Include="..\..\code\ImGui\ImGuizmo.h" />
     <ClInclude Include="..\..\code\Tool\Console.h" />
@@ -141,7 +141,7 @@
     <ClCompile Include="..\..\code\External\imgui\imgui_draw.cpp" />
     <ClCompile Include="..\..\code\External\imgui\imgui_tables.cpp" />
     <ClCompile Include="..\..\code\External\imgui\imgui_widgets.cpp" />
-    <ClCompile Include="..\..\code\Graphics\Graphics.cpp" />
+    <ClCompile Include="..\..\code\Graphics\GfxBackend.cpp" />
     <ClCompile Include="..\..\code\ImGui\ImGuiMain.cpp" />
     <ClCompile Include="..\..\code\ImGui\ImGuizmo.cpp" />
     <ClCompile Include="..\..\code\Tests\AssetTest.cpp">
@@ -258,7 +258,7 @@
       <CompileAs>CompileAsCpp</CompileAs>
       <CppLanguageStandard>c++1z</CppLanguageStandard>
       <PreprocessorDefinitions>_DEBUG</PreprocessorDefinitions>
-      <AdditionalOptions>-funwind-tables  -fno-omit-frame-pointer %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalOptions>-funwind-tables  -fno-omit-frame-pointer -Wno-backslash-newline-escape %(AdditionalOptions)</AdditionalOptions>
       <UndefinePreprocessorDefinitions>
       </UndefinePreprocessorDefinitions>
       <CLanguageStandard>c11</CLanguageStandard>
@@ -291,6 +291,7 @@
       </PreprocessorDefinitions>
       <CLanguageStandard>c11</CLanguageStandard>
       <AdditionalIncludeDirectories>%VULKAN_SDK%\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalOptions>-funwind-tables  -fno-omit-frame-pointer --Wno-backslash-newline-escape %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
     <Link>
       <LibraryDependencies>%(LibraryDependencies);m</LibraryDependencies>
@@ -315,7 +316,7 @@
       <OmitFramePointers>false</OmitFramePointers>
       <DebugInformationFormat>FullDebug</DebugInformationFormat>
       <Optimization>Full</Optimization>
-      <AdditionalOptions>-funwind-tables  -fno-omit-frame-pointer %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalOptions>-funwind-tables  -fno-omit-frame-pointer --Wno-backslash-newline-escape %(AdditionalOptions)</AdditionalOptions>
       <CLanguageStandard>c11</CLanguageStandard>
       <AdditionalIncludeDirectories>%VULKAN_SDK%\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>

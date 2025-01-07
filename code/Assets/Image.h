@@ -28,6 +28,7 @@ namespace Asset
     API bool InitializeImageManager();
     API void ReleaseImageManager();
     API AssetHandleImage LoadImage(const char* path, const ImageLoadParams& params, const AssetGroup& group);
+    API GfxImageHandle GetWhiteImage();
 }
 
 #if PLATFORM_WINDOWS

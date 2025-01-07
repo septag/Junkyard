@@ -96,7 +96,7 @@ bool Asset::InitializeImageManager()
             .format = GfxFormat::R8G8B8A8_UNORM
         };
 
-        GfxBackendCommandBuffer cmd = GfxBackend::BeginCommandBuffer(GfxQueueType::Transfer);
+        GfxCommandBuffer cmd = GfxBackend::BeginCommandBuffer(GfxQueueType::Transfer);
         void* stagingData;
         size_t stagingDataSize;
         GfxBufferDesc stagingBufferDesc {
@@ -347,3 +347,7 @@ AssetHandleImage Asset::LoadImage(const char* path, const ImageLoadParams& param
     #endif
 #endif
 
+GfxImageHandle Asset::GetWhiteImage()
+{
+    return gImageMgr.imageWhite;
+}
