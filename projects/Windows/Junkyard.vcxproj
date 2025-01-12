@@ -247,11 +247,6 @@
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\..\code\Graphics\GfxBackend.cpp" />
-    <ClCompile Include="..\..\code\Graphics\Graphics.cpp">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='ReleaseDev|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
-    </ClCompile>
     <ClCompile Include="..\..\code\ImGui\ImGuiMain.cpp" />
     <ClCompile Include="..\..\code\ImGui\ImGuizmo.cpp" />
     <ClCompile Include="..\..\code\Tool\Console.cpp" />
@@ -272,12 +267,14 @@
     <ClInclude Include="..\..\code\Common\Profiler.h" />
     <ClInclude Include="..\..\code\Common\RemoteServices.h" />
     <ClInclude Include="..\..\code\Common\VirtualFS.h" />
+    <ClInclude Include="..\..\code\Config.h" />
     <ClInclude Include="..\..\code\Core\Allocators.h" />
     <ClInclude Include="..\..\code\Core\Arrays.h" />
     <ClInclude Include="..\..\code\Core\Atomic.h" />
     <ClInclude Include="..\..\code\Core\Base.h" />
     <ClInclude Include="..\..\code\Core\BlitSort.h" />
     <ClInclude Include="..\..\code\Core\Blobs.h" />
+    <ClInclude Include="..\..\code\Core\Config.h" />
     <ClInclude Include="..\..\code\Core\Debug.h" />
     <ClInclude Include="..\..\code\Core\External\c89atomic\c89atomic.h" />
     <ClInclude Include="..\..\code\Core\External\cj5\cj5.h" />
@@ -324,7 +321,6 @@
     <ClInclude Include="..\..\code\External\volk\volk.h" />
     <ClInclude Include="..\..\code\Graphics\GfxBackend.h" />
     <ClInclude Include="..\..\code\Graphics\GfxBackendTypes.h" />
-    <ClInclude Include="..\..\code\Graphics\Graphics.h" />
     <ClInclude Include="..\..\code\ImGui\ImGuiMain.h" />
     <ClInclude Include="..\..\code\ImGui\ImGuizmo.h" />
     <ClInclude Include="..\..\code\Tool\Console.h" />

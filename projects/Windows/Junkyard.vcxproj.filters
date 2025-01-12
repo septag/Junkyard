@@ -153,9 +153,6 @@
     <ClCompile Include="..\..\code\Core\TracyHelper.cpp">
       <Filter>Core</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\code\Graphics\Graphics.cpp">
-      <Filter>Graphics</Filter>
-    </ClCompile>
     <ClCompile Include="..\..\code\Engine.cpp" />
     <ClCompile Include="..\..\code\Core\DebugClang.cpp">
       <Filter>Core</Filter>
@@ -318,9 +315,6 @@
     <ClInclude Include="..\..\code\Core\System.h">
       <Filter>Core</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\code\Graphics\Graphics.h">
-      <Filter>Graphics</Filter>
-    </ClInclude>
     <ClInclude Include="..\..\code\Core\IncludeWin.h">
       <Filter>Core</Filter>
     </ClInclude>
@@ -448,6 +442,10 @@
     <ClInclude Include="..\..\code\External\OffsetAllocator\offsetAllocator.h">
       <Filter>External\OffsetAllocator</Filter>
     </ClInclude>
+    <ClInclude Include="..\..\code\Core\Config.h">
+      <Filter>Core</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\code\Config.h" />
   </ItemGroup>
   <ItemGroup>
     <FxCompile Include="..\..\code\Shaders\ImGui.hlsl">

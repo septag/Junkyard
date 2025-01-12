@@ -52,10 +52,10 @@
 #define OFFSET_ALLOCATOR_IMPLEMENT
 PRAGMA_DIAGNOSTIC_PUSH()
 PRAGMA_DIAGNOSTIC_IGNORED_MSVC(4505)    // unreferenced shader linkage removed
+PRAGMA_DIAGNOSTIC_IGNORED_CLANG_GCC("-Wunused-function")
 #include "../External/OffsetAllocator/offsetAllocator.h"
 PRAGMA_DIAGNOSTIC_POP()
 
-static constexpr uint32 GFXBACKEND_MAX_SWAP_CHAIN_IMAGES = 3;
 static constexpr uint32 GFXBACKEND_MAX_GARBAGE_COLLECT_PER_FRAME = 32;
 static constexpr uint32 GFXBACKEND_BACKBUFFER_COUNT = 3;
 static constexpr uint32 GFXBACKEND_FRAMES_IN_FLIGHT = 2;
@@ -486,8 +486,13 @@ struct GfxBackendPipeline
 
     VkPipeline handle;
     PipelineType type;
+    uint32 shaderHash;
 
-    // TODO: HotReload stuff
+    union 
+    {
+        VkGraphicsPipelineCreateInfo* graphics;
+        VkComputePipelineCreateInfo* compute;
+    } createInfo;
 };
 
 struct GfxBackendSampler
@@ -532,6 +537,7 @@ struct GfxBackendVk
     uint64 presentFrame;
 
     VkSampler samplerDefault;
+    VkPipelineCache pipelineCache;
 };
 
 static GfxBackendVk gBackendVk;
@@ -752,10 +758,10 @@ namespace GfxBackend
     {
         GfxBackendInstance& inst = gBackendVk.instance;
 
-        auto HasLayer = [&inst](const char* layerName)
+        auto HasLayer = [](const char* layerName)
         {
-            for (uint32 i = 0; i < inst.numLayers; i++) {
-                if (Str::IsEqual(inst.layers[i].layerName, layerName))
+            for (uint32 i = 0; i < gBackendVk.instance.numLayers; i++) {
+                if (Str::IsEqual(gBackendVk.instance.layers[i].layerName, layerName))
                     return true;
             }
             return false;
@@ -1103,9 +1109,9 @@ namespace GfxBackend
         StaticArray<const char*, 32> enabledFeatures;
         GfxBackendGpu& gpu = gBackendVk.gpu;
 
-        auto CheckAddExtension = [&gpu, &enabledExtensions](const char* name, bool required = false)->bool
+        auto CheckAddExtension = [&enabledExtensions](const char* name, bool required = false)->bool
         {
-            if (_HasExtension(gpu.extensions, gpu.numExtensions, name)) {
+            if (_HasExtension(gBackendVk.gpu.extensions, gBackendVk.gpu.numExtensions, name)) {
                 enabledExtensions.Push(name);
                 return true;
             }
@@ -1462,6 +1468,139 @@ namespace GfxBackend
 
         vkCmdBlitImage2(cmd, &blitInfo);
     }
+
+    static VkGraphicsPipelineCreateInfo* _DuplicateGraphicsPipelineCreateInfo(const VkGraphicsPipelineCreateInfo& pipelineInfo)
+    {
+        // Child POD members with arrays inside
+        const VkPipelineRenderingCreateInfo* srcRenderingCreateInfo = (VkPipelineRenderingCreateInfo*)pipelineInfo.pNext;
+        MemSingleShotMalloc<VkPipelineRenderingCreateInfo> pallocRenderingCreateInfo;
+        pallocRenderingCreateInfo.AddMemberArray<VkFormat>(
+            offsetof(VkPipelineRenderingCreateInfo, pColorAttachmentFormats), 
+            srcRenderingCreateInfo->colorAttachmentCount);
+            
+        MemSingleShotMalloc<VkPipelineVertexInputStateCreateInfo> pallocVertexInputInfo;
+        pallocVertexInputInfo.AddMemberArray<VkVertexInputBindingDescription>(
+            offsetof(VkPipelineVertexInputStateCreateInfo, pVertexBindingDescriptions), 
+            pipelineInfo.pVertexInputState->vertexBindingDescriptionCount);
+        pallocVertexInputInfo.AddMemberArray<VkVertexInputAttributeDescription>(
+            offsetof(VkPipelineVertexInputStateCreateInfo, pVertexAttributeDescriptions), 
+            pipelineInfo.pVertexInputState->vertexAttributeDescriptionCount);
+
+        MemSingleShotMalloc<VkPipelineColorBlendStateCreateInfo> pallocColorBlendState;
+        pallocColorBlendState.AddMemberArray<VkPipelineColorBlendAttachmentState>(
+            offsetof(VkPipelineColorBlendStateCreateInfo, pAttachments),
+            pipelineInfo.pColorBlendState->attachmentCount);
+
+        MemSingleShotMalloc<VkPipelineDynamicStateCreateInfo> pallocDynamicState;
+        pallocDynamicState.AddMemberArray<VkDynamicState>(
+            offsetof(VkPipelineDynamicStateCreateInfo, pDynamicStates),
+            pipelineInfo.pDynamicState->dynamicStateCount);
+
+        // Main fields
+        MemSingleShotMalloc<VkGraphicsPipelineCreateInfo, 12> mallocator;
+
+        mallocator.AddMemberArray<VkPipelineShaderStageCreateInfo>(
+            offsetof(VkGraphicsPipelineCreateInfo, pStages),
+            pipelineInfo.stageCount);
+        
+        mallocator.AddChildStructSingleShot(pallocVertexInputInfo, offsetof(VkGraphicsPipelineCreateInfo, pVertexInputState), 1);
+
+        mallocator.AddMemberArray<VkPipelineInputAssemblyStateCreateInfo>(
+            offsetof(VkGraphicsPipelineCreateInfo, pInputAssemblyState), 1);
+
+        mallocator.AddMemberArray<VkPipelineViewportStateCreateInfo>(
+            offsetof(VkGraphicsPipelineCreateInfo, pViewportState), 1);
+        
+        mallocator.AddMemberArray<VkPipelineRasterizationStateCreateInfo>(
+            offsetof(VkGraphicsPipelineCreateInfo, pRasterizationState), 1);
+
+        mallocator.AddMemberArray<VkPipelineMultisampleStateCreateInfo>(
+            offsetof(VkGraphicsPipelineCreateInfo, pMultisampleState), 1);
+
+        mallocator.AddMemberArray<VkPipelineDepthStencilStateCreateInfo>(
+            offsetof(VkGraphicsPipelineCreateInfo, pDepthStencilState), 1);
+
+        mallocator.AddChildStructSingleShot(pallocRenderingCreateInfo, offsetof(VkGraphicsPipelineCreateInfo, pNext), 1);
+        mallocator.AddChildStructSingleShot(pallocColorBlendState, offsetof(VkGraphicsPipelineCreateInfo, pColorBlendState), 1);
+        mallocator.AddChildStructSingleShot(pallocDynamicState, offsetof(VkGraphicsPipelineCreateInfo, pDynamicState), 1);
+
+        VkGraphicsPipelineCreateInfo* pipInfoNew = mallocator.Calloc(&gBackendVk.runtimeAlloc);
+
+        pipInfoNew->sType = pipelineInfo.sType;
+        pipInfoNew->flags = pipelineInfo.flags;
+        pipInfoNew->stageCount = pipelineInfo.stageCount;
+        memcpy((void*)pipInfoNew->pStages, pipelineInfo.pStages, sizeof(VkPipelineShaderStageCreateInfo)*pipelineInfo.stageCount);
+        memcpy((void*)pipInfoNew->pInputAssemblyState, pipelineInfo.pInputAssemblyState, sizeof(VkPipelineInputAssemblyStateCreateInfo));
+        memcpy((void*)pipInfoNew->pViewportState, pipelineInfo.pViewportState, sizeof(VkPipelineViewportStateCreateInfo));
+        memcpy((void*)pipInfoNew->pRasterizationState, pipelineInfo.pRasterizationState, sizeof(VkPipelineRasterizationStateCreateInfo));
+        memcpy((void*)pipInfoNew->pMultisampleState, pipelineInfo.pMultisampleState, sizeof(VkPipelineMultisampleStateCreateInfo));
+        memcpy((void*)pipInfoNew->pDepthStencilState, pipelineInfo.pDepthStencilState, sizeof(VkPipelineDepthStencilStateCreateInfo));
+        pipInfoNew->layout = pipelineInfo.layout;
+        pipInfoNew->renderPass = pipelineInfo.renderPass;
+        pipInfoNew->subpass = pipelineInfo.subpass;
+        pipInfoNew->basePipelineHandle = pipelineInfo.basePipelineHandle;
+        pipInfoNew->basePipelineIndex = pipelineInfo.basePipelineIndex;
+
+        { // VkPipelineVertexInputStateCreateInfo
+            VkPipelineVertexInputStateCreateInfo* vertexInputState = 
+                const_cast<VkPipelineVertexInputStateCreateInfo*>(pipInfoNew->pVertexInputState);
+            vertexInputState->sType = pipelineInfo.pVertexInputState->sType;
+            vertexInputState->pNext = pipelineInfo.pVertexInputState->pNext;
+            vertexInputState->flags = pipelineInfo.pVertexInputState->flags;
+            vertexInputState->vertexBindingDescriptionCount = pipelineInfo.pVertexInputState->vertexBindingDescriptionCount;
+            vertexInputState->vertexAttributeDescriptionCount = pipelineInfo.pVertexInputState->vertexAttributeDescriptionCount;
+            memcpy((void*)vertexInputState->pVertexBindingDescriptions, pipelineInfo.pVertexInputState->pVertexBindingDescriptions,
+                   pipelineInfo.pVertexInputState->vertexBindingDescriptionCount*sizeof(VkVertexInputBindingDescription));
+            memcpy((void*)vertexInputState->pVertexAttributeDescriptions, pipelineInfo.pVertexInputState->pVertexAttributeDescriptions,
+                   pipelineInfo.pVertexInputState->vertexAttributeDescriptionCount*sizeof(VkVertexInputAttributeDescription));
+        }
+
+        { // VkPipelineColorBlendStateCreateInfo
+            VkPipelineColorBlendStateCreateInfo* colorBlendState =
+                const_cast<VkPipelineColorBlendStateCreateInfo*>(pipInfoNew->pColorBlendState);
+            colorBlendState->sType = pipelineInfo.pColorBlendState->sType;
+            colorBlendState->pNext = pipelineInfo.pColorBlendState->pNext;
+            colorBlendState->flags = pipelineInfo.pColorBlendState->flags;
+            colorBlendState->logicOpEnable = pipelineInfo.pColorBlendState->logicOpEnable;
+            colorBlendState->logicOp = pipelineInfo.pColorBlendState->logicOp;
+            colorBlendState->attachmentCount = pipelineInfo.pColorBlendState->attachmentCount;
+
+            memcpy((void*)colorBlendState->pAttachments, pipelineInfo.pColorBlendState->pAttachments,
+                   pipelineInfo.pColorBlendState->attachmentCount*sizeof(VkPipelineColorBlendAttachmentState));
+
+            memcpy((void*)colorBlendState->blendConstants, pipelineInfo.pColorBlendState->blendConstants, 4*sizeof(float));
+        }
+
+        { // VkPipelineDynamicStateCreateInfo
+            VkPipelineDynamicStateCreateInfo* dynamicState =
+                const_cast<VkPipelineDynamicStateCreateInfo*>(pipInfoNew->pDynamicState);
+            dynamicState->sType = pipelineInfo.pDynamicState->sType;
+            dynamicState->pNext = pipelineInfo.pDynamicState->pNext;
+            dynamicState->flags = pipelineInfo.pDynamicState->flags;
+            dynamicState->dynamicStateCount = pipelineInfo.pDynamicState->dynamicStateCount;
+
+            memcpy((void*)dynamicState->pDynamicStates, pipelineInfo.pDynamicState->pDynamicStates,
+                   pipelineInfo.pDynamicState->dynamicStateCount*sizeof(VkDynamicState));
+        }
+
+        { // VkPipelineRenderingCreateInfo
+            VkPipelineRenderingCreateInfo* renderingCreateInfo = (VkPipelineRenderingCreateInfo*)pipInfoNew->pNext;
+            renderingCreateInfo->sType = srcRenderingCreateInfo->sType;
+            renderingCreateInfo->viewMask = srcRenderingCreateInfo->viewMask;
+            renderingCreateInfo->colorAttachmentCount = srcRenderingCreateInfo->colorAttachmentCount;
+            memcpy((void*)renderingCreateInfo->pColorAttachmentFormats, srcRenderingCreateInfo->pColorAttachmentFormats, 
+                   sizeof(VkFormat)*srcRenderingCreateInfo->colorAttachmentCount);
+            renderingCreateInfo->depthAttachmentFormat = srcRenderingCreateInfo->depthAttachmentFormat;
+        }
+        
+        return pipInfoNew;
+    }
+
+    static VkComputePipelineCreateInfo* _DuplicateComputePipelineCreateInfo(const VkComputePipelineCreateInfo& createInfo)
+    {
+        return Mem::AllocCopy<VkComputePipelineCreateInfo>(&createInfo, 1, &gBackendVk.runtimeAlloc);
+    }
+
 } // GfxBackend
 
 bool GfxBackend::Initialize()
@@ -1610,6 +1749,13 @@ bool GfxBackend::Initialize()
             LOG_ERROR("Gfx: CreateSampler failed");
         }
     }
+
+    // Pipeline Cache
+    // TODO: Serialize the cache
+    VkPipelineCacheCreateInfo pipelineCacheCreateInfo {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO,
+    };
+    vkCreatePipelineCache(gBackendVk.device, &pipelineCacheCreateInfo, gBackendVk.vkAlloc, &gBackendVk.pipelineCache);
 
     return true;
 }
@@ -1764,8 +1910,6 @@ void GfxBackend::End()
 void GfxBackend::Release()
 {
     MemAllocator* alloc = &gBackendVk.parentAlloc;
-
-
     if (gBackendVk.device)
         vkDeviceWaitIdle(gBackendVk.device);
     gBackendVk.queueMan.Release();
@@ -1774,6 +1918,10 @@ void GfxBackend::Release()
         vkDestroySampler(gBackendVk.device, gBackendVk.samplerDefault, gBackendVk.vkAlloc);        
 
     _CollectGarbage(true);
+
+    // TODO: Save the cache to disk
+    if (gBackendVk.pipelineCache) 
+        vkDestroyPipelineCache(gBackendVk.device, gBackendVk.pipelineCache, gBackendVk.vkAlloc);
 
     gBackendVk.pipelineLayouts.Free();
     gBackendVk.images.Free();
@@ -2089,9 +2237,6 @@ bool GfxBackendMemoryBumpAllocator::CreateBlock(Block* block)
         MEM_FAIL();
         return false;
     }
-
-    if (gBackendVk.extApi.hasMemoryBudget)
-        Atomic::FetchSub(&gBackendVk.memMan.GetDeviceMemoryBudget(mMemTypeIndex), mBlockSize);
 
     if (mTypeFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) {
         r = vkMapMemory(gBackendVk.device, block->deviceMem, 0, VK_WHOLE_SIZE, 0, &block->mappedData);
@@ -2575,6 +2720,118 @@ void GfxBackend::DestroyPipelineLayout(GfxPipelineLayoutHandle& handle)
     }
 }
 
+void GfxBackend::ReloadShaderPipelines(const GfxShader& shader)
+{
+    ReadWriteMutexReadScope objPoolLock(gBackendVk.objectPoolsMutex);
+
+    for (GfxBackendPipeline& pipeline : gBackendVk.pipelines) {
+        if (pipeline.shaderHash != shader.hash)
+            continue;
+        
+        // Reload the shaders by only reloading the modules
+        VkPipeline oldPipeline = nullptr;
+        if (pipeline.type == GfxBackendPipeline::PipelineTypeGraphics) {
+            const GfxShaderStageInfo* vsInfo = nullptr; 
+            const GfxShaderStageInfo* psInfo = nullptr; 
+
+            for (uint32 i = 0; i < shader.numStages; i++) {
+                if (shader.stages[i].stage == GfxShaderStage::Vertex)
+                    vsInfo = &shader.stages[i];
+                if (shader.stages[i].stage == GfxShaderStage::Fragment)
+                    psInfo = &shader.stages[i];
+            }
+            ASSERT_MSG(vsInfo, "Shader '%s' is missing Vertex shader program", shader.name);
+            ASSERT_MSG(psInfo, "Shader '%s' is missing Pixel shader program", shader.name);
+            VkShaderModule psShaderModule;
+            VkShaderModule vsShaderModule;
+
+            {
+                VkShaderModuleCreateInfo shaderStageCreateInfo {
+                    .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+                    .codeSize = vsInfo->dataSize,
+                    .pCode = (const uint32*)vsInfo->data.Get()
+                };
+
+                if (vkCreateShaderModule(gBackendVk.device, &shaderStageCreateInfo, gBackendVk.vkAlloc, &vsShaderModule) != VK_SUCCESS) {
+                    LOG_ERROR("Gfx: Failed to compile Vertex module for shader '%s'", shader.name);
+                    return;
+                }
+            }
+
+            {
+                VkShaderModuleCreateInfo shaderStageCreateInfo {
+                    .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+                    .codeSize = psInfo->dataSize,
+                    .pCode = (const uint32*)psInfo->data.Get()
+                };
+
+                if (vkCreateShaderModule(gBackendVk.device, &shaderStageCreateInfo, gBackendVk.vkAlloc, &psShaderModule) != VK_SUCCESS) {
+                    LOG_ERROR("Gfx: Failed to compile Pixel module for shader '%s'", shader.name);
+                    return;
+                }
+            }
+
+            const_cast<VkPipelineShaderStageCreateInfo*>(&pipeline.createInfo.graphics->pStages[0])->module = vsShaderModule;
+            const_cast<VkPipelineShaderStageCreateInfo*>(&pipeline.createInfo.graphics->pStages[1])->module = psShaderModule;
+
+            VkPipeline pipelineVk;
+            if (vkCreateGraphicsPipelines(gBackendVk.device, nullptr, 1, pipeline.createInfo.graphics, gBackendVk.vkAlloc, &pipelineVk) != VK_SUCCESS) 
+            {
+                LOG_ERROR("Gfx: Failed to create graphics pipeline for shader '%s'", shader.name);
+                return;
+            }
+
+            vkDestroyShaderModule(gBackendVk.device, vsShaderModule, gBackendVk.vkAlloc);
+            vkDestroyShaderModule(gBackendVk.device, psShaderModule, gBackendVk.vkAlloc);
+
+            oldPipeline = pipeline.handle;
+            pipeline.handle = pipelineVk;
+        }
+        else if (pipeline.type == GfxBackendPipeline::PipelineTypeCompute) {
+            const GfxShaderStageInfo* csInfo = nullptr; 
+
+            for (uint32 i = 0; i < shader.numStages; i++) {
+                if (shader.stages[i].stage == GfxShaderStage::Compute)
+                    csInfo = &shader.stages[i];
+            }
+            ASSERT_MSG(csInfo, "Shader '%s' is missing Compute shader program", shader.name);
+
+            VkShaderModule csShaderModule;
+            VkShaderModuleCreateInfo shaderStageCreateInfo {
+                .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+                .codeSize = csInfo->dataSize,
+                .pCode = (const uint32*)csInfo->data.Get()
+            };
+
+            if (vkCreateShaderModule(gBackendVk.device, &shaderStageCreateInfo, gBackendVk.vkAlloc, &csShaderModule) != VK_SUCCESS) {
+                LOG_ERROR("Gfx: Failed to compile Compute module for shader '%s'", shader.name);
+                return;
+            }
+            const_cast<VkPipelineShaderStageCreateInfo*>(&pipeline.createInfo.compute->stage)->module = csShaderModule;
+
+            VkPipeline pipelineVk;
+            if (vkCreateComputePipelines(gBackendVk.device, nullptr, 1, pipeline.createInfo.compute, gBackendVk.vkAlloc, &pipelineVk) != VK_SUCCESS) 
+            {
+                LOG_ERROR("Gfx: Failed to create compute pipeline for shader '%s'", shader.name);
+                return;
+            }
+
+            vkDestroyShaderModule(gBackendVk.device, csShaderModule, gBackendVk.vkAlloc);
+
+            oldPipeline = pipeline.handle;
+            pipeline.handle = pipelineVk;
+        }
+
+        ASSERT(oldPipeline);
+        MutexScope lock(gBackendVk.garbageMtx);
+        gBackendVk.garbage.Push({
+            .type = GfxBackendGarbage::Type::Pipeline,
+            .frameIdx = gBackendVk.presentFrame,
+            .pipeline = oldPipeline
+        });
+    }
+}
+
 GfxPipelineHandle GfxBackend::CreateGraphicsPipeline(const GfxShader& shader, GfxPipelineLayoutHandle layoutHandle, 
                                                      const GfxGraphicsPipelineDesc& desc)
 {
@@ -2822,7 +3079,7 @@ GfxPipelineHandle GfxBackend::CreateGraphicsPipeline(const GfxShader& shader, Gf
     };
 
     VkPipeline pipelineVk;
-    if (vkCreateGraphicsPipelines(gBackendVk.device, nullptr /* TODO */, 1, &pipelineInfo, gBackendVk.vkAlloc, &pipelineVk) != VK_SUCCESS) {
+    if (vkCreateGraphicsPipelines(gBackendVk.device, gBackendVk.pipelineCache, 1, &pipelineInfo, gBackendVk.vkAlloc, &pipelineVk) != VK_SUCCESS) {
         LOG_ERROR("Gfx: Failed to create graphics pipeline for shader '%s'", shader.name);
         return GfxPipelineHandle();
     }
@@ -2831,10 +3088,13 @@ GfxPipelineHandle GfxBackend::CreateGraphicsPipeline(const GfxShader& shader, Gf
     vkDestroyShaderModule(gBackendVk.device, vsShaderModule, gBackendVk.vkAlloc);
     vkDestroyShaderModule(gBackendVk.device, psShaderModule, gBackendVk.vkAlloc);
 
-    // TODO: gfxSavePipelineBinaryProperties()
     GfxBackendPipeline pipeline {
         .handle = pipelineVk,
-        .type = GfxBackendPipeline::PipelineTypeGraphics
+        .type = GfxBackendPipeline::PipelineTypeGraphics,
+        .shaderHash = shader.hash,
+        .createInfo = {
+            .graphics = _DuplicateGraphicsPipelineCreateInfo(pipelineInfo)
+        }
     };
 
     ReadWriteMutexWriteScope objPoolLock(gBackendVk.objectPoolsMutex);
@@ -2883,7 +3143,7 @@ GfxPipelineHandle GfxBackend::CreateComputePipeline(const GfxShader& shader, Gfx
     };
 
     VkPipeline pipelineVk;
-    if (vkCreateComputePipelines(gBackendVk.device, nullptr /* TODO */, 1, &pipelineCreateInfo, gBackendVk.vkAlloc, &pipelineVk) != VK_SUCCESS) {
+    if (vkCreateComputePipelines(gBackendVk.device, gBackendVk.pipelineCache, 1, &pipelineCreateInfo, gBackendVk.vkAlloc, &pipelineVk) != VK_SUCCESS) {
         LOG_ERROR("Gfx: Failed to create compute pipeline for shader '%s'", shader.name);
         return GfxPipelineHandle();
     }
@@ -2894,7 +3154,11 @@ GfxPipelineHandle GfxBackend::CreateComputePipeline(const GfxShader& shader, Gfx
     // TODO: gfxSavePipelineBinaryProperties()
     GfxBackendPipeline pipeline {
         .handle = pipelineVk,
-        .type = GfxBackendPipeline::PipelineTypeCompute
+        .type = GfxBackendPipeline::PipelineTypeCompute,
+        .shaderHash = shader.hash,
+        .createInfo = {
+            .compute = _DuplicateComputePipelineCreateInfo(pipelineCreateInfo)
+        }
     };
 
     ReadWriteMutexWriteScope objPoolLock(gBackendVk.objectPoolsMutex);
@@ -2915,6 +3179,11 @@ void GfxBackend::DestroyPipeline(GfxPipelineHandle& handle)
                 .pipeline = pipeline.handle
             });
         }
+
+        if (pipeline.type == GfxBackendPipeline::PipelineTypeGraphics)
+            Mem::Free(pipeline.createInfo.graphics, &gBackendVk.runtimeAlloc);
+        else if (pipeline.type == GfxBackendPipeline::PipelineTypeCompute)
+            Mem::Free(pipeline.createInfo.compute, &gBackendVk.runtimeAlloc);
 
         gBackendVk.pipelines.Remove(handle);
         handle = {};
@@ -4599,8 +4868,8 @@ void GfxCommandBuffer::BeginRenderPass(const GfxBackendRenderPass& pass)
 
         VkClearValue clearValue {};
         if (layout == VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL) {
-            clearValue.color = {srcAttachment.clearValue.color.x, srcAttachment.clearValue.color.y, 
-                                srcAttachment.clearValue.color.z, srcAttachment.clearValue.color.w};
+            clearValue.color = {{srcAttachment.clearValue.color.x, srcAttachment.clearValue.color.y, 
+                                 srcAttachment.clearValue.color.z, srcAttachment.clearValue.color.w}};
         }
         else if (layout == VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL || 
                  layout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL ||
@@ -4966,10 +5235,6 @@ GfxBackendMemoryOffsetAllocator::Block* GfxBackendMemoryOffsetAllocator::CreateB
         MEM_FAIL();
         return nullptr;
     }
-
-    if (gBackendVk.extApi.hasMemoryBudget)
-        Atomic::FetchSub(&gBackendVk.memMan.GetDeviceMemoryBudget(mMemTypeIndex), mBlockSize);
-
 
     if (mTypeFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) {
         r = vkMapMemory(gBackendVk.device, block->deviceMem, 0, VK_WHOLE_SIZE, 0, &block->mappedData);

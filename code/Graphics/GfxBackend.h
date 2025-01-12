@@ -100,6 +100,8 @@ namespace GfxBackend
 
     float GetRenderTimeNS();
 
+    void ReloadShaderPipelines(const GfxShader& shader);
+
 } // Gfx
 
 //----------------------------------------------------------------------------------------------------------------------

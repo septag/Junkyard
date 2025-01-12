@@ -131,12 +131,15 @@ namespace Engine
                 } 
             }
         }
+    /*
+        // TODO
     #if PLATFORM_ANDROID
         else if (ev.type == AppEventType::Suspended) 
-            gfxDestroySurfaceAndSwapchain();
+            DestroySurfaceAndSwapchain();
         else if (ev.type == AppEventType::Resumed)
-            gfxRecreateSurfaceAndSwapchain();
+            RecreateSurfaceAndSwapchain();
     #endif
+    */
     }
 
     static void _InitResourcesUpdate(float dt, void*)
