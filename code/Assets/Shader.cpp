@@ -8,7 +8,7 @@
 
 #include "../Tool/ShaderCompiler.h"
 
-#include "../Graphics/GfxBackendTypes.h"
+#include "../Graphics/GfxBackend.h"
 
 static constexpr uint32 SHADER_ASSET_TYPE = MakeFourCC('S', 'H', 'A', 'D');
 
@@ -115,8 +115,7 @@ bool AssetShaderImpl::Reload(void* newData, void* oldData)
         return false;
     }
 
-    // TODO
-    // _private::gfxRecreatePipelinesWithNewShader(newShader->hash, newShader);
+    GfxBackend::ReloadShaderPipelines(*newShader);
     return true;
     
 }
