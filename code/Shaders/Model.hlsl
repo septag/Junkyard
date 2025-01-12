@@ -24,6 +24,7 @@ cbuffer FrameInfo
     float4x4 ViewMat;
     float4x4 ProjMat;
     float3 LightDir;
+    float LightFactor;
 };
 
 Sampler2D BaseColorTexture;
@@ -47,6 +48,7 @@ float4 PsMain(Psinput input) : SV_Target
     float3 lv = -normalize(LightDir);
     float3 n = normalize((float3)input.normal);
     float NdotL = max(0.0, dot(n, lv));
+    NdotL = max(LightFactor, NdotL);
 
     float4 albedo = BaseColorTexture.Sample(input.uv);
     return float4(NdotL*albedo.xyz + ambient*albedo.xyz, 1.0f);
