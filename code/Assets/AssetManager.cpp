@@ -1477,12 +1477,6 @@ static void Asset::_ServerLoadBatchTask(uint32, void*)
         }
     }
 
-    // Save the baked ones
-    // TODO: Decide if we need to save baked data on the server-side, if not, just remove this
-
-    // if (!saveAssets.IsEmpty())
-    //    batchJob = Jobs::Dispatch(JobsType::LongTask, _SaveBakedTask, saveAssets.Ptr(), saveAssets.Count());
-
     // Send successfully loaded asset blobs to the client
     // TODO: compress the data
     {
@@ -1525,9 +1519,6 @@ static void Asset::_ServerLoadBatchTask(uint32, void*)
             }
         }
     }
-
-    // if (!saveAssets.IsEmpty())
-    //    Jobs::WaitForCompletion(batchJob);
 
     // No need for TaskDatas (allocated in _RemoteServerCallback)
     for (uint32 i = 0; i < numTasks; i++) 

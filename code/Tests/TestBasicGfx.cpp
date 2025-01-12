@@ -56,12 +56,14 @@ struct ModelScene
     AssetGroup mAssetGroup;
 
     float mLightAngle = M_HALFPI;
+    bool mEnableLight = false;
 
     struct FrameInfo 
     {
         Mat4 viewMat;
         Mat4 projMat;
         Float3 lightDir;
+        float lightFactor;
     };
 
     struct ModelTransform
@@ -239,7 +241,8 @@ struct ModelScene
         FrameInfo ubo {
             .viewMat = mCam.GetViewMat(),
             .projMat = GfxBackend::GetSwapchainTransformMat() * mCam.GetPerspectiveMat(vwidth, vheight),
-            .lightDir = Float3(-0.2f, M::Cos(mLightAngle), -M::Sin(mLightAngle))
+            .lightDir = Float3(-0.2f, M::Cos(mLightAngle), -M::Sin(mLightAngle)),
+            .lightFactor = mEnableLight ? 0 : 1.0f
         };
 
         GfxBufferDesc stagingDesc {
@@ -262,6 +265,7 @@ struct ModelScene
 
     void UpdateImGui()
     {
+        ImGui::Checkbox("EnableLight", &mEnableLight);
         ImGui::SliderFloat("LightAngle", &mLightAngle, 0, M_PI, "%0.1f");
     }
 
@@ -314,7 +318,7 @@ struct ModelScene
                 if (mtl->pbrMetallicRoughness.baseColorTex.texture.IsValid()) {
                     AssetObjPtrScope<GfxImage> img(mtl->pbrMetallicRoughness.baseColorTex.texture);
                     if (!img.IsNull())
-                    imgHandle = img->handle;
+                        imgHandle = img->handle;
                 }
 
                 GfxBindingDesc bindings[] = {

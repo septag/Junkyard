@@ -215,6 +215,7 @@ namespace ModelUtil
             mallocMesh.AddMemberArray<void*>(offsetof(MeshOptMesh, vertexBuffers), srcMesh.numVertexBuffers);
             mallocMesh.AddMemberArray<uint32>(offsetof(MeshOptMesh, indexBuffer), srcMesh.numIndices);
             mallocMesh.AddMemberArray<uint32>(offsetof(MeshOptMesh, vertexStrides), srcMesh.numVertexBuffers);
+            mallocMesh.AddMemberArray<MeshOptSubmesh>(offsetof(MeshOptMesh, submeshes), srcMesh.numSubmeshes);
             MeshOptMesh* bakeMesh = mallocMesh.Calloc(&tmpAlloc);
 
             for (uint32 k = 0; k < srcMesh.numVertexBuffers; k++) {
@@ -222,10 +223,16 @@ namespace ModelUtil
                 bakeMesh->vertexStrides[k] = modelParams.layout.vertexBufferStrides[k];
             }
 
+            for (uint32 k = 0; k < srcMesh.numSubmeshes; k++) {
+                bakeMesh->submeshes[k].startIndex = srcMesh.submeshes[k].startIndex;
+                bakeMesh->submeshes[k].numIndices = srcMesh.submeshes[k].numIndices;
+            }
+
             bakeMesh->indexBuffer = srcMesh.cpuBuffers.indexBuffer.Get();
             bakeMesh->numVertexBuffers = srcMesh.numVertexBuffers;
             bakeMesh->numVertices = srcMesh.numVertices;
             bakeMesh->numIndices = srcMesh.numIndices;
+            bakeMesh->numSubmeshes = srcMesh.numSubmeshes;
 
             const GfxVertexInputAttributeDesc* attr = &modelParams.layout.vertexAttributes[0];    
             bool foundPos = false;
@@ -246,6 +253,11 @@ namespace ModelUtil
         }
 
         MeshOpt::Optimize(&bakeModel);
+
+        for (uint32 i = 0; i < model->numMeshes; i++) {
+            ModelMesh& srcMesh = model->meshes[i];
+            srcMesh.numVertices = bakeModel.meshes[i]->numVertices;
+        }
     }
     #endif // CONFIG_TOOLMODE
 

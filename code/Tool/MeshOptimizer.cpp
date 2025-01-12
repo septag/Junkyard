@@ -7,6 +7,8 @@
 #include "../Core/Allocators.h"
 #include "../Core/TracyHelper.h"
 
+#include "../Core/Log.h"
+
 static thread_local MemAllocator* gMeshOptAlloc = nullptr;
 
 void MeshOpt::Initialize()
@@ -24,54 +26,61 @@ void MeshOpt::Optimize(MeshOptModel* model)
 
     for (uint32 i = 0; i < model->numMeshes; i++) {
         MeshOptMesh* mesh = model->meshes[i];
-        uint32* indices = mesh->indexBuffer;
+        uint32* meshIndices = mesh->indexBuffer;
 
         meshopt_Stream* streams = tmpAlloc.MallocTyped<meshopt_Stream>(mesh->numVertexBuffers);
+        void** vertices = tmpAlloc.MallocTyped<void*>(mesh->numVertexBuffers);
         for (uint32 k = 0; k < mesh->numVertexBuffers; k++) {
-            streams[k] = meshopt_Stream {
+            streams[k] = {
                 .data = mesh->vertexBuffers[k],
                 .size = mesh->vertexStrides[k],
                 .stride = mesh->vertexStrides[k]
             };
+
+            vertices[k] = tmpAlloc.Malloc(mesh->numVertices * mesh->vertexStrides[k]);
         }
 
-        // Reindex/Remove duplicates
-        uint32* remap = tmpAlloc.MallocTyped<uint32>(mesh->numIndices);
-        size_t numVertices = meshopt_generateVertexRemapMulti(remap, indices, mesh->numIndices, 
-                                                              mesh->numVertices, streams, mesh->numVertexBuffers);
-        [[maybe_unused]] uint32 numDuplicates = mesh->numVertices - (uint32)numVertices;
+        uint32* remap = tmpAlloc.MallocTyped<uint32>(mesh->numVertices);
+        uint32* indices = tmpAlloc.MallocTyped<uint32>(mesh->numIndices);
 
-        for (uint32 k = 0; k < mesh->numVertexBuffers; k++) {
-            void* remappedVertices = tmpAlloc.Malloc(numVertices * mesh->vertexStrides[k]);
-            meshopt_remapVertexBuffer(remappedVertices, mesh->vertexBuffers[k], mesh->numVertices, 
-                                      mesh->vertexStrides[k], remap);
-            memcpy(mesh->vertexBuffers[k], remappedVertices, numVertices * mesh->vertexStrides[k]);
+        // TODO: For multi-subset meshes, this process will mess up the geometry (I think particularly for the first subset), investigate why
+        if (mesh->numSubmeshes == 1) {
+            size_t numVertices = meshopt_generateVertexRemapMulti(remap, meshIndices, mesh->numIndices, mesh->numVertices, streams, mesh->numVertexBuffers);
+            for (uint32 k = 0; k < mesh->numVertexBuffers; k++) 
+                meshopt_remapVertexBuffer(vertices[k], mesh->vertexBuffers[k], numVertices, mesh->vertexStrides[k], remap);
+            meshopt_remapIndexBuffer(indices, meshIndices, mesh->numIndices, remap);
+            mesh->numVertices = uint32(numVertices);
         }
-        meshopt_remapIndexBuffer(indices, indices, mesh->numIndices, remap);
-        mesh->numVertices = uint32(numVertices);
+        else {
+            for (uint32 k = 0; k < mesh->numVertexBuffers; k++) 
+                memcpy(vertices[k], mesh->vertexBuffers[k], mesh->vertexStrides[k]*mesh->numVertices);
+            memcpy(indices, mesh->indexBuffer, sizeof(uint32)*mesh->numIndices);
+        }
 
-        // Vertex cache
-        meshopt_optimizeVertexCache(indices, indices, mesh->numIndices, mesh->numVertices);
-        
-        // Overdraw
-        uint32 positionStride = mesh->posStride;
-        uint8* positions = (uint8*)mesh->vertexBuffers[mesh->posBufferIndex] + mesh->posOffset;
-        meshopt_optimizeOverdraw(indices, indices, mesh->numIndices, (const float*)positions, mesh->numVertices, positionStride, 1.05f);
+        for (uint32 submeshIdx = 0; submeshIdx < mesh->numSubmeshes; submeshIdx++) {
+            MeshOptSubmesh submesh = mesh->submeshes[submeshIdx];
 
-        #if 0
-        meshopt_OverdrawStatistics overdrawStats =
-            meshopt_analyzeOverdraw(indices, mesh->numIndices, (const float*)positions, mesh->numVertices, positionStride);
-        #endif
-        
+            // Vertex cache
+            meshopt_optimizeVertexCache(indices + submesh.startIndex, indices + submesh.startIndex, submesh.numIndices, mesh->numVertices);
+
+            // Overdraw
+            uint32 positionStride = mesh->posStride;
+            uint8* positions = (uint8*)vertices[mesh->posBufferIndex] + mesh->posOffset;
+            meshopt_optimizeOverdraw(indices + submesh.startIndex, indices + submesh.startIndex, 
+                                     submesh.numIndices, (const float*)positions, mesh->numVertices, positionStride, 1.05f);
+
+            if (model->showOverdrawAnalysis) {
+                [[maybe_unused]] meshopt_OverdrawStatistics overdrawStats =
+                    meshopt_analyzeOverdraw(indices + submesh.startIndex, submesh.numIndices, (const float*)positions, mesh->numVertices, positionStride);
+                LOG_INFO("PixelsCovered: %u, Overdraw: %.1f", overdrawStats.pixels_covered, overdrawStats.overdraw);
+            }
+        }
+
         // Fetch
-        for (uint32 k = 0; k < mesh->numVertexBuffers; k++) {
-            numVertices = meshopt_optimizeVertexFetchRemap(remap, indices, mesh->numIndices, mesh->numVertices);
-            ASSERT(numVertices == mesh->numVertices);       // This will raise problems, should I do something about this ?
-            void* remappedVertices = tmpAlloc.Malloc(numVertices * mesh->vertexStrides[k]);
-            meshopt_remapVertexBuffer(remappedVertices, mesh->vertexBuffers[k], mesh->numVertices, mesh->vertexStrides[k], remap);
-            memcpy(mesh->vertexBuffers[k], remappedVertices, numVertices * mesh->vertexStrides[k]);
-        }  
-        meshopt_remapIndexBuffer(indices, indices, mesh->numIndices, remap);
+        meshopt_optimizeVertexFetchRemap(remap, indices, mesh->numIndices, mesh->numVertices);
+        for (uint32 k = 0; k < mesh->numVertexBuffers; k++)
+            meshopt_remapVertexBuffer(mesh->vertexBuffers[k], vertices[k], mesh->numVertices, mesh->vertexStrides[k], remap);
+        meshopt_remapIndexBuffer(meshIndices, indices, mesh->numIndices, remap);
     }
 
     gMeshOptAlloc = nullptr;
