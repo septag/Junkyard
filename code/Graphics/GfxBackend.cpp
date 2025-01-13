@@ -4979,8 +4979,11 @@ void GfxCommandBuffer::EndRenderPass()
     VkCommandBuffer cmdVk = GfxBackend::_GetCommandBufferHandle(*this);
     vkCmdEndRendering(cmdVk);
 
-    if (mDrawsToSwapchain) 
+    if (mDrawsToSwapchain) {
+        VkImage swapchainImage = gBackendVk.swapchain.GetImage();
+        GfxBackend::_TransitionImageTEMP(cmdVk, swapchainImage, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
         gBackendVk.queueMan.GetQueue(mQueueIndex).internalDependents |= GfxQueueType::Present;
+    }
 
     mIsInRenderPass = false;
 }

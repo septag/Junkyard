@@ -39,6 +39,7 @@ static inline constexpr size_t ASSET_HEADER_BUFFER_POOL_SIZE = SIZE_MB;
 static inline constexpr size_t ASSET_DATA_BUFFER_POOL_SIZE = SIZE_MB*128;
 static inline constexpr uint32 ASSET_SERVER_MAX_IN_FLIGHT = 128;
 static inline constexpr uint32 ASSET_HOT_RELOAD_MAX_IN_FLIGHT = 128;
+static inline constexpr uint32 ASSET_MAX_TRANSFER_SIZE_PER_FRAME = 50*SIZE_MB;  
 
 struct AssetTypeManager
 {
@@ -167,6 +168,9 @@ struct AssetLoadTaskData
     AssetLoadTaskOutputs outputs;
 };
 
+using AssetImageDescHandlePair = Pair<AssetDataInternal::GpuImageDesc*, AssetHandle>;
+using AssetBufferDescHandlePair = Pair<AssetDataInternal::GpuBufferDesc*, AssetHandle>;
+
 struct AssetHandleResult
 {
     AssetDataHeader* header;
@@ -247,6 +251,7 @@ struct AssetMan
 
     Array<AssetJobItem> pendingJobs;
     JobsHandle curJob;
+    JobsSignal* curJobSignal;
 
     Array<AssetHandle> hotReloadList;
 
@@ -298,6 +303,7 @@ namespace Asset
     template <typename _T> _T* _TranslatePointer(_T* ptr, const void* origPtr, void* newPtr);
     static void _LoadGroupTask(uint32, void* userData);
     static void _UnloadGroupTask(uint32, void* userData);
+    static void _CreateGpuObjects(uint32 numImages, const AssetImageDescHandlePair* images, uint32 numBuffers, const AssetBufferDescHandlePair* buffers);
     static uint32 _MakeCacheFilepath(Path* outPath, const AssetDataHeader* header, uint32 overrideAssetHash = 0);
     static uint32 _MakeParamsHash(const AssetParams& params, uint32 typeSpecificParamsSize);
     static bool _RemoteServerCallback(uint32 cmd, const Blob& incomingData, Blob*, void*, char outErrorDesc[REMOTE_ERROR_SIZE]);
@@ -839,6 +845,116 @@ static void Asset::_LoadAssetTask(uint32 groupIdx, void* userData)
     LOG_VERBOSE("(load) %s: %s%s", typeMan.name.CStr(), params.path.CStr(), taskData.inputs.type == AssetLoadTaskInputType::Baked ? " (baked)" : "");
 }
 
+static void Asset::_CreateGpuObjects(uint32 numImages, const AssetImageDescHandlePair* images, 
+                                     uint32 numBuffers, const AssetBufferDescHandlePair* buffers)
+{
+    PROFILE_ZONE_COLOR(PROFILE_COLOR_ASSET2);
+    MemTempAllocator tempAlloc;
+
+    GfxBackend::BeginRenderFrameSync();
+    GfxCommandBuffer cmd = GfxBackend::BeginCommandBuffer(GfxQueueType::Transfer);
+
+    if (numImages) {
+        GfxImageDesc* descs = Mem::AllocTyped<GfxImageDesc>(numImages, &tempAlloc);
+        GfxBufferDesc* stagingBufferDescs = Mem::AllocTyped<GfxBufferDesc>(numImages, &tempAlloc);
+        GfxImageHandle* handles = Mem::AllocZeroTyped<GfxImageHandle>(numImages, &tempAlloc);
+        GfxBufferHandle* bufferHandles = Mem::AllocZeroTyped<GfxBufferHandle>(numImages, &tempAlloc);
+
+        for (uint32 i = 0; i < numImages; i++)  {
+            descs[i] = images[i].first->createDesc;
+            stagingBufferDescs[i] = {
+                .sizeBytes = images[i].first->contentSize,
+                .usageFlags = GfxBufferUsageFlags::TransferSrc,
+                .arena = GfxMemoryArena::TransientCPU
+            };
+        }
+
+        GfxBackend::BatchCreateImage(numImages, descs, handles);
+        GfxBackend::BatchCreateBuffer(numImages, stagingBufferDescs, bufferHandles);
+
+        GfxMapResult* mapResults = Mem::AllocZeroTyped<GfxMapResult>(numImages, &tempAlloc);
+        cmd.BatchMapBuffer(numImages, bufferHandles, mapResults);
+
+        for (uint32 i = 0; i < numImages; i++) {
+            ASSERT(mapResults[i].dataSize == images[i].first->contentSize);
+            memcpy(mapResults[i].dataPtr, images[i].first->content.Get(), mapResults[i].dataSize);
+        }
+
+        cmd.BatchFlushBuffer(numImages, bufferHandles);
+
+        GfxCopyBufferToImageParams* copyParams = Mem::AllocTyped<GfxCopyBufferToImageParams>(numImages, &tempAlloc);
+        for (uint32 i = 0; i < numImages; i++) {
+            copyParams[i] = {
+                .srcHandle = bufferHandles[i],
+                .dstHandle = handles[i],
+                .stagesUsed = GfxShaderStage::Fragment,
+                .mipCount = UINT16_MAX,
+                .resourceTransferedCallback = _GpuResourceFinishedCallback,
+                .resourceTransferedUserData = IntToPtr(images[i].second.mId)
+            };
+        }
+
+        cmd.BatchCopyBufferToImage(numImages, copyParams);            
+        GfxBackend::BatchDestroyBuffer(numImages, bufferHandles);
+
+        for (uint32 i = 0; i < numImages; i++) {
+            GfxImageHandle* targetImage = images[i].first->bindToImage.Get();
+            *targetImage = handles[i];
+        }
+    }
+
+    if (numBuffers) {
+        GfxBufferDesc* descs = Mem::AllocTyped<GfxBufferDesc>(numBuffers, &tempAlloc);
+        GfxBufferDesc* stagingBufferDescs = Mem::AllocTyped<GfxBufferDesc>(numBuffers, &tempAlloc);
+        GfxBufferHandle* handles = Mem::AllocZeroTyped<GfxBufferHandle>(numBuffers, &tempAlloc);
+        GfxBufferHandle* stagingHandles = Mem::AllocZeroTyped<GfxBufferHandle>(numBuffers, &tempAlloc);
+
+        for (uint32 i = 0; i < numBuffers; i++) {
+            descs[i] = buffers[i].first->createDesc;
+            stagingBufferDescs[i] = {
+                .sizeBytes = buffers[i].first->createDesc.sizeBytes,
+                .usageFlags = GfxBufferUsageFlags::TransferSrc,
+                .arena = GfxMemoryArena::TransientCPU
+            };
+        }
+
+        GfxBackend::BatchCreateBuffer(numBuffers, descs, handles);
+        GfxBackend::BatchCreateBuffer(numBuffers, stagingBufferDescs, stagingHandles);
+
+        GfxMapResult* mapResults = Mem::AllocZeroTyped<GfxMapResult>(numBuffers, &tempAlloc);
+        cmd.BatchMapBuffer(numBuffers, stagingHandles, mapResults);
+
+        for (uint32 i = 0; i < numBuffers; i++) {
+            ASSERT(mapResults[i].dataSize == buffers[i].first->createDesc.sizeBytes);
+            memcpy(mapResults[i].dataPtr, buffers[i].first->content.Get(), mapResults[i].dataSize);
+        }
+        cmd.BatchFlushBuffer(numBuffers, stagingHandles);
+
+        GfxCopyBufferToBufferParams* copyParams = Mem::AllocTyped<GfxCopyBufferToBufferParams>(numBuffers, &tempAlloc);
+        for (uint32 i = 0; i < numBuffers; i++) {
+            copyParams[i] = {
+                .srcHandle = stagingHandles[i],
+                .dstHandle = handles[i],
+                .stagesUsed = GfxShaderStage::Vertex,
+                .resourceTransferedCallback = _GpuResourceFinishedCallback,
+                .resourceTransferedUserData = IntToPtr(buffers[i].second.mId)
+            };
+        }
+
+        cmd.BatchCopyBufferToBuffer(numBuffers, copyParams);            
+        GfxBackend::BatchDestroyBuffer(numBuffers, stagingHandles);
+
+        for (uint32 i = 0; i < numBuffers; i++) {
+            GfxBufferHandle* targetBuffer = buffers[i].first->bindToBuffer.Get();
+            *targetBuffer = handles[i];
+        }
+    }
+
+    GfxBackend::EndCommandBuffer(cmd);
+    GfxBackend::SubmitQueue(GfxQueueType::Transfer, GfxQueueType::Graphics);
+    GfxBackend::EndRenderFrameSync();
+}
+
 static void Asset::_LoadGroupTask(uint32, void* userData)
 {
     PROFILE_ZONE_COLOR(PROFILE_COLOR_ASSET1);
@@ -891,7 +1007,7 @@ static void Asset::_LoadGroupTask(uint32, void* userData)
     Array<AssetQueuedItem> queuedAssets;
     queuedAssets.Reserve(loadList.Count());
 
-    for (uint32 i = 0; i < loadList.Count(); i += batchCount) {
+    for (uint32 i = 0; i < loadList.Count();) {
         uint32 sliceCount = Min(batchCount, loadList.Count() - i);
 
         AssetLoadTaskData* taskDatas = Mem::AllocZeroTyped<AssetLoadTaskData>(sliceCount, tempAlloc);
@@ -998,6 +1114,7 @@ static void Asset::_LoadGroupTask(uint32, void* userData)
 
         // Gather dependency assets and add them to the queue
         // Gather items to be saved in cache
+        uint32 lastLoadListCount = loadList.Count();
         for (uint32 k = 0; k < sliceCount; k++) {
             AssetLoadTaskInputs& in = taskDatas[k].inputs;
             AssetLoadTaskOutputs& out = taskDatas[k].outputs;
@@ -1046,6 +1163,10 @@ static void Asset::_LoadGroupTask(uint32, void* userData)
         } 
 
         tempAlloc->Reset();
+
+        i += batchCount;
+        if (lastLoadListCount < loadList.Count())
+            batchCount = Max(batchCount, Min(128u, loadList.Count() - i));
     }
 
     // Save to cache
@@ -1064,24 +1185,19 @@ static void Asset::_LoadGroupTask(uint32, void* userData)
 
     // Create GPU objects
     {
-        GfxBackend::BeginRenderFrameSync();
-        GfxCommandBuffer cmd = GfxBackend::BeginCommandBuffer(GfxQueueType::Transfer);
-
-        using GpuImageDescHandlePair = Pair<AssetDataInternal::GpuImageDesc*, AssetHandle>;
-        using GpuBufferDescHandlePair = Pair<AssetDataInternal::GpuBufferDesc*, AssetHandle>;
-        Array<GpuImageDescHandlePair> images(tempAlloc);
-        Array<GpuBufferDescHandlePair> buffers(tempAlloc);
+        Array<AssetImageDescHandlePair> images(tempAlloc);
+        Array<AssetBufferDescHandlePair> buffers(tempAlloc);
 
         for (uint32 i = 0; i < queuedAssets.Count(); i++) {
             AssetQueuedItem& qa = queuedAssets[i];
             AssetDataInternal::GpuObject* gpuObj = qa.data->gpuObjects.Get();
             while (gpuObj) {
                 if (gpuObj->type == AssetDataInternal::GpuObjectType::Buffer) {
-                    buffers.Push(GpuBufferDescHandlePair(&gpuObj->bufferDesc, loadListHandles[qa.indexInLoadList]));
+                    buffers.Push(AssetBufferDescHandlePair(&gpuObj->bufferDesc, loadListHandles[qa.indexInLoadList]));
                     qa.hasPendingGpuResource = true;
                 }
                 else if (gpuObj->type == AssetDataInternal::GpuObjectType::Image) {
-                    images.Push(GpuImageDescHandlePair(&gpuObj->imageDesc, loadListHandles[qa.indexInLoadList]));
+                    images.Push(AssetImageDescHandlePair(&gpuObj->imageDesc, loadListHandles[qa.indexInLoadList]));
                     qa.hasPendingGpuResource = true;
                 }
 
@@ -1089,107 +1205,45 @@ static void Asset::_LoadGroupTask(uint32, void* userData)
             }
         }
 
-        if (!images.IsEmpty()) {
-            uint32 numImages = images.Count();
-            GfxImageDesc* descs = Mem::AllocTyped<GfxImageDesc>(numImages, tempAlloc);
-            GfxBufferDesc* stagingBufferDescs = Mem::AllocTyped<GfxBufferDesc>(numImages, tempAlloc);
-            GfxImageHandle* handles = Mem::AllocZeroTyped<GfxImageHandle>(numImages, tempAlloc);
-            GfxBufferHandle* bufferHandles = Mem::AllocZeroTyped<GfxBufferHandle>(numImages, tempAlloc);
+        JobsSignal gpuObjectsSignal;
+        gAssetMan.curJobSignal = &gpuObjectsSignal;
 
-            for (uint32 i = 0; i < numImages; i++)  {
-                descs[i] = images[i].first->createDesc;
-                stagingBufferDescs[i] = {
-                    .sizeBytes = images[i].first->contentSize,
-                    .usageFlags = GfxBufferUsageFlags::TransferSrc,
-                    .arena = GfxMemoryArena::TransientCPU
-                };
+        uint32 imageIdx = 0;
+        uint32 bufferIdx = 0;
+        if (images.Count() || buffers.Count()) {
+            gpuObjectsSignal.Wait();
+            gpuObjectsSignal.Reset();
+
+            size_t totalTransferSize = 0;
+            for (uint32 i = imageIdx; i < images.Count(); i++) {
+                const AssetImageDescHandlePair& img = images[i];
+                totalTransferSize += img.first->contentSize;
+                if (totalTransferSize > ASSET_MAX_TRANSFER_SIZE_PER_FRAME) {
+                    _CreateGpuObjects(i - imageIdx, &images[imageIdx], 0, nullptr);
+                    imageIdx = i;
+                    totalTransferSize = 0;
+                    gpuObjectsSignal.Wait();
+                    gpuObjectsSignal.Reset();
+                }
             }
 
-            GfxBackend::BatchCreateImage(numImages, descs, handles);
-            GfxBackend::BatchCreateBuffer(numImages, stagingBufferDescs, bufferHandles);
-
-            GfxMapResult* mapResults = Mem::AllocZeroTyped<GfxMapResult>(numImages, tempAlloc);
-            cmd.BatchMapBuffer(numImages, bufferHandles, mapResults);
-
-            for (uint32 i = 0; i < numImages; i++) {
-                ASSERT(mapResults[i].dataSize == images[i].first->contentSize);
-                memcpy(mapResults[i].dataPtr, images[i].first->content.Get(), mapResults[i].dataSize);
+            for (uint32 i = bufferIdx; i < buffers.Count(); i++) {
+                const AssetBufferDescHandlePair& buff = buffers[i];
+                totalTransferSize += buff.first->createDesc.sizeBytes;
+                if (totalTransferSize > ASSET_MAX_TRANSFER_SIZE_PER_FRAME) {
+                    _CreateGpuObjects(images.Count() - imageIdx, imageIdx < images.Count() ? &images[imageIdx] : nullptr, 
+                                      i - bufferIdx, &buffers[bufferIdx]);
+                    imageIdx = images.Count();
+                    bufferIdx = i;
+                    totalTransferSize = 0;
+                    gpuObjectsSignal.Wait();
+                    gpuObjectsSignal.Reset();
+                }
             }
 
-            cmd.BatchFlushBuffer(numImages, bufferHandles);
-
-            GfxCopyBufferToImageParams* copyParams = Mem::AllocTyped<GfxCopyBufferToImageParams>(numImages, tempAlloc);
-            for (uint32 i = 0; i < numImages; i++) {
-                copyParams[i] = {
-                    .srcHandle = bufferHandles[i],
-                    .dstHandle = handles[i],
-                    .stagesUsed = GfxShaderStage::Fragment,
-                    .mipCount = UINT16_MAX,
-                    .resourceTransferedCallback = _GpuResourceFinishedCallback,
-                    .resourceTransferedUserData = IntToPtr(images[i].second.mId)
-                };
-            }
-
-            cmd.BatchCopyBufferToImage(numImages, copyParams);            
-            GfxBackend::BatchDestroyBuffer(numImages, bufferHandles);
-
-            for (uint32 i = 0; i < numImages; i++) {
-                GfxImageHandle* targetImage = images[i].first->bindToImage.Get();
-                *targetImage = handles[i];
-            }
+            _CreateGpuObjects(images.Count() - imageIdx, imageIdx < images.Count() ? &images[imageIdx] : nullptr,
+                              buffers.Count() - bufferIdx, bufferIdx < buffers.Count() ? &buffers[bufferIdx] : nullptr);
         }
-
-        if (!buffers.IsEmpty()) {
-            uint32 numBuffers = buffers.Count();
-            GfxBufferDesc* descs = Mem::AllocTyped<GfxBufferDesc>(numBuffers, tempAlloc);
-            GfxBufferDesc* stagingBufferDescs = Mem::AllocTyped<GfxBufferDesc>(numBuffers, tempAlloc);
-            GfxBufferHandle* handles = Mem::AllocZeroTyped<GfxBufferHandle>(numBuffers, tempAlloc);
-            GfxBufferHandle* stagingHandles = Mem::AllocZeroTyped<GfxBufferHandle>(numBuffers, tempAlloc);
-
-            for (uint32 i = 0; i < numBuffers; i++) {
-                descs[i] = buffers[i].first->createDesc;
-                stagingBufferDescs[i] = {
-                    .sizeBytes = buffers[i].first->createDesc.sizeBytes,
-                    .usageFlags = GfxBufferUsageFlags::TransferSrc,
-                    .arena = GfxMemoryArena::TransientCPU
-                };
-            }
-
-            GfxBackend::BatchCreateBuffer(numBuffers, descs, handles);
-            GfxBackend::BatchCreateBuffer(numBuffers, stagingBufferDescs, stagingHandles);
-
-            GfxMapResult* mapResults = Mem::AllocZeroTyped<GfxMapResult>(numBuffers, tempAlloc);
-            cmd.BatchMapBuffer(numBuffers, stagingHandles, mapResults);
-
-            for (uint32 i = 0; i < numBuffers; i++) {
-                ASSERT(mapResults[i].dataSize == buffers[i].first->createDesc.sizeBytes);
-                memcpy(mapResults[i].dataPtr, buffers[i].first->content.Get(), mapResults[i].dataSize);
-            }
-            cmd.BatchFlushBuffer(numBuffers, stagingHandles);
-
-            GfxCopyBufferToBufferParams* copyParams = Mem::AllocTyped<GfxCopyBufferToBufferParams>(numBuffers, tempAlloc);
-            for (uint32 i = 0; i < numBuffers; i++) {
-                copyParams[i] = {
-                    .srcHandle = stagingHandles[i],
-                    .dstHandle = handles[i],
-                    .stagesUsed = GfxShaderStage::Vertex,
-                    .resourceTransferedCallback = _GpuResourceFinishedCallback,
-                    .resourceTransferedUserData = IntToPtr(buffers[i].second.mId)
-                };
-            }
-
-            cmd.BatchCopyBufferToBuffer(numBuffers, copyParams);            
-            GfxBackend::BatchDestroyBuffer(numBuffers, stagingHandles);
-
-            for (uint32 i = 0; i < numBuffers; i++) {
-                GfxBufferHandle* targetBuffer = buffers[i].first->bindToBuffer.Get();
-                *targetBuffer = handles[i];
-            }
-        }
-
-        GfxBackend::EndCommandBuffer(cmd);
-        GfxBackend::SubmitQueue(GfxQueueType::Transfer, GfxQueueType::Graphics);
-        GfxBackend::EndRenderFrameSync();
     }
 
     if (saveItemsJob)
@@ -1988,9 +2042,16 @@ void Asset::Update()
     PROFILE_ZONE_COLOR(PROFILE_COLOR_ASSET1);
     ASSERT_MSG(Engine::IsMainThread(), "Update can only be called in the main thread");
 
-    if (gAssetMan.curJob && !Jobs::IsRunning(gAssetMan.curJob)) {
-        Jobs::Delete(gAssetMan.curJob);
-        gAssetMan.curJob = nullptr;
+    if (gAssetMan.curJob) {
+        if (gAssetMan.curJobSignal) {
+            gAssetMan.curJobSignal->Set();
+            gAssetMan.curJobSignal->Raise();
+        }
+
+        if (!Jobs::IsRunning(gAssetMan.curJob)) {
+            Jobs::Delete(gAssetMan.curJob);
+            gAssetMan.curJob = nullptr;
+        }
     }
 
     if (gAssetMan.curJob == nullptr) {
