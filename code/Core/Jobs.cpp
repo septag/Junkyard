@@ -887,6 +887,12 @@ void JobsSignal::Set(int value)
     Atomic::ExchangeExplicit(&self->value, uint32(value), AtomicMemoryOrder::Release);
 }
 
+void JobsSignal::Reset()
+{
+    JobsSignalInternal* self = reinterpret_cast<JobsSignalInternal*>(data);
+    Atomic::ExchangeExplicit(&self->value, uint32(0), AtomicMemoryOrder::Release);
+}
+
 void JobsSignal::Decrement()
 {
     JobsSignalInternal* self = reinterpret_cast<JobsSignalInternal*>(data);

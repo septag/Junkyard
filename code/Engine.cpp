@@ -563,6 +563,8 @@ void Engine::BeginFrame(float dt)
         GfxBackend::Begin();
     }
 
+    Asset::Update();
+
     gEng.rawFrameStartTime = Timer::GetTicks();
 }
 
@@ -575,8 +577,6 @@ void Engine::EndFrame()
     ASSERT_MSG(gEng.beginFrameCalled, "BeginFrame is not called");
     gEng.beginFrameCalled = false;
     gEng.endFrameCalled = true;
-
-    Asset::Update();
 
     gEng.rawFrameTime = Timer::Diff(Timer::GetTicks(), gEng.rawFrameStartTime);
 

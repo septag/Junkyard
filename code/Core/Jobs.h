@@ -61,6 +61,7 @@ struct alignas(CACHE_LINE_SIZE) JobsSignal
     void Increment();
     void WaitOnCondition(bool(*condFn)(int value, int reference), int reference = 0);
     void Set(int value = 1);
+    void Reset();
 
 private:
     uint8 data[128];
