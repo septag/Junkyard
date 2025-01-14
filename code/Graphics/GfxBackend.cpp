@@ -241,7 +241,7 @@ private:
     static int SubmitThread(void* userData);
     bool SubmitQueueInternal(GfxBackendQueueSubmitRequest& req);
     void SetupQueuesForDiscreteDevice();
-    void SetupQueuesForItegratedDevice();
+    void SetupQueuesForIntegratedDevice();
     void MergeQueues();
     uint32 AssignQueueFamily(GfxQueueType type, GfxQueueType preferNotHave = GfxQueueType::None, 
                              uint32 numExcludes = 0, const uint32* excludeList = nullptr);
@@ -1181,6 +1181,16 @@ namespace GfxBackend
             if (settings.graphics.headless && IsBitsSet(queue.type, GfxQueueType::Graphics|GfxQueueType::Present))
                 continue;
 
+            bool isDuplicate = false;
+            for (uint32 k = 0; k < i; k++) {
+                if (gBackendVk.queueMan.GetQueue(k).familyIdx == queue.familyIdx) {
+                    isDuplicate = true;
+                    break;
+                }                    
+            }
+            if (isDuplicate)
+                continue;
+
             VkDeviceQueueCreateInfo createInfo {
                 .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
                 .queueFamilyIndex = queue.familyIdx,
@@ -1193,7 +1203,7 @@ namespace GfxBackend
         // Create device (logical)
         VkDeviceCreateInfo devCreateInfo {
             .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
-            .queueCreateInfoCount = gBackendVk.queueMan.GetQueueCount(),
+            .queueCreateInfoCount = queueCreateInfos.Count(),
             .pQueueCreateInfos = queueCreateInfos.Ptr(),
             .enabledExtensionCount = enabledExtensions.Count(),
             .ppEnabledExtensionNames = enabledExtensions.Ptr()
@@ -3742,12 +3752,13 @@ bool GfxBackendQueueManager::Initialize()
 
     LOG_VERBOSE("(init) Found total %u queue families", mNumQueueFamilies);
 
-    if (gpu.props.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU)
+    if (gpu.props.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU) {
         SetupQueuesForDiscreteDevice();
-    else {
-        ASSERT(0);  // TODO: not implemented
+        MergeQueues();
     }
-    MergeQueues();
+    else {
+        SetupQueuesForIntegratedDevice();
+    }
 
     ThreadDesc thrdDesc {
         .entryFn = GfxBackendQueueManager::SubmitThread,
@@ -3920,10 +3931,96 @@ void GfxBackendQueueManager::SetupQueuesForDiscreteDevice()
     }
 }
 
-void GfxBackendQueueManager::SetupQueuesForItegratedDevice()
+void GfxBackendQueueManager::SetupQueuesForIntegratedDevice()
 {
-    ASSERT(0);
-    // TODO
+    MemAllocator* alloc = &gBackendVk.parentAlloc;
+
+    // Discrete GPUs:
+    //  Graphics + Present + Compute. We also have an implicit Transfer to do frequent buffer updates and whatnot
+    //  ComputeAsync: Preferebly exclusive
+    mQueues = Mem::AllocZeroTyped<GfxBackendQueue>(4, alloc);
+    StaticArray<uint32, 4> queueFamilyIndices;
+
+    if (SettingsJunkyard::Get().graphics.IsGraphicsEnabled()) {
+        uint32 familyIdx = AssignQueueFamily(GfxQueueType::Graphics|GfxQueueType::Present|GfxQueueType::Transfer|GfxQueueType::Compute);
+        mQueues[mNumQueues++] = {
+            .type = GfxQueueType::Graphics|GfxQueueType::Present|GfxQueueType::Compute,
+            .familyIdx = familyIdx,
+            .priority = 1.0f,
+            .supportsTransfer = true
+        }; 
+
+        if (familyIdx != -1) {
+            LOG_VERBOSE("\tGraphics/Compute/Transfer queue from index: %u", familyIdx);
+            queueFamilyIndices.Push(familyIdx);
+        }
+        else {
+            LOG_ERROR("Gfx: Graphics queue not found");
+            ASSERT_MSG(0, "Cannot continue without a valid Graphics|Trasnfer|Compute queue");
+        }
+    }
+
+    {
+        uint32 familyIdx = AssignQueueFamily(GfxQueueType::Transfer, GfxQueueType::Graphics|GfxQueueType::Compute);
+        if (familyIdx == -1) 
+            familyIdx = AssignQueueFamily(GfxQueueType::Transfer);
+
+        if (familyIdx != -1) {
+            mQueues[mNumQueues++] = {
+                .type = GfxQueueType::Transfer,
+                .familyIdx = familyIdx,
+                .priority = 1.0f,
+                .supportsTransfer = true
+            };
+            LOG_VERBOSE("\tTransfer queue from index: %u", familyIdx);
+            queueFamilyIndices.Push(familyIdx);
+        }
+        else {
+            LOG_ERROR("Gfx: Transfer queue not found");
+            ASSERT(0);
+        }
+    }
+
+    {
+        uint32 familyIdx = AssignQueueFamily(GfxQueueType::Compute|GfxQueueType::Transfer, GfxQueueType::Graphics,
+                                             queueFamilyIndices.Count(), queueFamilyIndices.Ptr());
+        if (familyIdx == -1) {
+            familyIdx = AssignQueueFamily(GfxQueueType::Compute|GfxQueueType::Transfer, GfxQueueType::Graphics,
+                                          queueFamilyIndices.Count(), queueFamilyIndices.Ptr());
+        }
+
+        if (familyIdx != -1) {
+            GfxQueueType extraCompute = SettingsJunkyard::Get().graphics.IsGraphicsEnabled() ? GfxQueueType::None : GfxQueueType::Compute;
+
+            mQueues[mNumQueues++] = {
+                .type = GfxQueueType::ComputeAsync | extraCompute,
+                .familyIdx = familyIdx,
+                .priority = 1.0f
+            };
+
+            LOG_VERBOSE("\tComputeAsync queue from index: %u", familyIdx);
+        }
+        else if (mNumQueues && IsBitsSet<GfxQueueType>(mQueues[0].type, GfxQueueType::Compute)) {
+            mQueues[0].type |= GfxQueueType::ComputeAsync;
+            LOG_WARNING("Gfx: Performance warning: Separate compute queue not found. Using unified queue family (%d) for async compute", mQueues[0].familyIdx);
+        }
+        else {
+            familyIdx = AssignQueueFamily(GfxQueueType::Compute|GfxQueueType::Transfer);
+            if (familyIdx != -1) {
+                mQueues[mNumQueues++] = {
+                    .type = GfxQueueType::ComputeAsync | GfxQueueType::Compute,
+                    .familyIdx = familyIdx,
+                    .priority = 1.0f
+                };
+
+                LOG_WARNING("Gfx: Performance warning: Separate compute queue not found. Using unified queue family (%d) for async compute", familyIdx);
+            }
+            else {
+                LOG_ERROR("Gfx: Cannot find Compute|Transfer queue on this GPU");
+                ASSERT(0);
+            }
+        }
+    }
 }
 
 void GfxBackendQueueManager::MergeQueues()
@@ -4412,9 +4509,10 @@ void GfxCommandBuffer::BatchCopyBufferToBuffer(uint32 numParams, const GfxCopyBu
         }
         ASSERT(dstQueueType != GfxQueueType::None);
 
-        uint32 dstQueueIndex = gBackendVk.queueMan.FindQueue(dstQueueType);
-        ASSERT(dstQueueIndex != -1);
-        if (mQueueIndex == dstQueueIndex) {
+        uint32 queueFamilyIdx = queue.familyIdx;
+        uint32 dstQueueFamilyIdx = gBackendVk.queueMan.GetQueue(gBackendVk.queueMan.FindQueue(dstQueueType)).familyIdx;
+        ASSERT(dstQueueFamilyIdx != -1);
+        if (queueFamilyIdx == dstQueueFamilyIdx) {
             // Unified queue
             VkBufferMemoryBarrier2 barrier {
                 .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2,
@@ -4433,6 +4531,9 @@ void GfxCommandBuffer::BatchCopyBufferToBuffer(uint32 numParams, const GfxCopyBu
             dstBuffer.transitionedAccess = barrier.dstAccessMask;
 
             bufferBarriers.Push(barrier);
+
+            if (copyParams.resourceTransferedCallback)
+                copyParams.resourceTransferedCallback(copyParams.resourceTransferedUserData);
         }
         else {
             // Separate queue
@@ -4441,8 +4542,8 @@ void GfxCommandBuffer::BatchCopyBufferToBuffer(uint32 numParams, const GfxCopyBu
                 .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2,
                 .srcStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT,
                 .srcAccessMask = VK_ACCESS_2_MEMORY_WRITE_BIT,
-                .srcQueueFamilyIndex = mQueueIndex,
-                .dstQueueFamilyIndex = dstQueueIndex,
+                .srcQueueFamilyIndex = queueFamilyIdx,
+                .dstQueueFamilyIndex = dstQueueFamilyIdx,
                 .buffer = dstBuffer.handle,
                 .offset = copyParams.dstOffset,
                 .size = sizeBytes
@@ -4452,7 +4553,7 @@ void GfxCommandBuffer::BatchCopyBufferToBuffer(uint32 numParams, const GfxCopyBu
             // TODO: Assert that dstQueue is not being recorded
             GfxBackendQueue::PendingBarrier dstBarrier {
                 .type = GfxBackendQueue::PendingBarrier::BUFFER,
-                .targetQueueIndex = dstQueueIndex,
+                .targetQueueIndex = dstQueueFamilyIdx,
                 .resourceTransferedCallback = copyParams.resourceTransferedCallback,
                 .resourceTransferedUserData = copyParams.resourceTransferedUserData,
                 .bufferHandle = copyParams.dstHandle,
@@ -4462,8 +4563,8 @@ void GfxCommandBuffer::BatchCopyBufferToBuffer(uint32 numParams, const GfxCopyBu
                     .srcAccessMask = VK_ACCESS_2_MEMORY_WRITE_BIT,
                     .dstStageMask = GfxBackend::_GetBufferDestStageFlags(dstQueueType, copyParams.stagesUsed, dstBuffer.desc.usageFlags),
                     .dstAccessMask = accessFlags,
-                    .srcQueueFamilyIndex = mQueueIndex,
-                    .dstQueueFamilyIndex = dstQueueIndex,
+                    .srcQueueFamilyIndex = queueFamilyIdx,
+                    .dstQueueFamilyIndex = dstQueueFamilyIdx,
                     .offset = copyParams.dstOffset,
                     .size = sizeBytes
                 }
@@ -4615,10 +4716,11 @@ void GfxCommandBuffer::BatchCopyBufferToImage(uint32 numParams, const GfxCopyBuf
             dstQueueType = GfxQueueType::Compute;
         ASSERT(dstQueueType != GfxQueueType::None);
 
-        uint32 dstQueueIndex = gBackendVk.queueMan.FindQueue(dstQueueType);
-        ASSERT(dstQueueIndex != -1);
+        uint32 queueFamilyIdx = queue.familyIdx;
+        uint32 dstQueueFamilyIdx = gBackendVk.queueMan.GetQueue(gBackendVk.queueMan.FindQueue(dstQueueType)).familyIdx;
+        ASSERT(dstQueueFamilyIdx != -1);
 
-        if (mQueueIndex == dstQueueIndex) {
+        if (queueFamilyIdx == dstQueueFamilyIdx) {
             // Unified Queue
             VkImageMemoryBarrier2 barrier {
                 .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
@@ -4638,6 +4740,9 @@ void GfxCommandBuffer::BatchCopyBufferToImage(uint32 numParams, const GfxCopyBuf
             dstImage.transitionedStage = barrier.dstStageMask;
             dstImage.transitionedAccess = barrier.dstAccessMask;
             barriers.Push(barrier);
+
+            if (copyParams.resourceTransferedCallback)
+                copyParams.resourceTransferedCallback(copyParams.resourceTransferedUserData);
         }
         else {
             // Separate queue
@@ -4647,8 +4752,8 @@ void GfxCommandBuffer::BatchCopyBufferToImage(uint32 numParams, const GfxCopyBuf
                 .srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT,
                 .oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                 .newLayout = dstLayout,
-                .srcQueueFamilyIndex = mQueueIndex,
-                .dstQueueFamilyIndex = dstQueueIndex,
+                .srcQueueFamilyIndex = queueFamilyIdx,
+                .dstQueueFamilyIndex = dstQueueFamilyIdx,
                 .image = dstImage.handle,
                 .subresourceRange = subresourceRange
             };
@@ -4669,8 +4774,8 @@ void GfxCommandBuffer::BatchCopyBufferToImage(uint32 numParams, const GfxCopyBuf
                     .dstAccessMask = VK_ACCESS_2_MEMORY_READ_BIT,
                     .oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                     .newLayout = dstLayout,
-                    .srcQueueFamilyIndex = mQueueIndex,
-                    .dstQueueFamilyIndex = dstQueueIndex,
+                    .srcQueueFamilyIndex = queueFamilyIdx,
+                    .dstQueueFamilyIndex = dstQueueFamilyIdx,
                     .subresourceRange = subresourceRange
                 }
             };
