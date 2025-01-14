@@ -1460,6 +1460,7 @@ static void Asset::_UnloadGroupTask(uint32, void* userData)
     }
 
     // Remove the handles and free the header
+    // TODO: this part seems to be crashing on some systems with Stack corruption. investigate
     {
         ReadWriteMutexWriteScope wlock(gAssetMan.assetMutex);
         for (AssetHandle handle : unloadList) {

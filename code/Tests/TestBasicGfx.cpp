@@ -258,7 +258,7 @@ struct ModelScene
         cmd.FlushBuffer(stagingBuff);
 
         cmd.TransitionBuffer(mUniformBuffer, GfxBufferTransition::TransferWrite);
-        cmd.CopyBufferToBuffer(stagingBuff, mUniformBuffer, GfxShaderStage::Vertex);
+        cmd.CopyBufferToBuffer(stagingBuff, mUniformBuffer, GfxShaderStage::Vertex|GfxShaderStage::Fragment);
 
         GfxBackend::DestroyBuffer(stagingBuff);
     }
@@ -295,7 +295,7 @@ struct ModelScene
         for (uint32 i = 0; i < model->numNodes; i++) {
             const ModelNode& node = model->nodes[i];
             if (node.meshId == 0)
-            continue;
+                continue;
 
             ModelTransform transform {
                 .modelMat = Transform3D::ToMat4(node.localTransform)
