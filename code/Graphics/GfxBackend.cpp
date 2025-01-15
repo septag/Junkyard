@@ -61,6 +61,7 @@ static constexpr uint32 GFXBACKEND_BACKBUFFER_COUNT = 3;
 static constexpr uint32 GFXBACKEND_FRAMES_IN_FLIGHT = 2;
 static constexpr uint32 GFXBACKEND_MAX_SETS_PER_PIPELINE = 4;
 static constexpr uint32 GFXBACKEND_MAX_ENTRIES_IN_OFFSET_ALLOCATOR = 64*1024;
+static constexpr uint32 GFXBACKEND_MAX_QUEUES = 4;
 
 #if PLATFORM_WINDOWS
 static const char* GFXBACKEND_DEFAULT_INSTANCE_EXTENSIONS[] = {"VK_KHR_surface", "VK_KHR_win32_surface"};
@@ -242,7 +243,6 @@ private:
     bool SubmitQueueInternal(GfxBackendQueueSubmitRequest& req);
     void SetupQueuesForDiscreteDevice();
     void SetupQueuesForIntegratedDevice();
-    void MergeQueues();
     uint32 AssignQueueFamily(GfxQueueType type, GfxQueueType preferNotHave = GfxQueueType::None, 
                              uint32 numExcludes = 0, const uint32* excludeList = nullptr);
     bool InitializeCommandBufferContext(GfxBackendCommandBufferContext& ctx, uint32 queueFamilyIndex);
@@ -1175,7 +1175,7 @@ namespace GfxBackend
         }
 
         // Gather Queues
-        StaticArray<VkDeviceQueueCreateInfo, 4> queueCreateInfos;
+        StaticArray<VkDeviceQueueCreateInfo, GFXBACKEND_MAX_QUEUES> queueCreateInfos;
         for (uint32 i = 0; i < gBackendVk.queueMan.GetQueueCount(); i++) {
             const GfxBackendQueue& queue = gBackendVk.queueMan.GetQueue(i);
             if (settings.graphics.headless && IsBitsSet(queue.type, GfxQueueType::Graphics|GfxQueueType::Present))
@@ -3752,13 +3752,10 @@ bool GfxBackendQueueManager::Initialize()
 
     LOG_VERBOSE("(init) Found total %u queue families", mNumQueueFamilies);
 
-    if (gpu.props.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU) {
+    if (gpu.props.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU)
         SetupQueuesForDiscreteDevice();
-        MergeQueues();
-    }
-    else {
+    else 
         SetupQueuesForIntegratedDevice();
-    }
 
     ThreadDesc thrdDesc {
         .entryFn = GfxBackendQueueManager::SubmitThread,
@@ -3836,8 +3833,8 @@ void GfxBackendQueueManager::SetupQueuesForDiscreteDevice()
     //  Graphics + Present + Compute. We also have an implicit Transfer to do frequent buffer updates and whatnot
     //  Transfer: Preferebly exclusive 
     //  ComputeAsync: Preferebly exclusive
-    mQueues = Mem::AllocZeroTyped<GfxBackendQueue>(4, alloc);
-    StaticArray<uint32, 4> queueFamilyIndices;
+    mQueues = Mem::AllocZeroTyped<GfxBackendQueue>(GFXBACKEND_MAX_QUEUES, alloc);
+    StaticArray<uint32, GFXBACKEND_MAX_QUEUES> queueFamilyIndices;
 
     if (SettingsJunkyard::Get().graphics.IsGraphicsEnabled()) {
         uint32 familyIdx = AssignQueueFamily(GfxQueueType::Graphics|GfxQueueType::Present|GfxQueueType::Transfer|GfxQueueType::Compute);
@@ -3938,8 +3935,8 @@ void GfxBackendQueueManager::SetupQueuesForIntegratedDevice()
     // Discrete GPUs:
     //  Graphics + Present + Compute. We also have an implicit Transfer to do frequent buffer updates and whatnot
     //  ComputeAsync: Preferebly exclusive
-    mQueues = Mem::AllocZeroTyped<GfxBackendQueue>(4, alloc);
-    StaticArray<uint32, 4> queueFamilyIndices;
+    mQueues = Mem::AllocZeroTyped<GfxBackendQueue>(GFXBACKEND_MAX_QUEUES, alloc);
+    StaticArray<uint32, GFXBACKEND_MAX_QUEUES> queueFamilyIndices;
 
     if (SettingsJunkyard::Get().graphics.IsGraphicsEnabled()) {
         uint32 familyIdx = AssignQueueFamily(GfxQueueType::Graphics|GfxQueueType::Present|GfxQueueType::Transfer|GfxQueueType::Compute);
@@ -4018,27 +4015,6 @@ void GfxBackendQueueManager::SetupQueuesForIntegratedDevice()
             else {
                 LOG_ERROR("Gfx: Cannot find Compute|Transfer queue on this GPU");
                 ASSERT(0);
-            }
-        }
-    }
-}
-
-void GfxBackendQueueManager::MergeQueues()
-{
-    // Merge all the queues that has the same family index
-    for (uint32 i = 1; i < mNumQueues; i++) {
-        GfxBackendQueue& queue = mQueues[i];
-        for (uint32 k = 0; k < i; k++) {
-            if (mQueues[k].familyIdx == queue.familyIdx) {
-                queue.type |= mQueues[k].type;
-                queue.supportsTransfer |= mQueues[k].supportsTransfer;
-
-                if (k != mNumQueues-1)
-                    Swap<GfxBackendQueue>(mQueues[k], mQueues[mNumQueues-1]);
-
-                --mNumQueues;
-                --i;
-                break;
             }
         }
     }
