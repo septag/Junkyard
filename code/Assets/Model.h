@@ -117,26 +117,15 @@ struct ModelSubmesh
 
 struct ModelMesh 
 {
-    struct CpuBuffers
-    {
-        RelativePtr<uint8>  vertexBuffers[MODEL_MAX_VERTEX_BUFFERS_PER_SHADER];    // void cast struct for each vbuff (count=numVertexBuffers)
-        RelativePtr<uint32> indexBuffer;
-    };
-
-    struct GpuBuffers
-    {
-        GfxBufferHandle vertexBuffers[MODEL_MAX_VERTEX_BUFFERS_PER_SHADER];
-        GfxBufferHandle indexBuffer;
-    };
-
     String32 name;
     uint32 numSubmeshes;
     uint32 numVertices;
     uint32 numIndices;
-    uint32 numVertexBuffers;
+    uint64 vertexBufferSizes[MODEL_MAX_VERTEX_BUFFERS_PER_SHADER];
+    uint64 vertexBufferOffsets[MODEL_MAX_VERTEX_BUFFERS_PER_SHADER];
+    uint64 indexBufferSize;
+    uint64 indexBufferOffset;
     RelativePtr<ModelSubmesh> submeshes;
-    CpuBuffers cpuBuffers;
-    GpuBuffers gpuBuffers;
 };
 
 struct ModelNode 
@@ -163,6 +152,10 @@ struct Model
     RelativePtr<ModelMesh> meshes;
     RelativePtr<RelativePtr<ModelMaterial>> materials;
     ModelGeometryLayout layout;
+
+    uint32 numVertexBuffers;
+    GfxBufferHandle vertexBuffers[MODEL_MAX_VERTEX_BUFFERS_PER_SHADER];
+    GfxBufferHandle indexBuffer;
 };
 
 // provide this for loading "model" asset

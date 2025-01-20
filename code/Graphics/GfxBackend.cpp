@@ -421,6 +421,7 @@ struct GfxBackendGarbage
 
     Type type;
     uint64 frameIdx;
+    GfxBackendDeviceMemory mem;
 
     union {
         VkPipeline pipeline;
@@ -688,9 +689,11 @@ namespace GfxBackend
                     break;
                 case GfxBackendGarbage::Type::Buffer:
                     vkDestroyBuffer(gBackendVk.device, garbage.buffer, gBackendVk.vkAlloc);
+                    gBackendVk.memMan.Free(garbage.mem);
                     break;
                 case GfxBackendGarbage::Type::Image:
                     vkDestroyImage(gBackendVk.device, garbage.image, gBackendVk.vkAlloc);
+                    gBackendVk.memMan.Free(garbage.mem);
                     break;
                 case GfxBackendGarbage::Type::Sampler:
                     vkDestroySampler(gBackendVk.device, garbage.sampler, gBackendVk.vkAlloc);
@@ -1640,7 +1643,7 @@ bool GfxBackend::Initialize()
 
     Engine::HelperInitializeProxyAllocator(&gBackendVk.parentAlloc, "GfxBackend");
 
-    gBackendVk.runtimeAllocBase.Initialize(&gBackendVk.parentAlloc, 4*SIZE_MB, debugAllocs);
+    gBackendVk.runtimeAllocBase.Initialize(&gBackendVk.parentAlloc, 16*SIZE_MB, debugAllocs);
     gBackendVk.driverAllocBase.Initialize(&gBackendVk.parentAlloc, 32*SIZE_MB, debugAllocs);
     Engine::HelperInitializeProxyAllocator(&gBackendVk.runtimeAlloc, "GfxBackend.Runtime", &gBackendVk.runtimeAllocBase);
     Engine::HelperInitializeProxyAllocator(&gBackendVk.driverAlloc, "GfxBackend.Vulkan", &gBackendVk.driverAllocBase);
@@ -2457,6 +2460,7 @@ void GfxBackend::BatchDestroyImage(uint32 numImages, GfxImageHandle* handles)
                         garbages.Push({
                             .type = GfxBackendGarbage::Type::Image,
                             .frameIdx = gBackendVk.presentFrame,
+                            .mem = image.mem,
                             .image = image.handle
                         });
                     }
@@ -3500,6 +3504,7 @@ void GfxBackend::BatchDestroyBuffer(uint32 numBuffers, GfxBufferHandle* handles)
             garbages.Push({
                 .type = GfxBackendGarbage::Type::Buffer,
                 .frameIdx = gBackendVk.presentFrame,
+                .mem = buffer.mem,
                 .buffer = buffer.handle
             });
 
@@ -3558,8 +3563,18 @@ GfxBackendDeviceMemory GfxBackendDeviceMemoryManager::Malloc(const VkMemoryRequi
     return mem;
 }
 
-void GfxBackendDeviceMemoryManager::Free(GfxBackendDeviceMemory)
+void GfxBackendDeviceMemoryManager::Free(GfxBackendDeviceMemory mem)
 {
+    switch (mem.arena) {
+    case GfxMemoryArena::DynamicImageGPU:
+        mDynamicImageGPU.Free(mem);
+        break;
+    case GfxMemoryArena::DynamicBufferGPU:
+        mDynamicBufferGPU.Free(mem);
+        break;
+    default:
+        break;
+    }
 }
 
 void GfxBackendDeviceMemoryManager::ResetTransientAllocators(uint32 frameIndex)
@@ -5380,9 +5395,18 @@ GfxBackendDeviceMemory GfxBackendMemoryOffsetAllocator::Malloc(const VkMemoryReq
 
     if (!block) {
         block = CreateBlock();
-        if (!block) 
+        if (!block) {
+            MEM_FAIL();
             return GfxBackendDeviceMemory {};
+        }
         mBlocks.Push(block);
+
+        OffsetAllocator_Allocate(block->offsetAlloc, totalSize, &alloc);
+    }
+
+    if (alloc.metadata == OFFSET_ALLOCATOR_NO_SPACE) {
+        MEM_FAIL();
+        return GfxBackendDeviceMemory {};
     }
 
     // Align the offset
@@ -5422,6 +5446,7 @@ void GfxBackendMemoryOffsetAllocator::Free(GfxBackendDeviceMemory mem)
                 .offset = uint32(mem.offset - mem.offsetAllocPadding),
                 .metadata = mem.offsetAllocMetaData
             };
+
             OffsetAllocator_Free(block->offsetAlloc, &alloc);
 
             freed = true;

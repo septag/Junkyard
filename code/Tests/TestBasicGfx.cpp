@@ -306,8 +306,8 @@ struct ModelScene
 
             // Buffers
             uint64 offsets[MODEL_MAX_VERTEX_BUFFERS_PER_SHADER] = {};
-            cmd.BindVertexBuffers(0, mesh.numVertexBuffers, mesh.gpuBuffers.vertexBuffers, offsets);
-            cmd.BindIndexBuffer(mesh.gpuBuffers.indexBuffer, 0, GfxIndexType::Uint32);
+            cmd.BindVertexBuffers(0, model->numVertexBuffers, model->vertexBuffers, mesh.vertexBufferOffsets);
+            cmd.BindIndexBuffer(model->indexBuffer, mesh.indexBufferOffset, GfxIndexType::Uint32);
 
             for (uint32 smi = 0; smi < mesh.numSubmeshes; smi++) {
                 const ModelSubmesh& submesh = mesh.submeshes[smi];

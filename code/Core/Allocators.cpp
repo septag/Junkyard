@@ -713,6 +713,7 @@ void MemTlsfAllocator::Release()
 
 void* MemTlsfAllocator::Malloc(size_t size, uint32 align)
 {
+    ASSERT(size);
     if (!mDebugMode) {
         ASSERT(mTlsf);
 

@@ -28,6 +28,14 @@ struct ModelVertexAttribute
     uint32 index;
 };
 
+struct ModelCpuBuffers
+{
+    uint8* vertexBuffers[MODEL_MAX_VERTEX_BUFFERS_PER_SHADER];
+    uint8* indexBuffer;
+    uint64 vertexBufferSizes[MODEL_MAX_VERTEX_BUFFERS_PER_SHADER];
+    uint64 indexBufferSize;
+};
+
 struct AssetModelImpl final : AssetTypeImplBase
 {
     bool Bake(const AssetParams& params, AssetData* data, const Span<uint8>& srcData, String<256>* outErrorDesc) override;
@@ -98,15 +106,15 @@ namespace ModelUtil
         return false;
     }
 
-    static uint8* _GetVertexAttributePointer(ModelMesh* mesh, const ModelGeometryLayout& vertexLayout, const char* semantic, 
-                                             uint32 semanticIdx, uint32* outVertexStride)
+    static uint8* _GetVertexAttributePointer(ModelMesh* mesh, ModelCpuBuffers* cpuBuffers, const ModelGeometryLayout& vertexLayout, 
+                                             const char* semantic, uint32 semanticIdx, uint32* outVertexStride)
     {
         const GfxVertexInputAttributeDesc* attr = &vertexLayout.vertexAttributes[0];
     
         while (!attr->semantic.IsEmpty()) {
             if (attr->semantic == semantic && attr->semanticIdx == semanticIdx) {
                 *outVertexStride = vertexLayout.vertexBufferStrides[attr->binding];
-                uint8* dstBuff = mesh->cpuBuffers.vertexBuffers[attr->binding].Get();
+                uint8* dstBuff = cpuBuffers->vertexBuffers[attr->binding] + mesh->vertexBufferOffsets[attr->binding];
                 return dstBuff + attr->offset;
             }
             ++attr;
@@ -115,11 +123,11 @@ namespace ModelUtil
         return nullptr;
     }
 
-    static void _CalculateTangents(ModelMesh* mesh, const ModelGeometryLayout& vertexLayout)
+    static void _CalculateTangents(ModelMesh* mesh, ModelCpuBuffers* cpuBuffers, const ModelGeometryLayout& vertexLayout)
     {
         using namespace M;
 
-        uint32* indexBuffer = mesh->cpuBuffers.indexBuffer.Get();
+        uint32* indexBuffer = (uint32*)(cpuBuffers->indexBuffer + mesh->indexBufferOffset);
 
         MemTempAllocator tmpAlloc;
     
@@ -132,8 +140,8 @@ namespace ModelUtil
             uint32 i3 = indexBuffer[i+2];
 
             uint32 posStride = 0, uvStride = 0;
-            uint8* posPtr = ModelUtil::_GetVertexAttributePointer(mesh, vertexLayout, "POSITION", 0, &posStride);
-            uint8* uvPtr = ModelUtil::_GetVertexAttributePointer(mesh, vertexLayout, "TEXCOORD", 0, &uvStride);
+            uint8* posPtr = ModelUtil::_GetVertexAttributePointer(mesh, cpuBuffers, vertexLayout, "POSITION", 0, &posStride);
+            uint8* uvPtr = ModelUtil::_GetVertexAttributePointer(mesh, cpuBuffers, vertexLayout, "TEXCOORD", 0, &uvStride);
 
             Float3 v1 = *((Float3*)(posPtr + posStride*i1));
             Float3 v2 = *((Float3*)(posPtr + posStride*i2));
@@ -171,9 +179,9 @@ namespace ModelUtil
 
         for (uint32 i = 0; i < mesh->numVertices; i++) {
             uint32 normalStride = 0, tangentStride = 0, bitangentStride = 0;
-            uint8* normalPtr = ModelUtil::_GetVertexAttributePointer(mesh, vertexLayout, "NORMAL", 0, &normalStride);
-            uint8* tangentPtr = ModelUtil::_GetVertexAttributePointer(mesh, vertexLayout, "TANGENT", 0, &tangentStride);
-            uint8* bitangentPtr = ModelUtil::_GetVertexAttributePointer(mesh, vertexLayout, "BINORMAL", 0, &bitangentStride);
+            uint8* normalPtr = ModelUtil::_GetVertexAttributePointer(mesh, cpuBuffers, vertexLayout, "NORMAL", 0, &normalStride);
+            uint8* tangentPtr = ModelUtil::_GetVertexAttributePointer(mesh, cpuBuffers, vertexLayout, "TANGENT", 0, &tangentStride);
+            uint8* bitangentPtr = ModelUtil::_GetVertexAttributePointer(mesh, cpuBuffers, vertexLayout, "BINORMAL", 0, &bitangentStride);
 
             Float3 n = *((Float3*)(normalPtr + normalStride*i));
             Float3 t = tan1[i];
@@ -202,7 +210,7 @@ namespace ModelUtil
     }
 
     #if CONFIG_TOOLMODE
-    static void _Optimize(Model* model, const ModelLoadParams& modelParams)
+    static void _Optimize(Model* model, ModelCpuBuffers* cpuBuffers, const ModelLoadParams& modelParams)
     {
         MemTempAllocator tmpAlloc;
         MeshOptModel bakeModel;
@@ -212,14 +220,14 @@ namespace ModelUtil
         for (uint32 i = 0; i < model->numMeshes; i++) {
             ModelMesh& srcMesh = model->meshes[i];
             MemSingleShotMalloc<MeshOptMesh> mallocMesh;
-            mallocMesh.AddMemberArray<void*>(offsetof(MeshOptMesh, vertexBuffers), srcMesh.numVertexBuffers);
+            mallocMesh.AddMemberArray<void*>(offsetof(MeshOptMesh, vertexBuffers), model->numVertexBuffers);
             mallocMesh.AddMemberArray<uint32>(offsetof(MeshOptMesh, indexBuffer), srcMesh.numIndices);
-            mallocMesh.AddMemberArray<uint32>(offsetof(MeshOptMesh, vertexStrides), srcMesh.numVertexBuffers);
+            mallocMesh.AddMemberArray<uint32>(offsetof(MeshOptMesh, vertexStrides), model->numVertexBuffers);
             mallocMesh.AddMemberArray<MeshOptSubmesh>(offsetof(MeshOptMesh, submeshes), srcMesh.numSubmeshes);
             MeshOptMesh* bakeMesh = mallocMesh.Calloc(&tmpAlloc);
 
-            for (uint32 k = 0; k < srcMesh.numVertexBuffers; k++) {
-                bakeMesh->vertexBuffers[k] = srcMesh.cpuBuffers.vertexBuffers[k].Get();
+            for (uint32 k = 0; k < model->numVertexBuffers; k++) {
+                bakeMesh->vertexBuffers[k] = cpuBuffers->vertexBuffers[k] + srcMesh.vertexBufferOffsets[k];
                 bakeMesh->vertexStrides[k] = modelParams.layout.vertexBufferStrides[k];
             }
 
@@ -228,8 +236,8 @@ namespace ModelUtil
                 bakeMesh->submeshes[k].numIndices = srcMesh.submeshes[k].numIndices;
             }
 
-            bakeMesh->indexBuffer = srcMesh.cpuBuffers.indexBuffer.Get();
-            bakeMesh->numVertexBuffers = srcMesh.numVertexBuffers;
+            bakeMesh->indexBuffer = (uint32*)(cpuBuffers->indexBuffer + srcMesh.indexBufferOffset);
+            bakeMesh->numVertexBuffers = model->numVertexBuffers;
             bakeMesh->numVertices = srcMesh.numVertices;
             bakeMesh->numIndices = srcMesh.numIndices;
             bakeMesh->numSubmeshes = srcMesh.numSubmeshes;
@@ -450,7 +458,8 @@ namespace GLTF
         }
     }
 
-    static bool _MapVertexAttributesToBuffer(ModelMesh* mesh, const ModelGeometryLayout& vertexLayout, 
+    static bool _MapVertexAttributesToBuffer(ModelCpuBuffers* cpuBuffers, const ModelMesh& mesh,
+                                             const ModelGeometryLayout& vertexLayout, 
                                              cgltf_attribute* srcAttribute, uint32 startVertex)
     {
         cgltf_accessor* access = srcAttribute->data;
@@ -460,7 +469,7 @@ namespace GLTF
             if (attr->semantic == mappedAttribute.semantic && attr->semanticIdx == mappedAttribute.index) {
                 uint32 vertexStride = vertexLayout.vertexBufferStrides[attr->binding];
                 uint8* srcBuffer = (uint8*)access->buffer_view->buffer->data;
-                uint8* dstBuffer = mesh->cpuBuffers.vertexBuffers[attr->binding].Get();
+                uint8* dstBuffer = cpuBuffers->vertexBuffers[attr->binding] + mesh.vertexBufferOffsets[attr->binding];
                 uint32 dstOffset =  startVertex * vertexStride + attr->offset;
                 uint32 srcOffset = static_cast<uint32>(access->offset + access->buffer_view->offset);
 
@@ -490,7 +499,7 @@ namespace GLTF
         return false;
     }
 
-    static void _SetupBuffers(ModelMesh* mesh, const ModelGeometryLayout& vertexLayout, cgltf_mesh* srcMesh)
+    static void _SetupBuffers(ModelMesh* mesh, ModelCpuBuffers* cpuBuffers, const ModelGeometryLayout& vertexLayout, cgltf_mesh* srcMesh)
     {
         // create buffers based on input vertexLayout
 
@@ -509,9 +518,9 @@ namespace GLTF
             uint32 count = 0;
             for (cgltf_size k = 0; k < srcPrim->attributes_count; k++) {
                 cgltf_attribute* srcAtt = &srcPrim->attributes[k];
-                _MapVertexAttributesToBuffer(mesh, vertexLayout, srcAtt, startVertex);
+                _MapVertexAttributesToBuffer(cpuBuffers, *mesh, vertexLayout, srcAtt, startVertex);
                 if (count == 0) {
-                    count = (uint32)srcAtt->data->count;
+                    count = uint32(srcAtt->data->count);
                 }
                 ASSERT(count == (uint32)srcAtt->data->count);
             }
@@ -524,10 +533,10 @@ namespace GLTF
             // indices
             cgltf_accessor* srcIndices = srcPrim->indices;
             if (srcIndices->component_type == cgltf_component_type_r_16u) {
-                uint32* indices = mesh->cpuBuffers.indexBuffer.Get() + startIndex;
+                uint32* indices = (uint32*)(cpuBuffers->indexBuffer + mesh->indexBufferOffset) + startIndex;
                 uint16* srcIndicesOffseted = reinterpret_cast<uint16*>((uint8*)srcIndices->buffer_view->buffer->data + srcIndices->buffer_view->offset);
                 for (cgltf_size k = 0; k < srcIndices->count; k++)
-                    indices[k] = uint32(srcIndicesOffseted[k] + startVertex);
+                    indices[k] = uint32(srcIndicesOffseted[k]) + startVertex;
 
                 // flip the winding
                 #if 0
@@ -538,10 +547,10 @@ namespace GLTF
                 #endif
             } 
             else if (srcIndices->component_type == cgltf_component_type_r_32u) {
-                uint32* indices = mesh->cpuBuffers.indexBuffer.Get() + startIndex;
+                uint32* indices = (uint32*)(cpuBuffers->indexBuffer + mesh->indexBufferOffset) + startIndex;
                 uint32* srcIndicesOffseted = reinterpret_cast<uint32*>((uint8*)srcIndices->buffer_view->buffer->data + srcIndices->buffer_view->offset);
                 for (cgltf_size k = 0; k < srcIndices->count; k++)
-                    indices[k] = srcIndicesOffseted[k] + (uint32)startVertex;
+                    indices[k] = srcIndicesOffseted[k] + startVertex;
 
                 // flip the winding
                 #if 0
@@ -560,10 +569,11 @@ namespace GLTF
         }
 
         if (calcTangents)
-            ModelUtil::_CalculateTangents(mesh, vertexLayout);
+            ModelUtil::_CalculateTangents(mesh, cpuBuffers, vertexLayout);
     }
 
-    static Pair<Model*, uint32> _Load(Blob& fileBlob, const Path& fileDir, MemTempAllocator* tmpAlloc, const ModelLoadParams& params, String<256>* outErrorDesc)
+    static Pair<Model*, uint32> _Load(Blob& fileBlob, const Path& fileDir, MemTempAllocator* tmpAlloc, const ModelLoadParams& params, 
+                                      String<256>* outErrorDesc, ModelCpuBuffers* outCpuBuffers)
     {
         const ModelGeometryLayout& layout = params.layout.vertexBufferStrides[0] ? params.layout : gModelDefaultLayout;
 
@@ -641,11 +651,14 @@ namespace GLTF
                     uint32 index = materials.FindIf([hash](const MaterialData& m)->bool { return m.hash == hash; });
                     if (index == UINT32_MAX) {
                         index = materials.Count();
-                        materials.Push(MaterialData { 
+                        MaterialData mtlData { 
                             .mtl = mtl, 
                             .size = uint32(tmpAlloc->GetOffset() - tmpAlloc->GetPointerOffset(mtl)), 
                             .id = IndexToId(index),
-                            .hash = hash });
+                            .hash = hash
+                        };
+
+                        materials.Push(mtlData);
                     }
 
                     materialsMap.Push(index);
@@ -658,6 +671,14 @@ namespace GLTF
         model->rootTransform = TRANSFORM3D_IDENT;
         model->layout = layout;
         model->numMaterialTextures = numTotalTextures;
+
+        {
+            uint32 bufferIdx = 0;
+            while (layout.vertexBufferStrides[bufferIdx])
+                bufferIdx++;
+            ASSERT_MSG(bufferIdx, "Vertex layout should at least contain one vertex attribute+stride");
+            model->numVertexBuffers = bufferIdx;
+        }
 
         // Meshes
         model->meshes = tmpAlloc->MallocZeroTyped<ModelMesh>((uint32)data->meshes_count);
@@ -780,20 +801,37 @@ namespace GLTF
         uint32 modelBufferSize = uint32(tmpAlloc->GetOffset() - tmpAlloc->GetPointerOffset(model));
 
         // Buffers
+        ModelCpuBuffers* cpuBuffers = outCpuBuffers;
+        ASSERT(cpuBuffers->indexBufferSize == 0);
+        ASSERT(cpuBuffers->vertexBufferSizes[0] == 0);
+
+        for (uint32 i = 0; i < model->numMeshes; i++) {
+            ModelMesh& mesh = model->meshes[i];
+
+            for (uint32 vertexBufferIdx = 0; vertexBufferIdx < model->numVertexBuffers; vertexBufferIdx++) {
+                mesh.vertexBufferOffsets[vertexBufferIdx] = cpuBuffers->vertexBufferSizes[vertexBufferIdx];
+                mesh.vertexBufferSizes[vertexBufferIdx] = layout.vertexBufferStrides[vertexBufferIdx]*mesh.numVertices;
+                cpuBuffers->vertexBufferSizes[vertexBufferIdx] += mesh.vertexBufferSizes[vertexBufferIdx];
+                cpuBuffers->vertexBufferSizes[vertexBufferIdx] = AlignValue(cpuBuffers->vertexBufferSizes[vertexBufferIdx], 16ull);
+            }
+
+            {
+                mesh.indexBufferOffset = cpuBuffers->indexBufferSize;
+                mesh.indexBufferSize = sizeof(uint32)*mesh.numIndices;
+                cpuBuffers->indexBufferSize += mesh.indexBufferSize;
+                cpuBuffers->indexBufferSize = AlignValue(cpuBuffers->indexBufferSize, 16ull);
+            }
+        }
+
+        for (uint32 vertexBufferIdx = 0; vertexBufferIdx < model->numVertexBuffers; vertexBufferIdx++)
+            cpuBuffers->vertexBuffers[vertexBufferIdx] = (uint8*)tmpAlloc->Malloc(cpuBuffers->vertexBufferSizes[vertexBufferIdx]);
+        cpuBuffers->indexBuffer = (uint8*)tmpAlloc->Malloc(cpuBuffers->indexBufferSize);
+
         for (uint32 i = 0; i < (uint32)data->meshes_count; i++) {
             cgltf_mesh* mesh = &data->meshes[i];
             ModelMesh* dstMesh = &model->meshes[i];
 
-            uint32 bufferIdx = 0;
-            while (layout.vertexBufferStrides[bufferIdx]) {
-                uint32 vertexSize = layout.vertexBufferStrides[bufferIdx];
-                dstMesh->cpuBuffers.vertexBuffers[bufferIdx] = tmpAlloc->MallocTyped<uint8>(vertexSize*dstMesh->numVertices);
-                bufferIdx++;
-            }
-            dstMesh->numVertexBuffers = bufferIdx;
-
-            dstMesh->cpuBuffers.indexBuffer = tmpAlloc->MallocTyped<uint32>(dstMesh->numIndices);
-            _SetupBuffers(dstMesh, layout, mesh);
+            _SetupBuffers(dstMesh, cpuBuffers, layout, mesh);
         }
 
         // Bounds
@@ -805,7 +843,7 @@ namespace GLTF
                 const ModelMesh& mesh = model->meshes[IdToIndex(dstNode->meshId)];
                 const GfxVertexInputAttributeDesc* attr = ModelUtil::_FindAttribute(layout, "POSITION", 0);
                 uint32 vertexStride = layout.vertexBufferStrides[attr->binding];
-                uint8* vbuffu8 = mesh.cpuBuffers.vertexBuffers[attr->binding].Get();
+                uint8* vbuffu8 = cpuBuffers->vertexBuffers[attr->binding] + mesh.vertexBufferOffsets[attr->binding];
                 for (uint32 v = 0; v < mesh.numVertices; v++) {
                     Float3 pos = *((Float3*)(vbuffu8 + v*vertexStride + attr->offset));
                     AABB::AddPoint(&bounds, pos);
@@ -854,15 +892,15 @@ bool AssetModelImpl::Bake(const AssetParams& params, AssetData* data, const Span
     fileBlob.SetSize(srcData.Count());
 
     Path fileDir = params.path.GetDirectory();
-
-    Pair<Model*, uint32> modelResult = GLTF::_Load(fileBlob, fileDir, &tmpAlloc, *modelParams, outErrorDesc);
+    ModelCpuBuffers cpuBuffers {};
+    Pair<Model*, uint32> modelResult = GLTF::_Load(fileBlob, fileDir, &tmpAlloc, *modelParams, outErrorDesc, &cpuBuffers);
     Model* model = modelResult.first;
     uint32 modelBufferSize = modelResult.second;
     if (!model)
         return false;
-    
+
     #if CONFIG_TOOLMODE
-    ModelUtil::_Optimize(model, *modelParams);
+    ModelUtil::_Optimize(model, &cpuBuffers, *modelParams);
     #endif // CONFIG_TOOLMODE
 
     ASSERT(modelBufferSize <= UINT32_MAX);
@@ -909,34 +947,23 @@ bool AssetModelImpl::Bake(const AssetParams& params, AssetData* data, const Span
     } // we have textures 
 
     // GPU Buffers
-    ModelGeometryLayout* layout = &model->layout;
+    for (uint32 vertexBufferIdx = 0; vertexBufferIdx < model->numVertexBuffers; vertexBufferIdx++) {
+        GfxBufferDesc desc {
+            .sizeBytes = cpuBuffers.vertexBufferSizes[vertexBufferIdx],
+            .usageFlags = GfxBufferUsageFlags::TransferDst|GfxBufferUsageFlags::Vertex,
+            .arena = GfxMemoryArena::DynamicBufferGPU
+        };
 
-    for (uint32 i = 0; i < model->numMeshes; i++) {
-        ModelMesh& mesh = model->meshes[i];
-        {
-            uint32 bufferIndex = 0;
-            while (layout->vertexBufferStrides[bufferIndex]) {
-                GfxBufferDesc desc {
-                    .sizeBytes = layout->vertexBufferStrides[bufferIndex]*mesh.numVertices,
-                    .usageFlags = GfxBufferUsageFlags::TransferDst|GfxBufferUsageFlags::Vertex,
-                    .arena = GfxMemoryArena::DynamicBufferGPU
-                };
+        data->AddGpuBufferObject(&model->vertexBuffers[vertexBufferIdx], desc, cpuBuffers.vertexBuffers[vertexBufferIdx]);
+    }
 
-                data->AddGpuBufferObject(&mesh.gpuBuffers.vertexBuffers[bufferIndex], desc, 
-                                        mesh.cpuBuffers.vertexBuffers[bufferIndex].Get());
-                bufferIndex++;
-            }
-        }
-
-        {
-            GfxBufferDesc desc {
-                .sizeBytes = uint32(sizeof(uint32)*mesh.numIndices),
-                .usageFlags = GfxBufferUsageFlags::TransferDst|GfxBufferUsageFlags::Index,
-                .arena = GfxMemoryArena::DynamicBufferGPU
-            };
-
-            data->AddGpuBufferObject(&mesh.gpuBuffers.indexBuffer, desc, mesh.cpuBuffers.indexBuffer.Get());
-        }
+    {
+        GfxBufferDesc desc {
+            .sizeBytes = cpuBuffers.indexBufferSize,
+            .usageFlags = GfxBufferUsageFlags::TransferDst|GfxBufferUsageFlags::Index,
+            .arena = GfxMemoryArena::DynamicBufferGPU
+        };
+        data->AddGpuBufferObject(&model->indexBuffer, desc, cpuBuffers.indexBuffer);
     }
 
     return true;
