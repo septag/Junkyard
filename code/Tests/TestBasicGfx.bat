@@ -13,6 +13,8 @@ if %errorlevel% neq 0 goto :End
 powershell Expand-Archive -Force -Path TestBasicGfx.zip -DestinationPath .\
 del TestBasicGfx.zip
 
+python ..\..\..\scripts\Data\make_gltf_metadata.py --recurse-dir .
+
 :End
 popd 
 

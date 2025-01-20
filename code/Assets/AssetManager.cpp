@@ -787,6 +787,7 @@ static void Asset::_LoadAssetTask(uint32 groupIdx, void* userData)
         #else
         const void* fileData = nullptr;
         uint32 fileSize = 0;
+        MemTempAllocator tempAlloc;
 
         // REMOTE: wait for file to arrive 
         if (taskData.inputs.isRemoteLoad) {
@@ -794,11 +795,8 @@ static void Asset::_LoadAssetTask(uint32 groupIdx, void* userData)
             fileData = taskData.inputs.fileData;
             fileSize = taskData.inputs.fileSize;
         }
-        
-        MemTempAllocator tempAlloc;
-        if (!taskData.inputs.isRemoteLoad) {
+        else {
             ASSERT(fileData == nullptr);
-
             Blob fileBlob = Vfs::ReadFile(taskData.inputs.bakedFilepath.CStr(), VfsFlags::None, &tempAlloc);
             fileData = fileBlob.Data();
             ASSERT(fileBlob.Size() <= UINT32_MAX);
@@ -1326,8 +1324,8 @@ static void Asset::_LoadGroupTask(uint32, void* userData)
     }
     tempAlloc->Reset();
 
-    // Set loaded flag to all newly loaded assets, so we can fetch and lock their data by the user
-    // Note that we have to wait for GPU data upload to finish submission
+    // Set loaded flag to all newly loaded assets, except the assets that has GPU resources
+    // For those we have to wait for GPU data upload to finish submission. See _GpuResourceFinishedCallback
     for (AssetQueuedItem& qa : queuedAssets) {
         if (!qa.hasPendingGpuResource) {
             AssetDataHeader* header = loadList[qa.indexInLoadList];

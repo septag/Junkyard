@@ -43,7 +43,11 @@ void MeshOpt::Optimize(MeshOptModel* model)
         uint32* remap = tmpAlloc.MallocTyped<uint32>(mesh->numVertices);
         uint32* indices = tmpAlloc.MallocTyped<uint32>(mesh->numIndices);
 
-        // TODO: For multi-subset meshes, this process will mess up the geometry (I think particularly for the first subset), investigate why
+        for (uint32 k = 0; k < mesh->numVertexBuffers; k++) 
+            memcpy(vertices[k], mesh->vertexBuffers[k], mesh->vertexStrides[k]*mesh->numVertices);
+
+        // TODO: This part is buggy and very unpredictable if enabled. investigate why
+        #if 0
         if (mesh->numSubmeshes == 1) {
             size_t numVertices = meshopt_generateVertexRemapMulti(remap, meshIndices, mesh->numIndices, mesh->numVertices, streams, mesh->numVertexBuffers);
             for (uint32 k = 0; k < mesh->numVertexBuffers; k++) 
@@ -56,12 +60,13 @@ void MeshOpt::Optimize(MeshOptModel* model)
                 memcpy(vertices[k], mesh->vertexBuffers[k], mesh->vertexStrides[k]*mesh->numVertices);
             memcpy(indices, mesh->indexBuffer, sizeof(uint32)*mesh->numIndices);
         }
+        #endif
 
         for (uint32 submeshIdx = 0; submeshIdx < mesh->numSubmeshes; submeshIdx++) {
             MeshOptSubmesh submesh = mesh->submeshes[submeshIdx];
 
             // Vertex cache
-            meshopt_optimizeVertexCache(indices + submesh.startIndex, indices + submesh.startIndex, submesh.numIndices, mesh->numVertices);
+            meshopt_optimizeVertexCache(indices + submesh.startIndex, mesh->indexBuffer + submesh.startIndex, submesh.numIndices, mesh->numVertices);
 
             // Overdraw
             uint32 positionStride = mesh->posStride;

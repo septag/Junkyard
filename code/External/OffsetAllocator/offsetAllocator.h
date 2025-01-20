@@ -263,7 +263,10 @@ static uint32_t OffsetAllocator_InsertNodeIntoBin(OffsetAllocator* allocator, ui
     OffsetAllocatorNode node = {
         .dataOffset = dataOffset, 
         .dataSize = size, 
-        .binListNext = topNodeIndex
+        .binListPrev = OFFSET_ALLOCATOR_UNUSED,
+        .binListNext = topNodeIndex,
+        .neighborPrev = OFFSET_ALLOCATOR_UNUSED,
+        .neighborNext = OFFSET_ALLOCATOR_UNUSED
     };
     allocator->nodes[nodeIndex] = node;
     if (topNodeIndex != OFFSET_ALLOCATOR_UNUSED) allocator->nodes[topNodeIndex].binListPrev = nodeIndex;
