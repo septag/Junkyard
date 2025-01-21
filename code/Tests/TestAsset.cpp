@@ -76,6 +76,7 @@ struct AppImpl : AppCallbacks
     Camera*     mCam;
 
     Grid mGrid;
+    bool mMinimized = false;
 
     struct Vertex 
     {
@@ -258,10 +259,8 @@ struct AppImpl : AppCallbacks
                         const ModelMesh& mesh = model->meshes[IdToIndex(node.meshId)];
     
                         // Buffers
-                        uint64* offsets = (uint64*)alloca(sizeof(uint64)*mesh.numVertexBuffers);
-                        memset(offsets, 0x0, sizeof(uint64)*mesh.numVertexBuffers);
-                        cmd.BindVertexBuffers(0, mesh.numVertexBuffers, mesh.gpuBuffers.vertexBuffers, offsets);
-                        cmd.BindIndexBuffer(mesh.gpuBuffers.indexBuffer, 0, GfxIndexType::Uint32);
+                        cmd.BindVertexBuffers(0, model->numVertexBuffers, model->vertexBuffers, mesh.vertexBufferOffsets);
+                        cmd.BindIndexBuffer(model->indexBuffer, mesh.indexBufferOffset, GfxIndexType::Uint32);
 
                         Mat4 worldMat = Mat4::Translate(x, y, 0.5f);
                         cmd.PushConstants(mPipelineLayout, "ModelTransform", &worldMat, sizeof(worldMat));
@@ -429,6 +428,9 @@ struct AppImpl : AppCallbacks
 
     void Update(fl32 dt) override
     {
+        if (mMinimized)
+            return;
+
         PROFILE_ZONE();
 
         mCam->HandleMovementKeyboard(dt, 40.0f, 20.0f);
@@ -523,6 +525,10 @@ struct AppImpl : AppCallbacks
     {
         if (!ImGui::IsAnyItemHovered() && !ImGui::GetIO().WantCaptureMouse && !ImGuizmo::IsOver())
             mCam->HandleRotationMouse(ev, 0.2f, 0.1f);
+        if (ev.type  == AppEventType::Iconified) 
+            mMinimized = true;            
+        else if (ev.type == AppEventType::Restored)
+            mMinimized = false;
     }
 
     static void CreateGraphicsResources(void* userData)

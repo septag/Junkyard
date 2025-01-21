@@ -347,6 +347,7 @@ struct AppImpl final : AppCallbacks
     GfxImageHandle mRenderTargetDepth;
     uint32 mSelectedSceneIdx;
     bool mFirstTime = true;
+    bool mMinimized = false;
 
     static void InitializeResources(void* userData)
     {
@@ -402,9 +403,12 @@ struct AppImpl final : AppCallbacks
         Engine::Release();
     };
 
-    void Update(fl32 dt) override
+    void Update(float dt) override
     {
         PROFILE_ZONE();
+
+        if (mMinimized)
+            return;
 
         if (mFirstTime) {
             mModelScenes[mSelectedSceneIdx].Load();
@@ -498,6 +502,11 @@ struct AppImpl final : AppCallbacks
     {
         if (mCam && !ImGui::IsAnyItemHovered() && !ImGui::GetIO().WantCaptureMouse && !ImGuizmo::IsOver())
             mCam->HandleRotationMouse(ev, 0.2f, 0.1f);
+
+        if (ev.type  == AppEventType::Iconified) 
+            mMinimized = true;            
+        else if (ev.type == AppEventType::Restored)
+            mMinimized = false;
     }
 };
 
