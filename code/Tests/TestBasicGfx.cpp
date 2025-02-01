@@ -103,7 +103,7 @@ struct ModelScene
         };
         mUniformBuffer = GfxBackend::CreateBuffer(bufferDesc);
 
-        mShader = Asset::LoadShader("/shaders/Model.hlsl", ShaderLoadParams{}, initAssetGroup);
+        mShader = Shader::Load("/shaders/Model.hlsl", ShaderLoadParams{}, initAssetGroup);
 
         mAssetGroup = Asset::CreateGroup();
     }
@@ -219,7 +219,7 @@ struct ModelScene
             }
         };
 
-        mModel = Asset::LoadModel(mModelFilepath.CStr(), modelParams, mAssetGroup);
+        mModel = Model::Load(mModelFilepath.CStr(), modelParams, mAssetGroup);
         mAssetGroup.Load();
     }
 
@@ -290,7 +290,7 @@ struct ModelScene
         RectInt scissor(0, 0, int(vwidth), int(vheight));
         cmd.SetScissors(0, 1, &scissor);
 
-        AssetObjPtrScope<Model> model(mModel);
+        AssetObjPtrScope<ModelData> model(mModel);
 
         for (uint32 i = 0; i < model->numNodes; i++) {
             const ModelNode& node = model->nodes[i];
@@ -328,7 +328,7 @@ struct ModelScene
                     },
                     {
                         .name = "BaseColorTexture",
-                        .image = imgHandle.IsValid() ? imgHandle : Asset::GetWhiteImage()
+                        .image = imgHandle.IsValid() ? imgHandle : Image::GetWhite1x1()
                     }
                 };
                 cmd.PushBindings(mPipelineLayout, CountOf(bindings), bindings);

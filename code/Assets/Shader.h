@@ -14,12 +14,13 @@ struct ShaderLoadParams
     ShaderCompileDesc compileDesc;  
 };
 
-namespace Asset
+namespace Shader
 {
-    API bool InitializeShaderManager();
-    API void ReleaseShaderManager();
+    API bool InitializeManager();
+    API void ReleaseManager();
 
-    API AssetHandleShader LoadShader(const char* path, const ShaderLoadParams& params, const AssetGroup& group);
+    // DataType: AssetObjPtrScope<GfxShader>
+    API AssetHandleShader Load(const char* path, const ShaderLoadParams& params, const AssetGroup& group);
 }
 
 

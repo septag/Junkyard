@@ -210,7 +210,7 @@ namespace ModelUtil
     }
 
     #if CONFIG_TOOLMODE
-    static void _Optimize(Model* model, ModelCpuBuffers* cpuBuffers, const ModelLoadParams& modelParams)
+    static void _Optimize(ModelData* model, ModelCpuBuffers* cpuBuffers, const ModelLoadParams& modelParams)
     {
         MemTempAllocator tmpAlloc;
         MeshOptModel bakeModel;
@@ -572,7 +572,7 @@ namespace GLTF
             ModelUtil::_CalculateTangents(mesh, cpuBuffers, vertexLayout);
     }
 
-    static Pair<Model*, uint32> _Load(Blob& fileBlob, const Path& fileDir, MemTempAllocator* tmpAlloc, const ModelLoadParams& params, 
+    static Pair<ModelData*, uint32> _Load(Blob& fileBlob, const Path& fileDir, MemTempAllocator* tmpAlloc, const ModelLoadParams& params, 
                                       String<256>* outErrorDesc, ModelCpuBuffers* outCpuBuffers)
     {
         const ModelGeometryLayout& layout = params.layout.vertexBufferStrides[0] ? params.layout : gModelDefaultLayout;
@@ -667,7 +667,7 @@ namespace GLTF
         }
 
         // Start creating the model. This is where the blob data starts
-        Model* model = tmpAlloc->MallocZeroTyped<Model>();
+        ModelData* model = tmpAlloc->MallocZeroTyped<ModelData>();
         model->rootTransform = TRANSFORM3D_IDENT;
         model->layout = layout;
         model->numMaterialTextures = numTotalTextures;
@@ -852,12 +852,12 @@ namespace GLTF
             dstNode->bounds = bounds;
         }
 
-        return Pair<Model*, uint32>(model, modelBufferSize);
+        return Pair<ModelData*, uint32>(model, modelBufferSize);
     }
 
 } // GLTF
 
-bool Asset::InitializeModelManager()
+bool Model::InitializeManager()
 {
     AssetTypeDesc desc {
         .fourcc = MODEL_ASSET_TYPE,
@@ -878,7 +878,7 @@ bool Asset::InitializeModelManager()
     return true;
 }
 
-void Asset::ReleaseModelManager()
+void Model::ReleaseManager()
 {
     Asset::UnregisterType(MODEL_ASSET_TYPE);
 }
@@ -893,8 +893,8 @@ bool AssetModelImpl::Bake(const AssetParams& params, AssetData* data, const Span
 
     Path fileDir = params.path.GetDirectory();
     ModelCpuBuffers cpuBuffers {};
-    Pair<Model*, uint32> modelResult = GLTF::_Load(fileBlob, fileDir, &tmpAlloc, *modelParams, outErrorDesc, &cpuBuffers);
-    Model* model = modelResult.first;
+    Pair<ModelData*, uint32> modelResult = GLTF::_Load(fileBlob, fileDir, &tmpAlloc, *modelParams, outErrorDesc, &cpuBuffers);
+    ModelData* model = modelResult.first;
     uint32 modelBufferSize = modelResult.second;
     if (!model)
         return false;
@@ -977,7 +977,7 @@ bool AssetModelImpl::Reload(void* newData, void* oldData)
     return false;
 }
 
-AssetHandleModel Asset::LoadModel(const char* path, const ModelLoadParams& params, const AssetGroup& group)
+AssetHandleModel Model::Load(const char* path, const ModelLoadParams& params, const AssetGroup& group)
 {
     AssetParams assetParams {
         .typeId = MODEL_ASSET_TYPE,

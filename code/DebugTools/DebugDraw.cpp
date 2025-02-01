@@ -294,8 +294,8 @@ void DebugDraw::DrawGroundGrid(const Camera& cam, const DebugDrawGridProperties&
 
 bool DebugDraw::Initialize()
 {
-    gDebugDraw.shaderAsset = Asset::LoadShader("/shaders/DebugDraw.hlsl", ShaderLoadParams(),
-                                               Engine::RegisterInitializeResources(_InitializeGraphicsResources));
+    gDebugDraw.shaderAsset = Shader::Load("/shaders/DebugDraw.hlsl", ShaderLoadParams(),
+                                          Engine::RegisterInitializeResources(_InitializeGraphicsResources));
 
     LOG_INFO("(init) DebugDraw initialized");
     return true;

@@ -576,8 +576,8 @@ bool ImGui::Initialize()
     _InitializeSettings();
 
     // Register graphics resources callback so we can continue when the resources are loaded
-    gImGui.shader = Asset::LoadShader("/shaders/ImGui.hlsl", ShaderLoadParams(),
-                                      Engine::RegisterInitializeResources(_InitializeGraphicsResources));
+    gImGui.shader = Shader::Load("/shaders/ImGui.hlsl", ShaderLoadParams(),
+                                 Engine::RegisterInitializeResources(_InitializeGraphicsResources));
 
     return true;
 }
