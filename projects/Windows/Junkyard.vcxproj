@@ -304,6 +304,7 @@
     <ClInclude Include="..\..\code\Engine.h" />
     <ClInclude Include="..\..\code\External\cgltf\cgltf.h" />
     <ClInclude Include="..\..\code\External\cgltf\cgltf_write.h" />
+    <ClInclude Include="..\..\code\External\dds-ktx\dds-ktx.h" />
     <ClInclude Include="..\..\code\External\dmon\dmon.h" />
     <ClInclude Include="..\..\code\External\imgui\imconfig.h" />
     <ClInclude Include="..\..\code\External\imgui\imgui.h" />

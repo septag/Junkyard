@@ -72,6 +72,7 @@ struct AssetTypeImplBase;
 struct AssetTypeDesc
 {
     uint32 fourcc;
+    uint32 cacheVersion;
     const char* name;
     AssetTypeImplBase* impl;
     const char* extraParamTypeName;

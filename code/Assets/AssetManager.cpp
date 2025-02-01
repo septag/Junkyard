@@ -21,6 +21,10 @@
 #include "../Graphics/GfxBackend.h"
 #include "../Engine.h"
 
+#include "Image.h"
+#include "Model.h"
+#include "Shader.h"
+
 #define ASSET_ASYNC_EXPERIMENT 0
 
 //     ██████╗ ██╗      ██████╗ ██████╗  █████╗ ██╗     ███████╗
@@ -45,6 +49,7 @@ struct AssetTypeManager
 {
     String32 name;
     uint32 fourcc;
+    uint32 cacheVersion;
     AssetTypeImplBase* impl;
     uint32 extraParamTypeSize;
     String32 extraParamTypeName;
@@ -192,6 +197,7 @@ struct AssetQueuedItem
     uint32 dataSize;
     uint32 paramsHash;
     uint32 assetHash;
+    uint32 assetTypeCacheVersion;
     AssetDataInternal* data;
     Path bakedFilepath;
     bool saveBaked;
@@ -263,23 +269,6 @@ struct AssetMan
 };
 
 static AssetMan gAssetMan;
-
-//----------------------------------------------------------------------------------------------------------------------
-// Fwd
-namespace Asset
-{
-    // Image.h
-    bool InitializeImageManager();      
-    void ReleaseImageManager();
-
-    // Shader.h
-    bool InitializeShaderManager();     
-    void ReleaseShaderManager();
-
-    // Model.h
-    bool InitializeModelManager();      
-    void ReleaseModelManager();
-}
 
 //----------------------------------------------------------------------------------------------------------------------
 // These functions should be exported for per asset type loading
@@ -485,11 +474,12 @@ static void Asset::_SaveBakedTask(uint32 groupIdx, void* userData)
 
     AssetQueuedItem* qa = ((AssetQueuedItem**)userData)[groupIdx];
 
+    uint32 cacheVersion = MakeVersion(ASSET_CACHE_VERSION, qa->assetTypeCacheVersion, 0, 0);
     Blob cache;
     cache.Reserve(32 + qa->dataSize);
     cache.SetGrowPolicy(Blob::GrowPolicy::Linear);
     cache.Write<uint32>(ASSET_CACHE_FILE_ID);
-    cache.Write<uint32>(ASSET_CACHE_VERSION);
+    cache.Write<uint32>(cacheVersion);
     cache.Write<uint32>(qa->dataSize);
     cache.Write(qa->data, qa->dataSize);
 
@@ -500,7 +490,6 @@ static void Asset::_SaveBakedTask(uint32 groupIdx, void* userData)
             LOG_VERBOSE("(save) Baked: %s", path);
         blob.Free();
 
-        // TODO: save to paramsHash -> assetHash lookup table        
         uint64 writeFileData = PtrToInt<uint64>(userData);
         uint32 paramsHash = uint32((writeFileData >> 32)&0xffffffff);
         uint32 assetHash = uint32(writeFileData&0xffffffff);
@@ -820,8 +809,9 @@ static void Asset::_LoadAssetTask(uint32 groupIdx, void* userData)
             return;
         }
 
+        uint32 targetCacheVersion = MakeVersion(ASSET_CACHE_VERSION, typeMan.cacheVersion, 0, 0);
         cache.Read<uint32>(&cacheVersion);
-        if (cacheVersion != ASSET_CACHE_VERSION) {
+        if (cacheVersion != targetCacheVersion) {
             taskData.outputs.errorDesc = "Invalid binary version for the baked file";
             return;
         }
@@ -1116,21 +1106,30 @@ static void Asset::_LoadGroupTask(uint32, void* userData)
         for (uint32 k = 0; k < sliceCount; k++) {
             AssetLoadTaskInputs& in = taskDatas[k].inputs;
             AssetLoadTaskOutputs& out = taskDatas[k].outputs;
+
             if (!out.data) {
                 Atomic::StoreExplicit(&in.header->state, uint32(AssetState::LoadFailed), AtomicMemoryOrder::Relaxed);
                 LOG_ERROR("Loading %s '%s' failed: %s", in.header->typeName, in.header->params->path.CStr(), out.errorDesc.CStr());
                 continue;
             }
 
+            AssetDataHeader* header = loadList[i + k];
+            uint32 typeManIdx = gAssetMan.typeManagers.FindIf(
+                [typeId = header->typeId](const AssetTypeManager& typeMgr) { return typeMgr.fourcc == typeId; });
+            ASSERT_MSG(typeManIdx != UINT32_MAX, "AssetType with FourCC %x is not registered", header->typeId);
+            const AssetTypeManager& typeMan = gAssetMan.typeManagers[typeManIdx];
+
             AssetQueuedItem qa {
                 .indexInLoadList = i + k,
                 .dataSize = out.dataSize,
                 .paramsHash = in.header->paramsHash,
                 .assetHash = in.assetHash,
+                .assetTypeCacheVersion = typeMan.cacheVersion,
                 .data = out.data,
                 .bakedFilepath = in.bakedFilepath,
                 .saveBaked = (in.type == AssetLoadTaskInputType::Source || in.isRemoteLoad)
             };
+
             queuedAssets.Push(qa);
 
             // Add dependencies to AssetDb and the new ones to loadList
@@ -1517,11 +1516,17 @@ static void Asset::_ServerLoadBatchTask(uint32, void*)
         const AssetLoadTaskInputs& in = taskDatas[i]->inputs;
         AssetLoadTaskOutputs& out = taskDatas[i]->outputs;
 
+        uint32 typeManIdx = gAssetMan.typeManagers.FindIf(
+            [typeId = in.header->typeId](const AssetTypeManager& typeMgr) { return typeMgr.fourcc == typeId; });
+        ASSERT_MSG(typeManIdx != UINT32_MAX, "AssetType with FourCC %x is not registered", in.header->typeId);
+        const AssetTypeManager& typeMan = gAssetMan.typeManagers[typeManIdx];
+
         bool saveBaked = in.type == AssetLoadTaskInputType::Source;
         if (out.data && saveBaked) {
             AssetQueuedItem qa {
                 .indexInLoadList = i,
                 .dataSize = out.dataSize,
+                .assetTypeCacheVersion = typeMan.cacheVersion,
                 .data = out.data,
                 .bakedFilepath = in.bakedFilepath,
                 .saveBaked = saveBaked
@@ -1556,13 +1561,19 @@ static void Asset::_ServerLoadBatchTask(uint32, void*)
                 Remote::SendResponse(ASSET_LOAD_ASSET_REMOTE_CMD, blobs[0], true, errorMsg.CStr());
             }
             else {
+                uint32 typeManIdx = gAssetMan.typeManagers.FindIf(
+                    [typeId = in.header->typeId](const AssetTypeManager& typeMgr) { return typeMgr.fourcc == typeId; });
+                ASSERT_MSG(typeManIdx != UINT32_MAX, "AssetType with FourCC %x is not registered", in.header->typeId);
+                const AssetTypeManager& typeMan = gAssetMan.typeManagers[typeManIdx];
+
                 blobs[0].Write<uint32>(uint32(AssetServerBlobType::IncludesBakedData));
                 blobs[0].Write<uint32>(in.assetHash);
 
                 // Add Cache header
                 // TODO: maybe make this cleaner. Because we are writing cache header in two places (_SaveBakedTask)
+                uint32 cacheVersion = MakeVersion(ASSET_CACHE_VERSION, typeMan.cacheVersion, 0, 0);
                 blobs[0].Write<uint32>(ASSET_CACHE_FILE_ID);
-                blobs[0].Write<uint32>(ASSET_CACHE_VERSION);
+                blobs[0].Write<uint32>(cacheVersion);
                 blobs[0].Write<uint32>(out.dataSize);
 
                 blobs[1].Reserve(out.data, out.dataSize);
@@ -1724,6 +1735,7 @@ void Asset::RegisterType(const AssetTypeDesc& desc)
     AssetTypeManager mgr {
         .name = desc.name,
         .fourcc = desc.fourcc,
+        .cacheVersion = desc.cacheVersion,
         .impl = desc.impl,
         .extraParamTypeSize = desc.extraParamTypeSize,
         .extraParamTypeName = desc.extraParamTypeName,
@@ -1828,17 +1840,17 @@ bool Asset::Initialize()
 
     //------------------------------------------------------------------------------------------------------------------
     // Initialize asset managers here
-    if (!Asset::InitializeImageManager()) {
+    if (!Image::InitializeManager()) {
         LOG_ERROR("Failed to initialize ImageManager");
         return false;
     }
 
-    if (!Asset::InitializeModelManager()) {
+    if (!Model::InitializeManager()) {
         LOG_ERROR("Failed to initialize ModelManager");
         return false;
     }
 
-    if (!Asset::InitializeShaderManager()) {
+    if (!Shader::InitializeManager()) {
         LOG_ERROR("Failed to initialize ShaderManager");
         return false;
     }
@@ -1905,9 +1917,9 @@ void Asset::Release()
         gAssetMan.hotReloadList.Free();
     }
 
-    Asset::ReleaseImageManager();
-    Asset::ReleaseModelManager();
-    Asset::ReleaseShaderManager();
+    Image::ReleaseManager();
+    Model::ReleaseManager();
+    Shader::ReleaseManager();
 
     Mem::Free(gAssetMan.memArena.allocators, alloc);
     gAssetMan.memArena.threadToAllocatorTable.Free();

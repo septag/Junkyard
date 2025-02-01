@@ -88,6 +88,9 @@
     <Filter Include="External\OffsetAllocator">
       <UniqueIdentifier>{ecf972c0-9377-4d0d-8ee7-fc3c8a9ff538}</UniqueIdentifier>
     </Filter>
+    <Filter Include="External\dds-ktx">
+      <UniqueIdentifier>{7c749050-3416-4c5c-909b-78f12d81870e}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\..\code\External\imgui\imgui.cpp">
@@ -446,6 +449,9 @@
       <Filter>Core</Filter>
     </ClInclude>
     <ClInclude Include="..\..\code\Config.h" />
+    <ClInclude Include="..\..\code\External\dds-ktx\dds-ktx.h">
+      <Filter>External\dds-ktx</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <FxCompile Include="..\..\code\Shaders\ImGui.hlsl">

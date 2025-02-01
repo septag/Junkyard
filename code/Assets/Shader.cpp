@@ -20,10 +20,10 @@ struct AssetShaderImpl final : AssetTypeImplBase
 
 static AssetShaderImpl gShaderImpl;
 
-bool Asset::InitializeShaderManager()
+bool Shader::InitializeManager()
 {
     // Register asset loader
-    Asset::RegisterType(AssetTypeDesc {
+    AssetTypeDesc shaderTypeDesc {
         .fourcc = SHADER_ASSET_TYPE,
         .name = "Shader",
         .impl = &gShaderImpl,
@@ -31,12 +31,14 @@ bool Asset::InitializeShaderManager()
         .extraParamTypeSize = sizeof(ShaderCompileDesc),
         .failedObj = nullptr,
         .asyncObj = nullptr
-    });
+    };
+
+    Asset::RegisterType(shaderTypeDesc);
 
     return true;
 }
 
-void Asset::ReleaseShaderManager()
+void Shader::ReleaseManager()
 {
     #if CONFIG_TOOLMODE
     ShaderCompiler::ReleaseLiveSessions();
@@ -120,7 +122,7 @@ bool AssetShaderImpl::Reload(void* newData, void* oldData)
     
 }
 
-AssetHandleShader Asset::LoadShader(const char* path, const ShaderLoadParams& params, const AssetGroup& group)
+AssetHandleShader Shader::Load(const char* path, const ShaderLoadParams& params, const AssetGroup& group)
 {
     AssetParams assetParams {
         .typeId = SHADER_ASSET_TYPE,

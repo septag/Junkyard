@@ -985,6 +985,7 @@ struct GfxBackendRenderPass
 //  |____/|_| |_/_/   \_\____/|_____|_| \_\
 //                                        
 
+// SERIALIZED
 struct GfxShaderStageInfo
 {
     GfxShaderStage stage;
@@ -993,6 +994,7 @@ struct GfxShaderStageInfo
     RelativePtr<uint8> data;
 };
 
+// SERIALIZED
 enum class GfxShaderParameterType : uint32
 {
     Uniformbuffer,
@@ -1001,6 +1003,7 @@ enum class GfxShaderParameterType : uint32
     Array
 };
 
+// SERIALIZED
 struct GfxShaderParameterInfo
 {
     char name[32];
@@ -1010,6 +1013,7 @@ struct GfxShaderParameterInfo
     bool isPushConstant;
 };
 
+// SERIALIZED
 struct GfxShaderVertexAttributeInfo 
 {
     char name[32];
@@ -1019,11 +1023,11 @@ struct GfxShaderVertexAttributeInfo
     GfxFormat format;
 };
 
-// Note: Binary representation (SERIALIZED)
+// SERIALIZED
 struct GfxShader
 {
     char name[32];
-    uint32 hash;           // This is actually the AssetId of the shader
+    uint32 hash;           // AssetParamsHash of the shader: Passed to pipelines to recreate them whenever shadear is reloaded
     uint32 numStages;
     uint32 numParams;
     uint32 numVertexAttributes;

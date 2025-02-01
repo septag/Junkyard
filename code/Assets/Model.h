@@ -139,7 +139,7 @@ struct ModelNode
     RelativePtr<uint32> childIds;     // indices to GfxModelData::nodes
 };
 
-struct Model 
+struct ModelData 
 {
     uint32 numMeshes;
     uint32 numNodes;
@@ -166,10 +166,11 @@ struct ModelLoadParams
     ModelGeometryLayout layout;
 };
 
-namespace Asset
+namespace Model
 {
-    API bool InitializeModelManager();
-    API void ReleaseModelManager();
+    API bool InitializeManager();
+    API void ReleaseManager();
 
-    API AssetHandleModel LoadModel(const char* path, const ModelLoadParams& params, const AssetGroup& group);
+    // DataType: AssetObjPtrScope<ModelData>
+    API AssetHandleModel Load(const char* path, const ModelLoadParams& params, const AssetGroup& group);
 }

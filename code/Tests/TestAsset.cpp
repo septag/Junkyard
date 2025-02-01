@@ -193,11 +193,12 @@ struct AppImpl : AppCallbacks
 
         Path imagePath;
         for (uint32 i = 0; i < cell.files.Count(); i++) {
-            cell.items[i].modelHandle = Asset::LoadModel(mFilePaths[cell.files[i]].CStr(), modelParams, cell.assetGroup);
+            cell.items[i].modelHandle = Model::Load(mFilePaths[cell.files[i]].CStr(), modelParams, cell.assetGroup);
 
             Path imageFilename = mFilePaths[cell.files[i]].GetFileName();
             imagePath.FormatSelf("/data/Tex%s.tga", imageFilename.CStr());
-            cell.items[i].imageHandle = Asset::LoadImage(imagePath.CStr(), imageParams, cell.assetGroup);
+
+            cell.items[i].imageHandle = Image::Load(imagePath.CStr(), imageParams, cell.assetGroup);
         }   
         cell.assetGroup.Load();
 
@@ -247,7 +248,7 @@ struct AppImpl : AppCallbacks
                 }
                 const CellItem& item = cell.items[cubeIndex++];
                
-                AssetObjPtrScope<Model> model(item.modelHandle);
+                AssetObjPtrScope<ModelData> model(item.modelHandle);
                 AssetObjPtrScope<GfxImage> image(item.imageHandle);
 
                 if (model.IsNull() || image.IsNull())
@@ -313,7 +314,7 @@ struct AppImpl : AppCallbacks
 
         {
             AssetGroup group = Engine::RegisterInitializeResources(AppImpl::CreateGraphicsResources, this);
-            mUnlitShader = Asset::LoadShader("/shaders/Unlit.hlsl", {}, group);
+            mUnlitShader = Shader::Load("/shaders/Unlit.hlsl", {}, group);
         }
 
         LOG_INFO("Reading file list ...");
