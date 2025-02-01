@@ -25,8 +25,6 @@
 #include "Model.h"
 #include "Shader.h"
 
-#define ASSET_ASYNC_EXPERIMENT 0
-
 //     ██████╗ ██╗      ██████╗ ██████╗  █████╗ ██╗     ███████╗
 //    ██╔════╝ ██║     ██╔═══██╗██╔══██╗██╔══██╗██║     ██╔════╝
 //    ██║  ███╗██║     ██║   ██║██████╔╝███████║██║     ███████╗
@@ -739,17 +737,11 @@ static void Asset::_LoadAssetTask(uint32 groupIdx, void* userData)
         assetData.mData->metaData = metaData.Ptr();
         assetData.mData->numMetaData = metaData.Count();
 
-        #if ASSET_ASYNC_EXPERIMENT
-        taskData.inputs.fileReadSignal.Wait();
-        const void* fileData = taskData.inputs.fileData;
-        uint32 fileSize = taskData.inputs.fileSize;
-        #else
         MemTempAllocator tempAlloc;
         Blob fileBlob = Vfs::ReadFile(taskData.inputs.header->params->path.CStr(), VfsFlags::None, &tempAlloc);
         const void* fileData = fileBlob.Data();
         ASSERT(fileBlob.Size() <= UINT32_MAX);
         uint32 fileSize = uint32(fileBlob.Size());
-        #endif
 
         if (!fileData) {
             taskData.outputs.errorDesc = "Failed opening source file";
@@ -769,11 +761,6 @@ static void Asset::_LoadAssetTask(uint32 groupIdx, void* userData)
         taskData.outputs.data = assetData.mData;
     }
     else if (taskData.inputs.type == AssetLoadTaskInputType::Baked) {
-        #if ASSET_ASYNC_EXPERIMENT
-        taskData.inputs.fileReadSignal.Wait();
-        const void* fileData = taskData.inputs.fileData;
-        uint32 fileSize = taskData.inputs.fileSize;
-        #else
         const void* fileData = nullptr;
         uint32 fileSize = 0;
         MemTempAllocator tempAlloc;
@@ -791,7 +778,6 @@ static void Asset::_LoadAssetTask(uint32 groupIdx, void* userData)
             ASSERT(fileBlob.Size() <= UINT32_MAX);
             fileSize = uint32(fileBlob.Size());
         }
-        #endif // ASSET_ASYNC_EXPERIMENT
 
         if (!fileData) {
             taskData.outputs.errorDesc = taskData.inputs.isRemoteLoad ? taskData.inputs.remoteLoadErrorStr : "Failed opening baked file";
@@ -948,17 +934,6 @@ static void Asset::_LoadGroupTask(uint32, void* userData)
     PROFILE_ZONE_COLOR(PROFILE_COLOR_ASSET1);
     TimerStopWatch timer;
 
-    #if ASSET_ASYNC_EXPERIMENT
-    auto ReadAssetFileFinished = [](AsyncFile* file, bool failed)
-    {
-        AssetLoadTaskData* taskData = (AssetLoadTaskData*)file->userData;
-        taskData->inputs.fileData = !failed ? file->data : nullptr;
-        taskData->inputs.fileSize = !failed ? file->size : 0;
-        taskData->inputs.fileReadSignal.Set();
-        taskData->inputs.fileReadSignal.Raise();
-    };
-    #endif
-
     // Fetch load list (pointers in the loadList are persistant through the lifetime of the group)
     AssetGroupHandle groupHandle(PtrToInt<uint32>(userData));
     Array<AssetDataHeader*> loadList;
@@ -1047,35 +1022,6 @@ static void Asset::_LoadGroupTask(uint32, void* userData)
         }
 
         JobsHandle batchJob = Jobs::Dispatch(JobsType::LongTask, _LoadAssetTask, taskDataPtrs, sliceCount, JobsPriority::High, JobsStackSize::Large);
-
-        #if ASSET_ASYNC_EXPERIMENT
-        // TODO: Currently ReadFile seems weird on Windows API at least
-        //       It takes roughly 18ms for 11 files (11 threads)
-        //       Either windows file system is lame or something wrong with my implementation
-        //       Because the profiler shows that many LoadAsset tasks are overlapped, which means the file reading is pretty serial
-        //       
-
-        // TODO: For remote connection, instead of files, we need to submit requests for the server instead of files
-        //       fileReadSignal will wait for that result instead. which is always baked data or error
-        //       It will also receive the newest asset hash to store in some database
-        //       We will also send the current asset hash in the database for the request, 
-        //       so server will check if it needs to send a new data or client will load baked data from it's cache
-        //       
-        for (uint32 k = 0; k < sliceCount; k++) {
-            AssetDataHeader* header = loadList[i + k];
-
-            AsyncFileRequest req {
-                .alloc = tempAlloc,
-                .readFn = ReadAssetFileFinished,
-                .userData = &taskDatas[k],
-            };
-
-            const char* assetFilepath = taskDatas[k].inputs.type == AssetLoadTaskInputType::Baked ? 
-                taskDatas[k].inputs.bakedFilepath.CStr() : header->params->path.CStr();
-            Path absFilepath = Vfs::ResolveFilepath(assetFilepath);
-            Async::ReadFile(absFilepath.CStr(), req);
-        }
-        #endif
 
         // REMOTE: Make load requests
         for (uint32 k = 0; k < sliceCount; k++) {
