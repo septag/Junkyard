@@ -305,7 +305,6 @@ struct ModelScene
             const ModelMesh& mesh = model->meshes[IdToIndex(node.meshId)];
 
             // Buffers
-            uint64 offsets[MODEL_MAX_VERTEX_BUFFERS_PER_SHADER] = {};
             cmd.BindVertexBuffers(0, model->numVertexBuffers, model->vertexBuffers, mesh.vertexBufferOffsets);
             cmd.BindIndexBuffer(model->indexBuffer, mesh.indexBufferOffset, GfxIndexType::Uint32);
 

@@ -1,6 +1,5 @@
 #include "DebugHud.h"
 
-#include "../Core/Jobs.h"
 #include "../Core/Blobs.h"
 #include "../Core/MathScalar.h"
 #include "../Core/Log.h"
@@ -8,7 +7,6 @@
 #include "../Common/JunkyardSettings.h"
 #include "../Common/Application.h"
 
-#include "../Assets/AssetManager.h"
 #include "../ImGui/ImGuiMain.h"
 
 #include "../Engine.h"

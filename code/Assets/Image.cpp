@@ -1,9 +1,6 @@
 #include "Image.h"
 #include "AssetManager.h"
 
-#include "../Core/TracyHelper.h"
-#include "../Core/Log.h"
-
 #include "../Common/VirtualFS.h"
 #include "../Common/JunkyardSettings.h"
 
