@@ -1,6 +1,6 @@
 #include "Debug.h"
 
-#if COMPILER_CLANG
+#if COMPILER_CLANG && !COMPILER_MSVC
 
 #include <unwind.h> // _Unwind_Backtrace
 #include <dlfcn.h>  // dladdr

@@ -1,8 +1,6 @@
 #include "Shader.h"
 #include "AssetManager.h"
 
-#include "../Core/Log.h"
-
 #include "../Common/VirtualFS.h"
 #include "../Common/JunkyardSettings.h"
 

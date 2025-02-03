@@ -9,13 +9,10 @@
 
 #include "../Core/StringUtil.h"
 #include "../Core/Hash.h"
-#include "../Core/Settings.h"
 #include "../Core/Log.h"
-#include "../Core/TracyHelper.h"
 #include "../Core/MathAll.h"
 #include "../Core/IniParser.h"
 
-#include "../Assets/Image.h"
 #include "../Assets/Shader.h"
 #include "../Assets/AssetManager.h"
 

@@ -3,8 +3,6 @@
 #include <stdlib.h>
 
 #include "System.h"
-#include "Atomic.h"
-#include "Log.h"
 #include "BlitSort.h"
 #include "TracyHelper.h"
 #include "Debug.h"

@@ -39,7 +39,6 @@
 #include "../Core/Atomic.h"
 #include "../Core/Pools.h"
 #include "../Core/Hash.h"
-#include "../Core/Jobs.h"
 
 #include "../Common/Application.h"
 #include "../Common/JunkyardSettings.h"
