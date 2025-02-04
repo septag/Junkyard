@@ -10,6 +10,7 @@
 #if PLATFORM_ANDROID || PLATFORM_LINUX
     #include <sys/prctl.h>          // prctl
     #include <semaphore.h>
+    #include <sys/syscall.h>
 #else
     #include <sched.h>
 #endif
@@ -25,10 +26,8 @@
 #include <arpa/inet.h>          // inet_ntop
 #include <poll.h>               // async file poll
 
-#if !PLATFORM_ANDROID
+#if PLATFORM_APPLE || PLATFORM_LINUX
     #include <uuid/uuid.h>
-#else
-    #include <linux/uuid.h>
 #endif
 
 #include "TracyHelper.h"
@@ -650,7 +649,7 @@ uint64 Timer::GetTicks()
     clock_gettime(CLOCK_MONOTONIC, &ts);
     return ((uint64)ts.tv_sec*1000000000 + (uint64)ts.tv_nsec) - gTimer.start;
 }
-#endif
+#endif // !PLATFORM_APPLE
 
 //     ██████╗ ███████╗███╗   ██╗███████╗██████╗  █████╗ ██╗          ██████╗ ███████╗
 //    ██╔════╝ ██╔════╝████╗  ██║██╔════╝██╔══██╗██╔══██╗██║         ██╔═══██╗██╔════╝
@@ -848,22 +847,17 @@ MemVirtualStats Mem::VirtualGetStats()
 //    ██║   ██║██║   ██║██║██║  ██║
 //    ╚██████╔╝╚██████╔╝██║██████╔╝
 //     ╚═════╝  ╚═════╝ ╚═╝╚═════╝ 
-#if !PLATFORM_ANDROID
+#if PLATFORM_APPLE || PLATFORM_LINUX
 struct UUIDImpl
 {
     uuid_t uuid;
 };
-#else
-struct UUIDImpl
-{
-    guid_t uuid;
-};
-#endif
 static_assert(sizeof(UUIDImpl) <= sizeof(UniqueID), "UUID size mismatch");
+#endif
 
 bool uuidGenerate(UniqueID* uuid)
 {
-#if !PLATFORM_ANDROID
+#if PLATFORM_APPLE || PLATFORM_LINUX
     UUIDImpl* u = reinterpret_cast<UUIDImpl*>(uuid);
     uuid_generate_random(u->uuid);
     return true;
@@ -876,7 +870,7 @@ bool uuidGenerate(UniqueID* uuid)
 
 bool uuidToString(const UniqueID& uuid, char* str, uint32 size)
 {
-#if !PLATFORM_ANDROID
+#if PLATFORM_APPLE || PLATFORM_LINUX
     ASSERT(size >= 36);
     UNUSED(size);
     
@@ -894,7 +888,7 @@ bool uuidToString(const UniqueID& uuid, char* str, uint32 size)
 
 bool uuidFromString(UniqueID* uuid, const char* str)
 {
-#if !PLATFORM_ANDROID
+#if PLATFORM_APPLE || PLATFORM_LINUX
     UUIDImpl* u = reinterpret_cast<UUIDImpl*>(uuid);
 
     if (uuid_parse(str, u->uuid) < 0)

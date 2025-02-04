@@ -3,8 +3,12 @@
 #include "StringUtil.h" // Str::Len
 #include "Allocators.h"
 
-#if CPU_X86
+#if CPU_X86 && defined(__SSE4_2__)
+#if COMPILER_MSVC
 #include <intrin.h>     // _mm_crc32_u64
+#else
+#include <immintrin.h>
+#endif
 #endif
 
 //
@@ -98,7 +102,7 @@ uint32 Hash::CRC32(const void* data, size_t len, uint32 seed)
     return crc;
 }
 
-#if CPU_X86
+#if CPU_X86 && defined(__SSE4_2__)
 // https://github.com/komrad36/CRC/blob/master/CRC/hardware_methods.cpp
 uint32 Hash::CRC32_x86_Aligned(const void* data, size_t len)
 {

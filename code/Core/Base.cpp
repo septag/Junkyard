@@ -17,7 +17,7 @@
 #if PLATFORM_APPLE
     #define strcpy_s(dest, size, src)  strlcpy(dest, src, size)
     #define strcat_s(dest, size, src)  strlcat(dest, src, size)
-#elif PLATFORM_ANDROID
+#elif PLATFORM_ANDROID || PLATFORM_LINUX
     // Ensure bounds-checking interface for string functions (string.h)
     // TODO: test this on platforms other than android. because at least android doesn't seem to have strcpy_s/strcat_s
     static size_t strcpy_s(char *dest, size_t size, const char *src);
@@ -440,7 +440,7 @@ INLINE void aligned_free(void* ptr)
 
 //----------------------------------------------------------------------------------------------------------------------
 // Custom implementation for strcpy_s and strcat_s
-#if PLATFORM_ANDROID
+#if PLATFORM_ANDROID || PLATFORM_LINUX
 // https://github.com/git/git/blob/master/compat/strlcpy.c
 static size_t strcpy_s(char *dest, size_t size, const char *src)
 {
