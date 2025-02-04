@@ -38,35 +38,38 @@ struct DebugStacktraceState
 
 static StaticArray<void*, 16> gDebugStopFuncs;
 
-_Unwind_Reason_Code debugUnwindCallback(_Unwind_Context* context, void* arg)
+namespace Debug
 {
-    DebugStacktraceState* state = reinterpret_cast<DebugStacktraceState*>(arg);
+    static _Unwind_Reason_Code Debug::UnwindCallback(_Unwind_Context* context, void* arg)
+    {
+        DebugStacktraceState* state = reinterpret_cast<DebugStacktraceState*>(arg);
 
-    state->numFrames++;
-    if (state->numFrames <= state->framesToSkip)
+        state->numFrames++;
+        if (state->numFrames <= state->framesToSkip)
         return _URC_NO_REASON;
 
-    void* ip = reinterpret_cast<void*>(_Unwind_GetIP(context));
-    if (ip) {
-        bool endOfStack = false;
-        if (gDebugStopFuncs.Count()) {
-            void* fn = _Unwind_FindEnclosingFunction(ip);
-            endOfStack = gDebugStopFuncs.FindIf([fn](const void* _fn)->bool { return fn == _fn; }) != UINT32_MAX;
-        }
+        void* ip = reinterpret_cast<void*>(_Unwind_GetIP(context));
+        if (ip) {
+            bool endOfStack = false;
+            if (gDebugStopFuncs.Count()) {
+                void* fn = _Unwind_FindEnclosingFunction(ip);
+                endOfStack = gDebugStopFuncs.FindIf([fn](const void* _fn)->bool { return fn == _fn; }) != UINT32_MAX;
+            }
 
-        if (state->current == state->end || endOfStack)
+            if (state->current == state->end || endOfStack)
             return _URC_END_OF_STACK;
-        else
+            else
             *state->current++ = ip;
+        }
+        return _URC_NO_REASON;
     }
-    return _URC_NO_REASON;
 }
 
 NO_INLINE uint16 Debug::CaptureStacktrace(void** stackframes, uint16 maxStackframes, uint16 framesToSkip, uint32* pHash)
 {
     ASSERT(maxStackframes);
     DebugStacktraceState state {stackframes, stackframes + maxStackframes, framesToSkip};
-    _Unwind_Backtrace(debugUnwindCallback, &state);
+    _Unwind_Backtrace(Debug::UnwindCallback, &state);
     uint32 numStacktrace = PtrToInt<uint16>((void*)(state.current - stackframes));
 
     if (pHash)

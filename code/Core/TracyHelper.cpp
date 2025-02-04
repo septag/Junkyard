@@ -3,7 +3,7 @@
 #ifdef TRACY_ENABLE
 
 // DbgHelpInit/Lock/Unlock are declared in Debug.h/implemented in DebugWin.cpp
-#define TRACY_DBGHELP_LOCK debugDbgHelp
+#define TRACY_DBGHELP_LOCK DebugDbgHelp
 PRAGMA_DIAGNOSTIC_PUSH()
 PRAGMA_DIAGNOSTIC_IGNORED_MSVC(4530)   // C4530: C++ exception handler used, but unwind semantics are not enabled. Specify /EHsc
 PRAGMA_DIAGNOSTIC_IGNORED_CLANG_GCC("-Wsometimes-uninitialized")

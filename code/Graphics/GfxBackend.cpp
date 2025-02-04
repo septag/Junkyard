@@ -43,6 +43,7 @@
 #include "../Common/Application.h"
 #include "../Common/JunkyardSettings.h"
 #include "../Common/CommonTypes.h"
+#include "../Common/Profiler.h"
 
 #include "../Engine.h"
 
@@ -1776,6 +1777,8 @@ bool GfxBackend::Initialize()
 
 void GfxBackend::Begin()
 {
+    PROFILE_ZONE_COLOR(PROFILE_COLOR_GFX1);
+
     ASSERT_MSG(Engine::IsMainThread(), "Update can only be called in the main thread");
 
     // GPU -> CPU sync
@@ -1857,6 +1860,8 @@ void GfxCommandBuffer::CopyImageToSwapchain(GfxImageHandle imgHandle)
 
 void GfxBackend::End()
 {
+    PROFILE_ZONE_COLOR(PROFILE_COLOR_GFX1);
+
     // Lock external systems to wait until Begin() call ends
     gBackendVk.externalFrameSyncSignal.Increment();
 
@@ -2196,6 +2201,8 @@ void GfxBackend::EndCommandBuffer(GfxCommandBuffer& cmdBuffer)
 
 void GfxBackendSwapchain::AcquireImage()
 {
+    PROFILE_ZONE_COLOR(PROFILE_COLOR_GFX2);
+
     [[maybe_unused]] VkResult r = vkAcquireNextImageKHR(gBackendVk.device, handle, UINT64_MAX, imageReadySemaphores[backbufferIdx], 
                                                         nullptr, &imageIndex);
     if (r == VK_ERROR_OUT_OF_DATE_KHR)
@@ -4285,6 +4292,7 @@ bool GfxBackendQueueManager::SubmitQueueInternal(GfxBackendQueueSubmitRequest& r
 
 void GfxBackendQueueManager::BeginFrame()
 {
+    PROFILE_ZONE_COLOR(PROFILE_COLOR_GFX2);
     ++mGeneration;
     mFrameIndex = mGeneration % GFXBACKEND_FRAMES_IN_FLIGHT;
 

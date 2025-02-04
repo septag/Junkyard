@@ -80,10 +80,10 @@ static SymGetLineFromAddr64Fn _SymGetLineFromAddr64;
 
 struct DebugStacktraceContext
 {
-    bool initialized;
-    HINSTANCE dbghelp;
-    HANDLE process;
-    CRITICAL_SECTION mutex;
+    bool mInitialized;
+    HINSTANCE mDbgHelp;
+    HANDLE mProcess;
+    CRITICAL_SECTION mMutex;
     
     DebugStacktraceContext();
     ~DebugStacktraceContext();
@@ -91,44 +91,67 @@ struct DebugStacktraceContext
 
 static DebugStacktraceContext gStacktrace;
 
-static bool debugInitializeStacktrace()
+namespace Debug
 {
-    if (gStacktrace.initialized)
+    static bool InitializeStacktrace()
+    {
+        if (gStacktrace.mInitialized)
         return true;
-    gStacktrace.initialized = true;
+        gStacktrace.mInitialized = true;
 
-    EnterCriticalSection(&gStacktrace.mutex);
-    ASSERT(gStacktrace.dbghelp == nullptr);
+        EnterCriticalSection(&gStacktrace.mMutex);
+        ASSERT(gStacktrace.mDbgHelp == nullptr);
 
-    // Load dbghelp.dll: this DLL should be provided and included in the repo
-    gStacktrace.dbghelp = LoadLibraryA("dbghelp.dll");
-    if (!gStacktrace.dbghelp) {
-        Debug::Print("Could not load DbgHelp.dll");
-        gStacktrace.initialized = false;
-        return false;
+        // Load dbghelp.dll: this DLL should be provided and included in the repo
+        gStacktrace.mDbgHelp = LoadLibraryA("dbghelp.dll");
+        if (!gStacktrace.mDbgHelp) {
+            Debug::Print("Could not load DbgHelp.dll");
+            gStacktrace.mInitialized = false;
+            return false;
+        }
+
+        _SymInitialize = (SymInitializeFn)GetProcAddress(gStacktrace.mDbgHelp, "SymInitialize");
+        _SymCleanup = (SymCleanupFn)GetProcAddress(gStacktrace.mDbgHelp, "SymCleanup");
+        _SymGetLineFromAddr64 = (SymGetLineFromAddr64Fn)GetProcAddress(gStacktrace.mDbgHelp, "SymGetLineFromAddr64");
+        _SymGetSymFromAddr64 = (SymGetSymFromAddr64Fn)GetProcAddress(gStacktrace.mDbgHelp, "SymGetSymFromAddr64");
+        _UnDecorateSymbolName = (UnDecorateSymbolNameFn)GetProcAddress(gStacktrace.mDbgHelp, "UnDecorateSymbolName");
+        ASSERT(_SymInitialize && _SymCleanup && _SymGetLineFromAddr64 && _SymGetSymFromAddr64 && _UnDecorateSymbolName);
+
+        gStacktrace.mProcess = GetCurrentProcess();
+
+        if (!_SymInitialize(gStacktrace.mProcess, NULL, TRUE)) {
+            LeaveCriticalSection(&gStacktrace.mMutex);
+            Debug::Print("DbgHelp: _SymInitialize failed");
+            gStacktrace.mInitialized = false;
+            return false;
+        }
+
+        ASSERT(_SymInitialize && _SymCleanup && _SymGetLineFromAddr64 && _SymGetSymFromAddr64 && _UnDecorateSymbolName);
+        LeaveCriticalSection(&gStacktrace.mMutex);
+
+        return true;
     }
+};
 
-    _SymInitialize = (SymInitializeFn)GetProcAddress(gStacktrace.dbghelp, "SymInitialize");
-    _SymCleanup = (SymCleanupFn)GetProcAddress(gStacktrace.dbghelp, "SymCleanup");
-    _SymGetLineFromAddr64 = (SymGetLineFromAddr64Fn)GetProcAddress(gStacktrace.dbghelp, "SymGetLineFromAddr64");
-    _SymGetSymFromAddr64 = (SymGetSymFromAddr64Fn)GetProcAddress(gStacktrace.dbghelp, "SymGetSymFromAddr64");
-    _UnDecorateSymbolName = (UnDecorateSymbolNameFn)GetProcAddress(gStacktrace.dbghelp, "UnDecorateSymbolName");
-    ASSERT(_SymInitialize && _SymCleanup && _SymGetLineFromAddr64 && _SymGetSymFromAddr64 && _UnDecorateSymbolName);
-
-    gStacktrace.process = GetCurrentProcess();
-
-    if (!_SymInitialize(gStacktrace.process, NULL, TRUE)) {
-        LeaveCriticalSection(&gStacktrace.mutex);
-        Debug::Print("DbgHelp: _SymInitialize failed");
-        gStacktrace.initialized = false;
-        return false;
-    }
-
-    ASSERT(_SymInitialize && _SymCleanup && _SymGetLineFromAddr64 && _SymGetSymFromAddr64 && _UnDecorateSymbolName);
-    LeaveCriticalSection(&gStacktrace.mutex);
-
-    return true;
+#ifdef TRACY_ENABLE
+void DebugDbgHelpInit()
+{
+    if (!gStacktrace.mInitialized) {
+        Debug::InitializeStacktrace();
+        ASSERT_MSG(gStacktrace.mInitialized, "Failed to initialize stacktrace capture");
+    }  
 }
+
+void DebugDbgHelpLock()
+{
+    EnterCriticalSection(&gStacktrace.mMutex);
+}
+
+void DebugDbgHelpUnlock()
+{
+    LeaveCriticalSection(&gStacktrace.mMutex);
+}
+#endif // if TRACY_ENABLE
 
 NO_INLINE uint16 Debug::CaptureStacktrace(void** stackframes, uint16 maxStackframes, uint16 framesToSkip, uint32* pHash)
 {
@@ -139,9 +162,9 @@ NO_INLINE uint16 Debug::CaptureStacktrace(void** stackframes, uint16 maxStackfra
 
 void Debug::ResolveStacktrace(uint16 numStacktrace, void* const* stackframes, DebugStacktraceEntry* entries)
 {
-    if (!gStacktrace.initialized) {
-        debugInitializeStacktrace();
-        ASSERT_MSG(gStacktrace.initialized, "Failed to initialize stacktrace capture");
+    if (!gStacktrace.mInitialized) {
+        Debug::InitializeStacktrace();
+        ASSERT_MSG(gStacktrace.mInitialized, "Failed to initialize stacktrace capture");
     }  
 
     IMAGEHLP_LINE64 line;
@@ -151,10 +174,10 @@ void Debug::ResolveStacktrace(uint16 numStacktrace, void* const* stackframes, De
     symbol->SizeOfStruct = sizeof(IMAGEHLP_SYMBOL64);
     symbol->MaxNameLength = PATH_CHARS_MAX;
 
-    EnterCriticalSection(&gStacktrace.mutex);
+    EnterCriticalSection(&gStacktrace.mMutex);
     for (uint16 i = 0; i < numStacktrace; i++) {
         DebugStacktraceEntry entry = {};
-        if (_SymGetSymFromAddr64(gStacktrace.process, (DWORD64)stackframes[i], &entry.offsetFromSymbol, symbol)) {
+        if (_SymGetSymFromAddr64(gStacktrace.mProcess, (DWORD64)stackframes[i], &entry.offsetFromSymbol, symbol)) {
             Str::Copy(entry.name, sizeof(entry.name), symbol->Name);
         } 
         else {
@@ -166,7 +189,7 @@ void Debug::ResolveStacktrace(uint16 numStacktrace, void* const* stackframes, De
             Str::Copy(entry.name, sizeof(entry.name), "[NA]");
         }
 
-        if (_SymGetLineFromAddr64(gStacktrace.process, (DWORD64)stackframes[i], (PDWORD)&(entry.offsetFromLine), &line)) {
+        if (_SymGetLineFromAddr64(gStacktrace.mProcess, (DWORD64)stackframes[i], (PDWORD)&(entry.offsetFromLine), &line)) {
             entry.line = line.LineNumber;
             Str::Copy(entry.filename, PATH_CHARS_MAX, line.FileName);
         } 
@@ -181,38 +204,18 @@ void Debug::ResolveStacktrace(uint16 numStacktrace, void* const* stackframes, De
 
         memcpy(&entries[i], &entry, sizeof(DebugStacktraceEntry));
     }
-    LeaveCriticalSection(&gStacktrace.mutex);
+    LeaveCriticalSection(&gStacktrace.mMutex);
 }
 
 void Debug::StacktraceSaveStopPoint(void*)
 {
 }
 
-#ifdef TRACY_ENABLE
-void debugDbgHelpInit()
-{
-    if (!gStacktrace.initialized) {
-        debugInitializeStacktrace();
-        ASSERT_MSG(gStacktrace.initialized, "Failed to initialize stacktrace capture");
-    }  
-}
-
-void debugDbgHelpLock()
-{
-    EnterCriticalSection(&gStacktrace.mutex);
-}
-
-void debugDbgHelpUnlock()
-{
-    LeaveCriticalSection(&gStacktrace.mutex);
-}
-#endif
-
-DebugStacktraceContext::DebugStacktraceContext() : dbghelp(nullptr), process(nullptr)
+DebugStacktraceContext::DebugStacktraceContext() : mDbgHelp(nullptr), mProcess(nullptr)
 {
     if constexpr (!CONFIG_FINAL_BUILD) {
-        InitializeCriticalSectionAndSpinCount(&mutex, 32);
-        debugInitializeStacktrace();
+        InitializeCriticalSectionAndSpinCount(&mMutex, 32);
+        Debug::InitializeStacktrace();
         // TODO: I had to disable this, because in RenderDoc, this fails. Needs investigation
         // ASSERT(initialized);
     }
@@ -220,19 +223,19 @@ DebugStacktraceContext::DebugStacktraceContext() : dbghelp(nullptr), process(nul
 
 DebugStacktraceContext::~DebugStacktraceContext()
 {
-    if (initialized) {
-        ASSERT(dbghelp);
+    if (mInitialized) {
+        ASSERT(mDbgHelp);
         ASSERT(_SymCleanup);
 
-        EnterCriticalSection(&mutex);
-        _SymCleanup(process);
-        FreeLibrary(dbghelp);
-        dbghelp = nullptr;
-        LeaveCriticalSection(&mutex);
+        EnterCriticalSection(&mMutex);
+        _SymCleanup(mProcess);
+        FreeLibrary(mDbgHelp);
+        mDbgHelp = nullptr;
+        LeaveCriticalSection(&mMutex);
 
         // Note that we do not Delete the critical section for Tracy, because it will be used after deinitialization by Tracy
         #if defined(TRACY_ENABLE)
-        DeleteCriticalSection(&mutex);
+        DeleteCriticalSection(&mMutex);
         #endif
     }
 }
@@ -253,6 +256,44 @@ struct RDBG_Context
     HANDLE cmdPipe = INVALID_HANDLE_VALUE;
 };
 static RDBG_Context gRemedyBG;
+
+namespace RDBG
+{
+    static Blob SendCommand(const Blob& cmdBuffer, MemAllocator* outBufferAlloc)
+    {
+        ASSERT(gRemedyBG.cmdPipe != INVALID_HANDLE_VALUE);
+
+        uint8 tempBuffer[RDBG_BUFFER_SIZE];
+        DWORD bytesRead;
+        Blob outBuffer(outBufferAlloc);
+        outBuffer.SetGrowPolicy(Blob::GrowPolicy::Linear);
+
+        BOOL r = TransactNamedPipe(gRemedyBG.cmdPipe, const_cast<void*>(cmdBuffer.Data()), DWORD(cmdBuffer.Size()), tempBuffer, sizeof(tempBuffer), &bytesRead, nullptr);
+        if (r)
+            outBuffer.Write(tempBuffer, bytesRead);
+
+        while (!r && GetLastError() == ERROR_MORE_DATA) {
+            r = ReadFile(gRemedyBG.cmdPipe, tempBuffer, sizeof(tempBuffer), &bytesRead, nullptr);
+            if (r)
+                outBuffer.Write(tempBuffer, bytesRead);
+        }
+
+        if (!r) {
+            LOG_ERROR("Reading RemedyBG pipe failed");
+            RDBG::Release();
+            return outBuffer;
+        }
+
+        return outBuffer;
+    }
+
+    static inline rdbg_CommandResult GetResult(Blob& resultBuff)
+    {
+        uint16 res;
+        resultBuff.Read<uint16>(&res);
+        return rdbg_CommandResult(res);
+    }
+}
 
 bool RDBG::Initialize(const char* serverName, const char* remedybgPath)
 {
@@ -309,41 +350,6 @@ void RDBG::Release()
         gRemedyBG.remedybgProc.Abort();
 }
 
-static Blob debugRemedyBG_SendCommand(const Blob& cmdBuffer, MemAllocator* outBufferAlloc)
-{
-    ASSERT(gRemedyBG.cmdPipe != INVALID_HANDLE_VALUE);
-
-    uint8 tempBuffer[RDBG_BUFFER_SIZE];
-    DWORD bytesRead;
-    Blob outBuffer(outBufferAlloc);
-    outBuffer.SetGrowPolicy(Blob::GrowPolicy::Linear);
-
-    BOOL r = TransactNamedPipe(gRemedyBG.cmdPipe, const_cast<void*>(cmdBuffer.Data()), DWORD(cmdBuffer.Size()), tempBuffer, sizeof(tempBuffer), &bytesRead, nullptr);
-    if (r)
-        outBuffer.Write(tempBuffer, bytesRead);
-
-    while (!r && GetLastError() == ERROR_MORE_DATA) {
-        r = ReadFile(gRemedyBG.cmdPipe, tempBuffer, sizeof(tempBuffer), &bytesRead, nullptr);
-        if (r)
-            outBuffer.Write(tempBuffer, bytesRead);
-    }
-
-    if (!r) {
-        LOG_ERROR("Reading RemedyBG pipe failed");
-        RDBG::Release();
-        return outBuffer;
-    }
-
-    return outBuffer;
-}
-
-static inline rdbg_CommandResult debugRemedyBG_GetResult(Blob& resultBuff)
-{
-    uint16 res;
-    resultBuff.Read<uint16>(&res);
-    return rdbg_CommandResult(res);
-}
-
 #define DEBUG_REMEDYBG_BEGINCOMMAND(_cmd)   \
     MemTempAllocator tempAlloc; \
     Blob cmdBuffer(&tempAlloc); \
@@ -363,8 +369,8 @@ bool RDBG::AttachToProcess(uint32 id)
     cmdBuffer.Write<uint32>(id);
     cmdBuffer.Write<rdbg_Bool>(true);
     cmdBuffer.Write<uint8>(RDBG_IF_DEBUGGING_TARGET_STOP_DEBUGGING);
-    Blob res = debugRemedyBG_SendCommand(cmdBuffer, &tempAlloc);
-    return debugRemedyBG_GetResult(res) == RDBG_COMMAND_RESULT_OK;
+    Blob res = RDBG::SendCommand(cmdBuffer, &tempAlloc);
+    return RDBG::GetResult(res) == RDBG_COMMAND_RESULT_OK;
 }
 
 bool RDBG::DetachFromProcess()
@@ -373,8 +379,8 @@ bool RDBG::DetachFromProcess()
         return 0;
 
     DEBUG_REMEDYBG_BEGINCOMMAND(RDBG_COMMAND_DETACH_FROM_PROCESS);
-    Blob res = debugRemedyBG_SendCommand(cmdBuffer, &tempAlloc);
-    return debugRemedyBG_GetResult(res) == RDBG_COMMAND_RESULT_OK;
+    Blob res = RDBG::SendCommand(cmdBuffer, &tempAlloc);
+    return RDBG::GetResult(res) == RDBG_COMMAND_RESULT_OK;
 }
 
 bool RDBG::Break()
@@ -383,15 +389,15 @@ bool RDBG::Break()
         return 0;
     
     DEBUG_REMEDYBG_BEGINCOMMAND(RDBG_COMMAND_BREAK_EXECUTION);
-    Blob res = debugRemedyBG_SendCommand(cmdBuffer, &tempAlloc);
-    return debugRemedyBG_GetResult(res) == RDBG_COMMAND_RESULT_OK;
+    Blob res = RDBG::SendCommand(cmdBuffer, &tempAlloc);
+    return RDBG::GetResult(res) == RDBG_COMMAND_RESULT_OK;
 }
 
 bool RDBG::Continue()
 {
     DEBUG_REMEDYBG_BEGINCOMMAND(RDBG_COMMAND_CONTINUE_EXECUTION);
-    Blob res = debugRemedyBG_SendCommand(cmdBuffer, &tempAlloc);
-    return debugRemedyBG_GetResult(res) == RDBG_COMMAND_RESULT_OK;
+    Blob res = RDBG::SendCommand(cmdBuffer, &tempAlloc);
+    return RDBG::GetResult(res) == RDBG_COMMAND_RESULT_OK;
 }
 
 bool RDBG::RunToFileAtLine(const char* filename, uint32 line)
@@ -403,8 +409,8 @@ bool RDBG::RunToFileAtLine(const char* filename, uint32 line)
     DEBUG_REMEDYBG_BEGINCOMMAND(RDBG_COMMAND_RUN_TO_FILE_AT_LINE);
     cmdBuffer.WriteStringBinary16(filename);
     cmdBuffer.Write<uint32>(line);
-    Blob res = debugRemedyBG_SendCommand(cmdBuffer, &tempAlloc);
-    return debugRemedyBG_GetResult(res) == RDBG_COMMAND_RESULT_OK;
+    Blob res = RDBG::SendCommand(cmdBuffer, &tempAlloc);
+    return RDBG::GetResult(res) == RDBG_COMMAND_RESULT_OK;
 }
 
 RDBG_Id RDBG::AddFunctionBreakpoint(const char* funcName, const char* conditionExpr, uint32 overloadId)
@@ -417,10 +423,10 @@ RDBG_Id RDBG::AddFunctionBreakpoint(const char* funcName, const char* conditionE
     cmdBuffer.WriteStringBinary16(funcName);
     cmdBuffer.Write<uint32>(overloadId);
     cmdBuffer.WriteStringBinary16(conditionExpr ? conditionExpr : "");
-    Blob res = debugRemedyBG_SendCommand(cmdBuffer, &tempAlloc);
+    Blob res = RDBG::SendCommand(cmdBuffer, &tempAlloc);
 
     RDBG_Id bid = 0;
-    if (debugRemedyBG_GetResult(res) == RDBG_COMMAND_RESULT_OK)
+    if (RDBG::GetResult(res) == RDBG_COMMAND_RESULT_OK)
         res.Read<RDBG_Id>(&bid);
     return bid;
 }
@@ -435,10 +441,10 @@ RDBG_Id RDBG::AddFileLineBreakpoint(const char* filename, uint32 line, const cha
     cmdBuffer.WriteStringBinary16(filename);
     cmdBuffer.Write<uint32>(line);
     cmdBuffer.WriteStringBinary16(conditionExpr ? conditionExpr : "");
-    Blob res = debugRemedyBG_SendCommand(cmdBuffer, &tempAlloc);
+    Blob res = RDBG::SendCommand(cmdBuffer, &tempAlloc);
 
     RDBG_Id bid = 0;
-    if (debugRemedyBG_GetResult(res) == RDBG_COMMAND_RESULT_OK)
+    if (RDBG::GetResult(res) == RDBG_COMMAND_RESULT_OK)
         res.Read<RDBG_Id>(&bid);
     return bid;
 }
@@ -452,10 +458,10 @@ RDBG_Id RDBG::AddAddressBreakpoint(uintptr_t addr, const char* conditionExpr)
     DEBUG_REMEDYBG_BEGINCOMMAND(RDBG_COMMAND_ADD_BREAKPOINT_AT_ADDRESS);
     cmdBuffer.Write<uint64>(addr);
     cmdBuffer.WriteStringBinary16(conditionExpr ? conditionExpr : "");
-    Blob res = debugRemedyBG_SendCommand(cmdBuffer, &tempAlloc);
+    Blob res = RDBG::SendCommand(cmdBuffer, &tempAlloc);
 
     RDBG_Id bid = 0;
-    if (debugRemedyBG_GetResult(res) == RDBG_COMMAND_RESULT_OK)
+    if (RDBG::GetResult(res) == RDBG_COMMAND_RESULT_OK)
         res.Read<RDBG_Id>(&bid);
     return bid;
 }
@@ -476,10 +482,10 @@ RDBG_Id RDBG::AddProcessorBreakpoint(const void* addr, uint8 numBytes, RDBG_Proc
     cmdBuffer.Write<uint8>(numBytes);
     cmdBuffer.Write<uint8>(uint8(type));
     cmdBuffer.WriteStringBinary16(conditionExpr ? conditionExpr : "");
-    Blob res = debugRemedyBG_SendCommand(cmdBuffer, &tempAlloc);
+    Blob res = RDBG::SendCommand(cmdBuffer, &tempAlloc);
 
     RDBG_Id bid = 0;
-    if (debugRemedyBG_GetResult(res) == RDBG_COMMAND_RESULT_OK)
+    if (RDBG::GetResult(res) == RDBG_COMMAND_RESULT_OK)
         res.Read<RDBG_Id>(&bid);
 
     return bid;
@@ -493,8 +499,8 @@ bool RDBG::EnableBreakpoint(RDBG_Id bId, bool enable)
     DEBUG_REMEDYBG_BEGINCOMMAND(RDBG_COMMAND_ENABLE_BREAKPOINT);
     cmdBuffer.Write<rdbg_Id>(bId);
     cmdBuffer.Write<rdbg_Bool>(enable);
-    Blob res = debugRemedyBG_SendCommand(cmdBuffer, &tempAlloc);
-    return debugRemedyBG_GetResult(res) == RDBG_COMMAND_RESULT_OK;
+    Blob res = RDBG::SendCommand(cmdBuffer, &tempAlloc);
+    return RDBG::GetResult(res) == RDBG_COMMAND_RESULT_OK;
 }
 
 bool RDBG::SetBreakpointCondition(RDBG_Id bId, const char* conditionExpr)
@@ -505,8 +511,8 @@ bool RDBG::SetBreakpointCondition(RDBG_Id bId, const char* conditionExpr)
     DEBUG_REMEDYBG_BEGINCOMMAND(RDBG_COMMAND_ENABLE_BREAKPOINT);
     cmdBuffer.Write<rdbg_Id>(bId);
     cmdBuffer.WriteStringBinary16(conditionExpr ? conditionExpr : "");
-    Blob res = debugRemedyBG_SendCommand(cmdBuffer, &tempAlloc);
-    return debugRemedyBG_GetResult(res) == RDBG_COMMAND_RESULT_OK;
+    Blob res = RDBG::SendCommand(cmdBuffer, &tempAlloc);
+    return RDBG::GetResult(res) == RDBG_COMMAND_RESULT_OK;
 }
 
 bool RDBG::DeleteBreakpoint(RDBG_Id bId)
@@ -516,8 +522,8 @@ bool RDBG::DeleteBreakpoint(RDBG_Id bId)
 
     DEBUG_REMEDYBG_BEGINCOMMAND(RDBG_COMMAND_DELETE_BREAKPOINT);
     cmdBuffer.Write<rdbg_Id>(bId);
-    Blob res = debugRemedyBG_SendCommand(cmdBuffer, &tempAlloc);
-    return debugRemedyBG_GetResult(res) == RDBG_COMMAND_RESULT_OK;
+    Blob res = RDBG::SendCommand(cmdBuffer, &tempAlloc);
+    return RDBG::GetResult(res) == RDBG_COMMAND_RESULT_OK;
 }
 
 bool RDBG::DeleteAllBreakpoints()
@@ -526,8 +532,8 @@ bool RDBG::DeleteAllBreakpoints()
         return 0;
 
     DEBUG_REMEDYBG_BEGINCOMMAND(RDBG_COMMAND_DELETE_ALL_BREAKPOINTS);
-    Blob res = debugRemedyBG_SendCommand(cmdBuffer, &tempAlloc);
-    return debugRemedyBG_GetResult(res) == RDBG_COMMAND_RESULT_OK;
+    Blob res = RDBG::SendCommand(cmdBuffer, &tempAlloc);
+    return RDBG::GetResult(res) == RDBG_COMMAND_RESULT_OK;
 }
 
 RDBG_Id RDBG::AddWatch(const char* expr, const char* comment, uint8 windowNum)
@@ -540,10 +546,10 @@ RDBG_Id RDBG::AddWatch(const char* expr, const char* comment, uint8 windowNum)
     cmdBuffer.Write<uint8>(windowNum);
     cmdBuffer.WriteStringBinary16(expr);
     cmdBuffer.WriteStringBinary16(comment ? comment : "");
-    Blob res = debugRemedyBG_SendCommand(cmdBuffer, &tempAlloc);
+    Blob res = RDBG::SendCommand(cmdBuffer, &tempAlloc);
 
     RDBG_Id wid = 0;
-    if (debugRemedyBG_GetResult(res) == RDBG_COMMAND_RESULT_OK)
+    if (RDBG::GetResult(res) == RDBG_COMMAND_RESULT_OK)
         res.Read<RDBG_Id>(&wid);
     return wid;
 }
@@ -556,10 +562,10 @@ RDBG_Id RDBG::DeleteWatch(RDBG_Id wId)
     ASSERT(wId);
     DEBUG_REMEDYBG_BEGINCOMMAND(RDBG_COMMAND_DELETE_WATCH);
     cmdBuffer.Write<rdbg_Id>(wId);
-    Blob res = debugRemedyBG_SendCommand(cmdBuffer, &tempAlloc);
+    Blob res = RDBG::SendCommand(cmdBuffer, &tempAlloc);
 
     RDBG_Id wid = 0;
-    if (debugRemedyBG_GetResult(res) == RDBG_COMMAND_RESULT_OK)
+    if (RDBG::GetResult(res) == RDBG_COMMAND_RESULT_OK)
         res.Read<RDBG_Id>(&wid);
     return wid;
 }
@@ -570,8 +576,8 @@ bool RDBG::DeleteAllWatches()
         return 0;
 
     DEBUG_REMEDYBG_BEGINCOMMAND(RDBG_COMMAND_DELETE_ALL_WATCHES);
-    Blob res = debugRemedyBG_SendCommand(cmdBuffer, &tempAlloc);
-    return debugRemedyBG_GetResult(res) == RDBG_COMMAND_RESULT_OK;
+    Blob res = RDBG::SendCommand(cmdBuffer, &tempAlloc);
+    return RDBG::GetResult(res) == RDBG_COMMAND_RESULT_OK;
 }
 
 #endif // PLATFORM_WINDOWS
