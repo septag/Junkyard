@@ -35,9 +35,9 @@ namespace Debug
     #ifdef __cplusplus
     extern "C" {
     #endif
-        void debugDbgHelpInit();
-        void debugDbgHelpLock();
-        void debugDbgHelpUnlock();
+        void DebugDbgHelpInit();
+        void DebugDbgHelpLock();
+        void DebugDbgHelpUnlock();
     #ifdef __cplusplus
     }
     #endif

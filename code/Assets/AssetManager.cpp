@@ -1187,6 +1187,8 @@ static void Asset::_LoadGroupTask(uint32, void* userData)
             _CreateGpuObjects(images.Count() - imageIdx, imageIdx < images.Count() ? &images[imageIdx] : nullptr,
                               buffers.Count() - bufferIdx, bufferIdx < buffers.Count() ? &buffers[bufferIdx] : nullptr);
         }
+
+        gAssetMan.curJobSignal = nullptr;
     }
 
     if (saveItemsJob)
