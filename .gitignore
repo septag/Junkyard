@@ -41,7 +41,6 @@ xcuserdata
 /*.ini
 scripts/symbols
 .cache
-.vscode
 test/**
 
 # Dependency downloads
