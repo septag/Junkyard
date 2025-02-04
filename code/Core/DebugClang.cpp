@@ -6,7 +6,7 @@
 #include <dlfcn.h>  // dladdr
 #include <cxxabi.h> // __cxa_demangle
 
-#if PLATFORM_ANDROID
+#if PLATFORM_ANDROID || PLATFORM_LINUX
 #include <malloc.h>
 #elif PLATFORM_APPLE
 #include <stdlib.h>    
@@ -40,7 +40,7 @@ static StaticArray<void*, 16> gDebugStopFuncs;
 
 namespace Debug
 {
-    static _Unwind_Reason_Code Debug::UnwindCallback(_Unwind_Context* context, void* arg)
+    static _Unwind_Reason_Code UnwindCallback(_Unwind_Context* context, void* arg)
     {
         DebugStacktraceState* state = reinterpret_cast<DebugStacktraceState*>(arg);
 

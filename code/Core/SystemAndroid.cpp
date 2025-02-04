@@ -134,18 +134,18 @@ void OS::GetSysInfo(SysInfo* info)
     }
 }
 
-char* pathGetMyPath(char*, size_t)
+char* OS::GetMyPath(char*, size_t)
 {
     ASSERT_MSG(0, "Exe path is not implemented on android");
     return nullptr;
 }
 
-void pathSetCurrentDir(const char*)
+void OS::SetCurrentDir(const char*)
 {
     ASSERT_MSG(0, "SetCurrentDir is not implemented on android");
 }
 
-char* pathGetCurrentDir(char*, size_t)
+char* OS::GetCurrentDir(char*, size_t)
 {
     ASSERT_MSG(0, "GetCurrentDir is not implemented on android");
     return nullptr;
@@ -199,7 +199,7 @@ JNIEnv* OS::AndroidGetJniEnv()
 }
 
 // https://developer.android.com/reference/android/os/Debug
-bool sysIsDebuggerPresent()
+bool OS::IsDebuggerPresent()
 {
     JNIEnv* jniEnv = OS::AndroidGetJniEnv();
     jclass clz = jniEnv->FindClass("android/os/Debug");

@@ -53,7 +53,7 @@ namespace Hash
     // CRC32: Pretty standard hash, mainly used for files
     API uint32 CRC32(const void* data, size_t len, uint32 seed = 0);
 
-    #if CPU_X86
+    #if CPU_X86 && defined(__SSE4_2__)
     API uint32 CRC32_x86_Aligned(const void* data, size_t len);
     #endif
 
