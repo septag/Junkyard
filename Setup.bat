@@ -42,7 +42,7 @@ if %errorlevel% neq 0 goto :End
 
 :InstallTracyClient
 choice /c YN /M "Download tracy profiler v0.10 "
-if errorlevel 2 goto :InstallVulkan
+if errorlevel 2 goto :InstallLivePP
 if errorlevel 1 (
     if not exist .downloads\Tracy-0.10.7z (
         powershell Invoke-WebRequest -Uri "https://github.com/wolfpld/tracy/releases/download/v0.10/Tracy-0.10.7z" -OutFile .downloads\Tracy-0.10.7z
@@ -52,6 +52,22 @@ if errorlevel 1 (
     echo Tracy client saved to '.downloads\Tracy-0.10.7z'
     call .downloads\Tracy-0.10.7z
 )
+
+:InstallLivePP
+choice /c YN /M "Download Live++ package v2.8.1 (Needs license for the broker)"
+if errorlevel 2 goto :InstallVulkan
+if errorlevel 1 (
+    if not exist .downloads\LPP_2_8_1.zip (
+        powershell Invoke-WebRequest -Uri "https://liveplusplus.tech/downloads/LPP_2_8_1.zip" -OutFile .downloads\LPP_2_8_1.zip
+        if %errorlevel% neq 1 goto :End
+    )
+    powershell Expand-Archive -Force -Path .downloads\LPP_2_8_1.zip -DestinationPath .downloads
+    echo Live++ package saved to '.downloads\LivePP'
+)
+
+if not exist code\External\LivePP mkdir code\External\LivePP
+xcopy .downloads\LivePP\Agent code\External\LivePP\Agent /E /I /Y
+xcopy .downloads\LivePP\API code\External\LivePP\API /E /I /Y
 
 :InstallVulkan
 choice /c YN /M "Install vulkan 1.3.296 "

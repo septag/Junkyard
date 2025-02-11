@@ -6,6 +6,7 @@
 #include "RemoteServices.h"
 #include "JunkyardSettings.h"
 
+#include "../Config.h"
 #include "../Engine.h"
 
 #include "../Core/StringUtil.h"
@@ -18,6 +19,11 @@
 #include "../Core/Allocators.h"
 
 #include "../Core/External/mgustavsson/ini.h"
+
+#if CONFIG_ENABLE_LIVEPP
+#include "../External/LivePP/API/x64/LPP_API_x64_CPP.h"
+#include "../External/LivePP/API/x64/LPP_API_Options.h"
+#endif
 
 // from <windowsx.h>
 #ifndef GET_X_LPARAM
@@ -34,19 +40,19 @@
 #endif
 
 #ifndef DPI_ENUMS_DECLARED
-    typedef enum PROCESS_DPI_AWARENESS
-    {
-        PROCESS_DPI_UNAWARE = 0,
-        PROCESS_SYSTEM_DPI_AWARE = 1,
-        PROCESS_PER_MONITOR_DPI_AWARE = 2
-    } PROCESS_DPI_AWARENESS;
+typedef enum PROCESS_DPI_AWARENESS
+{
+    PROCESS_DPI_UNAWARE = 0,
+    PROCESS_SYSTEM_DPI_AWARE = 1,
+    PROCESS_PER_MONITOR_DPI_AWARE = 2
+} PROCESS_DPI_AWARENESS;
             
-    typedef enum MONITOR_DPI_TYPE {
-        MDT_EFFECTIVE_DPI = 0,
-        MDT_ANGULAR_DPI = 1,
-        MDT_RAW_DPI = 2,
-        MDT_DEFAULT = MDT_EFFECTIVE_DPI
-    } MONITOR_DPI_TYPE;
+typedef enum MONITOR_DPI_TYPE {
+    MDT_EFFECTIVE_DPI = 0,
+    MDT_ANGULAR_DPI = 1,
+    MDT_RAW_DPI = 2,
+    MDT_DEFAULT = MDT_EFFECTIVE_DPI
+} MONITOR_DPI_TYPE;
 #endif // DPI_ENUMS_DECLARED
 
 struct AppEventCallbackPair
@@ -771,6 +777,15 @@ namespace App
     {
         TimerStopWatch stopwatch;
 
+        #if CONFIG_ENABLE_LIVEPP
+        lpp::LppSynchronizedAgent lppAgent = lpp::LppCreateSynchronizedAgentANSI(nullptr, "code/External/LivePP");
+        lppAgent.EnableModuleANSI(lpp::LppGetCurrentModulePathANSI(), lpp::LPP_MODULES_OPTION_NONE, nullptr, nullptr);
+        if (!lpp::LppIsValidSynchronizedAgent(&lppAgent)) {
+            ASSERT_MSG(0, "LivePP initialization failed. Make sure cwd is the root directory of the project");
+            return false;
+        }
+        #endif // CONFIG_ENABLE_LIVEPP
+
         ASSERT_MSG(desc.callbacks, "App callbacks is not set");
         if (!desc.callbacks)
             return false;
@@ -912,6 +927,13 @@ namespace App
                 _HandleConsoleInputEvents(gApp.hStdin);
             }
 
+            #if CONFIG_ENABLE_LIVEPP
+            if (lppAgent.WantsReload(lpp::LPP_RELOAD_OPTION_SYNCHRONIZE_WITH_RELOAD))
+                lppAgent.Reload(lpp::LPP_RELOAD_BEHAVIOUR_WAIT_UNTIL_CHANGES_ARE_APPLIED);
+            if (lppAgent.WantsRestart())
+                lppAgent.Restart(lpp::LPP_RESTART_BEHAVIOUR_INSTANT_TERMINATION, 0u, nullptr);
+            #endif // CONFIG_ENABLE_LIVEPP
+
             tmNow = Timer::GetTicks();
             float dt = float(Timer::ToSec(tmNow - tmPrev));
             if (!gApp.overrideUpdateCallback.first)
@@ -945,6 +967,11 @@ namespace App
         }
 
         gApp.eventCallbacks.Free();
+
+        #if CONFIG_ENABLE_LIVEPP
+        lppAgent.DisableModuleANSI(lpp::LppGetCurrentModulePathANSI(), lpp::LPP_MODULES_OPTION_NONE, nullptr, nullptr);
+        lpp::LppDestroySynchronizedAgent(&lppAgent);
+        #endif 
 
         return true;
     }

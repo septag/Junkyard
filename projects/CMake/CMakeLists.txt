@@ -54,9 +54,15 @@ if (WIN32)
         ${SOURCE_Root} ${HEADERS_Root})
 
     target_include_directories(Junkyard SYSTEM PUBLIC ../../code/External/vulkan/include)
-    target_link_options(Junkyard PUBLIC /DEBUG:FULL /INCREMENTAL:NO)
     target_compile_definitions(Junkyard PUBLIC -D_DEBUG -D_ITERATOR_DEBUG_LEVEL=0 -D_CRT_SECURE_NO_WARNINGS -DCONFIG_TOOLMODE=1)
     target_compile_options(Junkyard PUBLIC /Zi /GR-)
+    target_link_options(Junkyard PUBLIC /DEBUG:FULL /INCREMENTAL:NO)
+
+    # LivePP
+    # CL: Enable Minimal Rebuild (/Gm-), Function level linking (/Gy), Optimize Global Data (/Gw)
+    # Link: NoReferences (/OPT:NOREF), Disable COMDAT Folding (/OPT:NOICF), Full Debug info (Already added), CreateHotpackableImage (/FUNCTIONPADMIN)
+    target_compile_options(Junkyard PUBLIC /Gm- /Gy /Gw)
+    target_link_options(Junkyard PUBLIC /OPT:NOREF /OPT:NOICF /FUNCTIONPADMIN) 
 
     target_link_directories(Junkyard INTERFACE 
         ../../code/External/slang/lib 

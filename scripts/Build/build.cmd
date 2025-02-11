@@ -16,6 +16,8 @@ if not exist %SOURCE_FILE% (
 
 set CONFIG=%2
 set CONFIG_KNOWN=0
+set LIVEPP_CFLAGS=/Gm- /Gy /Gw
+set LIVEPP_LINKFLAGS=/FUNCTIONPADMIN /OPT:NOREF /OPT:NOICF
 
 if defined VULKAN_SDK (
     if not exist %VULKAN_SDK%\include (
@@ -35,9 +37,9 @@ if "%CONFIG%"=="" (
 )
 
 if "%CONFIG%"=="debug" (
-    set COMPILE_FLAGS=%COMPILE_FLAGS% /Od /MDd /Zi /RTC1
+    set COMPILE_FLAGS=%COMPILE_FLAGS% /Od /MDd /Zi /RTC1 %LIVEPP_CFLAGS%
     set DEFINES=%DEFINES% -D_DEBUG -D_ITERATOR_DEBUG_LEVEL=0
-    set LINK_FLAGS=%LINK_FLAGS% /DEBUG:FULL
+    set LINK_FLAGS=%LINK_FLAGS% /DEBUG:FULL %LIVEPP_LINKFLAGS%
     set CONFIG_KNOWN=1
 )
 
@@ -75,7 +77,6 @@ if %CONFIG_KNOWN% neq 1 (
     set errorlevel=1
     goto Quit
 )
-
 
 set DEFINES=%DEFINES% -D_MBCS -D_CRT_SECURE_NO_WARNINGS -DBUILD_UNITY 
 set COMPILE_FLAGS=%COMPILE_FLAGS% /std:c++20 /GR- /EHs- /I%ROOT_DIR%\code\External\vulkan\include

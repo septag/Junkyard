@@ -313,6 +313,13 @@
     <ClInclude Include="..\..\code\External\imgui\imstb_textedit.h" />
     <ClInclude Include="..\..\code\External\imgui\imstb_truetype.h" />
     <ClInclude Include="..\..\code\External\ispc_texcomp\include\ispc_texcomp.h" />
+    <ClInclude Include="..\..\code\External\LivePP\API\x64\LPP_API.h" />
+    <ClInclude Include="..\..\code\External\LivePP\API\x64\LPP_API_Helpers.h" />
+    <ClInclude Include="..\..\code\External\LivePP\API\x64\LPP_API_Hooks.h" />
+    <ClInclude Include="..\..\code\External\LivePP\API\x64\LPP_API_Options.h" />
+    <ClInclude Include="..\..\code\External\LivePP\API\x64\LPP_API_Preferences.h" />
+    <ClInclude Include="..\..\code\External\LivePP\API\x64\LPP_API_Version_x64_CPP.h" />
+    <ClInclude Include="..\..\code\External\LivePP\API\x64\LPP_API_x64_CPP.h" />
     <ClInclude Include="..\..\code\External\meshoptimizer\include\meshoptimizer.h" />
     <ClInclude Include="..\..\code\External\OffsetAllocator\offsetAllocator.h" />
     <ClInclude Include="..\..\code\External\slang\slang.h" />

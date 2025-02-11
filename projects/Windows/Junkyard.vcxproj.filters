@@ -91,6 +91,9 @@
     <Filter Include="External\dds-ktx">
       <UniqueIdentifier>{7c749050-3416-4c5c-909b-78f12d81870e}</UniqueIdentifier>
     </Filter>
+    <Filter Include="External\LivePP">
+      <UniqueIdentifier>{c2977352-c411-4a8c-a32f-04c05cc93ca7}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\..\code\External\imgui\imgui.cpp">
@@ -451,6 +454,27 @@
     <ClInclude Include="..\..\code\Config.h" />
     <ClInclude Include="..\..\code\External\dds-ktx\dds-ktx.h">
       <Filter>External\dds-ktx</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\code\External\LivePP\API\x64\LPP_API.h">
+      <Filter>External\LivePP</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\code\External\LivePP\API\x64\LPP_API_Helpers.h">
+      <Filter>External\LivePP</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\code\External\LivePP\API\x64\LPP_API_Hooks.h">
+      <Filter>External\LivePP</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\code\External\LivePP\API\x64\LPP_API_Options.h">
+      <Filter>External\LivePP</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\code\External\LivePP\API\x64\LPP_API_Preferences.h">
+      <Filter>External\LivePP</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\code\External\LivePP\API\x64\LPP_API_Version_x64_CPP.h">
+      <Filter>External\LivePP</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\code\External\LivePP\API\x64\LPP_API_x64_CPP.h">
+      <Filter>External\LivePP</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
