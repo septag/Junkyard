@@ -25,7 +25,7 @@ struct DebugDrawShaderTransform
 struct DebugDrawShaderVertex
 {
     Float3 pos;
-    Color color;
+    Color4u color;
 };
 
 struct DebugDrawContext
@@ -206,8 +206,8 @@ void DebugDraw::DrawGroundGrid(const Camera& cam, const DebugDrawGridProperties&
 {
     ASSERT(gDebugDraw.isDrawing);
 
-    Color color = props.lineColor;
-    Color boldColor = props.boldLineColor;
+    Color4u color = props.lineColor;
+    Color4u boldColor = props.boldLineColor;
 
     float spacing = M::Ceil(Max(props.spacing, 0.0001f));
     float boldSpacing = props.boldSpacing;
@@ -264,7 +264,7 @@ void DebugDraw::DrawGroundGrid(const Camera& cam, const DebugDrawGridProperties&
 
         vertices[i].color = vertices[ni].color = (yoffset != 0.0f)
                 ? (!M::IsEqual(M::Mod(yoffset, boldSpacing), 0.0f, 0.0001f) ? color : boldColor)
-                : COLOR_RED;
+                : COLOR4U_RED;
     }
 
     for (float xoffset = snapbox.xmin; xoffset <= snapbox.xmax; xoffset += spacing, i += 2) {
@@ -280,7 +280,7 @@ void DebugDraw::DrawGroundGrid(const Camera& cam, const DebugDrawGridProperties&
 
         vertices[i].color = vertices[ni].color = (xoffset != 0.0f)
                 ? (!M::IsEqual(M::Mod(xoffset, boldSpacing), 0.0f, 0.0001f) ? color : boldColor)
-                : COLOR_GREEN;
+                : COLOR4U_GREEN;
     }
 
     DebugDrawItem item {

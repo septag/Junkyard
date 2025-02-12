@@ -599,7 +599,7 @@ namespace OS
     API bool DeleteFilePath(const char* path);
 }
 
-#if PLATFORM_DESKTOP
+#if PLATFORM_PC
 enum class OSProcessFlags : uint32
 {
     None = 0,
@@ -636,7 +636,7 @@ private:
 #endif
 };
 
-#endif // PLATFORM_DESKTOP
+#endif // PLATFORM_PC
 
 // Platform specific 
 #if PLATFORM_WINDOWS
@@ -697,8 +697,8 @@ namespace OS
                                                          const char* operation = nullptr,
                                                          void** pInstance = nullptr);
     API char* Win32GetFolder(OSWin32Folder folder, char* dst, size_t dstSize);
+    API void Win32EnableProgramConsoleCoding();
 }
-
 
 #elif PLATFORM_ANDROID
 struct _JNIEnv;

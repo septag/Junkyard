@@ -54,7 +54,7 @@ namespace ImGui
     template <typename F> void AlignRight(const F& f) { Align(1, f); }
     template <typename F> void AlignCenter(const F& f) { Align(0.5f, f); }
 
-    inline ImVec4 ColorToImVec4(const Color& c) { return ImVec4(c.r, c.g, c.b, c.a); }
+    inline ImVec4 ColorToImVec4(const Color4u& c) { return ImVec4(c.r, c.g, c.b, c.a); }
 
     API void SeparatorVertical(float thickness = 1.0f);
     API bool ToggleButton(const char* label, bool* toggled, const ImVec2& size_arg = ImVec2(0, 0));

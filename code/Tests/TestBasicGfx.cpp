@@ -336,7 +336,6 @@ struct ModelScene
             }
         }
     }
-
 };
 
 struct AppImpl final : AppCallbacks
@@ -429,7 +428,7 @@ struct AppImpl final : AppCallbacks
             .colorAttachments = {{ 
                 .clear = true,
                 .clearValue = {
-                    .color = Color::ToFloat4(COLOR_BLACK)
+                    .color = Color4u::ToFloat4(COLOR4U_BLACK)
                 }
             }},
             .depthAttachment = {
@@ -453,8 +452,8 @@ struct AppImpl final : AppCallbacks
         DebugDraw::BeginDraw(cmd, App::GetFramebufferWidth(), App::GetFramebufferHeight());
         DebugDrawGridProperties gridProps {
             .distance = 200,
-            .lineColor = Color(0x565656), 
-            .boldLineColor = Color(0xd6d6d6)            
+            .lineColor = Color4u(0x565656), 
+            .boldLineColor = Color4u(0xd6d6d6)            
         };
 
         DebugDraw::DrawGroundGrid(*mCam, gridProps);

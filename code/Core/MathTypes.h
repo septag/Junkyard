@@ -114,7 +114,7 @@ struct Float4
     static Float4 Sub(Float4 _a, Float4 _b);
 };
 
-struct Color 
+struct Color4u 
 {
     union {
         struct 
@@ -128,14 +128,14 @@ struct Color
         unsigned int n;
     };
 
-    Color() = default;
+    Color4u() = default;
 
-    explicit constexpr Color(uint8 _r, uint8 _g, uint8 _b, uint8 _a = 255)
+    explicit constexpr Color4u(uint8 _r, uint8 _g, uint8 _b, uint8 _a = 255)
         : r(_r), g(_g), b(_b), a(_a)
     {
     }
 
-    explicit constexpr Color(float _r, float _g, float _b, float _a) :
+    explicit constexpr Color4u(float _r, float _g, float _b, float _a) :
         r((uint8)(_r * 255.0f)),
         g((uint8)(_g * 255.0f)),
         b((uint8)(_b * 255.0f)),
@@ -143,10 +143,10 @@ struct Color
     {
     }
 
-    explicit constexpr Color(const float* f) : Color(f[0], f[1], f[2], f[3]) {}
-    constexpr Color(uint32 _n) : n(_n) {}
+    explicit constexpr Color4u(const float* f) : Color4u(f[0], f[1], f[2], f[3]) {}
+    constexpr Color4u(uint32 _n) : n(_n) {}
 
-    Color& operator=(uint32 _n) 
+    Color4u& operator=(uint32 _n) 
     {
         n = _n;
         return *this;
@@ -154,8 +154,8 @@ struct Color
 
     static float ValueToLinear(float _a);
     static float ValueToGamma(float _a);
-    static Float4 ToFloat4(Color c);
-    static Color  Blend(Color _a, Color _b, float _t);
+    static Float4 ToFloat4(Color4u c);
+    static Color4u  Blend(Color4u _a, Color4u _b, float _t);
     static Float4 ToFloat4SRGB(Float4 cf);
     static Float4 ToFloat4Linear(Float4 c);
     static Float3 RGBtoHSV(Float3 rgb);
@@ -656,13 +656,13 @@ inline constexpr Quat QUAT_INDENT {0, 0, 0, 1.0f};
 
 inline constexpr Transform3D TRANSFORM3D_IDENT { FLOAT3_ZERO, MAT3_IDENT };
 
-inline constexpr Color COLOR_WHITE  { uint8(255), uint8(255), uint8(255), uint8(255) };
-inline constexpr Color COLOR_BLACK  { uint8(0), uint8(0), uint8(0), uint8(255) };
-inline constexpr Color COLOR_RED    { uint8(255), uint8(0), uint8(0), uint8(255) };
-inline constexpr Color COLOR_YELLOW { uint8(255), uint8(255), uint8(0), uint8(255) };
-inline constexpr Color COLOR_GREEN  { uint8(0), uint8(255), uint8(0), uint8(255) };
-inline constexpr Color COLOR_BLUE   { uint8(0), uint8(0), uint8(255), uint8(255) };
-inline constexpr Color COLOR_PURPLE { uint8(255), uint8(0), uint8(255), uint8(255) };
+inline constexpr Color4u COLOR4U_WHITE  { uint8(255), uint8(255), uint8(255), uint8(255) };
+inline constexpr Color4u COLOR4U_BLACK  { uint8(0), uint8(0), uint8(0), uint8(255) };
+inline constexpr Color4u COLOR4U_RED    { uint8(255), uint8(0), uint8(0), uint8(255) };
+inline constexpr Color4u COLOR4U_YELLOW { uint8(255), uint8(255), uint8(0), uint8(255) };
+inline constexpr Color4u COLOR4U_GREEN  { uint8(0), uint8(255), uint8(0), uint8(255) };
+inline constexpr Color4u COLOR4U_BLUE   { uint8(0), uint8(0), uint8(255), uint8(255) };
+inline constexpr Color4u COLOR4U_PURPLE { uint8(255), uint8(0), uint8(255), uint8(255) };
 
 inline constexpr Rect RECT_EMPTY { M_FLOAT32_MAX, M_FLOAT32_MAX, -M_FLOAT32_MAX, -M_FLOAT32_MAX };
 inline constexpr RectInt RECTINT_EMPTY { INT32_MAX, INT32_MAX, INT32_MIN, INT32_MIN };

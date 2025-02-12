@@ -506,7 +506,7 @@ struct AppImpl : AppCallbacks
         cmd.EndRenderPass();
 
         DebugDraw::BeginDraw(cmd, width, height);
-        DebugDraw::DrawGroundGrid(*mCam, { .distance = 50.0f, .lineColor = Color(0x565656), .boldLineColor = Color(0xd6d6d6) });
+        DebugDraw::DrawGroundGrid(*mCam, { .distance = 50.0f, .lineColor = Color4u(0x565656), .boldLineColor = Color4u(0xd6d6d6) });
         DebugDraw::EndDraw(cmd, *mCam, mRenderTargetDepth);
 
         if (ImGui::IsEnabled()) { // imgui test

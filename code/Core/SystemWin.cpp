@@ -924,7 +924,7 @@ void OS::GetSysInfo(SysInfo* info)
     extData.Free();
 }
 
-#if PLATFORM_DESKTOP
+#if PLATFORM_PC
 OSProcess::OSProcess() :
     mProcess(INVALID_HANDLE_VALUE),
     mStdOutPipeRead(INVALID_HANDLE_VALUE),
@@ -1090,7 +1090,7 @@ uint32 OSProcess::ReadStdErr(void* data, uint32 size) const
     BOOL r = ReadFile((HANDLE)mStdErrPipeRead, data, size, &bytesRead, nullptr);
     return (r && bytesRead) ? bytesRead : 0;
 }
-#endif  // PLATFORM_DESKTOP
+#endif  // PLATFORM_PC
 
 bool OS::Win32IsProcessRunning(const char* execName)
 {
@@ -1332,6 +1332,16 @@ char* OS::Win32GetFolder(OSWin32Folder folder, char* dst, size_t dstSize)
         ASSERT_MSG(0, "SHGetKnownFolderPath failed");
         return nullptr;
     }
+}
+
+void OS::Win32EnableProgramConsoleCoding()
+{
+    HANDLE hStdOut = GetStdHandle(STD_OUTPUT_HANDLE);
+    DWORD consoleMode = 0;
+    GetConsoleMode(hStdOut, &consoleMode);
+    consoleMode |= ENABLE_VIRTUAL_TERMINAL_PROCESSING | ENABLE_PROCESSED_OUTPUT;
+    [[maybe_unused]] BOOL r = SetConsoleMode(hStdOut, consoleMode);
+    ASSERT(r);
 }
 
 PathInfo OS::GetPathInfo(const char* path)

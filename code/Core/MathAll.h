@@ -611,7 +611,7 @@ FORCE_INLINE Float4 Float4::Sub(Float4 _a, Float4 _b)
 //    ██║     ██║   ██║██║     ██║   ██║██╔══██╗
 //    ╚██████╗╚██████╔╝███████╗╚██████╔╝██║  ██║
 //     ╚═════╝ ╚═════╝ ╚══════╝ ╚═════╝ ╚═╝  ╚═╝
-FORCE_INLINE float Color::ValueToLinear(float _a)
+FORCE_INLINE float Color4u::ValueToLinear(float _a)
 {
     const float lo = _a / 12.92f;
     const float hi = M::Pow((_a + 0.055f) / 1.055f, 2.4f);
@@ -619,7 +619,7 @@ FORCE_INLINE float Color::ValueToLinear(float _a)
     return result;
 }
 
-FORCE_INLINE float Color::ValueToGamma(float _a)
+FORCE_INLINE float Color4u::ValueToGamma(float _a)
 {
     const float lo = _a * 12.92f;
     const float hi = M::Pow(M::Abs(_a), 1.0f / 2.4f) * 1.055f - 0.055f;
@@ -627,7 +627,7 @@ FORCE_INLINE float Color::ValueToGamma(float _a)
     return result;
 }
 
-FORCE_INLINE Float4 Color::ToFloat4(Color c)
+FORCE_INLINE Float4 Color4u::ToFloat4(Color4u c)
 {
     float rcp = 1.0f / 255.0f;
     return Float4((float)c.r * rcp, (float)c.g * rcp, (float)c.b * rcp, (float)c.a * rcp);
@@ -1306,14 +1306,14 @@ namespace M
     FORCE_INLINE Float4 Float4Sub(Float4 _a, Float4 _b) { return Float4::Sub(_a, _b); }
 
     // Color
-    FORCE_INLINE float ColorValueToLinear(float _a) { return Color::ValueToLinear(_a); }
-    FORCE_INLINE float ColorValueToGamma(float _a) { return Color::ValueToGamma(_a); }
-    FORCE_INLINE Float4 ColorToFloat4(Color c) { return Color::ToFloat4(c); }
-    FORCE_INLINE Color  ColorBlend(Color _a, Color _b, float _t) { return Color::Blend(_a, _b, _t); }
-    FORCE_INLINE Float4 ColorToFloat4SRGB(Float4 cf) { return Color::ToFloat4SRGB(cf); }
-    FORCE_INLINE Float4 ColorToFloat4Linear(Float4 c) { return Color::ToFloat4Linear(c); }
-    FORCE_INLINE Float3 ColorRGBtoHSV(Float3 rgb) { return Color::RGBtoHSV(rgb); }
-    FORCE_INLINE Float3 ColorHSVtoRGB(Float3 hsv) { return Color::HSVtoRGB(hsv); }
+    FORCE_INLINE float ColorValueToLinear(float _a) { return Color4u::ValueToLinear(_a); }
+    FORCE_INLINE float ColorValueToGamma(float _a) { return Color4u::ValueToGamma(_a); }
+    FORCE_INLINE Float4 ColorToFloat4(Color4u c) { return Color4u::ToFloat4(c); }
+    FORCE_INLINE Color4u  ColorBlend(Color4u _a, Color4u _b, float _t) { return Color4u::Blend(_a, _b, _t); }
+    FORCE_INLINE Float4 ColorToFloat4SRGB(Float4 cf) { return Color4u::ToFloat4SRGB(cf); }
+    FORCE_INLINE Float4 ColorToFloat4Linear(Float4 c) { return Color4u::ToFloat4Linear(c); }
+    FORCE_INLINE Float3 ColorRGBtoHSV(Float3 rgb) { return Color4u::RGBtoHSV(rgb); }
+    FORCE_INLINE Float3 ColorHSVtoRGB(Float3 hsv) { return Color4u::HSVtoRGB(hsv); }
 
     // Int2
     FORCE_INLINE Int2 Int2Add(Int2 _a, Int2 _b) { return Int2::Add(_a, _b); }

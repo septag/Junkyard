@@ -647,7 +647,7 @@ Float3 Float3::CalcLinearFit3D(const Float3* _points, int _num)
 //    ██║     ██║   ██║██║     ██║   ██║██╔══██╗
 //    ╚██████╗╚██████╔╝███████╗╚██████╔╝██║  ██║
 //     ╚═════╝ ╚═════╝ ╚══════╝ ╚═════╝ ╚═╝  ╚═╝
-Float3 Color::RGBtoHSV(Float3 rgb)
+Float3 Color4u::RGBtoHSV(Float3 rgb)
 {
     float K = 0.f;
     float r = rgb.f[0];
@@ -672,7 +672,7 @@ Float3 Color::RGBtoHSV(Float3 rgb)
                   r);
 }
 
-Float3 Color::HSVtoRGB(Float3 hsv)
+Float3 Color4u::HSVtoRGB(Float3 hsv)
 {
     const float hh = hsv.f[0];
     const float ss = hsv.f[1];
@@ -687,12 +687,12 @@ Float3 Color::HSVtoRGB(Float3 hsv)
                   vv * M::Lerp(1.0f, M::Saturate(pz - 1.0f), ss));
 }
 
-Color Color::Blend(Color _a, Color _b, float _t)
+Color4u Color4u::Blend(Color4u _a, Color4u _b, float _t)
 {
-    Float4 c1 = Color::ToFloat4(_a);
-    Float4 c2 = Color::ToFloat4(_b);
+    Float4 c1 = Color4u::ToFloat4(_a);
+    Float4 c2 = Color4u::ToFloat4(_b);
     
-    return Color(
+    return Color4u(
         M::Lerp(c1.x, c2.x, _t),
         M::Lerp(c1.y, c2.y, _t),
         M::Lerp(c1.z, c2.z, _t),
@@ -701,7 +701,7 @@ Color Color::Blend(Color _a, Color _b, float _t)
 }
 
 // https://en.wikipedia.org/wiki/SRGB#Specification_of_the_transformation
-Float4 Color::ToFloat4Linear(Float4 c)
+Float4 Color4u::ToFloat4Linear(Float4 c)
 {
     for (int i = 0; i < 3; i++) {
         c.f[i] = c.f[i] < 0.04045f ? c.f[i]/12.92f : M::Pow((c.f[i] + 0.055f)/1.055f, 2.4f);
@@ -709,7 +709,7 @@ Float4 Color::ToFloat4Linear(Float4 c)
     return c;
 }
 
-Float4 Color::ToFloat4SRGB(Float4 cf) 
+Float4 Color4u::ToFloat4SRGB(Float4 cf) 
 {
     for (int i = 0; i < 3; i++) {
         cf.f[i] = cf.f[i] <= 0.0031308 ? 

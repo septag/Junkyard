@@ -32,7 +32,7 @@ struct GfxCommandBuffer
     void BatchMapBuffer(uint32 numParams, const GfxBufferHandle* handles, GfxMapResult* mapResults);
     void BatchFlushBuffer(uint32 numBuffers, const GfxBufferHandle* bufferHandles);
 
-    void ClearImageColor(GfxImageHandle imgHandle, Color color);
+    void ClearImageColor(GfxImageHandle imgHandle, Color4u color);
     void ClearImageColor(GfxImageHandle imgHandle, Float4 color);
     void ClearSwapchainColor(Float4 color);
 

@@ -77,7 +77,7 @@ struct DebugHudContext
     uint32 monitorRefreshRate;
 
     String<256> statusText;
-    Color statusColor;
+    Color4u statusColor;
     float statusShowTime;
 };
 
@@ -93,12 +93,12 @@ namespace DebugHud
         gDebugHud.statusShowTime = 0;
 
         switch (entry.type) {
-        case LogLevel::Info:	gDebugHud.statusColor = COLOR_WHITE; break;
-        case LogLevel::Debug:	gDebugHud.statusColor = Color(0, 200, 200); break;
-        case LogLevel::Verbose:	gDebugHud.statusColor = Color(128, 128, 128); break;
-        case LogLevel::Warning:	gDebugHud.statusColor = COLOR_YELLOW; break;
-        case LogLevel::Error:	gDebugHud.statusColor = COLOR_RED; break;
-        default:			    gDebugHud.statusColor = COLOR_WHITE; break;
+        case LogLevel::Info:	gDebugHud.statusColor = COLOR4U_WHITE; break;
+        case LogLevel::Debug:	gDebugHud.statusColor = Color4u(0, 200, 200); break;
+        case LogLevel::Verbose:	gDebugHud.statusColor = Color4u(128, 128, 128); break;
+        case LogLevel::Warning:	gDebugHud.statusColor = COLOR4U_YELLOW; break;
+        case LogLevel::Error:	gDebugHud.statusColor = COLOR4U_RED; break;
+        default:			    gDebugHud.statusColor = COLOR4U_WHITE; break;
         }
     }
 
@@ -171,11 +171,11 @@ namespace DebugHud
         ImVec4 textColor = ImGui::GetStyleColorVec4(ImGuiCol_Text);
          if (isFrameTime) {
             if (graph.avgValue >= 33.0f)        
-                textColor = ImGui::ColorToImVec4(COLOR_RED);
+                textColor = ImGui::ColorToImVec4(COLOR4U_RED);
         }
         else if (isFps) {
             if (graph.avgValue < 30)            
-                textColor = ImGui::ColorToImVec4(COLOR_RED);
+                textColor = ImGui::ColorToImVec4(COLOR4U_RED);
         }
         ImGui::PushStyleColor(ImGuiCol_Text, textColor);
 

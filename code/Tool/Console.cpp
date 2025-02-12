@@ -63,7 +63,7 @@ namespace Console
 
     static bool _RunExternalCommand(int argc, const char* argv[])
     {
-        #if PLATFORM_DESKTOP
+        #if PLATFORM_PC
             ASSERT(argc > 1);
     
             const char* prefixCmd = nullptr;

@@ -1791,9 +1791,9 @@ void GfxBackend::Begin()
     gBackendVk.swapchain.AcquireImage();
 }
 
-void GfxCommandBuffer::ClearImageColor(GfxImageHandle imgHandle, Color color)
+void GfxCommandBuffer::ClearImageColor(GfxImageHandle imgHandle, Color4u color)
 {
-    ClearImageColor(imgHandle, Color::ToFloat4(color));
+    ClearImageColor(imgHandle, Color4u::ToFloat4(color));
 }
 
 void GfxCommandBuffer::ClearImageColor(GfxImageHandle imgHandle, Float4 color)

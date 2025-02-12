@@ -810,13 +810,7 @@ namespace App
         gApp.hStdin = GetStdHandle(STD_INPUT_HANDLE);
         gApp.hStdOut = GetStdHandle(STD_OUTPUT_HANDLE);
 
-        {
-            DWORD consoleMode = 0;
-            GetConsoleMode(gApp.hStdOut, &consoleMode);
-            consoleMode |= ENABLE_VIRTUAL_TERMINAL_PROCESSING | ENABLE_PROCESSED_OUTPUT;
-            [[maybe_unused]] BOOL r = SetConsoleMode(gApp.hStdOut, consoleMode);
-            ASSERT(r);
-        }
+        OS::Win32EnableProgramConsoleCoding();
 
         // Default console handler
         SetConsoleCtrlHandler([](DWORD type)->BOOL { 

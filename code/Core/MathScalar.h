@@ -40,7 +40,7 @@ namespace M
     FORCE_INLINE bool IsFIN64(double _f);
     FORCE_INLINE bool IsINF(float _f);
     FORCE_INLINE bool IsINF64(double _f);
-    FORCE_INLINE float IsRound(float _f);
+    FORCE_INLINE float Round(float _f);
     FORCE_INLINE float Ceil(float _f);
     FORCE_INLINE float Lerp(float _a, float _b, float _t);
     FORCE_INLINE float SmoothLerp(float _a, float _b, float _dt, float h);
@@ -213,7 +213,7 @@ FORCE_INLINE bool M::IsINF64(fl64 _f)
     return tmp == UINT64_C(0x7ff0000000000000);
 }
 
-FORCE_INLINE float M::IsRound(float _f)
+FORCE_INLINE float M::Round(float _f)
 {
     return M::Floor(_f + 0.5f);
 }
