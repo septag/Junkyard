@@ -24,5 +24,7 @@ if [ "$1" == "all" ]; then
     rm -rf code/External/ispc_texcomp/include
     rm -rf code/External/ispc_texcomp/lib
 
+	rm -rf code/External/slang/LICENSE
+	rm -rf code/External/slang/README.md
     find code/External/slang -mindepth 1 -maxdepth 1 -type d -exec rm -rf {} +
 fi

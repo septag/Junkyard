@@ -1,20 +1,20 @@
 @echo off
 
 rem Delete copied files to bin folders
-del /Q Bin\Debug\*.dll
-del /Q Bin\Release\*.dll
-del /Q Bin\ReleaseDev\*.dll
-del /Q Bin\build_cmd\*.dll
+del /q Bin\Debug\*.dll
+del /q Bin\Release\*.dll
+del /q Bin\ReleaseDev\*.dll
+del /q Bin\build_cmd\*.dll
 
 rem Delete ini files
-del /Q *.ini
+del /q *.ini
 
 rem Delete generated files
-del /Q *.spv 
-del /Q *.hlsl 
-del /Q *.glsl 
-del /Q *.asm 
-del /Q *.unknown
+del /q *.spv 
+del /q *.hlsl 
+del /q *.glsl 
+del /q *.asm 
+del /q *.unknown
 
 rem Delete all prebuilt dependencies
 if "%1" == "all" ( 
@@ -24,9 +24,12 @@ if "%1" == "all" (
 	rmdir /q /s code\External\ispc_texcomp\include
 	rmdir /q /s code\External\ispc_texcomp\lib
 
-	del /q code\External\slang\*.h
-	rmdir /q /s code\External\slang\bin
-	rmdir /q /s code\External\slang\docs
-	rmdir /q /s code\External\slang\prelude
+	del /q code\External\slang\LICENSE
+	del /q code\External\slang\README.md
+	for /d %%D in ("code\External\slang\*") do (
+		rmdir /s /q "%%D"
+	)
 ) 
+
+
 

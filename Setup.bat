@@ -3,6 +3,12 @@ setlocal EnableExtensions enableDelayedExpansion
 
 pushd %~dp0
 
+if "%1" == "-cleaninstalldeps" (
+    echo Dependencies updated. Cleaning and reinstalling dependencies
+    call Clean.bat all
+    goto :InstallCodeDepsStart
+)
+
 if not exist .downloads mkdir .downloads
 
 set vars_ini=vars.ini
@@ -39,6 +45,10 @@ pushd %meshopt_dir%
 call Setup.bat
 popd
 if %errorlevel% neq 0 goto :End
+
+if "%1" == "-cleaninstalldeps" (
+    goto :End
+)
 
 :InstallTracyClient
 choice /c YN /M "Download tracy profiler v0.10 "
