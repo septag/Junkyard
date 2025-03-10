@@ -5,7 +5,7 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Launch",
+            "name": "Debug Windows",
             "type": "cppvsdbg",
             "request": "launch",
             "cwd": "${workspaceFolder}",
@@ -13,8 +13,8 @@
             "args": [],
             "environment": [],
             "stopAtEntry": false,
-            "preLaunchTask": "Build",
-            "console": "externalTerminal"
+            "preLaunchTask": "Build Windows",
+            "console": "externalTerminal",
         }
     ]
 }

@@ -2,7 +2,7 @@
     "version": "2.0.0",
     "tasks": [
         {
-            "label": "Build",
+            "label": "Build Windows",
             "type": "shell",
             "command": "ninja",
             "args": [],
@@ -15,12 +15,34 @@
             "group": {
                 "kind": "build",
                 "isDefault": true
-            }
+            },
         },
         {
-            "label": "Configure",
+            "label": "Build Linux",
             "type": "shell",
-            "command": "${workspaceFolder}/projects/CMake/ConfigureNinja.bat",
+            "command": "ninja",
+            "args": [],
+            "problemMatcher": [
+                "$gcc"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}/.build/Ninja"
+            },
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            }
+        },        
+        {
+            "label": "Configure Windows",
+            "type": "shell",
+            "command": "${workspaceFolder}/projects/CMake/ConfigureNinja.bat"
+        },
+        {
+            "label": "Configure Linux",
+            "type": "shell",
+            "command": "${workspaceFolder}/projects/CMake/ConfigureNinja.sh",
+            "problemMatcher": ["$gcc"]
         }
     ]
 }
