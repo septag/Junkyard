@@ -12,7 +12,9 @@
         "*.ini": true,
         "data": true,
         "bin": true,
-        "art": true
+        "art": true,
+        "**/*.so": true,
+        "**/*.dylib": true
     },
     "clangd.arguments": [
         "--compile-commands-dir=${workspaceFolder}/.build/Ninja"
