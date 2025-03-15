@@ -66,7 +66,7 @@ if (WIN32)
         ${SOURCE_Root} ${HEADERS_Root})
 
     target_include_directories(Junkyard SYSTEM PUBLIC ../../code/External/vulkan/include)
-    target_compile_definitions(Junkyard PUBLIC -D_DEBUG -D_ITERATOR_DEBUG_LEVEL=0 -D_CRT_SECURE_NO_WARNINGS -DCONFIG_TOOLMODE=1)
+    target_compile_definitions(Junkyard PUBLIC -D_ITERATOR_DEBUG_LEVEL=0 -D_CRT_SECURE_NO_WARNINGS -DCONFIG_TOOLMODE=1)
     target_compile_options(Junkyard PUBLIC /Zi /GR-)
     target_link_options(Junkyard PUBLIC /DEBUG:FULL /INCREMENTAL:NO)
 

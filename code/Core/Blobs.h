@@ -210,7 +210,7 @@ inline size_t RingBlob::Read(void* dst, size_t size)
     
     size = Min(size, mSize);
     if (size == 0)
-    return 0;
+        return 0;
     
     if (dst) {
         uint8* buff = mBuffer;
@@ -235,7 +235,7 @@ inline size_t RingBlob::Peek(void* dst, size_t size, size_t* pOffset)
     
     size = Min(size, mSize);
     if (size == 0)
-    return 0;
+        return 0;
     
     ASSERT(dst);
     uint8* buff = mBuffer;
@@ -250,7 +250,7 @@ inline size_t RingBlob::Peek(void* dst, size_t size, size_t* pOffset)
     }
     
     if (pOffset)
-    *pOffset = (*pOffset + size) % mCapacity;
+        *pOffset = (*pOffset + size) % mCapacity;
 
     return size;
 }

@@ -396,7 +396,7 @@ inline void Array<_T>::Extend(const Array<_T>& arr)
         uint32 newCount = mCount + arr.mCount;
         uint32 newCapacity = Max(newCount, Min(mCapacity, arr.mCapacity));
         if (newCapacity > mCapacity)
-        Reserve(newCapacity);
+            Reserve(newCapacity);
         memcpy(&mBuffer[mCount], arr.mBuffer, sizeof(_T)*arr.mCount);
         mCount = newCount;
     }

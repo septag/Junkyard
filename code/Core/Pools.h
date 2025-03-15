@@ -188,7 +188,7 @@ public:
     { 
         Page* page = mPages;
         while (page && page->index == 0 && page->next)
-        page = page->next;
+            page = page->next;
 
         return Iterator(page, 0, mPageSize); 
     }
@@ -198,7 +198,7 @@ public:
     { 
         Page* page = mPages;
         while (page && page->index == 0 && page->next)
-        page = page->next;
+            page = page->next;
 
         return Iterator(page, 0, mPageSize); 
     }
@@ -340,7 +340,7 @@ inline void HandlePool<_HandleType, _DataType>::Free()
 {
     if (mAlloc) {
         if (mHandles) 
-        _private::handleDestroyPoolTable(mHandles, mAlloc);
+            _private::handleDestroyPoolTable(mHandles, mAlloc);
         mItems.Free();
         mHandles = nullptr;
     }

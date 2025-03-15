@@ -227,6 +227,10 @@ void SaveToINI(const char* iniFilepath)
         char* data = tmpAlloc.MallocTyped<char>(size);
         ini_save(ini, data, size);
 
+        // We shouldn't write \0 for text files, otherwise, programs detect it as binary (linux)
+        while (size && data[size-1] == 0)
+            --size;
+    
         File f;
         if (f.Open(iniFilepath, FileOpenFlags::Write)) {
             f.Write(data, size);

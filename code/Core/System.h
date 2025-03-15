@@ -166,7 +166,7 @@ struct alignas(CACHE_LINE_SIZE) SpinLockMutex
 
 private:
     uint32 mLocked = 0;
-    [[maybe_unused]] uint8 _padding[CACHE_LINE_SIZE - sizeof(uint32)];
+    uint8 _padding[CACHE_LINE_SIZE - sizeof(uint32)];
 };
 
 struct SpinLockMutexScope

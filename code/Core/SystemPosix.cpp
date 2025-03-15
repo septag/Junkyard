@@ -432,8 +432,10 @@ void Semaphore::Release()
 void Semaphore::Post(uint32 count)
 {
     SemaphoreImpl* sem = reinterpret_cast<SemaphoreImpl*>(mData);
-    [[maybe_unused]] int r = sem_post(&sem->sem);
-    ASSERT(r == 0);
+    for (uint32 i = 0; i < count; i++) {
+        [[maybe_unused]] int r = sem_post(&sem->sem);
+        ASSERT(r == 0);
+    }
 }
 
 bool Semaphore::Wait(uint32 msecs)
@@ -855,7 +857,7 @@ struct UUIDImpl
 static_assert(sizeof(UUIDImpl) <= sizeof(UniqueID), "UUID size mismatch");
 #endif
 
-bool uuidGenerate(UniqueID* uuid)
+bool UniqueID::Generate(UniqueID* uuid)
 {
 #if PLATFORM_APPLE || PLATFORM_LINUX
     UUIDImpl* u = reinterpret_cast<UUIDImpl*>(uuid);
@@ -868,7 +870,7 @@ bool uuidGenerate(UniqueID* uuid)
 #endif
 }
 
-bool uuidToString(const UniqueID& uuid, char* str, uint32 size)
+bool UniqueID::ToString(const UniqueID& uuid, char* str, uint32 size)
 {
 #if PLATFORM_APPLE || PLATFORM_LINUX
     ASSERT(size >= 36);
@@ -886,7 +888,7 @@ bool uuidToString(const UniqueID& uuid, char* str, uint32 size)
 #endif
 }
 
-bool uuidFromString(UniqueID* uuid, const char* str)
+bool UniqueID::FromString(UniqueID* uuid, const char* str)
 {
 #if PLATFORM_APPLE || PLATFORM_LINUX
     UUIDImpl* u = reinterpret_cast<UUIDImpl*>(uuid);

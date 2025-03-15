@@ -9,7 +9,7 @@ BASE_HEADER = 'Base.h'
 INCLUDE_PHRASE = '#include "'
 ONCE_PRAGMA = '#pragma once'
 EXCLUDE_EXTERNALS = ['MemPro', 'Tracy']
-IGNORE_MODULES = ['config', 'debug', 'includewin', 'tracyhelper']
+IGNORE_MODULES = ['config', 'includewin', 'tracyhelper']
 IGNORE_HEADERS = ['TargetConditionals.h']   # used as double-quotes in slang
 LINE_WIDTH = 120
 
@@ -95,7 +95,7 @@ def preprocess_file(filepath, included_files, newly_included = None):
                 if content:
                     blob = blob + ('//' + '-'*(LINE_WIDTH-2) + '\n')
                     blob = blob + ('// ' + header_filepath + '\n\n')
-                    blob = blob + content                
+                    blob = blob + content + '\n' # 
         else:
             blob = blob + line
     return blob
@@ -133,7 +133,7 @@ included_files_in_header = included_files.copy()
 for module in modules:            
     module_source_path = os.path.abspath(os.path.join(args.rootdir, module + '.cpp'))
     if os.path.isfile(module_source_path) and module_source_path.lower() not in included_files:
-        source_blob = source_blob + preprocess_file(module_source_path, included_files)
+        source_blob = source_blob + preprocess_file(module_source_path, included_files) + '\n'
 
 # for each included file, check if we have the source file, then include them into the cpp
 test_extra_includes = included_files.copy()

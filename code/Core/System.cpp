@@ -5,13 +5,18 @@
 #include "Blobs.h"
 
 #ifdef BUILD_UNITY
+    #if PLATFORM_POSIX
+        #include "SystemPosix.cpp"
+    #endif
+    
     #if PLATFORM_WINDOWS
         #include "SystemWin.cpp"
     #elif PLATFORM_ANDROID
-        #include "SystemPosix.cpp"
         #include "SystemAndroid.cpp"
     #elif PLATFORM_OSX
         #include "SystemMac.cpp"
+    #elif PLATFORM_LINUX
+        #include "SystemLinux.cpp"
     #else
         #error "Not implemented"
     #endif
@@ -211,7 +216,7 @@ namespace PathUtils
         }
 
         if (pathB[0] == sep[0])
-        ++pathB;
+            ++pathB;
         Str::Concat(dst, (uint32)dstSize, pathB);
         return dst;
     }

@@ -54,25 +54,25 @@ namespace Str
                 const char* cp = (const char*)(longWordPtr - 1);
                 uint32 baseOffset = (uint32)(intptr_t)(cp - str);
                 if (baseOffset > _max)
-                return _max;
+                    return _max;
 
                 if (cp[0] == 0)
-                return Min(_max, baseOffset);
+                    return Min(_max, baseOffset);
                 if (cp[1] == 0)
-                return Min(_max, baseOffset + 1);
+                    return Min(_max, baseOffset + 1);
                 if (cp[2] == 0)
-                return Min(_max, baseOffset + 2);
+                    return Min(_max, baseOffset + 2);
                 if (cp[3] == 0)
-                return Min(_max, baseOffset + 3);
+                    return Min(_max, baseOffset + 3);
                 #if ARCH_64BIT
                 if (cp[4] == 0)
-                return Min(_max, baseOffset + 4);
+                    return Min(_max, baseOffset + 4);
                 if (cp[5] == 0)
-                return Min(_max, baseOffset + 5);
+                    return Min(_max, baseOffset + 5);
                 if (cp[6] == 0)
-                return Min(_max, baseOffset + 6);
+                    return Min(_max, baseOffset + 6);
                 if (cp[7] == 0)
-                return Min(_max, baseOffset + 7);
+                    return Min(_max, baseOffset + 7);
                 #endif // ARCH_64BIT
             }
         }

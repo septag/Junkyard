@@ -10,7 +10,7 @@
 #ifdef BUILD_UNITY
     #if PLATFORM_WINDOWS
         #include "DebugWin.cpp"
-    #elif PLATFORM_ANDROID  
+    #elif PLATFORM_POSIX
         #include "DebugClang.cpp"
     #endif
 #endif 

@@ -29,7 +29,7 @@ bool _private::handleGrowPoolTable(HandlePoolTable** pTbl, MemAllocator* alloc)
 
     HandlePoolTable* newTable = handleCreatePoolTable(newCapacity, alloc);
     if (!newTable)
-    return false;
+        return false;
     newTable->count = tbl->count;
     memcpy(newTable->dense, tbl->dense, sizeof(uint32) * tbl->capacity);
     memcpy(newTable->sparse, tbl->sparse, sizeof(uint32) * tbl->capacity);
@@ -44,7 +44,7 @@ _private::HandlePoolTable* _private::handleClone(HandlePoolTable* tbl, MemAlloca
     ASSERT(tbl->capacity);
     HandlePoolTable* newTable = handleCreatePoolTable(tbl->capacity, alloc);
     if (!newTable)
-    return nullptr;
+        return nullptr;
 
     newTable->count = tbl->count;
     memcpy(newTable->dense, tbl->dense, sizeof(uint32) * tbl->capacity);
@@ -153,7 +153,7 @@ bool _private::handleGrowPoolTableWithBuffer(HandlePoolTable** pTbl, void* buff,
     
     HandlePoolTable* newTable = handleCreatePoolTableWithBuffer(newCapacity, buff, size);
     if (!newTable)
-    return false;
+        return false;
     newTable->count = tbl->count;
     memcpy(newTable->dense, tbl->dense, sizeof(uint32) * tbl->capacity);
     memcpy(newTable->sparse, tbl->sparse, sizeof(uint32) * tbl->capacity);
