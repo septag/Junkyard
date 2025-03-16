@@ -1,5 +1,7 @@
 #pragma once
 
+#include "../Core/Base.h"
+
 #define INPUT_MAX_TOUCH_POINTS 8
 
 enum class InputKeycode : uint32

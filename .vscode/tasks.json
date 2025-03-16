@@ -42,6 +42,7 @@
             "label": "Configure Linux",
             "type": "shell",
             "command": "${workspaceFolder}/projects/CMake/ConfigureNinja.sh",
+            "args": ["-DCMAKE_EXPORT_COMPILE_COMMANDS=1", "-DCMAKE_BUILD_TYPE=Debug"],
             "problemMatcher": ["$gcc"]
         }
     ]

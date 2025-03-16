@@ -971,6 +971,17 @@ FORCE_INLINE int RectInt::Height() const
     return ymax - ymin;
 }
 
+FORCE_INLINE void RectInt::SetWidth(int width)
+{
+    xmax = xmin + width;
+}
+
+FORCE_INLINE void RectInt::SetHeight(int height)
+{
+    ymax = ymin + height;
+}
+
+
 /*
 *   2               3 (max)
 *   -----------------

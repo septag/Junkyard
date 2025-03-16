@@ -5,6 +5,15 @@
     "version": "0.2.0",
     "configurations": [
         {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug LLDB",
+            "program": "${workspaceFolder}/bin/TestLinux",
+            "args": [],
+            "cwd": "${workspaceFolder}",
+            "preLaunchTask": "Build Linux"
+        },
+        {
             "name": "Debug Windows",
             "type": "cppvsdbg",
             "request": "launch",

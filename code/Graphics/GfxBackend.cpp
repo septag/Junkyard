@@ -14,6 +14,10 @@
     #include <vulkan/vulkan_android.h>
 #elif PLATFORM_APPLE
     #include <MoltenVk/mvk_vulkan.h>
+#elif PLATFORM_LINUX
+    #include <vulkan/vulkan.h>
+    #include <vulkan/vulkan_xlib.h>
+    #include <GLFW/glfw3.h>
 #else
     #error "Not implemented"
 #endif
@@ -69,6 +73,8 @@ static const char* GFXBACKEND_DEFAULT_INSTANCE_EXTENSIONS[] = {"VK_KHR_surface",
 static const char* GFXBACKEND_DEFAULT_INSTANCE_EXTENSIONS[] = {"VK_KHR_surface", "VK_KHR_android_surface"};
 #elif PLATFORM_APPLE
 static const char* GFXBACKEND_DEFAULT_INSTANCE_EXTENSIONS[] = {"VK_KHR_surface", "VK_EXT_metal_surface"};
+#elif PLATFORM_LINUX
+static const char* GFXBACKEND_DEFAULT_INSTANCE_EXTENSIONS[] = {"VK_KHR_Surface", "VK_KHR_xlib_surface"};
 #endif
 
 struct GfxBackendAllocator final : MemAllocator

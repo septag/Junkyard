@@ -14,9 +14,19 @@ fi
 
 pushd Ninja > /dev/null
 
-echo "$PATH"
+if [[ "$(uname)" == "Linux" ]]; then
+    extra_cmake_opts="-DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang"
+    echo Make sure you have installed these packages \(debian/ubuntu\):
+    echo  pkg-config
+    echo  libglfw3-dev
+    echo  uuid-dev
+    echo  libc++abi-dev
+    echo  libvulkan-dev 
+else
+    extra_cmake_opts=""
+fi
 
-cmake ../../projects/CMake -GNinja "$@"
+cmake ../../projects/CMake -GNinja $extra_cmake_opts "$@"
 
 popd > /dev/null
 popd > /dev/null
