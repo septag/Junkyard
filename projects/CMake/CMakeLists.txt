@@ -23,11 +23,10 @@ endif()
 file(GLOB SOURCE_Core ../../code/Core/*.cpp)
 file(GLOB_RECURSE HEADERS_Core ../../code/Core/*.h)
 
+file(GLOB SOURCE_Common ../../code/Common/*.cpp)
+file(GLOB HEADERS_Common ../../code/Common/*.h)
+
 if (WIN32)
-
-    file(GLOB SOURCE_Common ../../code/Common/*.cpp)
-    file(GLOB HEADERS_Common ../../code/Common/*.h)
-
     file(GLOB SOURCE_DebugTools ../../code/DebugTools/*.cpp)
     file(GLOB HEADERS_DebugTools ../../code/DebugTools/*.h)
 
@@ -117,7 +116,35 @@ if (WIN32)
 
     set_property(GLOBAL PROPERTY VS_STARTUP_PROJECT TestBasicGfx)
 else()
-    add_library(Junkyard STATIC ${SOURCE_Core} ${HEADERS_Core})
+    add_library(Junkyard STATIC 
+        ${SOURCE_Core} ${HEADERS_Core}
+        ${SOURCE_Common} ${HEADERS_Core} 
+        ../../code/EngineLinux.cpp)
+
+    target_compile_definitions(Junkyard PUBLIC -DCONFIG_TOOLMODE=1)
+    target_compile_options(Junkyard PUBLIC -fno-rtti -fno-exceptions)
+
+    if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
+        find_package(PkgConfig REQUIRED)
+        pkg_check_modules(GLFW REQUIRED glfw3)
+        pkg_check_modules(VULKAN REQUIRED vulkan)
+
+        target_include_directories(Junkyard PUBLIC ${GLFW_INCLUDE_DIRS})
+        target_include_directories(Junkyard PUBLIC ${VULKAN_INCLUDE_DIRS})
+
+        # TODO: I still haven't found a way to no hardcode this (cxxabi.h)
+        target_include_directories(Junkyard PUBLIC "/usr/lib/llvm-14/include/")
+
+        target_link_directories(Junkyard PUBLIC ${GLFW_LIBRARY_DIRS})
+
+        target_link_libraries(Junkyard PUBLIC ${GLFW_LIBRARIES})
+
+        target_link_libraries(Junkyard PUBLIC uuid m c++abi)
+    endif()
+
+    add_executable(TestLinux ../../code/Tests/TestLinux.cpp)
+    target_link_libraries(TestLinux Junkyard)
+
 endif()
 
 

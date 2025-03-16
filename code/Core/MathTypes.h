@@ -476,6 +476,8 @@ struct RectInt
     bool IsEmpty() const;
     int Width() const;
     int Height() const;
+    void SetWidth(int width);
+    void SetHeight(int height);
 
     static RectInt  Expand(const RectInt rc, Int2 expand);
     static bool   TestPoint(const RectInt rc, Int2 pt);

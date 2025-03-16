@@ -23,6 +23,7 @@
 #include "ImGui/ImGuiMain.h"
 
 #include "Tool/Console.h"
+#include <GL/gl.h>
 
 static constexpr float  ENGINE_REMOTE_RECONNECT_INTERVAL = 5.0f;
 static constexpr uint32 ENGINE_REMOTE_CONNECT_RETRIES = 3;
@@ -131,15 +132,6 @@ namespace Engine
                 } 
             }
         }
-    /*
-        // TODO
-    #if PLATFORM_ANDROID
-        else if (ev.type == AppEventType::Suspended) 
-            DestroySurfaceAndSwapchain();
-        else if (ev.type == AppEventType::Resumed)
-            RecreateSurfaceAndSwapchain();
-    #endif
-    */
     }
 
     static void _InitResourcesUpdate(float dt, void*)
@@ -726,5 +718,11 @@ void Engine::HelperInitializeProxyAllocator(MemProxyAllocator* alloc, const char
     MemProxyAllocatorFlags proxyAllocFlags = SettingsJunkyard::Get().engine.trackAllocations ? 
         MemProxyAllocatorFlags::EnableTracking : MemProxyAllocatorFlags::None;
 
-    alloc->Initialize(name, baseAlloc ? baseAlloc : &gEng.mainAlloc, proxyAllocFlags);
+    if (!baseAlloc) {
+        ASSERT(gEng.mainAlloc.IsInitialized());
+        alloc->Initialize(name, &gEng.mainAlloc, proxyAllocFlags);
+    }
+    else {
+        alloc->Initialize(name, baseAlloc, proxyAllocFlags);
+    }
 }

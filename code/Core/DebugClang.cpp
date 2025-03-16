@@ -46,7 +46,7 @@ namespace Debug
 
         state->numFrames++;
         if (state->numFrames <= state->framesToSkip)
-        return _URC_NO_REASON;
+            return _URC_NO_REASON;
 
         void* ip = reinterpret_cast<void*>(_Unwind_GetIP(context));
         if (ip) {
