@@ -17,6 +17,8 @@
 
 #include "GLFW/glfw3.h"
 
+#include <unistd.h>
+
 struct AppWindowState
 {
     char name[32];
@@ -220,6 +222,7 @@ bool App::Run(const AppDesc &desc)
         return false;
     }
 
+    // Window creation
     if (settings.graphics.IsGraphicsEnabled()) {
         glfwWindowHint(GLFW_SCALE_TO_MONITOR, GLFW_TRUE);
         _LoadInitRects();
@@ -268,6 +271,16 @@ bool App::Run(const AppDesc &desc)
 const char* App::GetName(void)
 {
     return gApp.name;
+}
+
+void* App::GetNativeWindowHandle()
+{
+    return gApp.window;
+}
+
+void* GetNativeAppHandle()
+{
+    return IntToPtr(getpid());
 }
 
 #endif // PLATFORM_LINUX
