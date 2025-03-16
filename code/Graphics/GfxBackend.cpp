@@ -26,6 +26,14 @@
 #define VOLK_IMPLEMENTATION
 #if PLATFORM_WINDOWS
     #define VK_USE_PLATFORM_WIN32_KHR
+#elif PLATFORM_LINUX
+    #define VK_USE_PLATFORM_XLIB_KHR
+#elif PLATFORM_ANDROID
+    #define VK_USE_PLATFORM_ANDROID_KHR
+#elif PLATFORM_OSX
+    #define VK_USE_PLATFORM_MACOS_MVK
+#elif PLATFORM_IOS
+    #define VK_USE_PLATFORM_IOS_MVK
 #endif
 #ifndef __10X__
 #include "../External/volk/volk.h"
@@ -995,6 +1003,9 @@ namespace GfxBackend
         };
     
         vkCreateMetalSurfaceEXT(gBackendVk.instance.handle, &surfaceCreateInfo, gBackendVk.vkAlloc, &surface);
+        #elif PLATFORM_LINUX
+        glfwCreateWindowSurface(gBackendVk.instance.handle, (GLFWwindow*)App::GetNativeWindowHandle(), 
+                                gBackendVk.vkAlloc, &surface);
         #else
         #error "Not implemented"
         #endif
