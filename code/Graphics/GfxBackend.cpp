@@ -1030,7 +1030,7 @@ namespace GfxBackend
         uint32 minor = VK_API_VERSION_MINOR(gpu.props.apiVersion);
 
         LOG_INFO("(init) GPU: %s (%s) (Index=%u)", gpu.props.deviceName, gpuType, gpuIndex);
-        LOG_INFO("(init) GPU memory: %_$$$llu", heapSize);
+        LOG_INFO("(init) GPU RAM: %_$$$llu", heapSize);
         LOG_INFO("(init) GPU driver vulkan version: %u.%u", major, minor);
 
         // TODO: Make this more flexible for MoltenVK

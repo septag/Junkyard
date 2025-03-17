@@ -370,16 +370,21 @@ bool Engine::Initialize()
         LOG_INFO("(init) CPU: %s", gEng.sysInfo.cpuModel);
         LOG_INFO("(init) CPU Cores: %u", gEng.sysInfo.coreCount); 
         LOG_INFO("(init) CPU Caps: %s", cpuCaps);
-        LOG_INFO("(init) System memory: %_$$$llu", gEng.sysInfo.physicalMemorySize);
+        LOG_INFO("(init) CPU L1 Cache: %u x %_$$$u (%u-way)", gEng.sysInfo.L1Cache.count, gEng.sysInfo.L1Cache.size, gEng.sysInfo.L1Cache.kway);
+        LOG_INFO("(init) CPU L2 Cache: %u x %_$$$u (%u-way)", gEng.sysInfo.L2Cache.count, gEng.sysInfo.L2Cache.size, gEng.sysInfo.L2Cache.kway);
+        LOG_INFO("(init) CPU L3 Cache: %u x %_$$$u (%u-way)", gEng.sysInfo.L3Cache.count, gEng.sysInfo.L3Cache.size, gEng.sysInfo.L3Cache.kway);
+        LOG_INFO("(init) System RAM: %_$$$llu", gEng.sysInfo.physicalMemorySize);
     }
 
     Console::Initialize(&gEng.alloc);
 
-    Jobs::Initialize(JobsInitParams { 
-                   .alloc = &gEng.jobsAlloc, 
-                   .numShortTaskThreads = SettingsJunkyard::Get().engine.jobsNumShortTaskThreads,
-                   .numLongTaskThreads = SettingsJunkyard::Get().engine.jobsNumLongTaskThreads,
-                   .debugAllocations = SettingsJunkyard::Get().engine.debugAllocations });
+    JobsInitParams jobsInitParams {                   
+        .alloc = &gEng.jobsAlloc, 
+        .numShortTaskThreads = SettingsJunkyard::Get().engine.jobsNumShortTaskThreads,
+        .numLongTaskThreads = SettingsJunkyard::Get().engine.jobsNumLongTaskThreads,
+        .debugAllocations = SettingsJunkyard::Get().engine.debugAllocations 
+    };
+    Jobs::Initialize(jobsInitParams);
 
     if (SettingsJunkyard::Get().engine.connectToServer) {
         if (!Remote::Connect(SettingsJunkyard::Get().engine.remoteServicesUrl.CStr(), _RemoteDisconnected)) {

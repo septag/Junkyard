@@ -783,43 +783,14 @@ bool OS::Win32GetRegisterLocalMachineString(const char* subkey, const char* valu
     return gAdvApi32.RegGetValueA(HKEY_LOCAL_MACHINE, subkey, value, RRF_RT_REG_SZ|RRF_RT_REG_EXPAND_SZ, nullptr, dst, &dataSize) == ERROR_SUCCESS;
 }
 
-static uint32 _GetPhysicalCoresCount()
-{
-	static uint32 cachedCoreCount = UINT32_MAX;
-	if (cachedCoreCount != UINT32_MAX)
-		return cachedCoreCount;
-
-	SYSTEM_LOGICAL_PROCESSOR_INFORMATION* buffer = nullptr;
-	DWORD returnLen = 0;
-	DWORD countCount = 0;
-	if (!GetLogicalProcessorInformation(buffer, &returnLen)) {
-		if (GetLastError() == ERROR_INSUFFICIENT_BUFFER)
-			buffer = (SYSTEM_LOGICAL_PROCESSOR_INFORMATION*)Mem::Alloc(returnLen);
-	}
-
-	if (buffer != nullptr && GetLogicalProcessorInformation(buffer, &returnLen)) {
-		SYSTEM_LOGICAL_PROCESSOR_INFORMATION* ptr = buffer;
-		DWORD byteOffset = 0;
-		while (byteOffset + sizeof(SYSTEM_LOGICAL_PROCESSOR_INFORMATION) <= returnLen) {
-			if (ptr->Relationship == RelationProcessorCore)
-				++countCount;
-
-			byteOffset += sizeof(SYSTEM_LOGICAL_PROCESSOR_INFORMATION);
-			++ptr;
-		}
-	}
-
-	Mem::Free(buffer);
-
-	cachedCoreCount = Clamp<uint32>(countCount, 1, _limits::SYS_MAX_CORES);
-    ASSERT_MSG(cachedCoreCount <= _limits::SYS_MAX_CORES, "CPU core count appears to be too high (%u). Consider increasing SYS_MAX_CORES", cachedCoreCount);
-	return cachedCoreCount;
-}
-
 // https://en.wikipedia.org/wiki/CPUID
 // https://docs.microsoft.com/en-us/cpp/intrinsics/cpuid-cpuidex?redirectedfrom=MSDN&view=msvc-170
 void OS::GetSysInfo(SysInfo* info)
 {
+    memset(info, 0x0, sizeof(*info));
+
+    //------------------------------------------------------------------------------------------------------------------
+    // CPU features/caps (cpuid)
     struct i4 
     {
         int i[4];
@@ -908,14 +879,64 @@ void OS::GetSysInfo(SysInfo* info)
     info->cpuCapsAVX2 = ((f_7_EBX_ >> 5) & 0x1) ? true : false;
     info->cpuCapsAVX512 = ((f_7_EBX_ >> 16) & 0x1) ? true : false;
 
-    // 
+    //------------------------------------------------------------------------------------------------------------------
+    // PageSize
     SYSTEM_INFO sysinfo;
     GetSystemInfo(&sysinfo);
     
     info->pageSize = sysinfo.dwPageSize;
-    // info->coreCount = sysinfo.dwNumberOfProcessors;
-    info->coreCount = _GetPhysicalCoresCount();
 
+    //------------------------------------------------------------------------------------------------------------------
+    // CPU physical core count and Cache information
+    {
+        SYSTEM_LOGICAL_PROCESSOR_INFORMATION* buffer = nullptr;
+        DWORD returnLen = 0;
+        DWORD coreCount = 0;
+        if (!GetLogicalProcessorInformation(buffer, &returnLen)) {
+            if (GetLastError() == ERROR_INSUFFICIENT_BUFFER)
+                buffer = (SYSTEM_LOGICAL_PROCESSOR_INFORMATION*)Mem::Alloc(returnLen);
+        }
+
+        if (buffer != nullptr && GetLogicalProcessorInformation(buffer, &returnLen)) {
+            SYSTEM_LOGICAL_PROCESSOR_INFORMATION* ptr = buffer;
+            DWORD byteOffset = 0;
+            while (byteOffset + sizeof(SYSTEM_LOGICAL_PROCESSOR_INFORMATION) <= returnLen) {
+                if (ptr->Relationship == RelationProcessorCore) {
+                    ++coreCount;
+                }
+
+                if (ptr->Relationship == RelationCache) {
+                    const CACHE_DESCRIPTOR& cache = ptr->Cache;
+                    if (cache.Type == CacheUnified || cache.Type == CacheData) {
+                        SysInfo::CacheInfo* cacheInfo = nullptr;
+                        switch (cache.Level) {
+                            case 1:  cacheInfo = &info->L1Cache;   break;
+                            case 2:  cacheInfo = &info->L2Cache;   break;
+                            case 3:  cacheInfo = &info->L3Cache;   break;
+                        }
+                        ++cacheInfo->count;
+                        cacheInfo->kway = cache.Associativity;
+                        cacheInfo->lineSize = cache.LineSize;
+                        cacheInfo->size = cache.Size;
+                    }
+                }
+
+                byteOffset += sizeof(SYSTEM_LOGICAL_PROCESSOR_INFORMATION);
+                ++ptr;
+            }
+        }
+
+        Mem::Free(buffer);
+
+        ASSERT(coreCount);
+        ASSERT_MSG(coreCount <= _limits::SYS_MAX_CORES, "CPU core count appears to be too high (%u). Consider increasing SYS_MAX_CORES", coreCount);
+        coreCount = Clamp<uint32>(coreCount, 1, _limits::SYS_MAX_CORES);
+        
+        info->coreCount = coreCount;       
+    }
+
+    //------------------------------------------------------------------------------------------------------------------
+    // Memory
     ULONGLONG memSizeKb;
     if (GetPhysicallyInstalledSystemMemory(&memSizeKb)) 
         info->physicalMemorySize = memSizeKb * 1024;

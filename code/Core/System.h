@@ -548,12 +548,23 @@ struct SysInfo
         ARM64
     };
 
+    struct CacheInfo
+    {
+        uint8 count;
+        uint8 kway;
+        uint16 lineSize;
+        uint32 size;
+    };
+
     char         cpuName[32];
     char         cpuModel[64];
     CpuFamily    cpuFamily;
     size_t       pageSize;
     size_t       physicalMemorySize;
     uint32       coreCount;
+    CacheInfo    L1Cache;
+    CacheInfo    L2Cache;
+    CacheInfo    L3Cache;
     uint32       cpuCapsSSE : 1;
     uint32       cpuCapsSSE2 : 1;
     uint32       cpuCapsSSE3 : 1;

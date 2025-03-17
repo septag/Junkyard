@@ -798,7 +798,16 @@ static void Asset::_LoadAssetTask(uint32 groupIdx, void* userData)
         uint32 targetCacheVersion = MakeVersion(ASSET_CACHE_VERSION, typeMan.cacheVersion, 0, 0);
         cache.Read<uint32>(&cacheVersion);
         if (cacheVersion != targetCacheVersion) {
-            taskData.outputs.errorDesc = "Invalid binary version for the baked file";
+            // If we are loading assets locally and cache versions does not match, we can revert back to baking from source
+            if (!taskData.inputs.isRemoteLoad) {
+                LOG_WARNING("%s '%s' has different binary version. Reverting to bake from source", 
+                            typeMan.name.CStr(), taskData.inputs.header->params->path.CStr());
+                taskData.inputs.type = AssetLoadTaskInputType::Source;
+                _LoadAssetTask(groupIdx, userData);
+            }
+            else {
+                taskData.outputs.errorDesc = "Invalid binary version for the baked file";
+            }
             return;
         }
 
@@ -1363,7 +1372,7 @@ static void Asset::_UnloadGroupTask(uint32, void* userData)
             if (--header->refCount > 0) {
                 unloadList.RemoveAndSwap(i);
             } 
-            else {
+            else if (header->data) {
                 // TODO: do something about hot-reloads
                 ASSERT_MSG(AssetState(Atomic::LoadExplicit(&header->state, AtomicMemoryOrder::Relaxed)) != AssetState::Locked,
                            "%s asset is still locked and cannot be unloaded: %s", header->typeName, header->params->path.CStr());
@@ -1378,6 +1387,10 @@ static void Asset::_UnloadGroupTask(uint32, void* userData)
                     dep = dep->next.Get();
                 }
 
+                i++;
+            }
+            else {
+                LOG_VERBOSE("Asset: %s, State: %u", header->params->path.CStr(), (AssetState)header->state);
                 i++;
             }
         }

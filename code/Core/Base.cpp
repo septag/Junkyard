@@ -47,6 +47,7 @@
 #endif
 
 #include "TracyHelper.h"
+#include "System.h"
 
 //    ██████╗  █████╗ ███╗   ██╗██████╗  ██████╗ ███╗   ███╗
 //    ██╔══██╗██╔══██╗████╗  ██║██╔══██╗██╔═══██╗████╗ ████║
@@ -185,7 +186,12 @@ void Assert::DebugMessage(const char* fmt, ...)
     vsnprintf(msgFmt, sizeof(msgFmt), fmt, args);
     va_end(args);
 
-    strcpy_s(msg, sizeof(msg), "[ASSERT_FAIL] ");
+    const char* closeBracket = "] ";
+    char threadName[32];
+    Thread::GetCurrentThreadName(threadName, sizeof(threadName));
+    strcpy_s(msg, sizeof(msg), "[ASSERT_FAIL: ");
+    strcat_s(msg, sizeof(msg), threadName);
+    strcat_s(msg, sizeof(msg), closeBracket);
     strcat_s(msg, sizeof(msg), msgFmt);
     
     puts(msg);
@@ -196,6 +202,8 @@ void Assert::DebugMessage(const char* fmt, ...)
     #elif PLATFORM_ANDROID
     __android_log_write(ANDROID_LOG_FATAL, CONFIG_APP_NAME, msg);
     #endif
+
+    // TODO: Add more reports + callstack
 }
 
 void Assert::SetFailCallback(AssertFailCallback callback, void* userdata)
