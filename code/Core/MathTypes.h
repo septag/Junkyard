@@ -384,7 +384,7 @@ struct Mat4
     static Mat4   ProjectPlane(Float3 planeNormal);
 };
 
-struct Rect 
+struct RectFloat 
 {
     union {
         struct 
@@ -402,21 +402,21 @@ struct Rect
         float f[4];
     };
 
-    Rect() = default;
+    RectFloat() = default;
 
-    explicit constexpr Rect(float _xmin, float _ymin, float _xmax, float _ymax) 
+    explicit constexpr RectFloat(float _xmin, float _ymin, float _xmax, float _ymax) 
     : xmin(_xmin), ymin(_ymin), xmax(_xmax), ymax(_ymax)
     {
     }
 
-    explicit constexpr Rect(const float* _vmin, const float* _vmax) 
+    explicit constexpr RectFloat(const float* _vmin, const float* _vmax) 
     : vmin { _vmin[0], _vmin[1] },
       vmax { _vmax[0], _vmax[1] }
     {
     }
 
-    explicit constexpr Rect(Float2 _vmin, Float2 _vmax) :
-        Rect(_vmin.f, _vmax.f)
+    explicit constexpr RectFloat(Float2 _vmin, Float2 _vmax) :
+        RectFloat(_vmin.f, _vmax.f)
     {
     }
 
@@ -424,16 +424,16 @@ struct Rect
     float  Width() const;
     float  Height() const;
 
-    static Rect   CenterExtents(Float2 center, Float2 extents);
-    static Rect   Expand(const Rect rc, Float2 expand);
-    static bool   TestPoint(const Rect rc, Float2 pt);
-    static bool   Test(const Rect rc1, const Rect rc2);
-    static void   AddPoint(Rect* rc, Float2 pt);
-    static Float2 GetCorner(const Rect* rc, int index);
-    static void   GetCorners(Float2 corners[4], const Rect* rc);
-    static Float2 Extents(const Rect rc);
-    static Float2 Center(const Rect rc);
-    static Rect   Translate(const Rect rc, Float2 pos);
+    static RectFloat   CenterExtents(Float2 center, Float2 extents);
+    static RectFloat   Expand(const RectFloat rc, Float2 expand);
+    static bool   TestPoint(const RectFloat rc, Float2 pt);
+    static bool   Test(const RectFloat rc1, const RectFloat rc2);
+    static void   AddPoint(RectFloat* rc, Float2 pt);
+    static Float2 GetCorner(const RectFloat* rc, int index);
+    static void   GetCorners(Float2 corners[4], const RectFloat* rc);
+    static Float2 Extents(const RectFloat rc);
+    static Float2 Center(const RectFloat rc);
+    static RectFloat   Translate(const RectFloat rc, Float2 pos);
 };
 
 struct RectInt 
@@ -664,7 +664,7 @@ inline constexpr Color4u COLOR4U_GREEN  { uint8(0), uint8(255), uint8(0), uint8(
 inline constexpr Color4u COLOR4U_BLUE   { uint8(0), uint8(0), uint8(255), uint8(255) };
 inline constexpr Color4u COLOR4U_PURPLE { uint8(255), uint8(0), uint8(255), uint8(255) };
 
-inline constexpr Rect RECT_EMPTY { M_FLOAT32_MAX, M_FLOAT32_MAX, -M_FLOAT32_MAX, -M_FLOAT32_MAX };
+inline constexpr RectFloat RECTFLOAT_EMPTY { M_FLOAT32_MAX, M_FLOAT32_MAX, -M_FLOAT32_MAX, -M_FLOAT32_MAX };
 inline constexpr RectInt RECTINT_EMPTY { INT32_MAX, INT32_MAX, INT32_MIN, INT32_MIN };
 inline constexpr AABB AABB_EMPTY { M_FLOAT32_MAX, M_FLOAT32_MAX, M_FLOAT32_MAX, -M_FLOAT32_MAX, -M_FLOAT32_MAX, -M_FLOAT32_MAX };
 

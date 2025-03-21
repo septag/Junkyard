@@ -107,12 +107,13 @@ included_files = set()
 modules = args.modules
 if len(modules) == 0:
     print('No modules are set. Unifying all modules.')
-    header_files = glob = glob.glob('*.h', root_dir=args.rootdir)
+    header_files = glob.glob('*.h', root_dir=args.rootdir)
     for header_file in header_files:
         if header_file != (args.outputname + '.h'):
             rootname, ext = os.path.splitext(header_file)
             modules.append(rootname)
 
+modules = sorted(modules)
 for index, module in enumerate(modules):
     if module.lower() in IGNORE_MODULES:
         print 
@@ -127,7 +128,7 @@ for module in modules:
     module_include_path = os.path.abspath(os.path.join(args.rootdir, module + '.h'))
     if os.path.isfile(module_include_path) and module_include_path.lower() not in included_files:
         header_blob = header_blob + preprocess_file(module_include_path, included_files) + '\n'
-included_files_in_header = included_files.copy()
+included_files_in_header = sorted(included_files.copy())
 
 # sources
 for module in modules:            
@@ -136,7 +137,7 @@ for module in modules:
         source_blob = source_blob + preprocess_file(module_source_path, included_files) + '\n'
 
 # for each included file, check if we have the source file, then include them into the cpp
-test_extra_includes = included_files.copy()
+test_extra_includes = sorted(included_files.copy())
 while len(test_extra_includes) > 0:
     newly_included = set()
     for include_file in test_extra_includes:
@@ -171,7 +172,8 @@ if not args.stbheader:
     with open(output_source_path, 'wt', encoding='utf-8') as f:
         f.write('// This source file is auto-generated\n')
         f.write('// Inlined files:\n')
-        for filepath in included_files:
+        all_included_files = sorted(included_files.copy())
+        for filepath in all_included_files:
             # Rest of the files that are not included in header goes into source
             if filepath not in included_files_in_header:
                 f.write('//\t' + os.path.basename(filepath) + '\n')

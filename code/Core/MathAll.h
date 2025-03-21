@@ -6,7 +6,7 @@
 // Individual files:
 //      MathTypes: Basic declarations for math primitives. Include this mainly in other headers
 //      MathScalar: Scalar math functions: sqrt/sin/cos/Lerp/etc.
-//      MathVector: Functions and operators for math primitives: Vector/Matrix/Quaternion/Rect
+//      MathVector: Functions and operators for math primitives: Vector/Matrix/Quaternion/RectFloat
 //
 // Easings:
 //      Reference: https://easings.net/
@@ -847,24 +847,24 @@ FORCE_INLINE Int2 Int2::Max(Int2 _a, Int2 _b)
 //    ██║  ██║███████╗╚██████╗   ██║   
 //    ╚═╝  ╚═╝╚══════╝ ╚═════╝   ╚═╝   
 
-FORCE_INLINE Rect Rect::CenterExtents(Float2 center, Float2 extents)
+FORCE_INLINE RectFloat RectFloat::CenterExtents(Float2 center, Float2 extents)
 {
-    return Rect(Float2::Sub(center, extents), Float2::Add(center, extents));
+    return RectFloat(Float2::Sub(center, extents), Float2::Add(center, extents));
 }
 
-FORCE_INLINE Rect Rect::Expand(const Rect rc, Float2 expand)
+FORCE_INLINE RectFloat RectFloat::Expand(const RectFloat rc, Float2 expand)
 {
-    return Rect(rc.xmin - expand.x, rc.ymin - expand.y, rc.xmax + expand.x, rc.ymax + expand.y);
+    return RectFloat(rc.xmin - expand.x, rc.ymin - expand.y, rc.xmax + expand.x, rc.ymax + expand.y);
 }
 
-FORCE_INLINE bool Rect::TestPoint(const Rect rc, Float2 pt)
+FORCE_INLINE bool RectFloat::TestPoint(const RectFloat rc, Float2 pt)
 {
     if (pt.x < rc.xmin || pt.y < rc.ymin || pt.x > rc.xmax || pt.y > rc.ymax)
         return false;
     return true;
 }
 
-FORCE_INLINE bool Rect::Test(const Rect rc1, const Rect rc2)
+FORCE_INLINE bool RectFloat::Test(const RectFloat rc1, const RectFloat rc2)
 {
     if (rc1.xmax < rc2.xmin || rc1.xmin > rc2.xmax)
         return false;
@@ -873,12 +873,12 @@ FORCE_INLINE bool Rect::Test(const Rect rc1, const Rect rc2)
     return true;
 }
 
-FORCE_INLINE void Rect::AddPoint(Rect* rc, Float2 pt)
+FORCE_INLINE void RectFloat::AddPoint(RectFloat* rc, Float2 pt)
 {
-    *rc = Rect(Float2::Min(Float2(rc->vmin), pt), Float2::Max(Float2(rc->vmax), pt));
+    *rc = RectFloat(Float2::Min(Float2(rc->vmin), pt), Float2::Max(Float2(rc->vmax), pt));
 }
 
-FORCE_INLINE bool Rect::IsEmpty() const
+FORCE_INLINE bool RectFloat::IsEmpty() const
 {
     return xmin >= xmax || ymin >= ymax;
 }
@@ -894,40 +894,40 @@ FORCE_INLINE bool Rect::IsEmpty() const
 *   -----------------
 *   0               1
 */
-FORCE_INLINE Float2 Rect::GetCorner(const Rect* rc, int index)
+FORCE_INLINE Float2 RectFloat::GetCorner(const RectFloat* rc, int index)
 {
     return Float2((index & 1) ? rc->xmax : rc->xmin, (index & 2) ? rc->ymax : rc->ymin);
 }
 
-FORCE_INLINE void Rect::GetCorners(Float2 corners[4], const Rect* rc)
+FORCE_INLINE void RectFloat::GetCorners(Float2 corners[4], const RectFloat* rc)
 {
     for (int i = 0; i < 4; i++)
-        corners[0] = Rect::GetCorner(rc, i);
+        corners[0] = RectFloat::GetCorner(rc, i);
 }
 
-FORCE_INLINE float Rect::Width() const
+FORCE_INLINE float RectFloat::Width() const
 {
     return xmax - xmin;
 }
 
-FORCE_INLINE float Rect::Height() const
+FORCE_INLINE float RectFloat::Height() const
 {
     return ymax - ymin;
 }
 
-FORCE_INLINE Float2 Rect::Extents(const Rect rc)
+FORCE_INLINE Float2 RectFloat::Extents(const RectFloat rc)
 {
     return Float2::Mul(Float2::Sub(Float2(rc.vmax), Float2(rc.vmin)), 0.5f);
 }
 
-FORCE_INLINE Float2 Rect::Center(const Rect rc)
+FORCE_INLINE Float2 RectFloat::Center(const RectFloat rc)
 {
     return Float2::Mul(Float2::Add(Float2(rc.vmin), Float2(rc.vmax)), 0.5f);
 }
 
-FORCE_INLINE Rect Rect::Translate(const Rect rc, Float2 pos) 
+FORCE_INLINE RectFloat RectFloat::Translate(const RectFloat rc, Float2 pos) 
 {
-    return Rect(Float2::Add(pos, Float2(rc.vmin)), Float2::Add(pos, Float2(rc.vmax)));
+    return RectFloat(Float2::Add(pos, Float2(rc.vmin)), Float2::Add(pos, Float2(rc.vmax)));
 }
 
 FORCE_INLINE RectInt RectInt::Expand(const RectInt rc, Int2 expand)
@@ -1404,16 +1404,16 @@ namespace M
     FORCE_INLINE Mat4   Mat4ProjectPlane(Float3 planeNormal) { return Mat4::ProjectPlane(planeNormal); }
 
     // Rect
-    FORCE_INLINE Rect   RectCenterExtents(Float2 center, Float2 extents) { return Rect::CenterExtents(center, extents); }
-    FORCE_INLINE Rect   RectExpand(const Rect rc, Float2 expand) { return Rect::Expand(rc, expand); }
-    FORCE_INLINE bool   RectTestPoint(const Rect rc, Float2 pt) { return Rect::TestPoint(rc, pt); }
-    FORCE_INLINE bool   RectTest(const Rect rc1, const Rect rc2) { return Rect::Test(rc1, rc2); }
-    FORCE_INLINE void   RectAddPoint(Rect* rc, Float2 pt) { Rect::AddPoint(rc, pt); }
-    FORCE_INLINE Float2 RectGetCorner(const Rect* rc, int index) { return Rect::GetCorner(rc, index); }
-    FORCE_INLINE void   RectGetCorners(Float2 corners[4], const Rect* rc) { Rect::GetCorners(corners, rc); }
-    FORCE_INLINE Float2 RectExtents(const Rect rc) { return Rect::Extents(rc); }
-    FORCE_INLINE Float2 RectCenter(const Rect rc) { return Rect::Center(rc); }
-    FORCE_INLINE Rect   RectTranslate(const Rect rc, Float2 pos) { return Rect::Translate(rc, pos); }
+    FORCE_INLINE RectFloat   RectCenterExtents(Float2 center, Float2 extents) { return RectFloat::CenterExtents(center, extents); }
+    FORCE_INLINE RectFloat   RectExpand(const RectFloat rc, Float2 expand) { return RectFloat::Expand(rc, expand); }
+    FORCE_INLINE bool   RectTestPoint(const RectFloat rc, Float2 pt) { return RectFloat::TestPoint(rc, pt); }
+    FORCE_INLINE bool   RectTest(const RectFloat rc1, const RectFloat rc2) { return RectFloat::Test(rc1, rc2); }
+    FORCE_INLINE void   RectAddPoint(RectFloat* rc, Float2 pt) { RectFloat::AddPoint(rc, pt); }
+    FORCE_INLINE Float2 RectGetCorner(const RectFloat* rc, int index) { return RectFloat::GetCorner(rc, index); }
+    FORCE_INLINE void   RectGetCorners(Float2 corners[4], const RectFloat* rc) { RectFloat::GetCorners(corners, rc); }
+    FORCE_INLINE Float2 RectExtents(const RectFloat rc) { return RectFloat::Extents(rc); }
+    FORCE_INLINE Float2 RectCenter(const RectFloat rc) { return RectFloat::Center(rc); }
+    FORCE_INLINE RectFloat   RectTranslate(const RectFloat rc, Float2 pos) { return RectFloat::Translate(rc, pos); }
 
     // RectInt
     FORCE_INLINE RectInt  RectIntExpand(const RectInt rc, Int2 expand) { return RectInt::Expand(rc, expand); }
