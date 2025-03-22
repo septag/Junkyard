@@ -16,7 +16,7 @@
     #include <MoltenVk/mvk_vulkan.h>
 #elif PLATFORM_LINUX
     #include <vulkan/vulkan.h>
-    #include <vulkan/vulkan_xlib.h>
+    // #include <vulkan/vulkan_xlib.h>
     #include <GLFW/glfw3.h>
 #else
     #error "Not implemented"
@@ -82,7 +82,7 @@ static const char* GFXBACKEND_DEFAULT_INSTANCE_EXTENSIONS[] = {"VK_KHR_surface",
 #elif PLATFORM_APPLE
 static const char* GFXBACKEND_DEFAULT_INSTANCE_EXTENSIONS[] = {"VK_KHR_surface", "VK_EXT_metal_surface"};
 #elif PLATFORM_LINUX
-static const char* GFXBACKEND_DEFAULT_INSTANCE_EXTENSIONS[] = {"VK_KHR_Surface", "VK_KHR_xlib_surface"};
+// Linux uses glfwRequiredInstanceExtensions
 #endif
 
 struct GfxBackendAllocator final : MemAllocator
@@ -891,13 +891,31 @@ namespace GfxBackend
         }
 
         StaticArray<const char*, 32> enabledExtensions;
+
+        #if PLATFORM_LINUX
+        uint32 numRequiredInstanceExts;
+        const char** requiredInstanceExts = glfwGetRequiredInstanceExtensions(&numRequiredInstanceExts);
+        for (uint32 i = 0; i < numRequiredInstanceExts; i++) {
+            if (!_HasExtension(inst.extensions, inst.numExtensions, requiredInstanceExts[i])) {
+                LOG_ERROR("Device doesn't support instance extension: %s", requiredInstanceExts[i]);
+                return false;
+            }
+
+            enabledExtensions.Push(requiredInstanceExts[i]);
+        }
+        #else
         for (uint32 i = 0; i < CountOf(GFXBACKEND_DEFAULT_INSTANCE_EXTENSIONS); i++)
             enabledExtensions.Push(GFXBACKEND_DEFAULT_INSTANCE_EXTENSIONS[i]);
+        #endif
 
         if constexpr (!CONFIG_FINAL_BUILD) {
             if (_HasExtension(inst.extensions, inst.numExtensions, "VK_EXT_debug_utils")) {
                 enabledExtensions.Push("VK_EXT_debug_utils");
                 gBackendVk.extApi.hasDebugUtils = true;
+            }
+            else {
+                LOG_ERROR("Device doesn't support instance extension: VK_EXT_debug_utils");
+                return false;
             }
         }
 
@@ -1149,7 +1167,7 @@ namespace GfxBackend
             vkEnumerateDeviceExtensionProperties(gpu.handle, nullptr, &gpu.numExtensions, gpu.extensions);
 
             if (settings.graphics.listExtensions) {
-                LOG_VERBOSE("Device Extensions (%u):", gpu.extensions);
+                LOG_VERBOSE("Device Extensions (%u):", gpu.numExtensions);
                 for (uint32 i = 0; i < gpu.numExtensions; i++) 
                     LOG_VERBOSE("\t%s", gpu.extensions[i].extensionName);
             }
@@ -1614,6 +1632,8 @@ bool GfxBackend::Initialize()
         OS::SetEnvVar("DISABLE_VULKAN_OBS_CAPTURE", "1");
     }
 
+    char vulkanPath[PATH_CHARS_MAX];
+    OS::GetEnvVar("VK_LAYER_PATH", vulkanPath, sizeof(vulkanPath));
     if (volkInitialize() != VK_SUCCESS) {
         LOG_ERROR("Volk failed to initialize. Possibly VulkanSDK is not installed (or MoltenVK dll is missing on Mac)");
         return false;

@@ -1,4 +1,5 @@
 #include "Application.h"
+#include "InputTypes.h"
 
 #if PLATFORM_LINUX
 
@@ -14,10 +15,17 @@
 #include "../Core/Log.h"
 #include "../Core/MathAll.h"
 #include "../Core/External/mgustavsson/ini.h"
+#include "../Core/Arrays.h"
 
 #include "GLFW/glfw3.h"
 
 #include <unistd.h>
+
+struct AppEventCallbackPair
+{
+    AppEventCallback callback;
+    void*            userData;
+};
 
 struct AppWindowState
 {
@@ -35,6 +43,9 @@ struct AppWindowState
     GLFWwindow* window;
     RectInt mainRect;
     bool windowModified;
+
+    Array<AppEventCallbackPair> eventCallbacks;
+    Pair<AppUpdateOverrideCallback, void*> overrideUpdateCallback;
 };
 
 static AppWindowState gApp;
@@ -108,7 +119,6 @@ namespace App
             Str::PrintFmt(iniFilename, sizeof(iniFilename), "%s_windows.ini", GetName());
 
             RectInt mainRect;
-            int w, h;
             glfwGetWindowPos(gApp.window, &mainRect.xmin, &mainRect.ymin);
             mainRect.SetWidth(gApp.windowWidth);
             mainRect.SetHeight(gApp.windowHeight);
@@ -225,6 +235,7 @@ bool App::Run(const AppDesc &desc)
     // Window creation
     if (settings.graphics.IsGraphicsEnabled()) {
         glfwWindowHint(GLFW_SCALE_TO_MONITOR, GLFW_TRUE);
+        glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
         _LoadInitRects();
         GLFWwindow* window = glfwCreateWindow(gApp.windowWidth, gApp.windowHeight, gApp.windowTitle, nullptr, nullptr);
         if (!window) {
@@ -244,6 +255,23 @@ bool App::Run(const AppDesc &desc)
         glfwSetWindowPos(window, gApp.mainRect.xmin, gApp.mainRect.ymin);
     }
 
+    LOG_INFO("(init) %s v%u.%u.%u initialized (%.1f ms)", 
+        settings.app.appName,  
+        GetVersionMajor(settings.app.appVersion),
+        GetVersionMinor(settings.app.appVersion),
+        GetVersionPatch(settings.app.appVersion),
+        stopwatch.ElapsedMS());
+
+    if (!desc.callbacks->Initialize()) {
+        LOG_ERROR("Initialization failed");
+        return false;
+    }    
+
+    Engine::_private::PostInitialize();
+
+    // Main message loop
+    uint64 tmNow = Timer::GetTicks();
+    uint64 tmPrev = tmNow;
     if (gApp.window) {
         GLFWwindow* window = gApp.window;
         while (!glfwWindowShouldClose(window)) {
@@ -252,12 +280,23 @@ bool App::Run(const AppDesc &desc)
             if (glfwGetWindowAttrib(window, GLFW_ICONIFIED)) {
 
             }
+
+            tmNow = Timer::GetTicks();
+            float dt = float(Timer::ToSec(tmNow - tmPrev));
+            if (!gApp.overrideUpdateCallback.first)
+                desc.callbacks->Update(dt);
+            else
+                gApp.overrideUpdateCallback.first(dt, gApp.overrideUpdateCallback.second);
+
+            tmPrev = tmNow;
         }
     }
 
+    gApp.desc.callbacks->Cleanup();
+
     Remote::Release();
     Vfs::Release();
-    
+
     if (gApp.window) {
         _SaveInitRects();
         glfwDestroyWindow(gApp.window);
@@ -278,9 +317,118 @@ void* App::GetNativeWindowHandle()
     return gApp.window;
 }
 
-void* GetNativeAppHandle()
+void* App::GetNativeAppHandle()
 {
     return IntToPtr(getpid());
 }
+
+uint16 App::GetWindowWidth()
+{
+    return gApp.windowWidth;
+}
+
+uint16 App::GetWindowHeight()
+{
+    return gApp.windowHeight;
+}
+
+uint16 App::GetFramebufferWidth()
+{
+    return gApp.framebufferWidth;
+}
+
+uint16 App::GetFramebufferHeight()
+{
+    return gApp.framebufferHeight;
+}
+
+AppFramebufferTransform App::GetFramebufferTransform()
+{
+    return AppFramebufferTransform::None;
+}
+
+AppDisplayInfo App::GetDisplayInfo()
+{
+    ASSERT(gApp.window);
+    GLFWmonitor* mon = glfwGetPrimaryMonitor();
+    ASSERT(mon);
+
+    float xscale, yscale;
+    const GLFWvidmode* vidMode = glfwGetVideoMode(mon);
+    glfwGetMonitorContentScale(mon, &xscale, &yscale);
+    AppDisplayInfo disp {
+        .width = uint16(vidMode->width),
+        .height = uint16(vidMode->height),
+        .refreshRate = uint16(vidMode->refreshRate),
+        .dpiScale = Max(xscale, yscale)
+    };
+    return disp;
+}
+
+bool App::IsKeyDown(InputKeycode keycode)
+{
+    ASSERT(gApp.window);
+    return false;
+}
+
+bool App::IsAnyKeysDown(const InputKeycode* keycodes, uint32 numKeycodes)
+{
+    return false;
+}
+
+InputKeyModifiers App::GetKeyMods()
+{
+    return InputKeyModifiers::None;
+}
+
+void App::RegisterEventsCallback(AppEventCallback callback, void* userData)
+{
+    bool alreadyExist = false;
+    for (uint32 i = 0; i < gApp.eventCallbacks.Count(); i++) {
+        if (callback == gApp.eventCallbacks[i].callback) {
+            alreadyExist = true;
+            break;
+        }
+    }
+
+    ASSERT_MSG(!alreadyExist, "Callback function already exists in event callbacks");
+    if (!alreadyExist) {
+        gApp.eventCallbacks.Push({callback, userData});
+    }    
+}
+
+void App::UnregisterEventsCallback(AppEventCallback callback)
+{
+    if (uint32 index = gApp.eventCallbacks.FindIf([callback](const AppEventCallbackPair& p)->bool {return p.callback == callback;});
+        index != UINT32_MAX)
+    {
+        gApp.eventCallbacks.RemoveAndSwap(index);
+    }
+}
+
+void App::OverrideUpdateCallback(AppUpdateOverrideCallback callback, void* userData)
+{
+    gApp.overrideUpdateCallback.first = callback;
+    gApp.overrideUpdateCallback.second = userData;
+}
+
+void App::SetCursor(AppMouseCursor cursor)
+{
+    UNUSED(cursor);
+}
+
+void App::CaptureMouse()
+{
+    ASSERT(gApp.window);
+    glfwSetInputMode(gApp.window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+}
+
+void App::ReleaseMouse()
+{
+    ASSERT(gApp.window);
+    glfwSetInputMode(gApp.window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+}
+
+
 
 #endif // PLATFORM_LINUX

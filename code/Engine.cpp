@@ -463,6 +463,9 @@ bool Engine::Initialize()
 
 void Engine::_private::PostInitialize()
 {
+    if (!gEng.initialized)
+        return;
+    
     // Fire up resource loading and override the update loop, so we can show something and wait for the init resources to finish
     if (gEng.initResourcesGroup.HasItemsInQueue()) {
         LOG_INFO("(init) Loading initial resources");

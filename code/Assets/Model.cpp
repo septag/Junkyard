@@ -811,14 +811,14 @@ namespace GLTF
                 mesh.vertexBufferOffsets[vertexBufferIdx] = cpuBuffers->vertexBufferSizes[vertexBufferIdx];
                 mesh.vertexBufferSizes[vertexBufferIdx] = layout.vertexBufferStrides[vertexBufferIdx]*mesh.numVertices;
                 cpuBuffers->vertexBufferSizes[vertexBufferIdx] += mesh.vertexBufferSizes[vertexBufferIdx];
-                cpuBuffers->vertexBufferSizes[vertexBufferIdx] = AlignValue(cpuBuffers->vertexBufferSizes[vertexBufferIdx], 16ull);
+                cpuBuffers->vertexBufferSizes[vertexBufferIdx] = AlignValue<uint64>(cpuBuffers->vertexBufferSizes[vertexBufferIdx], 16ull);
             }
 
             {
                 mesh.indexBufferOffset = cpuBuffers->indexBufferSize;
                 mesh.indexBufferSize = sizeof(uint32)*mesh.numIndices;
                 cpuBuffers->indexBufferSize += mesh.indexBufferSize;
-                cpuBuffers->indexBufferSize = AlignValue(cpuBuffers->indexBufferSize, 16ull);
+                cpuBuffers->indexBufferSize = AlignValue<uint64>(cpuBuffers->indexBufferSize, 16ull);
             }
         }
 

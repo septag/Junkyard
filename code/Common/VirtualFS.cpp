@@ -114,6 +114,7 @@ static VfsManager gVfs;
     #include <stdio.h>  // snprintf 
     PRAGMA_DIAGNOSTIC_PUSH()
     PRAGMA_DIAGNOSTIC_IGNORED_MSVC(4505)
+    PRAGMA_DIAGNOSTIC_IGNORED_CLANG_GCC("-Wc++11-narrowing")
     #include "../External/dmon/dmon.h"
     PRAGMA_DIAGNOSTIC_POP()
 #endif

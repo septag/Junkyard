@@ -371,7 +371,7 @@
 #define PLATFORM_MOBILE (0 || PLATFORM_ANDROID || PLATFORM_IOS)
 
 // Force ToolMode=0 on mobile platforms
-#if CONFIG_TOOLMODE && !PLATFORM_WINDOWS
+#if CONFIG_TOOLMODE && !PLATFORM_PC
     #undef CONFIG_TOOLMODE
     #define CONFIG_TOOLMODE 0
 #endif
