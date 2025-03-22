@@ -18,5 +18,15 @@
     },
     "clangd.arguments": [
         "--compile-commands-dir=${workspaceFolder}/.build/Ninja"
-    ]
+    ],
+    "terminal.integrated.profiles.linux": {
+        "vulkan-sdk": {
+            "path": "/usr/bin/bash",
+            "args": [
+                "--init-file",
+                "${workspaceFolder}/.downloads/vulkan-sdk/setup-env.sh"
+            ]
+        }
+    },
+    "terminal.integrated.defaultProfile.linux": "vulkan-sdk"
 }

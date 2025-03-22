@@ -497,6 +497,7 @@ namespace Jobs
         instance->type = type;
         instance->isAutoDelete = isAutoDelete;
 
+        #if 0
         // Another fiber is running on this worker thread
         // Set the running fiber as a parent to the new ones, unless we are using AutoDelete fibers, which don't have any dependencies
         JobsFiber* parent = nullptr;
@@ -505,6 +506,7 @@ namespace Jobs
             ASSERT(tdata->curFiber);
             parent = tdata->curFiber;
         }
+        #endif
 
         // Push workers to the end of the list, will be collected by fiber threads
         {

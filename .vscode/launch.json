@@ -9,9 +9,15 @@
             "request": "launch",
             "name": "Debug LLDB",
             "program": "${workspaceFolder}/bin/TestLinux",
-            "args": [],
+            "args": ["-GraphicsValidate=1"],
             "cwd": "${workspaceFolder}",
-            "preLaunchTask": "Build Linux"
+            "preLaunchTask": "Build Linux",
+            "env": {
+                "LD_LIBRARY_PATH":"${workspaceFolder}/.downloads/vulkan-sdk/x86_64/lib",
+                "VK_LAYER_PATH": "${workspaceFolder}/.downloads/vulkan-sdk/x86_64/lib",
+                // "VK_LOADER_DEBUG": "all",
+                // "VK_ICD_FILENAMES": "/usr/share/vulkan/icd.d/nvidia_icd.json"
+            }
         },
         {
             "name": "Debug Windows",
@@ -20,7 +26,7 @@
             "cwd": "${workspaceFolder}",
             "program": "${workspaceFolder}/.build/Ninja/TestBasicGfx.exe",
             "args": [],
-            "environment": [],
+            "environment": [{}],
             "stopAtEntry": false,
             "preLaunchTask": "Build Windows",
             "console": "externalTerminal",

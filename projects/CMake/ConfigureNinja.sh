@@ -21,12 +21,14 @@ if [[ "$(uname)" == "Linux" ]]; then
     echo  libglfw3-dev
     echo  uuid-dev
     echo  libc++abi-dev
-    echo  libvulkan-dev 
+    echo  Install VulkanSDK using Setup.sh
+    
+    source ../../.downloads/vulkan-sdk/setup-env.sh
 else
     extra_cmake_opts=""
 fi
 
-cmake ../../projects/CMake -GNinja $extra_cmake_opts "$@"
+cmake ../../projects/CMake -GNinja $extra_cmake_opts $@
 
 popd > /dev/null
 popd > /dev/null

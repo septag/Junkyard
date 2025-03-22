@@ -131,8 +131,7 @@ void OS::GetSysInfo(SysInfo* sysInfo)
                 if (strncmp(line, "MemTotal:", 9) == 0) {
                     uint64 memTotal;
                     sscanf(line, "MemTotal: %lu kB", &memTotal);
-                    printf("Total physical memory: %lu KB\n", memTotal);
-                    sysInfo->physicalMemorySize = memTotal;
+                    sysInfo->physicalMemorySize = memTotal*SIZE_KB;
                     break;
                 }
             }
