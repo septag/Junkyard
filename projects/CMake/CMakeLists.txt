@@ -73,7 +73,6 @@ if (WIN32)
     # Copy files after succesful build
     set (FILES_TO_COPY 
         ../../code/External/slang/bin/slang.dll
-        ../../code/External/slang/bin/slang-glslang.dll 
         ../../code/External/ispc_texcomp/lib/win64/ispc_texcomp.dll 
         ../../code/External/dbghelp/dbghelp.dll
         ../../code/External/meshoptimizer/lib/win64/meshoptimizer.dll)

@@ -101,6 +101,13 @@ struct GfxBackendVkAllocator
 
 struct GfxBackendSwapchain
 {
+    struct ImageState
+    {
+        VkPipelineStageFlags2 lastStage;
+        VkImageLayout lastLayout;
+        VkAccessFlags2 lastAccessFlags;
+    };
+
     uint32 backbufferIdx;
     uint32 numImages;
     VkSwapchainKHR handle;
@@ -109,8 +116,10 @@ struct GfxBackendSwapchain
     VkImageView imageViews[GFXBACKEND_BACKBUFFER_COUNT];
     VkSemaphore imageReadySemaphores[GFXBACKEND_BACKBUFFER_COUNT];
     VkSemaphore presentSemaphores[GFXBACKEND_BACKBUFFER_COUNT];
+    ImageState imageStates[GFXBACKEND_BACKBUFFER_COUNT];
     VkExtent2D extent;
     uint32 imageIndex;
+
     bool resize;
 
     void GoNext() { backbufferIdx = (backbufferIdx + 1) % GFXBACKEND_BACKBUFFER_COUNT; }
@@ -118,6 +127,7 @@ struct GfxBackendSwapchain
     VkSemaphore GetPresentSemaphore() { return presentSemaphores[backbufferIdx]; }
     VkImage GetImage() { return images[imageIndex]; }
     VkImageView GetImageView() { return imageViews[imageIndex]; }
+    ImageState& GetImageState() { return imageStates[imageIndex]; }
     void AcquireImage();
 };
 
@@ -612,6 +622,31 @@ namespace GfxBackend
         }
 
         return flags;
+    }
+
+    static inline VkAccessFlags2 _GetImageReadAccessFlags(VkImageUsageFlags usageFlags)
+    {
+        VK_ACCESS_2_INPUT_ATTACHMENT_READ_BIT|
+            VK_ACCESS_2_SHADER_READ_BIT|
+            VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT|
+            VK_ACCESS_2_SHADER_SAMPLED_READ_BIT|
+            VK_ACCESS_2_SHADER_STORAGE_READ_BIT|
+            VK_ACCESS_2_SHADER_BINDING_TABLE_READ_BIT_KHR;
+
+        VkAccessFlags2 accessFlags = 0;
+        if (usageFlags & VK_IMAGE_USAGE_SAMPLED_BIT) 
+            accessFlags |= VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_SAMPLED_READ_BIT;
+        if (usageFlags & VK_IMAGE_USAGE_STORAGE_BIT)
+            accessFlags |= VK_ACCESS_2_SHADER_STORAGE_READ_BIT;
+        if (usageFlags & VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT)
+            accessFlags |= VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT;
+        if (usageFlags & VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT)
+            accessFlags |= VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT;
+        if (usageFlags & VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT)
+            accessFlags |= VK_ACCESS_2_INPUT_ATTACHMENT_READ_BIT;
+        if (usageFlags == 0)
+            accessFlags = VK_ACCESS_2_MEMORY_READ_BIT;
+        return accessFlags;
     }
 
     static inline const GfxShaderParameterInfo* _FindShaderParam(const GfxShader& shader, const char* paramName)
@@ -1165,11 +1200,11 @@ namespace GfxBackend
             return false;
 
         // Optional extensions and features
-        gBackendVk.extApi.hasNonSemanticInfo = CheckAddExtension("VK_KHR_shader_non_semantic_info");
+        gBackendVk.extApi.hasNonSemanticInfo = (gpu.props.apiVersion < VK_API_VERSION_1_3) ? CheckAddExtension("VK_KHR_shader_non_semantic_info") : true;
         gBackendVk.extApi.hasMemoryBudget = CheckAddExtension("VK_EXT_memory_budget");
         if constexpr (PLATFORM_MOBILE)
             gBackendVk.extApi.hasAstcDecodeMode = CheckAddExtension("VK_EXT_astc_decode_mode");
-        gBackendVk.extApi.hasPipelineExecutableProperties = CheckAddExtension("VK_KHR_pipeline_executable_properties");
+        gBackendVk.extApi.hasPipelineExecutableProperties = settings.graphics.shaderDumpProperties ? CheckAddExtension("VK_KHR_pipeline_executable_properties") : false;
 
         if (enabledExtensions.Count()) {
             LOG_VERBOSE("Enabled device extensions (%u):", enabledExtensions.Count());
@@ -1416,70 +1451,6 @@ namespace GfxBackend
         }
 
         memset(swapchain, 0x0, sizeof(*swapchain));
-    }
-
-    static void _TransitionImageTEMP(VkCommandBuffer cmd, VkImage image, VkImageLayout curLayout, VkImageLayout newLayout)
-    {
-        VkImageAspectFlags aspect = (newLayout == VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL) ? VK_IMAGE_ASPECT_DEPTH_BIT : VK_IMAGE_ASPECT_COLOR_BIT;
-        VkImageMemoryBarrier2 imageBarrier {
-            .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
-            .srcStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
-            .srcAccessMask = VK_ACCESS_2_MEMORY_WRITE_BIT,
-            .dstStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
-            .dstAccessMask = VK_ACCESS_2_MEMORY_WRITE_BIT|VK_ACCESS_2_MEMORY_READ_BIT,
-            .oldLayout = curLayout,
-            .newLayout = newLayout,
-            .image = image,
-            .subresourceRange = {
-                .aspectMask = aspect,
-                .levelCount = VK_REMAINING_MIP_LEVELS,
-                .layerCount = VK_REMAINING_ARRAY_LAYERS
-            }
-        };
-
-        VkDependencyInfo depInfo {
-            .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
-            .imageMemoryBarrierCount = 1,
-            .pImageMemoryBarriers = &imageBarrier
-        };
-
-        vkCmdPipelineBarrier2(cmd, &depInfo);
-    }
-
-    static void _CopyImageToImageTEMP(VkCommandBuffer cmd, VkImage source, VkImage dest, VkExtent2D srcExtent, VkExtent2D destExtent)
-    {
-        VkImageBlit2 blitRegion {
-            .sType = VK_STRUCTURE_TYPE_IMAGE_BLIT_2,
-            .srcSubresource = {
-                .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-                .layerCount = 1
-            },
-            .srcOffsets = {
-                {0, 0, 0},
-                {int(srcExtent.width), int(srcExtent.height), 1}
-            },
-            .dstSubresource = {
-                .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-                .layerCount = 1
-            },
-            .dstOffsets = {
-                {0, 0, 0},
-                {int(destExtent.width), int(destExtent.height), 1}
-            },
-        };
-
-        VkBlitImageInfo2 blitInfo {
-            .sType = VK_STRUCTURE_TYPE_BLIT_IMAGE_INFO_2,
-            .srcImage = source,
-            .srcImageLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-            .dstImage = dest,
-            .dstImageLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-            .regionCount = 1,
-            .pRegions = &blitRegion,
-            .filter = VK_FILTER_LINEAR
-        };
-
-        vkCmdBlitImage2(cmd, &blitInfo);
     }
 
     static VkGraphicsPipelineCreateInfo* _DuplicateGraphicsPipelineCreateInfo(const VkGraphicsPipelineCreateInfo& pipelineInfo)
@@ -1801,11 +1772,14 @@ void GfxCommandBuffer::ClearImageColor(GfxImageHandle imgHandle, Float4 color)
     mShouldSubmit = true;
 
     VkCommandBuffer cmdVk = GfxBackend::_GetCommandBufferHandle(*this);
-    GfxBackendImage& image = gBackendVk.images.Data(imgHandle);
 
-    // TEMP
-    GfxBackend::_TransitionImageTEMP(cmdVk, image.handle, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL);
-    image.layout = VK_IMAGE_LAYOUT_GENERAL;
+    gBackendVk.objectPoolsMutex.EnterRead();
+    GfxBackendImage& image = gBackendVk.images.Data(imgHandle);
+    ASSERT_MSG(image.layout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL || image.layout == VK_IMAGE_LAYOUT_GENERAL, 
+               "Image should be already transitioned to TRANSFER_DST_OPTIMAL or GENERAL layout");
+    VkImageLayout imageLayout = image.layout;
+    VkImage imageHandle = image.handle;
+    gBackendVk.objectPoolsMutex.ExitRead();
 
     VkClearColorValue clearVal = {{color.x, color.y, color.z, color.w}};
     VkImageSubresourceRange clearRange = {
@@ -1814,44 +1788,139 @@ void GfxCommandBuffer::ClearImageColor(GfxImageHandle imgHandle, Float4 color)
         .layerCount = VK_REMAINING_ARRAY_LAYERS
     };
 
-    vkCmdClearColorImage(cmdVk, image.handle, image.layout, &clearVal, 1, &clearRange);
+    vkCmdClearColorImage(cmdVk, imageHandle, imageLayout, &clearVal, 1, &clearRange);
 }
 
 void GfxCommandBuffer::ClearSwapchainColor(Float4 color)
 {
+    ASSERT(!mIsInRenderPass);
+
     mShouldSubmit = true;
 
     VkCommandBuffer cmdVk = GfxBackend::_GetCommandBufferHandle(*this);
 
     VkImage imageVk = gBackendVk.swapchain.GetImage();
 
-    GfxBackend::_TransitionImageTEMP(cmdVk, imageVk, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL);
+    {
+        VkImageMemoryBarrier2 imageBarrier {
+            .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
+            .srcStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+            .dstStageMask = VK_PIPELINE_STAGE_2_CLEAR_BIT,
+            .dstAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT,
+            .newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+            .image = imageVk,
+            .subresourceRange = {
+                .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+                .levelCount = VK_REMAINING_MIP_LEVELS,
+                .layerCount = VK_REMAINING_ARRAY_LAYERS
+            }
+        };
+
+        VkDependencyInfo depInfo {
+            .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
+            .imageMemoryBarrierCount = 1,
+            .pImageMemoryBarriers = &imageBarrier
+        };
+
+        vkCmdPipelineBarrier2(cmdVk, &depInfo);
+    }
+
     VkClearColorValue clearVal = {{color.x, color.y, color.z, color.w}};
     VkImageSubresourceRange clearRange = {
         .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
         .levelCount = VK_REMAINING_MIP_LEVELS,
         .layerCount = VK_REMAINING_ARRAY_LAYERS
     };
-    vkCmdClearColorImage(cmdVk, imageVk, VK_IMAGE_LAYOUT_GENERAL, &clearVal, 1, &clearRange);
-    GfxBackend::_TransitionImageTEMP(cmdVk, imageVk, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
+    vkCmdClearColorImage(cmdVk, imageVk, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &clearVal, 1, &clearRange);
 
+    GfxBackendSwapchain::ImageState& state = gBackendVk.swapchain.GetImageState();
+    state.lastStage = VK_PIPELINE_STAGE_2_CLEAR_BIT;
+    state.lastLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    state.lastAccessFlags = VK_ACCESS_2_TRANSFER_WRITE_BIT;
     mDrawsToSwapchain = true;
     gBackendVk.queueMan.GetQueue(mQueueIndex).internalDependents |= GfxQueueType::Present;
 }
 
 void GfxCommandBuffer::CopyImageToSwapchain(GfxImageHandle imgHandle)
 {
+    ASSERT(!mIsInRenderPass);
     ASSERT(mIsRecording);
 
     VkCommandBuffer cmdVk = GfxBackend::_GetCommandBufferHandle(*this);
+
+    gBackendVk.objectPoolsMutex.EnterRead();
     GfxBackendImage& image = gBackendVk.images.Data(imgHandle);
+    ASSERT_MSG(image.layout == VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, "Image should be already transitioned to TRANSFER_SRC_OPTIMAL layout");
+    VkImage imageHandle = image.handle;
+    int imageWidth = int(image.desc.width);
+    int imageHeight = int(image.desc.height);
+    gBackendVk.objectPoolsMutex.ExitRead();
+
     VkImage swapchainImage = gBackendVk.swapchain.GetImage();
     
-    GfxBackend::_TransitionImageTEMP(cmdVk, swapchainImage, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
-    VkExtent2D extent { image.desc.width, image.desc.height };
-    GfxBackend::_CopyImageToImageTEMP(cmdVk, image.handle, swapchainImage, extent, gBackendVk.swapchain.extent);
-    GfxBackend::_TransitionImageTEMP(cmdVk, swapchainImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
+    {
+        VkImageMemoryBarrier2 imageBarrier {
+            .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
+            .srcStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+            .dstStageMask = VK_PIPELINE_STAGE_2_COPY_BIT,
+            .dstAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT,
+            .newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+            .image = swapchainImage,
+            .subresourceRange = {
+                .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+                .levelCount = VK_REMAINING_MIP_LEVELS,
+                .layerCount = VK_REMAINING_ARRAY_LAYERS
+            }
+        };
 
+        VkDependencyInfo depInfo {
+            .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
+            .imageMemoryBarrierCount = 1,
+            .pImageMemoryBarriers = &imageBarrier
+        };
+
+        vkCmdPipelineBarrier2(cmdVk, &depInfo);
+    }
+
+    {
+        VkImageBlit2 blitRegion {
+            .sType = VK_STRUCTURE_TYPE_IMAGE_BLIT_2,
+            .srcSubresource = {
+                .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+                .layerCount = 1
+            },
+            .srcOffsets = {
+                {0, 0, 0},
+                {imageWidth, imageHeight, 1}
+            },
+            .dstSubresource = {
+                .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+                .layerCount = 1
+            },
+            .dstOffsets = {
+                {0, 0, 0},
+                {int(gBackendVk.swapchain.extent.width), int(gBackendVk.swapchain.extent.height), 1}
+            },
+        };
+
+        VkBlitImageInfo2 blitInfo {
+            .sType = VK_STRUCTURE_TYPE_BLIT_IMAGE_INFO_2,
+            .srcImage = imageHandle,
+            .srcImageLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+            .dstImage = swapchainImage,
+            .dstImageLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+            .regionCount = 1,
+            .pRegions = &blitRegion,
+            .filter = VK_FILTER_LINEAR
+        };
+
+        vkCmdBlitImage2(cmdVk, &blitInfo);
+    }
+
+    GfxBackendSwapchain::ImageState& state = gBackendVk.swapchain.GetImageState();
+    state.lastStage = VK_PIPELINE_STAGE_2_COPY_BIT;
+    state.lastLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    state.lastAccessFlags = VK_ACCESS_2_TRANSFER_WRITE_BIT;
     mDrawsToSwapchain = true;
     mShouldSubmit = true;
 
@@ -2189,9 +2258,41 @@ GfxCommandBuffer GfxBackend::BeginCommandBuffer(GfxQueueType queueType)
 void GfxBackend::EndCommandBuffer(GfxCommandBuffer& cmdBuffer)
 {
     ASSERT(cmdBuffer.mIsRecording && !cmdBuffer.mIsInRenderPass);
+    VkCommandBuffer cmdVk = GfxBackend::_GetCommandBufferHandle(cmdBuffer);
 
-    VkCommandBuffer handle = GfxBackend::_GetCommandBufferHandle(cmdBuffer);
-    [[maybe_unused]] VkResult r = vkEndCommandBuffer(handle);
+    // Transition the swapchain to PRESENT layout if we have drawn to it
+    if (cmdBuffer.mDrawsToSwapchain) {
+        GfxBackendSwapchain::ImageState& state = gBackendVk.swapchain.GetImageState();
+
+        VkImageMemoryBarrier2 imageBarrier {
+            .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
+            .srcStageMask = state.lastStage,
+            .srcAccessMask = state.lastAccessFlags,
+            .dstStageMask = VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT,
+            .oldLayout = state.lastLayout,
+            .newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+            .image = gBackendVk.swapchain.GetImage(),
+            .subresourceRange = {
+                .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+                .levelCount = VK_REMAINING_MIP_LEVELS,
+                .layerCount = VK_REMAINING_ARRAY_LAYERS
+            }
+        };
+
+        VkDependencyInfo depInfo {
+            .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
+            .imageMemoryBarrierCount = 1,
+            .pImageMemoryBarriers = &imageBarrier
+        };
+
+        vkCmdPipelineBarrier2(cmdVk, &depInfo);
+
+        state.lastStage = VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT;
+        state.lastLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+        state.lastAccessFlags = 0;
+    }
+
+    [[maybe_unused]] VkResult r = vkEndCommandBuffer(cmdVk);
     ASSERT(r == VK_SUCCESS);
     cmdBuffer.mIsRecording = false;
 
@@ -3099,6 +3200,10 @@ GfxPipelineHandle GfxBackend::CreateGraphicsPipeline(const GfxShader& shader, Gf
         .basePipelineHandle = VK_NULL_HANDLE,
         .basePipelineIndex = -1
     };
+
+    // TODO: implement hasPipelineExecutableProperties (shaderDumpProperties option):
+    //  Dump shader properties into text files
+    //  https://registry.khronos.org/vulkan/specs/latest/man/html/VK_KHR_pipeline_executable_properties.html
 
     VkPipeline pipelineVk;
     if (vkCreateGraphicsPipelines(gBackendVk.device, gBackendVk.pipelineCache, 1, &pipelineInfo, gBackendVk.vkAlloc, &pipelineVk) != VK_SUCCESS) {
@@ -4727,7 +4832,7 @@ void GfxCommandBuffer::BatchCopyBufferToImage(uint32 numParams, const GfxCopyBuf
                 .srcStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT,
                 .srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT,
                 .dstStageMask = GfxBackend::_GetImageDestStageFlags(dstQueueType, copyParams.stagesUsed),
-                .dstAccessMask = VK_ACCESS_2_MEMORY_READ_BIT,
+                .dstAccessMask = GfxBackend::_GetImageReadAccessFlags(VkImageUsageFlags(dstImage.desc.usageFlags)),
                 .oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                 .newLayout = dstLayout,
                 .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
@@ -4771,7 +4876,7 @@ void GfxCommandBuffer::BatchCopyBufferToImage(uint32 numParams, const GfxCopyBuf
                     .srcStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT,
                     .srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT,
                     .dstStageMask = GfxBackend::_GetImageDestStageFlags(dstQueueType, copyParams.stagesUsed),
-                    .dstAccessMask = VK_ACCESS_2_MEMORY_READ_BIT,
+                    .dstAccessMask = GfxBackend::_GetImageReadAccessFlags(VkImageUsageFlags(dstImage.desc.usageFlags)),
                     .oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                     .newLayout = dstLayout,
                     .srcQueueFamilyIndex = queueFamilyIdx,
@@ -5061,6 +5166,40 @@ void GfxCommandBuffer::BeginRenderPass(const GfxBackendRenderPass& pass)
     if (pass.hasDepth)
         depthAttachment = MakeRenderingAttachmentInfo(pass.depthAttachment, depthView, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
 
+    // If we are drawing to Swapchain, we have to wait for drawing to finish and also transition the layout to COLOR_ATTACHMENT_OUTPUT
+    if (pass.swapchain) {
+        GfxBackendSwapchain::ImageState& state = gBackendVk.swapchain.GetImageState();
+        VkImageMemoryBarrier2 imageBarrier {
+            .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
+            .srcStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+            .srcAccessMask = state.lastAccessFlags,
+            .dstStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+            .dstAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT|VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
+            .oldLayout = state.lastLayout,
+            .newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+            .image = gBackendVk.swapchain.GetImage(),
+            .subresourceRange = {
+                .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+                .levelCount = VK_REMAINING_MIP_LEVELS,
+                .layerCount = VK_REMAINING_ARRAY_LAYERS
+            }
+        };
+
+        VkDependencyInfo depInfo {
+            .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
+            .imageMemoryBarrierCount = 1,
+            .pImageMemoryBarriers = &imageBarrier
+        };
+
+        vkCmdPipelineBarrier2(cmdVk, &depInfo);
+
+        state.lastStage = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
+        state.lastAccessFlags = VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT|VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
+        state.lastLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+        gBackendVk.queueMan.GetQueue(mQueueIndex).internalDependents |= GfxQueueType::Present;
+    }
+
     VkRenderingInfo renderInfo {
         .sType = VK_STRUCTURE_TYPE_RENDERING_INFO,
         .renderArea = renderArea,
@@ -5083,12 +5222,6 @@ void GfxCommandBuffer::EndRenderPass()
 
     VkCommandBuffer cmdVk = GfxBackend::_GetCommandBufferHandle(*this);
     vkCmdEndRendering(cmdVk);
-
-    if (mDrawsToSwapchain) {
-        VkImage swapchainImage = gBackendVk.swapchain.GetImage();
-        GfxBackend::_TransitionImageTEMP(cmdVk, swapchainImage, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
-        gBackendVk.queueMan.GetQueue(mQueueIndex).internalDependents |= GfxQueueType::Present;
-    }
 
     mIsInRenderPass = false;
 }

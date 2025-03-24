@@ -116,26 +116,25 @@ namespace Log
 
     static void _PrintToDebugger(const LogEntry& entry)
     {
-        #if PLATFORM_WINDOWS
-            uint32 newSize = entry.textLen + 128;
-            MemTempAllocator tmp;
-            char* text = tmp.MallocTyped<char>(newSize);
+        if constexpr(!PLATFORM_WINDOWS)
+            return;
 
-            if (text) {
-                char source[PATH_CHARS_MAX];
-                if (entry.sourceFile)
-                    Str::PrintFmt(source, sizeof(source), "%s(%d): ", entry.sourceFile, entry.line);
-                else 
-                    source[0] = '\0';
-                Str::PrintFmt(text, newSize, "%s%s%s\n", source, LOG_ENTRY_TYPES[static_cast<uint32>(entry.type)], entry.text);
-                Debug::Print(text);
-            }
-            else {
-                ASSERT_ALWAYS(0, "Not enough stack memory: %u bytes", newSize);
-            }
-        #else
-            UNUSED(entry);
-        #endif
+        uint32 newSize = entry.textLen + 128;
+        MemTempAllocator tmp;
+        char* text = tmp.MallocTyped<char>(newSize);
+
+        if (text) {
+            char source[PATH_CHARS_MAX];
+            if (entry.sourceFile)
+                Str::PrintFmt(source, sizeof(source), "%s(%d): ", entry.sourceFile, entry.line);
+            else 
+                source[0] = '\0';
+            Str::PrintFmt(text, newSize, "%s%s%s", source, LOG_ENTRY_TYPES[static_cast<uint32>(entry.type)], entry.text);
+            Debug::PrintLine(text);
+        }
+        else {
+            ASSERT_ALWAYS(0, "Not enough stack memory: %u bytes", newSize);
+        }
     }
 
     #ifdef TRACY_ENABLE

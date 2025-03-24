@@ -105,7 +105,7 @@ namespace Debug
         // Load dbghelp.dll: this DLL should be provided and included in the repo
         gStacktrace.mDbgHelp = LoadLibraryA("dbghelp.dll");
         if (!gStacktrace.mDbgHelp) {
-            Debug::Print("Could not load DbgHelp.dll");
+            Debug::PrintLine("Could not load DbgHelp.dll");
             gStacktrace.mInitialized = false;
             return false;
         }
@@ -121,7 +121,7 @@ namespace Debug
 
         if (!_SymInitialize(gStacktrace.mProcess, NULL, TRUE)) {
             LeaveCriticalSection(&gStacktrace.mMutex);
-            Debug::Print("DbgHelp: _SymInitialize failed");
+            Debug::PrintLine("DbgHelp: _SymInitialize failed");
             gStacktrace.mInitialized = false;
             return false;
         }
@@ -183,7 +183,7 @@ void Debug::ResolveStacktrace(uint16 numStacktrace, void* const* stackframes, De
         else {
             DWORD gle = GetLastError();
             if (gle != ERROR_INVALID_ADDRESS && gle != ERROR_MOD_NOT_FOUND) {
-                Debug::Print("_SymGetSymFromAddr64 failed");
+                Debug::PrintLine("_SymGetSymFromAddr64 failed");
                 break;
             }
             Str::Copy(entry.name, sizeof(entry.name), "[NA]");
@@ -196,7 +196,7 @@ void Debug::ResolveStacktrace(uint16 numStacktrace, void* const* stackframes, De
         else {
             DWORD gle = GetLastError();
             if (gle != ERROR_INVALID_ADDRESS && gle != ERROR_MOD_NOT_FOUND) {
-                Debug::Print("_SymGetLineFromAddr64 failed");
+                Debug::PrintLine("_SymGetLineFromAddr64 failed");
                 break;
             }
             Str::Copy(entry.filename, PATH_CHARS_MAX, "[NA]");

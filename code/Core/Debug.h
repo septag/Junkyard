@@ -15,7 +15,8 @@ using DebugFiberScopeProtectorCallback = bool(*)(void* userData);
 
 namespace Debug
 {
-    API void Print(const char* text);
+    API void PrintLine(const char* text);
+    API void PrintLineFmt(const char* fmt, ...);
     API void SetCaptureStacktraceForFiberProtector(bool capture);
     API uint16 CaptureStacktrace(void** stackframes, uint16 maxStackframes, uint16 framesToSkip = 1, uint32* pHash = nullptr);
     API void ResolveStacktrace(uint16 numStacktrace, void* const* stackframes, DebugStacktraceEntry* entries);

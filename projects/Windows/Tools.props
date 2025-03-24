@@ -15,7 +15,6 @@
     </ClCompile>
     <PostBuildEvent>
       <Command>echo No | copy /-Y $(SolutionDir)..\..\code\External\slang\bin\slang.dll $(OutDir)
-echo No | copy /-Y $(SolutionDir)..\..\code\External\slang\bin\slang-glslang.dll $(OutDir)
 echo No | copy /-Y $(SolutionDir)..\..\code\External\ispc_texcomp\lib\win64\ispc_texcomp.dll $(OutDir)
 echo No | copy /-Y $(SolutionDir)..\..\code\External\dbghelp\dbghelp.dll $(OutDir)
 echo No | copy /-Y $(SolutionDir)..\..\code\External\meshoptimizer\lib\win64\meshoptimizer.dll $(OutDir)</Command>

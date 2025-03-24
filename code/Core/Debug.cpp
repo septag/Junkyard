@@ -17,14 +17,34 @@
 
 static bool gDebugCaptureStacktraceForFiberProtector;
 
-void Debug::Print(const char* text)
+void Debug::PrintLine(const char* text)
 {
     #if PLATFORM_WINDOWS
-        OS::Win32PrintToDebugger(text);
+    OS::Win32PrintToDebugger(text);
+    OS::Win32PrintToDebugger("\n");
     #elif PLATFORM_ANDROID
-        OS::AndroidPrintToLog(OSAndroidLogType::Debug, CONFIG_APP_NAME, text);
+    OS::AndroidPrintToLog(OSAndroidLogType::Debug, CONFIG_APP_NAME, text);
     #else
-        puts(text);
+    puts(text);
+    #endif
+}
+
+void Debug::PrintLineFmt(const char* fmt, ...)
+{
+    char text[1024];
+    va_list args;
+    va_start(args, fmt);
+    uint32 len = Str::PrintFmtArgs(text, sizeof(text)-1, fmt, args);
+    va_end(args);
+
+    #if PLATFORM_WINDOWS
+    text[len] = '\n';
+    text[len+1] = '\0';
+    OS::Win32PrintToDebugger(text);
+    #elif PLATFORM_ANDROID
+    OS::AndroidPrintToLog(OSAndroidLogType::Debug, CONFIG_APP_NAME, text);
+    #else
+    puts(text);
     #endif
 }
 
@@ -116,24 +136,16 @@ void Debug::FiberScopeProtector_Pop(uint16 id)
 
 void Debug::FiberScopeProtector_Check()
 {
-    char msg[512];
-    
     if (FiberProtectorCtx().items.Count()) {
-        Str::PrintFmt(msg, sizeof(msg), "Found %u protected items in the fiber that are not destructed in the scope:", FiberProtectorCtx().items.Count());
-        Debug::Print(msg);
-        if constexpr (PLATFORM_WINDOWS) Debug::Print("\n");
+        Debug::PrintLineFmt("Found %u protected items in the fiber that are not destructed in the scope:", FiberProtectorCtx().items.Count());
         
         DebugStacktraceEntry stacktraces[kDebugMaxFiberProtectorStackframes];
         for (const DebugFiberProtectorThreadContext::Item& item : FiberProtectorCtx().items) {
-            Str::PrintFmt(msg, sizeof(msg), "\t%s:", item.name);
-            Debug::Print(msg);
-            if constexpr (PLATFORM_WINDOWS) Debug::Print("\n");
+            Debug::PrintLineFmt("\t%s:", item.name);
             if (item.numStackframes) {
                 Debug::ResolveStacktrace(item.numStackframes, item.stackframes, stacktraces);
                 for (uint16 i = 0; i < item.numStackframes; i++) {
-                    Str::PrintFmt(msg, sizeof(msg), "\t\t%s(%u): %s", stacktraces[i].filename, stacktraces[i].line, stacktraces[i].name);
-                    Debug::Print(msg);
-                    if constexpr (PLATFORM_WINDOWS) Debug::Print("\n");
+                    Debug::PrintLineFmt("\t\t%s(%u): %s", stacktraces[i].filename, stacktraces[i].line, stacktraces[i].name);
                 }
             }
         }

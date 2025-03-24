@@ -20,7 +20,7 @@ enum class SettingsCategory : uint32
     _Count
 };
 
-static constexpr const char* kSettingCategoryNames[uint32(SettingsCategory::_Count)] = {
+static constexpr const char* SETTINGS_CATEGORY_NAMES[uint32(SettingsCategory::_Count)] = {
     "App",
     "Engine",
     "Graphics",
@@ -28,7 +28,7 @@ static constexpr const char* kSettingCategoryNames[uint32(SettingsCategory::_Cou
     "Debug"
 };
 
-static_assert(CountOf(kSettingCategoryNames) == uint32(SettingsCategory::_Count));
+static_assert(CountOf(SETTINGS_CATEGORY_NAMES) == uint32(SettingsCategory::_Count));
 
 struct SettingsJunkyardParser final : SettingsCustomCallbacks
 {
@@ -217,7 +217,7 @@ uint32 SettingsJunkyardParser::GetCategoryCount() const
 const char* SettingsJunkyardParser::GetCategory(uint32 id) const
 {
     ASSERT(id < uint32(SettingsCategory::_Count));
-    return kSettingCategoryNames[id];
+    return SETTINGS_CATEGORY_NAMES[id];
 }
 
 const SettingsJunkyard& SettingsJunkyard::Get()
