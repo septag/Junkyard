@@ -154,8 +154,11 @@ namespace Vfs
 //    ╚═╝     ╚═╝ ╚═════╝  ╚═════╝ ╚═╝  ╚═══╝   ╚═╝   ╚══════╝
 bool Vfs::MountLocal(const char* rootDir, const char* alias, [[maybe_unused]] bool watch)
 {
-    if (OS::GetPathInfo(rootDir).type != PathType::Directory) {
-        LOG_ERROR("VirtualFS: RootDir '%s' is not a valid directory", rootDir);
+    if (!OS::IsPathDir(rootDir)) {
+        LOG_ERROR("VirtualFS: '%s' is not a valid directory", rootDir);
+        if constexpr(!CONFIG_FINAL_BUILD) {
+            LOG_ERROR("VirtualFS: Make sure cwd on the root directory of the project and assets are downloaded for this app");
+        }
         return false;
     }
 

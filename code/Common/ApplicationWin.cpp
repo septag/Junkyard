@@ -108,6 +108,25 @@ struct AppWindowsState
 
 static AppWindowsState gApp;
 
+// MSVC D0 extension work around for LivePPte
+#if CONFIG_ENABLE_LIVEPP
+static void _LivePPGlobalHotReloadEnd(lpp::LppGlobalHotReloadEndHookId)
+{
+    char eventName[32];
+    if (Str::PrintFmt(eventName, sizeof(eventName), "D0_GlobalHotReload_%i", GetCurrentProcessId()) < 0) {
+        return;
+    }
+
+    HANDLE ev = OpenEventA(EVENT_MODIFY_STATE, FALSE, eventName);
+    if (ev) {
+        SetEvent(ev);
+        CloseHandle(ev);
+    }
+}
+
+LPP_GLOBAL_HOTRELOAD_END_HOOK(_LivePPGlobalHotReloadEnd);
+#endif // CONFIG_ENABLE_LIVEPP
+
 namespace App
 {
     static void _InitKeyTable()
@@ -778,6 +797,11 @@ namespace App
         TimerStopWatch stopwatch;
 
         #if CONFIG_ENABLE_LIVEPP
+        if (!OS::IsPathDir("code/External/LivePP")) {
+            ASSERT_ALWAYS(0, "Cannot find path './code/External/LivePP'. Perhaps CWD is not set to project's root directory");
+            return false;
+        }
+
         lpp::LppSynchronizedAgent lppAgent = lpp::LppCreateSynchronizedAgentANSI(nullptr, "code/External/LivePP");
         lppAgent.EnableModuleANSI(lpp::LppGetCurrentModulePathANSI(), lpp::LPP_MODULES_OPTION_NONE, nullptr, nullptr);
         if (!lpp::LppIsValidSynchronizedAgent(&lppAgent)) {
