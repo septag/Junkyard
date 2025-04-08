@@ -309,7 +309,7 @@ enum class GfxMemoryArena : uint8
     DynamicBufferGPU
 };
 
-enum class GfxQueueType : uint8
+enum class GfxQueueType
 {
     None = 0,
     Graphics = 0x1,

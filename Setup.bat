@@ -51,16 +51,21 @@ if "%1" == "-cleaninstalldeps" (
 )
 
 :InstallTracyClient
-choice /c YN /M "Download tracy profiler v0.10 "
+choice /c YN /M "Download tracy profiler v0.11.1 "
 if errorlevel 2 goto :InstallLivePP
 if errorlevel 1 (
-    if not exist .downloads\Tracy-0.10.7z (
-        powershell Invoke-WebRequest -Uri "https://github.com/wolfpld/tracy/releases/download/v0.10/Tracy-0.10.7z" -OutFile .downloads\Tracy-0.10.7z
+    if not exist .downloads\Tracy-0.11.zip (
+        powershell Invoke-WebRequest -Uri "https://github.com/wolfpld/tracy/releases/download/v0.11.1/windows-0.11.1.zip" -OutFile .downloads\Tracy-0.11.1
         if %errorlevel% neq 1 goto :End
     )
-    powershell Invoke-WebRequest -Uri "https://github.com/wolfpld/tracy/releases/download/v0.10/tracy.pdf" -OutFile .downloads\tracy.pdf
-    echo Tracy client saved to '.downloads\Tracy-0.10.7z'
-    call .downloads\Tracy-0.10.7z
+
+    if not exist .downloads\Tracy-0.11.1 mkdir .downloads\Tracy-0.11.1
+    powershell Expand-Archive -Force -Path .downloads\Tracy-0.11.1.zip -DestinationPath .downloads\Tracy-0.11.1
+    del /F .downloads\Tracy-0.11.1.zip
+
+    powershell Invoke-WebRequest -Uri "https://github.com/wolfpld/tracy/releases/download/v0.11.1/tracy.pdf" -OutFile .downloads\Tracy-0.11.1\tracy.pdf
+
+    echo Tracy client saved to '.downloads\Tracy-0.11.1'
 )
 
 :InstallLivePP

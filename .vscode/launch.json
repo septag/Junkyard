@@ -5,31 +5,18 @@
     "version": "0.2.0",
     "configurations": [
         {
+            "name": "LaunchLinux",
             "type": "lldb",
             "request": "launch",
-            "name": "Debug LLDB",
-            "program": "${workspaceFolder}/bin/TestLinux",
-            "args": ["-GraphicsValidate=1"],
-            "cwd": "${workspaceFolder}",
-            "preLaunchTask": "Build Linux",
-            "env": {
-                "LD_LIBRARY_PATH":"${workspaceFolder}/.downloads/vulkan-sdk/x86_64/lib",
-                "VK_LAYER_PATH": "${workspaceFolder}/.downloads/vulkan-sdk/x86_64/lib",
-                // "VK_LOADER_DEBUG": "all",
-                // "VK_ICD_FILENAMES": "/usr/share/vulkan/icd.d/nvidia_icd.json"
-            }
-        },
-        {
-            "name": "Debug Windows",
-            "type": "cppvsdbg",
-            "request": "launch",
-            "cwd": "${workspaceFolder}",
-            "program": "${workspaceFolder}/.build/Ninja/TestBasicGfx.exe",
+            "program": "${command:cmake.launchTargetPath}",
             "args": [],
-            "environment": [{}],
-            "stopAtEntry": false,
-            "preLaunchTask": "Build Windows",
-            "console": "externalTerminal",
+            "cwd": "${workspaceFolder}",
+            "env": {
+                "LD_LIBRARY_PATH":"${workspaceFolder}/bin:${workspaceFolder}/.downloads/vulkan-1.3.296.0/x86_64/lib",
+                "VK_LAYER_PATH": "${workspaceFolder}/.downloads/vulkan-1.3.296.0/x86_64/lib",
+                // "VK_LOADER_DEBUG": "all",
+                "VK_ICD_FILENAMES": "/usr/share/vulkan/icd.d/nvidia_icd.json"
+            }
         }
     ]
 }

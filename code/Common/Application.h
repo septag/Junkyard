@@ -20,7 +20,8 @@ enum class AppMouseCursor
     ResizeNESW,
     ResizeNWSE,
     Hand,
-    NotAllowed
+    NotAllowed,
+    _Count
 };
 
 enum class AppEventType 

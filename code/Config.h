@@ -11,3 +11,7 @@
     #endif
 #endif
 
+#ifndef CONFIG_DEBUG_GFXBACKEND
+    #define CONFIG_DEBUG_GFXBACKEND 0
+#endif 
+

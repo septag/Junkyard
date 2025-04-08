@@ -10,6 +10,10 @@
     #define TRACY_FIBERS
 #endif
 
+#if PLATFORM_LINUX
+    #define TRACY_NO_CALLSTACK
+#endif
+
 #include "External/tracy/tracy/TracyC.h"
 
 #ifdef TRACY_ENABLE
@@ -47,7 +51,6 @@
             };
         }
     }
-
 
     #define TracyCRealloc(oldPtr, ptr, size) if (oldPtr) { TracyCFree(oldPtr); }  TracyCAlloc(ptr, size)
 
@@ -100,10 +103,6 @@
         #define PROFILE_ZONE_NAME_COLOR_OPT(name, color, active) \
             static constexpr struct ___tracy_source_location_data CONCAT(__tracy_source_location,__LINE__) = { name, __func__,  __FILE__, (uint32_t)__LINE__, color }; \
             Tracy::_private::TracyCZoneScope CONCAT(__tracy_ctx,__LINE__)(___tracy_emit_zone_begin( &CONCAT(__tracy_source_location,__LINE__), active ), &CONCAT(__tracy_source_location,__LINE__));
-        #define PROFILE_ZONE_WITH_TEXT_OPT(text, textLen, active) \
-            static constexpr struct ___tracy_source_location_data CONCAT(__tracy_source_location,__LINE__) = { NULL, __func__,  __FILE__, (uint32_t)__LINE__, 0 }; \
-            Tracy::_private::TracyCZoneScope CONCAT(__tracy_ctx,__LINE__)(___tracy_emit_zone_begin( &CONCAT(__tracy_source_location,__LINE__), active ), &CONCAT(__tracy_source_location,__LINE__)); \
-            TracyCZoneText(CONCAT(__tracy_ctx,__LINE__).mCtx, text, textLen)
 
         #define PROFILE_ZONE() PROFILE_ZONE_OPT(true)
         #define PROFILE_ZONE_NAME(name) PROFILE_ZONE_NAME_OPT(name, true)
