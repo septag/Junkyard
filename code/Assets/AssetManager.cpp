@@ -299,7 +299,7 @@ namespace Asset
     constexpr AssetPlatform::Enum _GetCurrentPlatform();
     static void _SaveAssetHashLookup();
     static void _LoadAssetHashLookup();
-    static void _OnFileChanged(const char* filepath);
+    [[maybe_unused]] static void _OnFileChanged(const char* filepath);
     static void _UnloadDatasManually(Span<AssetDataPair> datas);
     static void _GpuResourceFinishedCallback(void* userData);
 } // Asset
@@ -1846,7 +1846,7 @@ void Asset::Release()
     }
 
     if (numUnloadJobs) {
-        LOG_VERBOSE("Unloading %u AssetGroups ...");
+        LOG_VERBOSE("Unloading %u AssetGroups ...", numUnloadJobs);
         while (gAssetMan.curJob) {
             Update();
             Thread::Sleep(1);

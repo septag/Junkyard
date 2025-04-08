@@ -666,7 +666,6 @@ bool ImGui::DrawFrame(GfxCommandBuffer cmd)
         cmd.MapBuffer(stagingVertexBuffer, (void**)&vertices);
         cmd.MapBuffer(stagingIndexBuffer, (void**)&indices);
 
-        uint32 numVerts = 0, numIndices = 0;
         for (int i = 0; i < drawData->CmdListsCount; i++) {
             const ImDrawList* cmdList = drawData->CmdLists[i];
             memcpy(vertices, cmdList->VtxBuffer.Data, cmdList->VtxBuffer.Size * sizeof(ImDrawVert));
@@ -674,9 +673,6 @@ bool ImGui::DrawFrame(GfxCommandBuffer cmd)
 
             vertices += cmdList->VtxBuffer.Size;
             indices += cmdList->IdxBuffer.Size;
-
-            numVerts += cmdList->VtxBuffer.Size;
-            numIndices += cmdList->IdxBuffer.Size;
         }
 
         cmd.FlushBuffer(stagingVertexBuffer);

@@ -8,18 +8,20 @@ PRAGMA_DIAGNOSTIC_PUSH()
 PRAGMA_DIAGNOSTIC_IGNORED_MSVC(4530)   // C4530: C++ exception handler used, but unwind semantics are not enabled. Specify /EHsc
 PRAGMA_DIAGNOSTIC_IGNORED_CLANG_GCC("-Wsometimes-uninitialized")
 PRAGMA_DIAGNOSTIC_IGNORED_CLANG_GCC("-Wunused-variable")
-#ifdef PLATFORM_POSIX
+#if PLATFORM_POSIX
     #define OLD_PLATFORM_POSIX PLATFORM_POSIX
     #undef PLATFORM_POSIX
 #endif
-#ifdef PLATFORM_WINDOWS
+
+#if PLATFORM_WINDOWS
     // windows version is using "fileno" api which gives us linker errors 
     #define fileno _fileno
     #define OLD_PLATFORM_WINDOWS PLATFORM_WINDOWS
     #undef PLATFORM_WINDOWS
 #endif
-#define TRACY_UNWIND(_stackframes, _depth) Debug::CaptureStacktrace(_stackframes, _depth, 2)
+// #define TRACY_UNWIND(_stackframes, _depth) Debug::CaptureStacktrace(_stackframes, _depth, 2)
 #define TRACY_VK_USE_SYMBOL_TABLE
+
 #include "External/tracy/TracyClient.cpp"
 PRAGMA_DIAGNOSTIC_POP()
 

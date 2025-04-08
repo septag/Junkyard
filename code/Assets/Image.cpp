@@ -30,6 +30,7 @@ PRAGMA_DIAGNOSTIC_POP()
 #define STBIR_FREE(ptr,c)                   Mem::Free(ptr, reinterpret_cast<MemAllocator*>(c));
 PRAGMA_DIAGNOSTIC_PUSH()
 PRAGMA_DIAGNOSTIC_IGNORED_MSVC(4505)
+PRAGMA_DIAGNOSTIC_IGNORED_CLANG_GCC("-Wunused-function")
 #include "../External/stb/stb_image_resize.h"
 PRAGMA_DIAGNOSTIC_POP()
 
@@ -368,6 +369,7 @@ bool AssetImageImpl::Bake(const AssetParams& params, AssetData* data, const Span
         case ImageEncoderCompression::ASTC_5x5: compressedFormat = GfxFormat::ASTC_5x5_UNORM_BLOCK; break;
         case ImageEncoderCompression::ASTC_6x6: compressedFormat = GfxFormat::ASTC_6x6_UNORM_BLOCK; break;
         case ImageEncoderCompression::ASTC_8x8: compressedFormat = GfxFormat::ASTC_8x8_UNORM_BLOCK; break;
+        default: ASSERT(0);
         }
 
         if (compressedFormat != imageFormat) {

@@ -6,7 +6,7 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 if (NOT CMAKE_RUNTIME_OUTPUT_DIRECTORY)
-    set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ../../bin)
+    set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ../bin)
 endif()
 
 if (CMAKE_GENERATOR MATCHES "Visual Studio" OR CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
@@ -22,7 +22,7 @@ endif()
 
 if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
     if (NOT CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
-        message(FATAL_ERROR "Error: Only clang compiler is supported on linux. Call ConfigureNinja.sh or use -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang when configuring")
+        message(FATAL_ERROR "Error: Only clang compiler is supported on linux")
     endif()
 
     list(APPEND CMAKE_PREFIX_PATH "$ENV{VULKAN_SDK}/share/cmake")
@@ -130,8 +130,14 @@ else()
         target_compile_options(Junkyard PUBLIC -Werror)
     endif()
 
-    if (CMAKE_BUILD_TYPE STREQUAL "Debug" OR CMAKE_BUILD_TYPE STREQUAL "RelWithDebInfo")
+    if (CMAKE_BUILD_TYPE STREQUAL "Debug")
         target_compile_definitions(Junkyard PUBLIC -D_DEBUG)
+    endif()
+
+    if (CMAKE_BUILD_TYPE STREQUAL "RelWithDebInfo")
+        target_compile_definitions(Junkyard PUBLIC -DCONFIG_ENABLE_ASSERT=1 -DTRACY_ENABLE=1)
+        target_compile_options(Junkyard PUBLIC -fno-omit-frame-pointer)
+        target_link_options(Junkyard PUBLIC -rdynamic)
     endif()
 
     if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
@@ -143,12 +149,24 @@ else()
         find_package(VulkanHeaders REQUIRED)
         target_link_libraries(Junkyard PUBLIC Vulkan::Headers)
 
-        # TODO: I still haven't found a way to no hardcode this (cxxabi.h)
-        target_include_directories(Junkyard PUBLIC "/usr/lib/llvm-14/include/")
-
         target_link_directories(Junkyard PUBLIC ${GLFW_LIBRARY_DIRS})
         target_link_libraries(Junkyard PUBLIC ${GLFW_LIBRARIES})
         target_link_libraries(Junkyard PUBLIC uuid m c++abi)
+
+        # Copy files after succesful build
+        set (FILES_TO_COPY 
+            ../code/External/slang/lib/libslang.so
+            ../code/External/ispc_texcomp/lib/libispc_texcomp.so 
+            ../code/External/meshoptimizer/lib/linux-x86_64/libmeshoptimizer.so)
+        set (FILES_DEST_DIR ${CMAKE_RUNTIME_OUTPUT_DIRECTORY})
+
+        add_custom_command(TARGET Junkyard POST_BUILD 
+            COMMAND ${CMAKE_COMMAND} -E echo "Copying files to ${FILES_DEST_DIR}")
+        foreach (FILE ${FILES_TO_COPY}) 
+            get_filename_component(FILENAME ${FILE} NAME)
+            add_custom_command(TARGET Junkyard POST_BUILD 
+                COMMAND ${CMAKE_COMMAND} -E copy_if_different ${FILE} "${FILES_DEST_DIR}/${FILENAME}")
+        endforeach()
 
         # External
         target_link_directories(Junkyard INTERFACE 
@@ -158,8 +176,8 @@ else()
         target_link_libraries(Junkyard INTERFACE ispc_texcomp slang meshoptimizer)
     endif()
 
-    add_executable(TestLinux ../../code/Tests/TestLinux.cpp)
-    target_link_libraries(TestLinux Junkyard)
+    add_executable(TestBasicGfx ../../code/Tests/TestBasicGfx.cpp)
+    target_link_libraries(TestBasicGfx Junkyard)
 
 endif()
 

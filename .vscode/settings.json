@@ -17,16 +17,31 @@
         "**/*.dylib": true
     },
     "clangd.arguments": [
-        "--compile-commands-dir=${workspaceFolder}/.build/Ninja"
+        "--compile-commands-dir=${workspaceFolder}/.build"
     ],
     "terminal.integrated.profiles.linux": {
         "vulkan-sdk": {
             "path": "/usr/bin/bash",
             "args": [
                 "--init-file",
-                "${workspaceFolder}/.downloads/vulkan-sdk/setup-env.sh"
+                "${workspaceFolder}/.downloads/vulkan-1.3.296.0/setup-env.sh"
             ]
         }
     },
-    "terminal.integrated.defaultProfile.linux": "vulkan-sdk"
+    "terminal.integrated.defaultProfile.linux": "vulkan-sdk",
+    "cmake.configureOnOpen": true,
+    "cmake.sourceDirectory": [
+        "${workspaceFolder}/projects/CMake",
+    ],
+    "cmake.preferredGenerators": ["Ninja"],
+    "cmake.buildDirectory": "${workspaceFolder}/.build",
+    "cmake.autoSelectActiveFolder": false,
+    "cmake.options.advanced": {
+        "folder": { "statusBarVisibility": "visible" },
+        "variant": { "statusBarVisibility": "compact" }
+    },
+    "cmake.copyCompileCommands": "${workspaceFolder}/.build/compile_commands.json",
+    "cmake.environment": {
+        "VULKAN_SDK":"${workspaceFolder}/.downloads/vulkan-1.3.296.0/x86_64"
+    }
 }
