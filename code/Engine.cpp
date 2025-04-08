@@ -23,7 +23,6 @@
 #include "ImGui/ImGuiMain.h"
 
 #include "Tool/Console.h"
-#include <GL/gl.h>
 
 static constexpr float  ENGINE_REMOTE_RECONNECT_INTERVAL = 5.0f;
 static constexpr uint32 ENGINE_REMOTE_CONNECT_RETRIES = 3;

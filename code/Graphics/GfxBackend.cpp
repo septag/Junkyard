@@ -3928,7 +3928,7 @@ bool GfxBackendQueueManager::Initialize()
 
     vkGetPhysicalDeviceQueueFamilyProperties(gpu.handle, &mNumQueueFamilies, nullptr);
     ASSERT_ALWAYS(mNumQueueFamilies, "There should be at least 1 queue family on this hardware");
-    mQueueFamilies = Mem::AllocTyped<GfxBackendQueueFamily>(mNumQueueFamilies, alloc);
+    mQueueFamilies = Mem::AllocZeroTyped<GfxBackendQueueFamily>(mNumQueueFamilies, alloc);
         
     VkQueueFamilyProperties* families = tempAlloc.MallocTyped<VkQueueFamilyProperties>(mNumQueueFamilies);
     vkGetPhysicalDeviceQueueFamilyProperties(gpu.handle, &mNumQueueFamilies, families);

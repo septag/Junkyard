@@ -55,7 +55,7 @@ choice /c YN /M "Download tracy profiler v0.11.1 "
 if errorlevel 2 goto :InstallLivePP
 if errorlevel 1 (
     if not exist .downloads\Tracy-0.11.zip (
-        powershell Invoke-WebRequest -Uri "https://github.com/wolfpld/tracy/releases/download/v0.11.1/windows-0.11.1.zip" -OutFile .downloads\Tracy-0.11.1
+        powershell Invoke-WebRequest -Uri "https://github.com/wolfpld/tracy/releases/download/v0.11.1/windows-0.11.1.zip" -OutFile .downloads\Tracy-0.11.1.zip
         if %errorlevel% neq 1 goto :End
     )
 
