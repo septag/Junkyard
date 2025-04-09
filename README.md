@@ -10,11 +10,16 @@ It's very much WIP, so not much to show off right now.
 
 ## Overview and Features
 
+- Multiplatform. Currently supported platforms (ARM64, x86_64 architectures only):
+    - Windows (Tested on Windows 10 x64)
+    - Linux (Tesded on Ubuntu 22/PopOS)
+    - MacOS through MoltenVk (Currently broken, will be back up soon again)
+    - Android (Currently broken, might work with Vulkan 1.3 hardware)
 - Minimal C'ish C++20: Some people call it Sane-C++ or similarly [Orthodox-C++](https://gist.github.com/bkaradzic/2e39896bc7d8c34e042b). I use a very small subset of newer C++ standards, in which I will explain later in the wiki. Some of them are pointed in [CppFeatures.txt](doc/CppFeatures.txt)
     - No stdc++ allowed in the code
     - No RTTI/Exceptions
     - Relying heavily on POD (Plain-old-data) structs, zero-init by default and avoiding implicit code in ctors/dtors
-    - Minimal template functions and macros. No fancy stuff!
+    - Minimal template functions and macros (mainly used in core containers). No fancy stuff!
 - Very strict memory allocation/resource allocation in most systems:
     - Relying heavily on custom allocators especially virtual memory paging and bump allocation
     - Debugging capabilities for memory stats
@@ -23,11 +28,6 @@ It's very much WIP, so not much to show off right now.
 - Design-wise, very much in contrast to *stl*, it has it's own portable C++ Core library: Array, Math, FileIO, HashTable, HandlePool, Buffers, Log, etc: [Core](code/Core). You can also use this core library in your own code, just by grabbing a copy of the folder and copy it over to your program or use `scripts/Code/amalgamate-core.py` script to choose subsets and make one big translation unit or even a single header from Core library.
 - Simple [Fiber-based job system](https://www.gdcvault.com/play/1022186/Parallelizing-the-Naughty-Dog-Engine), with custom Signal synchronization primitives.
 - Vulkan graphics backend with HLSL shaders (Slang)
-- Multiplatform. Supported platforms:
-    - Windows (Tested on Windows 10 x64)
-    - MacOS through MoltenVk (Currently broken, will be back up soon again)
-    - Android (Android29+, ARM64, Vulkan 1.3)
-    - Linux (WIP)
 - Fast iteration
     - Quick build/compile times (2s debug rebuild)
     - Aim for simple tooling with minimal abstraction or complexity
@@ -74,7 +74,9 @@ allocation library
     - [DbgHelp](https://learn.microsoft.com/en-us/windows/win32/debug/dbghelp-functions): Windows debug helper module. 
 - Android:
     - [cpufeatures](https://android.googlesource.com/platform/ndk/+/master/sources/android/cpufeatures/cpu-features.c): Fetch CPU information
-- Optional:
+- Linux
+    - [GLFW](https://www.glfw.org/): Basic window/input management that is only used for the Linux backend
+- Optional Tools:
     - [LivePP](https://liveplusplus.tech): Commercial tool for Hot-reloading C++ code. This software is magic!
     - [MemPro](https://puredevsoftware.com/mempro/index.htm): Commercial tool for debugging memory allocations
     - [Python 3.10+](https://www.python.org/downloads/): Optional but highly recommended. Used in some tooling scripts and utilities. 
@@ -96,14 +98,14 @@ Steps:
     - ISPC Texture compressor
 - *Vulkan SDK*: This is also mandatory if you haven't installed it yet. This also fetches vulkan validation layer for all platforms. For windows, make sure `VULKAN_SDK` and `VK_LAYER_PATH` env vars are set.
 - *Tracy Profiler*: (optional) This is a very good GUI tool for profiling
-- *LivePP*: (optional) A powerful commercial C++ code-reloading software. Note that you'll need a valid license to use this feature.
-- Python 3.10+: (optional) If you want some extra script goodies to work, mainly platform helpers, have python installed.
+- *LivePP*: (windows optional) A powerful commercial C++ code-reloading software. Note that you'll need a valid license to use this feature.
+- Python 3.10+: (windows optional) If you want some extra script goodies to work, mainly platform helpers, have python installed.
 - *Android extra*: (optional) For android development some additional tools can be downloaded which is optional of course!
 
 ### Windows
 Compatible with **Visual studio 2019 (build tools v142)** and **Visual Studio 2022 (build tools v143)** build envrinoments.   
-There are three ways to build binaries on windows: 
-- **Visual studio solution**: open `projects/Windows/Junkyard.sln` and build projects. So far, there are three configurations:
+There are multiple ways to build binaries on windows: 
+- **Visual studio solution**: The easiest and most convenient method on Windows. open `projects/Windows/Junkyard.sln` and build projects. So far, there are three configurations:
     - `Debug`: The name says it, all debug symbols are included, no optimizations, etc.
     - `ReleaseDev`: Symbols and Tracy profiler is enabled by default in this build. You might want to use this for Profiling and basic release build validation, because it also enables assertions.
     - `Release`: Fully optimized build.
@@ -111,6 +113,23 @@ There are three ways to build binaries on windows:
 - **CMake**: Although not the first-class citizen, CMake can also be optionally used to generate projects. Also useful to experiment with other build systems like *Ninja*. It's just a single cmake file and it's in `projects/CMake` directory.
 
 <sub>**Note**: Binaries on windows are built with `/DEBUG:FULL /Zi` so that they are compatible with [RemedyBG debugger](https://remedybg.itch.io/remedybg) and LivePP.</sub>
+
+## Linux
+Linux binaries currently can only be built with clang toolset. The most convenient and tested method is using *Visual Studio Code* with the following extensions:
+- Clangd
+- CMakeTools
+- CodeLLDB
+  
+Just make sure you have already ran `Setup.sh` successfully and have this packages installed (Setup script will try to install them automatically on Ubuntu based distros):
+- clang
+- cmake
+- pkg-config
+- libglfw3-dev
+- uuid-dev
+- libc++-dev
+- libc++abi-dev
+
+Then open the project folder with *vscode* and choose your preferred configuration, build and launch with *LaunchLinux* target.
 
 ### MacOS
 MacOS Xcode projects are currently broken because after Vulkan backend overhaul, I migrated to Vulkan 1.3 specs, so I need to revisit those parts and make them compatible with MoltenVk.
@@ -134,7 +153,7 @@ They also usually require some sort of asset files. The example assets are not i
 - *TestIO*: Synthetic IO (Async) tests. Before running this one, make sure to run the script `code/Tests/TestIO.bat` (or `code/Tests/TestIO.sh`). 
 
 ### Remote Asset Baking
-Optionally. you can load bake assets remotely through TCP/IP. For example, on mobile platforms, There is no deployment of source assets on the device and APKs are kept light and does not contain anything other than executable binaries. So for those platforms, it is actually a requirement to bake assets remotely, after they are baked, they will be cached on the target device.
+Optionally. you can load bake assets remotely through TCP/IP connection. For example, on mobile platforms, There is no deployment of source assets on the device and APKs are kept light and does not contain anything other than executable binaries. So for those platforms, it is actually a requirement to bake assets remotely, after they are baked, they will be cached on the target device.
 
 So to run on mobile/consoles platforms that require server-side asset baking, you should always first start up `JunkyardTool`. It's either included in windows solution or you can use the quick batch scripts that builds and runs it: `scripts/Build/build-run-tool.bat`.
 
