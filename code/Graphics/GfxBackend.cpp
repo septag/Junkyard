@@ -680,13 +680,6 @@ namespace GfxBackend
 
     static inline VkAccessFlags2 _GetImageReadAccessFlags(VkImageUsageFlags usageFlags)
     {
-        VK_ACCESS_2_INPUT_ATTACHMENT_READ_BIT|
-            VK_ACCESS_2_SHADER_READ_BIT|
-            VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT|
-            VK_ACCESS_2_SHADER_SAMPLED_READ_BIT|
-            VK_ACCESS_2_SHADER_STORAGE_READ_BIT|
-            VK_ACCESS_2_SHADER_BINDING_TABLE_READ_BIT_KHR;
-
         VkAccessFlags2 accessFlags = 0;
         if (usageFlags & VK_IMAGE_USAGE_SAMPLED_BIT) 
             accessFlags |= VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_SAMPLED_READ_BIT;

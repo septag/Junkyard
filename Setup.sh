@@ -15,6 +15,35 @@ if [ ! -f "$vars_ini" ]; then
     echo "# Add command-aliases here" > "$vars_ini"
 fi
 
+# Install Ubuntu packages
+prompt_choice() {
+    read -p "Install required system packages/libs? (Y/N): " choice
+    case "$choice" in
+        Y|y) return 0 ;;
+        N|n) return 1 ;;
+        *) echo "Invalid choice. Please enter Y or N." ; prompt_choice ;;
+    esac
+}
+
+if prompt_choice; then
+    # Check if apt package manager exists (Ubuntu-based system)
+    if command -v apt &> /dev/null; then
+        echo "Ubuntu package manager detected. Installing required packages ..."
+        sudo apt install pkg-config libglfw3-dev uuid-dev clang libc++-dev libc++abi-dev cmake
+    else
+        echo "Ubuntu/apt package manager is not detected."
+        echo "Skipping package installation."
+        echo "Make sure you have these packages installed for your distro:"
+        echo "  clang"
+        echo "  cmake"
+        echo "  pkg-config"
+        echo "  libglfw3-dev"
+        echo "  uuid-dev"
+        echo "  libc++-dev"
+        echo "  libc++abi-dev"
+    fi    
+fi
+
 # Function to prompt user for choice
 prompt_choice() {
     read -p "Install code dependencies? (Y/N): " choice
