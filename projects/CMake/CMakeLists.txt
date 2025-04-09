@@ -77,10 +77,10 @@ if (WIN32)
 
     # Copy files after succesful build
     set (FILES_TO_COPY 
-        ../../code/External/slang/bin/slang.dll
-        ../../code/External/ispc_texcomp/lib/win64/ispc_texcomp.dll 
-        ../../code/External/dbghelp/dbghelp.dll
-        ../../code/External/meshoptimizer/lib/win64/meshoptimizer.dll)
+        ../code/External/slang/bin/slang.dll
+        ../code/External/ispc_texcomp/lib/win64/ispc_texcomp.dll 
+        ../code/External/dbghelp/dbghelp.dll
+        ../code/External/meshoptimizer/lib/win64/meshoptimizer.dll)
     set (FILES_DEST_DIR ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/$<CONFIG>)
 
     add_custom_command(TARGET Junkyard POST_BUILD 
@@ -109,16 +109,6 @@ if (WIN32)
     add_executable(TestBasicGfx ../../code/Tests/TestBasicGfx.cpp)
     target_link_libraries(TestBasicGfx Junkyard)
     set_property(TARGET TestBasicGfx PROPERTY VS_DEBUGGER_WORKING_DIRECTORY ${DEBUGGER_WORKING_DIR})
-
-    # TestAsset
-    add_executable(TestAsset ../../code/Tests/TestAsset.cpp)
-    target_link_libraries(TestAsset Junkyard)
-    set_property(TARGET TestAsset PROPERTY VS_DEBUGGER_WORKING_DIRECTORY ${DEBUGGER_WORKING_DIR})
-
-    # TestIO
-    add_executable(TestIO ../../code/Tests/TestIO.cpp)
-    target_link_libraries(TestIO Junkyard)
-    set_property(TARGET TestIO PROPERTY VS_DEBUGGER_WORKING_DIRECTORY ${DEBUGGER_WORKING_DIR})
 
     set_property(GLOBAL PROPERTY VS_STARTUP_PROJECT TestBasicGfx)
 else()
