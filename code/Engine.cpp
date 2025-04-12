@@ -313,7 +313,7 @@ bool Engine::IsMainThread()
 
 bool Engine::Initialize()
 {
-    PROFILE_ZONE();
+    PROFILE_ZONE("Engine.Init");
 
     Thread::SetCurrentThreadName("Main");
     gEng.mainThreadId = Thread::GetCurrentId();
@@ -525,7 +525,7 @@ void Engine::Release()
 
 void Engine::BeginFrame(float dt)
 {
-    PROFILE_ZONE();
+    PROFILE_ZONE("Engine.BeginFrame");
     ASSERT(gEng.initialized);
     ASSERT_MSG(!gEng.beginFrameCalled, "Cannot call BeginFrame twice");
     gEng.beginFrameCalled = true;
@@ -569,7 +569,7 @@ void Engine::BeginFrame(float dt)
 
 void Engine::EndFrame()
 {
-    PROFILE_ZONE();
+    PROFILE_ZONE("Engine.EndFrame");
 
     ASSERT(gEng.initialized);
     ASSERT_MSG(!gEng.endFrameCalled, "Cannot call EndFrame twice");

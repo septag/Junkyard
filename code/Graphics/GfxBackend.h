@@ -37,7 +37,7 @@ struct GfxCommandBuffer
     void ClearSwapchainColor(Float4 color);
 
     void PushConstants(GfxPipelineLayoutHandle layoutHandle, const char* name, const void* data, uint32 dataSize);
-    template <typename _T> void PushConstants(GfxPipelineLayoutHandle layout, const char* name, const _T& data);
+    template <typename _T> void PushConstants(GfxPipelineLayoutHandle layout, const char* name, const _T& data) { PushConstants(layout, name, &data, sizeof(data)); }
 
     void PushBindings(GfxPipelineLayoutHandle layoutHandle, uint32 numBindings, const GfxBindingDesc* bindings);
 
@@ -104,58 +104,70 @@ namespace GfxBackend
 } // Gfx
 
 //----------------------------------------------------------------------------------------------------------------------
-// TODO: Profiling
-#ifdef TRACY_ENABLE_TODO
+// TODO: GPU Profiling
+#ifdef TRACY_ENABLE
     #include "../Core/TracyHelper.h"
 
-    namespace Tracy 
+    struct GpuProfilerScope
     {
-        namespace _private
-        {
-            API void ProfileZoneBegin(uint64 srcloc);
-            API void ProfileZoneEnd();
+        GpuProfilerScope() = delete;
+        GpuProfilerScope(const GpuProfilerScope&) = delete;
 
-            struct TracyGpuZoneScope
-            {
-                bool _active;
+        GpuProfilerScope(GfxCommandBuffer& cmdBuffer, const ___tracy_source_location_data* sourceLoc, int callstackDepth, 
+                         bool isActive, bool isAlloc);
+        ~GpuProfilerScope();
 
-                TracyGpuZoneScope() = delete;
-                explicit TracyGpuZoneScope(bool active, uint64 srcloc) : _active(active) 
-                {
-                    if (active)
-                        ProfileZoneBegin(srcloc);
-                }
-            
-                ~TracyGpuZoneScope()
-                {
-                    if (_active)
-                        ProfileZoneEnd();
-                }
-            };
-        }   // _private
-    } // Tracy
-
-    #define PROFILE_GPU_ZONE(active) \
-        Tracy::_private::TracyGpuZoneScope(active, Tracy::_private::__tracy_alloc_source_loc(__LINE__, __FILE__, __func__))
-    #define PROFILE_GPU_ZONE_NAME(name, active) \
-        Tracy::_private::TracyGpuZoneScope(active, Tracy::_private::__tracy_alloc_source_loc(__LINE__, __FILE__, __func__, name))
-    #define PROFILE_GPU_ZONE_BEGIN(active) \
-        do { if (active) Tracy::_private::profileGpuZoneBegin(Tracy::_private::__tracy_alloc_source_loc(__LINE__, __FILE__, __func__));  } while(0)
-    #define PROFILE_GPU_ZONE_NAME_BEGIN(name, active) \
-        do { if (active) Tracy::_private::profileGpuZoneBegin(Tracy::_private::__tracy_alloc_source_loc(__LINE__, __FILE__, __func__, name));  } while(0)
-    #define PROFILE_GPU_ZONE_END(active)  \
-        do { if (active) Tracy::_private::profileGpuZoneEnd();  } while(0)
-#else
-    #define PROFILE_GPU_ZONE(active)
-    #define PROFILE_GPU_ZONE_NAME(name, active)
-    #define PROFILE_GPU_ZONE_BEGIN(active)
-    #define PROFILE_GPU_ZONE_END(active)
-#endif // TRACY_ENABLE
-
+        GfxCommandBuffer& mCmdBuffer;
+        const bool mIsActive;
+    };
 
 //----------------------------------------------------------------------------------------------------------------------
-template <typename _T>
-inline void GfxCommandBuffer::PushConstants(GfxPipelineLayoutHandle layout, const char* name, const _T& data)
-{
-    PushConstants(layout, name, &data, sizeof(data));
-}
+// Profiling Macros
+    #if defined TRACY_HAS_CALLSTACK && defined TRACY_CALLSTACK
+        #define GPU_PROFILE_ZONE_OPT(cmdBuffer, name, active) \
+            static constexpr struct ___tracy_source_location_data CONCAT(___tracy_gpu_zone,__LINE__) = { name, __func__,  __FILE__, (uint32_t)__LINE__, 0 }; \
+            GpuProfilerScope CONCAT(__gpu_profiler,__LINE__)(cmdBuffer, &CONCAT(___tracy_gpu_zone,__LINE__), TRACY_CALLSTACK, active, false)
+        #define GPU_PROFILE_ZONE_ALLOC_OPT(cmdBuffer, name, active) \
+            struct ___tracy_source_location_data CONCAT(___tracy_gpu_zone,__LINE__) = { name, __func__,  __FILE__, (uint32_t)__LINE__, 0 }; \
+            GpuProfilerScope CONCAT(__gpu_profiler,__LINE__)(cmdBuffer, &CONCAT(___tracy_gpu_zone,__LINE__), TRACY_CALLSTACK, active, true)
+        #define GPU_PROFILE_ZONE_COLOR_OPT(cmdBuffer, name, color, active) \
+            static constexpr struct ___tracy_source_location_data CONCAT(___tracy_gpu_zone,__LINE__) = { name, __func__,  __FILE__, (uint32_t)__LINE__, color }; \
+            GpuProfilerScope CONCAT(__gpu_profiler,__LINE__)(cmdBuffer, &CONCAT(___tracy_gpu_zone,__LINE__), TRACY_CALLSTACK, active, false)
+        #define GPU_PROFILE_ZONE_ALLOC_COLOR_OPT(cmdBuffer, name, color, active) \
+            struct ___tracy_source_location_data CONCAT(___tracy_gpu_zone,__LINE__) = { name, __func__,  __FILE__, (uint32_t)__LINE__, color }; \
+            GpuProfilerScope CONCAT(__gpu_profiler,__LINE__)(cmdBuffer, &CONCAT(___tracy_gpu_zone,__LINE__), TRACY_CALLSTACK, active, true)
+
+        #define GPU_PROFILE_ZONE(cmdBuffer, name) GPU_PROFILE_ZONE_OPT(cmdBuffer, name, true)
+        #define GPU_PROFILE_ZONE_ALLOC(cmdBuffer, name) GPU_PROFILE_ZONE_ALLOC_OPT(cmdBuffer, name, true)
+        #define GPU_PROFILE_ZONE_COLOR(cmdBuffer, name, color) GPU_PROFILE_ZONE_COLOR_OPT(cmdBuffer, name, color, true)
+        #define GPU_PROFILE_ZONE_ALLOC_COLOR(cmdBuffer, name, color) GPU_PROFILE_ZONE_ALLOC_COLOR_OPT(cmdBuffer, name, color, true)
+    #else
+        #define GPU_PROFILE_ZONE_OPT(cmdBuffer, name, active) \
+            static constexpr struct ___tracy_source_location_data CONCAT(___tracy_gpu_zone,__LINE__) = { name, __func__,  __FILE__, (uint32_t)__LINE__, 0 }; \
+            GpuProfilerScope CONCAT(__gpu_profiler,__LINE__)(cmdBuffer, &CONCAT(___tracy_gpu_zone,__LINE__), 0, active, false)
+        #define GPU_PROFILE_ZONE_ALLOC_OPT(cmdBuffer, name, active) \
+            struct ___tracy_source_location_data CONCAT(___tracy_gpu_zone,__LINE__) = { name, __func__,  __FILE__, (uint32_t)__LINE__, 0 }; \
+            GpuProfilerScope CONCAT(__gpu_profiler,__LINE__)(cmdBuffer, &CONCAT(___tracy_gpu_zone,__LINE__), 0, active, true)
+        #define GPU_PROFILE_ZONE_COLOR_OPT(cmdBuffer, name, color, active) \
+            static constexpr struct ___tracy_source_location_data CONCAT(___tracy_gpu_zone,__LINE__) = { name, __func__,  __FILE__, (uint32_t)__LINE__, color }; \
+            GpuProfilerScope CONCAT(__gpu_profiler,__LINE__)(cmdBuffer, &CONCAT(___tracy_gpu_zone,__LINE__), 0, active, false)
+        #define GPU_PROFILE_ZONE_ALLOC_COLOR_OPT(cmdBuffer, name, color, active) \
+            struct ___tracy_source_location_data CONCAT(___tracy_gpu_zone,__LINE__) = { name, __func__,  __FILE__, (uint32_t)__LINE__, color }; \
+            GpuProfilerScope CONCAT(__gpu_profiler,__LINE__)(cmdBuffer, &CONCAT(___tracy_gpu_zone,__LINE__), 0, active, true)
+
+        #define GPU_PROFILE_ZONE(cmdBuffer, name) GPU_PROFILE_ZONE_OPT(cmdBuffer, name, true)
+        #define GPU_PROFILE_ZONE_ALLOC(cmdBuffer, name) GPU_PROFILE_ZONE_ALLOC_OPT(cmdBuffer, name, true)
+        #define GPU_PROFILE_ZONE_COLOR(cmdBuffer, name, color) GPU_PROFILE_ZONE_COLOR_OPT(cmdBuffer, name, color, true)
+        #define GPU_PROFILE_ZONE_ALLOC_COLOR(cmdBuffer, name, color) GPU_PROFILE_ZONE_ALLOC_COLOR_OPT(cmdBuffer, name, color, true)
+    #endif // TRACY_HAS_CALLBACK
+#else
+    #define GPU_PROFILE_ZONE_OPT(cmdBuffer, name, active)
+    #define GPU_PROFILE_ZONE_ALLOC_OPT(cmdBuffer, name, active)
+    #define GPU_PROFILE_ZONE_COLOR_OPT(cmdBuffer, name, color, active)
+    #define GPU_PROFILE_ZONE_ALLOC_COLOR_OPT(cmdBuffer, name, color, active)
+
+    #define GPU_PROFILE_ZONE(cmdBuffer, name)
+    #define GPU_PROFILE_ZONE_ALLOC(cmdBuffer, name)
+    #define GPU_PROFILE_ZONE_COLOR(cmdBuffer, name, color)
+    #define GPU_PROFILE_ZONE_ALLOC_COLOR(cmdBuffer, name, color)
+#endif  // TRACY_ENABLE

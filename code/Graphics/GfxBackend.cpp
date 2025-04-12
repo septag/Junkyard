@@ -76,6 +76,7 @@ static constexpr uint32 GFXBACKEND_FRAMES_IN_FLIGHT = 2;
 static constexpr uint32 GFXBACKEND_MAX_SETS_PER_PIPELINE = 4;
 static constexpr uint32 GFXBACKEND_MAX_ENTRIES_IN_OFFSET_ALLOCATOR = 64*1024;
 static constexpr uint32 GFXBACKEND_MAX_QUEUES = 4;
+static constexpr uint32 GFXBACKEND_PROFILE_CONTEXT_QUERY_COUNT = 64*1024;
 
 #if PLATFORM_WINDOWS
 static const char* GFXBACKEND_DEFAULT_INSTANCE_EXTENSIONS[] = {"VK_KHR_surface", "VK_KHR_win32_surface"};
@@ -202,6 +203,57 @@ struct GfxBackendQueueSemaphoreBank
     void Reset();
 };
 
+struct GfxBackendProfilerContext
+{
+    // From TracyQueue.hpp
+    // Don't change order, only add new entries at the end, this is also used on trace dumps!
+    enum class GpuContextType : uint8
+    {
+        Invalid,
+        OpenGl,
+        Vulkan,
+        OpenCL,
+        Direct3D12,
+        Direct3D11
+    };
+
+    enum GpuContextFlags : uint8
+    {
+        GpuContextCalibration   = 1 << 0
+    };
+    // 
+
+    VkQueryPool m_query;
+    VkTimeDomainEXT m_timeDomain;
+    uint64 m_deviation;
+#ifdef _WIN32
+    int64 m_qpcToNs;
+#endif
+    int64 m_prevCalibration;
+    uint8 m_context;
+
+    AtomicUint64 m_head;
+    uint64 m_tail;
+    uint32 m_oldCnt;
+    uint32 m_queryCount;
+
+    int64* m_res;
+
+    uint8 m_id;
+    bool m_init;
+
+    static AtomicUint32 smContextCounter;
+
+    bool Initialize(const char* name);
+    void Release();
+    void Collect(VkCommandBuffer cmdVk);
+    bool IsInitialized() { return m_init; }
+    void Calibrate(int64& tCpu, int64& tGpu);
+    uint32 NextQueryId();
+};
+
+AtomicUint32 GfxBackendProfilerContext::smContextCounter = 0;
+
 struct GfxBackendQueue
 {
     struct WaitSemaphore
@@ -251,6 +303,10 @@ struct GfxBackendQueue
     GfxQueueType internalDependents;
     AtomicUint32 numCmdBuffersInRecording;
     AtomicUint32 numPendingCmdBuffers;
+
+#ifdef TRACY_ENABLE
+    GfxBackendProfilerContext profilerContext;
+#endif
 };
 
 struct GfxBackendQueueManager
@@ -260,7 +316,6 @@ struct GfxBackendQueueManager
     void Release();
 
     void BeginFrame();
-
     void SubmitQueue(GfxQueueType queueType, GfxQueueType dependentQueues);
 
     inline uint32 FindQueue(GfxQueueType type) const;
@@ -308,6 +363,8 @@ struct GfxBackendInstance
 
 struct GfxBackendVkExtensions
 {
+    bool hasTimestampQueries;
+    bool hasCalibratedTimestamps;
     bool hasDebugUtils;
     bool hasNonSemanticInfo;
     bool hasMemoryBudget;
@@ -601,11 +658,6 @@ namespace GfxBackend
                 str.Append("|");
             str.Append("Transfer");
         }
-        if (IsBitsSet<GfxQueueType>(queueType, GfxQueueType::Present)) {
-            if (!str.IsEmpty())
-                str.Append("|");
-            str.Append("Present");
-        }
         return str;
     }
 
@@ -709,7 +761,7 @@ namespace GfxBackend
     {
         GfxBackendQueue& queue = gBackendVk.queueMan.GetQueue(cmdBuffer.mQueueIndex);
         ASSERT_MSG(cmdBuffer.mGeneration == gBackendVk.queueMan.GetGeneration(), 
-                   "EndCommandBuffer must be called before resetting the queue");
+                   "EndCommandBuffer is not called in the same frame that this CommandBuffer is being recorded");
         
         const GfxBackendCommandBufferContext& cmdBufferMan = queue.cmdBufferContexts[gBackendVk.queueMan.GetFrameIndex()];
 
@@ -1268,6 +1320,12 @@ namespace GfxBackend
             return false;
 
         // Optional extensions and features
+        gBackendVk.extApi.hasTimestampQueries = gpu.props.limits.timestampPeriod > 0 && gpu.props.limits.timestampComputeAndGraphics;
+        if (!gBackendVk.extApi.hasTimestampQueries)
+            LOG_WARNING("Timestamp queries are not supported on this GPU");
+        if (gBackendVk.extApi.hasTimestampQueries)
+            gBackendVk.extApi.hasCalibratedTimestamps = CheckAddExtension("VK_KHR_calibrated_timestamps");
+
         gBackendVk.extApi.hasNonSemanticInfo = (gpu.props.apiVersion < VK_API_VERSION_1_3) ? CheckAddExtension("VK_KHR_shader_non_semantic_info") : true;
         gBackendVk.extApi.hasMemoryBudget = CheckAddExtension("VK_EXT_memory_budget");
         if constexpr (PLATFORM_MOBILE)
@@ -1818,7 +1876,7 @@ bool GfxBackend::Initialize()
 
 void GfxBackend::Begin()
 {
-    PROFILE_ZONE_COLOR(PROFILE_COLOR_GFX1);
+    PROFILE_ZONE_COLOR("Gfx.Begin", PROFILE_COLOR_GFX1);
 
     ASSERT_MSG(Engine::IsMainThread(), "Update can only be called in the main thread");
 
@@ -1999,7 +2057,7 @@ void GfxCommandBuffer::CopyImageToSwapchain(GfxImageHandle imgHandle)
 
 void GfxBackend::End()
 {
-    PROFILE_ZONE_COLOR(PROFILE_COLOR_GFX1);
+    PROFILE_ZONE_COLOR("Gfx.End", PROFILE_COLOR_GFX1);
 
     // Lock external systems to wait until Begin() call ends
     gBackendVk.externalFrameSyncSignal.Increment();
@@ -2361,17 +2419,23 @@ void GfxBackend::EndCommandBuffer(GfxCommandBuffer& cmdBuffer)
         state.lastAccessFlags = 0;
     }
 
+    GfxBackendQueue& queue = gBackendVk.queueMan.GetQueue(cmdBuffer.mQueueIndex);
+
+    #ifdef TRACY_ENABLE
+    if (queue.profilerContext.IsInitialized())
+        queue.profilerContext.Collect(cmdVk);
+    #endif
+
     [[maybe_unused]] VkResult r = vkEndCommandBuffer(cmdVk);
     ASSERT(r == VK_SUCCESS);
     cmdBuffer.mIsRecording = false;
 
-    GfxBackendQueue& queue = gBackendVk.queueMan.GetQueue(cmdBuffer.mQueueIndex);
     Atomic::FetchSub(&queue.numCmdBuffersInRecording, 1);
 }
 
 void GfxBackendSwapchain::AcquireImage()
 {
-    PROFILE_ZONE_COLOR(PROFILE_COLOR_GFX2);
+    PROFILE_ZONE_COLOR("Gfx.AcquireImage", PROFILE_COLOR_GFX2);
 
     [[maybe_unused]] VkResult r = vkAcquireNextImageKHR(gBackendVk.device, handle, UINT64_MAX, imageReadySemaphores[backbufferIdx], 
                                                         nullptr, &imageIndex);
@@ -3990,7 +4054,20 @@ void GfxBackendQueueManager::PostInitialize()
             }
 
             queue.semaphoreBanks[k].Initialize();
+
         }
+
+        #ifdef TRACY_ENABLE
+        if (IsBitsSet<GfxQueueType>(queue.type, GfxQueueType::Graphics) ||
+            IsBitsSet<GfxQueueType>(queue.type, GfxQueueType::Compute) ||
+            IsBitsSet<GfxQueueType>(queue.type, GfxQueueType::ComputeAsync)) 
+        {
+            queue.profilerContext.Initialize(GfxBackend::_GetQueueTypeStr(queue.type).CStr());
+            if (!queue.profilerContext.IsInitialized()) {
+                LOG_WARNING("Gfx: Tracy profiler context failed for queue %u", i);
+            }
+        }
+        #endif
     }
 }
 
@@ -4008,8 +4085,14 @@ void GfxBackendQueueManager::Release()
 
         for (uint32 k = 0; k < GFXBACKEND_FRAMES_IN_FLIGHT; k++) {
             ReleaseCommandBufferContext(queue.cmdBufferContexts[k]);
-            queue.semaphoreBanks[k].Release();            
+            queue.semaphoreBanks[k].Release();
+
         }
+
+        #ifdef TRACY_ENABLE
+        if (queue.profilerContext.IsInitialized())
+            queue.profilerContext.Release();
+        #endif
 
         queue.waitSemaphores.Free();
         queue.signalSemaphores.Free();
@@ -4469,7 +4552,7 @@ bool GfxBackendQueueManager::SubmitQueueInternal(GfxBackendQueueSubmitRequest& r
 
 void GfxBackendQueueManager::BeginFrame()
 {
-    PROFILE_ZONE_COLOR(PROFILE_COLOR_GFX2);
+    PROFILE_ZONE_COLOR("QueueMan.Begin", PROFILE_COLOR_GFX2);
     ++mGeneration;
     mFrameIndex = mGeneration % GFXBACKEND_FRAMES_IN_FLIGHT;
 
@@ -5784,3 +5867,347 @@ const GfxBlendAttachmentDesc* GfxBlendAttachmentDesc::GetAlphaBlending()
     };
     return &desc;
 }
+
+//----------------------------------------------------------------------------------------------------------------------
+// GpuProfilerScope
+#ifdef TRACY_ENABLE
+
+// This implementation uses VK_EXT_host_query_reset extensions that is available in Vulkan 1.2
+bool GfxBackendProfilerContext::Initialize(const char* name)
+{
+    ASSERT(gBackendVk.extApi.hasTimestampQueries);
+    ASSERT(gBackendVk.extApi.hasCalibratedTimestamps); // TODO: make Calibrated timestamps mandatory for profiling
+
+    // (TracyVulkan: FindAvailableTimeDomains)
+    if (gBackendVk.extApi.hasCalibratedTimestamps) {
+        uint32 num;
+        vkGetPhysicalDeviceCalibrateableTimeDomainsEXT(gBackendVk.gpu.handle, &num, nullptr);
+        if(num > 4) 
+            num = 4;
+
+        VkTimeDomainEXT data[4];
+        vkGetPhysicalDeviceCalibrateableTimeDomainsEXT(gBackendVk.gpu.handle, &num, data );
+        VkTimeDomainEXT supportedDomain = (VkTimeDomainEXT)-1;
+        #if PLATFORM_WINDOWS
+        supportedDomain = VK_TIME_DOMAIN_QUERY_PERFORMANCE_COUNTER_EXT;
+        #elif PLATFORM_LINUX && defined(CLOCK_MONOTONIC_RAW)
+        supportedDomain = VK_TIME_DOMAIN_CLOCK_MONOTONIC_RAW_EXT;
+        #endif
+
+        for(uint32 i = 0; i < num; i++) {
+            if(data[i] == supportedDomain) {
+                m_timeDomain = data[i];
+                break;
+            }
+        }
+    }
+
+    if (m_timeDomain == VK_TIME_DOMAIN_DEVICE_KHR)
+        return false;
+
+    // (TracyVulkan: FindCalibratedTimestampDeviation)
+    {
+        constexpr uint32 NumProbes = 32;
+        VkCalibratedTimestampInfoEXT spec[2] = {
+            { VK_STRUCTURE_TYPE_CALIBRATED_TIMESTAMP_INFO_EXT, nullptr, VK_TIME_DOMAIN_DEVICE_EXT },
+            { VK_STRUCTURE_TYPE_CALIBRATED_TIMESTAMP_INFO_EXT, nullptr, m_timeDomain },
+        };
+
+        uint64 ts[2];
+        uint64 deviation[NumProbes];
+        for(uint32 i = 0; i < NumProbes; i++)
+            vkGetCalibratedTimestampsKHR(gBackendVk.device, 2, spec, ts, deviation + i);
+
+        uint64 minDeviation = deviation[0];
+        for(uint32 i = 1; i < NumProbes; i++) {
+            if (minDeviation > deviation[i])
+                minDeviation = deviation[i];
+        }
+        m_deviation = minDeviation * 3 / 2;
+
+        #if PLATFORM_WINDOWS
+        LARGE_INTEGER t;
+        QueryPerformanceFrequency(&t);
+
+        m_qpcToNs = int64(1000000000. / t.QuadPart);
+        #endif
+    }
+
+    int64 tgpu;
+    Calibrate(m_prevCalibration, tgpu);
+
+    // (TracyVulkan: CreateQueryPool)
+    m_queryCount = GFXBACKEND_PROFILE_CONTEXT_QUERY_COUNT;
+    {
+        VkQueryPoolCreateInfo poolInfo = {
+            .sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO,
+            .queryType = VK_QUERY_TYPE_TIMESTAMP,
+            .queryCount = m_queryCount
+        };
+
+        while (vkCreateQueryPool(gBackendVk.device, &poolInfo, gBackendVk.vkAlloc, &m_query ) != VK_SUCCESS)
+        {
+            m_queryCount /= 2;
+            poolInfo.queryCount = m_queryCount;
+        }
+    }
+
+    vkResetQueryPool(gBackendVk.device, m_query, 0, m_queryCount);
+
+    // We need the buffer to be twice as large for availability values
+    m_res = Mem::AllocTyped<int64>(m_queryCount * 2, &gBackendVk.parentAlloc);
+
+    {
+        ___tracy_gpu_new_context_data data {
+            .gpuTime = tgpu,
+            .period = gBackendVk.gpu.props.limits.timestampPeriod,
+            .context = uint8(Atomic::FetchAddExplicit(&smContextCounter, 1, AtomicMemoryOrder::Relaxed)),
+            .flags = uint8(m_timeDomain != VK_TIME_DOMAIN_DEVICE_EXT ? GfxBackendProfilerContext::GpuContextFlags::GpuContextCalibration : 0),
+            .type = uint8(GfxBackendProfilerContext::GpuContextType::Vulkan)
+        };
+        ASSERT(data.context <= UINT8_MAX);
+        m_id = data.context;
+
+        ___tracy_emit_gpu_new_context(data);
+    }
+
+    // (TracyVulkan: Name)
+    {
+        ___tracy_gpu_context_name_data data {
+            .context = m_id,
+            .name = name,
+            .len = uint16(Str::Len(name))
+        };
+        ___tracy_emit_gpu_context_name_serial(data);
+    }
+
+    m_init = true;
+    return true;
+}
+
+void GfxBackendProfilerContext::Release()
+{
+    m_init = false;
+    Mem::Free(m_res, &gBackendVk.parentAlloc);
+    vkDestroyQueryPool(gBackendVk.device, m_query, gBackendVk.vkAlloc);
+}
+
+void GfxBackendProfilerContext::Collect(VkCommandBuffer cmdVk)
+{
+    const uint64_t head = Atomic::LoadExplicit(&m_head, AtomicMemoryOrder::Relaxed);
+    if(m_tail == head) 
+        return;
+
+    #ifdef TRACY_ON_DEMAND
+    if(!___tracy_connected())
+    {
+        vkCmdResetQueryPool(cmdVk, m_query, 0, m_queryCount);
+        m_tail = head;
+        m_oldCnt = 0;
+        int64 tgpu;
+        if(m_timeDomain != VK_TIME_DOMAIN_DEVICE_EXT) 
+            Calibrate(m_prevCalibration, tgpu);
+        return;
+    }
+    #endif
+    ASSERT(head > m_tail);
+        
+    const unsigned int wrappedTail = uint32(m_tail % m_queryCount);
+
+    uint32 cnt;
+    if( m_oldCnt != 0 ) {
+        cnt = m_oldCnt;
+        m_oldCnt = 0;
+    }
+    else {
+        cnt = uint32(head - m_tail);
+        ASSERT(cnt <= m_queryCount);
+        if( wrappedTail + cnt > m_queryCount )
+            cnt = m_queryCount - wrappedTail;
+    }
+
+    vkGetQueryPoolResults(gBackendVk.device, m_query, wrappedTail, cnt, sizeof(int64)*m_queryCount*2, m_res, 
+                          sizeof(int64)*2, VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WITH_AVAILABILITY_BIT);
+
+    for (uint32 idx = 0; idx < cnt; idx++) {
+        int64 avail = m_res[idx * 2 + 1];
+        if (avail == 0) {
+            m_oldCnt = cnt - idx;
+            cnt = idx;
+            break;
+        }
+
+        ___tracy_gpu_time_data data {
+            .gpuTime = m_res[idx*2],
+            .queryId = uint16(wrappedTail + idx),
+            .context = m_id
+        };
+
+        ___tracy_emit_gpu_time_serial(data);
+    }
+
+    ASSERT(m_timeDomain != VK_TIME_DOMAIN_DEVICE_EXT);
+
+    {
+        int64 tgpu, tcpu;
+        Calibrate(tcpu, tgpu);
+        int64 delta = tcpu - m_prevCalibration;
+        if(delta > 0) {
+            m_prevCalibration = tcpu;
+
+            ___tracy_gpu_calibration_data data {
+                .gpuTime = tgpu,
+                .cpuDelta = delta,
+                .context = m_id
+            };
+
+           ___tracy_emit_gpu_calibration_serial(data);
+        }
+    }
+
+    vkCmdResetQueryPool(cmdVk, m_query, wrappedTail, cnt);
+    m_tail += cnt;
+}
+
+void GfxBackendProfilerContext::Calibrate(int64& tCpu, int64& tGpu)
+{
+    ASSERT( m_timeDomain != VK_TIME_DOMAIN_DEVICE_EXT );
+
+    VkCalibratedTimestampInfoEXT spec[2] = {
+        { VK_STRUCTURE_TYPE_CALIBRATED_TIMESTAMP_INFO_EXT, nullptr, VK_TIME_DOMAIN_DEVICE_EXT },
+        { VK_STRUCTURE_TYPE_CALIBRATED_TIMESTAMP_INFO_EXT, nullptr, m_timeDomain },
+    };
+
+    uint64 ts[2];
+    uint64 deviation;
+    do {
+        vkGetCalibratedTimestampsKHR(gBackendVk.device, 2, spec, ts, &deviation);
+    } while(deviation > m_deviation);
+
+    #if PLATFORM_WINDOWS
+    tGpu = ts[0];
+    tCpu = ts[1] * m_qpcToNs;
+    #elif PLATFORM_LINUX && defined(CLOCK_MONOTONIC_RAW)
+    tGpu = ts[0];
+    tCpu = ts[1];
+    #else
+    ASSERT_MSG(false, "Not Implemented");
+    #endif
+}
+
+GpuProfilerScope::GpuProfilerScope(GfxCommandBuffer& cmdBuffer, const ___tracy_source_location_data* sourceLoc, 
+                                   int callstackDepth, bool isActive, bool isAlloc) : mCmdBuffer(cmdBuffer), mIsActive(isActive)
+{
+    if (!isActive)
+        return;
+
+    ASSERT_MSG(cmdBuffer.mIsRecording, "CommandBuffer should be recording while profiling samples are placed");
+    ASSERT_MSG(!cmdBuffer.mIsInRenderPass, "CommandBuffer should not be in a RenderPass for profile samples");
+    ASSERT_MSG(cmdBuffer.mGeneration == gBackendVk.queueMan.GetGeneration(), 
+               "EndCommandBuffer is not called in the same frame that this CommandBuffer is being recorded");
+
+    GfxBackendQueue& queue = gBackendVk.queueMan.GetQueue(cmdBuffer.mQueueIndex);
+    uint32 index = gBackendVk.queueMan.GetFrameIndex();
+    GfxBackendProfilerContext& ctx = queue.profilerContext;
+
+    if (ctx.IsInitialized()) {
+        VkCommandBuffer cmdBufferVk;
+        {
+            const GfxBackendCommandBufferContext& cmdBufferMan = queue.cmdBufferContexts[index];
+            ReadWriteMutexReadScope lock(queue.cmdBufferCtxMutex);
+            cmdBufferVk = cmdBufferMan.cmdBuffers[cmdBuffer.mCmdBufferIndex];
+        }
+
+        uint32 queryId = ctx.NextQueryId();
+        vkCmdWriteTimestamp(cmdBufferVk, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, ctx.m_query, queryId);
+
+        if (callstackDepth > 0) {
+            if (isAlloc) {
+                ___tracy_gpu_zone_begin_callstack_data data {
+                    .srcloc = ___tracy_alloc_srcloc_name(sourceLoc->line, sourceLoc->file, Str::Len(sourceLoc->file), 
+                                                         sourceLoc->function, Str::Len(sourceLoc->function), 
+                                                         sourceLoc->name, Str::Len(sourceLoc->name), sourceLoc->color),
+                    .depth = callstackDepth,
+                    .queryId = uint16(queryId), 
+                    .context = ctx.m_id
+                };
+                ___tracy_emit_gpu_zone_begin_alloc_callstack_serial(data);
+            }
+            else {
+                ___tracy_gpu_zone_begin_callstack_data data {
+                    .srcloc = uint64(sourceLoc),
+                    .depth = callstackDepth,
+                    .queryId = uint16(queryId), 
+                    .context = ctx.m_id
+                };
+
+                ___tracy_emit_gpu_zone_begin_callstack_serial(data);
+            }
+        }
+        else {
+            if (isAlloc) {
+                ___tracy_gpu_zone_begin_data data {
+                    .srcloc = ___tracy_alloc_srcloc_name(sourceLoc->line, sourceLoc->file, Str::Len(sourceLoc->file), 
+                                                         sourceLoc->function, Str::Len(sourceLoc->function), 
+                                                         sourceLoc->name, Str::Len(sourceLoc->name), sourceLoc->color),
+                    .queryId = uint16(queryId), 
+                    .context = ctx.m_id
+                };
+                ___tracy_emit_gpu_zone_begin_alloc_serial(data);
+            }
+            else {
+                ___tracy_gpu_zone_begin_data data {
+                    .srcloc = uint64(sourceLoc),
+                    .queryId = uint16(queryId), 
+                    .context = ctx.m_id
+                };
+
+                ___tracy_emit_gpu_zone_begin_serial(data);
+            }
+        }
+    }
+}
+
+uint32 GfxBackendProfilerContext::NextQueryId()
+{
+    const uint64_t id = Atomic::FetchAddExplicit(&m_head, 1, AtomicMemoryOrder::Relaxed);
+    return id % m_queryCount;
+}
+
+GpuProfilerScope::~GpuProfilerScope()
+{
+    if (!mIsActive)
+        return;
+
+    GfxCommandBuffer& cmdBuffer = mCmdBuffer;
+    ASSERT_MSG(cmdBuffer.mIsRecording, "CommandBuffer should be recording while profiling samples are placed");
+    ASSERT_MSG(!cmdBuffer.mIsInRenderPass, "CommandBuffer should not be in a RenderPass for profile samples");
+    ASSERT_MSG(cmdBuffer.mGeneration == gBackendVk.queueMan.GetGeneration(), 
+               "EndCommandBuffer is not called in the same frame that this CommandBuffer is being recorded");
+
+
+    GfxBackendQueue& queue = gBackendVk.queueMan.GetQueue(cmdBuffer.mQueueIndex);
+    uint32 index = gBackendVk.queueMan.GetFrameIndex();
+    GfxBackendProfilerContext& ctx = queue.profilerContext;
+
+    if (ctx.IsInitialized()) {
+        VkCommandBuffer cmdBufferVk;
+        {
+            const GfxBackendCommandBufferContext& cmdBufferMan = queue.cmdBufferContexts[index];
+            ReadWriteMutexReadScope lock(queue.cmdBufferCtxMutex);
+            cmdBufferVk = cmdBufferMan.cmdBuffers[cmdBuffer.mCmdBufferIndex];
+        }
+
+        uint32 queryId = ctx.NextQueryId();
+        vkCmdWriteTimestamp(cmdBufferVk, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, ctx.m_query, queryId);
+
+        ___tracy_gpu_zone_end_data data {
+            .queryId = uint16(queryId),
+            .context = ctx.m_id
+        };
+
+        ___tracy_emit_gpu_zone_end_serial(data);
+    }
+
+}
+#endif // TRACY_ENABLE

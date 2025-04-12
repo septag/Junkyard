@@ -332,7 +332,7 @@ static void Asset::_GpuResourceFinishedCallback(void* userData)
 
 static void Asset::_UnloadDatasManually(Span<AssetDataPair> datas)
 {
-    PROFILE_ZONE_COLOR(PROFILE_COLOR_ASSET3);
+    PROFILE_ZONE_COLOR("Asset.UnloadDatasManually", PROFILE_COLOR_ASSET3);
 
     // Unload dependencies
     {
@@ -411,7 +411,7 @@ static void Asset::_OnFileChanged(const char* filepath)
 
 static void Asset::_SaveAssetHashLookup()
 {
-    PROFILE_ZONE();
+    PROFILE_ZONE("Asset.SaveHashLookup");
 
     const uint32* keys = gAssetMan.assetHashLookup.Keys();
     const uint32* values = gAssetMan.assetHashLookup.Values();
@@ -434,7 +434,7 @@ static void Asset::_SaveAssetHashLookup()
 
 static void Asset::_LoadAssetHashLookup()
 {
-    PROFILE_ZONE();
+    PROFILE_ZONE("Asset.LoadHashLookup");
     
     MemTempAllocator tempAlloc;
     Blob blob = Vfs::ReadFile("cache/_HashLookup.txt", VfsFlags::TextFile, &tempAlloc);
@@ -468,7 +468,7 @@ static uint32 Asset::_MakeParamsHash(const AssetParams& params, uint32 typeSpeci
 
 static void Asset::_SaveBakedTask(uint32 groupIdx, void* userData)
 {
-    PROFILE_ZONE_COLOR(PROFILE_COLOR_ASSET3);
+    PROFILE_ZONE_COLOR("Asset.SaveBaked", PROFILE_COLOR_ASSET3);
 
     AssetQueuedItem* qa = ((AssetQueuedItem**)userData)[groupIdx];
 
@@ -711,7 +711,7 @@ static AssetHandleResult Asset::_CreateOrFetchHandle(const AssetParams& params)
 
 static void Asset::_LoadAssetTask(uint32 groupIdx, void* userData)
 {
-    PROFILE_ZONE_COLOR(PROFILE_COLOR_ASSET2);
+    PROFILE_ZONE_COLOR("Asset.Load", PROFILE_COLOR_ASSET2);
 
     AssetLoadTaskData& taskData = *(((AssetLoadTaskData**)userData)[groupIdx]);
     const AssetParams& params = *taskData.inputs.header->params;
@@ -831,7 +831,7 @@ static void Asset::_LoadAssetTask(uint32 groupIdx, void* userData)
 static void Asset::_CreateGpuObjects(uint32 numImages, const AssetImageDescHandlePair* images, 
                                      uint32 numBuffers, const AssetBufferDescHandlePair* buffers)
 {
-    PROFILE_ZONE_COLOR(PROFILE_COLOR_ASSET2);
+    PROFILE_ZONE_COLOR("Asset.CreateGpuObjects", PROFILE_COLOR_ASSET2);
     MemTempAllocator tempAlloc;
 
     GfxBackend::BeginRenderFrameSync();
@@ -940,7 +940,7 @@ static void Asset::_CreateGpuObjects(uint32 numImages, const AssetImageDescHandl
 
 static void Asset::_LoadGroupTask(uint32, void* userData)
 {
-    PROFILE_ZONE_COLOR(PROFILE_COLOR_ASSET1);
+    PROFILE_ZONE_COLOR("Asset.LoadGroup", PROFILE_COLOR_ASSET1);
     TimerStopWatch timer;
 
     // Fetch load list (pointers in the loadList are persistant through the lifetime of the group)
@@ -1344,7 +1344,7 @@ static void Asset::_LoadGroupTask(uint32, void* userData)
 
 static void Asset::_UnloadGroupTask(uint32, void* userData)
 {
-    PROFILE_ZONE_COLOR(PROFILE_COLOR_ASSET3);
+    PROFILE_ZONE_COLOR("Asset.UnloadGroup", PROFILE_COLOR_ASSET3);
 
     // Fetch load list (pointers in the loadList are persistant through the lifetime of the group)
     MemTempAllocator tempAlloc;
@@ -2011,7 +2011,7 @@ const AssetParams* Asset::GetParams(AssetHandle handle)
 
 void Asset::Update()
 {
-    PROFILE_ZONE_COLOR(PROFILE_COLOR_ASSET1);
+    PROFILE_ZONE_COLOR("Asset.Update", PROFILE_COLOR_ASSET1);
     ASSERT_MSG(Engine::IsMainThread(), "Update can only be called in the main thread");
 
     if (gAssetMan.curJob) {

@@ -1,4 +1,5 @@
 #include "TracyHelper.h"
+#include "StringUtil.h"
 
 #ifdef TRACY_ENABLE
 
@@ -36,8 +37,6 @@ PRAGMA_DIAGNOSTIC_POP()
     #define PLATFORM_WINDOWS OLD_PLATFORM_WINDOWS
 #endif
 
-#include <string.h>
-
 static TracyZoneEnterCallback gZoneEnterCallback;
 static TracyZoneExitCallback gZoneExitCallback;
 
@@ -62,25 +61,46 @@ void Tracy::RunZoneEnterCallback(TracyCZoneCtx* ctx, const ___tracy_source_locat
 }
 
 
-void Tracy::_private::___tracy_emit_gpu_calibrate_serial(const struct ___tracy_gpu_calibrate_data data)
-{
-    auto item = tracy::Profiler::QueueSerial();
-    tracy::MemWrite(&item->hdr.type, tracy::QueueType::GpuCalibration);
-    tracy::MemWrite(&item->gpuCalibration.gpuTime, data.gpuTime);
-    tracy::MemWrite(&item->gpuCalibration.cpuTime, data.cpuTime);
-    tracy::MemWrite(&item->gpuCalibration.cpuDelta, data.deltaTime);
-    tracy::MemWrite(&item->gpuCalibration.context, data.context);
-    tracy::Profiler::QueueSerialFinish();
-}
-
-int64 Tracy::_private::__tracy_get_time(void)
+int64 Tracy::GetTime()
 {
     return tracy::Profiler::GetTime();
 }
 
-uint64 Tracy::_private::__tracy_alloc_source_loc(uint32 line, const char* source, const char* function, const char* name)
-{
-    return tracy::Profiler::AllocSourceLocation(line, source, function, name, name ? strlen(name): 0);
+Tracy::CpuProfilerScope::CpuProfilerScope(const ___tracy_source_location_data* sourceLoc, int callstackDepth, bool isActive, bool isAlloc)
+{ 
+    mCtx = {};
+
+    if (callstackDepth > 0) {
+        if (isAlloc) {
+            mCtx = ___tracy_emit_zone_begin_alloc_callstack(
+                ___tracy_alloc_srcloc_name(sourceLoc->line, sourceLoc->file, Str::Len(sourceLoc->file), 
+                                           sourceLoc->function, Str::Len(sourceLoc->function), sourceLoc->name, Str::Len(sourceLoc->name),
+                                           sourceLoc->color), callstackDepth, isActive);
+        }
+        else {
+            mCtx = ___tracy_emit_zone_begin_callstack(sourceLoc, callstackDepth, isActive);
+        }
+    }
+    else {
+        if (isAlloc) {
+            mCtx = ___tracy_emit_zone_begin_alloc(
+                ___tracy_alloc_srcloc_name(sourceLoc->line, sourceLoc->file, Str::Len(sourceLoc->file), 
+                                           sourceLoc->function, Str::Len(sourceLoc->function), sourceLoc->name, Str::Len(sourceLoc->name),
+                                           sourceLoc->color), isActive);
+        }
+        else {
+            mCtx = ___tracy_emit_zone_begin(sourceLoc, isActive);
+        }
+    }
+
+    Tracy::RunZoneEnterCallback(&mCtx, sourceLoc); 
 }
+
+Tracy::CpuProfilerScope::~CpuProfilerScope() 
+{ 
+    if (!Tracy::RunZoneExitCallback(&mCtx)) 
+        ___tracy_emit_zone_end(mCtx); 
+}
+
 
 #endif  // TRACY_ENABLE

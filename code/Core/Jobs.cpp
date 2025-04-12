@@ -338,8 +338,14 @@ namespace Jobs
         #ifdef TRACY_ENABLE
         if (!fiber->tracyZonesStack.IsEmpty()) {
             // Refresh all the zones in stack order
-            for (JobsTracyZone& zone : fiber->tracyZonesStack)
-                zone.ctx = ___tracy_emit_zone_begin_callstack(zone.sourceLoc, TRACY_CALLSTACK, zone.ctx.active);
+            // TODO: Add support/test for ALLOC mode source locations. Might break this part
+            for (JobsTracyZone& zone : fiber->tracyZonesStack) {
+                #if !defined(TRACY_NO_CALLSTACK)
+                    zone.ctx = ___tracy_emit_zone_begin_callstack(zone.sourceLoc, TRACY_CALLSTACK, zone.ctx.active);
+                #else
+                    zone.ctx = ___tracy_emit_zone_begin(zone.sourceLoc, zone.ctx.active);
+                #endif
+            }
         }
         #endif
 

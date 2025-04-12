@@ -1,3 +1,5 @@
+#include "../UnityBuild.inl"
+
 #include "../Core/Settings.h"
 #include "../Core/Log.h"
 #include "../Core/TracyHelper.h"
@@ -22,7 +24,6 @@
 #include "../Assets/Model.h"
 #include "../Assets/Shader.h"
 
-#include "../UnityBuild.inl"
 
 #include "../Tool/Console.h"
 
@@ -403,7 +404,7 @@ struct AppImpl final : AppCallbacks
 
     void Update(float dt) override
     {
-        PROFILE_ZONE();
+        PROFILE_ZONE("Update");
 
         if (mMinimized)
             return;
@@ -443,11 +444,14 @@ struct AppImpl final : AppCallbacks
         };
 
         cmd.TransitionImage(mRenderTargetDepth, GfxImageTransition::RenderTarget);
-        cmd.BeginRenderPass(pass);
+
         {
+            GPU_PROFILE_ZONE(cmd, "ModelRender");
+
+            cmd.BeginRenderPass(pass);
             mModelScenes[mSelectedSceneIdx].Render(cmd);            
+            cmd.EndRenderPass();
         }
-        cmd.EndRenderPass();
 
         DebugDraw::BeginDraw(cmd, App::GetFramebufferWidth(), App::GetFramebufferHeight());
         DebugDrawGridProperties gridProps {
@@ -460,6 +464,7 @@ struct AppImpl final : AppCallbacks
         DebugDraw::EndDraw(cmd, *mCam, mRenderTargetDepth);
 
         if (ImGui::IsEnabled()) {
+            GPU_PROFILE_ZONE(cmd, "ImGui");
             DebugHud::DrawDebugHud(dt, 20);
             DebugHud::DrawStatusBar(dt);
 

@@ -212,7 +212,7 @@ MemTempContext::~MemTempContext()
 
 void MemTempAllocator::Reset()
 {
-    PROFILE_ZONE();
+    PROFILE_ZONE("TempAllocator.Reset");
 
     // TODO: do some kind of heuristics to detect leaks if allocStack is not empty
 
@@ -637,8 +637,6 @@ void  MemBumpAllocatorVM::BackendRelease(void* ptr, size_t size)
 
 void MemBumpAllocatorVM::WarmUp()
 {
-    PROFILE_ZONE();
-
     size_t hwPageSize = OS::GetPageSize();
     size_t pageOffset = AlignValue(mOffset, mPageSize);
     BackendCommit(mBuffer + pageOffset, mReserveSize - pageOffset);

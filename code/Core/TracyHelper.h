@@ -10,7 +10,8 @@
     #define TRACY_FIBERS
 #endif
 
-#if PLATFORM_LINUX
+// TODO: I had to disable callstacks, because of Crashes that I got from the Tracy profiler side. Have to investigate
+#if PLATFORM_LINUX || PLATFORM_WINDOWS
     #define TRACY_NO_CALLSTACK
 #endif
 
@@ -26,127 +27,72 @@
         API void RunZoneEnterCallback(TracyCZoneCtx* ctx, const ___tracy_source_location_data* sourceLoc);
         API bool RunZoneExitCallback(TracyCZoneCtx* ctx);
 
-        namespace _private
+        API int64 GetTime();
+
+        struct CpuProfilerScope
         {
-            struct ___tracy_gpu_calibrate_data
-            {
-                int64 gpuTime;
-                int64 cpuTime;
-                int64 deltaTime;
-                uint8 context;
-            };
+            TracyCZoneCtx mCtx;
 
-            void ___tracy_emit_gpu_calibrate_serial(const struct ___tracy_gpu_calibrate_data data);
-            int64 __tracy_get_time(void);
-            uint64 __tracy_alloc_source_loc(uint32 line, const char* source, const char* function, const char* name);
+            CpuProfilerScope() = delete;
 
-            struct TracyCZoneScope
-            {
-                TracyCZoneCtx mCtx;
-                const ___tracy_source_location_data* mSourceLoc;
-    
-                TracyCZoneScope() = delete;
-                explicit TracyCZoneScope(TracyCZoneCtx ctx, const ___tracy_source_location_data* sourceLoc) : mCtx(ctx), mSourceLoc(sourceLoc) { Tracy::RunZoneEnterCallback(&ctx, sourceLoc); }
-                ~TracyCZoneScope() { if (!Tracy::RunZoneExitCallback(&mCtx)) { TracyCZoneEnd(mCtx); }}
-            };
-        }
+            explicit CpuProfilerScope(const ___tracy_source_location_data* sourceLoc, int callstackDepth, bool isActive, bool isAlloc);
+            ~CpuProfilerScope();
+        };
     }
 
     #define TracyCRealloc(oldPtr, ptr, size) if (oldPtr) { TracyCFree(oldPtr); }  TracyCAlloc(ptr, size)
 
+    TRACY_API uint64_t ___tracy_alloc_srcloc_name( uint32_t line, const char* source, size_t sourceSz, const char* function, size_t functionSz, const char* name, size_t nameSz, uint32_t color );
+
+    // TODO: Change _NAME macros so that they stop using static constexpr structs and instead use ___tracy_alloc_srcloc_name, ___tracy_emit_zone_begin_alloc_callstack APIs
+    // NOTE: uint64 Id for __tracy_source_location_data is actually the pointer to it. So for static ones, we just cast it. For dynamics we use ___tracy_alloc_srcloc_name
     #if defined TRACY_HAS_CALLSTACK && defined TRACY_CALLSTACK
-        #define PROFILE_ZONE_OPT(active) \
-            static constexpr struct ___tracy_source_location_data CONCAT(__tracy_source_location,__LINE__) = { NULL, __func__,  __FILE__, (uint32_t)__LINE__, 0 }; \
-            Tracy::_private::TracyCZoneScope CONCAT(__tracy_ctx,__LINE__)(___tracy_emit_zone_begin_callstack(&CONCAT(__tracy_source_location,__LINE__), TRACY_CALLSTACK, active), &CONCAT(__tracy_source_location,__LINE__));
-        #define PROFILE_ZONE_NAME_OPT(name, active) \
+        #define PROFILE_ZONE_OPT(active, name) \
             static constexpr struct ___tracy_source_location_data CONCAT(__tracy_source_location,__LINE__) = { name, __func__,  __FILE__, (uint32_t)__LINE__, 0 }; \
-            Tracy::_private::TracyCZoneScope CONCAT(__tracy_ctx,__LINE__)(___tracy_emit_zone_begin_callstack( &CONCAT(__tracy_source_location,__LINE__), TRACY_CALLSTACK, active ), &CONCAT(__tracy_source_location,__LINE__));
-        #define PROFILE_ZONE_COLOR_OPT(color, active) \
-            static constexpr struct ___tracy_source_location_data CONCAT(__tracy_source_location,__LINE__) = { NULL, __func__,  __FILE__, (uint32_t)__LINE__, color }; \
-            Tracy::_private::TracyCZoneScope CONCAT(__tracy_ctx,__LINE__)(___tracy_emit_zone_begin_callstack( &CONCAT(__tracy_source_location,__LINE__), TRACY_CALLSTACK, active ), &CONCAT(__tracy_source_location,__LINE__));
-        #define PROFILE_ZONE_NAME_COLOR_OPT(name, color, active) \
+            Tracy::CpuProfilerScope CONCAT(__cpu_profiler,__LINE__)(&CONCAT(__tracy_source_location,__LINE__), TRACY_CALLSTACK, active, false)
+        #define PROFILE_ZONE_ALLOC_OPT(name, active) \
+            struct ___tracy_source_location_data CONCAT(__tracy_source_location,__LINE__) = { name, __func__,  __FILE__, (uint32_t)__LINE__, 0 }; \
+            Tracy::CpuProfilerScope CONCAT(__cpu_profiler,__LINE__)(&CONCAT(__tracy_source_location,__LINE__), TRACY_CALLSTACK, active, true)
+        #define PROFILE_ZONE_COLOR_OPT(name, color, active) \
             static constexpr struct ___tracy_source_location_data CONCAT(__tracy_source_location,__LINE__) = { name, __func__,  __FILE__, (uint32_t)__LINE__, color }; \
-            Tracy::_private::TracyCZoneScope CONCAT(__tracy_ctx,__LINE__)(___tracy_emit_zone_begin_callstack( &CONCAT(__tracy_source_location,__LINE__), TRACY_CALLSTACK, active ), &CONCAT(__tracy_source_location,__LINE__));
+            Tracy::CpuProfilerScope CONCAT(__cpu_profiler,__LINE__)(&CONCAT(__tracy_source_location,__LINE__), TRACY_CALLSTACK, active, false)
+        #define PROFILE_ZONE_ALLOC_COLOR_OPT(name, color, active) \
+            static constexpr struct ___tracy_source_location_data CONCAT(__tracy_source_location,__LINE__) = { name, __func__,  __FILE__, (uint32_t)__LINE__, color }; \
+            Tracy::CpuProfilerScope CONCAT(__cpu_profiler,__LINE__)(&CONCAT(__tracy_source_location,__LINE__), TRACY_CALLSTACK, active, true)
 
-        #define PROFILE_ZONE() PROFILE_ZONE_OPT(true)
-        #define PROFILE_ZONE_NAME(name) PROFILE_ZONE_NAME_OPT(name, true)
-        #define PROFILE_ZONE_COLOR(color) PROFILE_ZONE_COLOR_OPT(color, true)
-        #define PROFILE_ZONE_NAME_COLOR(name, color) PROFILE_ZONE_NAME_COLOR_OPT(name, color, true)
-
-        #define PROFILE_ZONE_WITH_TEXT_OPT(text, textLen, active) \
-            PROFILE_ZONE_OPT(active) \
-            TracyCZoneText(CONCAT(__tracy_ctx,__LINE__).mCtx, text, textLen)
-        #define PROFILE_ZONE_NAME_WITH_TEXT_OPT(name, text, textLen, active) \
-            PROFILE_ZONE_NAME_OPT(name, active) \
-            TracyCZoneText(CONCAT(__tracy_ctx,__LINE__).mCtx, text, textLen)
-        #define PROFILE_ZONE_COLOR_WITH_TEXT_OPT(color, text, textLen, active) \
-            PROFILE_ZONE_COLOR_OPT(color, active) \
-            TracyCZoneText(CONCAT(__tracy_ctx,__LINE__).mCtx, text, textLen)
-        #define PROFILE_ZONE_NAME_COLOR_WITH_TEXT_OPT(name, color, text, textLen, active) \
-            PROFILE_ZONE_NAME_COLOR_OPT(name, color, active) \
-            TracyCZoneText(CONCAT(__tracy_ctx,__LINE__).mCtx, text, textLen)
-
-        #define PROFILE_ZONE_WITH_TEXT(text, textLen) PROFILE_ZONE_WITH_TEXT_OPT(text, textLen, true)
-        #define PROFILE_ZONE_NAME_WITH_TEXT(name, text, textLen) PROFILE_ZONE_NAME_WITH_TEXT_OPT(name, text, textLen, true)
-        #define PROFILE_ZONE_COLOR_WITH_TEXT(color, text, textLen) PROFILE_ZONE_COLOR_WITH_TEXT_OPT(color, text, textLen, true)
-        #define PROFILE_ZONE_NAME_COLOR_WITH_TEXT(name, color, text, textLen) PROFILE_ZONE_NAME_COLOR_WITH_TEXT(name, color, text, textLen, true)
+        #define PROFILE_ZONE(name) PROFILE_ZONE_OPT(name, true)
+        #define PROFILE_ZONE_ALLOC(name) PROFILE_ZONE_ALLOC_OPT(name, true)
+        #define PROFILE_ZONE_COLOR(name, color) PROFILE_ZONE_COLOR_OPT(name, color, true)
+        #define PROFILE_ZONE_ALLOC_COLOR(name, color) PROFILE_ZONE_ALLOC_COLOR_OPT(name, color, true)
     #else
-        #define PROFILE_ZONE_OPT(active) \
-            static constexpr struct ___tracy_source_location_data CONCAT(__tracy_source_location,__LINE__) = { NULL, __func__,  __FILE__, (uint32_t)__LINE__, 0 }; \
-            Tracy::_private::TracyCZoneScope CONCAT(__tracy_ctx,__LINE__)(___tracy_emit_zone_begin( &CONCAT(__tracy_source_location,__LINE__), active ), &CONCAT(__tracy_source_location,__LINE__));
-        #define PROFILE_ZONE_NAME_OPT(name, active) \
+        #define PROFILE_ZONE_OPT(name, active) \
             static constexpr struct ___tracy_source_location_data CONCAT(__tracy_source_location,__LINE__) = { name, __func__,  __FILE__, (uint32_t)__LINE__, 0 }; \
-            Tracy::_private::TracyCZoneScope CONCAT(__tracy_ctx,__LINE__)(___tracy_emit_zone_begin( &CONCAT(__tracy_source_location,__LINE__), active ), &CONCAT(__tracy_source_location,__LINE__));
-        #define PROFILE_ZONE_COLOR_OPT(color, active) \
-            static constexpr struct ___tracy_source_location_data CONCAT(__tracy_source_location,__LINE__) = { NULL, __func__,  __FILE__, (uint32_t)__LINE__, color }; \
-            Tracy::_private::TracyCZoneScope CONCAT(__tracy_ctx,__LINE__)(___tracy_emit_zone_begin( &CONCAT(__tracy_source_location,__LINE__), active ), &CONCAT(__tracy_source_location,__LINE__));
-        #define PROFILE_ZONE_NAME_COLOR_OPT(name, color, active) \
+            Tracy::CpuProfilerScope CONCAT(__cpu_profiler,__LINE__)(&CONCAT(__tracy_source_location,__LINE__), 0, active, false)
+        #define PROFILE_ZONE_ALLOC_OPT(name, active) \
+            struct ___tracy_source_location_data CONCAT(__tracy_source_location,__LINE__) = { name, __func__,  __FILE__, (uint32_t)__LINE__, 0 }; \
+            Tracy::CpuProfilerScope CONCAT(__cpu_profiler,__LINE__)(&CONCAT(__tracy_source_location,__LINE__), 0, active, true)
+        #define PROFILE_ZONE_COLOR_OPT(name, color, active) \
             static constexpr struct ___tracy_source_location_data CONCAT(__tracy_source_location,__LINE__) = { name, __func__,  __FILE__, (uint32_t)__LINE__, color }; \
-            Tracy::_private::TracyCZoneScope CONCAT(__tracy_ctx,__LINE__)(___tracy_emit_zone_begin( &CONCAT(__tracy_source_location,__LINE__), active ), &CONCAT(__tracy_source_location,__LINE__));
+            Tracy::CpuProfilerScope CONCAT(__cpu_profiler,__LINE__)(&CONCAT(__tracy_source_location,__LINE__), 0, active, false)
+        #define PROFILE_ZONE_ALLOC_COLOR_OPT(name, color, active) \
+            static constexpr struct ___tracy_source_location_data CONCAT(__tracy_source_location,__LINE__) = { name, __func__,  __FILE__, (uint32_t)__LINE__, color }; \
+            Tracy::CpuProfilerScope CONCAT(__cpu_profiler,__LINE__)(&CONCAT(__tracy_source_location,__LINE__), 0, active, true)
 
-        #define PROFILE_ZONE() PROFILE_ZONE_OPT(true)
-        #define PROFILE_ZONE_NAME(name) PROFILE_ZONE_NAME_OPT(name, true)
-        #define PROFILE_ZONE_COLOR(color) PROFILE_ZONE_COLOR_OPT(color, true)
-        #define PROFILE_ZONE_NAME_COLOR(name, color) PROFILE_ZONE_NAME_COLOR_OPT(name, color, true)
-
-        #define PROFILE_ZONE_WITH_TEXT_OPT(text, textLen, active) \
-            PROFILE_ZONE_OPT(active) \
-            TracyCZoneText(CONCAT(__tracy_ctx,__LINE__).mCtx, text, textLen)
-        #define PROFILE_ZONE_NAME_WITH_TEXT_OPT(name, text, textLen, active) \
-            PROFILE_ZONE_NAME_OPT(name, active) \
-            TracyCZoneText(CONCAT(__tracy_ctx,__LINE__).mCtx, text, textLen)
-        #define PROFILE_ZONE_COLOR_WITH_TEXT_OPT(color, text, textLen, active) \
-            PROFILE_ZONE_COLOR_OPT(color, active) \
-            TracyCZoneText(CONCAT(__tracy_ctx,__LINE__).mCtx, text, textLen)
-        #define PROFILE_ZONE_NAME_COLOR_WITH_TEXT_OPT(name, color, text, textLen, active) \
-            PROFILE_ZONE_NAME_COLOR_WITH_TEXT_OPT(name, color, active) \
-            TracyCZoneText(CONCAT(__tracy_ctx,__LINE__).mCtx, text, textLen)
-
-        #define PROFILE_ZONE_WITH_TEXT(text, textLen) PROFILE_ZONE_WITH_TEXT_OPT(text, textLen, true)
-        #define PROFILE_ZONE_NAME_WITH_TEXT(name, text, textLen) PROFILE_ZONE_NAME_WITH_TEXT_OPT(name, text, textLen, true)
-        #define PROFILE_ZONE_COLOR_WITH_TEXT(color, text, textLen) PROFILE_ZONE_COLOR_WITH_TEXT_OPT(color, text, textLen, true)
-        #define PROFILE_ZONE_NAME_COLOR_WITH_TEXT(name, color, text, textLen) PROFILE_ZONE_NAME_COLOR_WITH_TEXT(name, color, text, textLen, true)
+        #define PROFILE_ZONE(name) PROFILE_ZONE_OPT(name, true)
+        #define PROFILE_ZONE_ALLOC(name) PROFILE_ZONE_ALLOC_OPT(name, true)
+        #define PROFILE_ZONE_COLOR(name, color) PROFILE_ZONE_COLOR_OPT(name, color, true)
+        #define PROFILE_ZONE_ALLOC_COLOR(name, color) PROFILE_ZONE_ALLOC_COLOR_OPT(name, color, true)
     #endif // else: TRACY_HAS_CALLBACK
 #else
-    #define PROFILE_ZONE_OPT(active)
-    #define PROFILE_ZONE_NAME_OPT(name, active)
-    #define PROFILE_ZONE_COLOR_OPT(color, active)
-    #define PROFILE_ZONE_NAME_COLOR_OPT(name, color, active)
+    #define PROFILE_ZONE_OPT(name, active)
+    #define PROFILE_ZONE_ALLOC_OPT(name, active)
+    #define PROFILE_ZONE_COLOR_OPT(name, color, active)
+    #define PROFILE_ZONE_ALLOC_COLOR_OPT(name, color, active)
 
-    #define PROFILE_ZONE_WITH_TEXT_OPT(text, textLen, active)
-    #define PROFILE_ZONE_NAME_WITH_TEXT_OPT(name, text, textLen, active)
-    #define PROFILE_ZONE_COLOR_WITH_TEXT_OPT(color, text, textLen, active)
-    #define PROFILE_ZONE_NAME_COLOR_WITH_TEXT_OPT(name, color, text, textLen, active)
-
-    #define PROFILE_ZONE()
-    #define PROFILE_ZONE_NAME(name)
-    #define PROFILE_ZONE_COLOR(color)
-    #define PROFILE_ZONE_NAME_COLOR(name, color)
-
-    #define PROFILE_ZONE_WITH_TEXT(text, textLen)
-    #define PROFILE_ZONE_NAME_WITH_TEXT(name, text, textLen)
-    #define PROFILE_ZONE_COLOR_WITH_TEXT(color, text, textLen)
-    #define PROFILE_ZONE_NAME_COLOR_WITH_TEXT(name, color, text, textLen)    
+    #define PROFILE_ZONE(name)
+    #define PROFILE_ZONE_ALLOC(name)
+    #define PROFILE_ZONE_COLOR(name, color)
+    #define PROFILE_ZONE_ALLOC_COLOR(name, color)
 
     #define TracyCRealloc(oldPtr, ptr, size)
 #endif  // TRACY_ENABLE
