@@ -223,31 +223,30 @@ struct GfxBackendProfilerContext
     };
     // 
 
-    VkQueryPool m_query;
-    VkTimeDomainEXT m_timeDomain;
-    uint64 m_deviation;
-#ifdef _WIN32
-    int64 m_qpcToNs;
+    VkQueryPool mQuery;
+    VkTimeDomainEXT mTimeDomain;
+    uint64 mDeviation;
+#if PLATFORM_WINDOWS
+    int64 mQpcToNS;
 #endif
-    int64 m_prevCalibration;
-    uint8 m_context;
+    int64 mPrevCalibration;
 
-    AtomicUint64 m_head;
-    uint64 m_tail;
-    uint32 m_oldCnt;
-    uint32 m_queryCount;
+    AtomicUint64 mHead;
+    uint64 mTail;
+    uint32 mOldCount;
+    uint32 mQueryCount;
 
-    int64* m_res;
+    int64* mRes;
 
-    uint8 m_id;
-    bool m_init;
+    uint8 mContextId;
+    bool mInit;
 
     static AtomicUint32 smContextCounter;
 
     bool Initialize(const char* name);
     void Release();
     void Collect(VkCommandBuffer cmdVk);
-    bool IsInitialized() { return m_init; }
+    bool IsInitialized() { return mInit; }
     void Calibrate(int64& tCpu, int64& tGpu);
     uint32 NextQueryId();
 };
@@ -293,9 +292,9 @@ struct GfxBackendQueue
     GfxQueueType type;
     uint32 familyIdx;
     float priority;
-    bool supportsTransfer;
     GfxBackendCommandBufferContext cmdBufferContexts[GFXBACKEND_FRAMES_IN_FLIGHT];
     GfxBackendQueueSemaphoreBank semaphoreBanks[GFXBACKEND_FRAMES_IN_FLIGHT];
+    VkQueryPool timeQueries[GFXBACKEND_FRAMES_IN_FLIGHT];   // For measuring GPU time per frame
     Array<WaitSemaphore> waitSemaphores;
     Array<VkSemaphore> signalSemaphores;
     Array<PendingBarrier> pendingBarriers;  // Buffers transfers coming into this queue
@@ -307,6 +306,8 @@ struct GfxBackendQueue
 #ifdef TRACY_ENABLE
     GfxBackendProfilerContext profilerContext;
 #endif
+
+    bool supportsTransfer;
 };
 
 struct GfxBackendQueueManager
@@ -630,6 +631,8 @@ struct GfxBackendVk
 
     VkSampler samplerDefault;
     VkPipelineCache pipelineCache;
+
+    float prevFrameGpuTime;     // This is the one before the last frame. (frameIdx - FRAMES_IN_FLIGHT)
 };
 
 static GfxBackendVk gBackendVk;
@@ -2312,6 +2315,11 @@ GfxCommandBuffer GfxBackend::BeginCommandBuffer(GfxQueueType queueType)
         .mQueueIndex = uint8(queueIndex)
     };
 
+    // First CommandBuffer writes time query
+    if (cmdBufferIndex == 0) {
+        vkCmdWriteTimestamp(cmdVk, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, queue.timeQueries[gBackendVk.queueMan.GetFrameIndex()], 0);
+    }
+
     // Record all pending buffer memory barriers
     queue.barriersMutex.Enter();
     if (!queue.pendingBarriers.IsEmpty()) {
@@ -2386,9 +2394,10 @@ void GfxBackend::EndCommandBuffer(GfxCommandBuffer& cmdBuffer)
 {
     ASSERT(cmdBuffer.mIsRecording && !cmdBuffer.mIsInRenderPass);
     VkCommandBuffer cmdVk = GfxBackend::_GetCommandBufferHandle(cmdBuffer);
+    GfxBackendQueue& queue = gBackendVk.queueMan.GetQueue(cmdBuffer.mQueueIndex);
 
-    // Transition the swapchain to PRESENT layout if we have drawn to it
     if (cmdBuffer.mDrawsToSwapchain) {
+        // Transition the swapchain to PRESENT layout if we have drawn to it
         GfxBackendSwapchain::ImageState& state = gBackendVk.swapchain.GetImageState();
 
         VkImageMemoryBarrier2 imageBarrier {
@@ -2417,9 +2426,10 @@ void GfxBackend::EndCommandBuffer(GfxCommandBuffer& cmdBuffer)
         state.lastStage = VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT;
         state.lastLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
         state.lastAccessFlags = 0;
-    }
 
-    GfxBackendQueue& queue = gBackendVk.queueMan.GetQueue(cmdBuffer.mQueueIndex);
+        // _Most likely_ the last call. write the end time query
+        vkCmdWriteTimestamp(cmdVk, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, queue.timeQueries[gBackendVk.queueMan.GetFrameIndex()], 1);
+    }
 
     #ifdef TRACY_ENABLE
     if (queue.profilerContext.IsInitialized())
@@ -4055,6 +4065,16 @@ void GfxBackendQueueManager::PostInitialize()
 
             queue.semaphoreBanks[k].Initialize();
 
+            {
+                VkQueryPoolCreateInfo queryPoolInfo = {
+                    .sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO,
+                    .queryType = VK_QUERY_TYPE_TIMESTAMP,
+                    .queryCount = 2  // Start + end timestamps
+                };
+
+                vkCreateQueryPool(gBackendVk.device, &queryPoolInfo, gBackendVk.vkAlloc, &queue.timeQueries[k]);
+                vkResetQueryPool(gBackendVk.device, queue.timeQueries[k], 0, 2);
+            }
         }
 
         #ifdef TRACY_ENABLE
@@ -4087,6 +4107,8 @@ void GfxBackendQueueManager::Release()
             ReleaseCommandBufferContext(queue.cmdBufferContexts[k]);
             queue.semaphoreBanks[k].Release();
 
+            if (queue.timeQueries[k])
+                vkDestroyQueryPool(gBackendVk.device, queue.timeQueries[k], gBackendVk.vkAlloc);
         }
 
         #ifdef TRACY_ENABLE
@@ -4590,6 +4612,14 @@ void GfxBackendQueueManager::BeginFrame()
         queue.cmdBufferCtxMutex.ExitWrite();
 
         queue.semaphoreBanks[mFrameIndex].Reset();
+
+        // It's safe to get query results now and measure Gpu time
+        uint64 timestamps[2];
+        vkGetQueryPoolResults(gBackendVk.device, queue.timeQueries[mFrameIndex], 0, 2, sizeof(timestamps), timestamps, sizeof(uint64), VK_QUERY_RESULT_64_BIT);
+        uint64 gpuTimeNs = timestamps[1] - timestamps[0];
+        gBackendVk.prevFrameGpuTime = float((double(gpuTimeNs) * double(gBackendVk.gpu.props.limits.timestampPeriod)) / 1e6);
+
+        vkResetQueryPool(gBackendVk.device, queue.timeQueries[mFrameIndex], 0, 2);
     }
 
     gBackendVk.memMan.ResetTransientAllocators(mFrameIndex);
@@ -5832,10 +5862,9 @@ Mat4 GfxBackend::GetSwapchainTransformMat()
     return MAT4_IDENT;
 }
 
-float GfxBackend::GetRenderTimeNS()
+float GfxBackend::GetRenderTimeMS()
 {
-    // TODO
-    return 0;
+    return gBackendVk.prevFrameGpuTime;
 }
 
 const GfxBlendAttachmentDesc* GfxBlendAttachmentDesc::GetDefault()
@@ -5896,13 +5925,13 @@ bool GfxBackendProfilerContext::Initialize(const char* name)
 
         for(uint32 i = 0; i < num; i++) {
             if(data[i] == supportedDomain) {
-                m_timeDomain = data[i];
+                mTimeDomain = data[i];
                 break;
             }
         }
     }
 
-    if (m_timeDomain == VK_TIME_DOMAIN_DEVICE_KHR)
+    if (mTimeDomain == VK_TIME_DOMAIN_DEVICE_KHR)
         return false;
 
     // (TracyVulkan: FindCalibratedTimestampDeviation)
@@ -5910,7 +5939,7 @@ bool GfxBackendProfilerContext::Initialize(const char* name)
         constexpr uint32 NumProbes = 32;
         VkCalibratedTimestampInfoEXT spec[2] = {
             { VK_STRUCTURE_TYPE_CALIBRATED_TIMESTAMP_INFO_EXT, nullptr, VK_TIME_DOMAIN_DEVICE_EXT },
-            { VK_STRUCTURE_TYPE_CALIBRATED_TIMESTAMP_INFO_EXT, nullptr, m_timeDomain },
+            { VK_STRUCTURE_TYPE_CALIBRATED_TIMESTAMP_INFO_EXT, nullptr, mTimeDomain },
         };
 
         uint64 ts[2];
@@ -5923,50 +5952,50 @@ bool GfxBackendProfilerContext::Initialize(const char* name)
             if (minDeviation > deviation[i])
                 minDeviation = deviation[i];
         }
-        m_deviation = minDeviation * 3 / 2;
+        mDeviation = minDeviation * 3 / 2;
 
         #if PLATFORM_WINDOWS
         LARGE_INTEGER t;
         QueryPerformanceFrequency(&t);
 
-        m_qpcToNs = int64(1000000000. / t.QuadPart);
+        mQpcToNS = int64(1000000000. / t.QuadPart);
         #endif
     }
 
     int64 tgpu;
-    Calibrate(m_prevCalibration, tgpu);
+    Calibrate(mPrevCalibration, tgpu);
 
     // (TracyVulkan: CreateQueryPool)
-    m_queryCount = GFXBACKEND_PROFILE_CONTEXT_QUERY_COUNT;
+    mQueryCount = GFXBACKEND_PROFILE_CONTEXT_QUERY_COUNT;
     {
         VkQueryPoolCreateInfo poolInfo = {
             .sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO,
             .queryType = VK_QUERY_TYPE_TIMESTAMP,
-            .queryCount = m_queryCount
+            .queryCount = mQueryCount
         };
 
-        while (vkCreateQueryPool(gBackendVk.device, &poolInfo, gBackendVk.vkAlloc, &m_query ) != VK_SUCCESS)
+        while (vkCreateQueryPool(gBackendVk.device, &poolInfo, gBackendVk.vkAlloc, &mQuery ) != VK_SUCCESS)
         {
-            m_queryCount /= 2;
-            poolInfo.queryCount = m_queryCount;
+            mQueryCount /= 2;
+            poolInfo.queryCount = mQueryCount;
         }
     }
 
-    vkResetQueryPool(gBackendVk.device, m_query, 0, m_queryCount);
+    vkResetQueryPool(gBackendVk.device, mQuery, 0, mQueryCount);
 
     // We need the buffer to be twice as large for availability values
-    m_res = Mem::AllocTyped<int64>(m_queryCount * 2, &gBackendVk.parentAlloc);
+    mRes = Mem::AllocTyped<int64>(mQueryCount * 2, &gBackendVk.parentAlloc);
 
     {
         ___tracy_gpu_new_context_data data {
             .gpuTime = tgpu,
             .period = gBackendVk.gpu.props.limits.timestampPeriod,
             .context = uint8(Atomic::FetchAddExplicit(&smContextCounter, 1, AtomicMemoryOrder::Relaxed)),
-            .flags = uint8(m_timeDomain != VK_TIME_DOMAIN_DEVICE_EXT ? GfxBackendProfilerContext::GpuContextFlags::GpuContextCalibration : 0),
+            .flags = uint8(mTimeDomain != VK_TIME_DOMAIN_DEVICE_EXT ? GfxBackendProfilerContext::GpuContextFlags::GpuContextCalibration : 0),
             .type = uint8(GfxBackendProfilerContext::GpuContextType::Vulkan)
         };
         ASSERT(data.context <= UINT8_MAX);
-        m_id = data.context;
+        mContextId = data.context;
 
         ___tracy_emit_gpu_new_context(data);
     }
@@ -5974,119 +6003,119 @@ bool GfxBackendProfilerContext::Initialize(const char* name)
     // (TracyVulkan: Name)
     {
         ___tracy_gpu_context_name_data data {
-            .context = m_id,
+            .context = mContextId,
             .name = name,
             .len = uint16(Str::Len(name))
         };
         ___tracy_emit_gpu_context_name_serial(data);
     }
 
-    m_init = true;
+    mInit = true;
     return true;
 }
 
 void GfxBackendProfilerContext::Release()
 {
-    m_init = false;
-    Mem::Free(m_res, &gBackendVk.parentAlloc);
-    vkDestroyQueryPool(gBackendVk.device, m_query, gBackendVk.vkAlloc);
+    mInit = false;
+    Mem::Free(mRes, &gBackendVk.parentAlloc);
+    vkDestroyQueryPool(gBackendVk.device, mQuery, gBackendVk.vkAlloc);
 }
 
 void GfxBackendProfilerContext::Collect(VkCommandBuffer cmdVk)
 {
-    const uint64_t head = Atomic::LoadExplicit(&m_head, AtomicMemoryOrder::Relaxed);
-    if(m_tail == head) 
+    const uint64_t head = Atomic::LoadExplicit(&mHead, AtomicMemoryOrder::Relaxed);
+    if(mTail == head) 
         return;
 
     #ifdef TRACY_ON_DEMAND
     if(!___tracy_connected())
     {
-        vkCmdResetQueryPool(cmdVk, m_query, 0, m_queryCount);
-        m_tail = head;
-        m_oldCnt = 0;
+        vkCmdResetQueryPool(cmdVk, mQuery, 0, mQueryCount);
+        mTail = head;
+        mOldCount = 0;
         int64 tgpu;
-        if(m_timeDomain != VK_TIME_DOMAIN_DEVICE_EXT) 
-            Calibrate(m_prevCalibration, tgpu);
+        if(mTimeDomain != VK_TIME_DOMAIN_DEVICE_EXT) 
+            Calibrate(mPrevCalibration, tgpu);
         return;
     }
     #endif
-    ASSERT(head > m_tail);
+    ASSERT(head > mTail);
         
-    const unsigned int wrappedTail = uint32(m_tail % m_queryCount);
+    const unsigned int wrappedTail = uint32(mTail % mQueryCount);
 
     uint32 cnt;
-    if( m_oldCnt != 0 ) {
-        cnt = m_oldCnt;
-        m_oldCnt = 0;
+    if( mOldCount != 0 ) {
+        cnt = mOldCount;
+        mOldCount = 0;
     }
     else {
-        cnt = uint32(head - m_tail);
-        ASSERT(cnt <= m_queryCount);
-        if( wrappedTail + cnt > m_queryCount )
-            cnt = m_queryCount - wrappedTail;
+        cnt = uint32(head - mTail);
+        ASSERT(cnt <= mQueryCount);
+        if( wrappedTail + cnt > mQueryCount )
+            cnt = mQueryCount - wrappedTail;
     }
 
-    vkGetQueryPoolResults(gBackendVk.device, m_query, wrappedTail, cnt, sizeof(int64)*m_queryCount*2, m_res, 
+    vkGetQueryPoolResults(gBackendVk.device, mQuery, wrappedTail, cnt, sizeof(int64)*mQueryCount*2, mRes, 
                           sizeof(int64)*2, VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WITH_AVAILABILITY_BIT);
 
     for (uint32 idx = 0; idx < cnt; idx++) {
-        int64 avail = m_res[idx * 2 + 1];
+        int64 avail = mRes[idx * 2 + 1];
         if (avail == 0) {
-            m_oldCnt = cnt - idx;
+            mOldCount = cnt - idx;
             cnt = idx;
             break;
         }
 
         ___tracy_gpu_time_data data {
-            .gpuTime = m_res[idx*2],
+            .gpuTime = mRes[idx*2],
             .queryId = uint16(wrappedTail + idx),
-            .context = m_id
+            .context = mContextId
         };
 
         ___tracy_emit_gpu_time_serial(data);
     }
 
-    ASSERT(m_timeDomain != VK_TIME_DOMAIN_DEVICE_EXT);
+    ASSERT(mTimeDomain != VK_TIME_DOMAIN_DEVICE_EXT);
 
     {
         int64 tgpu, tcpu;
         Calibrate(tcpu, tgpu);
-        int64 delta = tcpu - m_prevCalibration;
+        int64 delta = tcpu - mPrevCalibration;
         if(delta > 0) {
-            m_prevCalibration = tcpu;
+            mPrevCalibration = tcpu;
 
             ___tracy_gpu_calibration_data data {
                 .gpuTime = tgpu,
                 .cpuDelta = delta,
-                .context = m_id
+                .context = mContextId
             };
 
            ___tracy_emit_gpu_calibration_serial(data);
         }
     }
 
-    vkCmdResetQueryPool(cmdVk, m_query, wrappedTail, cnt);
-    m_tail += cnt;
+    vkCmdResetQueryPool(cmdVk, mQuery, wrappedTail, cnt);
+    mTail += cnt;
 }
 
 void GfxBackendProfilerContext::Calibrate(int64& tCpu, int64& tGpu)
 {
-    ASSERT( m_timeDomain != VK_TIME_DOMAIN_DEVICE_EXT );
+    ASSERT( mTimeDomain != VK_TIME_DOMAIN_DEVICE_EXT );
 
     VkCalibratedTimestampInfoEXT spec[2] = {
         { VK_STRUCTURE_TYPE_CALIBRATED_TIMESTAMP_INFO_EXT, nullptr, VK_TIME_DOMAIN_DEVICE_EXT },
-        { VK_STRUCTURE_TYPE_CALIBRATED_TIMESTAMP_INFO_EXT, nullptr, m_timeDomain },
+        { VK_STRUCTURE_TYPE_CALIBRATED_TIMESTAMP_INFO_EXT, nullptr, mTimeDomain },
     };
 
     uint64 ts[2];
     uint64 deviation;
     do {
         vkGetCalibratedTimestampsKHR(gBackendVk.device, 2, spec, ts, &deviation);
-    } while(deviation > m_deviation);
+    } while(deviation > mDeviation);
 
     #if PLATFORM_WINDOWS
     tGpu = ts[0];
-    tCpu = ts[1] * m_qpcToNs;
+    tCpu = ts[1] * mQpcToNS;
     #elif PLATFORM_LINUX && defined(CLOCK_MONOTONIC_RAW)
     tGpu = ts[0];
     tCpu = ts[1];
@@ -6119,7 +6148,7 @@ GpuProfilerScope::GpuProfilerScope(GfxCommandBuffer& cmdBuffer, const ___tracy_s
         }
 
         uint32 queryId = ctx.NextQueryId();
-        vkCmdWriteTimestamp(cmdBufferVk, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, ctx.m_query, queryId);
+        vkCmdWriteTimestamp(cmdBufferVk, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, ctx.mQuery, queryId);
 
         if (callstackDepth > 0) {
             if (isAlloc) {
@@ -6129,7 +6158,7 @@ GpuProfilerScope::GpuProfilerScope(GfxCommandBuffer& cmdBuffer, const ___tracy_s
                                                          sourceLoc->name, Str::Len(sourceLoc->name), sourceLoc->color),
                     .depth = callstackDepth,
                     .queryId = uint16(queryId), 
-                    .context = ctx.m_id
+                    .context = ctx.mContextId
                 };
                 ___tracy_emit_gpu_zone_begin_alloc_callstack_serial(data);
             }
@@ -6138,7 +6167,7 @@ GpuProfilerScope::GpuProfilerScope(GfxCommandBuffer& cmdBuffer, const ___tracy_s
                     .srcloc = uint64(sourceLoc),
                     .depth = callstackDepth,
                     .queryId = uint16(queryId), 
-                    .context = ctx.m_id
+                    .context = ctx.mContextId
                 };
 
                 ___tracy_emit_gpu_zone_begin_callstack_serial(data);
@@ -6151,7 +6180,7 @@ GpuProfilerScope::GpuProfilerScope(GfxCommandBuffer& cmdBuffer, const ___tracy_s
                                                          sourceLoc->function, Str::Len(sourceLoc->function), 
                                                          sourceLoc->name, Str::Len(sourceLoc->name), sourceLoc->color),
                     .queryId = uint16(queryId), 
-                    .context = ctx.m_id
+                    .context = ctx.mContextId
                 };
                 ___tracy_emit_gpu_zone_begin_alloc_serial(data);
             }
@@ -6159,7 +6188,7 @@ GpuProfilerScope::GpuProfilerScope(GfxCommandBuffer& cmdBuffer, const ___tracy_s
                 ___tracy_gpu_zone_begin_data data {
                     .srcloc = uint64(sourceLoc),
                     .queryId = uint16(queryId), 
-                    .context = ctx.m_id
+                    .context = ctx.mContextId
                 };
 
                 ___tracy_emit_gpu_zone_begin_serial(data);
@@ -6170,8 +6199,8 @@ GpuProfilerScope::GpuProfilerScope(GfxCommandBuffer& cmdBuffer, const ___tracy_s
 
 uint32 GfxBackendProfilerContext::NextQueryId()
 {
-    const uint64_t id = Atomic::FetchAddExplicit(&m_head, 1, AtomicMemoryOrder::Relaxed);
-    return id % m_queryCount;
+    const uint64_t id = Atomic::FetchAddExplicit(&mHead, 1, AtomicMemoryOrder::Relaxed);
+    return id % mQueryCount;
 }
 
 GpuProfilerScope::~GpuProfilerScope()
@@ -6199,11 +6228,11 @@ GpuProfilerScope::~GpuProfilerScope()
         }
 
         uint32 queryId = ctx.NextQueryId();
-        vkCmdWriteTimestamp(cmdBufferVk, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, ctx.m_query, queryId);
+        vkCmdWriteTimestamp(cmdBufferVk, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, ctx.mQuery, queryId);
 
         ___tracy_gpu_zone_end_data data {
             .queryId = uint16(queryId),
-            .context = ctx.m_id
+            .context = ctx.mContextId
         };
 
         ___tracy_emit_gpu_zone_end_serial(data);

@@ -98,7 +98,7 @@ namespace GfxBackend
     void BeginRenderFrameSync();
     void EndRenderFrameSync();
 
-    float GetRenderTimeNS();
+    float GetRenderTimeMS();
 
     void ReloadShaderPipelines(const GfxShader& shader);
 } // Gfx

@@ -249,7 +249,7 @@ void DebugHud::DrawDebugHud(float dt, float yOffset)
         _UpdateGraph(dt*1000.0f, DebugHudGraphType::FrameTime);
         _UpdateGraph(1.0f/dt, DebugHudGraphType::Fps);
         _UpdateGraph(Engine::GetEngineTimeMS(), DebugHudGraphType::CpuTime);
-        _UpdateGraph(GfxBackend::GetRenderTimeNS()/1000000.0f, DebugHudGraphType::GpuTime);
+        _UpdateGraph(GfxBackend::GetRenderTimeMS(), DebugHudGraphType::GpuTime);
 
         _DrawHudMenu();
 
