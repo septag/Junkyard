@@ -396,6 +396,7 @@ void* MemTempAllocator::Realloc(void* ptr, size_t size, uint32 align)
         return newPtr;
     }
     else {
+        void* initPtr = ptr;
         if (ptr == nullptr)
             ptr = Mem::GetDefaultAlloc()->Malloc(size, align);
         else
@@ -406,15 +407,35 @@ void* MemTempAllocator::Realloc(void* ptr, size_t size, uint32 align)
             size_t endOffset = memStack.baseOffset + memStack.offset;
 
             ctx.peakBytes = Max<size_t>(ctx.peakBytes, endOffset);
+
+            if (initPtr) {
+                uint32 oldPtrIdx = memStack.debugPointers.FindIf([initPtr](const MemDebugPointer& p) { return p.ptr == initPtr; });
+                if (oldPtrIdx != -1)
+                    memStack.debugPointers.RemoveAndSwap(oldPtrIdx);
+            }
+            
             memStack.debugPointers.Push({ptr, align});
         }
         return ptr;
     }
 }
 
-void MemTempAllocator::Free(void*, uint32) 
+void MemTempAllocator::Free(void* ptr, uint32) 
 {
-    // No Free!
+    if (!ptr)
+        return;
+
+    MemTempContext& ctx = _GetMemTempContext();
+
+    if (ctx.debugMode) {
+        uint32 index = mId >> 16;
+        ASSERT_MSG(index == ctx.allocStack.Count() - 1, "Invalid temp id, likely doesn't belong to current temp stack scope");
+
+        MemTempStack& memStack = ctx.allocStack[index];
+        uint32 freeIdx = memStack.debugPointers.FindIf([ptr](const MemDebugPointer& p) { return p.ptr == ptr; });
+        if (freeIdx != -1)
+            memStack.debugPointers.RemoveAndSwap(freeIdx);
+    }
 }
 
 size_t MemTempAllocator::GetOffset() const
@@ -581,8 +602,13 @@ void* MemBumpAllocatorBase::Realloc(void* ptr, size_t size, uint32 align)
     }
 }
 
-void MemBumpAllocatorBase::Free(void*, uint32)
+void MemBumpAllocatorBase::Free(void* ptr, uint32)
 {
+    if (mDebugMode && ptr) {
+        uint32 index = mDebugPointers->FindIf([ptr](const MemDebugPointer& p) { return p.ptr == ptr; });
+        if (index != -1)
+            mDebugPointers->RemoveAndSwap(index);
+    }
 }
 
 void MemBumpAllocatorBase::Reset()

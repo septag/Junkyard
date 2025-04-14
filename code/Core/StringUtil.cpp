@@ -679,52 +679,21 @@ const char* Str::SkipChar(const char* str, char ch)
     return str;
 }
 
-Span<char*> Str::Split(const char* str, char ch, MemAllocator* alloc)
+Str::SplitResult Str::Split(const char* str, char ch, MemAllocator* alloc)
 {
     Array<char*> splits(alloc);
+    char* strCopy = Mem::AllocCopy<char>(str, Str::Len(str) + 1, alloc);
 
-    const char* s = str;
-    const char* start = str;
+    char* s = strCopy;
+    char* start = s;
     while (*s) {
         if (*s == ch) {
-            uint32 len = PtrToInt<uint32>((void*)(s - start));
-            char* splitItem = Mem::AllocCopy<char>(start, len + 1, alloc);
-            splitItem[len] = 0;
-            splits.Push(splitItem);
-
-            s = Str::SkipChar(s, ch);
-            start = Str::SkipChar(s, ch);
-        }
-
-        if (*s) ++s;
-    }
-
-    if (start < s) {
-        uint32 len = PtrToInt<uint32>((void*)(s - start));
-        char* splitItem = Mem::AllocCopy<char>(start, len + 1, alloc);
-        splits.Push(splitItem);
-    }
-
-    return splits.Detach();
-}
-
-Span<char*> Str::SplitWhitespace(const char* str, MemAllocator* alloc)
-{
-    Array<char*> splits(alloc);
-
-    const char* s = str;
-    const char* start = str;
-    while (*s) {
-        if (Str::IsWhitespace(*s)) {
             if (start != s) {
-                uint32 len = PtrToInt<uint32>((void*)(s - start));
-                char* splitItem = Mem::AllocCopy<char>(start, len + 1, alloc);
-                splitItem[len] = 0;
-                splits.Push(splitItem);
+                *(s++) = 0;
+                splits.Push(start);
             }
 
-            s = Str::SkipWhitespace(s);
-
+            s = const_cast<char*>(Str::SkipChar(s, ch));
             start = s;
         }
         else {
@@ -732,11 +701,52 @@ Span<char*> Str::SplitWhitespace(const char* str, MemAllocator* alloc)
         }
     }
 
-    if (start != s) {
-        uint32 len = PtrToInt<uint32>((void*)(s - start));
-        char* splitItem = Mem::AllocCopy<char>(start, len + 1, alloc);
-        splits.Push(splitItem);
+    if (start < s) 
+        splits.Push(start);
+
+    Str::SplitResult r {
+        .buffer = strCopy,
+        .splits = splits.Detach()
+    };
+
+    return r;
+}
+
+Str::SplitResult Str::SplitWhitespace(const char* str, MemAllocator* alloc)
+{
+    Array<char*> splits(alloc);
+    char* strCopy = Mem::AllocCopy<char>(str, Str::Len(str) + 1, alloc);
+
+    char* s = strCopy;
+    char* start = s;
+    while (*s) {
+        if (Str::IsWhitespace(*s)) {
+            if (start != s) {
+                *(s++) = 0;
+                splits.Push(start);
+            }
+
+            s = const_cast<char*>(Str::SkipWhitespace(s));
+            start = s;
+        }
+        else {
+            ++s;
+        }
     }
 
-    return splits.Detach();
+    if (start != s) 
+        splits.Push(start);
+
+    Str::SplitResult r {
+        .buffer = strCopy,
+        .splits = splits.Detach()
+    };
+
+    return r;
+}
+
+void Str::FreeSplitResult(SplitResult& sres, MemAllocator* alloc)
+{
+    Mem::Free(sres.buffer, alloc);
+    Mem::Free(sres.splits.Ptr(), alloc);
 }

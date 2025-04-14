@@ -41,6 +41,7 @@ if "%CONFIG%"=="debug" (
     set DEFINES=%DEFINES% -D_DEBUG -D_ITERATOR_DEBUG_LEVEL=0
     set LINK_FLAGS=%LINK_FLAGS% /DEBUG:FULL %LIVEPP_LINKFLAGS%
     set CONFIG_KNOWN=1
+    echo Build Debug config ...
 )
 
 if "%CONFIG%"=="debugasan" (
@@ -48,6 +49,7 @@ if "%CONFIG%"=="debugasan" (
     set DEFINES=%DEFINES% -D_DEBUG
     set LINK_FLAGS=%LINK_FLAGS% /DEBUG:FULL
     set CONFIG_KNOWN=1
+    echo Build Debug config with AddressSanitizer ...
 )
 
 if "%CONFIG%"=="releasedev" (
@@ -55,6 +57,7 @@ if "%CONFIG%"=="releasedev" (
     set DEFINES=%DEFINES% -D_ITERATOR_DEBUG_LEVEL=0 -DTRACY_ENABLE -DCONFIG_ENABLE_ASSERT=1
     set LINK_FLAGS=%LINK_FLAGS% /DEBUG:FULL
     set CONFIG_KNOWN=1
+    echo Build Release config with debug symbols ...
 )
 
 if "%CONFIG%"=="releaseasan" (
@@ -62,6 +65,7 @@ if "%CONFIG%"=="releaseasan" (
     set DEFINES=%DEFINES% -D_ITERATOR_DEBUG_LEVEL=0 -DCONFIG_ENABLE_ASSERT=1
     set LINK_FLAGS=%LINK_FLAGS% /DEBUG:FULL
     set CONFIG_KNOWN=1
+    echo Build Release config with debug symbols and AddressSanitizer ...
 )
 
 if "%CONFIG%"=="release" (
@@ -70,6 +74,7 @@ if "%CONFIG%"=="release" (
     set LIBS=%LIBS%
     set LINK_FLAGS=%LINK_FLAGS%
     set CONFIG_KNOWN=1
+    echo Build Release config ...
 )
 
 if %CONFIG_KNOWN% neq 1 (

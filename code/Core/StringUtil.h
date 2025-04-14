@@ -55,9 +55,16 @@ namespace Str
     NO_ASAN API const char* FindCharRev(const char* str, char ch);
     NO_ASAN API const char* FindStr(const char* RESTRICT str, const char* RESTRICT find);
 
-    // Returns indexes to the input string with 
-    API Span<char*> Split(const char* str, char ch, MemAllocator* alloc);
-    API Span<char*> SplitWhitespace(const char* str, MemAllocator* alloc);
+    
+    struct SplitResult
+    {
+        char* buffer;
+        Span<char*> splits;
+    };
+
+    API SplitResult Split(const char* str, char ch, MemAllocator* alloc);
+    API SplitResult SplitWhitespace(const char* str, MemAllocator* alloc);
+    API void FreeSplitResult(SplitResult& sres, MemAllocator* alloc);
 } // Str
 
 

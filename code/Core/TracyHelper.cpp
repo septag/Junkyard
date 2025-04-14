@@ -9,33 +9,25 @@ PRAGMA_DIAGNOSTIC_PUSH()
 PRAGMA_DIAGNOSTIC_IGNORED_MSVC(4530)   // C4530: C++ exception handler used, but unwind semantics are not enabled. Specify /EHsc
 PRAGMA_DIAGNOSTIC_IGNORED_CLANG_GCC("-Wsometimes-uninitialized")
 PRAGMA_DIAGNOSTIC_IGNORED_CLANG_GCC("-Wunused-variable")
-#if PLATFORM_POSIX
-    #define OLD_PLATFORM_POSIX PLATFORM_POSIX
-    #undef PLATFORM_POSIX
-#endif
 
 #if PLATFORM_WINDOWS
     // windows version is using "fileno" api which gives us linker errors 
     #define fileno _fileno
-    #define OLD_PLATFORM_WINDOWS PLATFORM_WINDOWS
-    #undef PLATFORM_WINDOWS
 #endif
+
+#pragma push_macro("PLATFORM_WINDOWS")
+#pragma push_macro("PLATFORM_POSIX")
+#undef PLATFORM_POSIX
+#undef PLATFORM_WINDOWS
+
 // #define TRACY_UNWIND(_stackframes, _depth) Debug::CaptureStacktrace(_stackframes, _depth, 2)
-#define TRACY_VK_USE_SYMBOL_TABLE
 
 #include "External/tracy/TracyClient.cpp"
 PRAGMA_DIAGNOSTIC_POP()
 
-// Restore our PLATFORM_ macros
-#ifdef OLD_PLATFORM_POSIX
-    #undef PLATFORM_POSIX
-    #define PLATFORM_POSIX OLD_PLATFORM_POSIX
-#endif
-
-#ifdef OLD_PLATFORM_WINDOWS
-    #undef PLATFORM_WINDOWS
-    #define PLATFORM_WINDOWS OLD_PLATFORM_WINDOWS
-#endif
+// Restore our PLATFORM_ macros (modified by tracy_rpmalloc.cpp)
+#pragma pop_macro("PLATFORM_WINDOWS")
+#pragma pop_macro("PLATFORM_POSIX")
 
 static TracyZoneEnterCallback gZoneEnterCallback;
 static TracyZoneExitCallback gZoneExitCallback;

@@ -325,11 +325,11 @@ struct AppImpl : AppCallbacks
             return true;
         }
 
-        Span<char*> filePaths = Str::SplitWhitespace((const char*)fileListBlob.Data(), &tempAlloc);
-        mNumFilePaths = filePaths.Count();
+        Str::SplitResult filePaths = Str::SplitWhitespace((const char*)fileListBlob.Data(), &tempAlloc);
+        mNumFilePaths = filePaths.splits.Count();
         mFilePaths = Mem::AllocZeroTyped<Path>(mNumFilePaths);
-        for (uint32 i = 0; i < filePaths.Count(); i++) {
-            mFilePaths[i] = Path::JoinUnix("/data/", filePaths[i]);
+        for (uint32 i = 0; i < filePaths.splits.Count(); i++) {
+            mFilePaths[i] = Path::JoinUnix("/data/", filePaths.splits[i]);
         }
         LOG_INFO("Ready. Total %u files", mNumFilePaths);
 
@@ -432,7 +432,7 @@ struct AppImpl : AppCallbacks
         if (mMinimized)
             return;
 
-        PROFILE_ZONE();
+        PROFILE_ZONE("Update");
 
         mCam->HandleMovementKeyboard(dt, 40.0f, 20.0f);
 
@@ -510,7 +510,7 @@ struct AppImpl : AppCallbacks
         DebugDraw::EndDraw(cmd, *mCam, mRenderTargetDepth);
 
         if (ImGui::IsEnabled()) { // imgui test
-            PROFILE_GPU_ZONE_NAME("ImGuiRender", true);
+            GPU_PROFILE_ZONE(cmd, "ImGuiRender");
             DebugHud::DrawDebugHud(dt);
 
             ShowGridGUI();

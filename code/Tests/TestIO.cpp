@@ -55,11 +55,11 @@ struct AppImpl final : AppCallbacks
             return true;
         }
 
-        Span<char*> filePaths = Str::SplitWhitespace((const char*)fileListBlob.Data(), &tempAlloc);
-        mNumFilePaths = filePaths.Count();
+        Str::SplitResult filePaths = Str::SplitWhitespace((const char*)fileListBlob.Data(), &tempAlloc);
+        mNumFilePaths = filePaths.splits.Count();
         mFilePaths = Mem::AllocZeroTyped<Path>(mNumFilePaths);
-        for (uint32 i = 0; i < filePaths.Count(); i++) {
-            mFilePaths[i] = Path::JoinUnix("/data", filePaths[i]);
+        for (uint32 i = 0; i < filePaths.splits.Count(); i++) {
+            mFilePaths[i] = Path::JoinUnix("/data", filePaths.splits[i]);
         }
         LOG_INFO("Ready. Total %u files", mNumFilePaths);
 
@@ -125,7 +125,7 @@ struct AppImpl final : AppCallbacks
         mReadFinished = false;
         mStartTime = Timer::GetTicks();
 
-        PROFILE_ZONE();
+        PROFILE_ZONE("AsyncRead");
         for (uint32 i = 0; i < mNumFilePaths; i++) {
             Path absPath = Vfs::ResolveFilepath(mFilePaths[i].CStr());
             ReadFileData data {
@@ -171,7 +171,7 @@ struct AppImpl final : AppCallbacks
 
         mFileDatas = Mem::ReallocTyped<ReadFileData>(mFileDatas, mNumFilePaths);
 
-        PROFILE_ZONE();
+        PROFILE_ZONE("SyncRead");
         for (uint32 i = 0; i < mNumFilePaths; i++) {
             mFileDatas[i] = {
                 .app = this,

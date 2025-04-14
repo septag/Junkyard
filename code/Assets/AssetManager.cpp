@@ -438,13 +438,13 @@ static void Asset::_LoadAssetHashLookup()
     
     MemTempAllocator tempAlloc;
     Blob blob = Vfs::ReadFile("cache/_HashLookup.txt", VfsFlags::TextFile, &tempAlloc);
-    if (!blob.IsValid())
+    if (!blob.IsValid() || blob.Size() == 0)
         return;
 
-    Span<char*> lines = Str::Split((const char*)blob.Data(), '\n', &tempAlloc);
+    Str::SplitResult lines = Str::Split((const char*)blob.Data(), '\n', &tempAlloc);
 
     ReadWriteMutexWriteScope lk(gAssetMan.hashLookupMutex);
-    for (char* line : lines) {
+    for (char* line : lines.splits) {
         char* semicolon = const_cast<char*>(Str::FindChar(line, ';'));
         if (semicolon) {
             *semicolon = 0;
