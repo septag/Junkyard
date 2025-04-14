@@ -869,6 +869,20 @@ namespace GfxBackend
     {
         UNUSED(userData);
 
+        auto ShouldIgnoreVerboseLog = [](const char* messageId)->bool
+        {
+            static const char* IGNORE_LIST[] = {
+                "BestPractices-Verbose-Success-Logging"
+            };
+
+            for (uint32 i = 0; i < CountOf(IGNORE_LIST); i++) {
+                if (Str::IsEqual(messageId, IGNORE_LIST[i]))
+                    return true;
+            }
+
+            return false;
+        };
+
         char typeStr[128];  typeStr[0] = '\0';
         if (messageType & VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT)  
             Str::Concat(typeStr, sizeof(typeStr), "[V]");
@@ -877,7 +891,8 @@ namespace GfxBackend
 
         switch (messageSeverity) {
         case VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT:
-            LOG_VERBOSE("Gfx: %s%s", typeStr, callbackData->pMessage);
+            if (!ShouldIgnoreVerboseLog(callbackData->pMessageIdName))
+                LOG_VERBOSE("Gfx: %s%s", typeStr, callbackData->pMessage);
             break;
         case VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT:
             LOG_INFO("Gfx: %s%s", typeStr, callbackData->pMessage);
