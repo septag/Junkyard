@@ -414,7 +414,6 @@ struct GfxBackendMemoryBumpAllocator
     GfxBackendDeviceMemory Malloc(const VkMemoryRequirements& memReq);
     void Reset();
 
-private:
     struct Block
     {
         VkDeviceMemory deviceMem;
@@ -443,7 +442,6 @@ struct GfxBackendMemoryOffsetAllocator
     GfxBackendDeviceMemory Malloc(const VkMemoryRequirements& memReq);
     void Free(GfxBackendDeviceMemory mem);
 
-private:
     struct Block
     {
         VkDeviceMemory deviceMem;
@@ -3877,24 +3875,43 @@ bool GfxBackendDeviceMemoryManager::Initialize()
     {
         static String<128> str;
         str.FormatSelf("%u (", index);
-        if (flags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)
-            str.Append("DeviceLocal-");
-        if (flags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT)
-            str.Append("HostVisible-");
-        if (flags & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)
-            str.Append("HostCoherent-");
-        if (flags & VK_MEMORY_PROPERTY_HOST_CACHED_BIT)
-            str.Append("HostCached-");
-        if (flags & VK_MEMORY_PROPERTY_LAZILY_ALLOCATED_BIT)
-            str.Append("LazilyAllocated-");
-        if (flags & VK_MEMORY_PROPERTY_PROTECTED_BIT)
-            str.Append("Protected-");
-        if (flags & VK_MEMORY_PROPERTY_DEVICE_COHERENT_BIT_AMD)
-            str.Append("DeviceCoherent-");
-        if (flags & VK_MEMORY_PROPERTY_DEVICE_UNCACHED_BIT_AMD)
-            str.Append("DeviceCached-");
-        if (flags & VK_MEMORY_PROPERTY_RDMA_CAPABLE_BIT_NV)
-            str.Append("RDMA-");
+        bool addOrSign = false;
+        if (flags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT) {
+            if (addOrSign) str.Append("|"); else addOrSign = true;
+            str.Append("DeviceLocal");            
+        }
+        if (flags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) {
+            if (addOrSign) str.Append("|"); else addOrSign = true;
+            str.Append("HostVisible");
+        }
+        if (flags & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT) {
+            if (addOrSign) str.Append("|"); else addOrSign = true;
+            str.Append("HostCoherent");
+        }
+        if (flags & VK_MEMORY_PROPERTY_HOST_CACHED_BIT) {
+            if (addOrSign) str.Append("|"); else addOrSign = true;
+            str.Append("HostCached");
+        }
+        if (flags & VK_MEMORY_PROPERTY_LAZILY_ALLOCATED_BIT) {
+            if (addOrSign) str.Append("|"); else addOrSign = true;
+            str.Append("LazilyAllocated");
+        }
+        if (flags & VK_MEMORY_PROPERTY_PROTECTED_BIT) {
+            if (addOrSign) str.Append("|"); else addOrSign = true;
+            str.Append("Protected");
+        }
+        if (flags & VK_MEMORY_PROPERTY_DEVICE_COHERENT_BIT_AMD) {
+            if (addOrSign) str.Append("|"); else addOrSign = true;
+            str.Append("DeviceCoherent");
+        }
+        if (flags & VK_MEMORY_PROPERTY_DEVICE_UNCACHED_BIT_AMD) {
+            if (addOrSign) str.Append("|"); else addOrSign = true;
+            str.Append("DeviceCached");
+        }
+        if (flags & VK_MEMORY_PROPERTY_RDMA_CAPABLE_BIT_NV) {
+            if (addOrSign) str.Append("|"); else addOrSign = true;
+            str.Append("RDMA");
+        }
         str.Append(")");
 
         return str.CStr();
@@ -3922,26 +3939,36 @@ bool GfxBackendDeviceMemoryManager::Initialize()
         LOG_VERBOSE(str.CStr());
     }
 
+    LOG_VERBOSE("\tArenas:");
+
     if (!mPersistentGPU.Initialize(128*SIZE_MB, FindDeviceMemoryType(VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, true)))
         return false;
+    LOG_VERBOSE("\t\tPersistentGPU: #%u", mPersistentGPU.mMemTypeIndex);
 
     {
-        VkMemoryPropertyFlags flags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_CACHED_BIT;
+        VkMemoryPropertyFlags flags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
         VkMemoryPropertyFlags fallbackFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT;
         if (!mPersistentCPU.Initialize(128*SIZE_MB, FindDeviceMemoryType(flags, false, fallbackFlags)))
             return false;
+        LOG_VERBOSE("\t\tPersistentCPU: #%u", mPersistentCPU.mMemTypeIndex);
     }
 
     for (uint32 i = 0; i < GFXBACKEND_FRAMES_IN_FLIGHT; i++) {
-        VkMemoryPropertyFlags flags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_CACHED_BIT;
+        VkMemoryPropertyFlags flags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
         VkMemoryPropertyFlags fallbackFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT;
         if (!mTransientCPU[i].Initialize(128*SIZE_MB, FindDeviceMemoryType(flags, false, fallbackFlags)))
             return false;
     }
+    LOG_VERBOSE("\t\tTransientCPU: #%u", mTransientCPU[0].mMemTypeIndex);
 
     {
-        mDynamicImageGPU.Initialize(128*SIZE_MB, FindDeviceMemoryType(VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, true));
-        mDynamicBufferGPU.Initialize(128*SIZE_MB, FindDeviceMemoryType(VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, true));
+        if (!mDynamicImageGPU.Initialize(128*SIZE_MB, FindDeviceMemoryType(VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, true)))
+            return false;
+        LOG_VERBOSE("\t\tDynamicImageGPU: #%u", mDynamicImageGPU.mMemTypeIndex);
+
+        if (!mDynamicBufferGPU.Initialize(128*SIZE_MB, FindDeviceMemoryType(VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, true)))
+            return false;
+        LOG_VERBOSE("\t\tDynamicBufferGPU: #%u", mDynamicBufferGPU.mMemTypeIndex);
     }
 
     return true;
