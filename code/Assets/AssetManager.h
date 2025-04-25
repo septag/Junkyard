@@ -5,6 +5,13 @@
 
 #include "../Common/CommonTypes.h"
 
+struct AssetDataInternal;
+struct GfxImageDesc;
+struct GfxBufferDesc;
+struct AssetData;
+struct AssetTypeImplBase;
+struct GfxBufferDesc;
+
 struct AssetMetaKeyValue
 {
     String32 key;
@@ -63,12 +70,6 @@ enum AssetGroupState : uint32
     Unloading
 };
 
-struct AssetDataInternal;
-struct GfxImageDesc;
-struct GfxBufferDesc;
-struct AssetData;
-struct AssetTypeImplBase;
-
 struct AssetTypeDesc
 {
     uint32 fourcc;
@@ -114,9 +115,6 @@ struct NO_VTABLE AssetTypeImplBase
     virtual bool Bake(const AssetParams& params, AssetData* data, const Span<uint8>& srcData, String<256>* outErrorDesc) = 0;
     virtual bool Reload(void* newData, void* oldData) = 0;
 };
-
-struct GfxImageDesc;
-struct GfxBufferDesc;
 
 struct AssetData
 {

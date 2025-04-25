@@ -2086,7 +2086,7 @@ void Asset::Update()
     }
 
     //------------------------------------------------------------------------------------------------------------------
-    // Gather hot reload items every N intervals and submit the 
+    // Gather hot reload items every N intervals. Create a special "hot-reload" asset group and submit it to load tasks
     if (gAssetMan.isHotReloadEnabled) {
         static uint64 lastUpdateTick = 0;
         if (lastUpdateTick == 0) 
