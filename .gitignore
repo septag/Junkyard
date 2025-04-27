@@ -29,7 +29,6 @@ __pycache__
 Thumbs.db
 .build*
 .downloads
-.clangd
 *.obj
 *.exe
 *.pdb

@@ -29,13 +29,14 @@ if prompt_choice; then
     # Check if apt package manager exists (Ubuntu-based system)
     if command -v apt &> /dev/null; then
         echo "Ubuntu package manager detected. Installing required packages ..."
-        sudo apt install pkg-config libglfw3-dev uuid-dev clang libc++-dev libc++abi-dev cmake
+        sudo apt install pkg-config libglfw3-dev uuid-dev clang libc++-dev libc++abi-dev cmake ninja-build
     else
         echo "Ubuntu/apt package manager is not detected."
         echo "Skipping package installation."
         echo "Make sure you have these packages installed for your distro:"
         echo "  clang"
         echo "  cmake"
+        echo "  ninja-build"
         echo "  pkg-config"
         echo "  libglfw3-dev"
         echo "  uuid-dev"
