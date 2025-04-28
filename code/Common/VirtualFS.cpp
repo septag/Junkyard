@@ -660,6 +660,7 @@ void Vfs::RegisterFileChangeCallback(VfsFileChangeCallback callback)
 static void Vfs::_DmonCallback(dmon_watch_id watchId, dmon_action action, const char* rootDir, const char* filepath, const char*, void*)
 {
     switch (action) {
+    case DMON_ACTION_CREATE:    // Some programs (like Krita), delete and re-add the file after modification (Ctrl+S)
     case DMON_ACTION_MODIFY:
         {
             Path absFilepath = Path::Join(Path(rootDir), filepath);

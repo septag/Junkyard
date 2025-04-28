@@ -392,7 +392,13 @@ static void Asset::_OnFileChanged(const char* filepath)
     if (!gAssetMan.isHotReloadEnabled)
         return;
 
-    // TODO: if filepath is a metadata file, then check the asset filepath instead
+    // Metadata check: if filepath is a metadata file, then check the asset filepath instead
+    Path path(filepath);
+    if (path.EndsWith(".asset")) {
+        char* p = path.Ptr();
+        p[path.Length() - 6] = '\0';
+        path.CalcLength();
+    }
 
     ReadWriteMutexReadScope mtx(gAssetMan.assetMutex);
     for (uint32 i = 0; i < gAssetMan.assetDb.Count(); i++) {
@@ -402,7 +408,7 @@ static void Asset::_OnFileChanged(const char* filepath)
         const char* assetPath = header->params->path.CStr();
         if (assetPath[0] == '/')
             ++assetPath;
-        if (Str::IsEqualNoCase(filepath, assetPath)) {
+        if (Str::IsEqualNoCase(path.CStr(), assetPath)) {
             MutexScope lk(gAssetMan.hotReloadMutex);
             gAssetMan.hotReloadList.Push(handle);
         }
