@@ -34,7 +34,7 @@ void Debug::PrintLineFmt(const char* fmt, ...)
     char text[1024];
     va_list args;
     va_start(args, fmt);
-    uint32 len = Str::PrintFmtArgs(text, sizeof(text)-1, fmt, args);
+    [[maybe_unused]] uint32 len = Str::PrintFmtArgs(text, sizeof(text)-1, fmt, args);
     va_end(args);
 
     #if PLATFORM_WINDOWS

@@ -280,18 +280,13 @@ void Thread::SetCurrentThreadPriority(ThreadPriority prio)
 //    ╚═╝     ╚═╝ ╚═════╝    ╚═╝   ╚══════╝╚═╝  ╚═╝
 struct MutexImpl
 {
-    alignas(CACHE_LINE_SIZE) AtomicUint32 spinlock;
     pthread_mutex_t handle;
-    uint32 spinCount;
 };
 static_assert(sizeof(MutexImpl) <= sizeof(Mutex), "Mutex size mismatch");
 
 void Mutex::Initialize(uint32 spinCount)
 {
     MutexImpl* _m = reinterpret_cast<MutexImpl*>(mData);
-    
-    _m->spinCount = spinCount;
-    _m->spinlock = 0;
     
     // Why do we need recursive mutex ?
     pthread_mutexattr_t attr;
@@ -318,12 +313,6 @@ void Mutex::Enter()
 {
     MutexImpl* _m = reinterpret_cast<MutexImpl*>(mData);
 
-    for (uint32 i = 0, c = _m->spinCount; i < c; i++) {
-        if (Atomic::ExchangeExplicit(&_m->spinlock, 1, AtomicMemoryOrder::Acquire) == 0)
-            return;
-        OS::PauseCPU();
-    }
-    
     pthread_mutex_lock(&_m->handle);
 }
 
@@ -332,15 +321,12 @@ void Mutex::Exit()
     MutexImpl* _m = reinterpret_cast<MutexImpl*>(mData);
 
     pthread_mutex_unlock(&_m->handle);
-    Atomic::StoreExplicit(&_m->spinlock, 0, AtomicMemoryOrder::Release);
 }
 
 bool Mutex::TryEnter()
 {
     MutexImpl* _m = reinterpret_cast<MutexImpl*>(mData);
 
-    if (Atomic::ExchangeExplicit(&_m->spinlock, 1, AtomicMemoryOrder::Acquire) == 0)
-        return true;
     return pthread_mutex_trylock(&_m->handle) == 0;
 }
 
@@ -720,7 +706,7 @@ char* OS::GetAbsolutePath(const char* path, char* dst, size_t dstSize)
 {
     char absPath[PATH_CHARS_MAX];
     if (realpath(path, absPath) != NULL) {
-        Str::Copy(dst, (uint32)dstSize, absPath);
+    Str::Copy(dst, (uint32)dstSize, absPath);
     } else {
         dst[0] = '\0';
     }
@@ -815,16 +801,6 @@ void* Mem::VirtualCommit(void* ptr, size_t size)
         ASSERT(0);
         return nullptr;
     }
-    
-    /*
-    // Experimental code: I want to hit the pages once in order to fetch them early on
-    size_t pageSize = OS::GetPageSize();
-    uint8* buff = reinterpret_cast<uint8*>(ptr);
-    uintptr dummyCounter = 0;
-    for (size_t off = 0; off < size; off += pageSize) {
-        dummyCounter += *(uintptr*)(buff + off);
-    } 
-    */   
 
     Atomic::FetchAdd(&gVMStats.commitedBytes, size);
     return ptr;

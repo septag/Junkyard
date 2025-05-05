@@ -141,6 +141,7 @@ bool Image::InitializeManager()
         };
 
         GfxCommandBuffer cmd = GfxBackend::BeginCommandBuffer(GfxQueueType::Transfer);
+        
         void* stagingData;
         size_t stagingDataSize;
         GfxBufferDesc stagingBufferDesc {
@@ -153,6 +154,7 @@ bool Image::InitializeManager()
         memcpy(stagingData, &kWhitePixel, stagingBufferDesc.sizeBytes);
         cmd.FlushBuffer(stagingBuffer);
         cmd.CopyBufferToImage(stagingBuffer, gImageMgr.imageWhite, GfxShaderStage::Fragment);
+        
         GfxBackend::EndCommandBuffer(cmd);
         GfxBackend::SubmitQueue(GfxQueueType::Transfer);
 

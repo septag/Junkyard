@@ -758,7 +758,7 @@ static void Asset::_LoadAssetTask(uint32 groupIdx, void* userData)
         // Parse/Bake
         Span<uint8> srcData((uint8*)const_cast<void*>(fileData), fileSize);
         if (!typeMan.impl->Bake(params, &assetData, srcData, &taskData.outputs.errorDesc)) {
-            taskData.outputs.errorDesc = "Bake failed";
+            // taskData.outputs.errorDesc = "Bake failed";
             alloc->SetOffset(startOffset);
             return;
         }

@@ -32,7 +32,9 @@
 #elif PLATFORM_ANDROID
     #define VK_USE_PLATFORM_ANDROID_KHR
 #elif PLATFORM_OSX
-    #define VK_USE_PLATFORM_MACOS_MVK
+    #ifndef VK_USE_PLATFORM_MACOS_MVK
+        #define VK_USE_PLATFORM_MACOS_MVK
+    #endif
 #elif PLATFORM_IOS
     #define VK_USE_PLATFORM_IOS_MVK
 #endif
@@ -76,14 +78,16 @@ static constexpr uint32 GFXBACKEND_FRAMES_IN_FLIGHT = 2;
 static constexpr uint32 GFXBACKEND_MAX_SETS_PER_PIPELINE = 4;
 static constexpr uint32 GFXBACKEND_MAX_ENTRIES_IN_OFFSET_ALLOCATOR = 64*1024;
 static constexpr uint32 GFXBACKEND_MAX_QUEUES = 4;
+#ifdef TRACY_ENABLE
 static constexpr uint32 GFXBACKEND_PROFILE_CONTEXT_QUERY_COUNT = 64*1024;
+#endif
 
 #if PLATFORM_WINDOWS
 static const char* GFXBACKEND_DEFAULT_INSTANCE_EXTENSIONS[] = {"VK_KHR_surface", "VK_KHR_win32_surface"};
 #elif PLATFORM_ANDROID 
 static const char* GFXBACKEND_DEFAULT_INSTANCE_EXTENSIONS[] = {"VK_KHR_surface", "VK_KHR_android_surface"};
 #elif PLATFORM_APPLE
-static const char* GFXBACKEND_DEFAULT_INSTANCE_EXTENSIONS[] = {"VK_KHR_surface", "VK_EXT_metal_surface"};
+static const char* GFXBACKEND_DEFAULT_INSTANCE_EXTENSIONS[] = {"VK_KHR_surface", "VK_EXT_metal_surface", "VK_KHR_portability_enumeration"};
 #elif PLATFORM_LINUX
 // Linux uses glfwRequiredInstanceExtensions
 #endif
@@ -490,6 +494,10 @@ private:
     GfxBackendMemoryBumpAllocator mTransientCPU[GFXBACKEND_FRAMES_IN_FLIGHT];
     GfxBackendMemoryOffsetAllocator mDynamicImageGPU;
     GfxBackendMemoryOffsetAllocator mDynamicBufferGPU;
+    
+#if PLATFORM_APPLE || PLATFORM_ANDROID
+    GfxBackendMemoryBumpAllocator mTiledGPU;    // Lazily allocated for transient resources in tile mem
+#endif
 
     uint32 mStagingIndex;
 };
@@ -970,6 +978,9 @@ namespace GfxBackend
             .enabledLayerCount = enabledLayers.Count(),
             .ppEnabledLayerNames = enabledLayers.Ptr()
         };
+        
+        if constexpr(PLATFORM_APPLE)
+            instCreateInfo.flags |= VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR;
 
         if (enabledLayers.Count()) {
             LOG_INFO("Enabled Vulkan layers:");
@@ -1092,7 +1103,8 @@ namespace GfxBackend
         Mem::Free(inst.extensions, alloc);
         Mem::Free(inst.layers, alloc);
 
-        vkDestroyInstance(inst.handle, gBackendVk.vkAlloc);
+        if (inst.handle)
+            vkDestroyInstance(inst.handle, gBackendVk.vkAlloc);
 
         memset(&inst, 0x0, sizeof(inst));
     }
@@ -1260,7 +1272,7 @@ namespace GfxBackend
 
         vkGetPhysicalDeviceFeatures2(gpu.handle, &features);
         gpu.features = features.features;
-
+        
         // Extensions
         vkEnumerateDeviceExtensionProperties(gpu.handle, nullptr, &gpu.numExtensions, nullptr);
         if (gpu.numExtensions > 0) {
@@ -1334,6 +1346,11 @@ namespace GfxBackend
 
         if (!CheckAddExtension("VK_KHR_push_descriptor", true))
             return false;
+        
+        if constexpr (PLATFORM_APPLE) {
+            if (!CheckAddExtension("VK_KHR_portability_subset", true))
+                return false;
+        }
 
         // Optional extensions and features
         gBackendVk.extApi.hasTimestampQueries = gpu.props.limits.timestampPeriod > 0 && gpu.props.limits.timestampComputeAndGraphics;
@@ -1587,9 +1604,11 @@ namespace GfxBackend
         if (swapchain->handle) 
             vkDestroySwapchainKHR(gBackendVk.device, swapchain->handle, gBackendVk.vkAlloc);
 
-        for (uint32 i = 0; i < GFXBACKEND_BACKBUFFER_COUNT; i++) {
-            vkDestroySemaphore(gBackendVk.device, swapchain->imageReadySemaphores[i], gBackendVk.vkAlloc);
-            vkDestroySemaphore(gBackendVk.device, swapchain->presentSemaphores[i], gBackendVk.vkAlloc);
+        if (gBackendVk.device) {
+            for (uint32 i = 0; i < GFXBACKEND_BACKBUFFER_COUNT; i++) {
+                vkDestroySemaphore(gBackendVk.device, swapchain->imageReadySemaphores[i], gBackendVk.vkAlloc);
+                vkDestroySemaphore(gBackendVk.device, swapchain->presentSemaphores[i], gBackendVk.vkAlloc);
+            }
         }
 
         memset(swapchain, 0x0, sizeof(*swapchain));
@@ -2104,18 +2123,20 @@ void GfxBackend::End()
     // Present
     {
         VkSemaphore waitSemaphore = gBackendVk.swapchain.GetPresentSemaphore();
+        uint32 queueIndex = gBackendVk.queueMan.FindQueue(GfxQueueType::Present);
+        ASSERT(queueIndex != -1);
+        GfxBackendQueue& queue = gBackendVk.queueMan.GetQueue(queueIndex);
+
         VkPresentInfoKHR presentInfo {
             .sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
-            .waitSemaphoreCount = 1,
+            .waitSemaphoreCount = 1u,
             .pWaitSemaphores = &waitSemaphore,
             .swapchainCount = 1,
             .pSwapchains = &gBackendVk.swapchain.handle,
             .pImageIndices = &gBackendVk.swapchain.imageIndex
         };
 
-        uint32 queueIndex = gBackendVk.queueMan.FindQueue(GfxQueueType::Present);
-        ASSERT(queueIndex != -1);
-        VkResult r = vkQueuePresentKHR(gBackendVk.queueMan.GetQueue(queueIndex).handle, &presentInfo);
+        VkResult r = vkQueuePresentKHR(queue.handle, &presentInfo);
         if (r == VK_ERROR_OUT_OF_DATE_KHR) {
             gBackendVk.swapchain.resize = true;
         }
@@ -2635,13 +2656,20 @@ void GfxBackend::BatchCreateImage(uint32 numImages, const GfxImageDesc* descs, G
         VkImage imageVk;
         [[maybe_unused]] VkResult r = vkCreateImage(gBackendVk.device, &imageCreateInfo, gBackendVk.vkAlloc, &imageVk);
         ASSERT_ALWAYS(r == VK_SUCCESS, "vkCreateImage failed");
+        
+        GfxMemoryArena arena = desc.arena;
+        #if PLATFORM_APPLE || PLATFORM_ANDROID
+        // We have to correct the memory arena for render targets on TBR GPUs. Switch to Tiled Arena
+        if (IsBitsSet<GfxImageUsageFlags>(desc.usageFlags, GfxImageUsageFlags::TransientAttachment))
+            arena = GfxMemoryArena::TiledGPU;
+        #endif
  
         VkMemoryRequirements memReq;
         vkGetImageMemoryRequirements(gBackendVk.device, imageVk, &memReq);
-        GfxBackendDeviceMemory mem = gBackendVk.memMan.Malloc(memReq, desc.arena);
+        GfxBackendDeviceMemory mem = gBackendVk.memMan.Malloc(memReq, arena);
         vkBindImageMemory(gBackendVk.device, imageVk, mem.handle, mem.offset);
 
-        if (desc.arena == GfxMemoryArena::TransientCPU)
+        if (arena == GfxMemoryArena::TransientCPU)
             ++numTransientIncrements;
 
         // View
@@ -2685,6 +2713,8 @@ void GfxBackend::BatchCreateImage(uint32 numImages, const GfxImageDesc* descs, G
             .desc = desc,
             .mem = mem
         };
+        
+        images[i].desc.arena = arena;   // Correct the arena (For tiled resources)
     }
 
     if (numTransientIncrements) {
@@ -3823,6 +3853,10 @@ GfxBackendDeviceMemory GfxBackendDeviceMemoryManager::Malloc(const VkMemoryRequi
         case GfxMemoryArena::DynamicBufferGPU:
             mem = mDynamicBufferGPU.Malloc(memReq);
             break;
+            
+        case GfxMemoryArena::TiledGPU:
+            mem = mTiledGPU.Malloc(memReq);
+            break;
 
         default:
             ASSERT_MSG(0, "Not implemented");
@@ -3941,7 +3975,11 @@ bool GfxBackendDeviceMemoryManager::Initialize()
 
     LOG_VERBOSE("\tArenas:");
 
-    if (!mPersistentGPU.Initialize(128*SIZE_MB, FindDeviceMemoryType(VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, true)))
+    VkMemoryPropertyFlags memLocalProp = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+    if (GfxBackend::IsIntegratedGPU())
+        memLocalProp |= VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT;    // For Integrated GPUs, DEVICE_LOCAL should also have HOST_VISIBLE
+    
+    if (!mPersistentGPU.Initialize(128*SIZE_MB, FindDeviceMemoryType(memLocalProp, true)))
         return false;
     LOG_VERBOSE("\t\tPersistentGPU: #%u", mPersistentGPU.mMemTypeIndex);
 
@@ -3952,7 +3990,8 @@ bool GfxBackendDeviceMemoryManager::Initialize()
             return false;
         LOG_VERBOSE("\t\tPersistentCPU: #%u", mPersistentCPU.mMemTypeIndex);
     }
-
+    
+   
     for (uint32 i = 0; i < GFXBACKEND_FRAMES_IN_FLIGHT; i++) {
         VkMemoryPropertyFlags flags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
         VkMemoryPropertyFlags fallbackFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT;
@@ -3962,15 +4001,24 @@ bool GfxBackendDeviceMemoryManager::Initialize()
     LOG_VERBOSE("\t\tTransientCPU: #%u", mTransientCPU[0].mMemTypeIndex);
 
     {
-        if (!mDynamicImageGPU.Initialize(128*SIZE_MB, FindDeviceMemoryType(VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, true)))
+        if (!mDynamicImageGPU.Initialize(128*SIZE_MB, FindDeviceMemoryType(memLocalProp, true)))
             return false;
         LOG_VERBOSE("\t\tDynamicImageGPU: #%u", mDynamicImageGPU.mMemTypeIndex);
 
-        if (!mDynamicBufferGPU.Initialize(128*SIZE_MB, FindDeviceMemoryType(VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, true)))
+        if (!mDynamicBufferGPU.Initialize(128*SIZE_MB, FindDeviceMemoryType(memLocalProp, true)))
             return false;
         LOG_VERBOSE("\t\tDynamicBufferGPU: #%u", mDynamicBufferGPU.mMemTypeIndex);
     }
 
+#if PLATFORM_APPLE || PLATFORM_ANDROID
+    {
+        VkMemoryPropertyFlags flags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_MEMORY_PROPERTY_LAZILY_ALLOCATED_BIT;
+        if (!mTiledGPU.Initialize(128*SIZE_MB, FindDeviceMemoryType(flags, true)))
+            return false;
+        LOG_VERBOSE("\t\tTiledGPU: #%u", mTiledGPU.mMemTypeIndex);
+    }
+#endif
+    
     return true;
 }
 
@@ -3982,6 +4030,9 @@ void GfxBackendDeviceMemoryManager::Release()
     mDynamicBufferGPU.Release();
     for (uint32 i = 0; i < GFXBACKEND_FRAMES_IN_FLIGHT; i++)
         mTransientCPU[i].Release();
+#if PLATFORM_APPLE || PLATFORM_ANDROID
+    mTiledGPU.Release();
+#endif
 }
 
 inline VkDeviceSize& GfxBackendDeviceMemoryManager::GetDeviceMemoryBudget(uint32 typeIndex)
@@ -4013,7 +4064,7 @@ uint32 GfxBackendDeviceMemoryManager::FindDeviceMemoryType(VkMemoryPropertyFlags
         if (localdeviceHeap && !(ctx.mProps.memoryHeaps[type.heapIndex].flags & VK_MEMORY_HEAP_DEVICE_LOCAL_BIT))
             continue;
 
-        if (type.propertyFlags & flags)
+        if ((type.propertyFlags & flags) == flags)
             return i;
     }
 
@@ -4524,7 +4575,7 @@ bool GfxBackendQueueManager::SubmitQueueInternal(GfxBackendQueueSubmitRequest& r
     {
         ASSERT(req.type == GfxQueueType::Graphics);
         // Notify the queue that the next Submit is gonna depend on swapchain
-        queue.waitSemaphores.Push({gBackendVk.swapchain.GetSwapchainSemaphore(), VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT});
+        queue.waitSemaphores.Push({gBackendVk.swapchain.GetSwapchainSemaphore(), VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT});
         queue.signalSemaphores.Push(gBackendVk.swapchain.GetPresentSemaphore());
     }
 
@@ -4574,7 +4625,8 @@ bool GfxBackendQueueManager::SubmitQueueInternal(GfxBackendQueueSubmitRequest& r
         .pSignalSemaphores = queue.signalSemaphores.Ptr(),
     };
 
-    GFX_DEBUG("Submit: %s (Dependents: %s)", GfxBackend::_GetQueueTypeStr(req.type).CStr(), GfxBackend::_GetQueueTypeStr(req.dependents).CStr());
+    GFX_DEBUG("Submit: %s (Dependents: %s)", GfxBackend::_GetQueueTypeStr(req.type).CStr(),
+              req.dependents != GfxQueueType::None ? GfxBackend::_GetQueueTypeStr(req.dependents).CStr() : "None");
 
     // TODO: maybe implement synchronization2 (more granual control?) with vkQueueSubmit
     if (vkQueueSubmit(queue.handle, 1, &submitInfo, req.fence) != VK_SUCCESS) {
@@ -5405,7 +5457,7 @@ void GfxCommandBuffer::BeginRenderPass(const GfxBackendRenderPass& pass)
         GfxBackendSwapchain::ImageState& state = gBackendVk.swapchain.GetImageState();
         VkImageMemoryBarrier2 imageBarrier {
             .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
-            .srcStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+            .srcStageMask = state.lastStage,
             .srcAccessMask = state.lastAccessFlags,
             .dstStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
             .dstAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT|VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
@@ -5442,7 +5494,7 @@ void GfxCommandBuffer::BeginRenderPass(const GfxBackendRenderPass& pass)
         .colorAttachmentCount = numColorAttachments,
         .pColorAttachments = colorAttachments,
         .pDepthAttachment = pass.hasDepth ? &depthAttachment : nullptr,
-        .pStencilAttachment = nullptr // TODO
+        .pStencilAttachment = nullptr
     };
     vkCmdBeginRendering(cmdVk, &renderInfo);
 
@@ -5937,6 +5989,80 @@ const GfxBlendAttachmentDesc* GfxBlendAttachmentDesc::GetAlphaBlending()
         .colorWriteMask = GfxColorComponentFlags::RGB
     };
     return &desc;
+}
+
+bool GfxBackend::IsIntegratedGPU()
+{
+    return gBackendVk.gpu.props.deviceType == VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU;
+}
+
+GfxFormat GfxBackend::GetValidDepthStencilFormat()
+{
+    static VkFormat kAllFormats[] = {
+        VK_FORMAT_D32_SFLOAT_S8_UINT,
+        VK_FORMAT_D24_UNORM_S8_UINT,
+        VK_FORMAT_D16_UNORM_S8_UINT
+    };
+    
+    // Formats
+    VkFormatProperties3 props3 {
+        .sType = VK_STRUCTURE_TYPE_FORMAT_PROPERTIES_3
+    };
+    
+    VkFormatProperties2 props2 {
+        .sType = VK_STRUCTURE_TYPE_FORMAT_PROPERTIES_2,
+        .pNext = &props3
+    };
+
+    VkFormat format = VK_FORMAT_UNDEFINED;
+    for (uint32 i = 0; i < CountOf(kAllFormats); i++) {
+        vkGetPhysicalDeviceFormatProperties2(gBackendVk.gpu.handle, kAllFormats[i], &props2);
+        if (!(props3.linearTilingFeatures & VK_FORMAT_FEATURE_2_DEPTH_STENCIL_ATTACHMENT_BIT_KHR) &&
+            !(props3.optimalTilingFeatures & VK_FORMAT_FEATURE_2_DEPTH_STENCIL_ATTACHMENT_BIT_KHR))
+        {
+            continue;
+        }
+        
+        format = kAllFormats[i];
+        break;
+    }
+    
+    ASSERT(format != VK_FORMAT_UNDEFINED);
+    return GfxFormat(format);
+}
+
+GfxFormat GfxBackend::GetValidDepthFormat()
+{
+    static VkFormat kAllFormats[] = {
+        VK_FORMAT_D32_SFLOAT,
+        VK_FORMAT_D16_UNORM
+    };
+    
+    // Formats
+    VkFormatProperties3 props3 {
+        .sType = VK_STRUCTURE_TYPE_FORMAT_PROPERTIES_3
+    };
+    
+    VkFormatProperties2 props2 {
+        .sType = VK_STRUCTURE_TYPE_FORMAT_PROPERTIES_2,
+        .pNext = &props3
+    };
+
+    VkFormat format = VK_FORMAT_UNDEFINED;
+    for (uint32 i = 0; i < CountOf(kAllFormats); i++) {
+        vkGetPhysicalDeviceFormatProperties2(gBackendVk.gpu.handle, kAllFormats[i], &props2);
+        if (!(props3.linearTilingFeatures & VK_FORMAT_FEATURE_2_DEPTH_STENCIL_ATTACHMENT_BIT_KHR) &&
+            !(props3.optimalTilingFeatures & VK_FORMAT_FEATURE_2_DEPTH_STENCIL_ATTACHMENT_BIT_KHR))
+        {
+            continue;
+        }
+        
+        format = kAllFormats[i];
+        break;
+    }
+    
+    ASSERT(format != VK_FORMAT_UNDEFINED);
+    return GfxFormat(format);
 }
 
 //----------------------------------------------------------------------------------------------------------------------

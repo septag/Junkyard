@@ -22,9 +22,6 @@ inline constexpr uint32 APP_MAX_KEY_CODES = 512;
 
 #define APP_ABS(a) (((a)<0.0f)?-(a):(a))
 
-@interface AppMacDelegate : NSObject<NSApplicationDelegate>
-@end
-
 @interface AppWindowDelegate : NSObject<NSWindowDelegate>
 @end
 
@@ -45,14 +42,15 @@ struct AppEventCallbackPair
 
 struct AppMacState
 {
+    char name[32];
     NSApplication* app;
     NSWindow* window;
     AppWindowDelegate* windowDelegate;
-    AppMacDelegate* appDelegate;
     AppMacMetalView* view;
     AppMacMetalViewDelegate* viewDelegate;
     id<MTLDevice> metalDevice;
     uint32 flagsChanged;
+    AppMouseCursor curCursor = AppMouseCursor::Arrow;
     
     bool valid;
     uint16 displayWidth;
@@ -86,127 +84,265 @@ struct AppMacState
     bool clipboardEnabled;
     bool iconified;
     bool mouseDown;
+    bool shouldQuit;
 };
 
 static AppMacState gApp;
 
 namespace App
 {
-static void _InitKeyTable() {
-    gApp.keycodes[0x1D] = InputKeycode::NUM0;
-    gApp.keycodes[0x12] = InputKeycode::NUM1;
-    gApp.keycodes[0x13] = InputKeycode::NUM2;
-    gApp.keycodes[0x14] = InputKeycode::NUM3;
-    gApp.keycodes[0x15] = InputKeycode::NUM4;
-    gApp.keycodes[0x17] = InputKeycode::NUM5;
-    gApp.keycodes[0x16] = InputKeycode::NUM6;
-    gApp.keycodes[0x1A] = InputKeycode::NUM7;
-    gApp.keycodes[0x1C] = InputKeycode::NUM8;
-    gApp.keycodes[0x19] = InputKeycode::NUM9;
-    gApp.keycodes[0x00] = InputKeycode::A;
-    gApp.keycodes[0x0B] = InputKeycode::B;
-    gApp.keycodes[0x08] = InputKeycode::C;
-    gApp.keycodes[0x02] = InputKeycode::D;
-    gApp.keycodes[0x0E] = InputKeycode::E;
-    gApp.keycodes[0x03] = InputKeycode::F;
-    gApp.keycodes[0x05] = InputKeycode::G;
-    gApp.keycodes[0x04] = InputKeycode::H;
-    gApp.keycodes[0x22] = InputKeycode::I;
-    gApp.keycodes[0x26] = InputKeycode::J;
-    gApp.keycodes[0x28] = InputKeycode::K;
-    gApp.keycodes[0x25] = InputKeycode::L;
-    gApp.keycodes[0x2E] = InputKeycode::M;
-    gApp.keycodes[0x2D] = InputKeycode::N;
-    gApp.keycodes[0x1F] = InputKeycode::O;
-    gApp.keycodes[0x23] = InputKeycode::P;
-    gApp.keycodes[0x0C] = InputKeycode::Q;
-    gApp.keycodes[0x0F] = InputKeycode::R;
-    gApp.keycodes[0x01] = InputKeycode::S;
-    gApp.keycodes[0x11] = InputKeycode::T;
-    gApp.keycodes[0x20] = InputKeycode::U;
-    gApp.keycodes[0x09] = InputKeycode::V;
-    gApp.keycodes[0x0D] = InputKeycode::W;
-    gApp.keycodes[0x07] = InputKeycode::X;
-    gApp.keycodes[0x10] = InputKeycode::Y;
-    gApp.keycodes[0x06] = InputKeycode::Z;
-    gApp.keycodes[0x27] = InputKeycode::Apostrophe;
-    gApp.keycodes[0x2A] = InputKeycode::Backslash;
-    gApp.keycodes[0x2B] = InputKeycode::Comma;
-    gApp.keycodes[0x18] = InputKeycode::Equal;
-    gApp.keycodes[0x32] = InputKeycode::GraveAccent;
-    gApp.keycodes[0x21] = InputKeycode::LeftBracket;
-    gApp.keycodes[0x1B] = InputKeycode::Minus;
-    gApp.keycodes[0x2F] = InputKeycode::Period;
-    gApp.keycodes[0x1E] = InputKeycode::RightBracket;
-    gApp.keycodes[0x29] = InputKeycode::Semicolon;
-    gApp.keycodes[0x2C] = InputKeycode::Slash;
-    gApp.keycodes[0x0A] = InputKeycode::World1;
-    gApp.keycodes[0x33] = InputKeycode::Backspace;
-    gApp.keycodes[0x39] = InputKeycode::CapsLock;
-    gApp.keycodes[0x75] = InputKeycode::Delete;
-    gApp.keycodes[0x7D] = InputKeycode::Down;
-    gApp.keycodes[0x77] = InputKeycode::End;
-    gApp.keycodes[0x24] = InputKeycode::Enter;
-    gApp.keycodes[0x35] = InputKeycode::Escape;
-    gApp.keycodes[0x7A] = InputKeycode::F1;
-    gApp.keycodes[0x78] = InputKeycode::F2;
-    gApp.keycodes[0x63] = InputKeycode::F3;
-    gApp.keycodes[0x76] = InputKeycode::F4;
-    gApp.keycodes[0x60] = InputKeycode::F5;
-    gApp.keycodes[0x61] = InputKeycode::F6;
-    gApp.keycodes[0x62] = InputKeycode::F7;
-    gApp.keycodes[0x64] = InputKeycode::F8;
-    gApp.keycodes[0x65] = InputKeycode::F9;
-    gApp.keycodes[0x6D] = InputKeycode::F10;
-    gApp.keycodes[0x67] = InputKeycode::F11;
-    gApp.keycodes[0x6F] = InputKeycode::F12;
-    gApp.keycodes[0x69] = InputKeycode::F13;
-    gApp.keycodes[0x6B] = InputKeycode::F14;
-    gApp.keycodes[0x71] = InputKeycode::F15;
-    gApp.keycodes[0x6A] = InputKeycode::F16;
-    gApp.keycodes[0x40] = InputKeycode::F17;
-    gApp.keycodes[0x4F] = InputKeycode::F18;
-    gApp.keycodes[0x50] = InputKeycode::F19;
-    gApp.keycodes[0x5A] = InputKeycode::F20;
-    gApp.keycodes[0x73] = InputKeycode::Home;
-    gApp.keycodes[0x72] = InputKeycode::Insert;
-    gApp.keycodes[0x7B] = InputKeycode::Left;
-    gApp.keycodes[0x3A] = InputKeycode::LeftAlt;
-    gApp.keycodes[0x3B] = InputKeycode::LeftControl;
-    gApp.keycodes[0x38] = InputKeycode::LeftShift;
-    gApp.keycodes[0x37] = InputKeycode::LeftSuper;
-    gApp.keycodes[0x6E] = InputKeycode::Menu;
-    gApp.keycodes[0x47] = InputKeycode::NumLock;
-    gApp.keycodes[0x79] = InputKeycode::PageDown;
-    gApp.keycodes[0x74] = InputKeycode::PageUp;
-    gApp.keycodes[0x7C] = InputKeycode::Right;
-    gApp.keycodes[0x3D] = InputKeycode::RightAlt;
-    gApp.keycodes[0x3E] = InputKeycode::RightControl;
-    gApp.keycodes[0x3C] = InputKeycode::RightShift;
-    gApp.keycodes[0x36] = InputKeycode::RightSuper;
-    gApp.keycodes[0x31] = InputKeycode::Space;
-    gApp.keycodes[0x30] = InputKeycode::Tab;
-    gApp.keycodes[0x7E] = InputKeycode::Up;
-    gApp.keycodes[0x52] = InputKeycode::KP0;
-    gApp.keycodes[0x53] = InputKeycode::KP1;
-    gApp.keycodes[0x54] = InputKeycode::KP2;
-    gApp.keycodes[0x55] = InputKeycode::KP3;
-    gApp.keycodes[0x56] = InputKeycode::KP4;
-    gApp.keycodes[0x57] = InputKeycode::KP5;
-    gApp.keycodes[0x58] = InputKeycode::KP6;
-    gApp.keycodes[0x59] = InputKeycode::KP7;
-    gApp.keycodes[0x5B] = InputKeycode::KP8;
-    gApp.keycodes[0x5C] = InputKeycode::KP9;
-    gApp.keycodes[0x45] = InputKeycode::KPAdd;
-    gApp.keycodes[0x41] = InputKeycode::KPDecimal;
-    gApp.keycodes[0x4B] = InputKeycode::KPDivide;
-    gApp.keycodes[0x4C] = InputKeycode::KPEnter;
-    gApp.keycodes[0x51] = InputKeycode::KPEqual;
-    gApp.keycodes[0x43] = InputKeycode::KPMultiply;
-    gApp.keycodes[0x4E] = InputKeycode::KPSubtract;
-}
+    static void _InitKeyTable()
+    {
+        gApp.keycodes[0x1D] = InputKeycode::NUM0;
+        gApp.keycodes[0x12] = InputKeycode::NUM1;
+        gApp.keycodes[0x13] = InputKeycode::NUM2;
+        gApp.keycodes[0x14] = InputKeycode::NUM3;
+        gApp.keycodes[0x15] = InputKeycode::NUM4;
+        gApp.keycodes[0x17] = InputKeycode::NUM5;
+        gApp.keycodes[0x16] = InputKeycode::NUM6;
+        gApp.keycodes[0x1A] = InputKeycode::NUM7;
+        gApp.keycodes[0x1C] = InputKeycode::NUM8;
+        gApp.keycodes[0x19] = InputKeycode::NUM9;
+        gApp.keycodes[0x00] = InputKeycode::A;
+        gApp.keycodes[0x0B] = InputKeycode::B;
+        gApp.keycodes[0x08] = InputKeycode::C;
+        gApp.keycodes[0x02] = InputKeycode::D;
+        gApp.keycodes[0x0E] = InputKeycode::E;
+        gApp.keycodes[0x03] = InputKeycode::F;
+        gApp.keycodes[0x05] = InputKeycode::G;
+        gApp.keycodes[0x04] = InputKeycode::H;
+        gApp.keycodes[0x22] = InputKeycode::I;
+        gApp.keycodes[0x26] = InputKeycode::J;
+        gApp.keycodes[0x28] = InputKeycode::K;
+        gApp.keycodes[0x25] = InputKeycode::L;
+        gApp.keycodes[0x2E] = InputKeycode::M;
+        gApp.keycodes[0x2D] = InputKeycode::N;
+        gApp.keycodes[0x1F] = InputKeycode::O;
+        gApp.keycodes[0x23] = InputKeycode::P;
+        gApp.keycodes[0x0C] = InputKeycode::Q;
+        gApp.keycodes[0x0F] = InputKeycode::R;
+        gApp.keycodes[0x01] = InputKeycode::S;
+        gApp.keycodes[0x11] = InputKeycode::T;
+        gApp.keycodes[0x20] = InputKeycode::U;
+        gApp.keycodes[0x09] = InputKeycode::V;
+        gApp.keycodes[0x0D] = InputKeycode::W;
+        gApp.keycodes[0x07] = InputKeycode::X;
+        gApp.keycodes[0x10] = InputKeycode::Y;
+        gApp.keycodes[0x06] = InputKeycode::Z;
+        gApp.keycodes[0x27] = InputKeycode::Apostrophe;
+        gApp.keycodes[0x2A] = InputKeycode::Backslash;
+        gApp.keycodes[0x2B] = InputKeycode::Comma;
+        gApp.keycodes[0x18] = InputKeycode::Equal;
+        gApp.keycodes[0x32] = InputKeycode::GraveAccent;
+        gApp.keycodes[0x21] = InputKeycode::LeftBracket;
+        gApp.keycodes[0x1B] = InputKeycode::Minus;
+        gApp.keycodes[0x2F] = InputKeycode::Period;
+        gApp.keycodes[0x1E] = InputKeycode::RightBracket;
+        gApp.keycodes[0x29] = InputKeycode::Semicolon;
+        gApp.keycodes[0x2C] = InputKeycode::Slash;
+        gApp.keycodes[0x0A] = InputKeycode::World1;
+        gApp.keycodes[0x33] = InputKeycode::Backspace;
+        gApp.keycodes[0x39] = InputKeycode::CapsLock;
+        gApp.keycodes[0x75] = InputKeycode::Delete;
+        gApp.keycodes[0x7D] = InputKeycode::Down;
+        gApp.keycodes[0x77] = InputKeycode::End;
+        gApp.keycodes[0x24] = InputKeycode::Enter;
+        gApp.keycodes[0x35] = InputKeycode::Escape;
+        gApp.keycodes[0x7A] = InputKeycode::F1;
+        gApp.keycodes[0x78] = InputKeycode::F2;
+        gApp.keycodes[0x63] = InputKeycode::F3;
+        gApp.keycodes[0x76] = InputKeycode::F4;
+        gApp.keycodes[0x60] = InputKeycode::F5;
+        gApp.keycodes[0x61] = InputKeycode::F6;
+        gApp.keycodes[0x62] = InputKeycode::F7;
+        gApp.keycodes[0x64] = InputKeycode::F8;
+        gApp.keycodes[0x65] = InputKeycode::F9;
+        gApp.keycodes[0x6D] = InputKeycode::F10;
+        gApp.keycodes[0x67] = InputKeycode::F11;
+        gApp.keycodes[0x6F] = InputKeycode::F12;
+        gApp.keycodes[0x69] = InputKeycode::F13;
+        gApp.keycodes[0x6B] = InputKeycode::F14;
+        gApp.keycodes[0x71] = InputKeycode::F15;
+        gApp.keycodes[0x6A] = InputKeycode::F16;
+        gApp.keycodes[0x40] = InputKeycode::F17;
+        gApp.keycodes[0x4F] = InputKeycode::F18;
+        gApp.keycodes[0x50] = InputKeycode::F19;
+        gApp.keycodes[0x5A] = InputKeycode::F20;
+        gApp.keycodes[0x73] = InputKeycode::Home;
+        gApp.keycodes[0x72] = InputKeycode::Insert;
+        gApp.keycodes[0x7B] = InputKeycode::Left;
+        gApp.keycodes[0x3A] = InputKeycode::LeftAlt;
+        gApp.keycodes[0x3B] = InputKeycode::LeftControl;
+        gApp.keycodes[0x38] = InputKeycode::LeftShift;
+        gApp.keycodes[0x37] = InputKeycode::LeftSuper;
+        gApp.keycodes[0x6E] = InputKeycode::Menu;
+        gApp.keycodes[0x47] = InputKeycode::NumLock;
+        gApp.keycodes[0x79] = InputKeycode::PageDown;
+        gApp.keycodes[0x74] = InputKeycode::PageUp;
+        gApp.keycodes[0x7C] = InputKeycode::Right;
+        gApp.keycodes[0x3D] = InputKeycode::RightAlt;
+        gApp.keycodes[0x3E] = InputKeycode::RightControl;
+        gApp.keycodes[0x3C] = InputKeycode::RightShift;
+        gApp.keycodes[0x36] = InputKeycode::RightSuper;
+        gApp.keycodes[0x31] = InputKeycode::Space;
+        gApp.keycodes[0x30] = InputKeycode::Tab;
+        gApp.keycodes[0x7E] = InputKeycode::Up;
+        gApp.keycodes[0x52] = InputKeycode::KP0;
+        gApp.keycodes[0x53] = InputKeycode::KP1;
+        gApp.keycodes[0x54] = InputKeycode::KP2;
+        gApp.keycodes[0x55] = InputKeycode::KP3;
+        gApp.keycodes[0x56] = InputKeycode::KP4;
+        gApp.keycodes[0x57] = InputKeycode::KP5;
+        gApp.keycodes[0x58] = InputKeycode::KP6;
+        gApp.keycodes[0x59] = InputKeycode::KP7;
+        gApp.keycodes[0x5B] = InputKeycode::KP8;
+        gApp.keycodes[0x5C] = InputKeycode::KP9;
+        gApp.keycodes[0x45] = InputKeycode::KPAdd;
+        gApp.keycodes[0x41] = InputKeycode::KPDecimal;
+        gApp.keycodes[0x4B] = InputKeycode::KPDivide;
+        gApp.keycodes[0x4C] = InputKeycode::KPEnter;
+        gApp.keycodes[0x51] = InputKeycode::KPEqual;
+        gApp.keycodes[0x43] = InputKeycode::KPMultiply;
+        gApp.keycodes[0x4E] = InputKeycode::KPSubtract;
+    }
 
-bool Run(const AppDesc& desc)
+    static void _UpdateDimensions()
+    {
+        const CGSize fbSize = [gApp.view drawableSize];
+        gApp.framebufferWidth = fbSize.width;
+        gApp.framebufferHeight = fbSize.height;
+        
+        const NSRect bounds = [gApp.view bounds];
+        gApp.windowWidth = bounds.size.width;
+        gApp.windowHeight = bounds.size.height;
+        ASSERT((gApp.framebufferWidth > 0) && (gApp.framebufferHeight > 0));
+        gApp.dpiScale = (float)gApp.framebufferWidth / (float)gApp.windowWidth;
+    }
+
+    static void _UpdateFrame()
+    {
+        static uint64 tmPrev = 0;
+        const NSPoint mousePos = [gApp.window mouseLocationOutsideOfEventStream];
+        gApp.mouseX = mousePos.x * gApp.dpiScale;
+        gApp.mouseY = gApp.framebufferHeight - (mousePos.y * gApp.dpiScale) - 1;
+        
+        uint64 tmNow = Timer::GetTicks();
+        double dt = Timer::ToSec(Timer::Diff(Timer::GetTicks(), tmPrev));
+        
+        if (gApp.firstFrame) {
+            gApp.firstFrame = false;
+            if (!gApp.desc.callbacks->Initialize()) {
+                App::Quit();
+                return;
+            }
+            
+            Engine::_private::PostInitialize();
+            
+            dt = 0;
+            gApp.initCalled = true;
+        }
+        
+        if (!gApp.overrideUpdateCallback.first)
+            gApp.desc.callbacks->Update(dt);
+        else
+            gApp.overrideUpdateCallback.first(dt, gApp.overrideUpdateCallback.second);
+        
+        tmPrev = tmNow;
+    }
+
+    static InputKeyModifiers _GetKeyMods(NSEventModifierFlags f)
+    {
+        InputKeyModifiers m = InputKeyModifiers::None;
+        if (f & NSEventModifierFlagShift)
+            m |= InputKeyModifiers::Shift;
+        if (f & NSEventModifierFlagControl)
+            m |= InputKeyModifiers::Ctrl;
+        if (f & NSEventModifierFlagOption)
+            m |= InputKeyModifiers::Alt;
+        if (f & NSEventModifierFlagCommand)
+            m |= InputKeyModifiers::Super;
+        return m;
+    }
+
+    static inline bool _EventsEnabled()
+    {
+        // only send events when an event callback is set, and the init function was called
+        return gApp.desc.callbacks && gApp.initCalled;
+    }
+
+    static void _InitEvent(AppEventType type)
+    {
+        memset(&gApp.ev, 0, sizeof(gApp.ev));
+        gApp.ev.type = type;
+        gApp.ev.mouseButton = InputMouseButton::Invalid;
+        gApp.ev.windowWidth = gApp.windowWidth;
+        gApp.ev.windowHeight = gApp.windowHeight;
+        gApp.ev.framebufferWidth = gApp.framebufferWidth;
+        gApp.ev.framebufferHeight = gApp.framebufferHeight;
+    }
+
+    static bool _CallEvent(const AppEvent& ev)
+    {
+        if (!gApp.cleanupCalled) {
+            if (gApp.desc.callbacks)
+                gApp.desc.callbacks->OnEvent(ev);
+            
+            // Call extra registered event callbacks
+            for (auto c : gApp.eventCallbacks)
+                c.callback(ev, c.userData);
+        }
+        
+        if (gApp.eventConsumed) {
+            gApp.eventConsumed = false;
+            return true;
+        }
+        else {
+            return false;
+        }
+    }
+
+    static void _DispatchMouseEvent(AppEventType type, InputMouseButton btn, InputKeyModifiers mod)
+    {
+        if (App::_EventsEnabled()) {
+            _InitEvent(type);
+            gApp.ev.mouseButton = btn;
+            gApp.ev.keyMods = mod;
+            gApp.ev.mouseX = gApp.mouseX;
+            gApp.ev.mouseY = gApp.mouseY;
+            _CallEvent(gApp.ev);
+        }
+    }
+
+    static void _DispatchKeyEvent(AppEventType type, InputKeycode key, bool repeat, InputKeyModifiers mod)
+    {
+        if (App::_EventsEnabled()) {
+            _InitEvent(type);
+            gApp.ev.keycode = key;
+            gApp.ev.keyRepeat = repeat;
+            gApp.ev.keyMods = mod;
+            _CallEvent(gApp.ev);
+        }
+    }
+
+    static void _DispatchAppEvent(AppEventType type)
+    {
+        if (App::_EventsEnabled()) {
+            _InitEvent(type);
+            _CallEvent(gApp.ev);
+        }
+    }
+
+    static InputKeycode _TranslateKey(int scanCode)
+    {
+        if ((scanCode >= 0) && (scanCode <APP_MAX_KEY_CODES))
+            return gApp.keycodes[scanCode];
+        else
+            return InputKeycode::Invalid;
+    }
+
+} // App
+
+bool App::Run(const AppDesc& desc)
 {
     gApp.desc = desc;
     gApp.desc.initWidth = desc.initWidth;
@@ -231,6 +367,11 @@ bool Run(const AppDesc& desc)
         Str::Copy(gApp.windowTitle, sizeof(gApp.windowTitle), desc.windowTitle);
     else
         Str::Copy(gApp.windowTitle, sizeof(gApp.windowTitle), "Junkyard");
+    
+    char moduleFilename[CONFIG_MAX_PATH];
+    OS::GetMyPath(moduleFilename, sizeof(moduleFilename));
+    PathUtils::GetFilename(moduleFilename, moduleFilename, sizeof(moduleFilename));
+    Str::Copy(gApp.name, sizeof(gApp.name), moduleFilename);
     
     _InitKeyTable();
     
@@ -266,149 +407,99 @@ bool Run(const AppDesc& desc)
     
     gApp.app = [NSApplication sharedApplication];
     NSApp.activationPolicy = NSApplicationActivationPolicyRegular;
-    gApp.appDelegate = [[AppMacDelegate alloc] init];
-    NSApp.delegate = gApp.appDelegate;
     [NSApp activateIgnoringOtherApps:YES];
-    [NSApp run];
+    
+    NSScreen* screen = NSScreen.mainScreen;
+    NSRect screenRect = NSScreen.mainScreen.frame;
+    
+    gApp.displayWidth = screenRect.size.width;
+    gApp.displayHeight = screenRect.size.height;
+    if (@available(macOS 12.0, *)) {
+        NSTimeInterval interval = [screen maximumRefreshInterval];
+        gApp.displayRefreshRate = uint16(1.0f / interval);
+    } else {
+        gApp.displayRefreshRate = 60;
+    }
+
+    if (gApp.desc.fullscreen) {
+        gApp.windowWidth = screenRect.size.width;
+        gApp.windowHeight = screenRect.size.height;
+    }
+    
+    if (gApp.desc.highDPI) {
+        gApp.dpiScale = [screen backingScaleFactor];
+        gApp.framebufferWidth = gApp.dpiScale * gApp.windowWidth;
+        gApp.framebufferHeight = gApp.dpiScale * gApp.windowHeight;
+    }
+    else {
+        gApp.framebufferWidth = gApp.windowWidth;
+        gApp.framebufferHeight = gApp.windowHeight;
+        gApp.dpiScale = 1.0f;
+    }
+    
+    const NSUInteger style =
+        NSWindowStyleMaskTitled |
+        NSWindowStyleMaskClosable |
+        NSWindowStyleMaskMiniaturizable |
+        NSWindowStyleMaskResizable;
+    NSRect windowRect = NSMakeRect(0, 0, gApp.windowWidth, gApp.windowHeight);
+    gApp.window = [[NSWindow alloc]
+        initWithContentRect:windowRect
+        styleMask:style
+        backing:NSBackingStoreBuffered
+        defer:NO];
+    
+    gApp.window.title = [NSString stringWithUTF8String:gApp.windowTitle];
+    gApp.window.acceptsMouseMovedEvents = YES;
+    gApp.window.restorable = YES;
+    gApp.windowDelegate = [[AppWindowDelegate alloc] init];
+    gApp.window.delegate = gApp.windowDelegate;
+    gApp.metalDevice = MTLCreateSystemDefaultDevice();
+    gApp.viewDelegate = [[AppMacMetalViewDelegate alloc] init];
+    gApp.view = [[AppMacMetalView alloc] init];
+    [gApp.view updateTrackingAreas];
+    gApp.view.delegate = gApp.viewDelegate;
+    gApp.view.device = gApp.metalDevice;
+    gApp.view.colorPixelFormat = MTLPixelFormatBGRA8Unorm;
+    gApp.view.depthStencilPixelFormat = MTLPixelFormatDepth32Float_Stencil8;
+    gApp.window.contentView = gApp.view;
+    [gApp.window makeFirstResponder:gApp.view];
+    CGSize drawableSize = { (CGFloat) gApp.framebufferWidth, (CGFloat) gApp.framebufferHeight };
+    gApp.view.drawableSize = drawableSize;
+    App::_UpdateDimensions();
+    // gApp.view.layer.magnificationFilter = kCAFilterNearest;
+    gApp.valid = true;
+    [gApp.window center];
+    
+    [gApp.window makeKeyAndOrderFront:nil];
+    [gApp.window setReleasedWhenClosed:NO];
+    
+    NSEvent *event;
+    while (!gApp.shouldQuit) {
+        event = [NSApp nextEventMatchingMask:NSEventMaskAny
+                                   untilDate:[NSDate distantFuture]
+                                      inMode:NSDefaultRunLoopMode
+                                     dequeue:YES];
+        [NSApp sendEvent:event];
+        [NSApp updateWindows];
+    }
+    
+    if (gApp.desc.callbacks) {
+        gApp.desc.callbacks->Cleanup();
+    }
+    
+    if (gApp.clipboardEnabled) {
+        ASSERT(gApp.clipboard);
+        Mem::Free(gApp.clipboard);
+    }
+    
+    gApp.eventCallbacks.Free();
+    memset(&gApp, 0x0, sizeof(AppMacState));
     
     return true;
 }
 
-static void _UpdateDimensions()
-{
-    const CGSize fbSize = [gApp.view drawableSize];
-    gApp.framebufferWidth = fbSize.width;
-    gApp.framebufferHeight = fbSize.height;
-    
-    const NSRect bounds = [gApp.view bounds];
-    gApp.windowWidth = bounds.size.width;
-    gApp.windowHeight = bounds.size.height;
-    ASSERT((gApp.framebufferWidth > 0) && (gApp.framebufferHeight > 0));
-    gApp.dpiScale = (float)gApp.framebufferWidth / (float)gApp.windowWidth;
-}
-
-static void _UpdateFrame()
-{
-    static uint64 tmPrev = 0;
-    const NSPoint mousePos = [gApp.window mouseLocationOutsideOfEventStream];
-    gApp.mouseX = mousePos.x * gApp.dpiScale;
-    gApp.mouseY = gApp.framebufferHeight - (mousePos.y * gApp.dpiScale) - 1;
-    
-    uint64 tmNow = Timer::GetTicks();
-    double dt = Timer::ToSec(Timer::Diff(Timer::GetTicks(), tmPrev));
-
-    if (gApp.firstFrame) {
-        gApp.firstFrame = false;
-        if (!gApp.desc.callbacks->Initialize()) {
-            App::Quit();
-            return;
-        }
-        
-        Engine::_private::PostInitialize();
-    
-        dt = 0;
-        gApp.initCalled = true;
-    }
-    
-    if (!gApp.overrideUpdateCallback.first)
-        gApp.desc.callbacks->Update(dt);
-    else
-        gApp.overrideUpdateCallback.first(dt, gApp.overrideUpdateCallback.second);
-
-    tmPrev = tmNow;
-}
-
-static InputKeyModifiers _GetKeyMods(NSEventModifierFlags f)
-{
-    InputKeyModifiers m = InputKeyModifiers::None;
-    if (f & NSEventModifierFlagShift)
-        m |= InputKeyModifiers::Shift;
-    if (f & NSEventModifierFlagControl)
-        m |= InputKeyModifiers::Ctrl;
-    if (f & NSEventModifierFlagOption)
-        m |= InputKeyModifiers::Alt;
-    if (f & NSEventModifierFlagCommand)
-        m |= InputKeyModifiers::Super;
-    return m;
-}
-
-static inline bool _EventsEnabled()
-{
-    // only send events when an event callback is set, and the init function was called
-    return gApp.desc.callbacks && gApp.initCalled;
-}
-
-static void _InitEvent(AppEventType type)
-{
-    memset(&gApp.ev, 0, sizeof(gApp.ev));
-    gApp.ev.type = type;
-    gApp.ev.mouseButton = InputMouseButton::Invalid;
-    gApp.ev.windowWidth = gApp.windowWidth;
-    gApp.ev.windowHeight = gApp.windowHeight;
-    gApp.ev.framebufferWidth = gApp.framebufferWidth;
-    gApp.ev.framebufferHeight = gApp.framebufferHeight;
-}
-
-static bool _CallEvent(const AppEvent& ev)
-{
-    if (!gApp.cleanupCalled) {
-        if (gApp.desc.callbacks)
-            gApp.desc.callbacks->OnEvent(ev);
-        
-        // Call extra registered event callbacks
-        for (auto c : gApp.eventCallbacks)
-            c.callback(ev, c.userData);
-    }
-    
-    if (gApp.eventConsumed) {
-        gApp.eventConsumed = false;
-        return true;
-    }
-    else {
-        return false;
-    }
-}
-
-static void _DispatchMouseEvent(AppEventType type, InputMouseButton btn, InputKeyModifiers mod)
-{
-    if (App::_EventsEnabled()) {
-        _InitEvent(type);
-        gApp.ev.mouseButton = btn;
-        gApp.ev.keyMods = mod;
-        gApp.ev.mouseX = gApp.mouseX;
-        gApp.ev.mouseY = gApp.mouseY;
-        _CallEvent(gApp.ev);
-    }
-}
-
-static void _DispatchKeyEvent(AppEventType type, InputKeycode key, bool repeat, InputKeyModifiers mod)
-{
-    if (App::_EventsEnabled()) {
-        _InitEvent(type);
-        gApp.ev.keycode = key;
-        gApp.ev.keyRepeat = repeat;
-        gApp.ev.keyMods = mod;
-        _CallEvent(gApp.ev);
-    }
-}
-
-static void _DispatchAppEvent(AppEventType type)
-{
-    if (App::_EventsEnabled()) {
-        _InitEvent(type);
-        _CallEvent(gApp.ev);
-    }
-}
-
-static InputKeycode _TranslateKey(int scanCode)
-{
-    if ((scanCode >= 0) && (scanCode <APP_MAX_KEY_CODES))
-        return gApp.keycodes[scanCode];
-    else
-        return InputKeycode::Invalid;
-}
-
-bool SetClipboardString(const char* str)
+bool App::SetClipboardString(const char* str)
 {
     if (!gApp.clipboardEnabled) {
         return false;
@@ -425,7 +516,7 @@ bool SetClipboardString(const char* str)
     return true;
 }
 
-void ShowMouse(bool visible)
+void App::ShowMouse(bool visible)
 {
     if (visible) {
         [NSCursor unhide];
@@ -435,7 +526,7 @@ void ShowMouse(bool visible)
     }
 }
 
-const char* GetClipboardString(void)
+const char* App::GetClipboardString(void)
 {
     if (!gApp.clipboardEnabled)
         return "";
@@ -457,27 +548,28 @@ const char* GetClipboardString(void)
     return gApp.clipboard;
 }
 
-void Quit(void)
+void App::Quit(void)
 {
     [gApp.window performClose:nil];
+    gApp.shouldQuit = true;
 }
 
-uint16 GetWindowWidth(void)
+uint16 App::GetWindowWidth(void)
 {
     return gApp.windowWidth;
 }
 
-uint16 GetWindowHeight(void)
+uint16 App::GetWindowHeight(void)
 {
     return gApp.windowHeight;
 }
 
-bool IsMouseShown(void)
+bool App::IsMouseShown(void)
 {
     return false;       // TODO: Not implemented yet
 }
 
-void* GetNativeWindowHandle(void)
+void* App::GetNativeWindowHandle(void)
 {
 #if PLATFORM_OSX
     void* obj = (__bridge void*) gApp.window.contentView.layer;
@@ -488,36 +580,39 @@ void* GetNativeWindowHandle(void)
 #endif
 }
 
-uint16 GetFramebufferWidth()
+uint16 App::GetFramebufferWidth()
 {
     return gApp.framebufferWidth;
 }
 
-uint16 GetFramebufferHeight()
+uint16 App::GetFramebufferHeight()
 {
     return gApp.framebufferHeight;
 }
 
-AppFramebufferTransform GetFramebufferTransform()
+AppFramebufferTransform App::GetFramebufferTransform()
 {
     return AppFramebufferTransform::None;
 }
 
+// TODO: as far as I know, there is no easy way to Capture/Release the mouse when it goes outside the window on Mac
+void App::CaptureMouse()
+{
+    SetCursor(AppMouseCursor::None);
+}
+
 // TODO
-void CaptureMouse()
+void App::ReleaseMouse()
 {
+    SetCursor(AppMouseCursor::Arrow);
 }
 
-void ReleaseMouse()
-{
-}
-
-void* GetNativeAppHandle()
+void* App::GetNativeAppHandle()
 {
     return (__bridge void*) gApp.app;
 }
 
-void RegisterEventsCallback(AppEventCallback callback, void* userData)
+void App::RegisterEventsCallback(AppEventCallback callback, void* userData)
 {
     bool alreadyExist = false;
     for (uint32 i = 0; i < gApp.eventCallbacks.Count(); i++) {
@@ -532,19 +627,38 @@ void RegisterEventsCallback(AppEventCallback callback, void* userData)
         gApp.eventCallbacks.Push({callback, userData});
 }
 
-void UnregisterEventsCallback(AppEventCallback callback)
+void App::UnregisterEventsCallback(AppEventCallback callback)
 {
     uint32 index = gApp.eventCallbacks.FindIf([callback](const AppEventCallbackPair& p)->bool { return p.callback == callback; });
     if (index != -1)
         gApp.eventCallbacks.RemoveAndSwap(index);
 }
 
-void SetCursor(AppMouseCursor cursor)
+void App::SetCursor(AppMouseCursor cursor)
 {
-    UNUSED(cursor);
+    if (cursor == gApp.curCursor)
+        return;
+    gApp.curCursor = cursor;
+    
+    if (cursor != AppMouseCursor::None)
+        [NSCursor unhide];
+    
+    switch (cursor) {
+    case AppMouseCursor::None:          [NSCursor hide];       break;
+    case AppMouseCursor::Arrow:         [[NSCursor arrowCursor] set];   break;
+    case AppMouseCursor::TextInput:     [[NSCursor IBeamCursor] set];   break;
+    case AppMouseCursor::ResizeAll:     [[NSCursor arrowCursor] set]; break;
+    case AppMouseCursor::ResizeNS:      [[NSCursor resizeUpDownCursor] set];  break;
+    case AppMouseCursor::ResizeWE:      [[NSCursor resizeLeftRightCursor] set]; break;
+    case AppMouseCursor::ResizeNESW:    [[NSCursor arrowCursor] set]; break;
+    case AppMouseCursor::ResizeNWSE:    [[NSCursor arrowCursor] set]; break;
+    case AppMouseCursor::Hand:          [[NSCursor openHandCursor] set]; break;
+    case AppMouseCursor::NotAllowed:    [[NSCursor operationNotAllowedCursor] set]; break;
+    default: break;
+    }
 }
 
-AppDisplayInfo GetDisplayInfo()
+AppDisplayInfo App::GetDisplayInfo()
 {
     return AppDisplayInfo {
         .width = gApp.displayWidth,
@@ -554,12 +668,12 @@ AppDisplayInfo GetDisplayInfo()
     };
 }
 
-bool IsKeyDown(InputKeycode keycode)
+bool App::IsKeyDown(InputKeycode keycode)
 {
     return gApp.keysPressed[uint32(keycode)];
 }
 
-bool IsAnyKeysDown(const InputKeycode* keycodes, uint32 numKeycodes)
+bool App::IsAnyKeysDown(const InputKeycode* keycodes, uint32 numKeycodes)
 {
     bool down = false;
     for (uint32 i = 0; i < numKeycodes; i++)
@@ -567,124 +681,32 @@ bool IsAnyKeysDown(const InputKeycode* keycodes, uint32 numKeycodes)
     return down;
 }
 
-InputKeyModifiers GetKeyMods()
+InputKeyModifiers App::GetKeyMods()
 {
     return gApp.keyMods;
 }
 
-const char* GetName()
+const char* App::GetName()
 {
-    return CONFIG_APP_NAME;
+    return gApp.name;
 }
 
-void OverrideUpdateCallback(AppUpdateOverrideCallback callback, void* userData)
+void App::OverrideUpdateCallback(AppUpdateOverrideCallback callback, void* userData)
 {
     gApp.overrideUpdateCallback.first = callback;
     gApp.overrideUpdateCallback.second = userData;
 }
-
-} // App
-
-//----------------------------------------------------------------------------------------------------------------------
-@implementation AppMacDelegate
-    - (void)applicationDidFinishLaunching:(NSNotification*)aNotification
-    {
-        NSScreen* screen = NSScreen.mainScreen;
-        NSRect screenRect = NSScreen.mainScreen.frame;
-        
-        gApp.displayWidth = screenRect.size.width;
-        gApp.displayHeight = screenRect.size.height;
-        if (@available(macOS 12.0, *)) {
-            NSTimeInterval interval = [screen maximumRefreshInterval];
-            gApp.displayRefreshRate = uint16(1.0f / interval);
-        } else {
-            gApp.displayRefreshRate = 60;
-        }
-
-        if (gApp.desc.fullscreen) {
-            gApp.windowWidth = screenRect.size.width;
-            gApp.windowHeight = screenRect.size.height;
-        }
-        
-        if (gApp.desc.highDPI) {
-            gApp.dpiScale = [screen backingScaleFactor];
-            gApp.framebufferWidth = gApp.dpiScale * gApp.windowWidth;
-            gApp.framebufferHeight = gApp.dpiScale * gApp.windowHeight;
-        }
-        else {
-            gApp.framebufferWidth = gApp.windowWidth;
-            gApp.framebufferHeight = gApp.windowHeight;
-            gApp.dpiScale = 1.0f;
-        }
-        
-        const NSUInteger style =
-            NSWindowStyleMaskTitled |
-            NSWindowStyleMaskClosable |
-            NSWindowStyleMaskMiniaturizable |
-            NSWindowStyleMaskResizable;
-        NSRect windowRect = NSMakeRect(0, 0, gApp.windowWidth, gApp.windowHeight);
-        gApp.window = [[NSWindow alloc]
-            initWithContentRect:windowRect
-            styleMask:style
-            backing:NSBackingStoreBuffered
-            defer:NO];
-        
-        gApp.window.title = [NSString stringWithUTF8String:gApp.windowTitle];
-        gApp.window.acceptsMouseMovedEvents = YES;
-        gApp.window.restorable = YES;
-        gApp.windowDelegate = [[AppWindowDelegate alloc] init];
-        gApp.window.delegate = gApp.windowDelegate;
-        gApp.metalDevice = MTLCreateSystemDefaultDevice();
-        gApp.viewDelegate = [[AppMacMetalViewDelegate alloc] init];
-        gApp.view = [[AppMacMetalView alloc] init];
-        [gApp.view updateTrackingAreas];
-        gApp.view.delegate = gApp.viewDelegate;
-        gApp.view.device = gApp.metalDevice;
-        gApp.view.colorPixelFormat = MTLPixelFormatBGRA8Unorm;
-        gApp.view.depthStencilPixelFormat = MTLPixelFormatDepth32Float_Stencil8;
-        gApp.window.contentView = gApp.view;
-        [gApp.window makeFirstResponder:gApp.view];
-        CGSize drawableSize = { (CGFloat) gApp.framebufferWidth, (CGFloat) gApp.framebufferHeight };
-        gApp.view.drawableSize = drawableSize;
-        App::_UpdateDimensions();
-        // gApp.view.layer.magnificationFilter = kCAFilterNearest;
-        gApp.valid = true;
-        if (gApp.desc.fullscreen) {
-            [gApp.window toggleFullScreen:self];
-        }
-        else {
-            [gApp.window center];
-        }
-        [gApp.window makeKeyAndOrderFront:nil];
-        [gApp.window setReleasedWhenClosed:NO];
-    }
-
-    - (BOOL)applicationShouldTerminateAfterLastWindowClosed:(NSApplication*)sender
-    {
-        return YES;
-    }
-
-    -(void)applicationWillTerminate:(NSNotification *)notification
-    {
-        if (gApp.desc.callbacks) {
-            gApp.desc.callbacks->Cleanup();
-        }
-        
-        if (gApp.clipboardEnabled) {
-            ASSERT(gApp.clipboard);
-            Mem::Free(gApp.clipboard);
-        }
-        
-        gApp.eventCallbacks.Free();
-        memset(&gApp, 0x0, sizeof(AppMacState));
-    }
-@end // AppMacDelegate
 
 //----------------------------------------------------------------------------------------------------------------------
 @implementation AppWindowDelegate
     - (BOOL)windowShouldClose:(id)sender
     {
         return YES;
+    }
+
+    - (void)windowWillClose:(NSNotification *)notification
+{
+        gApp.shouldQuit = true;
     }
 
     - (void)windowDidResize:(NSNotification*)notification

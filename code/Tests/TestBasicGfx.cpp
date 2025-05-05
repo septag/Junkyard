@@ -202,7 +202,8 @@ struct ModelScene
             },
             .numColorAttachments = 1,
             .colorAttachmentFormats = {GfxBackend::GetSwapchainFormat()},
-            .depthAttachmentFormat = GfxFormat::D24_UNORM_S8_UINT
+            .depthAttachmentFormat = GfxBackend::GetValidDepthStencilFormat(),
+            .stencilAttachmentFormat = GfxBackend::GetValidDepthStencilFormat()
         };
 
         mPipeline = GfxBackend::CreateGraphicsPipeline(*shader, mPipelineLayout, pipelineDesc);
@@ -347,6 +348,7 @@ struct AppImpl final : AppCallbacks
     uint32 mSelectedSceneIdx;
     bool mFirstTime = true;
     bool mMinimized = false;
+    bool mDrawGrid = true;
 
     static void InitializeResources(void* userData)
     {
@@ -358,8 +360,8 @@ struct AppImpl final : AppCallbacks
                 .width = uint16(extent.x),
                 .height = uint16(extent.y),
                 .multisampleFlags = GfxSampleCountFlags::SampleCount1,
-                .format = GfxFormat::D24_UNORM_S8_UINT,
-                .usageFlags = GfxImageUsageFlags::DepthStencilAttachment,
+                .format = GfxBackend::GetValidDepthStencilFormat(),
+                .usageFlags = GfxImageUsageFlags::DepthStencilAttachment|GfxImageUsageFlags::TransientAttachment,
                 .arena = GfxMemoryArena::PersistentGPU
             };
 
@@ -386,6 +388,9 @@ struct AppImpl final : AppCallbacks
         mSelectedSceneIdx = Clamp(mSelectedSceneIdx, 0u, CountOf(TESTBASICGFX_MODELS)-1);
 
         mCam = &mModelScenes[mSelectedSceneIdx].mCam;
+
+        if constexpr (PLATFORM_APPLE || PLATFORM_ANDROID)
+            mDrawGrid = false;
 
         return true;
     };
@@ -449,19 +454,21 @@ struct AppImpl final : AppCallbacks
             GPU_PROFILE_ZONE(cmd, "ModelRender");
 
             cmd.BeginRenderPass(pass);
-            mModelScenes[mSelectedSceneIdx].Render(cmd);            
+            mModelScenes[mSelectedSceneIdx].Render(cmd);
             cmd.EndRenderPass();
         }
 
-        DebugDraw::BeginDraw(cmd, App::GetFramebufferWidth(), App::GetFramebufferHeight());
-        DebugDrawGridProperties gridProps {
-            .distance = 200,
-            .lineColor = Color4u(0x565656), 
-            .boldLineColor = Color4u(0xd6d6d6)            
-        };
+        if (mDrawGrid) {
+            DebugDraw::BeginDraw(cmd, App::GetFramebufferWidth(), App::GetFramebufferHeight());
+            DebugDrawGridProperties gridProps {
+                .distance = 200,
+                .lineColor = Color4u(0x565656),
+                .boldLineColor = Color4u(0xd6d6d6)
+            };
 
-        DebugDraw::DrawGroundGrid(*mCam, gridProps);
-        DebugDraw::EndDraw(cmd, *mCam, mRenderTargetDepth);
+            DebugDraw::DrawGroundGrid(*mCam, gridProps);
+            DebugDraw::EndDraw(cmd, *mCam, mRenderTargetDepth);
+        }
 
         if (ImGui::IsEnabled()) {
             GPU_PROFILE_ZONE(cmd, "ImGui");
@@ -481,6 +488,9 @@ struct AppImpl final : AppCallbacks
                             }
                         }
                     }
+                    ImGui::Separator();
+                    if (ImGui::MenuItem("Draw Grid", nullptr, mDrawGrid))
+                        mDrawGrid = !mDrawGrid;
                     ImGui::EndMenu();
                 }
             }        

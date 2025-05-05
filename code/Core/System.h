@@ -76,7 +76,7 @@ private:
 //    ██║╚██╔╝██║██║   ██║   ██║   ██╔══╝   ██╔██╗ 
 //    ██║ ╚═╝ ██║╚██████╔╝   ██║   ███████╗██╔╝ ██╗
 //    ╚═╝     ╚═╝ ╚═════╝    ╚═╝   ╚══════╝╚═╝  ╚═╝
-struct alignas(CACHE_LINE_SIZE) Mutex
+struct Mutex
 {
     void Initialize(uint32 spinCount = 32);
     void Release();
@@ -86,7 +86,7 @@ struct alignas(CACHE_LINE_SIZE) Mutex
     bool TryEnter();
 
 private:
-    uint8 mData[128];
+    uint8 mData[64];
 };
 
 struct MutexScope

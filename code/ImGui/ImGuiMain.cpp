@@ -645,47 +645,67 @@ bool ImGui::DrawFrame(GfxCommandBuffer cmd)
 
         uint32 vertexSize = drawData->TotalVtxCount * sizeof(ImDrawVert);
         uint32 indexSize = drawData->TotalIdxCount * sizeof(ImDrawIdx);
+        
+        if (GfxBackend::IsIntegratedGPU()) {
+            ImDrawVert* vertices = nullptr;
+            ImDrawIdx* indices = nullptr;
+            cmd.MapBuffer(gImGui.vertexBuffer, (void**)&vertices);
+            cmd.MapBuffer(gImGui.indexBuffer, (void**)&indices);
+            
+            for (int i = 0; i < drawData->CmdListsCount; i++) {
+                const ImDrawList* cmdList = drawData->CmdLists[i];
+                memcpy(vertices, cmdList->VtxBuffer.Data, cmdList->VtxBuffer.Size * sizeof(ImDrawVert));
+                memcpy(indices, cmdList->IdxBuffer.Data, cmdList->IdxBuffer.Size * sizeof(ImDrawIdx));
 
-        GfxBufferDesc stagingVertexBufferDesc {
-            .sizeBytes = vertexSize,
-            .usageFlags = GfxBufferUsageFlags::TransferSrc,
-            .arena = GfxMemoryArena::TransientCPU
-        };
-        GfxBufferHandle stagingVertexBuffer = GfxBackend::CreateBuffer(stagingVertexBufferDesc);
-
-        GfxBufferDesc stagingIndexBufferDesc {
-            .sizeBytes = indexSize,
-            .usageFlags = GfxBufferUsageFlags::TransferSrc,
-            .arena = GfxMemoryArena::TransientCPU
-        };
-        GfxBufferHandle stagingIndexBuffer = GfxBackend::CreateBuffer(stagingIndexBufferDesc);
-
-        ImDrawVert* vertices = nullptr;
-        ImDrawIdx* indices = nullptr;
-
-        cmd.MapBuffer(stagingVertexBuffer, (void**)&vertices);
-        cmd.MapBuffer(stagingIndexBuffer, (void**)&indices);
-
-        for (int i = 0; i < drawData->CmdListsCount; i++) {
-            const ImDrawList* cmdList = drawData->CmdLists[i];
-            memcpy(vertices, cmdList->VtxBuffer.Data, cmdList->VtxBuffer.Size * sizeof(ImDrawVert));
-            memcpy(indices, cmdList->IdxBuffer.Data, cmdList->IdxBuffer.Size * sizeof(ImDrawIdx));
-
-            vertices += cmdList->VtxBuffer.Size;
-            indices += cmdList->IdxBuffer.Size;
+                vertices += cmdList->VtxBuffer.Size;
+                indices += cmdList->IdxBuffer.Size;
+            }
+            
+            cmd.FlushBuffer(gImGui.vertexBuffer);
+            cmd.FlushBuffer(gImGui.indexBuffer);
         }
+        else {
+            GfxBufferDesc stagingVertexBufferDesc {
+                .sizeBytes = vertexSize,
+                .usageFlags = GfxBufferUsageFlags::TransferSrc,
+                .arena = GfxMemoryArena::TransientCPU
+            };
+            GfxBufferHandle stagingVertexBuffer = GfxBackend::CreateBuffer(stagingVertexBufferDesc);
 
-        cmd.FlushBuffer(stagingVertexBuffer);
-        cmd.FlushBuffer(stagingIndexBuffer);
+            GfxBufferDesc stagingIndexBufferDesc {
+                .sizeBytes = indexSize,
+                .usageFlags = GfxBufferUsageFlags::TransferSrc,
+                .arena = GfxMemoryArena::TransientCPU
+            };
+            GfxBufferHandle stagingIndexBuffer = GfxBackend::CreateBuffer(stagingIndexBufferDesc);
 
-        cmd.TransitionBuffer(gImGui.vertexBuffer, GfxBufferTransition::TransferWrite);
-        cmd.TransitionBuffer(gImGui.indexBuffer, GfxBufferTransition::TransferWrite);
+            ImDrawVert* vertices = nullptr;
+            ImDrawIdx* indices = nullptr;
 
-        cmd.CopyBufferToBuffer(stagingVertexBuffer, gImGui.vertexBuffer, GfxShaderStage::Vertex);
-        cmd.CopyBufferToBuffer(stagingIndexBuffer, gImGui.indexBuffer, GfxShaderStage::Vertex);
+            cmd.MapBuffer(stagingVertexBuffer, (void**)&vertices);
+            cmd.MapBuffer(stagingIndexBuffer, (void**)&indices);
 
-        GfxBackend::DestroyBuffer(stagingIndexBuffer);
-        GfxBackend::DestroyBuffer(stagingVertexBuffer);
+            for (int i = 0; i < drawData->CmdListsCount; i++) {
+                const ImDrawList* cmdList = drawData->CmdLists[i];
+                memcpy(vertices, cmdList->VtxBuffer.Data, cmdList->VtxBuffer.Size * sizeof(ImDrawVert));
+                memcpy(indices, cmdList->IdxBuffer.Data, cmdList->IdxBuffer.Size * sizeof(ImDrawIdx));
+
+                vertices += cmdList->VtxBuffer.Size;
+                indices += cmdList->IdxBuffer.Size;
+            }
+
+            cmd.FlushBuffer(stagingVertexBuffer);
+            cmd.FlushBuffer(stagingIndexBuffer);
+
+            cmd.TransitionBuffer(gImGui.vertexBuffer, GfxBufferTransition::TransferWrite);
+            cmd.TransitionBuffer(gImGui.indexBuffer, GfxBufferTransition::TransferWrite);
+
+            cmd.CopyBufferToBuffer(stagingVertexBuffer, gImGui.vertexBuffer, GfxShaderStage::Vertex);
+            cmd.CopyBufferToBuffer(stagingIndexBuffer, gImGui.indexBuffer, GfxShaderStage::Vertex);
+
+            GfxBackend::DestroyBuffer(stagingIndexBuffer);
+            GfxBackend::DestroyBuffer(stagingVertexBuffer);
+        }
     }
 
     // Begin Drawing to the swapchain 

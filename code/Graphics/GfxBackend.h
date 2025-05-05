@@ -94,6 +94,8 @@ namespace GfxBackend
     GfxFormat GetSwapchainFormat();
     Mat4 GetSwapchainTransformMat();
     Int2 GetSwapchainExtent();
+    GfxFormat GetValidDepthStencilFormat();
+    GfxFormat GetValidDepthFormat();
 
     void BeginRenderFrameSync();
     void EndRenderFrameSync();
@@ -101,6 +103,8 @@ namespace GfxBackend
     float GetRenderTimeMS();
 
     void ReloadShaderPipelines(const GfxShader& shader);
+
+    bool IsIntegratedGPU();
 } // Gfx
 
 //----------------------------------------------------------------------------------------------------------------------

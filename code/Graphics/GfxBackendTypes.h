@@ -307,6 +307,9 @@ enum class GfxMemoryArena : uint8
     TransientCPU,
     DynamicImageGPU,
     DynamicBufferGPU
+#if PLATFORM_APPLE || PLATFORM_ANDROID
+    , TiledGPU
+#endif
 };
 
 enum class GfxQueueType

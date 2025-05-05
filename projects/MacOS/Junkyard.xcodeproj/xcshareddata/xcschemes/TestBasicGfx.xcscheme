@@ -44,19 +44,28 @@
          runnableDebuggingMode = "0">
          <BuildableReference
             BuildableIdentifier = "primary"
+            BlueprintIdentifier = "ABF103ED2A642B2300D853CC"
+            BuildableName = "TestBasicGfx.app"
+            BlueprintName = "TestBasicGfx"
+            ReferencedContainer = "container:Junkyard.xcodeproj">
+         </BuildableReference>
+      </BuildableProductRunnable>
+      <MacroExpansion>
+         <BuildableReference
+            BuildableIdentifier = "primary"
             BlueprintIdentifier = "14E748CD2C76360100F5644B"
             BuildableName = "TestIO.app"
             BlueprintName = "TestIO"
             ReferencedContainer = "container:Junkyard.xcodeproj">
          </BuildableReference>
-      </BuildableProductRunnable>
+      </MacroExpansion>
       <CommandLineArguments>
          <CommandLineArgument
             argument = "-EngineUseCacheOnly=1"
             isEnabled = "NO">
          </CommandLineArgument>
          <CommandLineArgument
-            argument = "-GraphicsValidate=1"
+            argument = "-EngineTrackAllocations=1"
             isEnabled = "YES">
          </CommandLineArgument>
          <CommandLineArgument
@@ -70,6 +79,10 @@
          <CommandLineArgument
             argument = "-EngineConnectToServer=1"
             isEnabled = "NO">
+         </CommandLineArgument>
+         <CommandLineArgument
+            argument = "-GraphicsValidate=1"
+            isEnabled = "YES">
          </CommandLineArgument>
       </CommandLineArguments>
       <EnvironmentVariables>
@@ -87,11 +100,6 @@
             key = "VK_ICD_FILENAMES"
             value = "$(PROJECT_DIR)/../../.downloads/moltenvk-1.3.0-rc1/MoltenVK/dynamic/dylib/macOS"
             isEnabled = "YES">
-         </EnvironmentVariable>
-         <EnvironmentVariable
-            key = "VK_LOADER_DEBUG"
-            value = "all"
-            isEnabled = "NO">
          </EnvironmentVariable>
       </EnvironmentVariables>
    </LaunchAction>

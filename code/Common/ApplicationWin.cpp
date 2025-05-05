@@ -826,7 +826,7 @@ namespace App
         if (desc.enableClipboard)
             gApp.clipboard = Mem::AllocZeroTyped<char>((uint32)gApp.desc.clipboardSizeBytes);
 
-        char moduleFilename[128];
+        char moduleFilename[CONFIG_MAX_PATH];
         OS::GetMyPath(moduleFilename, sizeof(moduleFilename));
         PathUtils::GetFilename(moduleFilename, moduleFilename, sizeof(moduleFilename));
         Str::Copy(gApp.name, sizeof(gApp.name), moduleFilename);

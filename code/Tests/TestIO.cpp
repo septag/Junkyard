@@ -193,7 +193,7 @@ struct AppImpl final : AppCallbacks
             mDuration = Timer::Diff(Timer::GetTicks(), mStartTime);
             mReadFinished = true;
         }
-
+        
         if (ImGui::Begin("TestIO")) {
             if (ImGui::Button("Start")) {
                 Start();
@@ -229,6 +229,7 @@ struct AppImpl final : AppCallbacks
         ImGui::End();
 
         GfxCommandBuffer cmd = GfxBackend::BeginCommandBuffer(GfxQueueType::Graphics);
+        cmd.ClearSwapchainColor(FLOAT4_ZERO);
         ImGui::DrawFrame(cmd);
         GfxBackend::EndCommandBuffer(cmd);
 

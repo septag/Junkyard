@@ -105,7 +105,8 @@ namespace DebugDraw
             },
             .numColorAttachments = 1,
             .colorAttachmentFormats = {GfxBackend::GetSwapchainFormat()},
-            .depthAttachmentFormat = GfxFormat::D24_UNORM_S8_UINT
+            .depthAttachmentFormat = GfxBackend::GetValidDepthStencilFormat(),
+            .stencilAttachmentFormat = GfxBackend::GetValidDepthStencilFormat()
         };
         
         gDebugDraw.pipeline = GfxBackend::CreateGraphicsPipeline(*shader, gDebugDraw.pipelineLayout, pipelineDesc);

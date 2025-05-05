@@ -156,7 +156,9 @@ namespace Vfs
 bool Vfs::MountLocal(const char* rootDir, const char* alias, [[maybe_unused]] bool watch)
 {
     if (!OS::IsPathDir(rootDir)) {
-        LOG_ERROR("VirtualFS: '%s' is not a valid directory", rootDir);
+        char absRootPath[CONFIG_MAX_PATH];
+        OS::GetAbsolutePath(rootDir, absRootPath, sizeof(absRootPath));
+        LOG_ERROR("VirtualFS: '%s' is not a valid directory (%s)", rootDir, absRootPath);
         if constexpr(!CONFIG_FINAL_BUILD) {
             LOG_ERROR("VirtualFS: Make sure cwd on the root directory of the project and assets are downloaded for this app");
         }
@@ -910,7 +912,6 @@ void Vfs::WriteFileAsync(const char* path, const Blob& blob, VfsFlags flags, Vfs
         req.mountType = idx != UINT32_MAX ? gVfs.mounts[idx].type : VfsMountType::Local;
 
         VfsAsyncManager* diskMgr = &gVfs.asyncMgr;
-        MutexScope mtx(diskMgr->requestsMtx);
 
         if ((flags & VfsFlags::NoCopyWriteBlob) != VfsFlags::NoCopyWriteBlob) {
             req.blob.SetAllocator(&gVfs.alloc);
@@ -920,7 +921,11 @@ void Vfs::WriteFileAsync(const char* path, const Blob& blob, VfsFlags flags, Vfs
             req.blob = blob;
         }
 
-        diskMgr->requests.Push(req);
+        {
+            MutexScope mtx(diskMgr->requestsMtx);
+            diskMgr->requests.Push(req);
+        }
+        
         diskMgr->semaphore.Post();
     }
 }

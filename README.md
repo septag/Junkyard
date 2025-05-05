@@ -13,7 +13,7 @@ It's very much WIP, so not much to show off right now.
 - Multiplatform. Currently supported platforms (ARM64, x86_64 architectures only):
     - Windows (Tested on Windows 10 x64)
     - Linux (Tesded on Ubuntu 22/PopOS)
-    - MacOS through MoltenVk (Currently broken, will be back up soon again)
+    - MacOS-Arm64 M1 and up (through MoltenVk 1.3)
     - Android (Currently broken, might work with Vulkan 1.3 hardware)
 - Minimal C'ish C++20: Some people call it Sane-C++ or similarly [Orthodox-C++](https://gist.github.com/bkaradzic/2e39896bc7d8c34e042b). I use a very small subset of newer C++ standards, in which I will explain later in the wiki. Some of them are pointed in [CppFeatures.txt](doc/CppFeatures.txt)
     - No stdc++ allowed in the code
@@ -84,7 +84,7 @@ allocation library
     - [Gnirehtet](https://github.com/Genymobile/gnirehtet): provides reverse tethering for Android
 
 ## Build and Deployment
-*Windows* is the primary platform, because it's the platform I use for my daily development. Maintaining build and tooling on multiple OSes is just a lot of work. Other platforms might be buggy or not fully feature complete. To build and run the projects, first thing is running the Setup script after fetching the repo:
+*PC/Windows* is the primary platform, because it's the platform I use for my daily development. Maintaining build and tooling on multiple OSes is just a lot of work. So please keep in mind that other platforms might be buggy, not as polished or not fully feature complete. To build and run the projects, first thing is running the Setup script after fetching the repo:
 
 ### Setup.bat/Setup.sh
 This script fetches, heavier dependencies for baking assets. And there is also the option to download and install required or optional SDKs and standalone tools.
@@ -132,7 +132,11 @@ Just make sure you have already ran `Setup.sh` successfully and have this packag
 Then open the project folder with *vscode* and choose your preferred configuration, build and launch with *LaunchLinux* target.
 
 ### MacOS
-MacOS Xcode projects are currently broken because after Vulkan backend overhaul, I migrated to Vulkan 1.3 specs, so I need to revisit those parts and make them compatible with MoltenVk.
+Graphics backend on MacOS runs through the latest MoltenVK which has Vulkan 1.3 support. As usual start with running `Setup.sh` script. Make sure to download tooling library dependencies and MoltenVK. MoltenVK will be downloaded into `$(ProjectRoot)/.downloads` directory. 
+
+Next step is downloading VulkanSDK 1.3 (will be automated later through Setup script) and run it's installer script (`install_vulkan.py` in the VulkanSDK root folder) to install vulkan library into `/usr/local/lib`. The Xcode project links to `libvulkan.dylib` and then by setting `VK_ICD_FILENAMES` environment variable (see Schemes in the Xcode project) to the local `.download/MoltenVK` directory, we make sure that the loader uses our version of MoltenVK. We also set `VK_LAYER_PATH` to the installed vulkan path (Again, see Schemes in the Xcode project), so we can use the always important vulkan validation layer.
+
+And that's it. Open the Xcode project and run your targets.
 
 ### Android
 For android, you need visual-studio 2022 with the following *Mobile Development with C++* components installed:

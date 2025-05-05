@@ -616,7 +616,6 @@ void MemBumpAllocatorBase::Reset()
     if (!mDebugMode) {
         mLastAllocatedPtr = nullptr;
         mOffset = 0;
-        mCommitSize = 0;
     }
     else {
         mOffset = 0;
@@ -1041,6 +1040,9 @@ void* MemProxyAllocator::Realloc(void* ptr, size_t size, uint32 align)
 
 void MemProxyAllocator::Free(void* ptr, uint32 align)
 {
+    if (!ptr)
+        return;
+    
     mBaseAlloc->Free(ptr, align);
 
     if (IsBitsSet<MemProxyAllocatorFlags>(mFlags, MemProxyAllocatorFlags::EnableTracking) && ptr) {

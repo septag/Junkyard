@@ -58,17 +58,23 @@ void Semaphore::Release()
 void Semaphore::Post(uint32 count)
 {
     SemaphoreImpl* sem = (SemaphoreImpl*)mData;
-    for (int i = 0; i < count; i++) {
-        dispatch_semaphore_signal(sem->handle);
-    } 
+    if (sem->handle) {
+        for (int i = 0; i < count; i++)
+            dispatch_semaphore_signal(sem->handle);
+    }
 }
 
 bool Semaphore::Wait(uint32 msecs)
 {
     SemaphoreImpl* sem = (SemaphoreImpl*)mData;
-    dispatch_time_t dt = msecs < 0 ? DISPATCH_TIME_FOREVER
-                                   : dispatch_time(DISPATCH_TIME_NOW, (int64_t)msecs * 1000000ll);
-    return !dispatch_semaphore_wait(sem->handle, dt);
+    if (sem->handle) {
+        dispatch_time_t dt = msecs < 0 ? DISPATCH_TIME_FOREVER
+                                       : dispatch_time(DISPATCH_TIME_NOW, (int64_t)msecs * 1000000ll);
+        return !dispatch_semaphore_wait(sem->handle, dt);
+    }
+    else {
+        return false;
+    }
 }
 
 namespace Timer

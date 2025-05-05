@@ -8,6 +8,26 @@
 
 /* Begin PBXBuildFile section */
 		14741D792D8D6F18000F148A /* GfxBackend.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 14741D782D8D6F18000F148A /* GfxBackend.cpp */; };
+		1478E9302DC392880011990C /* TestBasicGfx.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 1478E92F2DC392880011990C /* TestBasicGfx.cpp */; };
+		1478E9402DC3972E0011990C /* libmeshoptimizer.dylib in Frameworks */ = {isa = PBXBuildFile; fileRef = 1478E93F2DC3972E0011990C /* libmeshoptimizer.dylib */; };
+		1478E9412DC3972E0011990C /* libmeshoptimizer.dylib in Frameworks */ = {isa = PBXBuildFile; fileRef = 1478E93F2DC3972E0011990C /* libmeshoptimizer.dylib */; };
+		1478E9442DC397440011990C /* libslang.dylib in Frameworks */ = {isa = PBXBuildFile; fileRef = 1478E9422DC397440011990C /* libslang.dylib */; };
+		1478E9462DC397440011990C /* libslang.dylib in Frameworks */ = {isa = PBXBuildFile; fileRef = 1478E9422DC397440011990C /* libslang.dylib */; };
+		1478E9492DC3975E0011990C /* libispc_texcomp.dylib in Frameworks */ = {isa = PBXBuildFile; fileRef = 1478E9482DC3975E0011990C /* libispc_texcomp.dylib */; };
+		1478E94A2DC3975E0011990C /* libispc_texcomp.dylib in Frameworks */ = {isa = PBXBuildFile; fileRef = 1478E9482DC3975E0011990C /* libispc_texcomp.dylib */; };
+		1478E94B2DC397670011990C /* libispc_texcomp.dylib in Embed Libraries */ = {isa = PBXBuildFile; fileRef = 1478E9482DC3975E0011990C /* libispc_texcomp.dylib */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
+		1478E94C2DC397680011990C /* libmeshoptimizer.dylib in Embed Libraries */ = {isa = PBXBuildFile; fileRef = 1478E93F2DC3972E0011990C /* libmeshoptimizer.dylib */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
+		1478E94D2DC397690011990C /* libslang.dylib in Embed Libraries */ = {isa = PBXBuildFile; fileRef = 1478E9422DC397440011990C /* libslang.dylib */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
+		1478E9562DC3A21A0011990C /* libslang-glslang.dylib in Resources */ = {isa = PBXBuildFile; fileRef = 1478E9552DC3A21A0011990C /* libslang-glslang.dylib */; };
+		1478E9572DC3A21A0011990C /* libslang-glslang.dylib in Resources */ = {isa = PBXBuildFile; fileRef = 1478E9552DC3A21A0011990C /* libslang-glslang.dylib */; };
+		1478E9582DC3A3000011990C /* libslang-glslang.dylib in Embed Libraries */ = {isa = PBXBuildFile; fileRef = 1478E9552DC3A21A0011990C /* libslang-glslang.dylib */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
+		1478E9602DC7D0920011990C /* libvulkan.1.3.296.dylib in Frameworks */ = {isa = PBXBuildFile; fileRef = 1478E95F2DC7D0920011990C /* libvulkan.1.3.296.dylib */; };
+		1478E9612DC7D0920011990C /* libvulkan.1.3.296.dylib in Frameworks */ = {isa = PBXBuildFile; fileRef = 1478E95F2DC7D0920011990C /* libvulkan.1.3.296.dylib */; };
+		1478E9632DC8CC1B0011990C /* SystemLinux.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 1478E9622DC8CC1B0011990C /* SystemLinux.cpp */; };
+		1478E9642DC8CECF0011990C /* libispc_texcomp.dylib in Embed Libraries */ = {isa = PBXBuildFile; fileRef = 1478E9482DC3975E0011990C /* libispc_texcomp.dylib */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
+		1478E9652DC8CED00011990C /* libmeshoptimizer.dylib in Embed Libraries */ = {isa = PBXBuildFile; fileRef = 1478E93F2DC3972E0011990C /* libmeshoptimizer.dylib */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
+		1478E9662DC8CED10011990C /* libslang.dylib in Embed Libraries */ = {isa = PBXBuildFile; fileRef = 1478E9422DC397440011990C /* libslang.dylib */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
+		1478E9682DC8F5CD0011990C /* Config.h in Headers */ = {isa = PBXBuildFile; fileRef = 1478E9672DC8F5CD0011990C /* Config.h */; };
 		1481D7762B77EF0800D60379 /* ImGuizmo.h in Headers */ = {isa = PBXBuildFile; fileRef = 1481D7722B77EF0800D60379 /* ImGuizmo.h */; };
 		1481D7782B77EF0800D60379 /* ImGuizmo.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 1481D7742B77EF0800D60379 /* ImGuizmo.cpp */; };
 		1481D7832B77EF2B00D60379 /* AssetManager.h in Headers */ = {isa = PBXBuildFile; fileRef = 1481D77A2B77EF2B00D60379 /* AssetManager.h */; };
@@ -90,7 +110,6 @@
 		ABF1044C2A642CB600D853CC /* Hash.cpp in Sources */ = {isa = PBXBuildFile; fileRef = ABF103CB2A6427DD00D853CC /* Hash.cpp */; };
 		ABF1044D2A642CB600D853CC /* Jobs.h in Headers */ = {isa = PBXBuildFile; fileRef = ABF103C32A6427DD00D853CC /* Jobs.h */; };
 		ABF1044E2A642CB600D853CC /* Config.h in Headers */ = {isa = PBXBuildFile; fileRef = ABF103D02A6427DD00D853CC /* Config.h */; };
-		ABF1044F2A642CB600D853CC /* MathVector.h in Headers */ = {isa = PBXBuildFile; fileRef = ABF103C12A6427DD00D853CC /* MathVector.h */; };
 		ABF104502A642CB600D853CC /* Settings.cpp in Sources */ = {isa = PBXBuildFile; fileRef = ABF103B52A6427DD00D853CC /* Settings.cpp */; };
 		ABF104512A642CB600D853CC /* Debug.h in Headers */ = {isa = PBXBuildFile; fileRef = ABF103CE2A6427DD00D853CC /* Debug.h */; };
 		ABF104522A642CB600D853CC /* Hash.h in Headers */ = {isa = PBXBuildFile; fileRef = ABF103B32A6427DD00D853CC /* Hash.h */; };
@@ -134,8 +153,46 @@
 		};
 /* End PBXContainerItemProxy section */
 
+/* Begin PBXCopyFilesBuildPhase section */
+		1478E9352DC394400011990C /* Embed Libraries */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 10;
+			files = (
+				1478E9642DC8CECF0011990C /* libispc_texcomp.dylib in Embed Libraries */,
+				1478E9662DC8CED10011990C /* libslang.dylib in Embed Libraries */,
+				1478E9652DC8CED00011990C /* libmeshoptimizer.dylib in Embed Libraries */,
+			);
+			name = "Embed Libraries";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		1478E9392DC394B90011990C /* Embed Libraries */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 10;
+			files = (
+				1478E9582DC3A3000011990C /* libslang-glslang.dylib in Embed Libraries */,
+				1478E94B2DC397670011990C /* libispc_texcomp.dylib in Embed Libraries */,
+				1478E94D2DC397690011990C /* libslang.dylib in Embed Libraries */,
+				1478E94C2DC397680011990C /* libmeshoptimizer.dylib in Embed Libraries */,
+			);
+			name = "Embed Libraries";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
 /* Begin PBXFileReference section */
 		14741D782D8D6F18000F148A /* GfxBackend.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = GfxBackend.cpp; path = /Users/sepul/Projects/Junkyard/code/Graphics/GfxBackend.cpp; sourceTree = "<absolute>"; };
+		1478E92F2DC392880011990C /* TestBasicGfx.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = TestBasicGfx.cpp; path = /Users/sepul/Projects/Junkyard/code/Tests/TestBasicGfx.cpp; sourceTree = "<absolute>"; };
+		1478E93F2DC3972E0011990C /* libmeshoptimizer.dylib */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.dylib"; name = libmeshoptimizer.dylib; path = "/Users/sepul/Projects/Junkyard/code/External/meshoptimizer/lib/mac-arm64/libmeshoptimizer.dylib"; sourceTree = "<absolute>"; };
+		1478E9422DC397440011990C /* libslang.dylib */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.dylib"; name = libslang.dylib; path = /Users/sepul/Projects/Junkyard/code/External/slang/lib/libslang.dylib; sourceTree = "<absolute>"; };
+		1478E9482DC3975E0011990C /* libispc_texcomp.dylib */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.dylib"; name = libispc_texcomp.dylib; path = "/Users/sepul/Projects/Junkyard/code/External/ispc_texcomp/lib/mac-arm64/libispc_texcomp.dylib"; sourceTree = "<absolute>"; };
+		1478E9552DC3A21A0011990C /* libslang-glslang.dylib */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.bundle"; name = "libslang-glslang.dylib"; path = "/Users/sepul/Projects/Junkyard/code/External/slang/lib/libslang-glslang.dylib"; sourceTree = "<absolute>"; };
+		1478E95F2DC7D0920011990C /* libvulkan.1.3.296.dylib */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.dylib"; name = libvulkan.1.3.296.dylib; path = /usr/local/lib/libvulkan.1.3.296.dylib; sourceTree = "<absolute>"; };
+		1478E9622DC8CC1B0011990C /* SystemLinux.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = SystemLinux.cpp; path = /Users/sepul/Projects/Junkyard/code/Core/SystemLinux.cpp; sourceTree = "<absolute>"; };
+		1478E9672DC8F5CD0011990C /* Config.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = Config.h; path = /Users/sepul/Projects/Junkyard/code/Config.h; sourceTree = "<absolute>"; };
 		1481D7722B77EF0800D60379 /* ImGuizmo.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = ImGuizmo.h; path = ../../code/ImGui/ImGuizmo.h; sourceTree = "<group>"; };
 		1481D7742B77EF0800D60379 /* ImGuizmo.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = ImGuizmo.cpp; path = ../../code/ImGui/ImGuizmo.cpp; sourceTree = "<group>"; };
 		1481D77A2B77EF2B00D60379 /* AssetManager.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = AssetManager.h; path = ../../code/Assets/AssetManager.h; sourceTree = "<group>"; };
@@ -203,7 +260,6 @@
 		ABF103BE2A6427DD00D853CC /* StringUtil.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = StringUtil.h; path = ../../code/Core/StringUtil.h; sourceTree = "<group>"; };
 		ABF103BF2A6427DD00D853CC /* DebugWin.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = DebugWin.cpp; path = ../../code/Core/DebugWin.cpp; sourceTree = "<group>"; };
 		ABF103C02A6427DD00D853CC /* System.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = System.cpp; path = ../../code/Core/System.cpp; sourceTree = "<group>"; };
-		ABF103C12A6427DD00D853CC /* MathVector.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = MathVector.h; path = ../../code/Core/MathVector.h; sourceTree = "<group>"; };
 		ABF103C32A6427DD00D853CC /* Jobs.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = Jobs.h; path = ../../code/Core/Jobs.h; sourceTree = "<group>"; };
 		ABF103C42A6427DD00D853CC /* SystemPosix.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = SystemPosix.cpp; path = ../../code/Core/SystemPosix.cpp; sourceTree = "<group>"; };
 		ABF103C52A6427DD00D853CC /* Debug.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = Debug.cpp; path = ../../code/Core/Debug.cpp; sourceTree = "<group>"; };
@@ -227,8 +283,7 @@
 		ABF103D92A6427DD00D853CC /* IncludeWin.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = IncludeWin.h; path = ../../code/Core/IncludeWin.h; sourceTree = "<group>"; };
 		ABF103DA2A6427DD00D853CC /* IniParser.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = IniParser.h; path = ../../code/Core/IniParser.h; sourceTree = "<group>"; };
 		ABF103E02A6428C400D853CC /* Engine.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Engine.framework; sourceTree = BUILT_PRODUCTS_DIR; };
-		ABF103EE2A642B2300D853CC /* Test1.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Test1.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		ABF104042A642BDE00D853CC /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; name = Info.plist; path = Test1/Info.plist; sourceTree = "<group>"; };
+		ABF103EE2A642B2300D853CC /* TestBasicGfx.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = TestBasicGfx.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		ABF1047E2A64380600D853CC /* UnityBuild.inl */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text; name = UnityBuild.inl; path = ../../code/UnityBuild.inl; sourceTree = "<group>"; };
 		ABF104832A64380600D853CC /* Engine.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = Engine.cpp; path = ../../code/Engine.cpp; sourceTree = "<group>"; };
 		ABF1048C2A64380600D853CC /* Engine.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = Engine.h; path = ../../code/Engine.h; sourceTree = "<group>"; };
@@ -236,7 +291,6 @@
 		ABF104A32A64478B00D853CC /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = System/Library/Frameworks/Foundation.framework; sourceTree = SDKROOT; };
 		ABF104A52A6447A800D853CC /* MetalKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = MetalKit.framework; path = System/Library/Frameworks/MetalKit.framework; sourceTree = SDKROOT; };
 		ABF104A72A6447B000D853CC /* AppKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AppKit.framework; path = System/Library/Frameworks/AppKit.framework; sourceTree = SDKROOT; };
-		ABF104A92A64493500D853CC /* MoltenVK.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = MoltenVK.xcframework; path = ../../code/External/MoltenVK/MoltenVK.xcframework; sourceTree = "<group>"; };
 		ABF104AD2A6449B900D853CC /* ShaderCompiler.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = ShaderCompiler.cpp; path = ../../code/Tool/ShaderCompiler.cpp; sourceTree = "<group>"; };
 		ABF104AE2A6449B900D853CC /* ShaderCompiler.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = ShaderCompiler.h; path = ../../code/Tool/ShaderCompiler.h; sourceTree = "<group>"; };
 		ABF104AF2A6449B900D853CC /* Console.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = Console.h; path = ../../code/Tool/Console.h; sourceTree = "<group>"; };
@@ -246,10 +300,6 @@
 		ABF104B62A6449B900D853CC /* ImageEncoder.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = ImageEncoder.h; path = ../../code/Tool/ImageEncoder.h; sourceTree = "<group>"; };
 		ABF104B72A6449B900D853CC /* Console.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = Console.cpp; path = ../../code/Tool/Console.cpp; sourceTree = "<group>"; };
 		ABF104E62A644D9000D853CC /* Metal.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Metal.framework; path = System/Library/Frameworks/Metal.framework; sourceTree = SDKROOT; };
-		ABF104E82A644DB400D853CC /* Metal.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Metal.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS16.4.sdk/System/Library/Frameworks/Metal.framework; sourceTree = DEVELOPER_DIR; };
-		ABF104E92A644DB400D853CC /* MetalKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = MetalKit.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS16.4.sdk/System/Library/Frameworks/MetalKit.framework; sourceTree = DEVELOPER_DIR; };
-		ABF104EC2A644DBB00D853CC /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS16.4.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
-		ABF104F02A644DFB00D853CC /* CoreFoundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreFoundation.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS16.4.sdk/System/Library/Frameworks/CoreFoundation.framework; sourceTree = DEVELOPER_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -257,10 +307,14 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				1478E9612DC7D0920011990C /* libvulkan.1.3.296.dylib in Frameworks */,
 				14E748D32C76360100F5644B /* Metal.framework in Frameworks */,
 				14E748D42C76360100F5644B /* MetalKit.framework in Frameworks */,
 				14E748D52C76360100F5644B /* AppKit.framework in Frameworks */,
+				1478E9402DC3972E0011990C /* libmeshoptimizer.dylib in Frameworks */,
+				1478E9442DC397440011990C /* libslang.dylib in Frameworks */,
 				14E748D62C76360100F5644B /* Engine.framework in Frameworks */,
+				1478E9492DC3975E0011990C /* libispc_texcomp.dylib in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -275,10 +329,14 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				1478E9602DC7D0920011990C /* libvulkan.1.3.296.dylib in Frameworks */,
 				ABF104F42A644E4900D853CC /* Metal.framework in Frameworks */,
 				ABF104F32A644E4300D853CC /* MetalKit.framework in Frameworks */,
 				ABF104F22A644E1A00D853CC /* AppKit.framework in Frameworks */,
+				1478E9412DC3972E0011990C /* libmeshoptimizer.dylib in Frameworks */,
+				1478E9462DC397440011990C /* libslang.dylib in Frameworks */,
 				ABF104EF2A644DE400D853CC /* Engine.framework in Frameworks */,
+				1478E94A2DC3975E0011990C /* libispc_texcomp.dylib in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -350,6 +408,7 @@
 		14B7EA902731921500CC6204 = {
 			isa = PBXGroup;
 			children = (
+				1478E9672DC8F5CD0011990C /* Config.h */,
 				1481D79C2B77EFB200D60379 /* Common */,
 				1481D78C2B77EF3800D60379 /* DebugTools */,
 				1481D7792B77EF1200D60379 /* Assets */,
@@ -361,7 +420,6 @@
 				ABF1047E2A64380600D853CC /* UnityBuild.inl */,
 				ABF1045A2A64378800D853CC /* Shaders */,
 				ABF104592A64377D00D853CC /* Graphics */,
-				ABF104042A642BDE00D853CC /* Info.plist */,
 				ABF103E72A642A9E00D853CC /* Tests */,
 				ABF103B02A64270F00D853CC /* Core */,
 				ABF103AE2A64265B00D853CC /* Junkyard.entitlements */,
@@ -375,7 +433,7 @@
 			isa = PBXGroup;
 			children = (
 				ABF103E02A6428C400D853CC /* Engine.framework */,
-				ABF103EE2A642B2300D853CC /* Test1.app */,
+				ABF103EE2A642B2300D853CC /* TestBasicGfx.app */,
 				14E748DB2C76360100F5644B /* TestIO.app */,
 			);
 			name = Products;
@@ -384,12 +442,12 @@
 		14D768522733CA5600A21A65 /* Frameworks */ = {
 			isa = PBXGroup;
 			children = (
-				ABF104F02A644DFB00D853CC /* CoreFoundation.framework */,
-				ABF104EC2A644DBB00D853CC /* Foundation.framework */,
+				1478E95F2DC7D0920011990C /* libvulkan.1.3.296.dylib */,
+				1478E9552DC3A21A0011990C /* libslang-glslang.dylib */,
+				1478E9482DC3975E0011990C /* libispc_texcomp.dylib */,
+				1478E9422DC397440011990C /* libslang.dylib */,
+				1478E93F2DC3972E0011990C /* libmeshoptimizer.dylib */,
 				ABF104E62A644D9000D853CC /* Metal.framework */,
-				ABF104E82A644DB400D853CC /* Metal.framework */,
-				ABF104E92A644DB400D853CC /* MetalKit.framework */,
-				ABF104A92A64493500D853CC /* MoltenVK.xcframework */,
 				ABF104A72A6447B000D853CC /* AppKit.framework */,
 				ABF104A52A6447A800D853CC /* MetalKit.framework */,
 				ABF104A32A64478B00D853CC /* Foundation.framework */,
@@ -415,6 +473,7 @@
 		ABF103B02A64270F00D853CC /* Core */ = {
 			isa = PBXGroup;
 			children = (
+				1478E9622DC8CC1B0011990C /* SystemLinux.cpp */,
 				AB8DBBE62B87AF5500B50A27 /* Arrays.h */,
 				AB8DBBE92B87AF5500B50A27 /* Blobs.h */,
 				AB8DBBE82B87AF5500B50A27 /* Pools.cpp */,
@@ -444,7 +503,6 @@
 				ABF103B42A6427DD00D853CC /* MathAll.h */,
 				ABF103D72A6427DD00D853CC /* MathScalar.h */,
 				ABF103CD2A6427DD00D853CC /* MathTypes.h */,
-				ABF103C12A6427DD00D853CC /* MathVector.h */,
 				ABF103D82A6427DD00D853CC /* Allocators.cpp */,
 				ABF103C92A6427DD00D853CC /* Allocators.h */,
 				ABF103B52A6427DD00D853CC /* Settings.cpp */,
@@ -466,6 +524,7 @@
 		ABF103E72A642A9E00D853CC /* Tests */ = {
 			isa = PBXGroup;
 			children = (
+				1478E92F2DC392880011990C /* TestBasicGfx.cpp */,
 				14E748DD2C7636FC00F5644B /* TestIO.cpp */,
 			);
 			name = Tests;
@@ -537,7 +596,6 @@
 				ABF104BC2A6449B900D853CC /* MeshOptimizer.h in Headers */,
 				1481D7762B77EF0800D60379 /* ImGuizmo.h in Headers */,
 				ABF104452A642CB600D853CC /* MathAll.h in Headers */,
-				ABF1044F2A642CB600D853CC /* MathVector.h in Headers */,
 				14E748C82C4FBD3B00F5644B /* DebugHud.h in Headers */,
 				14FDA9492A6D3A2500589F52 /* imgui.h in Headers */,
 				1481D7BB2B77EFCA00D60379 /* InputTypes.h in Headers */,
@@ -555,6 +613,7 @@
 				14FDA94A2A6D3A2500589F52 /* imconfig.h in Headers */,
 				1481D7B12B77EFCA00D60379 /* RemoteServices.h in Headers */,
 				AB8DBBEA2B87AF5500B50A27 /* Arrays.h in Headers */,
+				1478E9682DC8F5CD0011990C /* Config.h in Headers */,
 				14E748CC2C4FBD5800F5644B /* ImGuiMain.h in Headers */,
 				ABF104C12A6449B900D853CC /* ImageEncoder.h in Headers */,
 				1481D7B22B77EFCA00D60379 /* Camera.h in Headers */,
@@ -579,6 +638,7 @@
 				14E748D02C76360100F5644B /* Sources */,
 				14E748D22C76360100F5644B /* Frameworks */,
 				14E748D72C76360100F5644B /* Resources */,
+				1478E9392DC394B90011990C /* Embed Libraries */,
 			);
 			buildRules = (
 			);
@@ -608,22 +668,23 @@
 			productReference = ABF103E02A6428C400D853CC /* Engine.framework */;
 			productType = "com.apple.product-type.framework";
 		};
-		ABF103ED2A642B2300D853CC /* Test1 */ = {
+		ABF103ED2A642B2300D853CC /* TestBasicGfx */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = ABF103FE2A642B2400D853CC /* Build configuration list for PBXNativeTarget "Test1" */;
+			buildConfigurationList = ABF103FE2A642B2400D853CC /* Build configuration list for PBXNativeTarget "TestBasicGfx" */;
 			buildPhases = (
 				ABF103EA2A642B2300D853CC /* Sources */,
 				ABF103EB2A642B2300D853CC /* Frameworks */,
 				ABF103EC2A642B2300D853CC /* Resources */,
+				1478E9352DC394400011990C /* Embed Libraries */,
 			);
 			buildRules = (
 			);
 			dependencies = (
 				ABF104032A642B6200D853CC /* PBXTargetDependency */,
 			);
-			name = Test1;
+			name = TestBasicGfx;
 			productName = Test1;
-			productReference = ABF103EE2A642B2300D853CC /* Test1.app */;
+			productReference = ABF103EE2A642B2300D853CC /* TestBasicGfx.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -657,7 +718,7 @@
 			projectRoot = "";
 			targets = (
 				ABF103DF2A6428C400D853CC /* Engine */,
-				ABF103ED2A642B2300D853CC /* Test1 */,
+				ABF103ED2A642B2300D853CC /* TestBasicGfx */,
 				14E748CD2C76360100F5644B /* TestIO */,
 			);
 		};
@@ -668,6 +729,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				1478E9572DC3A21A0011990C /* libslang-glslang.dylib in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -684,6 +746,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				1478E9562DC3A21A0011990C /* libslang-glslang.dylib in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -723,6 +786,7 @@
 				1481D7AF2B77EFCA00D60379 /* Camera.cpp in Sources */,
 				ABF104B82A6449B900D853CC /* ShaderCompiler.cpp in Sources */,
 				ABF1043D2A642CB600D853CC /* Log.cpp in Sources */,
+				1478E9632DC8CC1B0011990C /* SystemLinux.cpp in Sources */,
 				ABF104482A642CB600D853CC /* Jobs.cpp in Sources */,
 				ABF104BF2A6449B900D853CC /* MeshOptimizer.cpp in Sources */,
 				ABF104472A642CB600D853CC /* IniParser.cpp in Sources */,
@@ -758,6 +822,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				1478E9302DC392880011990C /* TestBasicGfx.cpp in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -833,12 +898,22 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
+				LIBRARY_SEARCH_PATHS = (
+					/usr/local/lib,
+					"$(PROJECT_DIR)/../../code/External/meshoptimizer/lib/mac-arm64",
+					"$(PROJECT_DIR)/../../code/External/slang/lib",
+					"$(PROJECT_DIR)/../../code/External/ispc_texcomp/lib/mac-arm64",
+				);
 				MACOSX_DEPLOYMENT_TARGET = 12.0;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
+				OTHER_CPLUSPLUSFLAGS = (
+					"$(OTHER_CFLAGS)",
+					"-Wno-backslash-newline-escape",
+				);
 				SDKROOT = macosx;
-				SYSTEM_HEADER_SEARCH_PATHS = /usr/local/include;
+				SYSTEM_HEADER_SEARCH_PATHS = "";
 				USE_HEADERMAP = NO;
 			};
 			name = Debug;
@@ -893,11 +968,21 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
+				LIBRARY_SEARCH_PATHS = (
+					/usr/local/lib,
+					"$(PROJECT_DIR)/../../code/External/meshoptimizer/lib/mac-arm64",
+					"$(PROJECT_DIR)/../../code/External/slang/lib",
+					"$(PROJECT_DIR)/../../code/External/ispc_texcomp/lib/mac-arm64",
+				);
 				MACOSX_DEPLOYMENT_TARGET = 12.0;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
+				OTHER_CPLUSPLUSFLAGS = (
+					"$(OTHER_CFLAGS)",
+					"-Wno-backslash-newline-escape",
+				);
 				SDKROOT = macosx;
-				SYSTEM_HEADER_SEARCH_PATHS = /usr/local/include;
+				SYSTEM_HEADER_SEARCH_PATHS = "";
 				USE_HEADERMAP = NO;
 			};
 			name = Release;
@@ -921,11 +1006,17 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
+				LIBRARY_SEARCH_PATHS = "$(inherited)";
 				MACOSX_DEPLOYMENT_TARGET = 11.0;
 				MARKETING_VERSION = 1.0;
+				OTHER_CPLUSPLUSFLAGS = (
+					"$(inherited)",
+					"$(OTHER_CFLAGS)",
+				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.junkyard.TestIO;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
+				SYSTEM_HEADER_SEARCH_PATHS = "$(inherited)";
 			};
 			name = Debug;
 		};
@@ -948,11 +1039,17 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
+				LIBRARY_SEARCH_PATHS = "$(inherited)";
 				MACOSX_DEPLOYMENT_TARGET = 11.0;
 				MARKETING_VERSION = 1.0;
+				OTHER_CPLUSPLUSFLAGS = (
+					"$(inherited)",
+					"$(OTHER_CFLAGS)",
+				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.junkyard.TestIO;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
+				SYSTEM_HEADER_SEARCH_PATHS = "$(inherited)";
 			};
 			name = Release;
 		};
@@ -973,6 +1070,7 @@
 				GCC_ENABLE_CPP_RTTI = NO;
 				GCC_WARN_ABOUT_DEPRECATED_FUNCTIONS = NO;
 				GENERATE_INFOPLIST_FILE = YES;
+				HEADER_SEARCH_PATHS = "${PROJECT_DIR}/../../.downloads/moltenvk-1.3.0-rc1/MoltenVk/include";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				INSTALL_PATH = "$(LOCAL_LIBRARY_DIR)/Frameworks";
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
@@ -984,11 +1082,16 @@
 					"@executable_path/../Frameworks",
 					"@loader_path/Frameworks",
 				);
+				LIBRARY_SEARCH_PATHS = "";
 				MACH_O_TYPE = staticlib;
 				MACOSX_DEPLOYMENT_TARGET = 11.0;
 				MARKETING_VERSION = 1.0;
 				MODULE_VERIFIER_SUPPORTED_LANGUAGES = "objective-c objective-c++";
 				MODULE_VERIFIER_SUPPORTED_LANGUAGE_STANDARDS = "gnu11 gnu++20";
+				OTHER_CPLUSPLUSFLAGS = (
+					"$(OTHER_CFLAGS)",
+					"$(inherited)",
+				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.junkyard.Engine;
 				PRODUCT_NAME = "$(TARGET_NAME:c99extidentifier)";
 				SDKROOT = auto;
@@ -998,6 +1101,7 @@
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_VERSION = 5.0;
+				SYSTEM_HEADER_SEARCH_PATHS = "";
 				TARGETED_DEVICE_FAMILY = "1,2";
 				USE_HEADERMAP = NO;
 				VERSIONING_SYSTEM = "apple-generic";
@@ -1022,6 +1126,7 @@
 				GCC_ENABLE_CPP_RTTI = NO;
 				GCC_WARN_ABOUT_DEPRECATED_FUNCTIONS = NO;
 				GENERATE_INFOPLIST_FILE = YES;
+				HEADER_SEARCH_PATHS = "${PROJECT_DIR}/../../.downloads/moltenvk-1.3.0-rc1/MoltenVk/include";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				INSTALL_PATH = "$(LOCAL_LIBRARY_DIR)/Frameworks";
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
@@ -1033,11 +1138,16 @@
 					"@executable_path/../Frameworks",
 					"@loader_path/Frameworks",
 				);
+				LIBRARY_SEARCH_PATHS = "";
 				MACH_O_TYPE = staticlib;
 				MACOSX_DEPLOYMENT_TARGET = 11.0;
 				MARKETING_VERSION = 1.0;
 				MODULE_VERIFIER_SUPPORTED_LANGUAGES = "objective-c objective-c++";
 				MODULE_VERIFIER_SUPPORTED_LANGUAGE_STANDARDS = "gnu11 gnu++20";
+				OTHER_CPLUSPLUSFLAGS = (
+					"$(OTHER_CFLAGS)",
+					"$(inherited)",
+				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.junkyard.Engine;
 				PRODUCT_NAME = "$(TARGET_NAME:c99extidentifier)";
 				SDKROOT = auto;
@@ -1047,6 +1157,7 @@
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_OPTIMIZATION_LEVEL = "-O";
 				SWIFT_VERSION = 5.0;
+				SYSTEM_HEADER_SEARCH_PATHS = "";
 				TARGETED_DEVICE_FAMILY = "1,2";
 				USE_HEADERMAP = NO;
 				VERSIONING_SYSTEM = "apple-generic";
@@ -1065,7 +1176,7 @@
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = Test1/Info.plist;
+				INFOPLIST_FILE = TestBasicGfx/Info.plist;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				INFOPLIST_KEY_NSMainStoryboardFile = Main;
 				INFOPLIST_KEY_NSPrincipalClass = NSApplication;
@@ -1073,12 +1184,17 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
+				LIBRARY_SEARCH_PATHS = "$(inherited)";
 				MACOSX_DEPLOYMENT_TARGET = 11.0;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.junkyard.Test1;
+				OTHER_CPLUSPLUSFLAGS = (
+					"$(OTHER_CFLAGS)",
+					"$(inherited)",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.junkyard.TestBasicGfx;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
-				SYSTEM_HEADER_SEARCH_PATHS = /usr/local/include;
+				SYSTEM_HEADER_SEARCH_PATHS = "$(inherited)";
 			};
 			name = Debug;
 		};
@@ -1093,7 +1209,7 @@
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = Test1/Info.plist;
+				INFOPLIST_FILE = TestBasicGfx/Info.plist;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				INFOPLIST_KEY_NSMainStoryboardFile = Main;
 				INFOPLIST_KEY_NSPrincipalClass = NSApplication;
@@ -1101,12 +1217,17 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
+				LIBRARY_SEARCH_PATHS = "$(inherited)";
 				MACOSX_DEPLOYMENT_TARGET = 11.0;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.junkyard.Test1;
+				OTHER_CPLUSPLUSFLAGS = (
+					"$(OTHER_CFLAGS)",
+					"$(inherited)",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.junkyard.TestBasicGfx;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
-				SYSTEM_HEADER_SEARCH_PATHS = /usr/local/include;
+				SYSTEM_HEADER_SEARCH_PATHS = "$(inherited)";
 			};
 			name = Release;
 		};
@@ -1140,7 +1261,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		ABF103FE2A642B2400D853CC /* Build configuration list for PBXNativeTarget "Test1" */ = {
+		ABF103FE2A642B2400D853CC /* Build configuration list for PBXNativeTarget "TestBasicGfx" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				ABF103FF2A642B2400D853CC /* Debug */,
