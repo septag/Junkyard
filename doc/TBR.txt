@@ -1,0 +1,16 @@
+For TBR GPUs, we are mainly targeting high-end android devices and Apple M1+
+
+Estimatation for tile size:
+1xRGBA16F (color): 64bpp
+1xR32F (depth): 32bpp
+1xRG16F (normal?): 32bpp
+-----> (128bpp) 16 bytes per pixel
+
+Guesses:
+	Tile mem size: 	M1		 	M2			M3
+					512KB		512KB		1MB
+	Tile sizes:		32x32		64x64		64x64
+	MSAA 4(64Bpp):	64KB		256KB		256KB
+	MSAA 8(128Bpp):	128KB		512KB		512KB
+
+

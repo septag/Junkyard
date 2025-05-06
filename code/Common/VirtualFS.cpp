@@ -71,11 +71,10 @@ struct VfsFileReadWriteRequest
 
 struct VfsAsyncManager
 {
+    Semaphore semaphore;
     Thread thread;
     Array<VfsFileReadWriteRequest> requests;
-    uint8 _padding[40];
     Mutex requestsMtx;
-    Semaphore semaphore;
 };
 
 struct VfsRemoteManager
@@ -87,16 +86,17 @@ struct VfsRemoteManager
 struct VfsManager
 {
     MemProxyAllocator alloc;
+    Thread reqFileChangesThrd;
+
+    Mutex fileChangesMtx;
+    Array<VfsFileChangeEvent> fileChanges;
+    Array<VfsFileChangeCallback> fileChangeCallbacks;
+
     Array<VfsMountPoint> mounts;
-    uint8 _padding1[32];
 
     VfsAsyncManager asyncMgr;
     VfsRemoteManager remoteMgr;
-    Array<VfsFileChangeEvent> fileChanges;
-    Array<VfsFileChangeCallback> fileChangeCallbacks;
-    uint8 _padding2[16];
-    Thread reqFileChangesThrd;
-    Mutex fileChangesMtx;
+
     bool quit;
     bool initialized;
 };

@@ -3853,10 +3853,11 @@ GfxBackendDeviceMemory GfxBackendDeviceMemoryManager::Malloc(const VkMemoryRequi
         case GfxMemoryArena::DynamicBufferGPU:
             mem = mDynamicBufferGPU.Malloc(memReq);
             break;
-            
+    #if PLATFORM_APPLE || PLATFORM_ANDROID
         case GfxMemoryArena::TiledGPU:
             mem = mTiledGPU.Malloc(memReq);
             break;
+    #endif
 
         default:
             ASSERT_MSG(0, "Not implemented");
