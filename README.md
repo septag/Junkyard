@@ -1,6 +1,6 @@
 # Junkyard
 
-Yet another multiplatform C++ framework to make games and maybe some other related high-performance applications.
+Yet another portable C++ framework to make games and maybe some other related high-performance applications.
 
 The goal is to focus on simplicity, fast iteration and development. Features will be developed based on the game/projects I do with it, so this is not going to be do-it-all engine/framework at all, but probably with a strong foundation to build your own renderers and other stuff on top of it.
 
@@ -12,9 +12,9 @@ It's very much WIP, so not much to show off right now.
 
 - Multiplatform. Currently supported platforms (ARM64, x86_64 architectures only):
     - Windows (Tested on Windows 10 x64)
-    - Linux (Tesded on Ubuntu 22/PopOS)
+    - Linux (Tested on Ubuntu 22/PopOS)
     - MacOS-Arm64 M1 and up (through MoltenVk 1.3)
-    - Android (Currently broken, might work with Vulkan 1.3 hardware)
+    - ~~Android~~ (Currently broken, might work with Vulkan 1.3 hardware)
 - Minimal C'ish C++20: Some people call it Sane-C++ or similarly [Orthodox-C++](https://gist.github.com/bkaradzic/2e39896bc7d8c34e042b). I use a very small subset of newer C++ standards, in which I will explain later in the wiki. Some of them are pointed in [CppFeatures.txt](doc/CppFeatures.txt)
     - No stdc++ allowed in the code
     - No RTTI/Exceptions
@@ -69,11 +69,9 @@ allocation library
 - Tooling (only used in tooling/PC builds):
     - [ISPC Texture Compressor](https://github.com/septag/ISPCTextureCompressor): BC/ASTC texture compressor
     - [meshoptimizer](https://github.com/zeux/meshoptimizer): Mesh optimization library that makes meshes smaller and faster to render
-    - [slang](https://github.com/shader-slang/slang): Shader transcompiler
+    - [slang](https://github.com/shader-slang/slang): Shader trans-compiler
 - Windows:
     - [DbgHelp](https://learn.microsoft.com/en-us/windows/win32/debug/dbghelp-functions): Windows debug helper module. 
-- Android:
-    - [cpufeatures](https://android.googlesource.com/platform/ndk/+/master/sources/android/cpufeatures/cpu-features.c): Fetch CPU information
 - Linux
     - [GLFW](https://www.glfw.org/): Basic window/input management that is only used for the Linux backend
 - Optional Tools:
@@ -92,18 +90,19 @@ This script fetches, heavier dependencies for baking assets. And there is also t
 So first, you need to run `Setup.bat` (or `Setup.sh` if you are in a Unix environment).
 
 Steps:
-- *Install code dependencies*: This is mandatory if you are fetching the code for the first time. It feches the following binaries:
+- *Install code dependencies*: This is mandatory if you are fetching the code for the first time. It fetches the following binaries:
     - Slang
     - meshoptimizer
     - ISPC Texture compressor
 - *Vulkan SDK*: This is also mandatory if you haven't installed it yet. This also fetches vulkan validation layer for all platforms. For windows, make sure `VULKAN_SDK` and `VK_LAYER_PATH` env vars are set.
+- *MoltenVK*: (MacOS required) This is a Vulkan-to-Metal translation layer that is required only on MacOS setup.
 - *Tracy Profiler*: (optional) This is a very good GUI tool for profiling
-- *LivePP*: (windows optional) A powerful commercial C++ code-reloading software. Note that you'll need a valid license to use this feature.
-- Python 3.10+: (windows optional) If you want some extra script goodies to work, mainly platform helpers, have python installed.
+- *LivePP*: (Windows optional) A powerful commercial C++ code-reloading software. Note that you'll need a valid license to use this feature.
+- Python 3.10+: (Windows optional) If you want some extra script goodies to work, mainly platform helpers, have python installed.
 - *Android extra*: (optional) For android development some additional tools can be downloaded which is optional of course!
 
 ### Windows
-Compatible with **Visual studio 2019 (build tools v142)** and **Visual Studio 2022 (build tools v143)** build envrinoments.   
+Compatible with **Visual studio 2019 (build tools v142)** and **Visual Studio 2022 (build tools v143)** build environments.   
 There are multiple ways to build binaries on windows: 
 - **Visual studio solution**: The easiest and most convenient method on Windows. open `projects/Windows/Junkyard.sln` and build projects. So far, there are three configurations:
     - `Debug`: The name says it, all debug symbols are included, no optimizations, etc.
@@ -138,21 +137,12 @@ Next step is downloading VulkanSDK 1.3 (will be automated later through Setup sc
 
 And that's it. Open the Xcode project and run your targets.
 
-### Android
-For android, you need visual-studio 2022 with the following *Mobile Development with C++* components installed:
-    - OpenJDK (Microsoft distribution)
-    - Android NDK (R23C)
-    - C++ Android development tools
-You can probably build and debug with android-studio by having Android SDK (API 29) and NDK R23 since it's just a gradle project. But I've never tried it. Overall, I think everybody knows that android build tools are a mess (along with many other things on that platform).
-
-Then just open `projects/Android/JunkyardAndroid.sln` and build any configuration.
-
 ## Running the Examples
 Currently, there are a few very basic examples. First thing to consider is that you must run the examples with **Current Directory** set to the root path of the project so `data` directory can be accessed by them.
 
 They also usually require some sort of asset files. The example assets are not included in the repo, so you need to download those with provided scripts. All test/example apps reside in `code/Tests` directory, each as a single cpp file:
 
-- *TestAsset*: Synthetic asset manager test program. Loads and unloads blocks of unique assets layed out on a grid. Before running the example, make sure to run the script `code/Tests/TestAsset.bat` (or `code/Tests/TestAsset.sh`). This will actually run a python script to procedurally generate some assets in `data/TestAsset`.
+- *TestAsset*: Synthetic asset manager test program. Loads and unloads blocks of unique assets laid out on a grid. Before running the example, make sure to run the script `code/Tests/TestAsset.bat` (or `code/Tests/TestAsset.sh`). This will actually run a python script to procedurally generate some assets in `data/TestAsset`.
 - *TestBasicGfx*: Basic graphics backend tests. Contains multiple scenes, mostly with GLTF meshes. Before running this example, make sure to run the script `code/Tests/TestBasicGfx.bat` (or `code/Tests/TestBasicGfx.sh`). This will also fetch some GLTF meshes+textures from the internet and put them in `data/TestBasicGfx`.
 - *TestIO*: Synthetic IO (Async) tests. Before running this one, make sure to run the script `code/Tests/TestIO.bat` (or `code/Tests/TestIO.sh`). 
 
@@ -170,6 +160,14 @@ remoteServicesUrl: [HOST_PC_IP]:6006
 ```
 
 Or set it with command line arguments: `-EngineConnectToServer=1 -EngineRemoteServicesUrl=[host_ip]`
+
+## Blog posts and Design documents
+Note that these are living documents, meaning that they are always subject to change based on design changes.
+
+- [**Introduction**](https://septag.dev/blog/posts/junkyard-intro): As the name says, it's an introduction to design principles, goals and essential 3rdparty tools that I use.
+- [**Memory Basics**](https://septag.dev/blog/posts/junkyard-memory-01): This covers basic memory allocation and design at the core level. It's an essential read if you want to make the best use of memory and understand the memory concepts behind the engine.
+- [**Relative Pointers**](https://septag.dev/blog/posts/junkyard-relativeptr): A kind of a follow up to the memory basics. Covers the concept of *Relative Pointers* used in some parts of the engine, especially binary serialization.
+- [**Project Structure**](https://septag.dev/blog/posts/junkyard-struct): Covers build structure and platform projects in more detail, directory structures and basic things you should know about adding modules and dependency checking between the modules. 
 
 ## [License (MIT)](https://github.com/septag/Junkyard/blob/main/LICENSE)
 
