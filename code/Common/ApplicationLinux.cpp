@@ -411,7 +411,7 @@ namespace App
         if (action == GLFW_PRESS || action == GLFW_RELEASE || action == GLFW_REPEAT) {
             ASSERT(key >=0 && key < APP_MAX_KEY_CODES);
             InputKeycode keycode = gApp.keycodes[key];
-            gApp.keysPressed[uint32(keycode)] = action == GLFW_PRESS;
+            gApp.keysPressed[uint32(keycode)] = action == GLFW_PRESS | action == GLFW_REPEAT;
             
             AppEvent event {
                 .type = (action == GLFW_PRESS || action == GLFW_REPEAT) ? AppEventType::KeyDown : AppEventType::KeyUp,
