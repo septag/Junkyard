@@ -164,7 +164,7 @@ Or set it with command line arguments: `-EngineConnectToServer=1 -EngineRemoteSe
 ## Blog posts and Design documents
 Note that these are living documents, meaning that they are always subject to change based on design changes.
 
-- [**Introduction**](https://septag.dev/blog/posts/junkyard-intro): As the name says, it's an introduction to design principles, goals and essential 3rdparty tools that I use.
+- [**Introduction**](https://septag.dev/blog/posts/junkyard-intro): It's just an introduction to design principles, goals and essential 3rdparty tools that I use.
 - [**Memory Basics**](https://septag.dev/blog/posts/junkyard-memory-01): This covers basic memory allocation and design at the core level. It's an essential read if you want to make the best use of memory and understand the memory concepts behind the engine.
 - [**Relative Pointers**](https://septag.dev/blog/posts/junkyard-relativeptr): A kind of a follow up to the memory basics. Covers the concept of *Relative Pointers* used in some parts of the engine, especially binary serialization.
 - [**Project Structure**](https://septag.dev/blog/posts/junkyard-struct): Covers build structure and platform projects in more detail, directory structures and basic things you should know about adding modules and dependency checking between the modules. 
