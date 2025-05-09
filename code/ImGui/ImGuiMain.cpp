@@ -643,68 +643,22 @@ bool ImGui::DrawFrame(GfxCommandBuffer cmd)
     if (drawData->TotalVtxCount) {
         _GrowGeometryBuffers(drawData->TotalVtxCount, drawData->TotalIdxCount);
 
-        uint32 vertexSize = drawData->TotalVtxCount * sizeof(ImDrawVert);
         uint32 indexSize = drawData->TotalIdxCount * sizeof(ImDrawIdx);
-        
-        if (GfxBackend::IsIntegratedGPU()) {
-            ImDrawVert* vertices = nullptr;
-            ImDrawIdx* indices = nullptr;
-            cmd.MapBuffer(gImGui.vertexBuffer, (void**)&vertices);
-            cmd.MapBuffer(gImGui.indexBuffer, (void**)&indices);
-            
-            for (int i = 0; i < drawData->CmdListsCount; i++) {
-                const ImDrawList* cmdList = drawData->CmdLists[i];
-                memcpy(vertices, cmdList->VtxBuffer.Data, cmdList->VtxBuffer.Size * sizeof(ImDrawVert));
-                memcpy(indices, cmdList->IdxBuffer.Data, cmdList->IdxBuffer.Size * sizeof(ImDrawIdx));
+        uint32 vertexSize = drawData->TotalVtxCount * sizeof(ImDrawVert);
 
-                vertices += cmdList->VtxBuffer.Size;
-                indices += cmdList->IdxBuffer.Size;
-            }
-            
-            cmd.FlushBuffer(gImGui.vertexBuffer);
-            cmd.FlushBuffer(gImGui.indexBuffer);
-        }
-        else {
-            GfxBufferDesc stagingVertexBufferDesc {
-                .sizeBytes = vertexSize,
-                .usageFlags = GfxBufferUsageFlags::TransferSrc,
-                .arena = GfxMemoryArena::TransientCPU
-            };
-            GfxBufferHandle stagingVertexBuffer = GfxBackend::CreateBuffer(stagingVertexBufferDesc);
+        GfxHelperBufferUpdateScope vertexBufferUpdate(cmd, gImGui.vertexBuffer, vertexSize, GfxShaderStage::Vertex);
+        GfxHelperBufferUpdateScope indexBufferUpdate(cmd, gImGui.indexBuffer, indexSize, GfxShaderStage::Vertex);
 
-            GfxBufferDesc stagingIndexBufferDesc {
-                .sizeBytes = indexSize,
-                .usageFlags = GfxBufferUsageFlags::TransferSrc,
-                .arena = GfxMemoryArena::TransientCPU
-            };
-            GfxBufferHandle stagingIndexBuffer = GfxBackend::CreateBuffer(stagingIndexBufferDesc);
+        ImDrawVert* vertices = (ImDrawVert*)vertexBufferUpdate.mData;
+        ImDrawIdx* indices = (ImDrawIdx*)indexBufferUpdate.mData;
 
-            ImDrawVert* vertices = nullptr;
-            ImDrawIdx* indices = nullptr;
+        for (int i = 0; i < drawData->CmdListsCount; i++) {
+            const ImDrawList* cmdList = drawData->CmdLists[i];
+            memcpy(vertices, cmdList->VtxBuffer.Data, cmdList->VtxBuffer.Size * sizeof(ImDrawVert));
+            memcpy(indices, cmdList->IdxBuffer.Data, cmdList->IdxBuffer.Size * sizeof(ImDrawIdx));
 
-            cmd.MapBuffer(stagingVertexBuffer, (void**)&vertices);
-            cmd.MapBuffer(stagingIndexBuffer, (void**)&indices);
-
-            for (int i = 0; i < drawData->CmdListsCount; i++) {
-                const ImDrawList* cmdList = drawData->CmdLists[i];
-                memcpy(vertices, cmdList->VtxBuffer.Data, cmdList->VtxBuffer.Size * sizeof(ImDrawVert));
-                memcpy(indices, cmdList->IdxBuffer.Data, cmdList->IdxBuffer.Size * sizeof(ImDrawIdx));
-
-                vertices += cmdList->VtxBuffer.Size;
-                indices += cmdList->IdxBuffer.Size;
-            }
-
-            cmd.FlushBuffer(stagingVertexBuffer);
-            cmd.FlushBuffer(stagingIndexBuffer);
-
-            cmd.TransitionBuffer(gImGui.vertexBuffer, GfxBufferTransition::TransferWrite);
-            cmd.TransitionBuffer(gImGui.indexBuffer, GfxBufferTransition::TransferWrite);
-
-            cmd.CopyBufferToBuffer(stagingVertexBuffer, gImGui.vertexBuffer, GfxShaderStage::Vertex);
-            cmd.CopyBufferToBuffer(stagingIndexBuffer, gImGui.indexBuffer, GfxShaderStage::Vertex);
-
-            GfxBackend::DestroyBuffer(stagingIndexBuffer);
-            GfxBackend::DestroyBuffer(stagingVertexBuffer);
+            vertices += cmdList->VtxBuffer.Size;
+            indices += cmdList->IdxBuffer.Size;
         }
     }
 

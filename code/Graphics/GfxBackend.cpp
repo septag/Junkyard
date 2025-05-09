@@ -6409,3 +6409,43 @@ GpuProfilerScope::~GpuProfilerScope()
 
 }
 #endif // TRACY_ENABLE
+
+//----------------------------------------------------------------------------------------------------------------------
+GfxHelperBufferUpdateScope::GfxHelperBufferUpdateScope(GfxCommandBuffer& cmd, GfxBufferHandle handle, uint32 size, GfxShaderStage bufferUsageStage)
+    : mCmd(cmd)
+{
+    ASSERT(size);
+    ASSERT(handle.IsValid());
+
+    mBuffer = handle;
+    mSize = size;
+    mBufferUsageStage = bufferUsageStage;
+
+    if (gBackendVk.gpu.props.deviceType == VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU) {
+        cmd.MapBuffer(mBuffer, &mData);
+    }
+    else {
+        GfxBufferDesc stagingBufferDesc {
+            .sizeBytes = size,
+            .usageFlags = GfxBufferUsageFlags::TransferSrc,
+            .arena = GfxMemoryArena::TransientCPU
+        };
+
+        mStagingBuffer = GfxBackend::CreateBuffer(stagingBufferDesc);
+        cmd.MapBuffer(mStagingBuffer, &mData);
+    }
+
+}
+
+GfxHelperBufferUpdateScope::~GfxHelperBufferUpdateScope()
+{
+    if (gBackendVk.gpu.props.deviceType == VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU) {
+        mCmd.FlushBuffer(mBuffer);
+    }
+    else {
+        mCmd.FlushBuffer(mStagingBuffer);
+        mCmd.TransitionBuffer(mBuffer, GfxBufferTransition::TransferWrite);
+        mCmd.CopyBufferToBuffer(mStagingBuffer, mBuffer, mBufferUsageStage);
+        GfxBackend::DestroyBuffer(mStagingBuffer);
+    }
+}

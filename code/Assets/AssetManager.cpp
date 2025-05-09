@@ -894,44 +894,59 @@ static void Asset::_CreateGpuObjects(uint32 numImages, const AssetImageDescHandl
 
     if (numBuffers) {
         GfxBufferDesc* descs = Mem::AllocTyped<GfxBufferDesc>(numBuffers, &tempAlloc);
-        GfxBufferDesc* stagingBufferDescs = Mem::AllocTyped<GfxBufferDesc>(numBuffers, &tempAlloc);
         GfxBufferHandle* handles = Mem::AllocZeroTyped<GfxBufferHandle>(numBuffers, &tempAlloc);
-        GfxBufferHandle* stagingHandles = Mem::AllocZeroTyped<GfxBufferHandle>(numBuffers, &tempAlloc);
 
-        for (uint32 i = 0; i < numBuffers; i++) {
+        for (uint32 i = 0; i < numBuffers; i++)
             descs[i] = buffers[i].first->createDesc;
-            stagingBufferDescs[i] = {
-                .sizeBytes = buffers[i].first->createDesc.sizeBytes,
-                .usageFlags = GfxBufferUsageFlags::TransferSrc,
-                .arena = GfxMemoryArena::TransientCPU
-            };
-        }
-
         GfxBackend::BatchCreateBuffer(numBuffers, descs, handles);
-        GfxBackend::BatchCreateBuffer(numBuffers, stagingBufferDescs, stagingHandles);
 
-        GfxMapResult* mapResults = Mem::AllocZeroTyped<GfxMapResult>(numBuffers, &tempAlloc);
-        cmd.BatchMapBuffer(numBuffers, stagingHandles, mapResults);
+        if (GfxBackend::IsIntegratedGPU()) {
+            GfxMapResult* mapResults = Mem::AllocZeroTyped<GfxMapResult>(numBuffers, &tempAlloc);
+            cmd.BatchMapBuffer(numBuffers, handles, mapResults);
+            for (uint32 i = 0; i < numBuffers; i++) {
+                ASSERT(mapResults[i].dataSize == buffers[i].first->createDesc.sizeBytes);
+                memcpy(mapResults[i].dataPtr, buffers[i].first->content.Get(), mapResults[i].dataSize);
+            }
+            cmd.BatchFlushBuffer(numBuffers, handles);
 
-        for (uint32 i = 0; i < numBuffers; i++) {
-            ASSERT(mapResults[i].dataSize == buffers[i].first->createDesc.sizeBytes);
-            memcpy(mapResults[i].dataPtr, buffers[i].first->content.Get(), mapResults[i].dataSize);
+            for (uint32 i = 0; i < numBuffers; i++)
+                _GpuResourceFinishedCallback(IntToPtr(buffers[i].second.mId));
         }
-        cmd.BatchFlushBuffer(numBuffers, stagingHandles);
+        else {
+            GfxBufferHandle* stagingHandles = Mem::AllocZeroTyped<GfxBufferHandle>(numBuffers, &tempAlloc);
+            GfxBufferDesc* stagingBufferDescs = Mem::AllocTyped<GfxBufferDesc>(numBuffers, &tempAlloc);
+            for (uint32 i = 0; i < numBuffers; i++) {
+                stagingBufferDescs[i] = {
+                    .sizeBytes = buffers[i].first->createDesc.sizeBytes,
+                    .usageFlags = GfxBufferUsageFlags::TransferSrc,
+                    .arena = GfxMemoryArena::TransientCPU
+                };
+            }
+            GfxBackend::BatchCreateBuffer(numBuffers, stagingBufferDescs, stagingHandles);
 
-        GfxCopyBufferToBufferParams* copyParams = Mem::AllocTyped<GfxCopyBufferToBufferParams>(numBuffers, &tempAlloc);
-        for (uint32 i = 0; i < numBuffers; i++) {
-            copyParams[i] = {
-                .srcHandle = stagingHandles[i],
-                .dstHandle = handles[i],
-                .stagesUsed = GfxShaderStage::Vertex,
-                .resourceTransferedCallback = _GpuResourceFinishedCallback,
-                .resourceTransferedUserData = IntToPtr(buffers[i].second.mId)
-            };
+            GfxMapResult* mapResults = Mem::AllocZeroTyped<GfxMapResult>(numBuffers, &tempAlloc);
+            cmd.BatchMapBuffer(numBuffers, stagingHandles, mapResults);
+
+            for (uint32 i = 0; i < numBuffers; i++) {
+                ASSERT(mapResults[i].dataSize == buffers[i].first->createDesc.sizeBytes);
+                memcpy(mapResults[i].dataPtr, buffers[i].first->content.Get(), mapResults[i].dataSize);
+            }
+            cmd.BatchFlushBuffer(numBuffers, stagingHandles);
+
+            GfxCopyBufferToBufferParams* copyParams = Mem::AllocTyped<GfxCopyBufferToBufferParams>(numBuffers, &tempAlloc);
+            for (uint32 i = 0; i < numBuffers; i++) {
+                copyParams[i] = {
+                    .srcHandle = stagingHandles[i],
+                    .dstHandle = handles[i],
+                    .stagesUsed = GfxShaderStage::Vertex,
+                    .resourceTransferedCallback = _GpuResourceFinishedCallback,
+                    .resourceTransferedUserData = IntToPtr(buffers[i].second.mId)
+                };
+            }
+
+            cmd.BatchCopyBufferToBuffer(numBuffers, copyParams);            
+            GfxBackend::BatchDestroyBuffer(numBuffers, stagingHandles);
         }
-
-        cmd.BatchCopyBufferToBuffer(numBuffers, copyParams);            
-        GfxBackend::BatchDestroyBuffer(numBuffers, stagingHandles);
 
         for (uint32 i = 0; i < numBuffers; i++) {
             GfxBufferHandle* targetBuffer = buffers[i].first->bindToBuffer.Get();

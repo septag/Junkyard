@@ -107,6 +107,24 @@ namespace GfxBackend
     bool IsIntegratedGPU();
 } // Gfx
 
+struct GfxHelperBufferUpdateScope
+{
+    GfxHelperBufferUpdateScope() = delete;
+    GfxHelperBufferUpdateScope(const GfxHelperBufferUpdateScope&) = delete;
+
+    explicit GfxHelperBufferUpdateScope(GfxCommandBuffer& cmd, GfxBufferHandle handle, uint32 size, GfxShaderStage bufferUsageStage);
+    ~GfxHelperBufferUpdateScope();
+
+    void* mData;
+    uint32 mSize;
+
+private:
+    GfxCommandBuffer& mCmd;
+    GfxBufferHandle mBuffer;
+    GfxBufferHandle mStagingBuffer;
+    GfxShaderStage mBufferUsageStage;
+};
+
 //----------------------------------------------------------------------------------------------------------------------
 // TODO: GPU Profiling
 #ifdef TRACY_ENABLE
