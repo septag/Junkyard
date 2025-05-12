@@ -56,10 +56,10 @@ DEFINE_HANDLE(AssetHandle);
 
 struct AssetParams
 {
-    uint32 typeId;
-    Path path;
+    uint32 typeId;                  // FourCC code of the asset type
+    Path path;                      
     AssetPlatform::Enum platform;
-    void* typeSpecificParams;
+    void* extraParams;               // Pointer to extra asset loading parameters. See `AssetTypeDesc.extraParamTypeSize`
 };
 
 enum AssetGroupState : uint32
@@ -72,14 +72,14 @@ enum AssetGroupState : uint32
 
 struct AssetTypeDesc
 {
-    uint32 fourcc;
-    uint32 cacheVersion;
-    const char* name;
-    AssetTypeImplBase* impl;
-    const char* extraParamTypeName;
-    uint32 extraParamTypeSize;          // Note: be careful that in order for asset caching to work properly. this size must exactly match the real underlying struct size with no extra padding
-    void* failedObj;
-    void* asyncObj;
+    uint32 fourcc;                  // Unique asset type identifier
+    uint32 cacheVersion;            // Cache version per asset type. You should bump this cache version if the underlying asset data has changed
+    const char* name;               // For verbosity (logging, debugging and such)
+    AssetTypeImplBase* impl;        // Asset type implementation. Since every asset type has it's own data and is baked differently
+    const char* extraParamTypeName; // (optional) For verbosity. "Param types" are custom types that are passed to asset load function
+    uint32 extraParamTypeSize;      // (optional) Extra paramters struct size for loading an asset. Basically `sizeof` of that struct.
+    void* failedObj;                // the pointer to a static data that asset manager returns when asset fails to load
+    void* asyncObj;                 // the pointer to a static data that asset manager returns while it's loading the asset
 };
 
 
@@ -100,7 +100,8 @@ struct AssetGroup
     void Load();
     void Unload();
 
-    void Wait();    // Not recommended, unless you really have to. It blocks the thread and wastes CPU cycles
+    // Waits for assets to load. This is not recommended since it blocks the thread, unless you really have to
+    void Wait();    
     bool IsValid() const;
     bool IsLoadFinished() const;
     bool IsIdle() const;
@@ -112,7 +113,12 @@ struct AssetGroup
 
 struct NO_VTABLE AssetTypeImplBase
 {
+    // Main implementation. Parsing asset data file format and extra baking all happens inside this function. 
+    // Inputs are `params` and `srcData` (raw asset binary data). Outputs are `data` and `outErrorDesc` in case of errors
+    // Return true if assets loads succesfully and false if failed (then fill out `outErrorDesc`)
     virtual bool Bake(const AssetParams& params, AssetData* data, const Span<uint8>& srcData, String<256>* outErrorDesc) = 0;
+
+    // [optional] Mainly used for extra book keeping that engine might need after reloading an asset type. 
     virtual bool Reload(void* newData, void* oldData) = 0;
 };
 
@@ -132,7 +138,7 @@ struct AssetData
     AssetDataInternal* mData;
     void* mLastDependencyPtr;
     void* mLastGpuObjectPtr;
-    const void* mOrigObjPtr;      // original pointer that has passed to SetObjData. We use it later for calculating handle pointer offsets
+    const void* mOrigObjPtr;      // Original pointer that has passed to SetObjData. We use it later for calculating handle pointer offsets
     uint32 mParamsHash;
 };
 

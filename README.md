@@ -168,6 +168,7 @@ Note that these are living documents, meaning that they are always subject to ch
 - [**Memory Basics**](https://septag.dev/blog/posts/junkyard-memory-01): This covers basic memory allocation and design at the core level. It's an essential read if you want to make the best use of memory and understand the memory concepts behind the engine.
 - [**Relative Pointers**](https://septag.dev/blog/posts/junkyard-relativeptr): A kind of a follow up to the memory basics. Covers the concept of *Relative Pointers* used in some parts of the engine, especially binary serialization.
 - [**Project Structure**](https://septag.dev/blog/posts/junkyard-struct): Covers build structure and platform projects in more detail, directory structures and basic things you should know about adding modules and dependency checking between the modules. 
+- [**Asset Manager**](https://septag.dev/blog/posts/junkyard-assetman): Asset manager design goals and details on the internals. Also quite useful if someone wants to add a new asset type to the engine.
 
 ## [License (MIT)](https://github.com/septag/Junkyard/blob/main/LICENSE)
 

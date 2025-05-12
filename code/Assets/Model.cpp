@@ -884,7 +884,7 @@ void Model::ReleaseManager()
 
 bool AssetModelImpl::Bake(const AssetParams& params, AssetData* data, const Span<uint8>& srcData, String<256>* outErrorDesc)
 {
-    const ModelLoadParams* modelParams = (const ModelLoadParams*)params.typeSpecificParams;
+    const ModelLoadParams* modelParams = (const ModelLoadParams*)params.extraParams;
 
     MemTempAllocator tmpAlloc;
     Blob fileBlob(const_cast<uint8*>(srcData.Ptr()), srcData.Count());
@@ -920,25 +920,25 @@ bool AssetModelImpl::Bake(const AssetParams& params, AssetData* data, const Span
 
                 if (!mtl->pbrMetallicRoughness.baseColorTex.texturePath.IsNull()) {
                     assetParams.path = mtl->pbrMetallicRoughness.baseColorTex.texturePath.Get();
-                    assetParams.typeSpecificParams = &mtl->pbrMetallicRoughness.baseColorTex.params;
+                    assetParams.extraParams = &mtl->pbrMetallicRoughness.baseColorTex.params;
                     data->AddDependency(&mtl->pbrMetallicRoughness.baseColorTex.texture, assetParams);
                 }
 
                 if (!mtl->pbrMetallicRoughness.metallicRoughnessTex.texturePath.IsNull()) {
                     assetParams.path = mtl->pbrMetallicRoughness.metallicRoughnessTex.texturePath.Get();
-                    assetParams.typeSpecificParams = &mtl->pbrMetallicRoughness.metallicRoughnessTex.params;
+                    assetParams.extraParams = &mtl->pbrMetallicRoughness.metallicRoughnessTex.params;
                     data->AddDependency(&mtl->pbrMetallicRoughness.metallicRoughnessTex.texture, assetParams);
                 }
 
                 if (!mtl->normalTexture.texturePath.IsNull()) {
                     assetParams.path = mtl->normalTexture.texturePath.Get();
-                    assetParams.typeSpecificParams = &mtl->normalTexture.params;
+                    assetParams.extraParams = &mtl->normalTexture.params;
                     data->AddDependency(&mtl->normalTexture.texture, assetParams);
                 }
 
                 if (!mtl->occlusionTexture.texturePath.IsNull()) {
                     assetParams.path = mtl->occlusionTexture.texturePath.Get();
-                    assetParams.typeSpecificParams = &mtl->occlusionTexture.params;
+                    assetParams.extraParams = &mtl->occlusionTexture.params;
                     data->AddDependency(&mtl->occlusionTexture.texture, assetParams);
                 }
             }
@@ -981,7 +981,7 @@ AssetHandleModel Model::Load(const char* path, const ModelLoadParams& params, co
     AssetParams assetParams {
         .typeId = MODEL_ASSET_TYPE,
         .path = path,
-        .typeSpecificParams = const_cast<ModelLoadParams*>(&params)
+        .extraParams = const_cast<ModelLoadParams*>(&params)
     };
 
     return group.AddToLoadQueue(assetParams);

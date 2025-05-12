@@ -247,7 +247,7 @@ struct AssetMan
     Array<AssetTypeManager> typeManagers;
     HandlePool<AssetHandle, AssetDataHeader*> assetDb;
     HashTable<AssetHandle> assetLookup;     // Key: AssetParams hash. To check for availibility
-    HashTableUint assetHashLookup;          // Key: AssetParams hash -> AssetHash
+    HashTableUint assetHashLookup;          // Key: AssetParams hash -> AssetHash: For platforms that doesn't have access to source assets to resolve cache name
     MemTlsfAllocator assetHeaderAllocBase;
     MemTlsfAllocator assetDataAllocBase;
 
@@ -468,7 +468,7 @@ static uint32 Asset::_MakeParamsHash(const AssetParams& params, uint32 typeSpeci
     hasher.Add<uint32>(params.typeId);
     hasher.AddAny(params.path.CStr(), params.path.Length());
     hasher.Add<uint32>(uint32(params.platform));
-    hasher.AddAny(params.typeSpecificParams, typeSpecificParamsSize);
+    hasher.AddAny(params.extraParams, typeSpecificParamsSize);
     return hasher.Hash();
 }
 
@@ -690,7 +690,7 @@ static AssetHandleResult Asset::_CreateOrFetchHandle(const AssetParams& params)
             
         MemSingleShotMalloc<AssetParams> paramsMallocator;
         if (typeMan.extraParamTypeSize)
-            paramsMallocator.AddMemberArray<uint8>(offsetof(AssetParams, typeSpecificParams), typeMan.extraParamTypeSize);
+            paramsMallocator.AddMemberArray<uint8>(offsetof(AssetParams, extraParams), typeMan.extraParamTypeSize);
         MemSingleShotMalloc<AssetDataHeader> mallocator;
         mallocator.AddChildStructSingleShot(paramsMallocator, offsetof(AssetDataHeader, params), 1);
         r.header = mallocator.Calloc(&gAssetMan.assetHeaderAlloc); // Note: This allocator is protected by 'assetMutex'
@@ -703,8 +703,8 @@ static AssetHandleResult Asset::_CreateOrFetchHandle(const AssetParams& params)
         r.header->params->path = params.path;
         r.header->params->platform = params.platform;
         r.header->typeName = typeMan.name.CStr();
-        if (params.typeSpecificParams)
-            memcpy(r.header->params->typeSpecificParams, params.typeSpecificParams, typeMan.extraParamTypeSize);
+        if (params.extraParams)
+            memcpy(r.header->params->extraParams, params.extraParams, typeMan.extraParamTypeSize);
 
         r.handle = gAssetMan.assetDb.Add(r.header);
 
@@ -1069,7 +1069,7 @@ static void Asset::_LoadGroupTask(uint32, void* userData)
             requestBlob.Write<uint32>(header->typeId);
             requestBlob.WriteStringBinary16(header->params->path.Ptr(), header->params->path.Length());
             requestBlob.Write<uint32>(header->params->platform);
-            requestBlob.Write(header->params->typeSpecificParams, header->typeSpecificParamsSize);
+            requestBlob.Write(header->params->extraParams, header->typeSpecificParamsSize);
 
             Remote::ExecuteCommand(ASSET_LOAD_ASSET_REMOTE_CMD, requestBlob);
         }
@@ -1115,7 +1115,7 @@ static void Asset::_LoadGroupTask(uint32, void* userData)
                     .typeId = dep->typeId,
                     .path = dep->path,
                     .platform = in.header->params->platform,
-                    .typeSpecificParams = !dep->typeSpecificParams.IsNull() ? dep->typeSpecificParams.Get() : nullptr
+                    .extraParams = !dep->typeSpecificParams.IsNull() ? dep->typeSpecificParams.Get() : nullptr
                 };
 
                 AssetHandleResult depHandleResult = _CreateOrFetchHandle(params);
@@ -1492,31 +1492,6 @@ static void Asset::_ServerLoadBatchTask(uint32, void*)
     }
     tasksForLoad.Free();
 
-    // Gather stuff that needs to be saved
-    StaticArray<AssetQueuedItem, ASSET_SERVER_MAX_IN_FLIGHT> saveAssets;
-    for (uint32 i = 0; i < numTasks; i++) {
-        const AssetLoadTaskInputs& in = taskDatas[i]->inputs;
-        AssetLoadTaskOutputs& out = taskDatas[i]->outputs;
-
-        uint32 typeManIdx = gAssetMan.typeManagers.FindIf(
-            [typeId = in.header->typeId](const AssetTypeManager& typeMgr) { return typeMgr.fourcc == typeId; });
-        ASSERT_MSG(typeManIdx != UINT32_MAX, "AssetType with FourCC %x is not registered", in.header->typeId);
-        const AssetTypeManager& typeMan = gAssetMan.typeManagers[typeManIdx];
-
-        bool saveBaked = in.type == AssetLoadTaskInputType::Source;
-        if (out.data && saveBaked) {
-            AssetQueuedItem qa {
-                .indexInLoadList = i,
-                .dataSize = out.dataSize,
-                .assetTypeCacheVersion = typeMan.cacheVersion,
-                .data = out.data,
-                .bakedFilepath = in.bakedFilepath,
-                .saveBaked = saveBaked
-            };
-            saveAssets.Push(qa);
-        }
-    }
-
     // Send successfully loaded asset blobs to the client
     // TODO: compress the data
     {
@@ -1597,7 +1572,7 @@ static bool Asset::_RemoteServerCallback([[maybe_unused]] uint32 cmd, const Blob
 
     MemSingleShotMalloc<AssetParams> paramsMallocator;
     if (typeMan.extraParamTypeSize)
-        paramsMallocator.AddMemberArray<uint8>(offsetof(AssetParams, typeSpecificParams), typeMan.extraParamTypeSize);
+        paramsMallocator.AddMemberArray<uint8>(offsetof(AssetParams, extraParams), typeMan.extraParamTypeSize);
     MemSingleShotMalloc<AssetDataHeader> dataHeaderMallocator;
     dataHeaderMallocator.AddChildStructSingleShot(paramsMallocator, offsetof(AssetDataHeader, params), 1);
     MemSingleShotMalloc<AssetLoadTaskData> mallocator;
@@ -1609,7 +1584,7 @@ static bool Asset::_RemoteServerCallback([[maybe_unused]] uint32 cmd, const Blob
     header->params->path.CalcLength();
 
     incomingData.Read<uint32>(&platformId);
-    incomingData.Read(header->params->typeSpecificParams, typeMan.extraParamTypeSize);
+    incomingData.Read(header->params->extraParams, typeMan.extraParamTypeSize);
 
     header->params->typeId = typeId;
     header->params->platform = AssetPlatform::Enum(platformId);
@@ -2163,8 +2138,8 @@ void AssetData::AddDependency(AssetHandle* bindToHandle, const AssetParams& para
     dep->path = params.path;
     dep->typeId = params.typeId;
     dep->bindToHandle = Asset::_TranslatePointer<AssetHandle>(bindToHandle, mOrigObjPtr, mData->objData.Get());
-    if (params.typeSpecificParams)
-        dep->typeSpecificParams = Mem::AllocCopy<uint8>((uint8*)params.typeSpecificParams, typeMan.extraParamTypeSize, mAlloc);
+    if (params.extraParams)
+        dep->typeSpecificParams = Mem::AllocCopy<uint8>((uint8*)params.extraParams, typeMan.extraParamTypeSize, mAlloc);
     
     if (mLastDependencyPtr) 
         ((AssetDataInternal::Dependency*)mLastDependencyPtr)->next = dep;

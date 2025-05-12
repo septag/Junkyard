@@ -49,7 +49,7 @@ bool AssetShaderImpl::Bake(const AssetParams& params, AssetData* data, const Spa
 {
     #if CONFIG_TOOLMODE
         MemTempAllocator tmpAlloc;
-        ShaderCompileDesc compileDesc = *((ShaderCompileDesc*)params.typeSpecificParams);
+        ShaderCompileDesc compileDesc = *((ShaderCompileDesc*)params.extraParams);
 
         compileDesc.dumpIntermediates |= data->GetMetaValue("dumpIntermediates", false);
         compileDesc.debug |= data->GetMetaValue("debug", false);
@@ -125,7 +125,7 @@ AssetHandleShader Shader::Load(const char* path, const ShaderLoadParams& params,
     AssetParams assetParams {
         .typeId = SHADER_ASSET_TYPE,
         .path = path,
-        .typeSpecificParams = const_cast<ShaderLoadParams*>(&params)
+        .extraParams = const_cast<ShaderLoadParams*>(&params)
     };
 
     return group.AddToLoadQueue(assetParams);

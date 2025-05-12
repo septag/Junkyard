@@ -196,7 +196,7 @@ uint32 Image::CalculateMipCount(uint32 width, uint32 height)
 
 bool AssetImageImpl::Bake(const AssetParams& params, AssetData* data, const Span<uint8>& srcData, String<256>* outErrorDesc)
 {
-    const ImageLoadParams* imageParams = (ImageLoadParams*)params.typeSpecificParams;
+    const ImageLoadParams* imageParams = (ImageLoadParams*)params.extraParams;
 
     struct MipSurface
     {
@@ -460,7 +460,7 @@ AssetHandleImage Image::Load(const char* path, const ImageLoadParams& params, co
     AssetParams assetParams {
         .typeId = IMAGE_ASSET_TYPE,
         .path = path,
-        .typeSpecificParams = const_cast<ImageLoadParams*>(&params)
+        .extraParams = const_cast<ImageLoadParams*>(&params)
     };
 
     return group.AddToLoadQueue(assetParams);

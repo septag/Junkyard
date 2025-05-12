@@ -90,7 +90,7 @@ struct AppImpl final : AppCallbacks
             AssetParams params {
                 .typeId = IMAGE_ASSET_TYPE,
                 .path = mFilePaths[i].CStr(),
-                .typeSpecificParams = &imageParams
+                .extraParams = &imageParams
             };
             mTexture = group.AddToLoadQueue(params);
         }
