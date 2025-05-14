@@ -77,7 +77,6 @@ void MeshOpt::Optimize(MeshOptModel* model)
             if (model->showOverdrawAnalysis) {
                 [[maybe_unused]] meshopt_OverdrawStatistics overdrawStats =
                     meshopt_analyzeOverdraw(indices + submesh.startIndex, submesh.numIndices, (const float*)positions, mesh->numVertices, positionStride);
-                LOG_INFO("PixelsCovered: %u, Overdraw: %.1f", overdrawStats.pixels_covered, overdrawStats.overdraw);
             }
         }
 

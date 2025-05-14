@@ -42,6 +42,7 @@ static inline constexpr size_t ASSET_DATA_BUFFER_POOL_SIZE = SIZE_MB*128;
 static inline constexpr uint32 ASSET_SERVER_MAX_IN_FLIGHT = 128;
 static inline constexpr uint32 ASSET_HOT_RELOAD_MAX_IN_FLIGHT = 128;
 static inline constexpr uint32 ASSET_MAX_TRANSFER_SIZE_PER_FRAME = 50*SIZE_MB;  
+static inline constexpr const char* ASSET_CACHE_LOOKUP_FILEPATH = "/cache/_CacheLookup.txt";
 
 struct AssetTypeManager
 {
@@ -197,6 +198,7 @@ struct AssetQueuedItem
     uint32 assetHash;
     uint32 assetTypeCacheVersion;
     AssetDataInternal* data;
+    const char* filepath;
     Path bakedFilepath;
     bool saveBaked;
     bool hasPendingGpuResource;
@@ -230,6 +232,12 @@ struct AssetJobItem
     AssetGroupHandle groupHandle;
 };
 
+struct AssetCacheRef
+{
+    uint32 assetHash;
+    Path sourceFilepath;
+};
+
 struct AssetMan
 {
     MemProxyAllocator alloc;
@@ -247,7 +255,7 @@ struct AssetMan
     Array<AssetTypeManager> typeManagers;
     HandlePool<AssetHandle, AssetDataHeader*> assetDb;
     HashTable<AssetHandle> assetLookup;     // Key: AssetParams hash. To check for availibility
-    HashTableUint assetHashLookup;          // Key: AssetParams hash -> AssetHash: For platforms that doesn't have access to source assets to resolve cache name
+    HashTable<AssetCacheRef> assetCacheLookup;          // Key: AssetParams hash -> AssetHash: For platforms that doesn't have access to source assets to resolve cache name
     MemTlsfAllocator assetHeaderAllocBase;
     MemTlsfAllocator assetDataAllocBase;
 
@@ -297,8 +305,8 @@ namespace Asset
     static void _RemoteClientCallback(uint32 cmd, const Blob& incomingData, void*, bool error, const char* errorDesc);
     static void _ServerLoadBatchTask(uint32, void*);
     constexpr AssetPlatform::Enum _GetCurrentPlatform();
-    static void _SaveAssetHashLookup();
-    static void _LoadAssetHashLookup();
+    static void _SaveCacheLookup();
+    static void _LoadCacheLookup();
     [[maybe_unused]] static void _OnFileChanged(const char* filepath);
     static void _UnloadDatasManually(Span<AssetDataPair> datas);
     static void _GpuResourceFinishedCallback(void* userData);
@@ -415,50 +423,53 @@ static void Asset::_OnFileChanged(const char* filepath)
     }
 }
 
-static void Asset::_SaveAssetHashLookup()
+static void Asset::_SaveCacheLookup()
 {
     PROFILE_ZONE("Asset.SaveHashLookup");
 
-    const uint32* keys = gAssetMan.assetHashLookup.Keys();
-    const uint32* values = gAssetMan.assetHashLookup.Values();
+    const uint32* keys = gAssetMan.assetCacheLookup.Keys();
+    const AssetCacheRef* values = gAssetMan.assetCacheLookup.Values();
 
     MemTempAllocator tempAlloc;
     Blob blob(&tempAlloc);
     blob.SetGrowPolicy(Blob::GrowPolicy::Multiply);
 
     String<64> line;
-    for (uint32 i = 0; i < gAssetMan.assetHashLookup.Capacity(); i++) {
+    for (uint32 i = 0; i < gAssetMan.assetCacheLookup.Capacity(); i++) {
         if (keys[i]) {
-            line.FormatSelf("0x%x;0x%x\n", keys[i], values[i]);
+            line.FormatSelf("0x%x;0x%x;%s\n", keys[i], values[i].assetHash, values[i].sourceFilepath.CStr());
             blob.Write(line.Ptr(), line.Length());
         }
     }
     blob.Write<char>('\0');
 
-    Vfs::WriteFileAsync("/cache/_HashLookup.txt", blob, VfsFlags::None, [](const char*, size_t, Blob&, void*) {}, nullptr);
+    Vfs::WriteFileAsync(ASSET_CACHE_LOOKUP_FILEPATH, blob, VfsFlags::None, [](const char*, size_t, Blob&, void*) {}, nullptr);
 }
 
-static void Asset::_LoadAssetHashLookup()
+static void Asset::_LoadCacheLookup()
 {
     PROFILE_ZONE("Asset.LoadHashLookup");
     
     MemTempAllocator tempAlloc;
-    Blob blob = Vfs::ReadFile("cache/_HashLookup.txt", VfsFlags::TextFile, &tempAlloc);
+    Blob blob = Vfs::ReadFile(ASSET_CACHE_LOOKUP_FILEPATH, VfsFlags::TextFile, &tempAlloc);
     if (!blob.IsValid() || blob.Size() == 0)
         return;
 
     Str::SplitResult lines = Str::Split((const char*)blob.Data(), '\n', &tempAlloc);
 
     ReadWriteMutexWriteScope lk(gAssetMan.hashLookupMutex);
-    for (char* line : lines.splits) {
-        char* semicolon = const_cast<char*>(Str::FindChar(line, ';'));
-        if (semicolon) {
-            *semicolon = 0;
-            uint32 paramsHash = Str::ToUint(line + 2, 16);
-            uint32 assetHash = Str::ToUint(semicolon + 3, 16);
+    for (uint32 i = 0; i < lines.splits.Count(); i++) {
+        char* line = lines.splits[i];
+        Str::SplitResult e = Str::Split(line, ';', &tempAlloc);
+        ASSERT_MSG(e.splits.Count() == 3, "Invalid cache lookup data in file '%s' line %u", Vfs::ResolveFilepath(ASSET_CACHE_LOOKUP_FILEPATH).CStr(), i);
+        uint32 paramsHash = Str::ToUint(e.splits[0], 16);
 
-            gAssetMan.assetHashLookup.Add(paramsHash, assetHash);
-        }
+        AssetCacheRef ref {
+            .assetHash = Str::ToUint(e.splits[1], 16),
+            .sourceFilepath = e.splits[2]
+        };
+
+        gAssetMan.assetCacheLookup.Add(paramsHash, ref);
     }
 }
 
@@ -478,6 +489,7 @@ static void Asset::_SaveBakedTask(uint32 groupIdx, void* userData)
 
     AssetQueuedItem* qa = ((AssetQueuedItem**)userData)[groupIdx];
 
+    // Alert: 2 heap memory allocations here! (happens only in development mode)
     uint32 cacheVersion = MakeVersion(ASSET_CACHE_VERSION, qa->assetTypeCacheVersion, 0, 0);
     Blob cache;
     cache.Reserve(32 + qa->dataSize);
@@ -487,30 +499,36 @@ static void Asset::_SaveBakedTask(uint32 groupIdx, void* userData)
     cache.Write<uint32>(qa->dataSize);
     cache.Write(qa->data, qa->dataSize);
 
-    uint64 writeFileData = (uint64(qa->paramsHash) << 32) | qa->assetHash;
+    struct WriteFileData 
+    {
+        uint32 paramsHash;
+        AssetCacheRef ref;
+    };
+
+    WriteFileData* writeFileData = Mem::AllocTyped<WriteFileData>();
+    writeFileData->paramsHash = qa->paramsHash;
+    writeFileData->ref.assetHash = qa->assetHash;
+    writeFileData->ref.sourceFilepath = qa->filepath;
+
     auto SaveFileCallback = [](const char* path, size_t bytesWritten, Blob& blob, void* userData)
     {
         if (bytesWritten)
             LOG_VERBOSE("(save) Baked: %s", path);
         blob.Free();
 
-        uint64 writeFileData = PtrToInt<uint64>(userData);
-        uint32 paramsHash = uint32((writeFileData >> 32)&0xffffffff);
-        uint32 assetHash = uint32(writeFileData&0xffffffff);
+        WriteFileData* data = (WriteFileData*)userData;
 
-        ReadWriteMutexWriteScope lk(gAssetMan.hashLookupMutex);
-        uint32 index = gAssetMan.assetHashLookup.AddIfNotFound(paramsHash, assetHash);
+        {
+            ReadWriteMutexWriteScope lk(gAssetMan.hashLookupMutex);
+            gAssetMan.assetCacheLookup.AddReplaceUnique(data->paramsHash, data->ref);
+        }
 
-        // Overwrite the value if it exists
-        // TODO: maybe have an API for that in HashTable
-        if (index != -1) 
-            ((uint32*)gAssetMan.assetHashLookup.mHashTable->values)[index] = assetHash;
-
+        Mem::Free(data);
         gAssetMan.isHashLookupUpdated = true;
     };
 
     Vfs::WriteFileAsync(qa->bakedFilepath.CStr(), cache, VfsFlags::CreateDirs|VfsFlags::NoCopyWriteBlob, 
-                        SaveFileCallback, IntToPtr(writeFileData));
+                        SaveFileCallback, writeFileData);
 }
 
 static uint32 Asset::_MakeCacheFilepath(Path* outPath, const AssetDataHeader* header, uint32 overrideAssetHash)
@@ -1017,7 +1035,8 @@ static void Asset::_LoadGroupTask(uint32, void* userData)
             // For remote loading, we are forced to use cache lookup table
             if (gAssetMan.isForceUseCache || isRemoteLoad) {
                 ReadWriteMutexReadScope lk(gAssetMan.hashLookupMutex);
-                assetHash = gAssetMan.assetHashLookup.FindAndFetch(header->paramsHash, 0);
+                uint32 index = gAssetMan.assetCacheLookup.Find(header->paramsHash);
+                assetHash = index != -1 ? gAssetMan.assetCacheLookup.Get(index).assetHash : 0;
             }
 
             if (!isRemoteLoad || assetHash) {
@@ -1102,6 +1121,7 @@ static void Asset::_LoadGroupTask(uint32, void* userData)
                 .assetHash = in.assetHash,
                 .assetTypeCacheVersion = typeMan.cacheVersion,
                 .data = out.data,
+                .filepath = in.header->params->path.CStr(),
                 .bakedFilepath = in.bakedFilepath,
                 .saveBaked = (in.type == AssetLoadTaskInputType::Source || in.isRemoteLoad)
             };
@@ -1739,8 +1759,8 @@ bool Asset::Initialize()
     gAssetMan.assetHeaderAllocBase.Initialize(alloc, ASSET_HEADER_BUFFER_POOL_SIZE, false);
     gAssetMan.assetDataAllocBase.Initialize(alloc, ASSET_DATA_BUFFER_POOL_SIZE, false);
     gAssetMan.groups.SetAllocator(alloc);
-    gAssetMan.assetHashLookup.SetAllocator(alloc);
-    gAssetMan.assetHashLookup.Reserve(512);
+    gAssetMan.assetCacheLookup.SetAllocator(alloc);
+    gAssetMan.assetCacheLookup.Reserve(512);
     gAssetMan.pendingJobs.SetAllocator(alloc);
 
     gAssetMan.memArena.maxAllocators = Jobs::GetWorkerThreadsCount(JobsType::LongTask);
@@ -1793,7 +1813,7 @@ bool Asset::Initialize()
     Vfs::MountLocal(OS::AndroidGetCacheDirectory(App::AndroidGetActivity()).CStr(), "cache", false);
     #endif
 
-    _LoadAssetHashLookup();
+    _LoadCacheLookup();
 
     //------------------------------------------------------------------------------------------------------------------
     // Initialize asset managers here
@@ -1864,7 +1884,7 @@ void Asset::Release()
     }
 
     if (gAssetMan.isHashLookupUpdated) {
-        _SaveAssetHashLookup();
+        _SaveCacheLookup();
         gAssetMan.isHashLookupUpdated = false;
     }
 
@@ -1885,7 +1905,7 @@ void Asset::Release()
     gAssetMan.groups.Free();
     gAssetMan.assetDb.Free();
     gAssetMan.assetLookup.Free();
-    gAssetMan.assetHashLookup.Free();
+    gAssetMan.assetCacheLookup.Free();
     gAssetMan.pendingJobs.Free();
     gAssetMan.typeManagers.Free();
 
@@ -2075,7 +2095,7 @@ void Asset::Update()
         uint64 now = Timer::GetTicks();
         float secsElapsed = (float)Timer::ToSec(Timer::Diff(now, lastUpdateTick));
         if (secsElapsed >= ASSET_SAVE_CACHE_LOOKUP_INTERVAL) {
-            _SaveAssetHashLookup();
+            _SaveCacheLookup();
             gAssetMan.isHashLookupUpdated = false;
             lastUpdateTick = now;
         }

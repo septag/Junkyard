@@ -482,7 +482,7 @@ namespace ImGui
             property.SetValue(value);
     
         uint32 hash = Hash::Fnv32Str(key);
-        gImGui.settingsCacheTable.AddIfNotFound(hash, property.GetValue());
+        gImGui.settingsCacheTable.AddUnique(hash, property.GetValue());
     }
 
     static void _GrowGeometryBuffers(uint32 numVertices, uint32 numIndices)

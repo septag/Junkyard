@@ -112,9 +112,20 @@ struct HashTable
 
     static size_t GetMemoryRequirement(uint32 capacity);
     
+    // Adds the key,value. 
+    // If key already exists, it tries to find another slot for the duplicate key
+    // If you don't want to have duplicates, use AddUnique instead
     _T* Add(uint32 key);
     uint32 Add(uint32 key, const _T& value);
-    uint32 AddIfNotFound(uint32 key, const _T& value);
+
+    // Only adds the key,value if key doesn't exist
+    // Returns the index to the key is found. otherwise returns -1
+    uint32 AddUnique(uint32 key, const _T& value);
+
+    // Adds the key,value if key doesn't exist
+    // Replaces the value of the key if it already exists
+    void AddReplaceUnique(uint32 key, const _T& value);
+
     uint32 Find(uint32 key) const;
     void Clear();
 
@@ -361,7 +372,18 @@ inline uint32 HashTable<_T>::Find(uint32 key) const
 }
 
 template <typename _T>
-inline uint32 HashTable<_T>::AddIfNotFound(uint32 key, const _T& value)
+inline void HashTable<_T>::AddReplaceUnique(uint32 key, const _T& value)
+{
+    uint32 index = Find(key);
+
+    if (index == INVALID_INDEX)
+        Add(key, value);
+    else
+        ((_T*)mHashTable->values)[index] = value;
+}
+
+template <typename _T>
+inline uint32 HashTable<_T>::AddUnique(uint32 key, const _T& value)
 {
     uint32 index = Find(key);
 
@@ -370,6 +392,7 @@ inline uint32 HashTable<_T>::AddIfNotFound(uint32 key, const _T& value)
     else
         return index;
 }
+
 
 template <typename _T>
 inline uint32 HashTable<_T>::Add(uint32 key, const _T& value)
