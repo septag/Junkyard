@@ -2838,8 +2838,12 @@ GfxPipelineLayoutHandle GfxBackend::CreatePipelineLayout(const GfxShader& shader
             ASSERT(binding.name && binding.name[0]);
 
             const GfxShaderParameterInfo* shaderParam = _FindShaderParam(shader, binding.name);
+            const GfxShaderParameterInfo* params = shader.params.Get();
+
             ASSERT_MSG(shaderParam != nullptr, "Shader parameter '%s' does not exist in shader '%s'", binding.name, shader.name);
             ASSERT_MSG(!shaderParam->isPushConstant, "Shader parameter '%s' is a push-constant in shader '%s'. cannot be used as regular uniform", 
+                       binding.name, shader.name);
+            ASSERT_MSG(!shaderParam->isSpecialization, "Shader parameter '%s' is a specialization-constant in shader '%s'. cannot be used as regular uniform", 
                        binding.name, shader.name);
             if (!shaderParam)
                 continue;
@@ -3193,19 +3197,51 @@ GfxPipelineHandle GfxBackend::CreateGraphicsPipeline(const GfxShader& shader, Gf
         }
     }
 
+    // TEMP (TODO: REMOVE)
+    #if 0
+    const GfxShaderParameterInfo* sparam = _FindShaderParam(shader, "test");
+    const GfxShaderParameterInfo* sparam2 = _FindShaderParam(shader, "test2");
+    VkSpecializationMapEntry specializeEntries[] = {
+        {
+            .constantID = sparam ? sparam->bindingIdx : 0,
+            .size = 4
+        },
+        {
+            .constantID = sparam2 ? sparam2->bindingIdx : 0,
+            .offset = 4,
+            .size = 4
+        }
+    };
+
+    struct SVars
+    {
+        float test = 0.0f;
+        float test2 = 1;
+    } svars;
+    
+
+    VkSpecializationInfo specialize {
+        .mapEntryCount = CountOf(specializeEntries),
+        .pMapEntries = specializeEntries,
+        .dataSize = sizeof(svars),
+        .pData = &svars
+    };
+    #endif
 
     VkPipelineShaderStageCreateInfo shaderStages[] = {
         {
             .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
             .stage = VK_SHADER_STAGE_VERTEX_BIT,
             .module = vsShaderModule,
-            .pName = "main"
+            .pName = "main",
+            .pSpecializationInfo = nullptr
         },
         {
             .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
             .stage = VK_SHADER_STAGE_FRAGMENT_BIT,
             .module = psShaderModule,
-            .pName = "main"
+            .pName = "main",
+            .pSpecializationInfo = nullptr
         }
     };
 
@@ -3365,7 +3401,7 @@ GfxPipelineHandle GfxBackend::CreateGraphicsPipeline(const GfxShader& shader, Gf
         .depthAttachmentFormat = VkFormat(desc.depthAttachmentFormat),
         .stencilAttachmentFormat = VkFormat(desc.stencilAttachmentFormat)
     };
-    
+
     VkGraphicsPipelineCreateInfo pipelineInfo {
         .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
         .pNext = &renderCreateInfo,
@@ -5288,7 +5324,7 @@ void GfxCommandBuffer::TransitionImage(GfxImageHandle imgHandle, GfxImageTransit
             barrier.dstStageMask = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
             barrier.dstAccessMask = VK_ACCESS_2_MEMORY_READ_BIT;
             barrier.newLayout = VK_IMAGE_LAYOUT_GENERAL;
-            barrier.srcQueueFamilyIndex = 1;    // TEMP
+            // barrier.srcQueueFamilyIndex = 1;    // TEMP
             break;
 
         case GfxImageTransition::ComputeWrite:
@@ -5592,6 +5628,37 @@ void GfxCommandBuffer::SetViewports(uint32 firstViewport, uint32 numViewports, c
     }
 
     vkCmdSetViewport(cmdVk, firstViewport, numViewports, viewportsVk);
+}
+
+void GfxCommandBuffer::SetDynamicState(const GfxDynamicState& state)
+{
+    VkCommandBuffer cmdVk = GfxBackend::_GetCommandBufferHandle(*this);
+
+    if (state.setCullMode) 
+        vkCmdSetCullMode(cmdVk, (VkCullModeFlags)state.cullMode);
+    if (state.setFrontFace)
+        vkCmdSetFrontFace(cmdVk, (VkFrontFace)state.frontFace);
+    if (state.setStencilOp) {
+        vkCmdSetStencilOp(cmdVk, (VkStencilFaceFlags)state.stencilOp.faceFlags, (VkStencilOp)state.stencilOp.failOp, 
+                          (VkStencilOp)state.stencilOp.passOp, (VkStencilOp)state.stencilOp.depthFailOp, (VkCompareOp)state.stencilOp.compareOp);
+    }
+
+    if (state.setStencilTestEnable)
+        vkCmdSetStencilTestEnable(cmdVk, state.stencilTestEnable);
+    if (state.setDepthCompareOp)
+        vkCmdSetDepthCompareOp(cmdVk, (VkCompareOp)state.depthCompareOp);
+    if (state.setDepthTestEnable)
+        vkCmdSetDepthTestEnable(cmdVk, state.depthTestEnable);
+    if (state.setPrimitiveTopology)
+        vkCmdSetPrimitiveTopology(cmdVk, (VkPrimitiveTopology)state.primitiveTopology);
+    if (state.setDepthBoundsTestEnable)
+        vkCmdSetDepthBoundsTestEnable(cmdVk, state.depthBoundsTestEnable);
+    if (state.setDepthBiasEnable)
+        vkCmdSetDepthBiasEnable(cmdVk, state.depthBiasEnable);
+    if (state.setLogicOp)
+        vkCmdSetLogicOpEXT(cmdVk, (VkLogicOp)state.logicOp);
+    if (state.setRasterizerDiscardEnable)
+        vkCmdSetRasterizerDiscardEnable(cmdVk, state.rasterizerDiscardEnable);
 }
 
 void GfxCommandBuffer::BindVertexBuffers(uint32 firstBinding, uint32 numBindings, const GfxBufferHandle* vertexBuffers, const uint64* offsets)

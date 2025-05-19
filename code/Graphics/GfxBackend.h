@@ -55,6 +55,7 @@ struct GfxCommandBuffer
 
     void SetScissors(uint32 firstScissor, uint32 numScissors, const RectInt* scissors);
     void SetViewports(uint32 firstViewport, uint32 numViewports, const GfxViewport* viewports);
+    void SetDynamicState(const GfxDynamicState& state);
 };
 
 namespace GfxBackend

@@ -2,8 +2,8 @@
 
 #include "../Core/System.h"
 
-static inline constexpr uint32 kShaderMaxDefines = 4;
-static inline constexpr uint32 kShaderMaxIncludeDirs = 2;
+static inline constexpr uint32 SHADER_MAX_DEFINES = 4;
+static inline constexpr uint32 SHADER_MAX_INCLUDE_DIRS = 2;
 
 struct ShaderDefine
 {
@@ -15,8 +15,8 @@ struct ShaderCompileDesc
 {
     uint32 numDefines;
     uint32 numIncludeDirs;
-    ShaderDefine defines[kShaderMaxDefines];
-    Path includeDirs[kShaderMaxIncludeDirs];
+    ShaderDefine defines[SHADER_MAX_DEFINES];
+    Path includeDirs[SHADER_MAX_INCLUDE_DIRS];
     bool dumpIntermediates;
     bool debug;
     uint8 _padding[2];      // Structure should have no holes because we are hashing it for asset-manager

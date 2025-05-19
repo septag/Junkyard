@@ -216,6 +216,8 @@ Pair<GfxShader*, uint32> Compile(const Span<uint8>& sourceCode, const char* file
         slang::ParameterCategory cat = param->getCategory();
         if (cat == slang::PushConstantBuffer)
             paramInfo->isPushConstant = true;
+        else if (cat == slang::SpecializationConstant)
+            paramInfo->isSpecialization = true;
         else
             ASSERT(param->getCategory() == slang::DescriptorTableSlot);
         
@@ -229,7 +231,17 @@ Pair<GfxShader*, uint32> Compile(const Span<uint8>& sourceCode, const char* file
         case slang::TypeReflection::Kind::SamplerState:      paramInfo->type = GfxShaderParameterType::Samplerstate;  break;
         case slang::TypeReflection::Kind::Resource:          paramInfo->type = GfxShaderParameterType::Resource; break;
         case slang::TypeReflection::Kind::Array:             paramInfo->type = GfxShaderParameterType::Array; break;
+        case slang::TypeReflection::Kind::Scalar:            paramInfo->type = GfxShaderParameterType::Scalar; break;
         default:                                             ASSERT_MSG(false, "Shader parameter type is not supported");   break;
+        }
+
+        if (paramInfo->type == GfxShaderParameterType::Scalar) {
+            switch (type->getScalarType()) {
+                case slang::TypeReflection::ScalarType::Bool:       paramInfo->scalarType = GfxShaderScalarType::Bool; break;
+                case slang::TypeReflection::ScalarType::Int32:      paramInfo->scalarType = GfxShaderScalarType::Int32; break;
+                case slang::TypeReflection::ScalarType::Float32:    paramInfo->scalarType = GfxShaderScalarType::Float32; break;
+                default:                                            ASSERT_MSG(false, "Shader scalar type is not supported"); break;
+            }
         }
     }
 

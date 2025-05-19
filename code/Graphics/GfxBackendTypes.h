@@ -731,6 +731,14 @@ struct GfxBlendDesc
 //             |_|                                           
 //
 
+enum class GfxStencilFaceFlags : uint32 
+{
+    Front = 0x00000001,
+    Back = 0x00000002,
+    FrontAndBack = 0x00000003
+};
+ENABLE_BITMASK(GfxStencilFaceFlags);
+
 // VkStencilOp
 enum class GfxStencilOp : uint32
 {
@@ -746,6 +754,7 @@ enum class GfxStencilOp : uint32
 
 struct GfxStencilOpDesc
 {
+    GfxStencilFaceFlags faceFlags;  // Only used in GfxDynamicState. DepthStencilDesc already has all cases included
     GfxStencilOp    failOp;
     GfxStencilOp    passOp;
     GfxStencilOp    depthFailOp;
@@ -948,6 +957,36 @@ struct GfxBindingDesc
     };
 };
 
+struct GfxDynamicState
+{
+    union {
+        GfxCullMode cullMode;
+        GfxCompareOp depthCompareOp;
+        GfxFrontFace frontFace;
+        GfxPrimitiveTopology primitiveTopology;
+        GfxStencilOpDesc stencilOp;
+        GfxLogicOp logicOp;
+        bool depthBoundsTestEnable;
+        bool depthTestEnable;
+        bool depthWriteEnable;
+        bool depthBiasEnable;
+        bool stencilTestEnable;
+        bool rasterizerDiscardEnable;
+    };
+
+    uint16 setCullMode : 1;
+    uint16 setDepthBoundsTestEnable : 1;
+    uint16 setDepthCompareOp : 1;
+    uint16 setDepthTestEnable : 1;
+    uint16 setDepthBiasEnable : 1;
+    uint16 setFrontFace : 1;
+    uint16 setPrimitiveTopology : 1;
+    uint16 setStencilOp : 1;
+    uint16 setStencilTestEnable : 1;
+    uint16 setLogicOp : 1;
+    uint16 setRasterizerDiscardEnable : 1;
+};
+
 //   ____                _           ____               
 //  |  _ \ ___ _ __   __| | ___ _ __|  _ \ __ _ ___ ___ 
 //  | |_) / _ \ '_ \ / _` |/ _ \ '__| |_) / _` / __/ __|
@@ -1003,7 +1042,16 @@ enum class GfxShaderParameterType : uint32
     Uniformbuffer,
     Samplerstate,
     Resource,
-    Array
+    Array,
+    Scalar
+};
+
+enum class GfxShaderScalarType : uint32
+{
+    Void = 0,
+    Bool,
+    Int32,
+    Float32
 };
 
 // SERIALIZED
@@ -1012,8 +1060,10 @@ struct GfxShaderParameterInfo
     char name[32];
     GfxShaderParameterType type;
     GfxShaderStage stage;
+    GfxShaderScalarType scalarType;
     uint32 bindingIdx;
     bool isPushConstant;
+    bool isSpecialization;
 };
 
 // SERIALIZED
