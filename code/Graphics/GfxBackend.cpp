@@ -585,6 +585,10 @@ struct GfxBackendPipeline
     PipelineType type;
     uint32 shaderHash;
 
+    // Allocated
+    uint32 numPermutVars;
+    GfxShaderPermutationVar* permutVars;
+
     union 
     {
         VkGraphicsPipelineCreateInfo* graphics;
@@ -598,10 +602,31 @@ struct GfxBackendSampler
     GfxSamplerDesc desc;
 };
 
+struct GfxBackendShaderToPipelineMapEntry
+{
+    union {
+        struct {
+            uint32 vsHash;
+            uint32 psHash;
+            VkShaderModule vs;
+            VkShaderModule ps;
+        } graphics;
+
+        struct {
+            uint32 csHash;
+            VkShaderModule cs;
+        } compute;
+    };
+
+    Array<GfxPipelineHandle> pipelines;
+};
+
 struct GfxBackendVk
 {
     ReadWriteMutex objectPoolsMutex;
     Mutex garbageMtx;
+    Mutex shaderToPipelineTableMtx;
+
     MemProxyAllocator parentAlloc;
     MemProxyAllocator runtimeAlloc;
     MemProxyAllocator driverAlloc;
@@ -637,6 +662,7 @@ struct GfxBackendVk
 
     VkSampler samplerDefault;
     VkPipelineCache pipelineCache;
+    HashTable<GfxBackendShaderToPipelineMapEntry> shaderToPipelineTable;
 
     float prevFrameGpuTime;     // This is the one before the last frame. (frameIdx - FRAMES_IN_FLIGHT)
 };
@@ -764,6 +790,56 @@ namespace GfxBackend
                 return &shader.params[i];
         }
         return nullptr;
+    }
+
+    static VkSpecializationInfo* _CreateSpecializationInfo(const GfxShader& shader, uint32 numPermutVars, 
+                                                           const GfxShaderPermutationVar* permutVars, MemAllocator* alloc)
+    {
+        ASSERT(numPermutVars && numPermutVars <= GFXBACKEND_MAX_SHADER_MUTATION_VARS);
+
+        uint32 numVars = 0;
+        for (uint32 i = 0; i < numPermutVars; i++, numVars++) {
+            if (permutVars[i].type == GfxShaderPermutationVar::Void)
+                break;
+            ASSERT(permutVars[i].name);
+        }
+        ASSERT(numVars);
+
+        const uint32 dataSize = numVars*4; // All mutation var types are 4 bytes (including boolean which is VkBool32)
+        uint8* data;
+        MemSingleShotMalloc<VkSpecializationInfo> mallocator;
+        mallocator.AddMemberArray<VkSpecializationMapEntry>(offsetof(VkSpecializationInfo, pMapEntries), numVars);
+        mallocator.AddExternalPointerField<uint8>(&data, dataSize);
+        VkSpecializationInfo* info = mallocator.Calloc(alloc);
+        info->mapEntryCount = numVars;
+        info->dataSize = dataSize; 
+        info->pData = data;
+
+        uint32 offset = 0;
+        for (uint32 i = 0; i < numVars; i++) {
+            const GfxShaderPermutationVar& var = permutVars[i];
+            
+            const GfxShaderParameterInfo* paramInfo = _FindShaderParam(shader, var.name);
+            ASSERT_MSG(paramInfo, "Specialization variable '%s' doesn't exist in shader '%s'", var.name, shader.name);
+            ASSERT_MSG(paramInfo->isSpecialization, "Shader variable '%s' is not a specialization constant (annotated with [SpecializationConstant]) in shader '%s'", 
+                       var.name, shader.name);
+
+            VkSpecializationMapEntry* mapEntry = const_cast<VkSpecializationMapEntry*>(&info->pMapEntries[i]);
+            mapEntry->constantID = paramInfo->bindingIdx;
+            mapEntry->offset = offset;
+            mapEntry->size = 4;
+
+            uint8* dstData = data + offset;
+            switch (var.type) {
+                case GfxShaderPermutationVar::Boolean:   *((VkBool32*)dstData) = var.value.b;  break;
+                case GfxShaderPermutationVar::Int:       *((int32*)dstData) = var.value.i; break;
+                case GfxShaderPermutationVar::Float:     *((float*)dstData) = var.value.f; break;
+            }
+
+            offset += 4;
+        }
+
+        return info;
     }
 
     inline VkCommandBuffer _GetCommandBufferHandle(const GfxCommandBuffer& cmdBuffer)
@@ -1872,6 +1948,9 @@ bool GfxBackend::Initialize()
     gBackendVk.externalFrameSyncSignal.Initialize();
     gBackendVk.externalFrameSyncSignal.Increment();
 
+    gBackendVk.shaderToPipelineTableMtx.Initialize();
+    gBackendVk.shaderToPipelineTable.SetAllocator(&gBackendVk.runtimeAlloc);
+
     // Make a trilinear sampler as default sampler
     // TODO: Make a better sampler system
     {
@@ -2184,6 +2263,9 @@ void GfxBackend::Release()
 
     gBackendVk.garbage.Free();
     gBackendVk.garbageMtx.Release();
+
+    gBackendVk.shaderToPipelineTable.Free();
+    gBackendVk.shaderToPipelineTableMtx.Release();
 
     gBackendVk.memMan.Release();
     _ReleaseSwapchain(&gBackendVk.swapchain);
@@ -2838,7 +2920,6 @@ GfxPipelineLayoutHandle GfxBackend::CreatePipelineLayout(const GfxShader& shader
             ASSERT(binding.name && binding.name[0]);
 
             const GfxShaderParameterInfo* shaderParam = _FindShaderParam(shader, binding.name);
-            const GfxShaderParameterInfo* params = shader.params.Get();
 
             ASSERT_MSG(shaderParam != nullptr, "Shader parameter '%s' does not exist in shader '%s'", binding.name, shader.name);
             ASSERT_MSG(!shaderParam->isPushConstant, "Shader parameter '%s' is a push-constant in shader '%s'. cannot be used as regular uniform", 
@@ -3035,12 +3116,29 @@ void GfxBackend::DestroyPipelineLayout(GfxPipelineLayoutHandle& handle)
 
 void GfxBackend::ReloadShaderPipelines(const GfxShader& shader)
 {
-    ReadWriteMutexReadScope objPoolLock(gBackendVk.objectPoolsMutex);
+    GfxBackendShaderToPipelineMapEntry* pipesEntry = nullptr;
+    MemTempAllocator tempAlloc;
 
-    for (GfxBackendPipeline& pipeline : gBackendVk.pipelines) {
-        if (pipeline.shaderHash != shader.hash)
-            continue;
-        
+    // We have to keep the mutex locked the entire time in order to protect entries from being invalidated
+    MutexScope shaderToPipelineLock(gBackendVk.shaderToPipelineTableMtx);
+    uint32 index = gBackendVk.shaderToPipelineTable.Find(shader.paramsHash);
+    if (index != -1)
+        pipesEntry = &gBackendVk.shaderToPipelineTable.GetMutable(index);
+    else {
+        ASSERT_MSG(0, "Shader to pipeline mapping should find something");
+        return;
+    }
+
+    ReadWriteMutexReadScope objPoolLock(gBackendVk.objectPoolsMutex);
+    for (GfxPipelineHandle handle : pipesEntry->pipelines) {
+        GfxBackendPipeline& pipeline = gBackendVk.pipelines.Data(handle);
+
+        VkSpecializationInfo* specInfo = nullptr;
+        if (pipeline.permutVars) {
+            ASSERT(pipeline.numPermutVars);
+            specInfo = _CreateSpecializationInfo(shader, pipeline.numPermutVars, pipeline.permutVars, &tempAlloc);
+        }
+
         // Reload the shaders by only reloading the modules
         VkPipeline oldPipeline = nullptr;
         if (pipeline.type == GfxBackendPipeline::PipelineTypeGraphics) {
@@ -3057,6 +3155,8 @@ void GfxBackend::ReloadShaderPipelines(const GfxShader& shader)
             ASSERT_MSG(psInfo, "Shader '%s' is missing Pixel shader program", shader.name);
             VkShaderModule psShaderModule;
             VkShaderModule vsShaderModule;
+            uint32 vsShaderModuleHash;
+            uint32 psShaderModuleHash;
 
             {
                 VkShaderModuleCreateInfo shaderStageCreateInfo {
@@ -3069,6 +3169,8 @@ void GfxBackend::ReloadShaderPipelines(const GfxShader& shader)
                     LOG_ERROR("Gfx: Failed to compile Vertex module for shader '%s'", shader.name);
                     return;
                 }
+
+                vsShaderModuleHash = Hash::Murmur32(vsInfo->data.Get(), vsInfo->dataSize);
             }
 
             {
@@ -3082,10 +3184,21 @@ void GfxBackend::ReloadShaderPipelines(const GfxShader& shader)
                     LOG_ERROR("Gfx: Failed to compile Pixel module for shader '%s'", shader.name);
                     return;
                 }
+
+                psShaderModuleHash = Hash::Murmur32(psInfo->data.Get(), psInfo->dataSize);
             }
 
+            // Reassign shader modules and specialization parameters
             const_cast<VkPipelineShaderStageCreateInfo*>(&pipeline.createInfo.graphics->pStages[0])->module = vsShaderModule;
+            const_cast<VkPipelineShaderStageCreateInfo*>(&pipeline.createInfo.graphics->pStages[0])->pSpecializationInfo = specInfo;
+
             const_cast<VkPipelineShaderStageCreateInfo*>(&pipeline.createInfo.graphics->pStages[1])->module = psShaderModule;
+            const_cast<VkPipelineShaderStageCreateInfo*>(&pipeline.createInfo.graphics->pStages[1])->pSpecializationInfo = specInfo;
+
+            pipesEntry->graphics.vs = vsShaderModule;
+            pipesEntry->graphics.ps = psShaderModule;
+            pipesEntry->graphics.vsHash = vsShaderModuleHash;
+            pipesEntry->graphics.psHash = psShaderModuleHash;
 
             VkPipeline pipelineVk;
             if (vkCreateGraphicsPipelines(gBackendVk.device, nullptr, 1, pipeline.createInfo.graphics, gBackendVk.vkAlloc, &pipelineVk) != VK_SUCCESS) 
@@ -3093,9 +3206,6 @@ void GfxBackend::ReloadShaderPipelines(const GfxShader& shader)
                 LOG_ERROR("Gfx: Failed to create graphics pipeline for shader '%s'", shader.name);
                 return;
             }
-
-            vkDestroyShaderModule(gBackendVk.device, vsShaderModule, gBackendVk.vkAlloc);
-            vkDestroyShaderModule(gBackendVk.device, psShaderModule, gBackendVk.vkAlloc);
 
             oldPipeline = pipeline.handle;
             pipeline.handle = pipelineVk;
@@ -3110,6 +3220,7 @@ void GfxBackend::ReloadShaderPipelines(const GfxShader& shader)
             ASSERT_MSG(csInfo, "Shader '%s' is missing Compute shader program", shader.name);
 
             VkShaderModule csShaderModule;
+
             VkShaderModuleCreateInfo shaderStageCreateInfo {
                 .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
                 .codeSize = csInfo->dataSize,
@@ -3120,7 +3231,13 @@ void GfxBackend::ReloadShaderPipelines(const GfxShader& shader)
                 LOG_ERROR("Gfx: Failed to compile Compute module for shader '%s'", shader.name);
                 return;
             }
+
+            // Reassign shader module and specialization parameters
             const_cast<VkPipelineShaderStageCreateInfo*>(&pipeline.createInfo.compute->stage)->module = csShaderModule;
+            const_cast<VkPipelineShaderStageCreateInfo*>(&pipeline.createInfo.compute->stage)->pSpecializationInfo = specInfo;
+
+            pipesEntry->compute.cs = csShaderModule;
+            pipesEntry->compute.csHash = Hash::Murmur32(csInfo->data.Get(), csInfo->dataSize);
 
             VkPipeline pipelineVk;
             if (vkCreateComputePipelines(gBackendVk.device, nullptr, 1, pipeline.createInfo.compute, gBackendVk.vkAlloc, &pipelineVk) != VK_SUCCESS) 
@@ -3128,8 +3245,6 @@ void GfxBackend::ReloadShaderPipelines(const GfxShader& shader)
                 LOG_ERROR("Gfx: Failed to create compute pipeline for shader '%s'", shader.name);
                 return;
             }
-
-            vkDestroyShaderModule(gBackendVk.device, csShaderModule, gBackendVk.vkAlloc);
 
             oldPipeline = pipeline.handle;
             pipeline.handle = pipelineVk;
@@ -3146,7 +3261,8 @@ void GfxBackend::ReloadShaderPipelines(const GfxShader& shader)
 }
 
 GfxPipelineHandle GfxBackend::CreateGraphicsPipeline(const GfxShader& shader, GfxPipelineLayoutHandle layoutHandle, 
-                                                     const GfxGraphicsPipelineDesc& desc)
+                                                     const GfxGraphicsPipelineDesc& desc, uint32 numPermutVars,
+                                                     const GfxShaderPermutationVar* permutVars)
 {
     MemTempAllocator tempAlloc;
 
@@ -3169,64 +3285,68 @@ GfxPipelineHandle GfxBackend::CreateGraphicsPipeline(const GfxShader& shader, Gf
         layoutVk = gBackendVk.pipelineLayouts.Data(layoutHandle)->handle;
     }
 
-    VkShaderModule psShaderModule;
-    VkShaderModule vsShaderModule;
-    {
-        VkShaderModuleCreateInfo shaderStageCreateInfo {
-            .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
-            .codeSize = vsInfo->dataSize,
-            .pCode = (const uint32*)vsInfo->data.Get()
-        };
+    VkShaderModule psShaderModule = nullptr;
+    VkShaderModule vsShaderModule = nullptr;
+    uint32 vsShaderModuleHash = Hash::Murmur32(vsInfo->data.Get(), vsInfo->dataSize);
+    uint32 psShaderModuleHash = Hash::Murmur32(psInfo->data.Get(), psInfo->dataSize);
+    uint32 shaderToPipelinesTableIndex; // used at the bottom of the function to modify the entry
 
-        if (vkCreateShaderModule(gBackendVk.device, &shaderStageCreateInfo, gBackendVk.vkAlloc, &vsShaderModule) != VK_SUCCESS) {
-            LOG_ERROR("Gfx: Failed to compile Vertex module for shader '%s'", shader.name);
-            return GfxPipelineHandle();
+    {
+        MutexScope shaderToPipelineLock(gBackendVk.shaderToPipelineTableMtx);
+        uint32 index = gBackendVk.shaderToPipelineTable.Find(shader.paramsHash);
+        if (index != -1) {
+            const GfxBackendShaderToPipelineMapEntry& pipesEntry = gBackendVk.shaderToPipelineTable.Get(index);
+            shaderToPipelinesTableIndex = index;
+            if (vsShaderModuleHash == pipesEntry.graphics.vsHash && psShaderModuleHash == pipesEntry.graphics.psHash) {
+                vsShaderModule = pipesEntry.graphics.vs;
+                psShaderModule = pipesEntry.graphics.ps;
+            }
+        }
+        else {
+            GfxBackendShaderToPipelineMapEntry pipesEntry {
+                .graphics = {
+                    .vsHash = vsShaderModuleHash,
+                    .psHash = psShaderModuleHash
+                }
+            };
+            pipesEntry.pipelines.SetAllocator(&gBackendVk.runtimeAlloc);
+            shaderToPipelinesTableIndex = gBackendVk.shaderToPipelineTable.Add(shader.paramsHash, pipesEntry);
         }
     }
 
-    {
-        VkShaderModuleCreateInfo shaderStageCreateInfo {
-            .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
-            .codeSize = psInfo->dataSize,
-            .pCode = (const uint32*)psInfo->data.Get()
-        };
+    if (!vsShaderModule || !psShaderModule) {
+        {
+            VkShaderModuleCreateInfo shaderStageCreateInfo {
+                .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+                .codeSize = vsInfo->dataSize,
+                .pCode = (const uint32*)vsInfo->data.Get()
+            };
 
-        if (vkCreateShaderModule(gBackendVk.device, &shaderStageCreateInfo, gBackendVk.vkAlloc, &psShaderModule) != VK_SUCCESS) {
-            LOG_ERROR("Gfx: Failed to compile Pixel module for shader '%s'", shader.name);
-            return GfxPipelineHandle();
+            if (vkCreateShaderModule(gBackendVk.device, &shaderStageCreateInfo, gBackendVk.vkAlloc, &vsShaderModule) != VK_SUCCESS) {
+                LOG_ERROR("Gfx: Failed to compile Vertex module for shader '%s'", shader.name);
+                return GfxPipelineHandle();
+            }
+        }
+
+        {
+            VkShaderModuleCreateInfo shaderStageCreateInfo {
+                .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+                .codeSize = psInfo->dataSize,
+                .pCode = (const uint32*)psInfo->data.Get()
+            };
+
+            if (vkCreateShaderModule(gBackendVk.device, &shaderStageCreateInfo, gBackendVk.vkAlloc, &psShaderModule) != VK_SUCCESS) {
+                LOG_ERROR("Gfx: Failed to compile Pixel module for shader '%s'", shader.name);
+                return GfxPipelineHandle();
+            }
         }
     }
 
-    // TEMP (TODO: REMOVE)
-    #if 0
-    const GfxShaderParameterInfo* sparam = _FindShaderParam(shader, "test");
-    const GfxShaderParameterInfo* sparam2 = _FindShaderParam(shader, "test2");
-    VkSpecializationMapEntry specializeEntries[] = {
-        {
-            .constantID = sparam ? sparam->bindingIdx : 0,
-            .size = 4
-        },
-        {
-            .constantID = sparam2 ? sparam2->bindingIdx : 0,
-            .offset = 4,
-            .size = 4
-        }
-    };
-
-    struct SVars
-    {
-        float test = 0.0f;
-        float test2 = 1;
-    } svars;
-    
-
-    VkSpecializationInfo specialize {
-        .mapEntryCount = CountOf(specializeEntries),
-        .pMapEntries = specializeEntries,
-        .dataSize = sizeof(svars),
-        .pData = &svars
-    };
-    #endif
+    VkSpecializationInfo* specInfo = nullptr;
+    if (permutVars) {
+        ASSERT(numPermutVars);
+        specInfo = _CreateSpecializationInfo(shader, numPermutVars, permutVars, &tempAlloc);
+    }
 
     VkPipelineShaderStageCreateInfo shaderStages[] = {
         {
@@ -3234,14 +3354,14 @@ GfxPipelineHandle GfxBackend::CreateGraphicsPipeline(const GfxShader& shader, Gf
             .stage = VK_SHADER_STAGE_VERTEX_BIT,
             .module = vsShaderModule,
             .pName = "main",
-            .pSpecializationInfo = nullptr
+            .pSpecializationInfo = specInfo
         },
         {
             .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
             .stage = VK_SHADER_STAGE_FRAGMENT_BIT,
             .module = psShaderModule,
             .pName = "main",
-            .pSpecializationInfo = nullptr
+            .pSpecializationInfo = specInfo
         }
     };
 
@@ -3433,24 +3553,39 @@ GfxPipelineHandle GfxBackend::CreateGraphicsPipeline(const GfxShader& shader, Gf
         return GfxPipelineHandle();
     }
 
-    // Should we keep these shader modules ?
-    vkDestroyShaderModule(gBackendVk.device, vsShaderModule, gBackendVk.vkAlloc);
-    vkDestroyShaderModule(gBackendVk.device, psShaderModule, gBackendVk.vkAlloc);
-
     GfxBackendPipeline pipeline {
         .handle = pipelineVk,
         .type = GfxBackendPipeline::PipelineTypeGraphics,
-        .shaderHash = shader.hash,
+        .shaderHash = shader.paramsHash,
+        .numPermutVars = numPermutVars,
+        .permutVars = permutVars ? Mem::AllocCopy<GfxShaderPermutationVar>(permutVars, numPermutVars) : nullptr,
         .createInfo = {
             .graphics = _DuplicateGraphicsPipelineCreateInfo(pipelineInfo)
         }
     };
 
-    ReadWriteMutexWriteScope objPoolLock(gBackendVk.objectPoolsMutex);
-    return gBackendVk.pipelines.Add(pipeline);
+    GfxPipelineHandle handle;
+
+    {
+        ReadWriteMutexWriteScope objPoolLock(gBackendVk.objectPoolsMutex);
+        handle = gBackendVk.pipelines.Add(pipeline);
+    }
+
+    {
+        MutexScope shaderToPipelineLock(gBackendVk.shaderToPipelineTableMtx);
+        GfxBackendShaderToPipelineMapEntry& pipesEntry = gBackendVk.shaderToPipelineTable.GetMutable(shaderToPipelinesTableIndex);
+        pipesEntry.graphics.vs = vsShaderModule;
+        pipesEntry.graphics.vsHash = vsShaderModuleHash;
+        pipesEntry.graphics.ps = psShaderModule;
+        pipesEntry.graphics.psHash = psShaderModuleHash;
+        pipesEntry.pipelines.Push(handle);
+    }
+
+    return handle;
 }
 
-GfxPipelineHandle GfxBackend::CreateComputePipeline(const GfxShader& shader, GfxPipelineLayoutHandle layoutHandle)
+GfxPipelineHandle GfxBackend::CreateComputePipeline(const GfxShader& shader, GfxPipelineLayoutHandle layoutHandle, 
+                                                    uint32 numPermutVars, const GfxShaderPermutationVar* permutVars)
 {
     MemTempAllocator tempAlloc;
 
@@ -3467,17 +3602,44 @@ GfxPipelineHandle GfxBackend::CreateComputePipeline(const GfxShader& shader, Gfx
         ReadWriteMutexReadScope objPoolLock(gBackendVk.objectPoolsMutex);
         layoutVk = gBackendVk.pipelineLayouts.Data(layoutHandle)->handle;
     }
-    VkShaderModule csShaderModule;
 
-    VkShaderModuleCreateInfo shaderStageCreateInfo {
-        .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
-        .codeSize = csInfo->dataSize,
-        .pCode = (const uint32*)csInfo->data.Get()
-    };
+    VkShaderModule csShaderModule = nullptr;
+    uint32 csShaderModuleHash = Hash::Murmur32(csInfo->data.Get(), csInfo->dataSize);
+    uint32 shaderToPipelinesTableIndex; // used at the bottom of the function to modify the entry
+                                        // note: we have to lock the hash table twice, because it's memory might get invalidated while we are doing stuff
 
-    if (vkCreateShaderModule(gBackendVk.device, &shaderStageCreateInfo, gBackendVk.vkAlloc, &csShaderModule) != VK_SUCCESS) {
-        LOG_ERROR("Gfx: Failed to compile Compute module for shader '%s'", shader.name);
-        return GfxPipelineHandle();
+    {
+        MutexScope shaderToPipelineLock(gBackendVk.shaderToPipelineTableMtx);
+        uint32 index = gBackendVk.shaderToPipelineTable.Find(shader.paramsHash);
+        if (index != -1) {
+            const GfxBackendShaderToPipelineMapEntry& pipesEntry = gBackendVk.shaderToPipelineTable.Get(index);
+            shaderToPipelinesTableIndex = index;
+            if (csShaderModuleHash == pipesEntry.compute.csHash)
+                csShaderModule = pipesEntry.compute.cs;                
+        }
+        else {
+            GfxBackendShaderToPipelineMapEntry pipesEntry {};
+            pipesEntry.pipelines.SetAllocator(&gBackendVk.runtimeAlloc);
+            shaderToPipelinesTableIndex = gBackendVk.shaderToPipelineTable.Add(shader.paramsHash, pipesEntry);
+        }
+    }
+
+    if (!csShaderModule) {
+        VkShaderModuleCreateInfo shaderStageCreateInfo {
+            .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+            .codeSize = csInfo->dataSize,
+            .pCode = (const uint32*)csInfo->data.Get(),
+        };
+
+        if (vkCreateShaderModule(gBackendVk.device, &shaderStageCreateInfo, gBackendVk.vkAlloc, &csShaderModule) != VK_SUCCESS) {
+            LOG_ERROR("Gfx: Failed to compile Compute module for shader '%s'", shader.name);
+            return GfxPipelineHandle();
+        }
+    }
+
+    VkSpecializationInfo* specInfo = nullptr;
+    if (numPermutVars && permutVars) {
+        specInfo = _CreateSpecializationInfo(shader, numPermutVars, permutVars, &tempAlloc);
     }
 
     VkComputePipelineCreateInfo pipelineCreateInfo {
@@ -3486,9 +3648,10 @@ GfxPipelineHandle GfxBackend::CreateComputePipeline(const GfxShader& shader, Gfx
             .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
             .stage = VK_SHADER_STAGE_COMPUTE_BIT,
             .module = csShaderModule,
-            .pName = "main"
+            .pName = "main",
+            .pSpecializationInfo = specInfo
         },
-        .layout = layoutVk,
+        .layout = layoutVk
     };
 
     VkPipeline pipelineVk;
@@ -3497,21 +3660,33 @@ GfxPipelineHandle GfxBackend::CreateComputePipeline(const GfxShader& shader, Gfx
         return GfxPipelineHandle();
     }
 
-    // Should we keep the shader module ?
-    vkDestroyShaderModule(gBackendVk.device, csShaderModule, gBackendVk.vkAlloc);
-
     // TODO: gfxSavePipelineBinaryProperties()
     GfxBackendPipeline pipeline {
         .handle = pipelineVk,
         .type = GfxBackendPipeline::PipelineTypeCompute,
-        .shaderHash = shader.hash,
+        .shaderHash = shader.paramsHash,
+        .numPermutVars = numPermutVars,
+        .permutVars = permutVars ? Mem::AllocCopy<GfxShaderPermutationVar>(permutVars, numPermutVars) : nullptr,
         .createInfo = {
             .compute = _DuplicateComputePipelineCreateInfo(pipelineCreateInfo)
         }
     };
 
-    ReadWriteMutexWriteScope objPoolLock(gBackendVk.objectPoolsMutex);
-    return gBackendVk.pipelines.Add(pipeline);
+    GfxPipelineHandle handle;
+    {
+        ReadWriteMutexWriteScope objPoolLock(gBackendVk.objectPoolsMutex);
+        handle = gBackendVk.pipelines.Add(pipeline);
+    }
+
+    {
+        MutexScope shaderToPipelineLock(gBackendVk.shaderToPipelineTableMtx);
+        GfxBackendShaderToPipelineMapEntry& pipesEntry = gBackendVk.shaderToPipelineTable.GetMutable(shaderToPipelinesTableIndex);
+        pipesEntry.compute.cs = csShaderModule;
+        pipesEntry.compute.csHash = csShaderModuleHash;
+        pipesEntry.pipelines.Push(handle);
+    }
+
+    return handle;
 }
 
 
@@ -3529,6 +3704,35 @@ void GfxBackend::DestroyPipeline(GfxPipelineHandle& handle)
             });
         }
 
+        {
+            MutexScope shaderToPipelineLock(gBackendVk.shaderToPipelineTableMtx);
+            uint32 index = gBackendVk.shaderToPipelineTable.Find(pipeline.shaderHash);
+            if (index != -1) {
+                GfxBackendShaderToPipelineMapEntry& entry = gBackendVk.shaderToPipelineTable.GetMutable(index);
+                uint32 pipIndex = entry.pipelines.Find(handle);
+                ASSERT(pipIndex != -1);
+                entry.pipelines.RemoveAndSwap(pipIndex);
+
+                // Destroy the entry if we hit the zero ref count
+                if (entry.pipelines.Count() == 0) {
+                    if (pipeline.type == GfxBackendPipeline::PipelineTypeGraphics) {
+                        if (entry.graphics.vs)
+                            vkDestroyShaderModule(gBackendVk.device, entry.graphics.vs, gBackendVk.vkAlloc);
+                        if (entry.graphics.ps)
+                            vkDestroyShaderModule(gBackendVk.device, entry.graphics.ps, gBackendVk.vkAlloc);
+                    }
+                    else if (pipeline.type == GfxBackendPipeline::PipelineTypeGraphics) {
+                        if (entry.compute.cs)
+                            vkDestroyShaderModule(gBackendVk.device, entry.compute.cs, gBackendVk.vkAlloc);
+                    }
+
+                    entry.pipelines.Free();
+                    gBackendVk.shaderToPipelineTable.Remove(index);
+                }
+            }
+        }
+
+        Mem::Free(pipeline.permutVars, &gBackendVk.runtimeAlloc);
         if (pipeline.type == GfxBackendPipeline::PipelineTypeGraphics)
             Mem::Free(pipeline.createInfo.graphics, &gBackendVk.runtimeAlloc);
         else if (pipeline.type == GfxBackendPipeline::PipelineTypeCompute)
@@ -5324,7 +5528,6 @@ void GfxCommandBuffer::TransitionImage(GfxImageHandle imgHandle, GfxImageTransit
             barrier.dstStageMask = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
             barrier.dstAccessMask = VK_ACCESS_2_MEMORY_READ_BIT;
             barrier.newLayout = VK_IMAGE_LAYOUT_GENERAL;
-            // barrier.srcQueueFamilyIndex = 1;    // TEMP
             break;
 
         case GfxImageTransition::ComputeWrite:

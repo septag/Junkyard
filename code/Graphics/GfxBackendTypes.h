@@ -11,9 +11,9 @@
 #include "../Core/MathTypes.h"
 #include "../Core/StringUtil.h"
 
-
 inline constexpr uint32 GFXBACKEND_MAX_RENDERPASS_COLOR_ATTACHMENTS = 8;
 inline constexpr uint32 GFXBACKEND_MAX_MIPS_PER_IMAGE = 12;  // up to 4096
+inline constexpr uint32 GFXBACKEND_MAX_SHADER_MUTATION_VARS = 4;
 
 enum class GfxFormat: uint32
 {
@@ -878,6 +878,8 @@ struct GfxPipelineLayoutDesc
         uint8 setIndex = 0;        // DescriptorSet Id
     };
 
+    // Push constants are declared in the shaders by putting [[vk_push_constant]] annotation before cbuffers
+    // Setting them are done with GfxCommandBuffer::PushConstants
     struct PushConstant
     {
         const char* name;
@@ -909,12 +911,37 @@ struct GfxVertexInputAttributeDesc
     uint32      offset;
 };
 
-typedef struct GfxVertexBufferBindingDesc 
+struct GfxVertexBufferBindingDesc 
 {
     uint32               binding;
     uint32               stride;
     GfxVertexInputRate   inputRate;
-} GfxVertexBufferBindingDesc;
+};
+
+struct GfxShaderPermutationVar
+{
+    enum Type
+    {
+        Void = 0,
+        Boolean,
+        Int,
+        Float
+    };
+
+    const char* name = nullptr;
+    Type type = Void;
+
+    union {
+        bool b;
+        int i;
+        float f;
+    } value;
+
+    GfxShaderPermutationVar() = default;
+    explicit GfxShaderPermutationVar(const char* _name, bool _b) : name(_name), type(Boolean) { value.b = _b; }
+    explicit GfxShaderPermutationVar(const char* _name, int _i) : name(_name), type(Int) { value.i = _i; }
+    explicit GfxShaderPermutationVar(const char* _name, float _f) : name(_name), type(Float) { value.f = _f; }
+};
 
 struct GfxGraphicsPipelineDesc
 {
@@ -1080,7 +1107,7 @@ struct GfxShaderVertexAttributeInfo
 struct GfxShader
 {
     char name[32];
-    uint32 hash;           // AssetParamsHash of the shader: Passed to pipelines to recreate them whenever shadear is reloaded
+    uint32 paramsHash;           // ParamsHash of the shader asset: Passed to pipelines to recreate them whenever shader is reloaded
     uint32 numStages;
     uint32 numParams;
     uint32 numVertexAttributes;

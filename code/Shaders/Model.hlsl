@@ -12,13 +12,6 @@ struct Psinput
     float2 uv : TEXCOORD0;
 };
 
-// TEMP
-[SpecializationConstant]
-const float test = 1;
-
-[SpecializationConstant]
-const float test2 = 1;
-
 // changes DescriptorTableSlot to PushConstant
 [[vk_push_constant]]
 cbuffer ModelTransform
@@ -58,7 +51,5 @@ float4 PsMain(Psinput input) : SV_Target
     NdotL = max(LightFactor, NdotL);
 
     float4 albedo = BaseColorTexture.Sample(input.uv);
-    albedo *= float4(test, test2, 0, albedo.w);
-
     return float4(NdotL*albedo.xyz + ambient*albedo.xyz, 1.0f);
 }

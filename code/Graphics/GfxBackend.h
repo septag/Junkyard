@@ -36,6 +36,7 @@ struct GfxCommandBuffer
     void ClearImageColor(GfxImageHandle imgHandle, Float4 color);
     void ClearSwapchainColor(Float4 color);
 
+    // Push constants are declared in the shaders by putting [[vk_push_constant]] annotation before cbuffers
     void PushConstants(GfxPipelineLayoutHandle layoutHandle, const char* name, const void* data, uint32 dataSize);
     template <typename _T> void PushConstants(GfxPipelineLayoutHandle layout, const char* name, const _T& data) { PushConstants(layout, name, &data, sizeof(data)); }
 
@@ -85,8 +86,14 @@ namespace GfxBackend
     void BatchCreateBuffer(uint32 numBuffers, const GfxBufferDesc* descs, GfxBufferHandle* outHandles);
     void BatchDestroyBuffer(uint32 numBuffers, GfxBufferHandle* handles);
 
-    GfxPipelineHandle CreateGraphicsPipeline(const GfxShader& shader, GfxPipelineLayoutHandle layoutHandle, const GfxGraphicsPipelineDesc& desc);
-    GfxPipelineHandle CreateComputePipeline(const GfxShader& shader, GfxPipelineLayoutHandle layoutHandle);
+    // We can have different permutations for each shader by having specialization constants
+    // The syntax in the shader is [SpecializationConstant] annotation before scalar types (float, bool, int)
+    // So instead of reloading shader asset with different defines, we can pass these constants (name/value pairs) here which is considerably faster and more robust 
+    GfxPipelineHandle CreateGraphicsPipeline(const GfxShader& shader, GfxPipelineLayoutHandle layoutHandle, 
+                                             const GfxGraphicsPipelineDesc& desc, uint32 numPermutVars = 0,
+                                             const GfxShaderPermutationVar* permutVars = nullptr);
+    GfxPipelineHandle CreateComputePipeline(const GfxShader& shader, GfxPipelineLayoutHandle layoutHandle, 
+                                            uint32 numPermutVars = 0, const GfxShaderPermutationVar* permutVars = nullptr);
     void DestroyPipeline(GfxPipelineHandle& handle);
 
     GfxSamplerHandle CreateSampler(const GfxSamplerDesc& desc);

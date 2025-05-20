@@ -311,42 +311,55 @@ inline void HashTable<_T>::Free()
 template <typename _T>
 inline const _T* HashTable<_T>::Values() const
 {
+    if (!mHashTable)
+        return nullptr;
     return reinterpret_cast<const _T*> (mHashTable->values);
 }
 
 template <typename _T>
 inline const uint32* HashTable<_T>::Keys() const
 {
+    if (!mHashTable)
+        return nullptr;
     return mHashTable->keys;
 }
 
 template <typename _T>
 inline uint32 HashTable<_T>::Count() const
 {
+    if (!mHashTable)
+        return 0;
+
     return mHashTable->count;
 }
 
 template <typename _T>
 inline uint32 HashTable<_T>::Capacity() const
 {
+    if (!mHashTable)
+        return 0;
+
     return mHashTable->capacity;
 }
 
 template <typename _T>
 inline const _T& HashTable<_T>::Get(uint32 index) const
 {
+    ASSERT(mHashTable);
     return reinterpret_cast<_T*>(mHashTable->values)[index];
 }
 
 template <typename _T>
 inline void HashTable<_T>::Set(uint32 index, const _T& value)
 {
+    ASSERT(mHashTable);
     reinterpret_cast<_T*>(mHashTable->values)[index] = value;
 }
 
 template <typename _T>
 inline _T& HashTable<_T>::GetMutable(uint32 index)
 {
+    ASSERT(mHashTable);
     return reinterpret_cast<_T*>(mHashTable->values)[index];
 }
 
@@ -355,19 +368,25 @@ inline void HashTable<_T>::Remove(uint32 index)
 {
     ASSERT_MSG(index < mHashTable->capacity, "index out of range");
 
-    mHashTable->keys[index] = 0;
-    --mHashTable->count;
+    if (mHashTable) {
+        mHashTable->keys[index] = 0;
+        --mHashTable->count;
+    }
 }
 
 template <typename _T>
 inline void HashTable<_T>::Clear()
 {
-    _private::hashtableClear(mHashTable);
+    if (mHashTable)
+        _private::hashtableClear(mHashTable);
 }
 
 template <typename _T>
 inline uint32 HashTable<_T>::Find(uint32 key) const
 {
+    if (!mHashTable)
+        return uint32(-1);
+
     return _private::hashtableFind(mHashTable, key);
 }
 
@@ -417,7 +436,12 @@ inline uint32 HashTable<_T>::Add(uint32 key, const _T& value)
 template <typename _T>
 inline _T* HashTable<_T>::Add(uint32 key)
 {
-    ASSERT(mHashTable);
+    if (mHashTable == nullptr) {
+        ASSERT(mAlloc);
+        Reserve(32);
+        ASSERT(mHashTable);
+    }
+
     if (mHashTable->count == mHashTable->capacity) {
         ASSERT_MSG(mAlloc, "HashTable full. Only hashtables with allocators can grow");
         [[maybe_unused]] bool r = _private::hashtableGrow(&mHashTable, mAlloc);

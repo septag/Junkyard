@@ -71,7 +71,7 @@ bool AssetShaderImpl::Bake(const AssetParams& params, AssetData* data, const Spa
         }
 
         // Used for reloading pipelines in Graphics subsystem
-        shader.first->hash = data->mParamsHash;
+        shader.first->paramsHash = data->mParamsHash;
 
         data->SetObjData(shader.first, shader.second);
         return true;
