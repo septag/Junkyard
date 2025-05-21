@@ -182,8 +182,7 @@ setup_linux()
 }
 
 setup_mac()
-{
-    
+{   
     # Install MoltenVk sdk
     moltenvk_version="1.3.0-rc1"
 

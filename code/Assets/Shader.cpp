@@ -1,6 +1,8 @@
 #include "Shader.h"
 #include "AssetManager.h"
 
+#include "../Core/Log.h"
+
 #include "../Common/VirtualFS.h"
 #include "../Common/JunkyardSettings.h"
 
@@ -95,24 +97,32 @@ bool AssetShaderImpl::Reload(void* newData, void* oldData)
     ASSERT(oldShader);
 
     // Compare the two, if any gloval state, like vertex layout or input params don't match, do not reload
-    if (oldShader->numStages != newShader->numStages)
+    if (oldShader->numStages != newShader->numStages) {
+        LOG_WARNING("Shader stages should not change for hot-reload");
         return false;
+    }
 
-    if (oldShader->numParams != newShader->numParams)
+    if (oldShader->numParams != newShader->numParams) {
+        LOG_WARNING("Shader parameters should not change for hot-reload");
         return false;
+    }
 
-    if (oldShader->numVertexAttributes != newShader->numVertexAttributes)
+    if (oldShader->numVertexAttributes != newShader->numVertexAttributes) {
+        LOG_WARNING("Shader vertex attributes should not change for hot-reload");
         return false;
+    }
 
     if (memcmp(oldShader->vertexAttributes.Get(), newShader->vertexAttributes.Get(), 
                newShader->numVertexAttributes*sizeof(GfxShaderVertexAttributeInfo)) != 0)
     {
+        LOG_WARNING("Shader vertex attributes should not change for hot-reload");
         return false;
     }
 
     if (memcmp(oldShader->params.Get(), newShader->params.Get(), 
                newShader->numParams*sizeof(GfxShaderParameterInfo)) != 0)
     {
+        LOG_WARNING("Shader parameters should not change for hot-reload");
         return false;
     }
 

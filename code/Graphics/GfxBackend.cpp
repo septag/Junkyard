@@ -1812,6 +1812,7 @@ namespace GfxBackend
             memcpy((void*)renderingCreateInfo->pColorAttachmentFormats, srcRenderingCreateInfo->pColorAttachmentFormats, 
                    sizeof(VkFormat)*srcRenderingCreateInfo->colorAttachmentCount);
             renderingCreateInfo->depthAttachmentFormat = srcRenderingCreateInfo->depthAttachmentFormat;
+            renderingCreateInfo->stencilAttachmentFormat = srcRenderingCreateInfo->stencilAttachmentFormat;
         }
         
         return pipInfoNew;
@@ -3195,17 +3196,22 @@ void GfxBackend::ReloadShaderPipelines(const GfxShader& shader)
             const_cast<VkPipelineShaderStageCreateInfo*>(&pipeline.createInfo.graphics->pStages[1])->module = psShaderModule;
             const_cast<VkPipelineShaderStageCreateInfo*>(&pipeline.createInfo.graphics->pStages[1])->pSpecializationInfo = specInfo;
 
-            pipesEntry->graphics.vs = vsShaderModule;
-            pipesEntry->graphics.ps = psShaderModule;
-            pipesEntry->graphics.vsHash = vsShaderModuleHash;
-            pipesEntry->graphics.psHash = psShaderModuleHash;
-
             VkPipeline pipelineVk;
             if (vkCreateGraphicsPipelines(gBackendVk.device, nullptr, 1, pipeline.createInfo.graphics, gBackendVk.vkAlloc, &pipelineVk) != VK_SUCCESS) 
             {
                 LOG_ERROR("Gfx: Failed to create graphics pipeline for shader '%s'", shader.name);
                 return;
             }
+
+            ASSERT(pipesEntry->graphics.vs);
+            vkDestroyShaderModule(gBackendVk.device, pipesEntry->graphics.vs, gBackendVk.vkAlloc);
+            ASSERT(pipesEntry->graphics.ps);
+            vkDestroyShaderModule(gBackendVk.device, pipesEntry->graphics.ps, gBackendVk.vkAlloc);
+            
+            pipesEntry->graphics.vs = vsShaderModule;
+            pipesEntry->graphics.ps = psShaderModule;
+            pipesEntry->graphics.vsHash = vsShaderModuleHash;
+            pipesEntry->graphics.psHash = psShaderModuleHash;
 
             oldPipeline = pipeline.handle;
             pipeline.handle = pipelineVk;
@@ -3236,15 +3242,18 @@ void GfxBackend::ReloadShaderPipelines(const GfxShader& shader)
             const_cast<VkPipelineShaderStageCreateInfo*>(&pipeline.createInfo.compute->stage)->module = csShaderModule;
             const_cast<VkPipelineShaderStageCreateInfo*>(&pipeline.createInfo.compute->stage)->pSpecializationInfo = specInfo;
 
-            pipesEntry->compute.cs = csShaderModule;
-            pipesEntry->compute.csHash = Hash::Murmur32(csInfo->data.Get(), csInfo->dataSize);
-
             VkPipeline pipelineVk;
             if (vkCreateComputePipelines(gBackendVk.device, nullptr, 1, pipeline.createInfo.compute, gBackendVk.vkAlloc, &pipelineVk) != VK_SUCCESS) 
             {
                 LOG_ERROR("Gfx: Failed to create compute pipeline for shader '%s'", shader.name);
                 return;
             }
+
+            ASSERT(pipesEntry->compute.cs);
+            vkDestroyShaderModule(gBackendVk.device, pipesEntry->compute.cs, gBackendVk.vkAlloc);
+            
+            pipesEntry->compute.cs = csShaderModule;
+            pipesEntry->compute.csHash = Hash::Murmur32(csInfo->data.Get(), csInfo->dataSize);
 
             oldPipeline = pipeline.handle;
             pipeline.handle = pipelineVk;
@@ -3558,7 +3567,7 @@ GfxPipelineHandle GfxBackend::CreateGraphicsPipeline(const GfxShader& shader, Gf
         .type = GfxBackendPipeline::PipelineTypeGraphics,
         .shaderHash = shader.paramsHash,
         .numPermutVars = numPermutVars,
-        .permutVars = permutVars ? Mem::AllocCopy<GfxShaderPermutationVar>(permutVars, numPermutVars) : nullptr,
+        .permutVars = permutVars ? Mem::AllocCopy<GfxShaderPermutationVar>(permutVars, numPermutVars, &gBackendVk.runtimeAlloc) : nullptr,
         .createInfo = {
             .graphics = _DuplicateGraphicsPipelineCreateInfo(pipelineInfo)
         }
