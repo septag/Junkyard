@@ -834,6 +834,7 @@ namespace GfxBackend
                 case GfxShaderPermutationVar::Boolean:   *((VkBool32*)dstData) = var.value.b;  break;
                 case GfxShaderPermutationVar::Int:       *((int32*)dstData) = var.value.i; break;
                 case GfxShaderPermutationVar::Float:     *((float*)dstData) = var.value.f; break;
+                default: ASSERT(0); break;
             }
 
             offset += 4;
