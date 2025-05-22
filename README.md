@@ -15,7 +15,7 @@ It's very much WIP, so not much to show off right now.
     - Linux (Tested on Ubuntu 22/PopOS)
     - MacOS-Arm64 M1 and up (through MoltenVk 1.3)
     - ~~Android~~ (Currently broken, might work with Vulkan 1.3 hardware)
-- Minimal C'ish C++20: Some people call it Sane-C++ or similarly [Orthodox-C++](https://gist.github.com/bkaradzic/2e39896bc7d8c34e042b). I use a very small subset of newer C++ standards, in which I will explain later in the wiki. Some of them are pointed in [CppFeatures.txt](doc/CppFeatures.txt)
+- Minimal C'ish C++20: Some people call it Sane-C++ or similarly [Orthodox-C++](https://gist.github.com/bkaradzic/2e39896bc7d8c34e042b). I use a very small subset of newer C++ standards:
     - No stdc++ allowed in the code
     - No RTTI/Exceptions
     - Relying heavily on POD (Plain-old-data) structs, zero-init by default and avoiding implicit code in ctors/dtors
@@ -45,41 +45,6 @@ It's very much WIP, so not much to show off right now.
         - [x] Shaders
         - [x] Images
         - [x] Models
-
-## Dependencies
-External dependencies are a pretty big deal imo, so I'm going to pay special attention to them. They are part of your code even if you don't write them yourself and they all play a big role in compile-times, maintenance, deployment and technical debt of your code. So I try to keep the dependencies small and to minimum. Most of the dependencies here are simple stb-style single-header C libs, but some just can't be as small and quick-to-compile as I want them to be (eg Physics/Audio/Baking/ShaderCompilers/etc), usually those ones are downloaded off the internet and not part of the repo. Anyway, here they are:
-
-- [Git](https://git-scm.com/downloads) and ~~[Git LFS](https://git-lfs.com/)~~: Source control
-- [VulkanSDK](https://vulkan.lunarg.com/): Used for the graphics backend. 
-- [c89atomics](https://github.com/mackron/c89atomic): Replacement for std atomics. Don't want to use `<atomic>` because it's part of std-C++ crap and it's [huge](https://build-bench.com/b/-_WeHavwOPkGBvI3ed5KNnpdgmk), and C11 `<stdatomic>` is not available for msvc2019. I might try to remove this for `<stdatomic>` if I intend to ditch msvc2019 and go strictly for msvc2022.
-- [cj5](https://github.com/septag/cj5): single-header [JSON5](https://json5.org/) parser.
-- [Tracy profiler](https://github.com/wolfpld/tracy): Frame profiler
-- [dds-ktx](https://github.com/septag/dds-ktx): Portable single header DDS/KTX reader for C/C++
-- [dmon](https://github.com/septag/dmon): Tiny C library that monitors changes in a directory
-- [ImGui](https://github.com/ocornut/imgui): Bloat-free graphical user interface library for C++
-- [ImGuizmo](https://github.com/CedricGuillemet/ImGuizmo): ImGui gizmo and some other useful widgets
-- [INI parser](https://github.com/mattiasgustavsson/libs/blob/main/ini.h): Mattias Gustavsson single-header lib for parsing INI files
-- [minicoro](https://github.com/edubart/minicoro): Single header asymmetric stackful cross-platform coroutine library in pure C.
-- [stb](https://github.com/nothings/stb): stb single-file public domain libraries for C/C++
-- [tlsf](https://github.com/mattconte/tlsf): Two-Level Segregated Fit memory allocator implementation.
-allocation library
-- [OffsetAllocator](https://github.com/septag/OffsetAllocator): Fast O(1) offset allocator with minimal fragmentation (Used for GPU dynamic memory allocations). I maintain my own single-header fork of the original project.
-- [volk](https://github.com/zeux/volk): Meta loader for Vulkan API
-- [sokol_args](https://github.com/floooh/sokol/blob/master/sokol_args.h): Single-header lib for parsing command-line arguments
-- Tooling (only used in tooling/PC builds):
-    - [ISPC Texture Compressor](https://github.com/septag/ISPCTextureCompressor): BC/ASTC texture compressor
-    - [meshoptimizer](https://github.com/zeux/meshoptimizer): Mesh optimization library that makes meshes smaller and faster to render
-    - [slang](https://github.com/shader-slang/slang): Shader trans-compiler
-- Windows:
-    - [DbgHelp](https://learn.microsoft.com/en-us/windows/win32/debug/dbghelp-functions): Windows debug helper module. 
-- Linux
-    - [GLFW](https://www.glfw.org/): Basic window/input management that is only used for the Linux backend
-- Optional Tools:
-    - [LivePP](https://liveplusplus.tech): Commercial tool for Hot-reloading C++ code. This software is magic!
-    - [MemPro](https://puredevsoftware.com/mempro/index.htm): Commercial tool for debugging memory allocations
-    - [Python 3.10+](https://www.python.org/downloads/): Optional but highly recommended. Used in some tooling scripts and utilities. 
-    - [ScrCpy](https://github.com/Genymobile/scrcpy): Display and control your Android device
-    - [Gnirehtet](https://github.com/Genymobile/gnirehtet): provides reverse tethering for Android
 
 ## Build and Deployment
 *PC/Windows* is the primary platform, because it's the platform I use for my daily development. Maintaining build and tooling on multiple OSes is just a lot of work. So please keep in mind that other platforms might be buggy, not as polished or not fully feature complete. To build and run the projects, first thing is running the Setup script after fetching the repo:
@@ -161,14 +126,53 @@ remoteServicesUrl: [HOST_PC_IP]:6006
 
 Or set it with command line arguments: `-EngineConnectToServer=1 -EngineRemoteServicesUrl=[host_ip]`
 
-## Blog posts and Design documents
-Note that these are living documents, meaning that they are always subject to change based on design changes.
+## Documentation
+The beginning of some headers usually include some important documentation about the API. But separate documents are written and maintained for coding standards, principles or design details.
 
+### Coding standard and rules
+For some general coding and styling rules see [Coding Standard](doc/CodingStandard.md)
+
+### Blog posts and design documents
 - [**Introduction**](https://septag.dev/blog/posts/junkyard-intro): It's just an introduction to design principles, goals and essential 3rdparty tools that I use.
 - [**Memory Basics**](https://septag.dev/blog/posts/junkyard-memory-01): This covers basic memory allocation and design at the core level. It's an essential read if you want to make the best use of memory and understand the memory concepts behind the engine.
 - [**Relative Pointers**](https://septag.dev/blog/posts/junkyard-relativeptr): A kind of a follow up to the memory basics. Covers the concept of *Relative Pointers* used in some parts of the engine, especially binary serialization.
 - [**Project Structure**](https://septag.dev/blog/posts/junkyard-struct): Covers build structure and platform projects in more detail, directory structures and basic things you should know about adding modules and dependency checking between the modules. 
 - [**Asset Manager**](https://septag.dev/blog/posts/junkyard-assetman): Asset manager design goals and details on the internals. Also quite useful if someone wants to add a new asset type to the engine.
+
+## Dependencies
+External dependencies are a pretty big deal imo, so I'm going to pay special attention to them. They are part of your code even if you don't write them yourself and they all play a big role in compile-times, maintenance, deployment and technical debt of your code. So I try to keep the dependencies small and to minimum. Most of the dependencies here are simple stb-style single-header C libs, but some just can't be as small and quick-to-compile as I want them to be (eg Physics/Audio/Baking/ShaderCompilers/etc), usually those ones are downloaded off the internet and not part of the repo. Anyway, here they are:
+
+- [Git](https://git-scm.com/downloads) and ~~[Git LFS](https://git-lfs.com/)~~: Source control
+- [VulkanSDK](https://vulkan.lunarg.com/): Used for the graphics backend. 
+- [c89atomics](https://github.com/mackron/c89atomic): Replacement for std atomics. Don't want to use `<atomic>` because it's part of std-C++ crap and it's [huge](https://build-bench.com/b/-_WeHavwOPkGBvI3ed5KNnpdgmk), and C11 `<stdatomic>` is not available for msvc2019. I might try to remove this for `<stdatomic>` if I intend to ditch msvc2019 and go strictly for msvc2022.
+- [cj5](https://github.com/septag/cj5): single-header [JSON5](https://json5.org/) parser.
+- [Tracy profiler](https://github.com/wolfpld/tracy): Frame profiler
+- [dds-ktx](https://github.com/septag/dds-ktx): Portable single header DDS/KTX reader for C/C++
+- [dmon](https://github.com/septag/dmon): Tiny C library that monitors changes in a directory
+- [ImGui](https://github.com/ocornut/imgui): Bloat-free graphical user interface library for C++
+- [ImGuizmo](https://github.com/CedricGuillemet/ImGuizmo): ImGui gizmo and some other useful widgets
+- [INI parser](https://github.com/mattiasgustavsson/libs/blob/main/ini.h): Mattias Gustavsson single-header lib for parsing INI files
+- [minicoro](https://github.com/edubart/minicoro): Single header asymmetric stackful cross-platform coroutine library in pure C.
+- [stb](https://github.com/nothings/stb): stb single-file public domain libraries for C/C++
+- [tlsf](https://github.com/mattconte/tlsf): Two-Level Segregated Fit memory allocator implementation.
+allocation library
+- [OffsetAllocator](https://github.com/septag/OffsetAllocator): Fast O(1) offset allocator with minimal fragmentation (Used for GPU dynamic memory allocations). I maintain my own single-header fork of the original project.
+- [volk](https://github.com/zeux/volk): Meta loader for Vulkan API
+- [sokol_args](https://github.com/floooh/sokol/blob/master/sokol_args.h): Single-header lib for parsing command-line arguments
+- Tooling (only used in tooling/PC builds):
+    - [ISPC Texture Compressor](https://github.com/septag/ISPCTextureCompressor): BC/ASTC texture compressor
+    - [meshoptimizer](https://github.com/zeux/meshoptimizer): Mesh optimization library that makes meshes smaller and faster to render
+    - [slang](https://github.com/shader-slang/slang): Shader trans-compiler
+- Windows:
+    - [DbgHelp](https://learn.microsoft.com/en-us/windows/win32/debug/dbghelp-functions): Windows debug helper module. 
+- Linux
+    - [GLFW](https://www.glfw.org/): Basic window/input management that is only used for the Linux backend
+- Optional Tools:
+    - [LivePP](https://liveplusplus.tech): Commercial tool for Hot-reloading C++ code. This software is magic!
+    - [MemPro](https://puredevsoftware.com/mempro/index.htm): Commercial tool for debugging memory allocations
+    - [Python 3.10+](https://www.python.org/downloads/): Optional but highly recommended. Used in some tooling scripts and utilities. 
+    - [ScrCpy](https://github.com/Genymobile/scrcpy): Display and control your Android device
+    - [Gnirehtet](https://github.com/Genymobile/gnirehtet): provides reverse tethering for Android
 
 ## [License (MIT)](https://github.com/septag/Junkyard/blob/main/LICENSE)
 
