@@ -20,13 +20,12 @@ Only one level namespaces are allowed. Nested namespaces are **not allowed**.
 ### Naming
 - **Namespaces, functions, type names, file names**: PascalCase
     - **static functions (privately accessed within a translation unit)**: _PascalCase
-    - **Public type declarations should always be outside of 
 - **Local and argument variables**: camelCase
-- **member variables (if the type also includes functions that operate on them)**: mPascalCase
+- **Member variables (if the type also includes functions that operate on them)**: mPascalCase
     - There are some exceptions in the core library (like math vector types) for conveniences of not addressing to `x, y, z` as `mX, mY, mZ`
-- **global variables**: gPascalCase
-- **Defines**: SCREAMING_SNAKE_CASE
-- **Constants and `constexpr` global vars**: SCREAMING_SNAKE_CASE
+- **Global variables**: gPascalCase
+- **Defines**: SCREAMING_SNAKE_CASE. They usually start with their related namespace name. 
+- **Constants and `constexpr` global vars**: SCREAMING_SNAKE_CASE. Same as above, they start with their parent module name or related namespace name. For example, anything related to GfxBackend, starts with `GFXBACKEND_` prefix.
 
 ## Coding 
 - **Use of stl code is strictly prohibited**: There should be no `#include <some_stl_crap>` in the code. For some external libs, we *may* have no choice, but they should be absolutely avoided inside any publicly used headers.
@@ -35,7 +34,7 @@ Only one level namespaces are allowed. Nested namespaces are **not allowed**.
     - Use `ENABLE_BITMASK()` macro for flag enum type to automatically implement `&|^~` operators
 - **Use encapsulation carefully. Prefer POD (plain-old-data) structs and functions over encapsulation**
     - Unless there are some conveniences are involved and data is small/harmless enough to pass around. For example, look at `GfxCommandBuffer` in `GfxBackend.h`. It doesn't keep the actual data to CommandBuffers. It just holds a reference/handle to the internal data and can be more convenient that we pass it around as an object and use the member functions for drawing stuff. 
-- **Inheritance is not allowed, *except* pure interface classes**: Use `final` keyword for the inherited implementor class so that compiler may have a better chance to optimize them. 
+- **Inheritance is not allowed, *except* pure interface classes**: This also should be used rarely and only if necessary. Because it creates the *vtable*, breaks POD benefits and any parent data that embeds them. Also use `final` keyword for the inherited implementor class so that compiler may have a better chance to optimize it. 
 - **Do not do anything heavy in constructors. Especially allocations are strictly prohibited**
     - Usually only `Scope` suffix types (Profiling, Mutex locking, ...) are allowed to do some light work in the constructor.
 - **Prefer zero-initialization or default member initializers over classic constructors**: So the order of preference is:
@@ -48,7 +47,7 @@ Only one level namespaces are allowed. Nested namespaces are **not allowed**.
 - **Use `Begin/End` function pairs for some work that needs preparation and post work**
 - **Do not use singletons**: Instead keep each sub-system data inside the translation unit and use `static MySubSystem gMySubSystem;` inside that translation unit to access it's data. Data should not be accessed from outside the translation unit directly.
 - **Using `malloc/free` or `new/delete` operators are not allowed**: We have replacements for all of those. Use `Mem::Alloc, Mem::Free, Mem::Realloc` family of functions. For `new/delete` (although should be rarely used) see `NEW/NEW_ARRAY/PLACEMENT_NEW/ALIGNED_NEW/PLACEMENT_NEW_ARRAY` macros, If you use plain-old-data types, you won't have the need for those.
-- **Consider using struct to return multiple return values from a function**
+- **Consider using struct to return multiple values from a function**
 - **Non-trivial code should be out of headers**
 - **Non-public data types and interfaces should be kept out of headers and inside source files**: There are a few exceptions where we use `_private` namespaces and those are usually for a few template optimizations, so that we can take non-trivial code out of the headers.
 - **Prefer enums over booleans for function arguments**
