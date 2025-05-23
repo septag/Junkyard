@@ -127,7 +127,7 @@ remoteServicesUrl: [HOST_PC_IP]:6006
 Or set it with command line arguments: `-EngineConnectToServer=1 -EngineRemoteServicesUrl=[host_ip]`
 
 ## Documentation
-The beginning of some headers usually include some important documentation about the API. But separate documents are written and maintained for coding standards, principles or design details.
+The beginning of headers usually include some important documentation about the API. But separate documents are written and maintained for coding standards, principles or design details.
 
 ### Coding standard and rules
 For some general coding and styling rules see [Coding Standard](doc/CodingStandard.md)

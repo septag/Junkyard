@@ -7,9 +7,15 @@ Only one level namespaces are allowed. Nested namespaces are **not allowed**.
 - **Only functions are allowed to be inside namespaces**
 - **Public type declarations should always be outside of namespace**: Instead use the namespace name as prefix. Example: `struct MemAllocator; namespace Mem { void* Alloc(MemAllocator* ...); }`. As you can see here, types are prefixed with their corresponding sub-system/module and functions are encapsulated inside the namespace.
 
-### Code blocks
-- **For functions, types and lambdas**: Use open curly bracket in a new line
-- **For everything else**: Use open curly bracket in the same line
+### Formatting
+- **Code blocks for functions, types and lambdas**: Use open curly bracket in a new line.
+- **Code blocks for everything else**: Use open curly bracket in the same line.
+- **Not having brackets for *single line* blocks is allowed**
+- **Only use relative paths for header includes**: Basically, using *include path* (`-I`) compiler flag is not allowed, except for some external dependencies like Vulkan headers.
+- **Allowed line width is *roughly* 120 characters**: Break lines after 120 characters. By *roughly* I mean, there is some tolerance of course. You don't have to be super strict about it. Sometimes it's ok if it passes the threshold a couple of characters. Or for instance, sometimes for comments, we can write longer lines.
+- **Only use LF for new lines**
+- **Comments should only be indicated by double slashes (`//`)**
+- **Indentations are 4-spaces**
 
 ### Naming
 - **Namespaces, functions, type names, file names**: PascalCase
@@ -57,7 +63,7 @@ Only one level namespaces are allowed. Nested namespaces are **not allowed**.
 - **Use handles (`DEFINE_HANDLE` macro and `HandlePool<>`) and resolve data internally, instead of exporting pointer objects in public APIs**: [Handles are the better pointers](https://floooh.github.io/2018/06/17/handles-vs-pointers.html)
 - **Adding non-POD data types as a member for other objects is not recommended**: Use of non-POD types, especially classes with virtual functions are only allowed inside sub-systems data and global data. Basically, in a data that is not copied and passed around. If you do that, then you have to get into C++ hell-hole and take care of manual construction like using NEW macros and such.
 - **Templates should be used carefully and rarely**: 
-    - They should not encapsulate large/heavy chunks of code. Only small/light functions and classes.
+    - They should not encapsulate large/heavy chunks of code. Only small/light functions and "helper" classes.
     - Should not be overused
     - Nested/complicated template classes are not allowed
     - If templates contain large non-trivial code, put them inside `_private::` functions, implement those functions inside the CPP file and call those functions inside template functions instead.
@@ -88,7 +94,7 @@ These language standard are only used through-out the code. Other stuff is not a
 - **C++11/98**:
     - *lambda functions*: Limited use. Only if the body of the function is no more than a couple of lines.
     - `constexpr`
-    - *operator overloading*: Limited use. Mainly for math types
+    - *operator overloading*: Limited use. Mainly for math types.
     - *default arguments*: Pass structs with default member initializers are preferred.
     - *Function overrides*: Limited use. It is mainly used for passing arguments with different types to a function that pretty much uses the same base signature and does the same thing (like variants for example). Otherwise, for functions that does drastically a different thing based on input arguments, you should use a different name instead.
     - *Return structs as value (C++ ABI)* 
