@@ -434,7 +434,7 @@ static void Asset::_SaveCacheLookup()
     Blob blob(&tempAlloc);
     blob.SetGrowPolicy(Blob::GrowPolicy::Multiply);
 
-    String<64> line;
+    String<512> line;
     for (uint32 i = 0; i < gAssetMan.assetCacheLookup.Capacity(); i++) {
         if (keys[i]) {
             line.FormatSelf("0x%x;0x%x;%s\n", keys[i], values[i].assetHash, values[i].sourceFilepath.CStr());
@@ -1039,12 +1039,25 @@ static void Asset::_LoadGroupTask(uint32, void* userData)
                 assetHash = index != -1 ? gAssetMan.assetCacheLookup.Get(index).assetHash : 0;
             }
 
-            if (!isRemoteLoad || assetHash) {
-                if (!taskDatas[k].inputs.bakedFilepath.IsEmpty() && !isRemoteLoad) {
-                    ASSERT(isHotReloadGroup);
-                    OS::DeleteFilePath(taskDatas[k].inputs.bakedFilepath.CStr());
+            // Hot-reload requests already has a cached file, delete that 
+            if (isHotReloadGroup) {
+                uint32 tmpAssetHash = assetHash;
+                if (!tmpAssetHash) {
+                    ReadWriteMutexReadScope lk(gAssetMan.hashLookupMutex);
+                    uint32 index = gAssetMan.assetCacheLookup.Find(header->paramsHash);
+                    if (index != -1) 
+                        tmpAssetHash = gAssetMan.assetCacheLookup.Get(index).assetHash;
                 }
 
+                if (tmpAssetHash) {
+                    Path prevCacheFilepath;
+                    _MakeCacheFilepath(&prevCacheFilepath, header, tmpAssetHash);
+                    Vfs::ResolveFilepath(prevCacheFilepath.CStr());
+                    OS::DeleteFilePath(Vfs::ResolveFilepath(prevCacheFilepath.CStr()).CStr());
+                }
+            }
+
+            if (!isRemoteLoad || assetHash) {
                 assetHash = _MakeCacheFilepath(&taskDatas[k].inputs.bakedFilepath, header, assetHash);
                 if (assetHash) {
                     if (!isRemoteLoad)
@@ -1768,14 +1781,8 @@ bool Asset::Initialize()
     gAssetMan.memArena.threadToAllocatorTable.SetAllocator(alloc);
     gAssetMan.memArena.threadToAllocatorTable.Reserve(gAssetMan.memArena.maxAllocators);
 
-    gAssetMan.tempAlloc.mAlloc = alloc;
-
-    if (SettingsJunkyard::Get().engine.connectToServer) {
-        gAssetMan.tempAlloc.Initialize(SIZE_GB, SIZE_MB);
-    }
-    else {
-        gAssetMan.tempAlloc.Initialize(SIZE_KB*512, SIZE_KB*64);
-    }
+    gAssetMan.tempAlloc.SetAllocator(alloc);
+    gAssetMan.tempAlloc.Initialize(SIZE_KB*512, SIZE_KB*64);
 
     RemoteCommandDesc loadRemoteDesc {
         .cmdFourCC = ASSET_LOAD_ASSET_REMOTE_CMD,

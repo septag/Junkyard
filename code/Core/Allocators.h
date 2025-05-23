@@ -181,9 +181,12 @@ private:
 
 struct MemBumpAllocatorCustom final : MemBumpAllocatorBase
 {
-    MemAllocator* mAlloc = Mem::GetDefaultAlloc();
+    MemBumpAllocatorCustom() = default;
+    explicit MemBumpAllocatorCustom(MemAllocator* alloc) : mAlloc(alloc) {}
+    void SetAllocator(MemAllocator* alloc) { mAlloc = alloc; }
 
 private:
+    MemAllocator* mAlloc = Mem::GetDefaultAlloc();
     void* BackendReserve(size_t size) override;
     void* BackendCommit(void* ptr, size_t size) override;
     void  BackendDecommit(void* ptr, size_t size) override;
