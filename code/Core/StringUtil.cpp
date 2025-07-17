@@ -679,7 +679,7 @@ const char* Str::SkipChar(const char* str, char ch)
     return str;
 }
 
-Str::SplitResult Str::Split(const char* str, char ch, MemAllocator* alloc)
+Str::SplitResult Str::Split(const char* str, char ch, MemAllocator* alloc, bool acceptEmptySplits)
 {
     Array<char*> splits(alloc);
     char* strCopy = Mem::AllocCopy<char>(str, Str::Len(str) + 1, alloc);
@@ -688,12 +688,14 @@ Str::SplitResult Str::Split(const char* str, char ch, MemAllocator* alloc)
     char* start = s;
     while (*s) {
         if (*s == ch) {
-            if (start != s) {
+            if (start != s || acceptEmptySplits) {
                 *(s++) = 0;
                 splits.Push(start);
             }
+            
+            if (!acceptEmptySplits)
+                s = const_cast<char*>(Str::SkipChar(s, ch));
 
-            s = const_cast<char*>(Str::SkipChar(s, ch));
             start = s;
         }
         else {

@@ -62,7 +62,7 @@ namespace Str
         Span<char*> splits;
     };
 
-    API SplitResult Split(const char* str, char ch, MemAllocator* alloc);
+    API SplitResult Split(const char* str, char ch, MemAllocator* alloc, bool acceptEmptySplits = false);
     API SplitResult SplitWhitespace(const char* str, MemAllocator* alloc);
     API void FreeSplitResult(SplitResult& sres, MemAllocator* alloc);
 } // Str
