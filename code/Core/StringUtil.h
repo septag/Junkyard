@@ -25,6 +25,7 @@ namespace Str
     API bool IsEqualCount(const char* s1, const char* s2, uint32 count);
     API bool IsEqualNoCaseCount(const char* s1, const char* s2, uint32 count);
     API int Compare(const char* a, const char* b);
+    API int CompareNoCase(const char* a, const char* b);
     API uint32 CountMatchingFirstChars(const char* s1, const char* s2);
     API bool StartsWith(const char* str, const char* startsWith);
     API bool EndsWith(const char* str, const char* endsWith);

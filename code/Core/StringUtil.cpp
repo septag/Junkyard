@@ -305,6 +305,15 @@ int Str::Compare(const char* a, const char* b)
     return strcmp(a, b);
 }
 
+int Str::CompareNoCase(const char* a, const char* b)
+{
+#if PLATFORM_WINDOWS
+    return _stricmp(a, b);
+#else
+    return stricmp(a, b);
+#endif
+}
+
 uint32 Str::CountMatchingFirstChars(const char* s1, const char* s2)
 {
     uint32 count = 0;
