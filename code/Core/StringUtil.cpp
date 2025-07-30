@@ -3,6 +3,10 @@
 #include <string.h>
 #include <stdlib.h>
 
+#if PLATFORM_POSIX
+#include <strings.h>
+#endif
+
 #define STB_SPRINTF_IMPLEMENTATION
 PRAGMA_DIAGNOSTIC_PUSH()
 PRAGMA_DIAGNOSTIC_IGNORED_CLANG_GCC("-Wunused-function")
@@ -310,7 +314,7 @@ int Str::CompareNoCase(const char* a, const char* b)
 #if PLATFORM_WINDOWS
     return _stricmp(a, b);
 #else
-    return stricmp(a, b);
+    return strcasecmp(a, b);
 #endif
 }
 
