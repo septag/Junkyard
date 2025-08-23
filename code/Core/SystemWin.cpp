@@ -1393,6 +1393,236 @@ PathInfo OS::GetPathInfo(const char* path)
     };
 }
 
+// ██╗    ██╗██╗███╗   ██╗██████╗ ██████╗     ██████╗ ██╗██████╗ ███████╗
+// ██║    ██║██║████╗  ██║╚════██╗╚════██╗    ██╔══██╗██║██╔══██╗██╔════╝
+// ██║ █╗ ██║██║██╔██╗ ██║ █████╔╝ █████╔╝    ██████╔╝██║██████╔╝█████╗  
+// ██║███╗██║██║██║╚██╗██║ ╚═══██╗██╔═══╝     ██╔═══╝ ██║██╔═══╝ ██╔══╝  
+// ╚███╔███╔╝██║██║ ╚████║██████╔╝███████╗    ██║     ██║██║     ███████╗
+//  ╚══╝╚══╝ ╚═╝╚═╝  ╚═══╝╚═════╝ ╚══════╝    ╚═╝     ╚═╝╚═╝     ╚══════╝
+                                                                                                                                                
+struct OSWin32PipeInternal : OSWin32Pipe
+{
+    Mutex mPendingWritesMtx;
+	Thread mThread;
+    Array<Span<uint8>> mPendingWrites;
+	String32 mName;
+	HANDLE mHandle;
+	size_t mInputBufferSize;
+	uint8* mInputBuffer;
+    uint32 mReadTimeout;
+	bool mSendPing;
+	bool mIsConnected;
+	AtomicUint32 mQuit;
+
+	ReadDataCallback mReadCallback;
+	ConnectCallback mConnectCallback;
+	DisconnectCallback mDisconnectCallback;
+    TimeoutCallback mTimeoutCallback;
+	
+	void* mUserData;
+
+    static int ServerThreadFn(void* userData);
+};
+
+int OSWin32PipeInternal::ServerThreadFn(void* userData)
+{
+	OSWin32PipeInternal* pipe = (OSWin32PipeInternal*)userData;
+	ASSERT(pipe->mReadCallback);
+
+    OVERLAPPED readOverlapped = {};
+    readOverlapped.hEvent = CreateEventA(nullptr, TRUE, FALSE, nullptr);
+
+	while (!Atomic::LoadExplicit(&pipe->mQuit, AtomicMemoryOrder::Acquire)) {
+		if (!pipe->mHandle) {
+			HANDLE hPipe = CreateNamedPipeA(pipe->mName.CStr(), 
+											PIPE_ACCESS_DUPLEX | FILE_FLAG_OVERLAPPED, 
+											PIPE_TYPE_MESSAGE | PIPE_READMODE_MESSAGE | PIPE_WAIT, 
+											1, // Max instances
+											(DWORD)pipe->mInputBufferSize, // output buffer size
+											(DWORD)pipe->mInputBufferSize, // input buffer size
+											0,
+											nullptr);
+
+			if (hPipe == INVALID_HANDLE_VALUE) {
+				LOG_ERROR("CreateNamedPipe for '%s' failed (GetLastError: %u)", pipe->mName.CStr(), GetLastError());
+				return -1;
+			}
+			pipe->mHandle = hPipe;
+
+			LOG_VERBOSE("Waiting for pipe connection '%s' ...", pipe->mName.CStr());
+			BOOL connected = ConnectNamedPipe(pipe->mHandle, nullptr) ? TRUE : (GetLastError() == ERROR_PIPE_CONNECTED);
+			if (!connected) {
+				CloseHandle(pipe->mHandle);
+				pipe->mHandle = nullptr;
+				LOG_WARNING("Client cannot connect to pipe '%s'. Aborting ...");
+				return -1;
+			}			
+			
+			LOG_INFO("Client connected to pipe");
+			ASSERT(!pipe->mIsConnected);
+			pipe->mIsConnected = true;
+			if (pipe->mConnectCallback)
+				pipe->mConnectCallback(pipe, pipe->mUserData);
+		}
+		else  {
+			DWORD bytesRead = 0;
+			DWORD bytesWritten = 0;
+            bool readFailed = false;
+
+            if (!ReadFile(pipe->mHandle, pipe->mInputBuffer, (DWORD)pipe->mInputBufferSize, &bytesRead, &readOverlapped)) {
+                DWORD lastErr = GetLastError();
+                if (lastErr == ERROR_IO_PENDING) {
+                    DWORD waitResult = WaitForSingleObject(readOverlapped.hEvent, pipe->mReadTimeout);
+                    if (waitResult == WAIT_OBJECT_0) {
+                        readFailed = !GetOverlappedResult(pipe->mHandle, &readOverlapped, &bytesRead, FALSE);
+                    }
+					else if (waitResult == WAIT_TIMEOUT) {
+                        if (pipe->mTimeoutCallback)
+                            readFailed = !pipe->mTimeoutCallback(pipe, pipe->mUserData);
+					}
+					else {
+						readFailed = true;
+					}
+                }
+            }
+
+			if (bytesRead) {
+				pipe->mReadCallback(pipe, pipe->mInputBuffer, bytesRead, pipe->mUserData);
+			}
+			else if (readFailed) {
+                LOG_WARNING("ReadFile failed (GetLastError: %u). Closing the pipe...", GetLastError());
+				pipe->Close();
+				continue;
+			}
+
+            // Write pending data
+            {
+                MutexScope lock(pipe->mPendingWritesMtx);
+                for (Span<uint8> data : pipe->mPendingWrites) {
+                    bool writeOk = WriteFile(pipe->mHandle, data.Ptr(), data.Count(), &bytesWritten, nullptr);
+                    if (!writeOk) {
+                        if (pipe->mHandle) {
+                            LOG_WARNING("Write to pipe '%s' failed (GetLastError: %u). Closing the pipe...", pipe->mName.CStr(), GetLastError());
+                            pipe->Close();
+                        }
+                    }
+                }
+
+				if (!pipe->mPendingWrites.IsEmpty())
+					FlushFileBuffers(pipe->mHandle);
+                pipe->mPendingWrites.Clear();
+            }
+		}
+	}
+
+    CloseHandle(readOverlapped.hEvent);
+	return 0;
+}
+
+bool OSWin32Pipe::IsConnected() const
+{
+    OSWin32PipeInternal* pipe = (OSWin32PipeInternal*)this;
+	if (!pipe->mHandle || pipe->mHandle == INVALID_HANDLE_VALUE)
+		return false;
+
+	return pipe->mIsConnected;
+}
+
+void OSWin32Pipe::Close()
+{
+    OSWin32PipeInternal* pipe = (OSWin32PipeInternal*)this;
+	if (pipe->mHandle) {
+		if (pipe->mIsConnected) {
+			DisconnectNamedPipe(pipe->mHandle);
+			pipe->mIsConnected = false;
+		}
+		else {
+			// Unlock the pipe by connecting a dummy to it
+			HANDLE hDummyPipe = CreateFileA(pipe->mName.CStr(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL, OPEN_EXISTING, 0, NULL);
+			Thread::Sleep(5);
+			if(hDummyPipe != INVALID_HANDLE_VALUE)
+				CloseHandle(hDummyPipe);
+		}
+
+		CloseHandle(pipe->mHandle);
+		pipe->mHandle = nullptr;
+
+		if (pipe->mDisconnectCallback)
+			pipe->mDisconnectCallback(this, pipe->mUserData);
+	}
+}
+
+OSWin32Pipe* OSWin32Pipe::CreateServer(const CreateServerDesc& desc)
+{
+	ASSERT_MSG(desc.handlerCallback, "Hanlder callback is not set");
+	ASSERT_MSG(desc.name && desc.name[0], "Name should not be empty or null");
+	ASSERT(desc.inputBufferSize);
+	ASSERT(desc.outputBufferSize);
+
+	static const char* PIPE_NAME_PREFIX = "\\\\.\\pipe\\";
+	String32 pipeName(PIPE_NAME_PREFIX);
+	pipeName.Append(desc.name);
+
+	MemSingleShotMalloc<OSWin32PipeInternal> mallocator;
+	mallocator.AddMemberArray<uint8>(offsetof(OSWin32PipeInternal, mInputBuffer), desc.inputBufferSize);
+	OSWin32PipeInternal* pipe = mallocator.Calloc();
+
+    pipe->mPendingWritesMtx.Initialize();
+	pipe->mName = pipeName;
+	pipe->mInputBufferSize = desc.inputBufferSize;
+	pipe->mReadCallback = desc.handlerCallback;
+	pipe->mConnectCallback = desc.connectCallback;
+	pipe->mDisconnectCallback = desc.disconnectCallback;
+    pipe->mTimeoutCallback = desc.timeoutCallback;
+    
+	pipe->mUserData = desc.handlerCallbackUserData;
+    pipe->mReadTimeout = desc.readTimeout;
+    pipe->mPendingWrites.SetAllocator(Mem::GetDefaultAlloc());
+	pipe->mSendPing = desc.sendPing;
+
+	String32 threadName(desc.name);
+	threadName.Append("_Pipe");
+	ThreadDesc thrdDesc {
+		.entryFn = OSWin32PipeInternal::ServerThreadFn,
+		.userData = pipe,
+		.name = threadName.CStr(),
+	};
+
+	if (!pipe->mThread.Start(thrdDesc)) {
+		MemSingleShotMalloc<OSWin32Pipe>::Free(pipe);
+		return nullptr;		
+	}
+
+	return pipe;
+}
+
+void OSWin32Pipe::Write(const void* data, uint32 size)
+{
+    OSWin32PipeInternal* pipe = (OSWin32PipeInternal*)this;
+	ASSERT(pipe->mHandle);
+	ASSERT(size);
+
+    uint8* dataCopy = Mem::AllocCopyRawBytes<uint8>((const uint8*)data, size);
+
+    MutexScope lock(pipe->mPendingWritesMtx);
+    pipe->mPendingWrites.Push(Span<uint8>(dataCopy, size));
+}
+
+void OSWin32Pipe::Destroy(OSWin32Pipe* pipe)
+{
+    OSWin32PipeInternal* pipeInternal = (OSWin32PipeInternal*)pipe;
+	ASSERT(pipeInternal);
+
+	Atomic::StoreExplicit(&pipeInternal->mQuit, 1, AtomicMemoryOrder::Release);
+	pipeInternal->Close();
+
+	pipeInternal->mThread.Stop();
+    pipeInternal->mPendingWritesMtx.Release();
+    pipeInternal->mPendingWrites.Free();
+
+	MemSingleShotMalloc<OSWin32Pipe>::Free(pipeInternal);
+}
+
 //    ███╗   ███╗███████╗███╗   ███╗ ██████╗ ██████╗ ██╗   ██╗
 //    ████╗ ████║██╔════╝████╗ ████║██╔═══██╗██╔══██╗╚██╗ ██╔╝
 //    ██╔████╔██║█████╗  ██╔████╔██║██║   ██║██████╔╝ ╚████╔╝ 

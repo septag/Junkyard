@@ -1102,10 +1102,11 @@ void JobsFiberMemAllocator::Release()
     Pool* pool = mPools;
     while (pool) {
         Pool* curPool = pool;
+        pool = pool->next;
+
         Mem::FreeAligned(curPool->buffer, mBufferAlignment, alloc);
         Mem::Free(curPool->ptrs, alloc);
         Mem::Free(curPool, alloc);
-        pool = pool->next;
     }
 }
 

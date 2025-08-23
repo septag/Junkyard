@@ -343,6 +343,8 @@ struct Path : String<PATH_CHARS_MAX>
     inline bool IsDir() const;
 
     Path& Join(const Path& path);
+    Path& JoinUnix(const Path& path);
+
     static Path Join(const Path& pathA, const Path& pathB);
     static Path JoinUnix(const Path& pathA, const Path& pathB);
 };
@@ -694,6 +696,38 @@ enum class OSWin32Folder
     _Count
 };
 
+// Basic Win32 server pipe (NamedPipes). Only accepts one client connection
+struct OSWin32Pipe
+{
+	using ReadDataCallback = void(*)(OSWin32Pipe* pipe, const void* data, uint32 dataSize, void* userData);
+	using ConnectCallback = void(*)(OSWin32Pipe* pipe, void* userData);
+	using DisconnectCallback = void(*)(OSWin32Pipe* pipe, void* userData);
+    using TimeoutCallback = bool(*)(OSWin32Pipe* pipe, void* userData);     // Return false to close the connection
+
+	struct CreateServerDesc
+	{
+		ReadDataCallback handlerCallback;
+		ConnectCallback connectCallback;
+		DisconnectCallback disconnectCallback;
+        TimeoutCallback timeoutCallback;
+		const char* name = CONFIG_APP_NAME;
+		size_t inputBufferSize = 32*SIZE_KB;
+		size_t outputBufferSize = 32*SIZE_KB;
+		void* handlerCallbackUserData = nullptr;
+        uint32 readTimeout = 100;
+		bool sendPing = true;
+	};
+
+	void Write(const void* data, uint32 size);
+	template <typename _T> uint32 Write(const _T& item) { return Write(&item, sizeof(item)); }
+
+	bool IsConnected() const;
+	void Close();
+
+	static OSWin32Pipe* CreateServer(const CreateServerDesc& desc);
+	static void Destroy(OSWin32Pipe* pipe);
+};
+
 namespace OS
 {
     API bool Win32IsProcessRunning(const char* execName);
@@ -840,6 +874,13 @@ inline Path Path::GetDirectory() const
 inline Path& Path::Join(const Path& path)
 {
     PathUtils::Join(mStr, sizeof(mStr), mStr, path.mStr);
+    mLen = Str::Len(mStr);
+    return *this;
+}
+
+inline Path& Path::JoinUnix(const Path& path)
+{
+    PathUtils::JoinUnixStyle(mStr, sizeof(mStr), mStr, path.mStr);
     mLen = Str::Len(mStr);
     return *this;
 }
