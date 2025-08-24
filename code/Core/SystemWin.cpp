@@ -1620,7 +1620,7 @@ void OSWin32Pipe::Destroy(OSWin32Pipe* pipe)
     pipeInternal->mPendingWritesMtx.Release();
     pipeInternal->mPendingWrites.Free();
 
-	MemSingleShotMalloc<OSWin32Pipe>::Free(pipeInternal);
+	MemSingleShotMalloc<OSWin32PipeInternal>::Free(pipeInternal);
 }
 
 //    ███╗   ███╗███████╗███╗   ███╗ ██████╗ ██████╗ ██╗   ██╗

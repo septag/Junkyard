@@ -719,7 +719,7 @@ struct OSWin32Pipe
 	};
 
 	void Write(const void* data, uint32 size);
-	template <typename _T> uint32 Write(const _T& item) { return Write(&item, sizeof(item)); }
+	template <typename _T> void Write(const _T& item) { Write(&item, sizeof(item)); }
 
 	bool IsConnected() const;
 	void Close();
