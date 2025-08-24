@@ -249,6 +249,9 @@ DebugStacktraceContext::~DebugStacktraceContext()
 //    ╚═╝  ╚═╝╚══════╝╚═╝     ╚═╝╚══════╝╚═════╝    ╚═╝   ╚═════╝  ╚═════╝ 
 static const char* RDBG_PIPE_NAME_PREFIX = "\\\\.\\pipe\\";
 static constexpr uint32 RDBG_BUFFER_SIZE = 8*SIZE_KB;
+static constexpr uint32 RDBG_LAUNCH_MAX_WAIT_TIME = 2000;
+static constexpr uint32 RDBG_CONNECTION_RETRY_INTERVAL = 100;
+static constexpr uint32 RDBG_CONNECTION_MAX_RETRIES = 5;
 
 struct RDBG_Context
 {
@@ -312,17 +315,27 @@ bool RDBG::Initialize(const char* serverName, const char* remedybgPath)
         return false;
     }
     // wait until the program is actually running, then we can connect
-    while (!gRemedyBG.remedybgProc.IsRunning())
-        Thread::Sleep(20);
-    Thread::Sleep(200);   // wait a little more so remedybg gets it's shit together
+    constexpr uint32 WAIT_TIME = 20;
+    uint32 waitTm = 0;
+    while (!gRemedyBG.remedybgProc.IsRunning() && waitTm < RDBG_LAUNCH_MAX_WAIT_TIME) {
+        Thread::Sleep(WAIT_TIME);
+        waitTm += WAIT_TIME;
+    }
+    if (!gRemedyBG.remedybgProc.IsRunning())
+        return false;
 
     String<256> pipeName(RDBG_PIPE_NAME_PREFIX);
     pipeName.Append(serverName);
 
-    gRemedyBG.cmdPipe = CreateFileA(pipeName.CStr(), GENERIC_READ|GENERIC_WRITE, 0, nullptr, OPEN_EXISTING, 0, nullptr);
-    if (gRemedyBG.cmdPipe == INVALID_HANDLE_VALUE) {
-        LOG_ERROR("RemedyBG: Creating command pipe failed");
-        return false;
+    uint32 retryCount = 0;
+    while (gRemedyBG.cmdPipe == INVALID_HANDLE_VALUE && retryCount < RDBG_CONNECTION_MAX_RETRIES) {
+        gRemedyBG.cmdPipe = CreateFileA(pipeName.CStr(), GENERIC_READ|GENERIC_WRITE, 0, nullptr, OPEN_EXISTING, 0, nullptr);
+        if (gRemedyBG.cmdPipe == INVALID_HANDLE_VALUE) {
+            LOG_ERROR("RemedyBG: Creating command pipe failed");
+            return false;
+        }
+        Thread::Sleep(RDBG_CONNECTION_RETRY_INTERVAL);   // wait a little more so remedybg gets it's shit together
+        ++retryCount;
     }
     
     DWORD newMode = PIPE_READMODE_MESSAGE;
