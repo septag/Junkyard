@@ -3286,7 +3286,7 @@ GfxPipelineHandle GfxBackend::CreateGraphicsPipeline(const GfxShader& shader, Gf
             psInfo = &shader.stages[i];
     }
     ASSERT_MSG(vsInfo, "Shader '%s' is missing Vertex shader program", shader.name);
-    ASSERT_MSG(psInfo, "Shader '%s' is missing Pixel shader program", shader.name);
+    // ASSERT_MSG(psInfo, "Shader '%s' is missing Pixel shader program", shader.name);
 
     VkPipelineLayout layoutVk;
     
@@ -3298,7 +3298,7 @@ GfxPipelineHandle GfxBackend::CreateGraphicsPipeline(const GfxShader& shader, Gf
     VkShaderModule psShaderModule = nullptr;
     VkShaderModule vsShaderModule = nullptr;
     uint32 vsShaderModuleHash = Hash::Murmur32(vsInfo->data.Get(), vsInfo->dataSize);
-    uint32 psShaderModuleHash = Hash::Murmur32(psInfo->data.Get(), psInfo->dataSize);
+    uint32 psShaderModuleHash = psInfo ? Hash::Murmur32(psInfo->data.Get(), psInfo->dataSize) : 0;
     uint32 shaderToPipelinesTableIndex; // used at the bottom of the function to modify the entry
 
     {
@@ -3324,8 +3324,9 @@ GfxPipelineHandle GfxBackend::CreateGraphicsPipeline(const GfxShader& shader, Gf
         }
     }
 
+    // If module is not cached, create them
     if (!vsShaderModule || !psShaderModule) {
-        {
+        if (!vsShaderModule) {
             VkShaderModuleCreateInfo shaderStageCreateInfo {
                 .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
                 .codeSize = vsInfo->dataSize,
@@ -3338,7 +3339,8 @@ GfxPipelineHandle GfxBackend::CreateGraphicsPipeline(const GfxShader& shader, Gf
             }
         }
 
-        {
+        // PixelShader is optional
+        if (!psShaderModule && psInfo) {
             VkShaderModuleCreateInfo shaderStageCreateInfo {
                 .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
                 .codeSize = psInfo->dataSize,
@@ -3374,6 +3376,7 @@ GfxPipelineHandle GfxBackend::CreateGraphicsPipeline(const GfxShader& shader, Gf
             .pSpecializationInfo = specInfo
         }
     };
+    const uint32 numShaderStages = psShaderModule ? 2 : 1;
 
     ASSERT_MSG(desc.numVertexBufferBindings > 0, "Must provide vertex buffer bindings");
     VkVertexInputBindingDescription* vertexBindingDescs = 
@@ -3523,7 +3526,6 @@ GfxPipelineHandle GfxBackend::CreateGraphicsPipeline(const GfxShader& shader, Gf
         .maxDepthBounds = desc.depthStencil.maxDepthBounds
     };
 
-    ASSERT(desc.numColorAttachments);
     VkPipelineRenderingCreateInfo renderCreateInfo {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO,
         .colorAttachmentCount = desc.numColorAttachments,
@@ -3536,7 +3538,7 @@ GfxPipelineHandle GfxBackend::CreateGraphicsPipeline(const GfxShader& shader, Gf
         .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
         .pNext = &renderCreateInfo,
         .flags = gBackendVk.extApi.hasPipelineExecutableProperties ? VK_PIPELINE_CREATE_CAPTURE_STATISTICS_BIT_KHR : (VkPipelineCreateFlags)0,
-        .stageCount = CountOf(shaderStages),
+        .stageCount = numShaderStages,
         .pStages = shaderStages,
         .pVertexInputState = &vertexInputInfo,
         .pInputAssemblyState = &inputAssembly,
@@ -5642,7 +5644,6 @@ void GfxCommandBuffer::BeginRenderPass(const GfxBackendRenderPass& pass)
     VkCommandBuffer cmdVk = GfxBackend::_GetCommandBufferHandle(*this);
 
     uint32 numColorAttachments = !pass.swapchain ? pass.numAttachments : 1;
-    ASSERT(numColorAttachments);
     ASSERT(numColorAttachments < GFXBACKEND_MAX_RENDERPASS_COLOR_ATTACHMENTS);
     VkRenderingAttachmentInfo colorAttachments[GFXBACKEND_MAX_RENDERPASS_COLOR_ATTACHMENTS];
 
@@ -5681,6 +5682,12 @@ void GfxCommandBuffer::BeginRenderPass(const GfxBackendRenderPass& pass)
 
         VkImageView view = pass.swapchain ? gBackendVk.swapchain.GetImageView() : colorViews[i];
         colorAttachments[i] = MakeRenderingAttachmentInfo(srcAttachment, view, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+    }
+
+    if (numColorAttachments == 0 && pass.depthAttachment.image.IsValid()) {
+        GfxBackendImage& image = gBackendVk.images.Data(pass.depthAttachment.image);
+        width = image.desc.width;
+        height = image.desc.height;
     }
 
     VkRect2D renderArea;

@@ -29,6 +29,7 @@ namespace Engine
     API void RegisterShortcut(const char* shortcut, EngineShortcutCallback callback, void* userData = nullptr);
 
     // TODO: Proper error-handling within the callback
+    // Register a callback that runs right after initial asset group (returned by this function) is done loading assets
     API const AssetGroup& RegisterInitializeResources(EngineInitializeResourcesCallback callback, void* userData = nullptr);
 
     API void RegisterProxyAllocator(MemProxyAllocator* alloc);

@@ -18,6 +18,8 @@ namespace Str
     API uint32 PrintFmtArgs(char* str, uint32 size, const char* fmt, va_list args);
     API char* PrintFmtAlloc(MemAllocator* alloc, const char* fmt, ...);
     API char* PrintFmtAllocArgs(MemAllocator* alloc, const char* fmt, va_list args);
+    API uint32 ScanFmt(const char* str, const char* fmt, ...);
+    API uint32 ScanFmtArgs(const char* str, const char* fmt, va_list args);
     API bool Utf8ToWide(const char* src, wchar_t* dst, size_t dstNumBytes);
     API bool WideToUtf8(const wchar_t* src, char* dst, size_t dstNumBytes);
     API bool IsEqual(const char* s1, const char* s2);

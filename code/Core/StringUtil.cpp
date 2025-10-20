@@ -2,6 +2,7 @@
 
 #include <string.h>
 #include <stdlib.h>
+#include <stdio.h>
 
 #if PLATFORM_POSIX
 #include <strings.h>
@@ -110,6 +111,20 @@ char* Str::PrintFmtAlloc(MemAllocator* alloc, const char* fmt, ...)
     char* str = Str::PrintFmtAllocArgs(alloc, fmt, args);
     va_end(args);
     return str;
+}
+
+uint32 Str::ScanFmt(const char* str, const char* fmt, ...)
+{
+    va_list args;
+    va_start(args, fmt);
+    uint32 r = vsscanf_s(str, fmt, args);
+    va_end(args);
+    return r;
+}
+
+uint32 Str::ScanFmtArgs(const char* str, const char* fmt, va_list args)
+{
+    return vsscanf_s(str, fmt, args);
 }
 
 char* Str::PrintFmtAllocArgs(MemAllocator* alloc, const char* fmt, va_list args)
