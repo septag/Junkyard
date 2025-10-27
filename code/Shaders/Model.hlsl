@@ -21,8 +21,7 @@ cbuffer ModelTransform
 
 cbuffer FrameInfo
 {
-    float4x4 ViewMat;
-    float4x4 ProjMat;
+    float4x4 WorldToClipMat;
     float3 LightDir;
     float LightFactor;
 };
@@ -33,7 +32,7 @@ Sampler2D BaseColorTexture;
 Psinput VsMain(VsInput input)
 {
     Psinput output;
-    float4x4 modelViewProj = mul(mul(ProjMat, ViewMat), ModelMat);
+    float4x4 modelViewProj = mul(WorldToClipMat, ModelMat);
     output.position = mul(modelViewProj, float4(input.position, 1.0f));
     output.normal = mul((float3x3)ModelMat, input.normal);
     output.uv = input.uv;

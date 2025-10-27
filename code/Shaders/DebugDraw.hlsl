@@ -11,24 +11,31 @@ struct PsInput
 };
 
 [[vk_push_constant]]
-cbuffer Transform
+cbuffer PerObjectData
 {
-    float4x4 ViewProjMat;
+    float4x4 LocalToWorldMat;
+    float4 TintColor;
+};
+
+cbuffer PerFrameData
+{
+    float4x4 WorldToClipMat;
 };
 
 [shader("vertex")]
-PsInput VsMain(VsInput input)
+PsInput VsMain(VsInput i)
 {
-    PsInput output;
+    PsInput o;
 
-    output.position = mul(ViewProjMat, float4(input.position, 1.0f));
-    output.color = input.color;
-    return output;
+    float4 worldPos = mul(LocalToWorldMat, float4(i.position, 1.0f));
+    o.position = mul(WorldToClipMat, worldPos);
+    o.color = i.color * TintColor;
+    return o;
 }
 
 [shader("fragment")]
-float4 PsMain(PsInput input)
+float4 PsMain(PsInput i)
 {
-    return input.color;
+    return i.color;
 }
 

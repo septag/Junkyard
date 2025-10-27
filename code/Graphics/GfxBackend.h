@@ -49,7 +49,7 @@ struct GfxCommandBuffer
     void Dispatch(uint32 groupCountX, uint32 groupCountY, uint32 groupCountZ);
 
     void TransitionBuffer(GfxBufferHandle buffHandle, GfxBufferTransition transition);
-    void TransitionImage(GfxImageHandle imgHandle, GfxImageTransition transition);
+    void TransitionImage(GfxImageHandle imgHandle, GfxImageTransition transition, GfxImageTransitionFlags flags = GfxImageTransitionFlags::None);
 
     void Draw(uint32 vertexCount, uint32 instanceCount, uint32 firstVertex, uint32 firstInstance);
     void DrawIndexed(uint32 indexCount, uint32 instanceCount, uint32 firstIndex, uint32 vertexOffset, uint32 firstInstance);
@@ -57,6 +57,8 @@ struct GfxCommandBuffer
     void SetScissors(uint32 firstScissor, uint32 numScissors, const RectInt* scissors);
     void SetViewports(uint32 firstViewport, uint32 numViewports, const GfxViewport* viewports);
     void SetDynamicState(const GfxDynamicState& state);
+
+    void HelperSetFullscreenViewportAndScissor();
 };
 
 namespace GfxBackend

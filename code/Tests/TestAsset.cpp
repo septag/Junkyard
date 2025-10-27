@@ -485,18 +485,11 @@ struct AppImpl : AppCallbacks
             .hasDepth = true
         };
 
-        cmd.TransitionImage(mRenderTargetDepth, GfxImageTransition::RenderTarget);
+        cmd.TransitionImage(mRenderTargetDepth, GfxImageTransition::RenderTarget, GfxImageTransitionFlags::DepthRead);
         cmd.BeginRenderPass(pass);
 
-        GfxViewport viewport {
-            .width = float(width),
-            .height = float(height),
-        };
-        RectInt scissor(0, 0, width, height);
-
-        cmd.SetViewports(0, 1, &viewport);
-        cmd.SetScissors(0, 1, &scissor);
         cmd.BindPipeline(mPipeline);
+        cmd.HelperSetFullscreenViewportAndScissor();
 
         for (uint32 i = 0; i < mGrid.numCells; i++) {
             if (mGrid.cells[i].loaded) 
@@ -505,9 +498,9 @@ struct AppImpl : AppCallbacks
 
         cmd.EndRenderPass();
 
-        DebugDraw::BeginDraw(cmd, width, height);
+        DebugDraw::BeginDraw(cmd, *mCam, width, height);
         DebugDraw::DrawGroundGrid(*mCam, { .distance = 50.0f, .lineColor = Color4u(0x565656), .boldLineColor = Color4u(0xd6d6d6) });
-        DebugDraw::EndDraw(cmd, *mCam, mRenderTargetDepth);
+        DebugDraw::EndDraw(cmd, mRenderTargetDepth);
 
         if (ImGui::IsEnabled()) { // imgui test
             GPU_PROFILE_ZONE(cmd, "ImGuiRender");
@@ -615,7 +608,8 @@ struct AppImpl : AppCallbacks
             },
             .numColorAttachments = 1,
             .colorAttachmentFormats = {GfxBackend::GetSwapchainFormat()},
-            .depthAttachmentFormat = GfxFormat::D24_UNORM_S8_UINT
+            .depthAttachmentFormat = GfxBackend::GetValidDepthStencilFormat(),
+            .stencilAttachmentFormat = GfxBackend::GetValidDepthStencilFormat()
         };
 
         self->mPipeline = GfxBackend::CreateGraphicsPipeline(*shader, self->mPipelineLayout, pipelineDesc);
@@ -624,7 +618,7 @@ struct AppImpl : AppCallbacks
             .width = App::GetFramebufferWidth(),
             .height = App::GetFramebufferHeight(),
             .multisampleFlags = GfxSampleCountFlags::SampleCount1,
-            .format = GfxFormat::D24_UNORM_S8_UINT,
+            .format = GfxBackend::GetValidDepthStencilFormat(),
             .usageFlags = GfxImageUsageFlags::DepthStencilAttachment,
             .arena = GfxMemoryArena::PersistentGPU
         };

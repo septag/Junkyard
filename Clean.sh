@@ -8,6 +8,7 @@ rm -f Bin/build_cmd/*.dll
 
 # Delete ini files
 rm -f *.ini
+rm -f *.txt
 
 # Delete generated files
 rm -f *.spv

@@ -2758,9 +2758,12 @@ void GfxBackend::BatchCreateImage(uint32 numImages, const GfxImageDesc* descs, G
 
         // View
         VkImageAspectFlags aspect = 0;
+
+        // Note that here, we either set depth (prioritized) or stencil for view. Otherwise validation layer will complain 
+        // that only one of them should be set for reading in shader
         if (GfxBackend::_FormatHasDepth(desc.format))
             aspect |= VK_IMAGE_ASPECT_DEPTH_BIT;
-        if (GfxBackend::_FormatHasStencil(desc.format))
+        else if (GfxBackend::_FormatHasStencil(desc.format))
             aspect |= VK_IMAGE_ASPECT_STENCIL_BIT;
         if (aspect == 0) 
             aspect = VK_IMAGE_ASPECT_COLOR_BIT;
@@ -3378,43 +3381,47 @@ GfxPipelineHandle GfxBackend::CreateGraphicsPipeline(const GfxShader& shader, Gf
     };
     const uint32 numShaderStages = psShaderModule ? 2 : 1;
 
-    ASSERT_MSG(desc.numVertexBufferBindings > 0, "Must provide vertex buffer bindings");
-    VkVertexInputBindingDescription* vertexBindingDescs = 
-        tempAlloc.MallocTyped<VkVertexInputBindingDescription>(desc.numVertexBufferBindings);
-    for (uint32 i = 0; i < desc.numVertexBufferBindings; i++) {
-        vertexBindingDescs[i] = {
-            .binding = desc.vertexBufferBindings[i].binding,
-            .stride = desc.vertexBufferBindings[i].stride,
-            .inputRate = VkVertexInputRate(desc.vertexBufferBindings[i].inputRate)
-        };
+    VkVertexInputBindingDescription* vertexBindingDescs = nullptr;
+    if (desc.numVertexBufferBindings) {
+        vertexBindingDescs = tempAlloc.MallocTyped<VkVertexInputBindingDescription>(desc.numVertexBufferBindings);
+        for (uint32 i = 0; i < desc.numVertexBufferBindings; i++) {
+            vertexBindingDescs[i] = {
+                .binding = desc.vertexBufferBindings[i].binding,
+                .stride = desc.vertexBufferBindings[i].stride,
+                .inputRate = VkVertexInputRate(desc.vertexBufferBindings[i].inputRate)
+            };
+        }
     }
 
     ASSERT_MSG(desc.numVertexInputAttributes == shader.numVertexAttributes, 
                "Provided number of vertex attributes does not match with the compiled shader");
 
-    VkVertexInputAttributeDescription* vertexInputAtts = 
-        tempAlloc.MallocTyped<VkVertexInputAttributeDescription>(desc.numVertexInputAttributes);
-    for (uint32 i = 0; i < desc.numVertexInputAttributes; i++) {
-        // Validation:
-        // Semantic/SemanticIndex
-        ASSERT_MSG(desc.vertexInputAttributes[i].semantic == shader.vertexAttributes[i].semantic &&
-                   desc.vertexInputAttributes[i].semanticIdx == shader.vertexAttributes[i].semanticIdx, 
-                   "Vertex input attributes does not match with shader: (Index: %u, Shader: %s%u, Desc: %s%u)",
-                   i, shader.vertexAttributes[i].semantic, shader.vertexAttributes[i].semanticIdx, 
-                   desc.vertexInputAttributes[i].semantic.CStr(), desc.vertexInputAttributes[i].semanticIdx);
-        // Format: Current exception is "COLOR" with RGBA8_UNORM on the CPU side and RGBA32_SFLOAT on shader side
-        ASSERT_MSG(desc.vertexInputAttributes[i].format == shader.vertexAttributes[i].format ||
-                   (desc.vertexInputAttributes[i].semantic == "COLOR" && 
-                   desc.vertexInputAttributes[i].format == GfxFormat::R8G8B8A8_UNORM &&
-                   shader.vertexAttributes[i].format == GfxFormat::R32G32B32A32_SFLOAT),
-                   "Vertex input attribute formats do not match");
+    VkVertexInputAttributeDescription* vertexInputAtts = nullptr;
+
+    if (desc.numVertexInputAttributes) {
+        vertexInputAtts = tempAlloc.MallocTyped<VkVertexInputAttributeDescription>(desc.numVertexInputAttributes);
+        for (uint32 i = 0; i < desc.numVertexInputAttributes; i++) {
+            // Validation:
+            // Semantic/SemanticIndex
+            ASSERT_MSG(desc.vertexInputAttributes[i].semantic == shader.vertexAttributes[i].semantic &&
+                    desc.vertexInputAttributes[i].semanticIdx == shader.vertexAttributes[i].semanticIdx, 
+                    "Vertex input attributes does not match with shader: (Index: %u, Shader: %s%u, Desc: %s%u)",
+                    i, shader.vertexAttributes[i].semantic, shader.vertexAttributes[i].semanticIdx, 
+                    desc.vertexInputAttributes[i].semantic.CStr(), desc.vertexInputAttributes[i].semanticIdx);
+            // Format: Current exception is "COLOR" with RGBA8_UNORM on the CPU side and RGBA32_SFLOAT on shader side
+            ASSERT_MSG(desc.vertexInputAttributes[i].format == shader.vertexAttributes[i].format ||
+                    (desc.vertexInputAttributes[i].semantic == "COLOR" && 
+                    desc.vertexInputAttributes[i].format == GfxFormat::R8G8B8A8_UNORM &&
+                    shader.vertexAttributes[i].format == GfxFormat::R32G32B32A32_SFLOAT),
+                    "Vertex input attribute formats do not match");
         
-        vertexInputAtts[i] = {
-            .location = shader.vertexAttributes[i].location,
-            .binding = desc.vertexInputAttributes[i].binding,
-            .format = static_cast<VkFormat>(desc.vertexInputAttributes[i].format),
-            .offset = desc.vertexInputAttributes[i].offset
-        };
+            vertexInputAtts[i] = {
+                .location = shader.vertexAttributes[i].location,
+                .binding = desc.vertexInputAttributes[i].binding,
+                .format = static_cast<VkFormat>(desc.vertexInputAttributes[i].format),
+                .offset = desc.vertexInputAttributes[i].offset
+            };
+        }
     }
 
     VkPipelineVertexInputStateCreateInfo vertexInputInfo = {
@@ -3733,7 +3740,7 @@ void GfxBackend::DestroyPipeline(GfxPipelineHandle& handle)
                         if (entry.graphics.ps)
                             vkDestroyShaderModule(gBackendVk.device, entry.graphics.ps, gBackendVk.vkAlloc);
                     }
-                    else if (pipeline.type == GfxBackendPipeline::PipelineTypeGraphics) {
+                    else if (pipeline.type == GfxBackendPipeline::PipelineTypeCompute) {
                         if (entry.compute.cs)
                             vkDestroyShaderModule(gBackendVk.device, entry.compute.cs, gBackendVk.vkAlloc);
                     }
@@ -3855,6 +3862,7 @@ void GfxCommandBuffer::PushBindings(GfxPipelineLayoutHandle layoutHandle, uint32
             VkDescriptorBufferInfo* pBufferInfo = nullptr;
 
             switch (bindingVk.descriptorType) {
+            case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER:
             case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER: 
             case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC:
             {
@@ -3869,14 +3877,7 @@ void GfxCommandBuffer::PushBindings(GfxPipelineLayoutHandle layoutHandle, uint32
             } 
             case VK_DESCRIPTOR_TYPE_SAMPLER:
             {
-                ASSERT(0);
-                /*
-                imageInfos[i] = {
-                    .sampler = binding.image.IsValid() ? gVk.pools.mImages.Data(binding.image).sampler : VK_NULL_HANDLE,
-                    .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
-                };
-                pImageInfo = &imageInfos[i];
-                */
+                ASSERT_MSG(0, "Not implemented");
                 break;
             }
             case VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER:
@@ -3889,32 +3890,6 @@ void GfxCommandBuffer::PushBindings(GfxPipelineLayoutHandle layoutHandle, uint32
                     .imageView = binding.image.IsValid() ? gBackendVk.images.Data(binding.image).viewHandle : VK_NULL_HANDLE,
                     .imageLayout = imgLayout
                 };
-                break;
-                /*
-                if (!binding.imageArrayCount) {
-                    const GfxImageData* imageData = binding.image.IsValid() ? &gVk.pools.mImages.Data(binding.image) : nullptr;
-                    imageInfos[i] = VkDescriptorImageInfo {
-                        .sampler = imageData ? imageData->sampler : VK_NULL_HANDLE,
-                        .imageView = imageData ? imageData->view : VK_NULL_HANDLE,
-                        .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
-                    };
-                    pImageInfo = &imageInfos[i];
-                }
-                else {
-                    // VK_EXT_descriptor_indexing
-                    // TODO: (DescriptorIndexing) do the same for SampledImages ? need to see how Samplers end up like
-                    descriptorCount = binding.imageArrayCount;
-                    pImageInfo = tempAlloc.MallocTyped<VkDescriptorImageInfo>(binding.imageArrayCount);
-                    for (uint32 img = 0; img < binding.imageArrayCount; img++) {
-                        const GfxImageData* imageData = binding.imageArray[img].IsValid() ? &gVk.pools.mImages.Data(binding.imageArray[img]) : nullptr;
-                        pImageInfo[img] = VkDescriptorImageInfo {
-                            .sampler = imageData ? imageData->sampler : VK_NULL_HANDLE,
-                            .imageView = imageData ? imageData->view : VK_NULL_HANDLE,
-                            .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
-                        };
-                    }
-                }
-                */
                 break;
             }
             case VK_DESCRIPTOR_TYPE_STORAGE_IMAGE:
@@ -3929,7 +3904,6 @@ void GfxCommandBuffer::PushBindings(GfxPipelineLayoutHandle layoutHandle, uint32
                     .imageLayout = imgLayout
                 };
                 break;
-
             default:
                 ASSERT_MSG(0, "Descriptor type is not implemented");
                 break;
@@ -5504,7 +5478,7 @@ void GfxCommandBuffer::TransitionBuffer(GfxBufferHandle buffHandle, GfxBufferTra
     vkCmdPipelineBarrier2(cmdVk, &depInfo);
 }
 
-void GfxCommandBuffer::TransitionImage(GfxImageHandle imgHandle, GfxImageTransition transition)
+void GfxCommandBuffer::TransitionImage(GfxImageHandle imgHandle, GfxImageTransition transition, GfxImageTransitionFlags flags)
 {
     ASSERT(mIsRecording);
     mShouldSubmit = true;
@@ -5537,9 +5511,17 @@ void GfxCommandBuffer::TransitionImage(GfxImageHandle imgHandle, GfxImageTransit
         case GfxImageTransition::ShaderRead:
             barrier.srcStageMask = image.transitionedStage;
             barrier.srcAccessMask = image.transitionedAccess;
-            barrier.dstStageMask = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
-            barrier.dstAccessMask = VK_ACCESS_2_MEMORY_READ_BIT;
-            barrier.newLayout = VK_IMAGE_LAYOUT_GENERAL;
+            barrier.dstStageMask = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+            barrier.dstAccessMask = VK_ACCESS_2_SHADER_READ_BIT;
+            barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+            // Exception: when it was used in the fragment shader, we can't read it in another fragment shader as ShaderRead
+            if (image.transitionedStage & (VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT|
+                                           VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT|
+                                           VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT)) 
+            {
+                barrier.dstStageMask &= ~VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
+            }
             break;
 
         case GfxImageTransition::ComputeWrite:
@@ -5561,12 +5543,23 @@ void GfxCommandBuffer::TransitionImage(GfxImageHandle imgHandle, GfxImageTransit
         case GfxImageTransition::RenderTarget:
             {
                 VkImageLayout layout;
-                VkPipelineStageFlags2 dstStage;
-                VkAccessFlags2 accessFlags;
+                VkPipelineStageFlags2 dstStage = 0;
+                VkAccessFlags2 accessFlags = 0;
                 if (GfxBackend::_FormatIsDepthStencil(image.desc.format)) {
                     layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-                    dstStage = VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT;
-                    accessFlags = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT|VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT;
+
+                    if (IsBitsSet<GfxImageTransitionFlags>(flags, GfxImageTransitionFlags::DepthWrite)) {
+                        dstStage |= VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT;
+                        accessFlags |= VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+                    }
+
+                    if (IsBitsSet<GfxImageTransitionFlags>(flags, GfxImageTransitionFlags::DepthRead)) {
+                        dstStage |= VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT;
+                        accessFlags |= VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT | VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT;
+                    }
+                    
+                    if (dstStage == 0)
+                        dstStage |= VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
                 }
                 else {
                     layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
@@ -5903,6 +5896,22 @@ void GfxCommandBuffer::BindIndexBuffer(GfxBufferHandle indexBuffer, uint64 offse
     GfxBackendBuffer& buffer = gBackendVk.buffers.Data(indexBuffer);
 
     vkCmdBindIndexBuffer(cmdVk, buffer.handle, VkDeviceSize(offset), VkIndexType(indexType));
+}
+
+void GfxCommandBuffer::HelperSetFullscreenViewportAndScissor()
+{
+    float vwidth = (float)App::GetFramebufferWidth();
+    float vheight = (float)App::GetFramebufferHeight();
+
+    GfxViewport viewport {
+        .width = vwidth,
+        .height = vheight,
+    };
+
+    SetViewports(0, 1, &viewport);
+
+    RectInt scissor(0, 0, int(vwidth), int(vheight));
+    SetScissors(0, 1, &scissor);
 }
 
 GfxSamplerHandle GfxBackend::CreateSampler(const GfxSamplerDesc& desc)

@@ -502,13 +502,12 @@ inline bool Array<_T>::IsFull() const
 template <typename _T>
 inline void Array<_T>::Free()
 {
-    mCount = 0;
-
-    if (mAlloc) {
+    if (mAlloc)
         Mem::Free(mBuffer, mAlloc);
-        mCapacity = 0;
-        mBuffer = nullptr;
-    }
+
+    mCount = 0;
+    mCapacity = 0;
+    mBuffer = nullptr;
 }
 
 template <typename _T>

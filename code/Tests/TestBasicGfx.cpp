@@ -61,8 +61,7 @@ struct ModelScene
 
     struct FrameInfo 
     {
-        Mat4 viewMat;
-        Mat4 projMat;
+        Mat4 worldToClipMat;
         Float3 lightDir;
         float lightFactor;
     };
@@ -241,8 +240,7 @@ struct ModelScene
         float vwidth = (float)App::GetFramebufferWidth();
         float vheight = (float)App::GetFramebufferHeight();
         FrameInfo ubo {
-            .viewMat = mCam.GetViewMat(),
-            .projMat = GfxBackend::GetSwapchainTransformMat() * mCam.GetPerspectiveMat(vwidth, vheight),
+            .worldToClipMat = GfxBackend::GetSwapchainTransformMat() * mCam.GetPerspectiveMat(vwidth, vheight) * mCam.GetViewMat(),
             .lightDir = Float3(-0.2f, M::Cos(mLightAngle), -M::Sin(mLightAngle)),
             .lightFactor = mEnableLight ? 0 : 1.0f
         };
@@ -278,19 +276,7 @@ struct ModelScene
 
         cmd.BindPipeline(mPipeline);
         
-        // Viewport
-        float vwidth = (float)App::GetFramebufferWidth();
-        float vheight = (float)App::GetFramebufferHeight();
-
-        GfxViewport viewport {
-            .width = vwidth,
-            .height = vheight,
-        };
-
-        cmd.SetViewports(0, 1, &viewport);
-
-        RectInt scissor(0, 0, int(vwidth), int(vheight));
-        cmd.SetScissors(0, 1, &scissor);
+        cmd.HelperSetFullscreenViewportAndScissor();
 
         AssetObjPtrScope<ModelData> model(mModel);
 
@@ -459,7 +445,7 @@ struct AppImpl final : AppCallbacks
         }
 
         if (mDrawGrid) {
-            DebugDraw::BeginDraw(cmd, App::GetFramebufferWidth(), App::GetFramebufferHeight());
+            DebugDraw::BeginDraw(cmd, *mCam, App::GetFramebufferWidth(), App::GetFramebufferHeight());
             DebugDrawGridProperties gridProps {
                 .distance = 200,
                 .lineColor = Color4u(0x565656),
@@ -467,7 +453,7 @@ struct AppImpl final : AppCallbacks
             };
 
             DebugDraw::DrawGroundGrid(*mCam, gridProps);
-            DebugDraw::EndDraw(cmd, *mCam, mRenderTargetDepth);
+            DebugDraw::EndDraw(cmd, mRenderTargetDepth);
         }
 
         if (ImGui::IsEnabled()) {

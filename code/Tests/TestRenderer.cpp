@@ -38,6 +38,10 @@ static const char* TESTRENDERER_MODELS[] = {
     "/data/Sponza/Sponza.gltf"
 };
 
+#define LIGHT_CULL_TILE_SIZE 16
+#define LIGHT_CULL_MAX_LIGHTS_PER_TILE 8
+#define LIGHT_CULL_MAX_LIGHTS_PER_FRAME 100
+
 struct RZPrepassVertex
 {
     Float3 position;
@@ -53,15 +57,65 @@ struct RZPrepassShaderFrameData
     Mat4 worldToClipMat;
 };
 
+struct RLight
+{
+    Float3 position;
+    float radius;
+};
+
+struct RLightCullShaderFrameData
+{
+    Mat4 worldToViewMat;
+    Mat4 clipToViewMat;
+    float cameraNear;
+    float cameraFar;
+    float _reserved1[2];
+    uint32 numLights;
+    uint32 windowWidth;
+    uint32 windowHeight;
+    uint32 _reserved2;
+};
+
+struct RLightCullDebugShaderFrameData
+{
+    uint32 tilesCountX;
+    uint32 tilesCountY;
+    uint32 _reserved[2];
+};
+
 struct RForwardPlusContext
 {
     AssetHandleShader sZPrepass;
     GfxPipelineHandle pZPrepass;
     GfxPipelineLayoutHandle pZPrepassLayout;
     GfxBufferHandle ubZPrepass;
+
+    RLight* lights;
+    uint32 numLights;
+    AssetHandleShader sLightCull;
+    GfxPipelineHandle pLightCull;
+    GfxPipelineLayoutHandle pLightCullLayout;
+    GfxBufferHandle ubLightCull;
+    GfxBufferHandle bLightsInput;
+    GfxBufferHandle bLightsOutput;
+
+    AssetHandleShader sLightCullDebug;
+    GfxPipelineHandle pLightCullDebug;
+    GfxPipelineLayoutHandle pLightCullDebugLayout;
+    AssetHandleImage checkerTex;
+};
+
+struct SceneLight
+{
+    Float4 boundingSphere;
 };
 
 RForwardPlusContext gFwdPlus;
+
+namespace R 
+{
+    void SetLights(uint32 numLights, const SceneLight* lights);
+}
 
 struct ModelScene
 {
@@ -79,13 +133,16 @@ struct ModelScene
 
     AssetGroup mAssetGroup;
 
+    Array<SceneLight> mLights;
+
     float mLightAngle = M_HALFPI;
+    float mPointLightRadius = 1.0f;
     bool mEnableLight = false;
+    bool mDebugLightCull = false;
 
     struct FrameInfo 
     {
-        Mat4 viewMat;
-        Mat4 projMat;
+        Mat4 worldToClipMat;
         Float3 lightDir;
         float lightFactor;
     };
@@ -130,6 +187,8 @@ struct ModelScene
         mShader = Shader::Load("/shaders/Model.hlsl", ShaderLoadParams{}, initAssetGroup);
 
         mAssetGroup = Asset::CreateGroup();
+
+        LoadLights();        
     }
 
     void Release()
@@ -221,7 +280,7 @@ struct ModelScene
             .depthStencil = {
                 .depthTestEnable = true,
                 .depthWriteEnable = false,
-                .depthCompareOp = GfxCompareOp::Less
+                .depthCompareOp = GfxCompareOp::Equal
             },
             .numColorAttachments = 1,
             .colorAttachmentFormats = {GfxBackend::GetSwapchainFormat()},
@@ -254,6 +313,8 @@ struct ModelScene
 
         GfxBackend::DestroyPipeline(mPipeline);
         GfxBackend::DestroyPipelineLayout(mPipelineLayout);
+
+        mLights.Free();
     }
 
     void Update(GfxCommandBuffer cmd)
@@ -264,8 +325,7 @@ struct ModelScene
         float vwidth = (float)App::GetFramebufferWidth();
         float vheight = (float)App::GetFramebufferHeight();
         FrameInfo ubo {
-            .viewMat = mCam.GetViewMat(),
-            .projMat = GfxBackend::GetSwapchainTransformMat() * mCam.GetPerspectiveMat(vwidth, vheight),
+            .worldToClipMat = GfxBackend::GetSwapchainTransformMat() * mCam.GetPerspectiveMat(vwidth, vheight) * mCam.GetViewMat(),
             .lightDir = Float3(-0.2f, M::Cos(mLightAngle), -M::Sin(mLightAngle)),
             .lightFactor = mEnableLight ? 0 : 1.0f
         };
@@ -290,8 +350,70 @@ struct ModelScene
 
     void UpdateImGui()
     {
-        ImGui::Checkbox("EnableLight", &mEnableLight);
-        ImGui::SliderFloat("LightAngle", &mLightAngle, 0, M_PI, "%0.1f");
+        ImGui::Checkbox("Enable Lights", &mEnableLight);
+        ImGui::SliderFloat("Light Angle", &mLightAngle, 0, M_PI, "%0.1f");
+        ImGui::SliderFloat("Point Light Radius", &mPointLightRadius, 0.1f, 10.0f, "%.1f");
+        if (ImGui::Button("Add Point Light")) {
+            AddLightAtCameraPosition();
+            R::SetLights(mLights.Count(), mLights.Ptr());
+        }
+
+        if (ImGui::Button("Save Lights")) {
+            SaveLights();
+        }
+
+        ImGui::Checkbox("Debug Light Culling", &mDebugLightCull);
+    }
+
+    void SaveLights()
+    {
+        MemTempAllocator tempAlloc;
+        Blob blob(&tempAlloc);
+        String<128> line;
+        for (SceneLight& light : mLights) {
+            line.FormatSelf("%.3f, %.3f, %.3f, %.1f\n", light.boundingSphere.x, light.boundingSphere.y, light.boundingSphere.z, 
+                            light.boundingSphere.w);
+            blob.Write(line.Ptr(), line.Length());
+        }
+
+        char curDir[CONFIG_MAX_PATH];
+        OS::GetCurrentDir(curDir, sizeof(curDir));
+        Path lightsFilepath(curDir);
+        String32 name = String32::Format("%s_Lights.txt", mName.CStr());
+        lightsFilepath.Join(name.CStr());
+        Vfs::WriteFile(lightsFilepath.CStr(), blob, VfsFlags::AbsolutePath);
+    }
+
+    void LoadLights()
+    {
+        char curDir[CONFIG_MAX_PATH];
+        OS::GetCurrentDir(curDir, sizeof(curDir));
+        String32 name = String32::Format("%s_Lights.txt", mName.CStr());
+        Path lightsFilepath(curDir);
+        lightsFilepath.Join(name.CStr());
+        MemTempAllocator tempAlloc;
+        Blob blob = Vfs::ReadFile(lightsFilepath.CStr(), VfsFlags::AbsolutePath|VfsFlags::TextFile, &tempAlloc);
+        if (blob.IsValid()) {
+            Str::SplitResult r = Str::Split((const char*)blob.Data(), '\n', &tempAlloc);
+            for (char* line : r.splits) {
+                SceneLight light {};
+                Str::ScanFmt(line, "%f, %f, %f, %f", &light.boundingSphere.x, &light.boundingSphere.y, &light.boundingSphere.z, 
+                             &light.boundingSphere.w);
+                mLights.Push(light);
+            }
+        }
+
+        if (!mLights.IsEmpty()) 
+            R::SetLights(mLights.Count(), mLights.Ptr());
+    }
+
+    void AddLightAtCameraPosition()
+    {
+        SceneLight light {
+            .boundingSphere = Float4(mCam.Position(), mPointLightRadius)
+        };
+
+        mLights.Push(light);
     }
 
     void Render(GfxCommandBuffer cmd)
@@ -305,15 +427,7 @@ struct ModelScene
         float vwidth = (float)App::GetFramebufferWidth();
         float vheight = (float)App::GetFramebufferHeight();
 
-        GfxViewport viewport {
-            .width = vwidth,
-            .height = vheight,
-        };
-
-        cmd.SetViewports(0, 1, &viewport);
-
-        RectInt scissor(0, 0, int(vwidth), int(vheight));
-        cmd.SetScissors(0, 1, &scissor);
+        cmd.HelperSetFullscreenViewportAndScissor();
 
         AssetObjPtrScope<ModelData> model(mModel);
 
@@ -368,91 +482,228 @@ namespace R
     void LoadFwdPlusAssets(AssetGroup assetGroup)
     {
         gFwdPlus.sZPrepass = Shader::Load("/shaders/ZPrepass.hlsl", ShaderLoadParams{}, assetGroup);
+
+        {
+            ShaderLoadParams loadParams {
+                .compileDesc = {
+                    .numDefines = 3,
+                    .defines = {
+                        {
+                            .define = "TILE_SIZE",
+                            .value = String32::Format("%d", LIGHT_CULL_TILE_SIZE)
+                        },
+                        {
+                            .define = "MAX_LIGHTS_PER_TILE",
+                            .value = String32::Format("%d", LIGHT_CULL_MAX_LIGHTS_PER_TILE)
+                        },
+                        {
+                            .define = "MSAA",
+                            .value = "0"
+                        }
+                    }
+                }
+            };
+            gFwdPlus.sLightCull = Shader::Load("/shaders/LightCull.hlsl", loadParams, assetGroup);
+            gFwdPlus.sLightCullDebug = Shader::Load("/shaders/LightCullDebug.hlsl", loadParams, assetGroup);
+        }
+
+        gFwdPlus.checkerTex = Image::Load("/data/Checker.png", ImageLoadParams{}, assetGroup);
     }
 
     bool InitializeFwdPlus()
     {
-        ASSERT(gFwdPlus.sZPrepass.IsValid());
-
-        AssetObjPtrScope<GfxShader> shader(gFwdPlus.sZPrepass);
 
         //--------------------------------------------------------------------------------------------------------------
         // ZPrepass
-        // Layout
-        GfxPipelineLayoutDesc::Binding pBindings[] = {
-            {
-                .name = "PerFrameData",
-                .type = GfxDescriptorType::UniformBuffer,
-                .stagesUsed = GfxShaderStage::Vertex
-            }
-        };
+        {
+            // Layout
+            ASSERT(gFwdPlus.sZPrepass.IsValid());
+            AssetObjPtrScope<GfxShader> shader(gFwdPlus.sZPrepass);
+            GfxPipelineLayoutDesc::Binding pBindings[] = {
+                {
+                    .name = "PerFrameData",
+                    .type = GfxDescriptorType::UniformBuffer,
+                    .stagesUsed = GfxShaderStage::Vertex
+                }
+            };
 
-        GfxPipelineLayoutDesc::PushConstant pPushConstants[] = {
-            {
-                .name = "PerObjectData",
-                .stagesUsed = GfxShaderStage::Vertex,
-                .size = sizeof(RZPrepassShaderObjectData)
-            }
-        };
+            GfxPipelineLayoutDesc::PushConstant pPushConstants[] = {
+                {
+                    .name = "PerObjectData",
+                    .stagesUsed = GfxShaderStage::Vertex,
+                    .size = sizeof(RZPrepassShaderObjectData)
+                }
+            };
 
-        GfxPipelineLayoutDesc pLayoutDesc {
-            .numBindings = CountOf(pBindings),
-            .bindings = pBindings,
-            .numPushConstants = CountOf(pPushConstants),
-            .pushConstants = pPushConstants
-        };
+            GfxPipelineLayoutDesc pLayoutDesc {
+                .numBindings = CountOf(pBindings),
+                .bindings = pBindings,
+                .numPushConstants = CountOf(pPushConstants),
+                .pushConstants = pPushConstants
+            };
 
-        gFwdPlus.pZPrepassLayout = GfxBackend::CreatePipelineLayout(*shader, pLayoutDesc);
+            gFwdPlus.pZPrepassLayout = GfxBackend::CreatePipelineLayout(*shader, pLayoutDesc);
 
-        // Pipeline
-        GfxVertexInputAttributeDesc vertexInputAttDescs[] = {
-            {
-                .semantic = "POSITION",
-                .binding = 0,
-                .format = GfxFormat::R32G32B32_SFLOAT,
-                .offset = offsetof(RZPrepassVertex, position)
-            }
-        };
+            // Pipeline
+            GfxVertexInputAttributeDesc vertexInputAttDescs[] = {
+                {
+                    .semantic = "POSITION",
+                    .binding = 0,
+                    .format = GfxFormat::R32G32B32_SFLOAT,
+                    .offset = offsetof(RZPrepassVertex, position)
+                }
+            };
 
-        GfxVertexBufferBindingDesc vertexBufferBindingDescs[] = {
-            {
-                .binding = 0,
-                .stride = sizeof(ModelScene::Vertex),       // TODO: Fix this, should be a separate vertex stream
-                .inputRate = GfxVertexInputRate::Vertex
-            }
-        };
+            GfxVertexBufferBindingDesc vertexBufferBindingDescs[] = {
+                {
+                    .binding = 0,
+                    .stride = sizeof(ModelScene::Vertex),       // TODO: Fix this, should be a separate vertex stream
+                    .inputRate = GfxVertexInputRate::Vertex
+                }
+            };
 
-        GfxGraphicsPipelineDesc pDesc {
-            .numVertexInputAttributes = CountOf(vertexInputAttDescs),
-            .vertexInputAttributes = vertexInputAttDescs,
-            .numVertexBufferBindings = CountOf(vertexBufferBindingDescs),
-            .vertexBufferBindings = vertexBufferBindingDescs,
-            .rasterizer = {
-                .cullMode = GfxCullMode::Front
-            },
-            .blend = {
-                .numAttachments = 1,
-                .attachments = GfxBlendAttachmentDesc::GetDefault()
-            },
-            .depthStencil = {
-                .depthTestEnable = true,
-                .depthWriteEnable = true,
-                .depthCompareOp = GfxCompareOp::Less
-            },
-            .numColorAttachments = 0,
-            .depthAttachmentFormat = GfxBackend::GetValidDepthStencilFormat(),
-            .stencilAttachmentFormat = GfxBackend::GetValidDepthStencilFormat()
-        };
+            GfxGraphicsPipelineDesc pDesc {
+                .numVertexInputAttributes = CountOf(vertexInputAttDescs),
+                .vertexInputAttributes = vertexInputAttDescs,
+                .numVertexBufferBindings = CountOf(vertexBufferBindingDescs),
+                .vertexBufferBindings = vertexBufferBindingDescs,
+                .rasterizer = {
+                    .cullMode = GfxCullMode::Back
+                },
+                .blend = {
+                    .numAttachments = 1,
+                    .attachments = GfxBlendAttachmentDesc::GetDefault()
+                },
+                .depthStencil = {
+                    .depthTestEnable = true,
+                    .depthWriteEnable = true,
+                    .depthCompareOp = GfxCompareOp::Less
+                },
+                .numColorAttachments = 0,
+                .depthAttachmentFormat = GfxBackend::GetValidDepthStencilFormat(),
+                .stencilAttachmentFormat = GfxBackend::GetValidDepthStencilFormat()
+            };
 
-        gFwdPlus.pZPrepass = GfxBackend::CreateGraphicsPipeline(*shader, gFwdPlus.pZPrepassLayout, pDesc);
+            gFwdPlus.pZPrepass = GfxBackend::CreateGraphicsPipeline(*shader, gFwdPlus.pZPrepassLayout, pDesc);
 
-        // Buffers
-        GfxBufferDesc bufferDesc {
-            .sizeBytes = sizeof(RZPrepassShaderFrameData),
-            .usageFlags = GfxBufferUsageFlags::TransferDst | GfxBufferUsageFlags::Uniform,
-            .arena = GfxMemoryArena::PersistentGPU
-        };
-        gFwdPlus.ubZPrepass = GfxBackend::CreateBuffer(bufferDesc);
+            // Buffers
+            GfxBufferDesc bufferDesc {
+                .sizeBytes = sizeof(RZPrepassShaderFrameData),
+                .usageFlags = GfxBufferUsageFlags::TransferDst | GfxBufferUsageFlags::Uniform,
+                .arena = GfxMemoryArena::PersistentGPU
+            };
+            gFwdPlus.ubZPrepass = GfxBackend::CreateBuffer(bufferDesc);
+        }
+
+        //--------------------------------------------------------------------------------------------------------------
+        // LightCull
+        {
+            AssetObjPtrScope<GfxShader> shader(gFwdPlus.sLightCull);
+            // Layout
+            GfxPipelineLayoutDesc::Binding bindings[] = {
+                {
+                    .name = "PerFrameData",
+                    .type = GfxDescriptorType::UniformBuffer,
+                    .stagesUsed = GfxShaderStage::Compute
+                },
+                {
+                    .name = "Lights",
+                    .type = GfxDescriptorType::StorageBuffer,
+                    .stagesUsed = GfxShaderStage::Compute
+                },
+                {
+                    .name = "VisibleLightIndices",
+                    .type = GfxDescriptorType::StorageBuffer,
+                    .stagesUsed = GfxShaderStage::Compute
+                },
+                {
+                    .name = "DepthTexture",
+                    .type = GfxDescriptorType::SampledImage,
+                    .stagesUsed = GfxShaderStage::Compute
+
+                }
+            };
+
+            GfxPipelineLayoutDesc layoutDesc { 
+                .numBindings = CountOf(bindings),
+                .bindings = bindings
+            };
+
+            gFwdPlus.pLightCullLayout = GfxBackend::CreatePipelineLayout(*shader, layoutDesc);
+
+            // Pipeline
+            gFwdPlus.pLightCull = GfxBackend::CreateComputePipeline(*shader, gFwdPlus.pLightCullLayout);
+
+            // Buffers
+            GfxBufferDesc bufferDesc {
+                .sizeBytes = sizeof(RLightCullShaderFrameData),
+                .usageFlags = GfxBufferUsageFlags::TransferDst | GfxBufferUsageFlags::Uniform
+            };
+            gFwdPlus.ubLightCull = GfxBackend::CreateBuffer(bufferDesc);
+
+            bufferDesc = {
+                .sizeBytes = sizeof(RLight)*LIGHT_CULL_MAX_LIGHTS_PER_FRAME,
+                .usageFlags = GfxBufferUsageFlags::TransferDst | GfxBufferUsageFlags::Storage
+            };
+            gFwdPlus.bLightsInput = GfxBackend::CreateBuffer(bufferDesc);
+
+            uint32 numTilesX = M::CeilDiv(App::GetFramebufferWidth(), LIGHT_CULL_TILE_SIZE);
+            uint32 numTilesY = M::CeilDiv(App::GetFramebufferHeight(), LIGHT_CULL_TILE_SIZE);
+            bufferDesc = {
+                .sizeBytes = sizeof(uint32)*numTilesX*numTilesY*LIGHT_CULL_MAX_LIGHTS_PER_TILE,
+                .usageFlags = GfxBufferUsageFlags::TransferDst | GfxBufferUsageFlags::Storage
+            };
+            gFwdPlus.bLightsOutput = GfxBackend::CreateBuffer(bufferDesc);
+
+        }
+
+        //--------------------------------------------------------------------------------------------------------------
+        // LightCull Debug
+        {
+            AssetObjPtrScope<GfxShader> shader(gFwdPlus.sLightCullDebug);
+
+            // Layout
+            GfxPipelineLayoutDesc::Binding bindings[] = {
+                {
+                    .name = "VisibleLightIndices",
+                    .type = GfxDescriptorType::StorageBuffer,
+                    .stagesUsed = GfxShaderStage::Fragment
+                }
+            };
+
+            GfxPipelineLayoutDesc::PushConstant pushConstants[] = {
+                {
+                    .name = "PerFrameData",
+                    .stagesUsed = GfxShaderStage::Fragment,
+                    .size = sizeof(RLightCullDebugShaderFrameData)
+                }
+            };
+
+            GfxPipelineLayoutDesc layoutDesc { 
+                .numBindings = CountOf(bindings),
+                .bindings = bindings,
+                .numPushConstants = CountOf(pushConstants),
+                .pushConstants = pushConstants
+            };
+
+            gFwdPlus.pLightCullDebugLayout = GfxBackend::CreatePipelineLayout(*shader, layoutDesc);
+
+            GfxGraphicsPipelineDesc pDesc {
+                .rasterizer = {
+                    .cullMode = GfxCullMode::Back
+                },
+                .blend = {
+                    .numAttachments = 1,
+                    .attachments = GfxBlendAttachmentDesc::GetDefault()
+                },
+                .numColorAttachments = 1,
+                .colorAttachmentFormats = {GfxBackend::GetSwapchainFormat()},
+                .depthAttachmentFormat = GfxBackend::GetValidDepthStencilFormat(),
+                .stencilAttachmentFormat = GfxBackend::GetValidDepthStencilFormat()
+            };
+
+            gFwdPlus.pLightCullDebug = GfxBackend::CreateGraphicsPipeline(*shader, gFwdPlus.pLightCullDebugLayout, pDesc);
+        }
 
         return true;
     }
@@ -462,32 +713,53 @@ namespace R
         GfxBackend::DestroyPipeline(gFwdPlus.pZPrepass);
         GfxBackend::DestroyPipelineLayout(gFwdPlus.pZPrepassLayout);
         GfxBackend::DestroyBuffer(gFwdPlus.ubZPrepass);
+
+        GfxBackend::DestroyPipeline(gFwdPlus.pLightCull);
+        GfxBackend::DestroyPipelineLayout(gFwdPlus.pLightCullLayout);
+        GfxBackend::DestroyBuffer(gFwdPlus.ubLightCull);
+        GfxBackend::DestroyBuffer(gFwdPlus.bLightsInput);
+        GfxBackend::DestroyBuffer(gFwdPlus.bLightsOutput);
+
+        GfxBackend::DestroyPipeline(gFwdPlus.pLightCullDebug);
+        GfxBackend::DestroyPipelineLayout(gFwdPlus.pLightCullDebugLayout);
+
+        Mem::Free(gFwdPlus.lights);
     }
 
     void UpdateBuffersFwdPlus(GfxCommandBuffer cmd, const Camera& cam)
     {
         float vwidth = (float)App::GetFramebufferWidth();
         float vheight = (float)App::GetFramebufferHeight();
-        RZPrepassShaderFrameData ubData {
-            .worldToClipMat = GfxBackend::GetSwapchainTransformMat() * cam.GetPerspectiveMat(vwidth, vheight) * cam.GetViewMat(),
-        };
 
-        GfxBufferDesc stagingDesc {
-            .sizeBytes = sizeof(ubData),
-            .usageFlags = GfxBufferUsageFlags::TransferSrc,
-            .arena = GfxMemoryArena::TransientCPU
-        };
-        GfxBufferHandle stagingBuff = GfxBackend::CreateBuffer(stagingDesc);
+        {
+            GfxHelperBufferUpdateScope zprepassBufferUpdater(cmd, gFwdPlus.ubZPrepass, sizeof(RZPrepassShaderFrameData), 
+                                                             GfxShaderStage::Vertex|GfxShaderStage::Fragment);
+            RZPrepassShaderFrameData* buffer = (RZPrepassShaderFrameData*)zprepassBufferUpdater.mData;
 
-        RZPrepassShaderFrameData* dstUbData;
-        cmd.MapBuffer(stagingBuff, (void**)&dstUbData);
-        *dstUbData = ubData;
-        cmd.FlushBuffer(stagingBuff);
+            *buffer = {
+                .worldToClipMat = GfxBackend::GetSwapchainTransformMat() * cam.GetPerspectiveMat(vwidth, vheight) * cam.GetViewMat(),
+            };
+        }
 
-        cmd.TransitionBuffer(gFwdPlus.ubZPrepass, GfxBufferTransition::TransferWrite);
-        cmd.CopyBufferToBuffer(stagingBuff, gFwdPlus.ubZPrepass, GfxShaderStage::Vertex|GfxShaderStage::Fragment);
+        {
+            GfxHelperBufferUpdateScope lightcullUniformUpdater(cmd, gFwdPlus.ubLightCull, sizeof(RLightCullShaderFrameData),
+                                                               GfxShaderStage::Compute);
+            RLightCullShaderFrameData* buffer = (RLightCullShaderFrameData*)lightcullUniformUpdater.mData;
+            buffer->worldToViewMat = cam.GetViewMat();
+            buffer->clipToViewMat = Mat4::Inverse(cam.GetPerspectiveMat(vwidth, vheight));
+            buffer->cameraNear = cam.Near();
+            buffer->cameraFar = cam.Far();
+            buffer->numLights = gFwdPlus.numLights;
+            buffer->windowWidth = App::GetFramebufferWidth();
+            buffer->windowHeight = App::GetFramebufferHeight();
+        }
 
-        GfxBackend::DestroyBuffer(stagingBuff);
+        if (gFwdPlus.numLights) {
+            GfxHelperBufferUpdateScope lightcullInputUpdater(cmd, gFwdPlus.bLightsInput, sizeof(RLight)*gFwdPlus.numLights,
+                                                             GfxShaderStage::Compute);
+            RLight* buffer = (RLight*)lightcullInputUpdater.mData;
+            memcpy(buffer, gFwdPlus.lights, sizeof(RLight)*gFwdPlus.numLights);
+        }
     }
 
     void RenderFwdPlus(GfxCommandBuffer cmd, GfxImageHandle depthImageHandle, AssetHandleModel modelHandle)
@@ -511,21 +783,9 @@ namespace R
         cmd.BeginRenderPass(pass);
 
         cmd.BindPipeline(gFwdPlus.pZPrepass);
+        cmd.HelperSetFullscreenViewportAndScissor();
         
         // Viewport
-        float vwidth = (float)App::GetFramebufferWidth();
-        float vheight = (float)App::GetFramebufferHeight();
-
-        GfxViewport viewport {
-            .width = vwidth,
-            .height = vheight,
-        };
-
-        cmd.SetViewports(0, 1, &viewport);
-
-        RectInt scissor(0, 0, int(vwidth), int(vheight));
-        cmd.SetScissors(0, 1, &scissor);
-
         for (uint32 i = 0; i < model->numNodes; i++) {
             const ModelNode& node = model->nodes[i];
             if (node.meshId == 0)
@@ -559,8 +819,77 @@ namespace R
         }
 
         cmd.EndRenderPass();
+
+        if (gFwdPlus.numLights) {
+            cmd.TransitionImage(depthImageHandle, GfxImageTransition::ShaderRead);
+
+            uint32 numTilesX = M::CeilDiv(App::GetFramebufferWidth(), LIGHT_CULL_TILE_SIZE);
+            uint32 numTilesY = M::CeilDiv(App::GetFramebufferHeight(), LIGHT_CULL_TILE_SIZE);
+
+            GfxBindingDesc bindings[] = {
+                {
+                    .name = "PerFrameData", 
+                    .buffer = gFwdPlus.ubLightCull
+                },
+                {
+                    .name = "Lights",
+                    .buffer = gFwdPlus.bLightsInput
+                },
+                {
+                    .name = "VisibleLightIndices",
+                    .buffer = gFwdPlus.bLightsOutput
+                },
+                {
+                    .name = "DepthTexture",
+                    .image = depthImageHandle
+                }
+            };
+
+            cmd.BindPipeline(gFwdPlus.pLightCull);
+            cmd.PushBindings(gFwdPlus.pLightCullLayout, CountOf(bindings), bindings);
+            cmd.Dispatch(numTilesX, numTilesY, 1);
+        }
     }
-}
+
+    void SetLights(uint32 numLights, const SceneLight* lights)
+    {
+        ASSERT(numLights);
+        ASSERT(lights);
+
+        gFwdPlus.lights = Mem::ReallocTyped<RLight>(gFwdPlus.lights, numLights);   // TODO: alloc
+        gFwdPlus.numLights = numLights;
+        for (uint32 i = 0; i < numLights; i++) {
+            const SceneLight& l = lights[i];
+            gFwdPlus.lights[i] = {
+                .position = Float3(l.boundingSphere.x, l.boundingSphere.y, l.boundingSphere.z),
+                .radius = l.boundingSphere.w
+            };
+        }
+    }
+
+    void DrawLightCullDebug(GfxCommandBuffer cmd)
+    {
+        cmd.BindPipeline(gFwdPlus.pLightCullDebug);
+        cmd.HelperSetFullscreenViewportAndScissor();
+
+        GfxBindingDesc bindings[] = {
+            {
+                .name = "VisibleLightIndices",
+                .buffer = gFwdPlus.bLightsOutput
+            }
+        };
+
+        cmd.PushBindings(gFwdPlus.pLightCullDebugLayout, CountOf(bindings), bindings);
+
+        RLightCullDebugShaderFrameData perFrameData {
+            .tilesCountX = (uint32)M::CeilDiv(App::GetFramebufferWidth(), LIGHT_CULL_TILE_SIZE),
+            .tilesCountY = (uint32)M::CeilDiv(App::GetFramebufferHeight(), LIGHT_CULL_TILE_SIZE)
+        };
+        cmd.PushConstants<RLightCullDebugShaderFrameData>(gFwdPlus.pLightCullDebugLayout, "PerFrameData", perFrameData);
+
+        cmd.Draw(3, 1, 0, 0);
+    }
+} // R
 
 
 struct AppImpl final : AppCallbacks
@@ -584,9 +913,15 @@ struct AppImpl final : AppCallbacks
                 .height = uint16(extent.y),
                 .multisampleFlags = GfxSampleCountFlags::SampleCount1,
                 .format = GfxBackend::GetValidDepthStencilFormat(),
-                .usageFlags = GfxImageUsageFlags::DepthStencilAttachment|GfxImageUsageFlags::TransientAttachment,
+                .usageFlags = GfxImageUsageFlags::DepthStencilAttachment|GfxImageUsageFlags::Sampled,
                 .arena = GfxMemoryArena::PersistentGPU
             };
+
+            // Note: this won't probably work with tiled GPUs because it's incompatible with Sampled flag
+            //       So we probably need to copy the contents of the zbuffer to another one
+            #if PLATFORM_MOBILE
+                desc.usageFlags |= GfxImageUsageFlags::TransientAttachment;
+            #endif
 
             self->mRenderTargetDepth = GfxBackend::CreateImage(desc);
         }
@@ -654,8 +989,9 @@ struct AppImpl final : AppCallbacks
         GfxCommandBuffer cmd = GfxBackend::BeginCommandBuffer(GfxQueueType::Graphics);
 
         // Update
-        mModelScenes[mSelectedSceneIdx].Update(cmd);
-        R::UpdateBuffersFwdPlus(cmd, mModelScenes[mSelectedSceneIdx].mCam);
+        ModelScene& scene = mModelScenes[mSelectedSceneIdx];
+        scene.Update(cmd);
+        R::UpdateBuffersFwdPlus(cmd, scene.mCam);
 
         // Render
         GfxBackendRenderPass pass { 
@@ -674,32 +1010,47 @@ struct AppImpl final : AppCallbacks
             .hasDepth = true
         };
 
-        cmd.TransitionImage(mRenderTargetDepth, GfxImageTransition::RenderTarget);     
-        
+        cmd.TransitionImage(mRenderTargetDepth, GfxImageTransition::RenderTarget, GfxImageTransitionFlags::DepthWrite);
+
         {
-            R::RenderFwdPlus(cmd, mRenderTargetDepth, mModelScenes[mSelectedSceneIdx].mModel);
+            R::RenderFwdPlus(cmd, mRenderTargetDepth, scene.mModel);
         }
 
+        cmd.TransitionImage(mRenderTargetDepth, GfxImageTransition::RenderTarget, GfxImageTransitionFlags::DepthRead);
+
+        // Draw scene
         {
             GPU_PROFILE_ZONE(cmd, "ModelRender");
 
             cmd.BeginRenderPass(pass);
-            mModelScenes[mSelectedSceneIdx].Render(cmd);
+            scene.Render(cmd);
+
+            if (scene.mDebugLightCull)
+                R::DrawLightCullDebug(cmd);
+
             cmd.EndRenderPass();
         }
 
-        if (mDrawGrid) {
-            DebugDraw::BeginDraw(cmd, App::GetFramebufferWidth(), App::GetFramebufferHeight());
-            DebugDrawGridProperties gridProps {
-                .distance = 200,
-                .lineColor = Color4u(0x565656),
-                .boldLineColor = Color4u(0xd6d6d6)
-            };
+        // DebugDraw
+        if (!scene.mDebugLightCull) {
+            DebugDraw::BeginDraw(cmd, *mCam, App::GetFramebufferWidth(), App::GetFramebufferHeight());
+            if (mDrawGrid) {
+                DebugDrawGridProperties gridProps {
+                    .distance = 200,
+                    .lineColor = Color4u(0x565656),
+                    .boldLineColor = Color4u(0xd6d6d6)
+                };
 
-            DebugDraw::DrawGroundGrid(*mCam, gridProps);
-            DebugDraw::EndDraw(cmd, *mCam, mRenderTargetDepth);
+                DebugDraw::DrawGroundGrid(*mCam, gridProps);
+            }
+
+            for (const SceneLight& l : scene.mLights) {
+                DebugDraw::DrawBoundingSphere(l.boundingSphere, COLOR4U_WHITE);
+            }
+            DebugDraw::EndDraw(cmd, mRenderTargetDepth);
         }
 
+        // ImGui
         if (ImGui::IsEnabled()) {
             GPU_PROFILE_ZONE(cmd, "ImGui");
             DebugHud::DrawDebugHud(dt, 20);
@@ -711,7 +1062,7 @@ struct AppImpl final : AppCallbacks
                     for (uint32 i = 0; i < CountOf(TESTRENDERER_MODELS); i++) {
                         if (ImGui::MenuItem(mModelScenes[i].mName.CStr(), nullptr, mSelectedSceneIdx == i)) {
                             if (i != mSelectedSceneIdx) {
-                                mModelScenes[mSelectedSceneIdx].Unload();
+                                scene.Unload();
                                 mSelectedSceneIdx = i;
                                 mModelScenes[i].Load();
                                 mCam = &mModelScenes[i].mCam;
@@ -728,7 +1079,7 @@ struct AppImpl final : AppCallbacks
 
             ImGui::SetNextWindowSize(ImVec2(300, 200), ImGuiCond_FirstUseEver);
             if (ImGui::Begin("Scene")) {
-                mModelScenes[mSelectedSceneIdx].UpdateImGui();
+                scene.UpdateImGui();
             }
             ImGui::End();
 

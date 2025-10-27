@@ -42,6 +42,8 @@ namespace M
     FORCE_INLINE bool IsINF64(double _f);
     FORCE_INLINE float Round(float _f);
     FORCE_INLINE float Ceil(float _f);
+    FORCE_INLINE int CeilDiv(int n, int d);             // How many 'd' fits into 'n' (Ceiling division): ceil(float(f)/float(d))
+    FORCE_INLINE uint32 CeilDiv(uint32 n, uint32 d);    
     FORCE_INLINE float Lerp(float _a, float _b, float _t);
     FORCE_INLINE float SmoothLerp(float _a, float _b, float _dt, float h);
     FORCE_INLINE float Sign(float _a);
@@ -221,6 +223,16 @@ FORCE_INLINE float M::Round(float _f)
 FORCE_INLINE float M::Ceil(float _f)
 {
     return -M::Floor(-_f);
+}
+
+FORCE_INLINE int M::CeilDiv(int n, int d)
+{
+    return (n + (d - 1))/d;
+}
+
+FORCE_INLINE uint32 M::CeilDiv(uint32 n, uint32 d)
+{
+    return (n + (d - 1))/d;
 }
 
 FORCE_INLINE float M::Lerp(float _a, float _b, float _t)

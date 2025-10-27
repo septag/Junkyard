@@ -498,6 +498,14 @@ enum class GfxImageTransition
     RenderTarget
 };
 
+enum class GfxImageTransitionFlags : uint32 
+{
+    None = 0,
+    DepthWrite = 0x1,
+    DepthRead = 0x2
+};
+ENABLE_BITMASK(GfxImageTransitionFlags);
+
 // Binary representation (SERIALIZED)
 struct GfxImage
 {
