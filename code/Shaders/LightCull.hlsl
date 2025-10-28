@@ -57,9 +57,9 @@ float ComputeViewDepth(float ndcZ, float near, float far)
 
 float3 Unproject(float2 ndcPos)
 {
-    float4 clipPos = float4(ndcPos.xy, 1.0, 1.0);   // z = 1: far view
-    float4 viewPos = mul(ClipToViewMat, clipPos);
-    return viewPos.xyz / viewPos.w;
+    float4 posClip = float4(ndcPos.xy, 1.0, 1.0);   // z = 1: far view
+    float4 posVS = mul(ClipToViewMat, posClip);
+    return posVS.xyz / posVS.w;
 }
 
 // Plane::From3Points (C++ code)
@@ -149,15 +149,15 @@ void CsMain(uint3 globalPos : SV_DispatchThreadID,
     for (uint i = localIndex; i < numLights; i += numThreadsPerTile) {
         PointLightCull pointLight = Lights[i];
 
-        float4 lightCenterView = mul(WorldToViewMat, float4(pointLight.position, 1));
+        float4 lightCenterVS = mul(WorldToViewMat, float4(pointLight.position, 1));
 
-        bool topInside = dot(TileFrustumPlanes[0].xyz, lightCenterView.xyz) >= -pointLight.radius;
-        bool rightInside = dot(TileFrustumPlanes[1].xyz, lightCenterView.xyz) >= -pointLight.radius;
-        bool bottomInside = dot(TileFrustumPlanes[2].xyz, lightCenterView.xyz) >= -pointLight.radius;
-        bool leftInside = dot(TileFrustumPlanes[3].xyz, lightCenterView.xyz) >= -pointLight.radius;
+        bool topInside = dot(TileFrustumPlanes[0].xyz, lightCenterVS.xyz) >= -pointLight.radius;
+        bool rightInside = dot(TileFrustumPlanes[1].xyz, lightCenterVS.xyz) >= -pointLight.radius;
+        bool bottomInside = dot(TileFrustumPlanes[2].xyz, lightCenterVS.xyz) >= -pointLight.radius;
+        bool leftInside = dot(TileFrustumPlanes[3].xyz, lightCenterVS.xyz) >= -pointLight.radius;
         bool inside = topInside & rightInside & bottomInside & leftInside;
 
-        float lightViewDepth = -lightCenterView.z;
+        float lightViewDepth = -lightCenterVS.z;
         if (inside &&
             (lightViewDepth + pointLight.radius >= minDepth) &&
             (lightViewDepth - pointLight.radius <= maxDepth))

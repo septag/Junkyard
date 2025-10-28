@@ -434,7 +434,7 @@ struct AppImpl final : AppCallbacks
             .hasDepth = true
         };
 
-        cmd.TransitionImage(mRenderTargetDepth, GfxImageTransition::RenderTarget);
+        cmd.TransitionImage(mRenderTargetDepth, GfxImageTransition::RenderTarget, GfxImageTransitionFlags::DepthRead);
 
         {
             GPU_PROFILE_ZONE(cmd, "ModelRender");

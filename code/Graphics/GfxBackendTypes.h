@@ -405,7 +405,10 @@ struct GfxBufferDesc
 
 enum class GfxBufferTransition
 {
-    TransferWrite
+    TransferWrite,
+    ComputeRead,
+    ComputeWrite,
+    FragmentRead
 };
 
 struct GfxCopyBufferToBufferParams

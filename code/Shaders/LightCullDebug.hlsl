@@ -39,6 +39,13 @@ PsInput VsMain(uint vertexId : SV_VertexID)
     return o;
 }
 
+float3 HSV_To_RGB(float3 hsv)
+{
+    float4 K = float4(1.0f, 2.0f / 3.0f, 1.0f / 3.0f, 3.0f);
+    float3 p = abs(frac(hsv.xxx + K.xyz) * 6.0f - K.www);
+    return hsv.x * lerp(K.xxx, saturate(p - K.xxx), hsv.y);
+}
+
 [shader("fragment")]
 float4 PsMain(PsInput i) : SV_Target
 {
@@ -47,13 +54,12 @@ float4 PsMain(PsInput i) : SV_Target
     uint index = tileId.y * TilesCountX + tileId.x;
 
     uint startIdx = index * MAX_LIGHTS_PER_TILE;
-    uint i;
-    for (i = 0; i < MAX_LIGHTS_PER_TILE; i++) {
-        if (VisibleLightIndices[startIdx + i] == -1)
-            break;
-    }
+    uint visibleLightCount = 0;
+    while (VisibleLightIndices[startIdx + visibleLightCount] != -1)
+        visibleLightCount++;
 
     // Move from blue (less lights) to red (maximum lights)
-    float value = pow(float(i) / float(MAX_LIGHTS_PER_TILE), 0.4);
-    return i == 0 ? float4(0, 0, 0, 1.0) : float4(value, 0, 1 - value, 1.0);
+    float value = pow(float(visibleLightCount) / float(MAX_LIGHTS_PER_TILE), 0.4);
+    float hue = lerp(0.66, 0, saturate(value)); // 0.66=blue, 0=red
+    return float4(HSV_To_RGB(float3(hue, 1.0f, 1.0)), 1.0f);
 }

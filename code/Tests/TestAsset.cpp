@@ -448,22 +448,8 @@ struct AppImpl : AppCallbacks
                 .projMat = GfxBackend::GetSwapchainTransformMat() * mCam->GetPerspectiveMat(width, height)
             };
 
-            GfxBufferDesc stagingDesc {
-                .sizeBytes = sizeof(ubo),
-                .usageFlags = GfxBufferUsageFlags::TransferSrc,
-                .arena = GfxMemoryArena::TransientCPU
-            };
-            GfxBufferHandle stagingBuff = GfxBackend::CreateBuffer(stagingDesc);
-
-            FrameTransform* dstUbo;
-            cmd.MapBuffer(stagingBuff, (void**)&dstUbo);
-            *dstUbo = ubo;
-            cmd.FlushBuffer(stagingBuff);
-
-            cmd.TransitionBuffer(mUniformBuffer, GfxBufferTransition::TransferWrite);
-            cmd.CopyBufferToBuffer(stagingBuff, mUniformBuffer, GfxShaderStage::Vertex);
-
-            GfxBackend::DestroyBuffer(stagingBuff);
+            GfxHelperBufferUpdateScope updater(cmd, mUniformBuffer, sizeof(FrameTransform), GfxShaderStage::Vertex);
+            memcpy(updater.mData, &ubo, sizeof(ubo));
         }
 
         GfxBackendRenderPass pass { 

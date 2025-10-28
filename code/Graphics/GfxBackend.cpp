@@ -722,27 +722,26 @@ namespace GfxBackend
     }
 
     // Returns the proper vulkan stage based the destination queue type and the stage that buffer should be transitioned to
-    static inline VkPipelineStageFlags2 _GetBufferDestStageFlags(GfxQueueType type, GfxShaderStage dstStages, 
-                                                                 GfxBufferUsageFlags usageFlags)
+    static inline VkPipelineStageFlags2 _GetBufferDestStageFlags(GfxShaderStage dstStages, GfxBufferUsageFlags usageFlags)
     {
         VkPipelineStageFlags2 flags = 0;
-        if (type == GfxQueueType::Graphics) {
-            if (IsBitsSet<GfxShaderStage>(dstStages, GfxShaderStage::Vertex)) {
-                if (IsBitsSet<GfxBufferUsageFlags>(usageFlags, GfxBufferUsageFlags::Vertex)) {
-                    flags |= VK_PIPELINE_STAGE_2_VERTEX_ATTRIBUTE_INPUT_BIT;
-                }
-                else if (IsBitsSet<GfxBufferUsageFlags>(usageFlags, GfxBufferUsageFlags::Index)) {
-                    flags |= VK_PIPELINE_STAGE_2_INDEX_INPUT_BIT;
-                }
-                else {
-                    flags |= VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT;
-                }
+        if (IsBitsSet<GfxShaderStage>(dstStages, GfxShaderStage::Vertex)) {
+            if (IsBitsSet<GfxBufferUsageFlags>(usageFlags, GfxBufferUsageFlags::Vertex)) {
+                flags |= VK_PIPELINE_STAGE_2_VERTEX_ATTRIBUTE_INPUT_BIT;
             }
-            if (IsBitsSet<GfxShaderStage>(dstStages, GfxShaderStage::Fragment)) {
-                flags |= VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
+            else if (IsBitsSet<GfxBufferUsageFlags>(usageFlags, GfxBufferUsageFlags::Index)) {
+                flags |= VK_PIPELINE_STAGE_2_INDEX_INPUT_BIT;
+            }
+            else {
+                flags |= VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT;
             }
         }
-        else if (type == GfxQueueType::Compute) {
+
+        if (IsBitsSet<GfxShaderStage>(dstStages, GfxShaderStage::Fragment)) {
+            flags |= VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
+        }
+
+        if (IsBitsSet<GfxShaderStage>(dstStages, GfxShaderStage::Compute)) {
             flags |= VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
         }
 
@@ -5136,7 +5135,7 @@ void GfxCommandBuffer::BatchCopyBufferToBuffer(uint32 numParams, const GfxCopyBu
                 .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2,
                 .srcStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT,
                 .srcAccessMask = VK_ACCESS_2_MEMORY_WRITE_BIT,
-                .dstStageMask = GfxBackend::_GetBufferDestStageFlags(dstQueueType, copyParams.stagesUsed, dstBuffer.desc.usageFlags),
+                .dstStageMask = GfxBackend::_GetBufferDestStageFlags(copyParams.stagesUsed, dstBuffer.desc.usageFlags),
                 .dstAccessMask = accessFlags,
                 .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
                 .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
@@ -5179,7 +5178,7 @@ void GfxCommandBuffer::BatchCopyBufferToBuffer(uint32 numParams, const GfxCopyBu
                     .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2,
                     .srcStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT,
                     .srcAccessMask = VK_ACCESS_2_MEMORY_WRITE_BIT,
-                    .dstStageMask = GfxBackend::_GetBufferDestStageFlags(dstQueueType, copyParams.stagesUsed, dstBuffer.desc.usageFlags),
+                    .dstStageMask = GfxBackend::_GetBufferDestStageFlags(copyParams.stagesUsed, dstBuffer.desc.usageFlags),
                     .dstAccessMask = accessFlags,
                     .srcQueueFamilyIndex = queueFamilyIdx,
                     .dstQueueFamilyIndex = dstQueueFamilyIdx,
@@ -5452,16 +5451,32 @@ void GfxCommandBuffer::TransitionBuffer(GfxBufferHandle buffHandle, GfxBufferTra
         .size = VK_WHOLE_SIZE
     };
     
+    barrier.srcStageMask = buffer.transitionedStage;
+    barrier.srcAccessMask = buffer.transitionedAccess;
     switch (transition) {
         case GfxBufferTransition::TransferWrite:
             ASSERT_MSG(IsBitsSet<GfxQueueType>(queue.type, GfxQueueType::Transfer) || queue.supportsTransfer,
                        "Cannot do transfer transitions on non-Transfer queues");
 
-            barrier.srcStageMask = buffer.transitionedStage;
-            barrier.srcAccessMask = buffer.transitionedAccess;
             barrier.dstStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
             barrier.dstAccessMask = VK_ACCESS_2_MEMORY_WRITE_BIT;
             break;
+        case GfxBufferTransition::ComputeRead:
+            ASSERT_MSG(IsBitsSet<GfxQueueType>(queue.type, GfxQueueType::Compute), "Queue doesn't support Compute");
+            barrier.dstStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+            barrier.dstAccessMask = VK_ACCESS_2_MEMORY_READ_BIT;
+            break;
+        case GfxBufferTransition::ComputeWrite:
+            ASSERT_MSG(IsBitsSet<GfxQueueType>(queue.type, GfxQueueType::Compute), "Queue doesn't support Compute");
+            barrier.dstStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+            barrier.dstAccessMask = VK_ACCESS_2_MEMORY_WRITE_BIT;
+            break;
+        case GfxBufferTransition::FragmentRead:
+            ASSERT_MSG(IsBitsSet<GfxQueueType>(queue.type, GfxQueueType::Graphics), "Queue doesn't support Fragment stage");
+            barrier.dstStageMask = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
+            barrier.dstAccessMask = VK_ACCESS_2_MEMORY_READ_BIT;
+            break;
+
         default:
             break;
     }
@@ -5558,8 +5573,10 @@ void GfxCommandBuffer::TransitionImage(GfxImageHandle imgHandle, GfxImageTransit
                         accessFlags |= VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT | VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT;
                     }
                     
-                    if (dstStage == 0)
+                    if (dstStage == 0) {
                         dstStage |= VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
+                        accessFlags |= VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT | VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT;
+                    }
                 }
                 else {
                     layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
@@ -5675,6 +5692,8 @@ void GfxCommandBuffer::BeginRenderPass(const GfxBackendRenderPass& pass)
 
         VkImageView view = pass.swapchain ? gBackendVk.swapchain.GetImageView() : colorViews[i];
         colorAttachments[i] = MakeRenderingAttachmentInfo(srcAttachment, view, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+
+        // TODO: there are implicit layout changes, set them for the Image objects (see the same thing for depth image below)
     }
 
     if (numColorAttachments == 0 && pass.depthAttachment.image.IsValid()) {
@@ -5699,8 +5718,43 @@ void GfxCommandBuffer::BeginRenderPass(const GfxBackendRenderPass& pass)
 
     ASSERT_MSG(!pass.hasStencil, "Not implemented yet");
     VkRenderingAttachmentInfo depthAttachment;
-    if (pass.hasDepth)
+    if (pass.hasDepth) {
         depthAttachment = MakeRenderingAttachmentInfo(pass.depthAttachment, depthView, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
+
+        // We are implicitly changing the layout. Store that for proper future transitions
+        {
+            ReadWriteMutexWriteScope objPoolLock(gBackendVk.objectPoolsMutex);
+            GfxBackendImage& img = gBackendVk.images.Data(pass.depthAttachment.image);
+
+            if (img.layout == VK_IMAGE_LAYOUT_UNDEFINED) {
+                VkImageMemoryBarrier2 imageBarrier {
+                    .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
+                    .dstStageMask = VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT,
+                    .dstAccessMask = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+                    .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+                    .newLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+                    .image = img.handle,
+                    .subresourceRange = {
+                        .aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT|VK_IMAGE_ASPECT_STENCIL_BIT,
+                        .levelCount = VK_REMAINING_MIP_LEVELS,
+                        .layerCount = VK_REMAINING_ARRAY_LAYERS
+                    }
+                };
+
+                VkDependencyInfo depInfo {
+                    .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
+                    .imageMemoryBarrierCount = 1,
+                    .pImageMemoryBarriers = &imageBarrier
+                };
+
+                vkCmdPipelineBarrier2(cmdVk, &depInfo);
+            }
+
+            img.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+            img.transitionedStage = VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT;
+            img.transitionedAccess = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+        }
+    }
 
     // If we are drawing to Swapchain, we have to wait for drawing to finish and also transition the layout to COLOR_ATTACHMENT_OUTPUT
     if (pass.swapchain) {
@@ -5734,6 +5788,7 @@ void GfxCommandBuffer::BeginRenderPass(const GfxBackendRenderPass& pass)
         state.lastLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
         gBackendVk.queueMan.GetQueue(mQueueIndex).internalDependents |= GfxQueueType::Present;
+        mDrawsToSwapchain = true;
     }
 
     VkRenderingInfo renderInfo {
@@ -5748,7 +5803,6 @@ void GfxCommandBuffer::BeginRenderPass(const GfxBackendRenderPass& pass)
     };
     vkCmdBeginRendering(cmdVk, &renderInfo);
 
-    mDrawsToSwapchain |= pass.swapchain;
     mIsInRenderPass = true;
 }
 
@@ -6712,6 +6766,13 @@ GfxHelperBufferUpdateScope::GfxHelperBufferUpdateScope(GfxCommandBuffer& cmd, Gf
 {
     ASSERT(size);
     ASSERT(handle.IsValid());
+
+    // Clamp the size to the capacity of the buffer
+    {
+        ReadWriteMutexReadScope objPoolLock(gBackendVk.objectPoolsMutex);
+        GfxBackendBuffer& buffer = gBackendVk.buffers.Data(handle);
+        size = Min<uint32>(size, (uint32)buffer.desc.sizeBytes);
+    }
 
     mBuffer = handle;
     mSize = size;

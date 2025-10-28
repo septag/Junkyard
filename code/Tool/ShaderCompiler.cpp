@@ -198,7 +198,10 @@ Pair<GfxShader*, uint32> Compile(const Span<uint8>& sourceCode, const char* file
                 uint32 numCols = field->getTypeLayout()->getColumnCount();
 
                 Str::Copy(vertexAtt->name, sizeof(vertexAtt->name), field->getName());
-                Str::Copy(vertexAtt->semantic, sizeof(vertexAtt->semantic), field->getSemanticName());
+
+                const char* semanticName = field->getSemanticName();
+                ASSERT_MSG(semanticName, "Vertex attribute '%s' doesn't have a semantic assigned", vertexAtt->name);
+                Str::Copy(vertexAtt->semantic, sizeof(vertexAtt->semantic), semanticName);
                 vertexAtt->semanticIdx = static_cast<uint32>(field->getSemanticIndex());
                 vertexAtt->location = field->getBindingIndex();
                 vertexAtt->format = shaderTranslateVertexInputFormat(numRows, numCols, scalarType, kind);
