@@ -82,16 +82,14 @@ struct RLightCullDebugShaderFrameData
 struct RLightShaderFrameData
 {
     Mat4 worldToClipMat;
-    Float3 skylight1Dir;
+    Float3 sunLightDir;
     float _reserved1;
-    Float4 skylight1Color;
-    Float3 skylight2Dir;
-    float _reserved2;
-    Float4 skylight2Color;
-    Float4 ambientLightColor;
+    Float4 sunLightColor;
+    Float4 skyAmbientColor;
+    Float4 groundAmbientColor;
     uint32 tilesCountX;
     uint32 tilesCountY;
-    uint32 _reserved[2];
+    uint32 _reserved2[2];
 };
 
 struct RForwardPlusContext
@@ -139,7 +137,8 @@ RForwardPlusContext gFwdPlus;
 namespace R 
 {
     void SetLocalLights(uint32 numLights, const SceneLight* lights);
-    void SetAmbientLight(Float4 ambientLight);
+    void SetAmbientLight(Float4 skyAmbientColor, Float4 groundAmbientColor);
+    void SetSunLight(Float3 direction, Float4 color);
 }
 
 struct ModelScene
@@ -155,10 +154,12 @@ struct ModelScene
 
     Array<SceneLight> mLights;
 
-    float mLightAngle = M_HALFPI;
+    float mSunlightAngle = M_HALFPI;
+    Float4 mSunlightColor = Color4u::ToFloat4(Color4u(251,250,204,8)); 
     float mPointLightRadius = 1.0f;
     Float4 mLightColor = Float4(1.0f, 1.0f, 1.0f, 1.0f);
-    Float4 mAmbientLightColor = Float4(0.1f, 0.1f, 0.1f, 1.0f);
+    Float4 mSkyAmbient = Color4u::ToFloat4(Color4u(36,54,81,26));
+    Float4 mGroundAmbient = Color4u::ToFloat4(Color4u(216,199,172,8));
     bool mDebugLightCull = false;
     bool mDebugLightBounds = false;
 
@@ -245,9 +246,17 @@ struct ModelScene
 
     void UpdateImGui()
     {
-        if (ImGui::ColorEdit3("Ambient Light Color", mAmbientLightColor.f, ImGuiColorEditFlags_Float)) 
-            R::SetAmbientLight(mAmbientLightColor);
-        ImGui::SliderFloat("Light Angle", &mLightAngle, 0, M_PI, "%0.1f");
+        if (ImGui::ColorEdit4("Sky Ambient Color", mSkyAmbient.f, ImGuiColorEditFlags_Float))
+            R::SetAmbientLight(mSkyAmbient, mGroundAmbient);
+        if (ImGui::ColorEdit4("Ground Ambient Color", mGroundAmbient.f, ImGuiColorEditFlags_Float)) 
+            R::SetAmbientLight(mSkyAmbient, mGroundAmbient);
+        ImGui::Separator();
+
+        if (ImGui::SliderFloat("Sun Light Angle", &mSunlightAngle, 0, M_PI, "%0.1f"))
+            R::SetSunLight(Float3(-0.2f, M::Cos(mSunlightAngle), -M::Sin(mSunlightAngle)), mSunlightColor);
+        if (ImGui::ColorEdit4("Sun Light Color", mSunlightColor.f, ImGuiColorEditFlags_Float))
+            R::SetSunLight(Float3(-0.2f, M::Cos(mSunlightAngle), -M::Sin(mSunlightAngle)), mSunlightColor);
+
         ImGui::SliderFloat("Point Light Radius", &mPointLightRadius, 0.1f, 10.0f, "%.1f");
         ImGui::ColorEdit4("Light Color", mLightColor.f, ImGuiColorEditFlags_Float);
         if (ImGui::Button("Add Point Light")) {
@@ -258,6 +267,7 @@ struct ModelScene
         if (ImGui::Button("Save Lights")) {
             SaveLights();
         }
+        ImGui::Separator();
 
         ImGui::Checkbox("Debug Light Culling", &mDebugLightCull);
         ImGui::Checkbox("Debug Light Bounds", &mDebugLightBounds);
@@ -305,7 +315,8 @@ struct ModelScene
 
         if (!mLights.IsEmpty()) 
             R::SetLocalLights(mLights.Count(), mLights.Ptr());
-        R::SetAmbientLight(mAmbientLightColor);
+        R::SetAmbientLight(mSkyAmbient, mGroundAmbient);
+        R::SetSunLight(Float3(-0.2f, M::Cos(mSunlightAngle), -M::Sin(mSunlightAngle)), mSunlightColor);
     }
 
     void AddLightAtCameraPosition()
@@ -853,7 +864,7 @@ namespace R
                 .colorAttachments = {{ 
                     .clear = true,
                     .clearValue = {
-                        .color = Color4u::ToFloat4(COLOR4U_BLACK)
+                        .color = gFwdPlus.lightPerFrameData.skyAmbientColor
                     }
                 }},
                 .depthAttachment = {
@@ -979,9 +990,16 @@ namespace R
         }
     }
 
-    void SetAmbientLight(Float4 ambientLight)
+    void SetAmbientLight(Float4 skyAmbientColor, Float4 groundAmbientColor)
     {
-        gFwdPlus.lightPerFrameData.ambientLightColor = Color4u::ToFloat4Linear(ambientLight);
+        gFwdPlus.lightPerFrameData.skyAmbientColor = Color4u::ToFloat4Linear(skyAmbientColor);
+        gFwdPlus.lightPerFrameData.groundAmbientColor = Color4u::ToFloat4Linear(groundAmbientColor);
+    }
+
+    void SetSunLight(Float3 direction, Float4 color)
+    {
+        gFwdPlus.lightPerFrameData.sunLightDir = Float3::Norm(direction);
+        gFwdPlus.lightPerFrameData.sunLightColor = Color4u::ToFloat4Linear(color);
     }
 } // R
 

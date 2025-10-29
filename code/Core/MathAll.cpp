@@ -692,7 +692,7 @@ Color4u Color4u::Blend(Color4u _a, Color4u _b, float _t)
     Float4 c1 = Color4u::ToFloat4(_a);
     Float4 c2 = Color4u::ToFloat4(_b);
     
-    return Color4u(
+    return Color4u::FromFloat4(
         M::Lerp(c1.x, c2.x, _t),
         M::Lerp(c1.y, c2.y, _t),
         M::Lerp(c1.z, c2.z, _t),

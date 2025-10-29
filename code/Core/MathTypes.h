@@ -135,15 +135,7 @@ struct Color4u
     {
     }
 
-    explicit constexpr Color4u(float _r, float _g, float _b, float _a) :
-        r((uint8)(_r * 255.0f)),
-        g((uint8)(_g * 255.0f)),
-        b((uint8)(_b * 255.0f)),
-        a((uint8)(_a * 255.0f))
-    {
-    }
-
-    explicit constexpr Color4u(const float* f) : Color4u(f[0], f[1], f[2], f[3]) {}
+    explicit Color4u(const float* f) { *this = Color4u::FromFloat4(f[0], f[1], f[2], f[3]); }
     constexpr Color4u(uint32 _n) : n(_n) {}
 
     Color4u& operator=(uint32 _n) 
@@ -154,8 +146,10 @@ struct Color4u
 
     static float ValueToLinear(float _a);
     static float ValueToGamma(float _a);
+    static Color4u FromFloat4(float _r, float _g, float _b, float _a = 1.0f);
     static Float4 ToFloat4(Color4u c);
-    static Color4u  Blend(Color4u _a, Color4u _b, float _t);
+    static Float4 ToFloat4(uint8 _r, uint8 _g, uint8 _b, uint8 _a = 255);
+    static Color4u Blend(Color4u _a, Color4u _b, float _t);
     static Float4 ToFloat4SRGB(Float4 cf);
     static Float4 ToFloat4Linear(Float4 c);
     static Float3 RGBtoHSV(Float3 rgb);

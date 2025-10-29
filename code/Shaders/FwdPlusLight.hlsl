@@ -24,12 +24,11 @@ struct PsInput
 cbuffer PerFrameData
 {
     float4x4 WorldToClipMat : packoffset(c0);
-    float3 SkyLight1Dir : packoffset(c4);
-    float4 SkyLight1ColorIntensity : packoffset(c5);
-    float3 SkyLight2Dir : packoffset(c6);
-    float4 SkyLight2ColorIntensity : packoffset(c7);
-    float4 AmbientLightColor : packoffset(c8);
-    uint TilesCountX : packoffset(c9);
+    float3 SunLightDir : packoffset(c4);
+    float4 SunLightColorIntensity : packoffset(c5);
+    float4 SkyAmbientColor : packoffset(c6);
+    float4 GroundAmbientColor : packoffset(c7);
+    uint TilesCountX : packoffset(c8);
 };
 
 [[vk_push_constant]]
@@ -77,6 +76,21 @@ float4 PsMain(PsInput i) : SV_Target
     float4 albedoColor = BaseColorTexture.Sample(i.uv);
     float3 N = normalize(i.normalWS);
     float3 finalDiffuse = float3(0, 0, 0);
+    float3 finalAmbient = float3(0, 0, 0);
+
+    // Sun light
+    {
+        float3 L = -SunLightDir;
+        float nDotL = max(0, dot(L, N));
+        float3 diffuse = SunLightColorIntensity.xyz * SunLightColorIntensity.w * nDotL;
+
+        float nDotUp = dot(N, float3(0, 0, 1));
+        float a = 0.5 + 0.5 * nDotUp;
+        float3 ambient = lerp(GroundAmbientColor.xyz * GroundAmbientColor.w, SkyAmbientColor.xyz * SkyAmbientColor.w, a);
+
+        finalDiffuse += diffuse;
+        finalAmbient += ambient;
+    }
 
     uint startIdx = index * MAX_LIGHTS_PER_TILE;
     uint offsetIdx = 0;
@@ -107,7 +121,7 @@ float4 PsMain(PsInput i) : SV_Target
         offsetIdx++;
     }
 
-    float3 litColor = albedoColor.xyz * (finalDiffuse.xyz + AmbientLightColor.xyz);
+    float3 litColor = albedoColor.xyz * (finalDiffuse + finalAmbient);
     // return float4(mainFalloff.xxx, 1.0);
     return float4(litColor, 1.0);
 }

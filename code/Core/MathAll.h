@@ -627,10 +627,24 @@ FORCE_INLINE float Color4u::ValueToGamma(float _a)
     return result;
 }
 
+FORCE_INLINE Color4u Color4u::FromFloat4(float r, float g, float b, float a)
+{
+    return Color4u(
+        ((uint8)(r * 255.0f)),
+        ((uint8)(g * 255.0f)),
+        ((uint8)(b * 255.0f)),
+        ((uint8)(a * 255.0f)));
+}
+
 FORCE_INLINE Float4 Color4u::ToFloat4(Color4u c)
 {
     float rcp = 1.0f / 255.0f;
     return Float4((float)c.r * rcp, (float)c.g * rcp, (float)c.b * rcp, (float)c.a * rcp);
+}
+
+FORCE_INLINE Float4 Color4u::ToFloat4(uint8 _r, uint8 _g, uint8 _b, uint8 _a)
+{
+    return ToFloat4(Color4u(_r, _g, _b, _a));
 }
 
 //    ███╗   ███╗ █████╗ ████████╗██████╗ 
