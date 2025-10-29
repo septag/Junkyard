@@ -5,7 +5,8 @@ import os
 from enum import Enum
 
 ArgsParser = argparse.ArgumentParser(description='')
-ArgsParser.add_argument('--recurse-dir', help='Recursively search a directory for GLTF files and process them', default=None)
+ArgsParser.add_argument('--recurse-dir', help='Recursively search a directory for GLTF files and process them', action='store_true', default=False)
+ArgsParser.add_argument('--force-bc1-for-albedo', help='Instead of BC7 as a default TC format for Albedo, use BC1', action='store_true', default=False)
 ArgsParser.add_argument('gltf_path', help='Path to the gltf file', default=None, nargs="?")
 Args = ArgsParser.parse_args(sys.argv[1:])
 ProcessedTextures = set()
@@ -28,8 +29,8 @@ def CreateMetadata(gltfFilepath, srcFilepath, type:TextureType):
     jsonData['pc'] = {}
 
     if type == TextureType.BASE_COLOR:
-        jsonData['pc']['format'] = "bc7"
-        # jsonData['sRGB'] = True
+        jsonData['pc']['format'] = "bc7" if not Args.force_bc1_for_albedo else "bc1"
+        jsonData['sRGB'] = True
     elif type == TextureType.NORMAL:
         jsonData['pc']['format'] = "bc5"
     elif type == TextureType.ROUGHNESS or type == TextureType.OCCLUSION:

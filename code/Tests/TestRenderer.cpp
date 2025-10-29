@@ -42,21 +42,6 @@ static inline constexpr uint32 R_LIGHT_CULL_TILE_SIZE = 16;
 static inline constexpr uint32 R_LIGHT_CULL_MAX_LIGHTS_PER_TILE = 8;
 static inline constexpr uint32 R_LIGHT_CULL_MAX_LIGHTS_PER_FRAME = 100;
 
-struct RZPrepassVertex
-{
-    Float3 position;
-};
-
-struct RZPrepassShaderObjectData
-{
-    Mat4 localToWorldMat;
-};
-
-struct RZPrepassShaderFrameData
-{
-    Mat4 worldToClipMat;
-};
-
 struct RLightBounds
 {
     Float3 position;
@@ -105,7 +90,8 @@ struct RLightShaderFrameData
     Float4 skylight2Color;
     Float4 ambientLightColor;
     uint32 tilesCountX;
-    uint32 _reserved[3];
+    uint32 tilesCountY;
+    uint32 _reserved[2];
 };
 
 struct RForwardPlusContext
@@ -138,6 +124,8 @@ struct RForwardPlusContext
     GfxBufferHandle ubLight;
 
     AssetHandleImage checkerTex;
+
+    RLightShaderFrameData lightPerFrameData;
 };
 
 struct SceneLight
@@ -150,7 +138,8 @@ RForwardPlusContext gFwdPlus;
 
 namespace R 
 {
-    void SetLights(uint32 numLights, const SceneLight* lights);
+    void SetLocalLights(uint32 numLights, const SceneLight* lights);
+    void SetAmbientLight(Float4 ambientLight);
 }
 
 struct ModelScene
@@ -161,11 +150,6 @@ struct ModelScene
     CameraFPS mCam;
 
     AssetHandleModel mModel;
-    AssetHandleShader mShader;
-
-    GfxPipelineHandle mPipeline;
-    GfxPipelineLayoutHandle mPipelineLayout;
-    GfxBufferHandle mUniformBuffer;
 
     AssetGroup mAssetGroup;
 
@@ -174,7 +158,7 @@ struct ModelScene
     float mLightAngle = M_HALFPI;
     float mPointLightRadius = 1.0f;
     Float4 mLightColor = Float4(1.0f, 1.0f, 1.0f, 1.0f);
-    bool mEnableLight = false;
+    Float4 mAmbientLightColor = Float4(0.1f, 0.1f, 0.1f, 1.0f);
     bool mDebugLightCull = false;
     bool mDebugLightBounds = false;
 
@@ -215,15 +199,6 @@ struct ModelScene
         Str::ScanFmt(targetStr, "%f,%f,%f", &camTarget.x, &camTarget.y, &camTarget.z);
         mCam.SetLookAt(camPos, camTarget);
 
-        GfxBufferDesc bufferDesc {
-            .sizeBytes = sizeof(FrameInfo),
-            .usageFlags = GfxBufferUsageFlags::TransferDst | GfxBufferUsageFlags::Uniform,
-            .arena = GfxMemoryArena::PersistentGPU
-        };
-        mUniformBuffer = GfxBackend::CreateBuffer(bufferDesc);
-
-        mShader = Shader::Load("/shaders/Model.hlsl", ShaderLoadParams{}, initAssetGroup);
-
         mAssetGroup = Asset::CreateGroup();
 
         LoadLights();        
@@ -241,93 +216,10 @@ struct ModelScene
         Settings::SetValue(targetSetting.CStr(), String64::Format("%.2f,%.2f,%.2f", target.x, target.y, target.z).CStr());
 
         Unload();
-        GfxBackend::DestroyBuffer(mUniformBuffer);
     }
 
     void Load()
     {
-        AssetObjPtrScope<GfxShader> shader(mShader);
-
-        GfxVertexBufferBindingDesc vertexBufferBindingDesc {
-            .binding = 0,
-            .stride = sizeof(Vertex),
-            .inputRate = GfxVertexInputRate::Vertex
-        };
-
-        GfxVertexInputAttributeDesc vertexInputAttDescs[] = {
-            {
-                .semantic = "POSITION",
-                .binding = 0,
-                .format = GfxFormat::R32G32B32_SFLOAT,
-                .offset = offsetof(Vertex, pos)
-            },
-            {
-                .semantic = "NORMAL",
-                .binding = 0,
-                .format = GfxFormat::R32G32B32_SFLOAT,
-                .offset = offsetof(Vertex, normal)
-            },
-            {
-                .semantic = "TEXCOORD",
-                .binding = 0,
-                .format = GfxFormat::R32G32_SFLOAT,
-                .offset = offsetof(Vertex, uv)
-            }
-        };
-
-        GfxPipelineLayoutDesc::Binding bindings[] = {
-            {
-                .name = "FrameInfo",
-                .type = GfxDescriptorType::UniformBuffer,
-                .stagesUsed = GfxShaderStage::Vertex|GfxShaderStage::Fragment
-            },
-            {
-                .name = "BaseColorTexture",
-                .type = GfxDescriptorType::CombinedImageSampler,
-                .stagesUsed = GfxShaderStage::Fragment
-            }
-        };
-
-        GfxPipelineLayoutDesc::PushConstant pushConstant {
-            .name = "ModelTransform",
-            .stagesUsed = GfxShaderStage::Vertex,
-            .size = sizeof(ModelTransform)
-        };
-
-        GfxPipelineLayoutDesc pipelineLayoutDesc {
-            .numBindings = CountOf(bindings),
-            .bindings = bindings,
-            .numPushConstants = 1,
-            .pushConstants = &pushConstant
-        };
-
-        mPipelineLayout = GfxBackend::CreatePipelineLayout(*shader, pipelineLayoutDesc);
-
-        GfxGraphicsPipelineDesc pipelineDesc {
-            .numVertexInputAttributes = CountOf(vertexInputAttDescs),
-            .vertexInputAttributes = vertexInputAttDescs,
-            .numVertexBufferBindings = 1,
-            .vertexBufferBindings = &vertexBufferBindingDesc,
-            .rasterizer = {
-                .cullMode = GfxCullMode::Back
-            },
-            .blend = {
-                .numAttachments = 1,
-                .attachments = GfxBlendAttachmentDesc::GetDefault()
-            },
-            .depthStencil = {
-                .depthTestEnable = true,
-                .depthWriteEnable = false,
-                .depthCompareOp = GfxCompareOp::Equal
-            },
-            .numColorAttachments = 1,
-            .colorAttachmentFormats = {GfxBackend::GetSwapchainFormat()},
-            .depthAttachmentFormat = GfxBackend::GetValidDepthStencilFormat(),
-            .stencilAttachmentFormat = GfxBackend::GetValidDepthStencilFormat()
-        };
-
-        mPipeline = GfxBackend::CreateGraphicsPipeline(*shader, mPipelineLayout, pipelineDesc);
-
         ModelLoadParams modelParams {
             .layout = {
                 .vertexAttributes = {
@@ -348,53 +240,19 @@ struct ModelScene
     void Unload()
     {
         mAssetGroup.Unload();
-
-        GfxBackend::DestroyPipeline(mPipeline);
-        GfxBackend::DestroyPipelineLayout(mPipelineLayout);
-
         mLights.Free();
-    }
-
-    void Update(GfxCommandBuffer& cmd)
-    {
-        if (!mAssetGroup.IsValid() || !mAssetGroup.IsLoadFinished())
-            return;
-
-        float vwidth = (float)App::GetFramebufferWidth();
-        float vheight = (float)App::GetFramebufferHeight();
-        FrameInfo ubo {
-            .worldToClipMat = GfxBackend::GetSwapchainTransformMat() * mCam.GetPerspectiveMat(vwidth, vheight) * mCam.GetViewMat(),
-            .lightDir = Float3(-0.2f, M::Cos(mLightAngle), -M::Sin(mLightAngle)),
-            .lightFactor = mEnableLight ? 0 : 1.0f
-        };
-
-        GfxBufferDesc stagingDesc {
-            .sizeBytes = sizeof(ubo),
-            .usageFlags = GfxBufferUsageFlags::TransferSrc,
-            .arena = GfxMemoryArena::TransientCPU
-        };
-        GfxBufferHandle stagingBuff = GfxBackend::CreateBuffer(stagingDesc);
-
-        FrameInfo* dstUbo;
-        cmd.MapBuffer(stagingBuff, (void**)&dstUbo);
-        *dstUbo = ubo;
-        cmd.FlushBuffer(stagingBuff);
-
-        cmd.TransitionBuffer(mUniformBuffer, GfxBufferTransition::TransferWrite);
-        cmd.CopyBufferToBuffer(stagingBuff, mUniformBuffer, GfxShaderStage::Vertex|GfxShaderStage::Fragment);
-
-        GfxBackend::DestroyBuffer(stagingBuff);
     }
 
     void UpdateImGui()
     {
-        ImGui::Checkbox("Enable Lights", &mEnableLight);
+        if (ImGui::ColorEdit3("Ambient Light Color", mAmbientLightColor.f, ImGuiColorEditFlags_Float)) 
+            R::SetAmbientLight(mAmbientLightColor);
         ImGui::SliderFloat("Light Angle", &mLightAngle, 0, M_PI, "%0.1f");
         ImGui::SliderFloat("Point Light Radius", &mPointLightRadius, 0.1f, 10.0f, "%.1f");
         ImGui::ColorEdit4("Light Color", mLightColor.f, ImGuiColorEditFlags_Float);
         if (ImGui::Button("Add Point Light")) {
             AddLightAtCameraPosition();
-            R::SetLights(mLights.Count(), mLights.Ptr());
+            R::SetLocalLights(mLights.Count(), mLights.Ptr());
         }
 
         if (ImGui::Button("Save Lights")) {
@@ -446,7 +304,8 @@ struct ModelScene
         }
 
         if (!mLights.IsEmpty()) 
-            R::SetLights(mLights.Count(), mLights.Ptr());
+            R::SetLocalLights(mLights.Count(), mLights.Ptr());
+        R::SetAmbientLight(mAmbientLightColor);
     }
 
     void AddLightAtCameraPosition()
@@ -457,66 +316,6 @@ struct ModelScene
         };
 
         mLights.Push(light);
-    }
-
-    void Render(GfxCommandBuffer& cmd)
-    {
-        if (!mAssetGroup.IsValid() || !mAssetGroup.IsLoadFinished())
-            return;
-
-        cmd.BindPipeline(mPipeline);
-        
-        // Viewport
-        float vwidth = (float)App::GetFramebufferWidth();
-        float vheight = (float)App::GetFramebufferHeight();
-
-        cmd.HelperSetFullscreenViewportAndScissor();
-
-        AssetObjPtrScope<ModelData> model(mModel);
-
-        for (uint32 i = 0; i < model->numNodes; i++) {
-            const ModelNode& node = model->nodes[i];
-            if (node.meshId == 0)
-                continue;
-
-            ModelTransform transform {
-                .modelMat = Transform3D::ToMat4(node.localTransform)
-            };
-            cmd.PushConstants(mPipelineLayout, "ModelTransform", &transform, sizeof(transform));
-
-            const ModelMesh& mesh = model->meshes[IdToIndex(node.meshId)];
-
-            // Buffers
-            cmd.BindVertexBuffers(0, model->numVertexBuffers, model->vertexBuffers, mesh.vertexBufferOffsets);
-            cmd.BindIndexBuffer(model->indexBuffer, mesh.indexBufferOffset, GfxIndexType::Uint32);
-
-            for (uint32 smi = 0; smi < mesh.numSubmeshes; smi++) {
-                const ModelSubmesh& submesh = mesh.submeshes[smi];
-                const ModelMaterial* mtl = model->materials[IdToIndex(submesh.materialId)].Get();
-                        
-                GfxImageHandle imgHandle {};
-
-                if (mtl->pbrMetallicRoughness.baseColorTex.texture.IsValid()) {
-                    AssetObjPtrScope<GfxImage> img(mtl->pbrMetallicRoughness.baseColorTex.texture);
-                    if (!img.IsNull())
-                        imgHandle = img->handle;
-                }
-
-                GfxBindingDesc bindings[] = {
-                    {
-                        .name = "FrameInfo",
-                        .buffer = mUniformBuffer
-                    },
-                    {
-                        .name = "BaseColorTexture",
-                        .image = imgHandle.IsValid() ? imgHandle : Image::GetWhite1x1()
-                    }
-                };
-                cmd.PushBindings(mPipelineLayout, CountOf(bindings), bindings);
-
-                cmd.DrawIndexed(submesh.numIndices, 1, submesh.startIndex, 0, 0);
-            }
-        }
     }
 };
 
@@ -598,7 +397,7 @@ namespace R
                 {
                     .name = "PerObjectData",
                     .stagesUsed = GfxShaderStage::Vertex,
-                    .size = sizeof(RZPrepassShaderObjectData)
+                    .size = sizeof(Mat4)
                 }
             };
 
@@ -617,7 +416,7 @@ namespace R
                     .semantic = "POSITION",
                     .binding = 0,
                     .format = GfxFormat::R32G32B32_SFLOAT,
-                    .offset = offsetof(RZPrepassVertex, position)
+                    .offset = 0 
                 }
             };
 
@@ -655,7 +454,7 @@ namespace R
 
             // Buffers
             GfxBufferDesc bufferDesc {
-                .sizeBytes = sizeof(RZPrepassShaderFrameData),
+                .sizeBytes = sizeof(Mat4),
                 .usageFlags = GfxBufferUsageFlags::TransferDst | GfxBufferUsageFlags::Uniform,
                 .arena = GfxMemoryArena::PersistentGPU
             };
@@ -902,18 +701,22 @@ namespace R
     {
         float vwidth = (float)App::GetFramebufferWidth();
         float vheight = (float)App::GetFramebufferHeight();
-        Mat4 worldToClipMat = GfxBackend::GetSwapchainTransformMat() * cam.GetPerspectiveMat(vwidth, vheight) * cam.GetViewMat();
+
+        Mat4 worldToClipMat = cam.GetPerspectiveMat(vwidth, vheight) * cam.GetViewMat();
+        if (cmd.mDrawsToSwapchain) // TODO: this is not gonna detect swapchain properly
+            worldToClipMat = GfxBackend::GetSwapchainTransformMat() * worldToClipMat;
+
+        gFwdPlus.lightPerFrameData.worldToClipMat = worldToClipMat;
+        gFwdPlus.lightPerFrameData.tilesCountX = M::CeilDiv((uint32)App::GetFramebufferWidth(), R_LIGHT_CULL_TILE_SIZE);
+        gFwdPlus.lightPerFrameData.tilesCountY = M::CeilDiv((uint32)App::GetFramebufferHeight(), R_LIGHT_CULL_TILE_SIZE);
+        uint32 numTiles = gFwdPlus.lightPerFrameData.tilesCountX * gFwdPlus.lightPerFrameData.tilesCountY;
 
         {
-            GfxHelperBufferUpdateScope zprepassBufferUpdater(cmd, gFwdPlus.ubZPrepass, sizeof(RZPrepassShaderFrameData), 
-                                                             GfxShaderStage::Vertex|GfxShaderStage::Fragment);
-            RZPrepassShaderFrameData* buffer = (RZPrepassShaderFrameData*)zprepassBufferUpdater.mData;
-
-            *buffer = {
-                .worldToClipMat = worldToClipMat,
-            };
+            GfxHelperBufferUpdateScope updater(cmd, gFwdPlus.ubZPrepass, -1, GfxShaderStage::Vertex|GfxShaderStage::Fragment);
+            memcpy(updater.mData, &worldToClipMat, sizeof(Mat4));
         }
 
+        // Per-frame light culling data
         {
             GfxHelperBufferUpdateScope updater(cmd, gFwdPlus.ubLightCull, -1, GfxShaderStage::Compute);
             RLightCullShaderFrameData* buffer = (RLightCullShaderFrameData*)updater.mData;
@@ -926,13 +729,10 @@ namespace R
             buffer->windowHeight = App::GetFramebufferHeight();
         }
 
+        // Per-frame lighting data
         {
             GfxHelperBufferUpdateScope updater(cmd, gFwdPlus.ubLight, -1, GfxShaderStage::Fragment);
-            RLightShaderFrameData* data = (RLightShaderFrameData*)updater.mData;
-            memset(data, 0x0, sizeof(RLightShaderFrameData));
-            data->worldToClipMat = worldToClipMat;
-            data->ambientLightColor = Float4(0.1f, 0.1f, 0.1f, 1.0f);
-            data->tilesCountX = M::CeilDiv((uint32)App::GetFramebufferWidth(), R_LIGHT_CULL_TILE_SIZE);
+            memcpy(updater.mData, &gFwdPlus.lightPerFrameData, sizeof(RLightShaderFrameData));
         }
 
         if (gFwdPlus.numLights) {
@@ -948,10 +748,6 @@ namespace R
         }
         else {
             // Fill visible light indices buffer with sentinels (empty state)
-            uint32 numTilesX = M::CeilDiv((uint32)App::GetFramebufferWidth(), R_LIGHT_CULL_TILE_SIZE);
-            uint32 numTilesY = M::CeilDiv((uint32)App::GetFramebufferHeight(), R_LIGHT_CULL_TILE_SIZE);
-            uint32 numTiles = numTilesX * numTilesY;
-
             GfxHelperBufferUpdateScope updater(cmd, gFwdPlus.bVisibleLightIndices, -1, GfxShaderStage::Fragment);
             uint32* indices = (uint32*)updater.mData;
             for (uint32 i = 0; i < numTiles; i++)
@@ -990,10 +786,8 @@ namespace R
                 if (node.meshId == 0)
                     continue;
 
-                RZPrepassShaderObjectData perObjData {
-                    .localToWorldMat = Transform3D::ToMat4(node.localTransform)
-                };
-                cmd.PushConstants(gFwdPlus.pZPrepassLayout, "PerObjectData", &perObjData, sizeof(perObjData));
+                Mat4 localToWorldMat = Transform3D::ToMat4(node.localTransform);
+                cmd.PushConstants(gFwdPlus.pZPrepassLayout, "PerObjectData", &localToWorldMat, sizeof(Mat4));
 
                 const ModelMesh& mesh = model->meshes[IdToIndex(node.meshId)];
 
@@ -1025,9 +819,6 @@ namespace R
             cmd.TransitionImage(depthImageHandle, GfxImageTransition::ShaderRead);
             cmd.TransitionBuffer(gFwdPlus.bVisibleLightIndices, GfxBufferTransition::ComputeWrite);
 
-            uint32 numTilesX = M::CeilDiv((uint32)App::GetFramebufferWidth(), R_LIGHT_CULL_TILE_SIZE);
-            uint32 numTilesY = M::CeilDiv((uint32)App::GetFramebufferHeight(), R_LIGHT_CULL_TILE_SIZE);
-
             GfxBindingDesc bindings[] = {
                 {
                     .name = "PerFrameData", 
@@ -1049,7 +840,7 @@ namespace R
 
             cmd.BindPipeline(gFwdPlus.pLightCull);
             cmd.PushBindings(gFwdPlus.pLightCullLayout, CountOf(bindings), bindings);
-            cmd.Dispatch(numTilesX, numTilesY, 1);
+            cmd.Dispatch(gFwdPlus.lightPerFrameData.tilesCountX, gFwdPlus.lightPerFrameData.tilesCountY, 1);
 
             cmd.TransitionBuffer(gFwdPlus.bVisibleLightIndices, GfxBufferTransition::FragmentRead);
         }
@@ -1154,8 +945,8 @@ namespace R
             cmd.PushBindings(gFwdPlus.pLightCullDebugLayout, CountOf(bindings), bindings);
 
             RLightCullDebugShaderFrameData perFrameData {
-                .tilesCountX = M::CeilDiv((uint32)App::GetFramebufferWidth(), R_LIGHT_CULL_TILE_SIZE),
-                .tilesCountY = M::CeilDiv((uint32)App::GetFramebufferHeight(), R_LIGHT_CULL_TILE_SIZE)
+                .tilesCountX = gFwdPlus.lightPerFrameData.tilesCountX,
+                .tilesCountY = gFwdPlus.lightPerFrameData.tilesCountY
             };
             cmd.PushConstants<RLightCullDebugShaderFrameData>(gFwdPlus.pLightCullDebugLayout, "PerFrameData", perFrameData);
 
@@ -1167,7 +958,7 @@ namespace R
         return true;
     }
 
-    void SetLights(uint32 numLights, const SceneLight* lights)
+    void SetLocalLights(uint32 numLights, const SceneLight* lights)
     {
         ASSERT(numLights);
         ASSERT(lights);
@@ -1186,6 +977,11 @@ namespace R
                 .color = Color4u::ToFloat4Linear(l.color)
             };
         }
+    }
+
+    void SetAmbientLight(Float4 ambientLight)
+    {
+        gFwdPlus.lightPerFrameData.ambientLightColor = Color4u::ToFloat4Linear(ambientLight);
     }
 } // R
 
@@ -1288,7 +1084,6 @@ struct AppImpl final : AppCallbacks
 
         // Update
         ModelScene& scene = mModelScenes[mSelectedSceneIdx];
-        scene.Update(cmd);
         R::UpdateBuffersFwdPlus(cmd, scene.mCam);
 
         // Render
@@ -1391,6 +1186,9 @@ int Main(int argc, char* argv[])
     SettingsJunkyard initSettings {
         .app = {
             .appName = "TestRenderer"
+        },
+        .graphics = {
+            .surfaceSRGB = true
         }
     };
     SettingsJunkyard::Initialize(initSettings);

@@ -25,7 +25,7 @@ struct SettingsGraphics
     bool enable = true;             // Enable graphics subsystem. (cmdline="-GraphicsEnable=1")
     bool validate = false;          // Enable validation layers. (cmdline="-GraphicsValidate=1")
     bool headless = false;          // Device is created, but with no views/swapchain/gfx-queue. only used for comput. (cmdline="headlessGraphics")
-    bool surfaceSRGB = false;       // SRGB surface for Swap-chain (TODO: remove this, won't do on swapchain SRGB anyways)
+    bool surfaceSRGB = false;       // SRGB surface for Swap-chain
     bool listExtensions = false;    // Show device extensions upon initialization
     bool validateBestPractices = false;   // see VK_EXT_validation_features
     bool validateSynchronization = true;   // see VK_EXT_validation_features

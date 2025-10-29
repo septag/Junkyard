@@ -1526,7 +1526,7 @@ namespace GfxBackend
         Mem::Free(gBackendVk.gpu.extensions, alloc);
     }
 
-    static bool _ResizeSwapchain(GfxBackendSwapchain* swapchain, VkSurfaceKHR surface, Int2 size)
+    static bool _ResizeSwapchain(GfxBackendSwapchain* swapchain, VkSurfaceKHR surface, Int2 size, bool forceSRGB)
     {
         vkGetPhysicalDeviceSurfaceCapabilitiesKHR(gBackendVk.gpu.handle, gBackendVk.surface, &gBackendVk.swapchainInfo.caps);
 
@@ -1545,10 +1545,24 @@ namespace GfxBackend
         const GfxBackendSwapchainInfo& info = gBackendVk.swapchainInfo;
         VkSurfaceFormatKHR chosenFormat {};
 
+        // Prefer BGRA first
         for (uint32 i = 0; i < info.numFormats; i++) {
-            if (info.formats[i].format == VK_FORMAT_B8G8R8A8_UNORM || info.formats[i].format == VK_FORMAT_R8G8B8A8_UNORM) {
+            VkFormat fmt = forceSRGB ? VK_FORMAT_B8G8R8A8_SRGB : VK_FORMAT_B8G8R8A8_UNORM;
+            if (info.formats[i].format == fmt) {
                 chosenFormat = info.formats[i];
                 break;
+            }
+        }
+
+        // Fall back -> RGBA
+        if (chosenFormat.format == VK_FORMAT_UNDEFINED) {
+            LOG_WARNING("BGRA swapchain format not found. Falling back to RGBA swapchain formats");
+            for (uint32 i = 0; i < info.numFormats; i++) {
+                VkFormat fmt = forceSRGB ? VK_FORMAT_R8G8B8A8_SRGB : VK_FORMAT_R8G8B8A8_UNORM;
+                if (info.formats[i].format == fmt) {
+                    chosenFormat = info.formats[i];
+                    break;
+                }
             }
         }
 
@@ -1607,6 +1621,11 @@ namespace GfxBackend
             formatName = "BGRA_UNORM";
         else if (chosenFormat.format == VK_FORMAT_R8G8B8A8_UNORM)
             formatName = "RGBA_UNORM";
+        else if (chosenFormat.format == VK_FORMAT_B8G8R8A8_SRGB)
+            formatName = "BGRA_SRGB";
+        else if (chosenFormat.format == VK_FORMAT_R8G8B8A8_SRGB)
+            formatName = "RGBA_SRGB";
+
         LOG_VERBOSE("(init) Swapchain %ux%ux%u (%s)", swapchain->extent.width, swapchain->extent.height, numImages, formatName);
 
         if (swapchain->handle) 
@@ -1652,7 +1671,8 @@ namespace GfxBackend
 
     static bool _InitializeSwapchain(GfxBackendSwapchain* swapchain, VkSurfaceKHR surface, Int2 size)
     {
-        if (!_ResizeSwapchain(swapchain, surface, size))
+        bool forceSRGB = SettingsJunkyard::Get().graphics.surfaceSRGB;
+        if (!_ResizeSwapchain(swapchain, surface, size, forceSRGB))
             return false;
 
         // Semaphores
@@ -2233,7 +2253,8 @@ void GfxBackend::End()
     if (gBackendVk.swapchain.resize) {
         vkDeviceWaitIdle(gBackendVk.device);
         GfxBackend::_ResizeSwapchain(&gBackendVk.swapchain, gBackendVk.surface, 
-                                     Int2(App::GetFramebufferWidth(), App::GetFramebufferHeight()));
+                                     Int2(App::GetFramebufferWidth(), App::GetFramebufferHeight()),
+                                     SettingsJunkyard::Get().graphics.surfaceSRGB);
     }
 
     ++gBackendVk.presentFrame;

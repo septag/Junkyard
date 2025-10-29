@@ -417,6 +417,7 @@ namespace ImGui
 
         // Default Font
         {
+            bool hasSRGBTarget = SettingsJunkyard::Get().graphics.surfaceSRGB;
             ImGuiIO& conf = GetIO();
 
             ImFontConfig fontConfig;
@@ -431,7 +432,7 @@ namespace ImGui
             GfxImageDesc imageDesc {
                 .width = uint16(fontWidth),
                 .height = uint16(fontHeight),
-                .format = GfxFormat::R8G8B8A8_UNORM,
+                .format = hasSRGBTarget ? GfxFormat::R8G8B8A8_SRGB : GfxFormat::R8G8B8A8_UNORM,
                 .usageFlags = GfxImageUsageFlags::TransferDst|GfxImageUsageFlags::Sampled
             };
     
@@ -515,10 +516,11 @@ namespace ImGui
 
 bool ImGui::Initialize()
 {
+    const SettingsJunkyard& settings = SettingsJunkyard::Get();
     Engine::HelperInitializeProxyAllocator(&gImGui.alloc, "ImGui");
     Engine::RegisterProxyAllocator(&gImGui.alloc);
 
-    gImGui.runtimeAlloc.Initialize(&gImGui.alloc, IMGUI_RUNTIME_HEAP_SIZE, SettingsJunkyard::Get().engine.debugAllocations);
+    gImGui.runtimeAlloc.Initialize(&gImGui.alloc, IMGUI_RUNTIME_HEAP_SIZE, settings.engine.debugAllocations);
     
     SetAllocatorFunctions(
         [](size_t size, void*)->void* { return Mem::Alloc(size, &gImGui.runtimeAlloc); },
@@ -573,8 +575,18 @@ bool ImGui::Initialize()
     _InitializeSettings();
 
     // Register graphics resources callback so we can continue when the resources are loaded
-    gImGui.shader = Shader::Load("/shaders/ImGui.hlsl", ShaderLoadParams(),
-                                 Engine::RegisterInitializeResources(_InitializeGraphicsResources));
+    ShaderLoadParams shaderParams {
+        .compileDesc { 
+            .numDefines = 1,
+            .defines = {
+                {
+                    .define = "SRGB_TARGET",
+                    .value = String32::Format("%d", settings.graphics.surfaceSRGB ? 1 : 0)
+                }
+            }
+        }
+    };
+    gImGui.shader = Shader::Load("/shaders/ImGui.hlsl", shaderParams, Engine::RegisterInitializeResources(_InitializeGraphicsResources));
 
     return true;
 }
