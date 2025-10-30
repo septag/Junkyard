@@ -41,6 +41,7 @@ static const char* TESTRENDERER_MODELS[] = {
 static inline constexpr uint32 R_LIGHT_CULL_TILE_SIZE = 16;
 static inline constexpr uint32 R_LIGHT_CULL_MAX_LIGHTS_PER_TILE = 8;
 static inline constexpr uint32 R_LIGHT_CULL_MAX_LIGHTS_PER_FRAME = 100;
+static inline constexpr uint32 R_MSAA = 4;
 
 struct RLightBounds
 {
@@ -92,8 +93,34 @@ struct RLightShaderFrameData
     uint32 _reserved2[2];
 };
 
+struct RVertexStreamPosition
+{
+    Float3 position;
+};
+
+struct RVertexStreamLighting
+{
+    Float3 normal;
+    Float2 uv;
+};
+
+static const ModelGeometryLayout RModelGeometryLayout = {
+    .vertexAttributes = {
+        {"POSITION", 0, 0, GfxFormat::R32G32B32_SFLOAT, offsetof(RVertexStreamPosition, position)},
+        {"NORMAL", 0, 1, GfxFormat::R32G32B32_SFLOAT, offsetof(RVertexStreamLighting, normal)},
+        {"TEXCOORD", 0, 1, GfxFormat::R32G32_SFLOAT, offsetof(RVertexStreamLighting, uv)}
+    },
+    .vertexBufferStrides = {
+        sizeof(RVertexStreamPosition),
+        sizeof(RVertexStreamLighting)
+    }
+};
+
 struct RForwardPlusContext
 {
+    GfxImageHandle msaaColorRenderImage;
+    GfxImageHandle msaaDepthRenderImage;
+
     AssetHandleShader sZPrepass;
     GfxPipelineHandle pZPrepass;
     GfxPipelineLayoutHandle pZPrepassLayout;
@@ -175,13 +202,6 @@ struct ModelScene
         Mat4 modelMat;
     };
 
-    struct Vertex 
-    {
-        Float3 pos;
-        Float3 normal;
-        Float2 uv;
-    };
-
     void Initialize(AssetGroup initAssetGroup, const char* modelFilepath)
     {
         ASSERT(mModelFilepath.IsEmpty());
@@ -221,20 +241,10 @@ struct ModelScene
 
     void Load()
     {
-        ModelLoadParams modelParams {
-            .layout = {
-                .vertexAttributes = {
-                    {"POSITION", 0, 0, GfxFormat::R32G32B32_SFLOAT, offsetof(Vertex, pos)},
-                    {"NORMAL", 0, 0, GfxFormat::R32G32B32_SFLOAT, offsetof(Vertex, normal)},
-                    {"TEXCOORD", 0, 0, GfxFormat::R32G32_SFLOAT, offsetof(Vertex, uv)}
-                },
-                .vertexBufferStrides = {
-                    sizeof(Vertex)
-                }
-            }
+        ModelLoadParams loadParams { 
+            .layout = RModelGeometryLayout
         };
-
-        mModel = Model::Load(mModelFilepath.CStr(), modelParams, mAssetGroup);
+        mModel = Model::Load(mModelFilepath.CStr(), loadParams, mAssetGroup);
         mAssetGroup.Load();
     }
 
@@ -351,7 +361,7 @@ namespace R
                         },
                         {
                             .define = "MSAA",
-                            .value = "0"
+                            .value = String32::Format("%d", R_MSAA)
                         }
                     }
                 }
@@ -366,6 +376,47 @@ namespace R
 
     bool InitializeFwdPlus()
     {
+        uint16 width = App::GetFramebufferWidth();
+        uint16 height = App::GetFramebufferHeight();
+
+        //--------------------------------------------------------------------------------------------------------------
+        // Render Images
+        if (R_MSAA > 1) {
+            GfxImageDesc desc {
+                .width = width,
+                .height = height,
+                .multisampleFlags = (GfxMultiSampleCount)R_MSAA,
+                .format = GfxBackend::GetValidDepthStencilFormat(), // TODO:
+                .usageFlags = GfxImageUsageFlags::DepthStencilAttachment|GfxImageUsageFlags::Sampled,
+            };
+
+            // Note: this won't probably work with tiled GPUs because it's incompatible with Sampled flag
+            //       So we probably need to copy the contents of the zbuffer to another one
+            #if PLATFORM_MOBILE
+            desc.usageFlags |= GfxImageUsageFlags::TransientAttachment;
+            #endif
+
+            gFwdPlus.msaaDepthRenderImage = GfxBackend::CreateImage(desc);
+        }
+
+        {
+            GfxImageDesc desc {
+                .width = width,
+                .height = height,
+                .multisampleFlags = (GfxMultiSampleCount)R_MSAA,
+                .format = GfxBackend::GetSwapchainFormat(), // TODO: 
+                .usageFlags = GfxImageUsageFlags::ColorAttachment,
+            };
+
+            // Note: this won't probably work with tiled GPUs because it's incompatible with Sampled flag
+            //       So we probably need to copy the contents of the zbuffer to another one
+            #if PLATFORM_MOBILE
+            desc.usageFlags |= GfxImageUsageFlags::TransientAttachment;
+            #endif
+
+            gFwdPlus.msaaColorRenderImage = GfxBackend::CreateImage(desc);
+        }
+
         //--------------------------------------------------------------------------------------------------------------
         // Common buffers
         {
@@ -375,8 +426,8 @@ namespace R
             };
             gFwdPlus.bLightBounds = GfxBackend::CreateBuffer(bufferDesc);
 
-            uint32 numTilesX = M::CeilDiv((uint32)App::GetFramebufferWidth(), R_LIGHT_CULL_TILE_SIZE);
-            uint32 numTilesY = M::CeilDiv((uint32)App::GetFramebufferHeight(), R_LIGHT_CULL_TILE_SIZE);
+            uint32 numTilesX = M::CeilDiv(uint32(width), R_LIGHT_CULL_TILE_SIZE);
+            uint32 numTilesY = M::CeilDiv(uint32(height), R_LIGHT_CULL_TILE_SIZE);
             bufferDesc = {
                 .sizeBytes = sizeof(uint32)*numTilesX*numTilesY*R_LIGHT_CULL_MAX_LIGHTS_PER_TILE,
                 .usageFlags = GfxBufferUsageFlags::TransferDst | GfxBufferUsageFlags::Storage
@@ -434,8 +485,7 @@ namespace R
             GfxVertexBufferBindingDesc vertexBufferBindingDescs[] = {
                 {
                     .binding = 0,
-                    .stride = sizeof(ModelScene::Vertex),       // TODO: Fix this, should be a separate vertex stream
-                    .inputRate = GfxVertexInputRate::Vertex
+                    .stride = sizeof(RVertexStreamPosition),
                 }
             };
 
@@ -455,6 +505,9 @@ namespace R
                     .depthTestEnable = true,
                     .depthWriteEnable = true,
                     .depthCompareOp = GfxCompareOp::Less
+                },
+                .msaa = {
+                    .sampleCount = (GfxMultiSampleCount)R_MSAA
                 },
                 .numColorAttachments = 0,
                 .depthAttachmentFormat = GfxBackend::GetValidDepthStencilFormat(),
@@ -571,10 +624,15 @@ namespace R
             gFwdPlus.pLightLayout = GfxBackend::CreatePipelineLayout(*shader, layoutDesc);
 
             // Pipeline
-            GfxVertexBufferBindingDesc vertexBufferBindingDesc {
-                .binding = 0,
-                .stride = sizeof(ModelScene::Vertex),   // TODO: use renderer specific vertex 
-                .inputRate = GfxVertexInputRate::Vertex
+            GfxVertexBufferBindingDesc vertexBufferBindingDescs[] = {
+                {
+                    .binding = 0,
+                    .stride = sizeof(RVertexStreamPosition),   // TODO: use renderer specific vertex 
+                },
+                {
+                    .binding = 1,
+                    .stride = sizeof(RVertexStreamLighting),
+                }
             };
 
             GfxVertexInputAttributeDesc vertexInputAttDescs[] = {
@@ -582,27 +640,27 @@ namespace R
                     .semantic = "POSITION",
                     .binding = 0,
                     .format = GfxFormat::R32G32B32_SFLOAT,
-                    .offset = offsetof(ModelScene::Vertex, pos)
+                    .offset = offsetof(RVertexStreamPosition, position)
                 },
                 {
                     .semantic = "NORMAL",
-                    .binding = 0,
+                    .binding = 1,
                     .format = GfxFormat::R32G32B32_SFLOAT,
-                    .offset = offsetof(ModelScene::Vertex, normal)
+                    .offset = offsetof(RVertexStreamLighting, normal)
                 },
                 {
                     .semantic = "TEXCOORD",
-                    .binding = 0,
+                    .binding = 1,
                     .format = GfxFormat::R32G32_SFLOAT,
-                    .offset = offsetof(ModelScene::Vertex, uv)
+                    .offset = offsetof(RVertexStreamLighting, uv)
                 }
             };
 
             GfxGraphicsPipelineDesc pDesc {
                 .numVertexInputAttributes = CountOf(vertexInputAttDescs),
                 .vertexInputAttributes = vertexInputAttDescs,
-                .numVertexBufferBindings = 1,
-                .vertexBufferBindings = &vertexBufferBindingDesc,
+                .numVertexBufferBindings = CountOf(vertexBufferBindingDescs),
+                .vertexBufferBindings = vertexBufferBindingDescs,
                 .rasterizer = {
                     .cullMode = GfxCullMode::Back
                 },
@@ -614,6 +672,9 @@ namespace R
                     .depthTestEnable = true,
                     .depthWriteEnable = false,
                     .depthCompareOp = GfxCompareOp::Equal
+                },
+                .msaa = {
+                    .sampleCount = (GfxMultiSampleCount)R_MSAA
                 },
                 .numColorAttachments = 1,
                 .colorAttachmentFormats = {GfxBackend::GetSwapchainFormat()},
@@ -704,6 +765,9 @@ namespace R
         GfxBackend::DestroyBuffer(gFwdPlus.bVisibleLightIndices);
         GfxBackend::DestroyBuffer(gFwdPlus.bLightProps);
 
+        GfxBackend::DestroyImage(gFwdPlus.msaaColorRenderImage);
+        GfxBackend::DestroyImage(gFwdPlus.msaaDepthRenderImage);
+
         Mem::Free(gFwdPlus.lightBounds);
         Mem::Free(gFwdPlus.lightProps);
     }
@@ -766,20 +830,24 @@ namespace R
         }
     }
 
-    bool RenderFwdPlus(GfxCommandBuffer& cmd, GfxImageHandle depthImageHandle, AssetHandleModel modelHandle, RDebugMode debugMode = RDebugMode::None)
+    bool RenderFwdPlus(GfxCommandBuffer& cmd, GfxImageHandle finalColorImage, GfxImageHandle finalDepthImage, 
+                       AssetHandleModel modelHandle, RDebugMode debugMode = RDebugMode::None)
     {
         AssetObjPtrScope<ModelData> model(modelHandle);
         if (model.IsNull()) {
             return false;
         }
 
+        GfxImageHandle renderDepthImage = R_MSAA > 1 ? gFwdPlus.msaaDepthRenderImage : finalDepthImage;
+        ASSERT(renderDepthImage.IsValid());
+
         // Z-Prepass
         {
-            // cmd.TransitionImage(depthImageHandle, GfxImageTransition::RenderTarget, GfxImageTransitionFlags::DepthWrite);
+            cmd.TransitionImage(renderDepthImage, GfxImageTransition::RenderTarget, GfxImageTransitionFlags::DepthWrite);
 
             GfxBackendRenderPass zprepass { 
                 .depthAttachment = {
-                    .image = depthImageHandle,
+                    .image = renderDepthImage,
                     .clear = true,
                     .clearValue = {
                         .depth = 1.0f
@@ -827,7 +895,7 @@ namespace R
 
         // Light culling
         if (gFwdPlus.numLights) {
-            cmd.TransitionImage(depthImageHandle, GfxImageTransition::ShaderRead);
+            cmd.TransitionImage(renderDepthImage, GfxImageTransition::ShaderRead);
             cmd.TransitionBuffer(gFwdPlus.bVisibleLightIndices, GfxBufferTransition::ComputeWrite);
 
             GfxBindingDesc bindings[] = {
@@ -845,7 +913,7 @@ namespace R
                 },
                 {
                     .name = "DepthTexture",
-                    .image = depthImageHandle
+                    .image = renderDepthImage
                 }
             };
 
@@ -856,23 +924,37 @@ namespace R
             cmd.TransitionBuffer(gFwdPlus.bVisibleLightIndices, GfxBufferTransition::FragmentRead);
         }
 
-        cmd.TransitionImage(depthImageHandle, GfxImageTransition::RenderTarget, GfxImageTransitionFlags::DepthRead);
+        cmd.TransitionImage(renderDepthImage, GfxImageTransition::RenderTarget, GfxImageTransitionFlags::DepthRead);
 
         // Light pass
         if (debugMode == RDebugMode::None) {
+            if (R_MSAA > 1 && finalDepthImage.IsValid()) {
+                cmd.TransitionImage(finalDepthImage, GfxImageTransition::RenderTarget, 
+                                    GfxImageTransitionFlags::DepthWrite|GfxImageTransitionFlags::DepthResolve);
+            }
+
+            // If finalColorImage is not provided, we render to Swapchain
+            GfxImageHandle renderColorImage = R_MSAA > 1 ? gFwdPlus.msaaColorRenderImage : finalColorImage;
+
+            // Render to swapchain if we don't have MSAA, otherwise, resolve to Swapchain and provided depth buffer
             GfxBackendRenderPass pass { 
+                .numAttachments = 1,
                 .colorAttachments = {{ 
+                    .image = renderColorImage,
+                    .resolveImage = finalColorImage,
                     .clear = true,
+                    .resolveToSwapchain = R_MSAA > 1 && !finalColorImage.IsValid(),
                     .clearValue = {
                         .color = gFwdPlus.lightPerFrameData.skyAmbientColor
                     }
                 }},
                 .depthAttachment = {
-                    .image = depthImageHandle,
+                    .image = renderDepthImage,
+                    .resolveImage = R_MSAA > 1 ? finalDepthImage : GfxImageHandle(),
                     .load = true,
-                    .clear = false
+                    .clear = false,
                 },
-                .swapchain = true,  // TODO: Change to offscreen
+                .swapchain = !renderColorImage.IsValid(), 
                 .hasDepth = true
             };
 
@@ -1017,16 +1099,14 @@ struct AppImpl final : AppCallbacks
     static void InitializeResources(void* userData)
     {
         AppImpl* self = (AppImpl*)userData;
+        Int2 extent = GfxBackend::GetSwapchainExtent();
 
         {
-            Int2 extent = GfxBackend::GetSwapchainExtent();
             GfxImageDesc desc {
                 .width = uint16(extent.x),
                 .height = uint16(extent.y),
-                .multisampleFlags = GfxSampleCountFlags::SampleCount1,
                 .format = GfxBackend::GetValidDepthStencilFormat(),
-                .usageFlags = GfxImageUsageFlags::DepthStencilAttachment|GfxImageUsageFlags::Sampled,
-                .arena = GfxMemoryArena::PersistentGPU
+                .usageFlags = GfxImageUsageFlags::DepthStencilAttachment | GfxImageUsageFlags::Sampled,
             };
 
             // Note: this won't probably work with tiled GPUs because it's incompatible with Sampled flag
@@ -1105,7 +1185,12 @@ struct AppImpl final : AppCallbacks
         R::UpdateBuffersFwdPlus(cmd, scene.mCam);
 
         // Render
-        bool sceneRendered = R::RenderFwdPlus(cmd, mRenderTargetDepth, scene.mModel, scene.mDebugLightCull ? RDebugMode::LightCull : RDebugMode::None);
+        bool sceneRendered = R::RenderFwdPlus(cmd, GfxImageHandle(), mRenderTargetDepth, scene.mModel, 
+                                              scene.mDebugLightCull ? RDebugMode::LightCull : RDebugMode::None);
+        if (sceneRendered && R_MSAA > 1) {
+            cmd.TransitionImage(mRenderTargetDepth, GfxImageTransition::RenderTarget, GfxImageTransitionFlags::DepthRead);
+        }
+
 
         // Draw empty scene (Clear framebuffer)
         if (!sceneRendered) {

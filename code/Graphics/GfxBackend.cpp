@@ -92,6 +92,11 @@ static const char* GFXBACKEND_DEFAULT_INSTANCE_EXTENSIONS[] = {"VK_KHR_surface",
 // Linux uses glfwRequiredInstanceExtensions
 #endif
 
+// TODO: Fix these
+static const char* GFXBACKEND_VALIDATION_EXCEPTIONS[] = {
+    "VUID-vkQueueSubmit-pSignalSemaphores-00067"
+};
+
 #if CONFIG_DEBUG_GFXBACKEND
 #define GFX_DEBUG(_text, ...) LOG_DEBUG(_text, ##__VA_ARGS__)
 #else
@@ -971,6 +976,11 @@ namespace GfxBackend
         if (messageType & VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT)  
             Str::Concat(typeStr, sizeof(typeStr), "[P]");
 
+        for (uint32 i = 0; i < CountOf(GFXBACKEND_VALIDATION_EXCEPTIONS); i++) {
+            if (callbackData->pMessageIdName && Str::IsEqual(callbackData->pMessageIdName, GFXBACKEND_VALIDATION_EXCEPTIONS[i]))
+                return VK_FALSE;
+        }
+
         switch (messageSeverity) {
         case VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT:
             if (!ShouldIgnoreVerboseLog(callbackData->pMessageIdName))
@@ -1843,6 +1853,159 @@ namespace GfxBackend
         return Mem::AllocCopy<VkComputePipelineCreateInfo>(&createInfo, 1, &gBackendVk.runtimeAlloc);
     }
 
+    static VkRenderingAttachmentInfo _TransitionAndMakeAttachment(const GfxRenderPassAttachment& attachment, VkCommandBuffer cmdVk, bool toSwapchain)
+    {
+        ASSERT_MSG(!(attachment.load & attachment.clear), "Cannot have both load/clear ops on color attachment");
+    
+        VkImageLayout layout;
+        VkPipelineStageFlags2 dstStageMask;
+        VkAccessFlags2 dstAccessMask;
+        VkImageAspectFlags aspectMask = 0;
+        VkResolveModeFlagBits resolveMode = VK_RESOLVE_MODE_NONE;
+        VkImageView viewHandle = nullptr;
+
+        if (!toSwapchain) {
+            ASSERT(attachment.image.IsValid());
+            GfxBackendImage& img = gBackendVk.images.Data(attachment.image);
+
+            if (GfxBackend::_FormatIsDepthStencil(img.desc.format)) {
+                layout = GfxBackend::_FormatHasStencil(img.desc.format) ? 
+                    VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL :
+                    VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
+                dstStageMask = VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT;
+                dstAccessMask = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT|VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT;
+                if (GfxBackend::_FormatHasStencil(img.desc.format)) 
+                    aspectMask |= VK_IMAGE_ASPECT_STENCIL_BIT;
+                if (GfxBackend::_FormatHasDepth(img.desc.format))
+                    aspectMask |= VK_IMAGE_ASPECT_DEPTH_BIT;
+            }
+            else {
+                layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+                dstStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
+                dstAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
+                aspectMask |= VK_IMAGE_ASPECT_COLOR_BIT;
+            }
+
+            // Transition the initial layout to attachment
+            if (img.layout == VK_IMAGE_LAYOUT_UNDEFINED && !toSwapchain) {
+                VkImageMemoryBarrier2 imageBarrier {
+                    .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
+                    .dstStageMask = dstStageMask,
+                    .dstAccessMask = dstAccessMask,
+                    .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+                    .newLayout = layout,
+                    .image = img.handle,
+                    .subresourceRange = {
+                        .aspectMask = aspectMask,
+                        .levelCount = VK_REMAINING_MIP_LEVELS,
+                        .layerCount = VK_REMAINING_ARRAY_LAYERS
+                    }
+                };
+
+                VkDependencyInfo depInfo {
+                    .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
+                    .imageMemoryBarrierCount = 1,
+                    .pImageMemoryBarriers = &imageBarrier
+                };
+
+                vkCmdPipelineBarrier2(cmdVk, &depInfo);
+
+                img.layout = layout;
+                img.transitionedStage = dstStageMask;
+                img.transitionedAccess = dstAccessMask;
+            }    
+
+            viewHandle = img.viewHandle;
+        }
+        else {
+            ASSERT(!attachment.image.IsValid());
+            layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+            dstStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
+            dstAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
+            aspectMask |= VK_IMAGE_ASPECT_COLOR_BIT;
+            viewHandle = gBackendVk.swapchain.GetImageView();
+        }
+
+        VkAttachmentLoadOp loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+        if (attachment.load)
+            loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+        else if (attachment.clear)
+            loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+
+        VkClearValue clearValue {};
+        if (layout == VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL) {
+            clearValue.color = {{attachment.clearValue.color.x, attachment.clearValue.color.y, 
+            attachment.clearValue.color.z, attachment.clearValue.color.w}};
+        }
+        else {
+            clearValue.depthStencil = {.depth = attachment.clearValue.depth, .stencil = attachment.clearValue.stencil};
+            ASSERT_MSG(!toSwapchain, "Swapchain doesn't have any DepthStencil views");
+        }
+
+        VkImageView resolveImageView = nullptr;
+        if (attachment.resolveImage.IsValid()) {
+            ASSERT_MSG(!toSwapchain && !attachment.resolveToSwapchain, "Cannot render and resolve to swapchain at the same time");
+            GfxBackendImage& resolveImg = gBackendVk.images.Data(attachment.resolveImage);
+            resolveImageView = resolveImg.viewHandle;
+
+            if (resolveImg.layout == VK_IMAGE_LAYOUT_UNDEFINED) {
+                // WTF ?! 
+                // Seems like to resolve depth buffers I also have to give access for color_attachment_output and color_attachment_write access
+                // Probably because we also have an MSAA Color Attachment resolve ? 
+                if (layout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL || layout == VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL) {
+                    dstStageMask |= VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
+                    dstAccessMask |= VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
+                }
+
+                VkImageMemoryBarrier2 imageBarrier {
+                    .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
+                    .dstStageMask = dstStageMask,
+                    .dstAccessMask = dstAccessMask,
+                    .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+                    .newLayout = layout,
+                    .image = resolveImg.handle,
+                    .subresourceRange = {
+                        .aspectMask = aspectMask,
+                        .levelCount = VK_REMAINING_MIP_LEVELS,
+                        .layerCount = VK_REMAINING_ARRAY_LAYERS
+                    }
+                };
+
+                VkDependencyInfo depInfo {
+                    .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
+                    .imageMemoryBarrierCount = 1,
+                    .pImageMemoryBarriers = &imageBarrier
+                };
+
+                vkCmdPipelineBarrier2(cmdVk, &depInfo);
+
+                resolveImg.layout = layout;
+                resolveImg.transitionedStage = dstStageMask;
+                resolveImg.transitionedAccess = dstAccessMask;
+            }
+
+            resolveMode = GfxBackend::_FormatIsDepthStencil(resolveImg.desc.format) ? VK_RESOLVE_MODE_MIN_BIT : VK_RESOLVE_MODE_AVERAGE_BIT;
+        }
+        else if (attachment.resolveToSwapchain) {
+            ASSERT_MSG(layout != VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, "DepthStencil attachments cannot be resolved to swapchain");
+            resolveImageView = gBackendVk.swapchain.GetImageView();    
+            resolveMode = VK_RESOLVE_MODE_AVERAGE_BIT;
+        }
+
+        VkRenderingAttachmentInfo info {
+            .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
+            .imageView = viewHandle,
+            .imageLayout = layout,
+            .resolveMode = resolveMode,
+            .resolveImageView = resolveImageView,
+            .resolveImageLayout = layout,
+            .loadOp = loadOp,
+            .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+            .clearValue = clearValue,
+        };
+
+        return info;
+    }
 } // GfxBackend
 
 bool GfxBackend::Initialize()
@@ -3476,12 +3639,12 @@ GfxPipelineHandle GfxBackend::CreateGraphicsPipeline(const GfxShader& shader, Gf
     // Multisampling
     VkPipelineMultisampleStateCreateInfo multisampling {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
-        .rasterizationSamples = VK_SAMPLE_COUNT_1_BIT,
-        .sampleShadingEnable = VK_FALSE,
-        .minSampleShading = 1.0f, // Optional
-        .pSampleMask = nullptr, // Optional
-        .alphaToCoverageEnable = VK_FALSE, // Optional
-        .alphaToOneEnable = VK_FALSE // Optional
+        .rasterizationSamples = (VkSampleCountFlagBits)desc.msaa.sampleCount,
+        .sampleShadingEnable = desc.msaa.sampleShadingEnable,
+        .minSampleShading = desc.msaa.minSampleShading,
+        .pSampleMask = desc.msaa.sampleMask,
+        .alphaToCoverageEnable = desc.msaa.alphaToCoverageEnable,
+        .alphaToOneEnable = desc.msaa.alphaToOneEnable
     };
 
     // Blending
@@ -5545,7 +5708,15 @@ void GfxCommandBuffer::TransitionImage(GfxImageHandle imgHandle, GfxImageTransit
 
     switch (transition) {
         case GfxImageTransition::ShaderRead:
-            barrier.srcStageMask = image.transitionedStage;
+            if (GfxBackend::_FormatIsDepthStencil(image.desc.format) &&
+                image.transitionedStage & VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT)
+            {
+                barrier.srcStageMask = VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT;
+            }
+            else {
+                barrier.srcStageMask = image.transitionedStage;
+            }
+
             barrier.srcAccessMask = image.transitionedAccess;
             barrier.dstStageMask = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
             barrier.dstAccessMask = VK_ACCESS_2_SHADER_READ_BIT;
@@ -5585,13 +5756,18 @@ void GfxCommandBuffer::TransitionImage(GfxImageHandle imgHandle, GfxImageTransit
                     layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 
                     if (IsBitsSet<GfxImageTransitionFlags>(flags, GfxImageTransitionFlags::DepthWrite)) {
-                        dstStage |= VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT;
+                        dstStage |= VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT;
                         accessFlags |= VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
                     }
 
                     if (IsBitsSet<GfxImageTransitionFlags>(flags, GfxImageTransitionFlags::DepthRead)) {
                         dstStage |= VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT;
-                        accessFlags |= VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT | VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT;
+                        accessFlags |= VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT;
+                    }
+
+                    if (IsBitsSet<GfxImageTransitionFlags>(flags, GfxImageTransitionFlags::DepthResolve)) {
+                        dstStage |= VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
+                        accessFlags |= VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
                     }
                     
                     if (dstStage == 0) {
@@ -5634,63 +5810,18 @@ void GfxCommandBuffer::BeginRenderPass(const GfxBackendRenderPass& pass)
 {
     ASSERT(mIsRecording);
 
-    auto MakeRenderingAttachmentInfo = [](const GfxRenderPassAttachment& srcAttachment, VkImageView view, VkImageLayout layout)
-    {
-        ASSERT(view);
-        ASSERT_MSG(!(srcAttachment.load & srcAttachment.clear), "Cannot have both load/clear ops on color attachment");
-
-        VkAttachmentLoadOp loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-        if (srcAttachment.load)
-            loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
-        else if (srcAttachment.clear)
-            loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-
-        VkClearValue clearValue {};
-        if (layout == VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL) {
-            clearValue.color = {{srcAttachment.clearValue.color.x, srcAttachment.clearValue.color.y, 
-                                 srcAttachment.clearValue.color.z, srcAttachment.clearValue.color.w}};
-        }
-        else if (layout == VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL || 
-                 layout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL ||
-                 layout == VK_IMAGE_LAYOUT_STENCIL_ATTACHMENT_OPTIMAL)
-        {
-            clearValue.depthStencil = {.depth = srcAttachment.clearValue.depth, .stencil = srcAttachment.clearValue.stencil};
-        }
-        else {
-            ASSERT(0);
-        }
-
-        VkRenderingAttachmentInfo info {
-            .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
-            .imageView = view,
-            .imageLayout = layout,
-            .loadOp = loadOp,
-            .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
-            .clearValue = clearValue,
-        };
-
-        return info;
-    };
-
     VkCommandBuffer cmdVk = GfxBackend::_GetCommandBufferHandle(*this);
+
+    // _TransitionAndMakeAttachment also accesses backend pool data
+    ReadWriteMutexWriteScope objPoolLock(gBackendVk.objectPoolsMutex);
 
     uint32 numColorAttachments = !pass.swapchain ? pass.numAttachments : 1;
     ASSERT(numColorAttachments < GFXBACKEND_MAX_RENDERPASS_COLOR_ATTACHMENTS);
     VkRenderingAttachmentInfo colorAttachments[GFXBACKEND_MAX_RENDERPASS_COLOR_ATTACHMENTS];
 
-    gBackendVk.objectPoolsMutex.EnterRead();
-    VkImageView colorViews[GFXBACKEND_MAX_RENDERPASS_COLOR_ATTACHMENTS];
-    if (!pass.swapchain) {
-        for (uint32 i = 0; i < numColorAttachments; i++) 
-            colorViews[i] = gBackendVk.images.Data(pass.colorAttachments[i].image).viewHandle;
-    }
-
-    VkImageView depthView = pass.hasDepth ? gBackendVk.images.Data(pass.depthAttachment.image).viewHandle : nullptr;
-    [[maybe_unused]] VkImageView stencilView = pass.hasStencil ? gBackendVk.images.Data(pass.stencilAttachment.image).viewHandle : nullptr;
-    gBackendVk.objectPoolsMutex.ExitRead();
-
     uint16 width = 0;
     uint16 height = 0;
+    bool resolvedToSwapchain = false;
     for (uint32 i = 0; i < numColorAttachments; i++) {
         const GfxRenderPassAttachment& srcAttachment = pass.colorAttachments[i];
         if (width == 0 && height == 0) {
@@ -5711,10 +5842,8 @@ void GfxCommandBuffer::BeginRenderPass(const GfxBackendRenderPass& pass)
                        "All attachments in the renderpass should have equal dimensions");
         }
 
-        VkImageView view = pass.swapchain ? gBackendVk.swapchain.GetImageView() : colorViews[i];
-        colorAttachments[i] = MakeRenderingAttachmentInfo(srcAttachment, view, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
-
-        // TODO: there are implicit layout changes, set them for the Image objects (see the same thing for depth image below)
+        colorAttachments[i] = GfxBackend::_TransitionAndMakeAttachment(srcAttachment, cmdVk, pass.swapchain);
+        resolvedToSwapchain |= srcAttachment.resolveToSwapchain;
     }
 
     if (numColorAttachments == 0 && pass.depthAttachment.image.IsValid()) {
@@ -5723,6 +5852,7 @@ void GfxCommandBuffer::BeginRenderPass(const GfxBackendRenderPass& pass)
         height = image.desc.height;
     }
 
+    ASSERT(width && height);
     VkRect2D renderArea;
     if (pass.cropRect.IsEmpty()) {
         renderArea = {
@@ -5738,47 +5868,14 @@ void GfxCommandBuffer::BeginRenderPass(const GfxBackendRenderPass& pass)
     }
 
     ASSERT_MSG(!pass.hasStencil, "Not implemented yet");
+
     VkRenderingAttachmentInfo depthAttachment;
     if (pass.hasDepth) {
-        depthAttachment = MakeRenderingAttachmentInfo(pass.depthAttachment, depthView, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
-
-        // We are implicitly changing the layout. Store that for proper future transitions
-        {
-            ReadWriteMutexWriteScope objPoolLock(gBackendVk.objectPoolsMutex);
-            GfxBackendImage& img = gBackendVk.images.Data(pass.depthAttachment.image);
-
-            if (img.layout == VK_IMAGE_LAYOUT_UNDEFINED) {
-                VkImageMemoryBarrier2 imageBarrier {
-                    .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
-                    .dstStageMask = VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT,
-                    .dstAccessMask = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
-                    .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-                    .newLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-                    .image = img.handle,
-                    .subresourceRange = {
-                        .aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT|VK_IMAGE_ASPECT_STENCIL_BIT,
-                        .levelCount = VK_REMAINING_MIP_LEVELS,
-                        .layerCount = VK_REMAINING_ARRAY_LAYERS
-                    }
-                };
-
-                VkDependencyInfo depInfo {
-                    .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
-                    .imageMemoryBarrierCount = 1,
-                    .pImageMemoryBarriers = &imageBarrier
-                };
-
-                vkCmdPipelineBarrier2(cmdVk, &depInfo);
-            }
-
-            img.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-            img.transitionedStage = VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT;
-            img.transitionedAccess = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-        }
+        depthAttachment = GfxBackend::_TransitionAndMakeAttachment(pass.depthAttachment, cmdVk, false);
     }
 
-    // If we are drawing to Swapchain, we have to wait for drawing to finish and also transition the layout to COLOR_ATTACHMENT_OUTPUT
-    if (pass.swapchain) {
+    // If we are drawing or resolving to Swapchain, we have to wait for drawing to finish and also transition the layout to COLOR_ATTACHMENT_OUTPUT
+    if (pass.swapchain || resolvedToSwapchain) {
         GfxBackendSwapchain::ImageState& state = gBackendVk.swapchain.GetImageState();
         VkImageMemoryBarrier2 imageBarrier {
             .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,

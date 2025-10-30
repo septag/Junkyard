@@ -15,7 +15,7 @@
 #endif
 
 #ifndef MSAA
-#define MSAA 0
+#define MSAA 1
 #endif
 
 struct PointLightCull
@@ -38,7 +38,7 @@ cbuffer PerFrameData
 StructuredBuffer<PointLightCull> Lights;
 RWStructuredBuffer<uint> VisibleLightIndices;
 
-#if MSAA
+#if MSAA > 1
 Texture2DMS<float> DepthTexture;
 #else
 Texture2D<float> DepthTexture;
@@ -104,7 +104,7 @@ void CsMain(uint3 globalPos : SV_DispatchThreadID,
 
     // Min/Max depth calculation for each tile
     {
-#if MSAA
+#if MSAA > 1
         uint depthBufferWidth, depthBufferHeight, depthBufferNumSamples;
         DepthTexture.GetDimensions(depthBufferWidth, depthBufferHeight, depthBufferNumSamples);
         float minZ = 3.402823466e+38F;  // FLT_MAX: IEE-754

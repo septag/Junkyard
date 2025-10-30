@@ -603,7 +603,7 @@ struct AppImpl : AppCallbacks
         GfxImageDesc desc {
             .width = App::GetFramebufferWidth(),
             .height = App::GetFramebufferHeight(),
-            .multisampleFlags = GfxSampleCountFlags::SampleCount1,
+            .multisampleFlags = GfxMultiSampleCount::SampleCount1,
             .format = GfxBackend::GetValidDepthStencilFormat(),
             .usageFlags = GfxImageUsageFlags::DepthStencilAttachment,
             .arena = GfxMemoryArena::PersistentGPU

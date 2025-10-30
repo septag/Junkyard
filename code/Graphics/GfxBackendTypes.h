@@ -454,7 +454,7 @@ enum class GfxImageType : uint32
 ENABLE_BITMASK(GfxImageType);
 
 // VkSampleCountFlagBits
-enum class GfxSampleCountFlags : uint32
+enum class GfxMultiSampleCount : uint32
 {
     SampleCount1 = 0x00000001,
     SampleCount2 = 0x00000002,
@@ -464,7 +464,6 @@ enum class GfxSampleCountFlags : uint32
     SampleCount32 = 0x00000020,
     SampleCount64 = 0x00000040
 };
-ENABLE_BITMASK(GfxSampleCountFlags);
 
 // Serialized for asset cache. Changing this will affect asset data
 struct GfxImageDesc
@@ -474,7 +473,7 @@ struct GfxImageDesc
     uint16 depth = 1;
     uint16 numMips = 1;
     uint16 numArrayLayers = 1;
-    GfxSampleCountFlags multisampleFlags = GfxSampleCountFlags::SampleCount1;
+    GfxMultiSampleCount multisampleFlags = GfxMultiSampleCount::SampleCount1;
     GfxImageType type = GfxImageType::Image2D;
     GfxFormat format;
     GfxImageUsageFlags usageFlags = GfxImageUsageFlags::Sampled;
@@ -505,7 +504,8 @@ enum class GfxImageTransitionFlags : uint32
 {
     None = 0,
     DepthWrite = 0x1,
-    DepthRead = 0x2
+    DepthRead = 0x2,
+    DepthResolve = 0x4
 };
 ENABLE_BITMASK(GfxImageTransitionFlags);
 
@@ -834,6 +834,15 @@ struct GfxRasterizerDesc
     float            lineWidth = 1.0f;
 };
 
+struct GfxMultiSampleDesc
+{
+    GfxMultiSampleCount sampleCount = GfxMultiSampleCount::SampleCount1;
+    bool sampleShadingEnable;
+    float minSampleShading = 1.0f;
+    const uint32* sampleMask;
+    bool alphaToCoverageEnable;
+    bool alphaToOneEnable;
+};
 
 //   ____ ___ ____  _____ _     ___ _   _ _____ ____  
 //  |  _ \_ _|  _ \| ____| |   |_ _| \ | | ____/ ___| 
@@ -967,6 +976,7 @@ struct GfxGraphicsPipelineDesc
     GfxRasterizerDesc rasterizer;
     GfxBlendDesc blend;
     GfxDepthStencilDesc depthStencil;
+    GfxMultiSampleDesc msaa;
 
     uint32 numColorAttachments;
     GfxFormat colorAttachmentFormats[GFXBACKEND_MAX_RENDERPASS_COLOR_ATTACHMENTS];
@@ -1035,8 +1045,10 @@ struct GfxDynamicState
 struct GfxRenderPassAttachment
 {
     GfxImageHandle image;
+    GfxImageHandle resolveImage;
     bool load;
     bool clear;
+    bool resolveToSwapchain;
 
     struct {
         Float4 color;

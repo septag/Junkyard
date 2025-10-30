@@ -1,6 +1,6 @@
 @echo off
 
-set slang_ver=2025.5.1
+set slang_ver=2025.20
 set slang_dist=v%slang_ver%/slang-%slang_ver%-windows-x86_64.zip
 
 if not exist slang.zip (
