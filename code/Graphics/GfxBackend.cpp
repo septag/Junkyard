@@ -408,8 +408,8 @@ struct GfxBackendDeviceMemory
 
     uint8 isHeapDeviceLocal : 1;   // Accessible by GPU (fast) 
     uint8 isCpuVisible : 1;        // Can be written by CPU
-    uint8 isCached : 1;            // Faster for small frequent updates
-    uint8 isCoherent : 1;          // No need to flush/map (potentially slower)
+    uint8 isCached : 1;            // Cached on the host. Faster for readback buffers
+    uint8 isCoherent : 1;          // No need to flush/map (can potentially be slower)
     uint8 isLazilyAlloc : 1;       // TBR
 
     bool IsValid() { return handle != nullptr || offset == -1; }
@@ -1641,7 +1641,6 @@ namespace GfxBackend
         if (swapchain->handle) 
             vkDestroySwapchainKHR(gBackendVk.device, swapchain->handle, gBackendVk.vkAlloc);
 
-
         if (vkCreateSwapchainKHR(gBackendVk.device, &createInfo, gBackendVk.vkAlloc, &swapchain->handle) != VK_SUCCESS) {
             LOG_ERROR("Gfx: CreateSwapchain failed");
             return false;
@@ -1667,6 +1666,11 @@ namespace GfxBackend
                 }
             };
 
+            if (swapchain->imageViews[i]) {
+                vkDestroyImageView(gBackendVk.device, swapchain->imageViews[i], gBackendVk.vkAlloc);
+                swapchain->imageViews[i] = nullptr;
+            }
+
             if (vkCreateImageView(gBackendVk.device, &viewCreateInfo, gBackendVk.vkAlloc, &swapchain->imageViews[i]) != VK_SUCCESS) {
                 LOG_ERROR("Gfx: CreateSwapchain create views failed");
                 return false;
@@ -1675,6 +1679,7 @@ namespace GfxBackend
 
         swapchain->format = chosenFormat;
         swapchain->resize = false;
+        memset(swapchain->imageStates, 0x0, sizeof(swapchain->imageStates));
 
         return true;
     }
@@ -2012,6 +2017,16 @@ bool GfxBackend::Initialize()
 {
     TimerStopWatch stopwatch;
 
+    App::RegisterEventsCallback([](const AppEvent& ev, void*) 
+    {
+        if (ev.type == AppEventType::Resized) {
+            vkDeviceWaitIdle(gBackendVk.device);
+            GfxBackend::_ResizeSwapchain(&gBackendVk.swapchain, gBackendVk.surface, 
+                                         Int2(App::GetFramebufferWidth(), App::GetFramebufferHeight()),
+                                         SettingsJunkyard::Get().graphics.surfaceSRGB);
+        }
+    });
+
     // Disable some implicit layers (TEMP?)
     if constexpr (PLATFORM_WINDOWS) {
         OS::SetEnvVar("DISABLE_LAYER_NV_OPTIMUS_1", "1");
@@ -2083,6 +2098,20 @@ bool GfxBackend::Initialize()
             LOG_ERROR("Gfx: Creating window surface failed");
             return false;
         }
+
+        App::RegisterFramebufferSizeQueryFunc([](uint16* width, uint16* height) 
+        {
+            VkSurfaceCapabilitiesKHR caps;
+            VkResult r = vkGetPhysicalDeviceSurfaceCapabilitiesKHR(gBackendVk.gpu.handle, gBackendVk.surface, &caps);
+            if (r != VK_SUCCESS)
+                return false;
+
+            ASSERT(caps.minImageExtent.width != -1 && caps.minImageExtent.height != -1);
+            *width = (uint16)caps.minImageExtent.width;
+            *height = (uint16)caps.minImageExtent.height;
+
+            return true;
+        });
     }
 
     if (!gBackendVk.queueMan.Initialize())
@@ -2474,6 +2503,8 @@ void GfxBackend::Release()
     gBackendVk.driverAlloc.Release();
     gBackendVk.runtimeAlloc.Release();
     gBackendVk.parentAlloc.Release();
+
+    App::RegisterFramebufferSizeQueryFunc(nullptr);
 }
 
 //   █████╗ ██╗     ██╗      ██████╗  ██████╗
@@ -2833,7 +2864,7 @@ GfxBackendDeviceMemory GfxBackendMemoryBumpAllocator::Malloc(const VkMemoryRequi
     ASSERT(memReq.alignment);
 
     if (memReq.size > mBlockSize) {
-        ASSERT_MSG(0, "GpuMemoryAllocator block size (%_$$$llu) is smaller than requested size (%_$$$llu)", mBlockSize, memReq.size);
+        ASSERT_MSG(0, "GpuMemoryAllocator block size (%u MB) is smaller than requested size (%u MB)", mBlockSize/SIZE_MB, memReq.size/SIZE_MB);
         MEM_FAIL();
         return GfxBackendDeviceMemory {};
     }

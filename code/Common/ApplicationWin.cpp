@@ -79,6 +79,7 @@ struct AppWindowsState
     char* clipboard;
     Array<AppEventCallbackPair> eventCallbacks;
     Pair<AppUpdateOverrideCallback, void*> overrideUpdateCallback;
+    AppFramebufferSizeQueryFunc queryFramebufferFunc;
     AppMouseCursor mouseCursor;
 
     HWND hwnd;
@@ -408,8 +409,8 @@ namespace App
         if (shcore)
             SetProcessDpiAwareness = (SetProcessDpiAwarenessFn)GetProcAddress(shcore, "SetProcessDpiAwareness");
     
+        // if the app didn't request HighDPI rendering, let Windows do the upscaling
         if (SetProcessDpiAwareness) {
-            // if the app didn't request HighDPI rendering, let Windows do the upscaling
             PROCESS_DPI_AWARENESS processDpiAwareness = PROCESS_SYSTEM_DPI_AWARE;
             gApp.dpiAware = true;
             if (!gApp.desc.highDPI) {
@@ -683,16 +684,16 @@ namespace App
         if (GetClientRect(hwnd, &rect)) {
             gApp.windowWidth = uint16(float(rect.right - rect.left) / gApp.windowScale);
             gApp.windowHeight = uint16(float(rect.bottom - rect.top) / gApp.windowScale);
-            const uint16 fbWidth = uint16(float(gApp.windowWidth) * gApp.contentScale);
-            const uint16 fbHeight = uint16(float(gApp.windowHeight) * gApp.contentScale);
+            uint16 fbWidth = uint16(float(gApp.windowWidth) * gApp.contentScale);
+            uint16 fbHeight = uint16(float(gApp.windowHeight) * gApp.contentScale);
+
+            // Fix framebuffer dimensions by getting the values straight from the graphics backend surface
+            if (gApp.queryFramebufferFunc)
+                gApp.queryFramebufferFunc(&fbWidth, &fbHeight);
+
             if ((fbWidth != gApp.framebufferWidth) || (fbHeight != gApp.framebufferHeight)) {
-                gApp.framebufferWidth = uint16(float(gApp.windowWidth) * gApp.contentScale);
-                gApp.framebufferHeight = uint16(float(gApp.windowHeight) * gApp.contentScale);
-                // prevent a framebuffer size of 0 when window is minimized
-                if (gApp.framebufferWidth == 0)
-                    gApp.framebufferWidth = 1;
-                if (gApp.framebufferHeight == 0)
-                    gApp.framebufferHeight = 1;
+                gApp.framebufferWidth = Max<uint16>(fbWidth, 1u);
+                gApp.framebufferHeight = Max<uint16>(fbHeight, 1u);
                 return true;
             }
         }
@@ -1169,6 +1170,11 @@ namespace App
     {
         gApp.overrideUpdateCallback.first = callback;
         gApp.overrideUpdateCallback.second = userData;
+    }
+
+    void RegisterFramebufferSizeQueryFunc(AppFramebufferSizeQueryFunc fn)
+    {
+        gApp.queryFramebufferFunc = fn;
     }
 } // App
 

@@ -82,6 +82,7 @@ struct AppEvent
 
 using AppEventCallback = void(*)(const AppEvent& ev, void* userData);
 using AppUpdateOverrideCallback = void(*)(float dt, void* userData);
+using AppFramebufferSizeQueryFunc = bool(*)(uint16* width, uint16* height);
 
 struct NO_VTABLE AppCallbacks
 {
@@ -140,6 +141,9 @@ namespace App
     API bool IsKeyDown(InputKeycode keycode);
     API bool IsAnyKeysDown(const InputKeycode* keycodes, uint32 numKeycodes);
     API InputKeyModifiers GetKeyMods();
+
+    // Used by GfxBackend
+    API void RegisterFramebufferSizeQueryFunc(AppFramebufferSizeQueryFunc fn);
 
     #if PLATFORM_ANDROID
     API AAssetManager* AndroidGetAssetManager();

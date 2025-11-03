@@ -39,8 +39,8 @@ static const char* TESTRENDERER_MODELS[] = {
 };
 
 static inline constexpr uint32 R_LIGHT_CULL_TILE_SIZE = 16;
-static inline constexpr uint32 R_LIGHT_CULL_MAX_LIGHTS_PER_TILE = 8;
-static inline constexpr uint32 R_LIGHT_CULL_MAX_LIGHTS_PER_FRAME = 100;
+static inline constexpr uint32 R_LIGHT_CULL_MAX_LIGHTS_PER_TILE = 64;
+static inline constexpr uint32 R_LIGHT_CULL_MAX_LIGHTS_PER_FRAME = 1024;
 static inline constexpr uint32 R_MSAA = 4;
 
 struct RLightBounds
@@ -374,10 +374,11 @@ namespace R
         gFwdPlus.checkerTex = Image::Load("/data/Checker.png", ImageLoadParams{}, assetGroup);
     }
 
-    bool InitializeFwdPlus()
+    static void _CreateFramebufferDependentResources(uint16 width, uint16 height)
     {
-        uint16 width = App::GetFramebufferWidth();
-        uint16 height = App::GetFramebufferHeight();
+        GfxBackend::DestroyImage(gFwdPlus.msaaDepthRenderImage);
+        GfxBackend::DestroyImage(gFwdPlus.msaaColorRenderImage);
+        GfxBackend::DestroyBuffer(gFwdPlus.bVisibleLightIndices);
 
         //--------------------------------------------------------------------------------------------------------------
         // Render Images
@@ -417,6 +418,29 @@ namespace R
             gFwdPlus.msaaColorRenderImage = GfxBackend::CreateImage(desc);
         }
 
+        // Buffers
+        {
+            uint32 numTilesX = M::CeilDiv(uint32(width), R_LIGHT_CULL_TILE_SIZE);
+            uint32 numTilesY = M::CeilDiv(uint32(height), R_LIGHT_CULL_TILE_SIZE);
+            GfxBufferDesc bufferDesc = {
+                .sizeBytes = sizeof(uint32)*numTilesX*numTilesY*R_LIGHT_CULL_MAX_LIGHTS_PER_TILE,
+                .usageFlags = GfxBufferUsageFlags::TransferDst | GfxBufferUsageFlags::Storage
+            };
+            gFwdPlus.bVisibleLightIndices = GfxBackend::CreateBuffer(bufferDesc);
+
+        }
+    }
+
+    bool InitializeFwdPlus()
+    {
+        App::RegisterEventsCallback([](const AppEvent& ev, void*)
+        {
+            if (ev.type == AppEventType::Resized)
+                _CreateFramebufferDependentResources(ev.framebufferWidth, ev.framebufferHeight);
+        });
+
+        _CreateFramebufferDependentResources(App::GetFramebufferWidth(), App::GetFramebufferHeight());
+
         //--------------------------------------------------------------------------------------------------------------
         // Common buffers
         {
@@ -425,14 +449,6 @@ namespace R
                 .usageFlags = GfxBufferUsageFlags::TransferDst | GfxBufferUsageFlags::Storage
             };
             gFwdPlus.bLightBounds = GfxBackend::CreateBuffer(bufferDesc);
-
-            uint32 numTilesX = M::CeilDiv(uint32(width), R_LIGHT_CULL_TILE_SIZE);
-            uint32 numTilesY = M::CeilDiv(uint32(height), R_LIGHT_CULL_TILE_SIZE);
-            bufferDesc = {
-                .sizeBytes = sizeof(uint32)*numTilesX*numTilesY*R_LIGHT_CULL_MAX_LIGHTS_PER_TILE,
-                .usageFlags = GfxBufferUsageFlags::TransferDst | GfxBufferUsageFlags::Storage
-            };
-            gFwdPlus.bVisibleLightIndices = GfxBackend::CreateBuffer(bufferDesc);
 
             bufferDesc = {
                 .sizeBytes = sizeof(RLightProps)*R_LIGHT_CULL_MAX_LIGHTS_PER_FRAME,
@@ -1096,28 +1112,30 @@ struct AppImpl final : AppCallbacks
     bool mMinimized = false;
     bool mDrawGrid = true;
 
+    void InitializeFramebufferResources(uint16 width, uint16 height)
+    {
+        GfxBackend::DestroyImage(mRenderTargetDepth);
+
+        GfxImageDesc desc {
+            .width = uint16(width),
+            .height = uint16(height),
+            .format = GfxBackend::GetValidDepthStencilFormat(),
+            .usageFlags = GfxImageUsageFlags::DepthStencilAttachment | GfxImageUsageFlags::Sampled,
+        };
+
+        // Note: this won't probably work with tiled GPUs because it's incompatible with Sampled flag
+        //       So we probably need to copy the contents of the zbuffer to another one
+        #if PLATFORM_MOBILE
+        desc.usageFlags |= GfxImageUsageFlags::TransientAttachment;
+        #endif
+
+        mRenderTargetDepth = GfxBackend::CreateImage(desc);
+    }
+
     static void InitializeResources(void* userData)
     {
         AppImpl* self = (AppImpl*)userData;
-        Int2 extent = GfxBackend::GetSwapchainExtent();
-
-        {
-            GfxImageDesc desc {
-                .width = uint16(extent.x),
-                .height = uint16(extent.y),
-                .format = GfxBackend::GetValidDepthStencilFormat(),
-                .usageFlags = GfxImageUsageFlags::DepthStencilAttachment | GfxImageUsageFlags::Sampled,
-            };
-
-            // Note: this won't probably work with tiled GPUs because it's incompatible with Sampled flag
-            //       So we probably need to copy the contents of the zbuffer to another one
-            #if PLATFORM_MOBILE
-                desc.usageFlags |= GfxImageUsageFlags::TransientAttachment;
-            #endif
-
-            self->mRenderTargetDepth = GfxBackend::CreateImage(desc);
-        }
-
+        self->InitializeFramebufferResources(App::GetFramebufferWidth(), App::GetFramebufferHeight());
         R::InitializeFwdPlus();
     }
 
@@ -1190,7 +1208,6 @@ struct AppImpl final : AppCallbacks
         if (sceneRendered && R_MSAA > 1) {
             cmd.TransitionImage(mRenderTargetDepth, GfxImageTransition::RenderTarget, GfxImageTransitionFlags::DepthRead);
         }
-
 
         // Draw empty scene (Clear framebuffer)
         if (!sceneRendered) {
@@ -1281,6 +1298,8 @@ struct AppImpl final : AppCallbacks
             mMinimized = true;            
         else if (ev.type == AppEventType::Restored)
             mMinimized = false;
+        else if (ev.type == AppEventType::Resized) 
+            InitializeFramebufferResources(ev.framebufferWidth, ev.framebufferHeight);
     }
 };
 
