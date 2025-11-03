@@ -25,7 +25,7 @@ bool Shader::InitializeManager()
     // Register asset loader
     AssetTypeDesc shaderTypeDesc {
         .fourcc = SHADER_ASSET_TYPE,
-        .cacheVersion = 1,
+        .cacheVersion = 2,
         .name = "Shader",
         .impl = &gShaderImpl,
         .extraParamTypeName = "ShaderCompileDesc",

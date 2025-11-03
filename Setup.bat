@@ -3,12 +3,6 @@ setlocal EnableExtensions enableDelayedExpansion
 
 pushd %~dp0
 
-if "%1" == "-cleaninstalldeps" (
-    echo Dependencies updated. Cleaning and reinstalling dependencies
-    call Clean.bat all
-    goto :InstallCodeDepsStart
-)
-
 if not exist .downloads mkdir .downloads
 
 set vars_ini=vars.ini
@@ -17,14 +11,14 @@ if not exist %vars_ini% (
 )
 
 :InstallCodeDeps
-choice /c YN /M "Install code dependencies"
-if errorlevel 2 goto :InstallTracyClient
-if errorlevel 1 goto :InstallCodeDepsStart
+del /q Bin\Debug\*.dll 2>nul
+del /q Bin\Release\*.dll 2>nul
+del /q Bin\ReleaseDev\*.dll 2>nul
+del /q Bin\build_cmd\*.dll 2>nul
 
-:InstallCodeDepsStart
 :InstallSlang
 set slang_dir=code\External\slang
-echo Installing slang into %slang_dir% ...
+echo Checking slang shader compiler: %slang_dir% ...
 pushd %slang_dir%
 call Setup.bat
 popd
@@ -32,7 +26,7 @@ if %errorlevel% neq 0 goto :End
 
 :InstallISPC
 set ispc_dir=code\External\ispc_texcomp
-echo Installing ISPC Texture compressor into %ispc_dir%
+echo Checking ISPCTextureCompressor: %ispc_dir%
 pushd %ispc_dir%
 call Setup.bat
 popd
@@ -40,15 +34,11 @@ if %errorlevel% neq 0 goto :End
 
 :InstallMeshOpt
 set meshopt_dir=code\External\meshoptimizer
-echo Installing meshoptimizer into %meshopt_dir%
+echo Checking meshoptimizer: %meshopt_dir%
 pushd %meshopt_dir%
 call Setup.bat
 popd
 if %errorlevel% neq 0 goto :End
-
-if "%1" == "-cleaninstalldeps" (
-    goto :End
-)
 
 :InstallTracyClient
 choice /c YN /M "Download tracy profiler v0.11.1 "
