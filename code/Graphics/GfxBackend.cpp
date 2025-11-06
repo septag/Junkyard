@@ -141,26 +141,23 @@ struct GfxBackendSwapchain
     };
 
     uint32 backbufferIdx;
+    uint32 imageIndex;
     uint32 numImages;
     VkSwapchainKHR handle;
     VkSurfaceFormatKHR format;
     VkImage images[GFXBACKEND_BACKBUFFER_COUNT];
     VkImageView imageViews[GFXBACKEND_BACKBUFFER_COUNT];
-    VkSemaphore imageReadySemaphores[GFXBACKEND_BACKBUFFER_COUNT];
-    VkSemaphore presentSemaphores[GFXBACKEND_BACKBUFFER_COUNT];
+    VkSemaphore imageReadySemaphores[GFXBACKEND_BACKBUFFER_COUNT];         // Signals when image is acquired for rendering. 
+    VkSemaphore renderFinishedSemaphores[GFXBACKEND_BACKBUFFER_COUNT];     // Signals after all rendering is finished (Ready for present)
     ImageState imageStates[GFXBACKEND_BACKBUFFER_COUNT];
     VkExtent2D extent;
-    uint32 imageIndex;
-
     bool resize;
 
-    void GoNext() { backbufferIdx = (backbufferIdx + 1) % GFXBACKEND_BACKBUFFER_COUNT; }
-    VkSemaphore GetSwapchainSemaphore() { return imageReadySemaphores[backbufferIdx]; }
-    VkSemaphore GetPresentSemaphore() { return presentSemaphores[backbufferIdx]; }
+    VkSemaphore GetSwapchainReadySemaphore() { return imageReadySemaphores[backbufferIdx]; }
+    VkSemaphore GetSwapchainRenderFinishedSemaphore() { return renderFinishedSemaphores[backbufferIdx]; }
     VkImage GetImage() { return images[imageIndex]; }
     VkImageView GetImageView() { return imageViews[imageIndex]; }
     ImageState& GetImageState() { return imageStates[imageIndex]; }
-    void AcquireImage();
 };
 
 struct GfxBackendSwapchainInfo
@@ -1697,7 +1694,7 @@ namespace GfxBackend
 
         for (uint32 i = 0; i < GFXBACKEND_BACKBUFFER_COUNT; i++) {
             vkCreateSemaphore(gBackendVk.device, &semCreateInfo, gBackendVk.vkAlloc, &swapchain->imageReadySemaphores[i]);
-            vkCreateSemaphore(gBackendVk.device, &semCreateInfo, gBackendVk.vkAlloc, &swapchain->presentSemaphores[i]);
+            vkCreateSemaphore(gBackendVk.device, &semCreateInfo, gBackendVk.vkAlloc, &swapchain->renderFinishedSemaphores[i]);
         }
 
         return true;
@@ -1718,7 +1715,7 @@ namespace GfxBackend
         if (gBackendVk.device) {
             for (uint32 i = 0; i < GFXBACKEND_BACKBUFFER_COUNT; i++) {
                 vkDestroySemaphore(gBackendVk.device, swapchain->imageReadySemaphores[i], gBackendVk.vkAlloc);
-                vkDestroySemaphore(gBackendVk.device, swapchain->presentSemaphores[i], gBackendVk.vkAlloc);
+                vkDestroySemaphore(gBackendVk.device, swapchain->renderFinishedSemaphores[i], gBackendVk.vkAlloc);
             }
         }
 
@@ -2214,7 +2211,17 @@ void GfxBackend::Begin()
     gBackendVk.externalFrameSyncSignal.Decrement();
     gBackendVk.externalFrameSyncSignal.Raise();
 
-    gBackendVk.swapchain.AcquireImage();
+    {
+        GfxBackendSwapchain& swapchain = gBackendVk.swapchain;
+
+        VkResult r = vkAcquireNextImageKHR(gBackendVk.device, swapchain.handle, UINT64_MAX, 
+                                           swapchain.GetSwapchainReadySemaphore(),   // Signals this when the image is available
+                                           nullptr, &swapchain.imageIndex);
+        if (r == VK_ERROR_OUT_OF_DATE_KHR)
+            swapchain.resize = true;
+        else if (r != VK_SUCCESS && r != VK_SUBOPTIMAL_KHR) 
+            ASSERT_ALWAYS(0, "Gfx: AcquireSwapchain failed");
+    }
 }
 
 void GfxCommandBuffer::ClearImageColor(GfxImageHandle imgHandle, Color4u color)
@@ -2414,7 +2421,7 @@ void GfxBackend::End()
 
     // Present
     {
-        VkSemaphore waitSemaphore = gBackendVk.swapchain.GetPresentSemaphore();
+        VkSemaphore waitSemaphore = gBackendVk.swapchain.GetSwapchainRenderFinishedSemaphore();
         uint32 queueIndex = gBackendVk.queueMan.FindQueue(GfxQueueType::Present);
         ASSERT(queueIndex != -1);
         GfxBackendQueue& queue = gBackendVk.queueMan.GetQueue(queueIndex);
@@ -2439,7 +2446,11 @@ void GfxBackend::End()
         }
     }
 
-    gBackendVk.swapchain.GoNext();
+    {
+        GfxBackendSwapchain& swapchain = gBackendVk.swapchain;
+        swapchain.backbufferIdx = (swapchain.backbufferIdx + 1) % GFXBACKEND_BACKBUFFER_COUNT;
+    }
+
     _CollectGarbage(false);
 
     if (gBackendVk.swapchain.resize) {
@@ -2773,18 +2784,6 @@ void GfxBackend::EndCommandBuffer(GfxCommandBuffer& cmdBuffer)
     cmdBuffer.mIsRecording = false;
 
     Atomic::FetchSub(&queue.numCmdBuffersInRecording, 1);
-}
-
-void GfxBackendSwapchain::AcquireImage()
-{
-    PROFILE_ZONE_COLOR("Gfx.AcquireImage", PROFILE_COLOR_GFX2);
-
-    [[maybe_unused]] VkResult r = vkAcquireNextImageKHR(gBackendVk.device, handle, UINT64_MAX, imageReadySemaphores[backbufferIdx], 
-                                                        nullptr, &imageIndex);
-    if (r == VK_ERROR_OUT_OF_DATE_KHR)
-        resize = true;
-    else if (r != VK_SUCCESS && r != VK_SUBOPTIMAL_KHR) 
-        ASSERT_ALWAYS(0, "Gfx: AcquireSwapchain failed");
 }
 
 bool GfxBackendMemoryBumpAllocator::Initialize(VkDeviceSize blockSize, uint32 memoryTypeIndex)
@@ -5016,8 +5015,8 @@ bool GfxBackendQueueManager::SubmitQueueInternal(GfxBackendQueueSubmitRequest& r
     {
         ASSERT(req.type == GfxQueueType::Graphics);
         // Notify the queue that the next Submit is gonna depend on swapchain
-        queue.waitSemaphores.Push({gBackendVk.swapchain.GetSwapchainSemaphore(), VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT});
-        queue.signalSemaphores.Push(gBackendVk.swapchain.GetPresentSemaphore());
+        queue.waitSemaphores.Push({gBackendVk.swapchain.GetSwapchainReadySemaphore(), VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT});
+        queue.signalSemaphores.Push(gBackendVk.swapchain.GetSwapchainRenderFinishedSemaphore());
     }
 
     if (IsBitsSet<GfxQueueType>(req.dependents, GfxQueueType::Graphics)) {
