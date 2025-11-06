@@ -1110,7 +1110,7 @@ struct AppImpl final : AppCallbacks
     uint32 mSelectedSceneIdx;
     bool mFirstTime = true;
     bool mMinimized = false;
-    bool mDrawGrid = true;
+    bool mDrawGrid = false;
 
     void InitializeFramebufferResources(uint16 width, uint16 height)
     {

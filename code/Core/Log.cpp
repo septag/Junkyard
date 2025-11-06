@@ -33,6 +33,8 @@
     #endif
 #endif
 
+static constexpr uint32 LOG_MAX_MESSAGE_CHARS = 2048;
+
 struct LogContext
 {
     StaticArray<Pair<LogCallback, void*>, 8> callbacks;
@@ -180,7 +182,7 @@ namespace Log
             return;
 
         MemTempAllocator tmp;
-        uint32 fmtLen = Str::Len(fmt) + 1024;
+        uint32 fmtLen = Str::Len(fmt) + LOG_MAX_MESSAGE_CHARS;
         char* text = tmp.MallocTyped<char>(fmtLen);
 
         va_list args;
@@ -207,7 +209,7 @@ namespace Log
                 return;
         
             MemTempAllocator tmp;
-            uint32 fmtLen = Str::Len(fmt) + 1024;
+            uint32 fmtLen = Str::Len(fmt) + LOG_MAX_MESSAGE_CHARS;
             char* text = tmp.MallocTyped<char>(fmtLen);
 
             va_list args;
@@ -238,7 +240,7 @@ namespace Log
             return;
 
         MemTempAllocator tmp;
-        uint32 fmtLen = Str::Len(fmt) + 1024;
+        uint32 fmtLen = Str::Len(fmt) + LOG_MAX_MESSAGE_CHARS;
         char* text = tmp.MallocTyped<char>(fmtLen);
 
         va_list args;
@@ -263,7 +265,7 @@ namespace Log
             return;
 
         MemTempAllocator tmp;
-        uint32 fmtLen = Str::Len(fmt) + 1024;
+        uint32 fmtLen = Str::Len(fmt) + LOG_MAX_MESSAGE_CHARS;
         char* text = tmp.MallocTyped<char>(fmtLen);
 
         va_list args;
@@ -288,7 +290,7 @@ namespace Log
             return;
 
         MemTempAllocator tmp;
-        uint32 fmtLen = Str::Len(fmt) + 1024;
+        uint32 fmtLen = Str::Len(fmt) + LOG_MAX_MESSAGE_CHARS;
         char* text = tmp.MallocTyped<char>(fmtLen);
 
         va_list args;

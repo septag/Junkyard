@@ -92,10 +92,14 @@ static const char* GFXBACKEND_DEFAULT_INSTANCE_EXTENSIONS[] = {"VK_KHR_surface",
 // Linux uses glfwRequiredInstanceExtensions
 #endif
 
+#ifdef _DEBUG
+// Put temporary exceptions
 // TODO: Fix these
 static const char* GFXBACKEND_VALIDATION_EXCEPTIONS[] = {
-    "VUID-vkQueueSubmit-pSignalSemaphores-00067"
+    // "VUID-vkQueueSubmit-pSignalSemaphores-00067",
+    ""
 };
+#endif
 
 #if CONFIG_DEBUG_GFXBACKEND
 #define GFX_DEBUG(_text, ...) LOG_DEBUG(_text, ##__VA_ARGS__)
@@ -140,21 +144,20 @@ struct GfxBackendSwapchain
         VkAccessFlags2 lastAccessFlags;
     };
 
-    uint32 backbufferIdx;
     uint32 imageIndex;
     uint32 numImages;
     VkSwapchainKHR handle;
     VkSurfaceFormatKHR format;
     VkImage images[GFXBACKEND_BACKBUFFER_COUNT];
     VkImageView imageViews[GFXBACKEND_BACKBUFFER_COUNT];
-    VkSemaphore imageReadySemaphores[GFXBACKEND_BACKBUFFER_COUNT];         // Signals when image is acquired for rendering. 
+    VkSemaphore imageReadySemaphores[GFXBACKEND_FRAMES_IN_FLIGHT];         // Signals when image is acquired for rendering. 
     VkSemaphore renderFinishedSemaphores[GFXBACKEND_BACKBUFFER_COUNT];     // Signals after all rendering is finished (Ready for present)
     ImageState imageStates[GFXBACKEND_BACKBUFFER_COUNT];
     VkExtent2D extent;
     bool resize;
 
-    VkSemaphore GetSwapchainReadySemaphore() { return imageReadySemaphores[backbufferIdx]; }
-    VkSemaphore GetSwapchainRenderFinishedSemaphore() { return renderFinishedSemaphores[backbufferIdx]; }
+    VkSemaphore GetSwapchainReadySemaphore(uint32 frameIdx) { return imageReadySemaphores[frameIdx]; }
+    VkSemaphore GetSwapchainRenderFinishedSemaphore() { return renderFinishedSemaphores[imageIndex]; }
     VkImage GetImage() { return images[imageIndex]; }
     VkImageView GetImageView() { return imageViews[imageIndex]; }
     ImageState& GetImageState() { return imageStates[imageIndex]; }
@@ -973,10 +976,12 @@ namespace GfxBackend
         if (messageType & VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT)  
             Str::Concat(typeStr, sizeof(typeStr), "[P]");
 
+    #ifdef _DEBUG
         for (uint32 i = 0; i < CountOf(GFXBACKEND_VALIDATION_EXCEPTIONS); i++) {
             if (callbackData->pMessageIdName && Str::IsEqual(callbackData->pMessageIdName, GFXBACKEND_VALIDATION_EXCEPTIONS[i]))
                 return VK_FALSE;
         }
+    #endif
 
         switch (messageSeverity) {
         case VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT:
@@ -1594,7 +1599,6 @@ namespace GfxBackend
             presentMode = info.presentModes[0];
         }
 
-        swapchain->backbufferIdx = 0;
         swapchain->extent = {
             Clamp<uint32>(size.x, info.caps.minImageExtent.width, info.caps.maxImageExtent.width), 
             Clamp<uint32>(size.y, info.caps.minImageExtent.height, info.caps.maxImageExtent.height)
@@ -1693,8 +1697,11 @@ namespace GfxBackend
         };
 
         for (uint32 i = 0; i < GFXBACKEND_BACKBUFFER_COUNT; i++) {
-            vkCreateSemaphore(gBackendVk.device, &semCreateInfo, gBackendVk.vkAlloc, &swapchain->imageReadySemaphores[i]);
             vkCreateSemaphore(gBackendVk.device, &semCreateInfo, gBackendVk.vkAlloc, &swapchain->renderFinishedSemaphores[i]);
+        }
+
+        for (uint32 i = 0; i < GFXBACKEND_FRAMES_IN_FLIGHT; i++) {
+            vkCreateSemaphore(gBackendVk.device, &semCreateInfo, gBackendVk.vkAlloc, &swapchain->imageReadySemaphores[i]);
         }
 
         return true;
@@ -1714,9 +1721,13 @@ namespace GfxBackend
 
         if (gBackendVk.device) {
             for (uint32 i = 0; i < GFXBACKEND_BACKBUFFER_COUNT; i++) {
-                vkDestroySemaphore(gBackendVk.device, swapchain->imageReadySemaphores[i], gBackendVk.vkAlloc);
                 vkDestroySemaphore(gBackendVk.device, swapchain->renderFinishedSemaphores[i], gBackendVk.vkAlloc);
             }
+
+            for (uint32 i = 0; i < GFXBACKEND_FRAMES_IN_FLIGHT; i++) {
+                vkDestroySemaphore(gBackendVk.device, swapchain->imageReadySemaphores[i], gBackendVk.vkAlloc);
+            }
+
         }
 
         memset(swapchain, 0x0, sizeof(*swapchain));
@@ -2215,7 +2226,7 @@ void GfxBackend::Begin()
         GfxBackendSwapchain& swapchain = gBackendVk.swapchain;
 
         VkResult r = vkAcquireNextImageKHR(gBackendVk.device, swapchain.handle, UINT64_MAX, 
-                                           swapchain.GetSwapchainReadySemaphore(),   // Signals this when the image is available
+                                           swapchain.GetSwapchainReadySemaphore(gBackendVk.queueMan.GetFrameIndex()),   
                                            nullptr, &swapchain.imageIndex);
         if (r == VK_ERROR_OUT_OF_DATE_KHR)
             swapchain.resize = true;
@@ -2444,11 +2455,6 @@ void GfxBackend::End()
             //       But I need to investigate a bit more on when this happens actually
             ASSERT_ALWAYS(false, "Gfx: Present swapchain failed");
         }
-    }
-
-    {
-        GfxBackendSwapchain& swapchain = gBackendVk.swapchain;
-        swapchain.backbufferIdx = (swapchain.backbufferIdx + 1) % GFXBACKEND_BACKBUFFER_COUNT;
     }
 
     _CollectGarbage(false);
@@ -5015,7 +5021,7 @@ bool GfxBackendQueueManager::SubmitQueueInternal(GfxBackendQueueSubmitRequest& r
     {
         ASSERT(req.type == GfxQueueType::Graphics);
         // Notify the queue that the next Submit is gonna depend on swapchain
-        queue.waitSemaphores.Push({gBackendVk.swapchain.GetSwapchainReadySemaphore(), VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT});
+        queue.waitSemaphores.Push({gBackendVk.swapchain.GetSwapchainReadySemaphore(gBackendVk.queueMan.GetFrameIndex()), VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT});
         queue.signalSemaphores.Push(gBackendVk.swapchain.GetSwapchainRenderFinishedSemaphore());
     }
 

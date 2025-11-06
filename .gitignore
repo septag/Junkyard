@@ -43,6 +43,7 @@ xcuserdata
 scripts/symbols
 .cache
 test/**
+/*.txt
 
 # Dependency downloads
 code/External/slang/**
