@@ -150,8 +150,14 @@ FORCE_INLINE float Quat::Angle(Quat qa, Quat qb)
 
 FORCE_INLINE Quat Quat::Norm(Quat q)
 {
-    const float inv_norm = M::Rsqrt(Quat::Dot(q, q));
-    return Quat(q.x*inv_norm, q.y*inv_norm, q.z*inv_norm, q.w*inv_norm);
+    float d = Quat::Dot(q, q);
+    if (d > M_FLOAT32_EPSILON) {
+        float inv_norm = M::Rsqrt(d);
+        return Quat(q.x*inv_norm, q.y*inv_norm, q.z*inv_norm, q.w*inv_norm);
+    }
+    else {
+        return QUAT_INDENT;    
+    }
 }
 
 FORCE_INLINE Quat Quat::RotateAxis(Float3 _axis, float _angle)
@@ -1136,64 +1142,6 @@ FORCE_INLINE AABB AABB::Scale(const AABB& aabb, Float3 scale)
                 p.x + e.x, p.y + e.y, p.z + e.z);
 }
 
-//    ████████╗██████╗  █████╗ ███╗   ██╗███████╗███████╗ ██████╗ ██████╗ ███╗   ███╗██████╗ ██████╗ 
-//    ╚══██╔══╝██╔══██╗██╔══██╗████╗  ██║██╔════╝██╔════╝██╔═══██╗██╔══██╗████╗ ████║╚════██╗██╔══██╗
-//       ██║   ██████╔╝███████║██╔██╗ ██║███████╗█████╗  ██║   ██║██████╔╝██╔████╔██║ █████╔╝██║  ██║
-//       ██║   ██╔══██╗██╔══██║██║╚██╗██║╚════██║██╔══╝  ██║   ██║██╔══██╗██║╚██╔╝██║ ╚═══██╗██║  ██║
-//       ██║   ██║  ██║██║  ██║██║ ╚████║███████║██║     ╚██████╔╝██║  ██║██║ ╚═╝ ██║██████╔╝██████╔╝
-//       ╚═╝   ╚═╝  ╚═╝╚═╝  ╚═╝╚═╝  ╚═══╝╚══════╝╚═╝      ╚═════╝ ╚═╝  ╚═╝╚═╝     ╚═╝╚═════╝ ╚═════╝ 
-FORCE_INLINE Transform3D Transform3D::Mul(const Transform3D& txa, const Transform3D& txb)
-{
-    return Transform3D(Float3::Add(Mat3::MulFloat3(txa.rot, txb.pos), txa.pos), Mat3::Mul(txa.rot, txb.rot));
-}
-
-FORCE_INLINE Float3 Transform3D::MulFloat3(const Transform3D& tx, Float3 v)
-{
-    return Float3::Add(Mat3::MulFloat3(tx.rot, v), tx.pos);
-}   
-
-FORCE_INLINE Float3 Transform3D::MulFloat3Scale(const Transform3D& tx, Float3 scale, Float3 v)
-{
-    return Float3::Add(Mat3::MulFloat3(tx.rot, Float3::Mul(v, scale)), tx.pos);
-}
-
-FORCE_INLINE Transform3D Transform3D::Inverse(const Transform3D& tx)
-{   
-    Mat3 rotInv = Mat3::Transpose(tx.rot);
-    return Transform3D(Mat3::MulFloat3(rotInv, Float3::Mul(tx.pos, -1.0f)), rotInv);
-}
-
-FORCE_INLINE Float3 Transform3D::MulFloat3Inverse(const Transform3D& tx, Float3 v)
-{   
-    Mat3 rmat = Mat3::Transpose(tx.rot);
-    return Mat3::MulFloat3(rmat, Float3::Sub(v, tx.pos));
-}
-
-FORCE_INLINE Transform3D Transform3D::MulInverse(const Transform3D& txa, const Transform3D& txb)
-{
-    return Transform3D(Mat3::MulFloat3Inverse(txa.rot, Float3::Sub(txb.pos, txa.pos)), Mat3::MulInverse(txa.rot, txb.rot));
-}
-
-FORCE_INLINE Mat4 Transform3D::ToMat4(const Transform3D& tx)
-{
-    return Mat4(Float4(Float3(tx.rot.fc1), 0.0f),
-                Float4(Float3(tx.rot.fc2), 0.0f),
-                Float4(Float3(tx.rot.fc3), 0.0f),
-                Float4(tx.pos,             1.0f));
-}
-
-FORCE_INLINE Transform3D Transform3D::Make(float x, float y, float z, float rx, float ry, float rz)
-{
-    Mat4 rot = Mat4::RotateXYZ(rx, ry, rz);
-    return Transform3D(Float3(x, y, z), Mat3(rot.fc1, rot.fc2, rot.fc3));
-}
-
-FORCE_INLINE Transform3D Transform3D::FromMat4(const Mat4& mat)
-{
-    return Transform3D(Float3(mat.fc4),  Mat3(mat.fc1, mat.fc2, mat.fc3));
-}
-
-
 //
 //     ██████╗██████╗ ██████╗      ██████╗ ██████╗ ███████╗██████╗  █████╗ ████████╗ ██████╗ ██████╗ ███████╗
 //    ██╔════╝██╔══██╗██╔══██╗    ██╔═══██╗██╔══██╗██╔════╝██╔══██╗██╔══██╗╚══██╔══╝██╔═══██╗██╔══██╗██╔════╝
@@ -1420,7 +1368,7 @@ namespace M
                                              float zf, float offset = 0, bool d3dNdc = false) { return Mat4::OrthoOffCenterLH(xmin, ymin, xmax, ymax, zn, zf, offset, d3dNdc); }
     FORCE_INLINE Mat4   Mat4ScaleRotateTranslate(float _sx, float _sy, float _sz, 
                                                  float _ax, float _ay, float _az,
-                                                 float _tx, float _ty, float _tz) { return Mat4::ScaleRotateTranslate(_sx, _sy, _sz, _ax, _ay, _az, _tx, _ty, _tz); }
+                                                 float _tx, float _ty, float _tz) { return Mat4::TransformMat(_sx, _sy, _sz, _ax, _ay, _az, _tx, _ty, _tz); }
     FORCE_INLINE Mat4   Mat4Mul(const Mat4& _a, const Mat4& _b) { return Mat4::Mul(_a, _b); }
     FORCE_INLINE Mat4   Mat4Inverse(const Mat4& _a) { return Mat4::Inverse(_a); }
     FORCE_INLINE Mat4   Mat4InverseTransformMat(const Mat4& _a) { return Mat4::InverseTransformMat(_a); }
@@ -1468,18 +1416,4 @@ namespace M
     FORCE_INLINE float  PlaneDistance(Plane _plane, Float3 _p) { return Plane::Distance(_plane, _p); }
     FORCE_INLINE Float3 PlaneProjectPoint(Plane _plane, Float3 _p) { return Plane::ProjectPoint(_plane, _p); }
     FORCE_INLINE Float3 PlaneOrigin(Plane _plane) { return Plane::Origin(_plane); }
-
-    // Transform3D
-    FORCE_INLINE Transform3D Transform3DMul(const Transform3D& txa, const Transform3D& txb) { return Transform3D::Mul(txa, txb); }
-    FORCE_INLINE Float3      Transform3DMulFloat3(const Transform3D& tx, Float3 v) { return Transform3D::MulFloat3(tx, v); }
-    FORCE_INLINE Float3      Transform3DMulFloat3Scale(const Transform3D& tx, Float3 scale, Float3 v) { return Transform3D::MulFloat3Scale(tx, scale, v); }
-    FORCE_INLINE Transform3D Transform3DInverse(const Transform3D& tx) { return Transform3D::Inverse(tx); }
-    FORCE_INLINE Float3      Transform3DMulFloat3Inverse(const Transform3D& tx, Float3 v) { return Transform3D::MulFloat3Inverse(tx, v); }
-    FORCE_INLINE Transform3D Transform3DMulInverse(const Transform3D& txa, const Transform3D& txb) { return Transform3D::MulInverse(txa, txb); }
-    FORCE_INLINE Mat4        Transform3DToMat4(const Transform3D& tx) { return Transform3D::ToMat4(tx); }
-    FORCE_INLINE Transform3D Transform3DMake(float x, float y, float z, float rx, float ry, float rz) { return Transform3D::Make(x, y, z, rx, ry, rz); }
-    FORCE_INLINE Transform3D Transform3DFromMat4(const Mat4& mat) { return Transform3D::FromMat4(mat); }
-
-    // Box
-    FORCE_INLINE AABB BoxToAABB(const Box& box) { return Box::ToAABB(box); } 
 }

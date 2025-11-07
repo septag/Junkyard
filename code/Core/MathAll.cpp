@@ -253,7 +253,9 @@ Mat4 Mat4::OrthoOffCenterLH(float xmin, float ymin, float xmax, float ymax, floa
                 0,              0,                      0,      1.0f);
 }
 
-Mat4 Mat4::ScaleRotateTranslate(float _sx, float _sy, float _sz, float _ax, float _ay, float _az, float _tx, float _ty, float _tz)
+Mat4 Mat4::TransformMat(float _tx, float _ty, float _tz, 
+                        float _ax, float _ay, float _az, 
+                        float _sx, float _sy, float _sz)
 {
     float sx, cx, sy, cy, sz, cz;
     
@@ -284,10 +286,50 @@ Mat4 Mat4::ScaleRotateTranslate(float _sx, float _sy, float _sz, float _ax, floa
     const float sxsz = sx * sz;
     const float cycz = cy * cz;
     
-    return Mat4(_sx * (cycz - sxsz * sy),       _sx * -cx * sz, _sx * (cz * sy + cy * sxsz),    _tx,
+    return Mat4(_sx * (cycz - sxsz * sy), _sx * -cx * sz, _sx * (cz * sy + cy * sxsz),    _tx,
                     _sy * (cz * sx * sy + cy * sz), _sy * cx * cz,  _sy * (sy * sz - cycz * sx),    _ty,
                     _sz * -cx * sy,                 _sz * sx,       _sz * cx * cy,                  _tz, 
                     0.0f,                           0.0f,           0.0f,                           1.0f);
+}
+
+Mat4 Mat4::TransformMat(Float3 translation, Quat rotation, Float3 scale)
+{
+    rotation = Quat::Norm(rotation);
+    float x = rotation.x;
+    float y = rotation.y;
+    float z = rotation.z;
+    float w = rotation.w;
+
+    // Precompute products
+    float xx = x*x, yy = y*y, zz = z*z;
+    float xy = x*y, xz = x*z, yz = y*z;
+    float wx = w*x, wy = w*y, wz = w*z;
+
+    // 3x3 rotation
+    float r00 = 1.0f - 2.0f*(yy + zz);
+    float r01 = 2.0f*(xy + wz);
+    float r02 = 2.0f*(xz - wy);
+
+    float r10 = 2.0f*(xy - wz);
+    float r11 = 1.0f - 2.0f*(xx + zz);
+    float r12 = 2.0f*(yz + wx);
+
+    float r20 = 2.0f*(xz + wy);
+    float r21 = 2.0f*(yz - wx);
+    float r22 = 1.0f - 2.0f*(xx + yy);
+
+    // Apply non-uniform scale to each basis column
+    float sx = scale.x, sy = scale.y, sz = scale.z;
+
+    // First column (X axis * sx)
+    // Second column (Y axis * sy)
+    // Third column (Z axis * sz)
+    // Fourth column (translation)
+    return Mat4(
+        Float4(r00 * sx, r10 * sx, r20 * sx, 0.0f),
+        Float4(r01 * sy, r11 * sy, r21 * sy, 0.0f),
+        Float4(r02 * sz, r12 * sz, r22 * sz, 0.0f),
+        Float4(translation.x, translation.y, translation.z, 1.0f));
 }
 
 Mat4 Mat4::FromNormal(Float3 _normal, float _scale, Float3 _pos)
@@ -882,12 +924,5 @@ AABB AABB::Transform(const AABB& aabb, const Mat4& mat)
     return AABB(Float3::Sub(newCenter, newExtents), Float3::Add(newCenter, newExtents));
 }
 
-AABB Box::ToAABB(const Box& box)
-{
-    Float3 center = box.tx.pos;
-    Mat3 absMat = Mat3::Abs(box.tx.rot);
-    Float3 extents = Mat3::MulFloat3(absMat, box.e);
-    return AABB(Float3::Sub(center, extents), Float3::Add(center, extents));
-}
 
 

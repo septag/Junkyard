@@ -128,13 +128,20 @@ struct ModelMesh
     RelativePtr<ModelSubmesh> submeshes;
 };
 
+struct ModelTransform
+{
+    Float3 position = FLOAT3_ZERO;
+    Quat rotation = QUAT_INDENT;
+    Float3 scale = Float3(1, 1, 1);
+};
+
 struct ModelNode 
 {
     String32 name;
     uint32 meshId;       // =0 if it's not renderable
     uint32 parentId;     // index to GfxModelData::nodes
     uint32 numChilds;
-    Transform3D localTransform;
+    ModelTransform localTransform;
     AABB bounds;
     RelativePtr<uint32> childIds;     // indices to GfxModelData::nodes
 };
@@ -146,7 +153,7 @@ struct ModelData
     uint32 numMaterials;
     uint32 numMaterialTextures;
 
-    Transform3D rootTransform;
+    ModelTransform rootTransform;
 
     RelativePtr<ModelNode> nodes;
     RelativePtr<ModelMesh> meshes;

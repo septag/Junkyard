@@ -104,6 +104,35 @@ struct RVertexStreamLighting
     Float2 uv;
 };
 
+struct RGeometrySubChunk
+{
+    uint32 startIndex;
+    uint32 numIndices;
+    GfxImageHandle baseColorImg;
+};
+
+struct RGeometryChunk
+{
+    Mat4 localToWorldMat;
+
+    GfxBufferHandle posVertexBuffer;
+    uint64 posVertexBufferOffset;
+
+    GfxBufferHandle lightingVertexBuffer;
+    uint64 lightingVertexBufferOffset;
+
+    GfxBufferHandle indexBuffer;
+    uint64 indexBufferOffset;
+
+    RGeometrySubChunk* subChunks;
+    uint32 numSubChunks;
+
+    RGeometryChunk* nextChunk;
+
+    void AddSubChunk(const RGeometrySubChunk& subChunk);
+    void AddSubChunks(uint32 numSubChunks, const RGeometrySubChunk* subChunks);
+};
+
 static const ModelGeometryLayout RModelGeometryLayout = {
     .vertexAttributes = {
         {"POSITION", 0, 0, GfxFormat::R32G32B32_SFLOAT, offsetof(RVertexStreamPosition, position)},
@@ -118,6 +147,12 @@ static const ModelGeometryLayout RModelGeometryLayout = {
 
 struct RForwardPlusContext
 {
+    MemBumpAllocatorVM frameAlloc;
+
+    RGeometryChunk* chunkList;
+    RGeometryChunk* lastChunk;
+    uint32 numGeometryChunks;
+
     GfxImageHandle msaaColorRenderImage;
     GfxImageHandle msaaDepthRenderImage;
 
@@ -166,6 +201,11 @@ namespace R
     void SetLocalLights(uint32 numLights, const SceneLight* lights);
     void SetAmbientLight(Float4 skyAmbientColor, Float4 groundAmbientColor);
     void SetSunLight(Float3 direction, Float4 color);
+
+    void NewFrame();
+    void Render(GfxCommandBuffer& cmd, GfxImageHandle finalColorImage, GfxImageHandle finalDepthImage, 
+                RDebugMode debugMode = RDebugMode::None);
+    RGeometryChunk* NewGeometryChunk();
 }
 
 struct ModelScene
@@ -433,6 +473,8 @@ namespace R
 
     bool InitializeFwdPlus()
     {
+        gFwdPlus.frameAlloc.Initialize(SIZE_MB, SIZE_KB*128);
+
         App::RegisterEventsCallback([](const AppEvent& ev, void*)
         {
             if (ev.type == AppEventType::Resized)
@@ -786,6 +828,8 @@ namespace R
 
         Mem::Free(gFwdPlus.lightBounds);
         Mem::Free(gFwdPlus.lightProps);
+
+        gFwdPlus.frameAlloc.Release();
     }
 
     void UpdateBuffersFwdPlus(GfxCommandBuffer& cmd, const Camera& cam)
@@ -846,16 +890,30 @@ namespace R
         }
     }
 
-    bool RenderFwdPlus(GfxCommandBuffer& cmd, GfxImageHandle finalColorImage, GfxImageHandle finalDepthImage, 
-                       AssetHandleModel modelHandle, RDebugMode debugMode = RDebugMode::None)
+    void Render(GfxCommandBuffer& cmd, GfxImageHandle finalColorImage, GfxImageHandle finalDepthImage, 
+                RDebugMode debugMode)
     {
-        AssetObjPtrScope<ModelData> model(modelHandle);
-        if (model.IsNull()) {
-            return false;
-        }
-
         GfxImageHandle renderDepthImage = R_MSAA > 1 ? gFwdPlus.msaaDepthRenderImage : finalDepthImage;
         ASSERT(renderDepthImage.IsValid());
+
+        // Render blank screen if we have nothing to render
+        if (gFwdPlus.numGeometryChunks == 0) {
+            GfxBackendRenderPass pass { 
+                .colorAttachments = {{ 
+                    .clear = true,
+                    .clearValue = {
+                        .color = Color4u::ToFloat4(COLOR4U_BLACK)
+                    }
+                }},
+                .swapchain = true,
+                .hasDepth = false
+            };
+
+            cmd.BeginRenderPass(pass);
+            cmd.EndRenderPass();
+
+            return;
+        }
 
         // Z-Prepass
         {
@@ -875,19 +933,13 @@ namespace R
 
             cmd.BindPipeline(gFwdPlus.pZPrepass);
             cmd.HelperSetFullscreenViewportAndScissor();
-        
-            for (uint32 i = 0; i < model->numNodes; i++) {
-                const ModelNode& node = model->nodes[i];
-                if (node.meshId == 0)
-                    continue;
 
-                Mat4 localToWorldMat = Transform3D::ToMat4(node.localTransform);
-                cmd.PushConstants(gFwdPlus.pZPrepassLayout, "PerObjectData", &localToWorldMat, sizeof(Mat4));
+            RGeometryChunk* chunk = gFwdPlus.chunkList;
+            while (chunk) {
+                cmd.PushConstants(gFwdPlus.pZPrepassLayout, "PerObjectData", &chunk->localToWorldMat, sizeof(Mat4));
 
-                const ModelMesh& mesh = model->meshes[IdToIndex(node.meshId)];
-
-                cmd.BindVertexBuffers(0, model->numVertexBuffers, model->vertexBuffers, mesh.vertexBufferOffsets);
-                cmd.BindIndexBuffer(model->indexBuffer, mesh.indexBufferOffset, GfxIndexType::Uint32);
+                cmd.BindVertexBuffers(0, 1, &chunk->posVertexBuffer, &chunk->posVertexBufferOffset);
+                cmd.BindIndexBuffer(chunk->indexBuffer, chunk->indexBufferOffset, GfxIndexType::Uint32);
 
                 GfxBindingDesc bindings[] = {
                     {
@@ -898,12 +950,12 @@ namespace R
                 cmd.PushBindings(gFwdPlus.pZPrepassLayout, CountOf(bindings), bindings);
             
                 uint32 numIndices = 0;
-                for (uint32 smi = 0; smi < mesh.numSubmeshes; smi++) {
-                    const ModelSubmesh& submesh = mesh.submeshes[smi];
-                    numIndices += submesh.numIndices;
-                }
+                for (uint32 sc = 0; sc < chunk->numSubChunks; sc++)
+                    numIndices += chunk->subChunks[sc].numIndices;
 
                 cmd.DrawIndexed(numIndices, 1, 0, 0, 0);
+
+                chunk = chunk->nextChunk;
             }
 
             cmd.EndRenderPass();
@@ -979,32 +1031,25 @@ namespace R
         
             cmd.HelperSetFullscreenViewportAndScissor();
 
-            for (uint32 i = 0; i < model->numNodes; i++) {
-                const ModelNode& node = model->nodes[i];
-                if (node.meshId == 0)
-                    continue;
+            RGeometryChunk* chunk = gFwdPlus.chunkList;
+            while (chunk) {
+                cmd.PushConstants<Mat4>(gFwdPlus.pLightLayout, "PerObjectData", chunk->localToWorldMat);
 
-                Mat4 localToWorldMat = Transform3D::ToMat4(node.localTransform);
-                cmd.PushConstants<Mat4>(gFwdPlus.pLightLayout, "PerObjectData", localToWorldMat);
+                const GfxBufferHandle vertexBuffers[] = {
+                    chunk->posVertexBuffer,
+                    chunk->lightingVertexBuffer
+                };
 
-                const ModelMesh& mesh = model->meshes[IdToIndex(node.meshId)];
+                const uint64 vertexBufferOffsets[] = {
+                    chunk->posVertexBufferOffset,
+                    chunk->lightingVertexBufferOffset
+                };
 
-                // Buffers
-                cmd.BindVertexBuffers(0, model->numVertexBuffers, model->vertexBuffers, mesh.vertexBufferOffsets);
-                cmd.BindIndexBuffer(model->indexBuffer, mesh.indexBufferOffset, GfxIndexType::Uint32);
+                cmd.BindVertexBuffers(0, 2, vertexBuffers, vertexBufferOffsets);
+                cmd.BindIndexBuffer(chunk->indexBuffer, chunk->indexBufferOffset, GfxIndexType::Uint32);
 
-                for (uint32 smi = 0; smi < mesh.numSubmeshes; smi++) {
-                    const ModelSubmesh& submesh = mesh.submeshes[smi];
-                    const ModelMaterial* mtl = model->materials[IdToIndex(submesh.materialId)].Get();
-                        
-                    GfxImageHandle imgHandle {};
-
-                    if (mtl->pbrMetallicRoughness.baseColorTex.texture.IsValid()) {
-                        AssetObjPtrScope<GfxImage> img(mtl->pbrMetallicRoughness.baseColorTex.texture);
-                        if (!img.IsNull())
-                            imgHandle = img->handle;
-                    }
-
+                for (uint32 sc = 0; sc < chunk->numSubChunks; sc++) {
+                    const RGeometrySubChunk& subChunk = chunk->subChunks[sc];
                     GfxBindingDesc bindings[] = {
                         {
                             .name = "PerFrameData",
@@ -1012,7 +1057,7 @@ namespace R
                         },
                         {
                             .name = "BaseColorTexture",
-                            .image = imgHandle.IsValid() ? imgHandle : Image::GetWhite1x1()
+                            .image = subChunk.baseColorImg.IsValid() ? subChunk.baseColorImg : Image::GetWhite1x1()
                         },
                         {
                             .name = "VisibleLightIndices",
@@ -1029,8 +1074,10 @@ namespace R
                     };
                     cmd.PushBindings(gFwdPlus.pLightLayout, CountOf(bindings), bindings);
 
-                    cmd.DrawIndexed(submesh.numIndices, 1, submesh.startIndex, 0, 0);
+                    cmd.DrawIndexed(subChunk.numIndices, 1, subChunk.startIndex, 0, 0);
                 }
+
+                chunk = chunk->nextChunk;
             }
 
             cmd.EndRenderPass();
@@ -1063,8 +1110,6 @@ namespace R
 
             cmd.EndRenderPass();
         }
-
-        return true;
     }
 
     void SetLocalLights(uint32 numLights, const SceneLight* lights)
@@ -1099,8 +1144,49 @@ namespace R
         gFwdPlus.lightPerFrameData.sunLightDir = Float3::Norm(direction);
         gFwdPlus.lightPerFrameData.sunLightColor = Color4u::ToFloat4Linear(color);
     }
+
+    RGeometryChunk* NewGeometryChunk()
+    {
+        RGeometryChunk* chunk = Mem::AllocZeroTyped<RGeometryChunk>(1, &gFwdPlus.frameAlloc);
+        chunk->localToWorldMat = MAT4_IDENT;
+
+        if (gFwdPlus.lastChunk)
+            gFwdPlus.lastChunk->nextChunk = chunk;
+        else
+            gFwdPlus.chunkList = chunk;
+        gFwdPlus.lastChunk = chunk;
+
+        ++gFwdPlus.numGeometryChunks;
+
+        return chunk;        
+    }
+
+    void NewFrame()
+    {
+        gFwdPlus.frameAlloc.Reset();
+        gFwdPlus.chunkList = nullptr;
+        gFwdPlus.lastChunk = nullptr;
+        gFwdPlus.numGeometryChunks = 0;
+    }
+    
 } // R
 
+void RGeometryChunk::AddSubChunk(const RGeometrySubChunk& subChunk)
+{
+    subChunks = Mem::ReallocTyped<RGeometrySubChunk>(subChunks, numSubChunks+1, &gFwdPlus.frameAlloc);
+    subChunks[numSubChunks] = subChunk;
+    ++numSubChunks;
+}
+
+void RGeometryChunk::AddSubChunks(uint32 numSubChunks, const RGeometrySubChunk* subChunks)
+{
+    ASSERT(numSubChunks);
+    ASSERT(subChunks);
+
+    this->subChunks = Mem::ReallocTyped<RGeometrySubChunk>(this->subChunks, this->numSubChunks+numSubChunks, &gFwdPlus.frameAlloc);
+    memcpy(this->subChunks + this->numSubChunks, subChunks, sizeof(RGeometrySubChunk)*numSubChunks);
+    this->numSubChunks += numSubChunks;
+}
 
 struct AppImpl final : AppCallbacks
 {
@@ -1203,31 +1289,71 @@ struct AppImpl final : AppCallbacks
         R::UpdateBuffersFwdPlus(cmd, scene.mCam);
 
         // Render
-        bool sceneRendered = R::RenderFwdPlus(cmd, GfxImageHandle(), mRenderTargetDepth, scene.mModel, 
-                                              scene.mDebugLightCull ? RDebugMode::LightCull : RDebugMode::None);
-        if (sceneRendered && R_MSAA > 1) {
+        {
+            R::NewFrame();
+
+            AssetObjPtrScope<ModelData> model(scene.mModel);
+            if (!model.IsNull()) {
+                MemTempAllocator tempAlloc;
+                Array<RGeometrySubChunk> subChunks(&tempAlloc);
+
+                RGeometryChunk* chunk = R::NewGeometryChunk();
+
+                for (uint32 i = 0; i < model->numNodes; i++) {
+                    const ModelNode& node = model->nodes[i];
+                    if (node.meshId == 0)
+                        continue;
+
+                    chunk->localToWorldMat = Mat4::TransformMat(
+                        node.localTransform.position,
+                        node.localTransform.rotation,
+                        node.localTransform.scale);
+
+                    ASSERT(model->numVertexBuffers == 2);
+                    chunk->posVertexBuffer = model->vertexBuffers[0];
+                    chunk->lightingVertexBuffer = model->vertexBuffers[1];
+                    chunk->indexBuffer = model->indexBuffer;
+                    
+                    const ModelMesh& mesh = model->meshes[IdToIndex(node.meshId)];
+
+                    chunk->posVertexBufferOffset = mesh.vertexBufferOffsets[0];
+                    chunk->lightingVertexBufferOffset = mesh.vertexBufferOffsets[1];
+                    chunk->indexBufferOffset = mesh.indexBufferOffset;
+
+                    for (uint32 smi = 0; smi < mesh.numSubmeshes; smi++) {
+                        const ModelSubmesh& submesh = mesh.submeshes[smi];
+                        const ModelMaterial* mtl = model->materials[IdToIndex(submesh.materialId)].Get();
+                        
+                        GfxImageHandle imgHandle {};
+
+                        if (mtl->pbrMetallicRoughness.baseColorTex.texture.IsValid()) {
+                            AssetObjPtrScope<GfxImage> img(mtl->pbrMetallicRoughness.baseColorTex.texture);
+                            if (!img.IsNull())
+                                imgHandle = img->handle;
+                        }
+
+                        RGeometrySubChunk subChunk {
+                            .startIndex = submesh.startIndex,
+                            .numIndices = submesh.numIndices,
+                            .baseColorImg = imgHandle
+                        };
+                        subChunks.Push(subChunk);
+                    }
+
+                }
+
+                chunk->AddSubChunks(subChunks.Count(), subChunks.Ptr());
+            }
+
+            R::Render(cmd, GfxImageHandle(), mRenderTargetDepth, scene.mDebugLightCull ? RDebugMode::LightCull : RDebugMode::None);
+        }
+
+        if ( R_MSAA > 1) {
             cmd.TransitionImage(mRenderTargetDepth, GfxImageTransition::RenderTarget, GfxImageTransitionFlags::DepthRead);
         }
 
-        // Draw empty scene (Clear framebuffer)
-        if (!sceneRendered) {
-            GfxBackendRenderPass pass { 
-                .colorAttachments = {{ 
-                    .clear = true,
-                    .clearValue = {
-                        .color = Color4u::ToFloat4(COLOR4U_BLACK)
-                    }
-                }},
-                .swapchain = true,
-                .hasDepth = false
-            };
-
-            cmd.BeginRenderPass(pass);
-            cmd.EndRenderPass();
-        }
-
         // DebugDraw
-        if (sceneRendered && !scene.mDebugLightCull) {
+        if (!scene.mDebugLightCull) {
             DebugDraw::BeginDraw(cmd, *mCam, App::GetFramebufferWidth(), App::GetFramebufferHeight());
             if (mDrawGrid) {
                 DebugDrawGridProperties gridProps {

@@ -667,7 +667,7 @@ namespace GLTF
 
         // Start creating the model. This is where the blob data starts
         ModelData* model = tmpAlloc->MallocZeroTyped<ModelData>();
-        model->rootTransform = TRANSFORM3D_IDENT;
+        model->rootTransform = ModelTransform();
         model->layout = layout;
         model->numMaterialTextures = numTotalTextures;
 
@@ -749,7 +749,7 @@ namespace GLTF
                 srcNode->name = Mem::AllocCopy<char>(name, sizeof(name), tmpAlloc);
             }
 
-            dstNode->localTransform = TRANSFORM3D_IDENT;
+            dstNode->localTransform = ModelTransform();
             dstNode->name = srcNode->name;
             if (dstNode->name.Length() != Str::Len(srcNode->name)) {
                 LOG_WARNING("Node: %s: name is too long (more than standard 31 characters), "
@@ -759,9 +759,11 @@ namespace GLTF
             // ASSERT_ALWAYS(!srcNode->has_scale, "Node: %s: Node scaling not supported yet", srcNode->name);
 
             if (srcNode->has_rotation) 
-                dstNode->localTransform.rot = Mat3::FromQuat(Quat(srcNode->rotation));
+                dstNode->localTransform.rotation = Quat(srcNode->rotation);
             if (srcNode->has_translation)
-                dstNode->localTransform.pos = Float3(srcNode->translation);
+                dstNode->localTransform.position = Float3(srcNode->translation);
+            if (srcNode->has_scale)
+                dstNode->localTransform.scale = Float3(srcNode->scale);
 
             for (cgltf_size mi = 0; mi < data->meshes_count; mi++) {
                 if (&data->meshes[mi] == srcNode->mesh) {
@@ -860,6 +862,7 @@ bool Model::InitializeManager()
 {
     AssetTypeDesc desc {
         .fourcc = MODEL_ASSET_TYPE,
+        .cacheVersion = 1,
         .name = "Model",
         .impl = &gModelImpl,
         .extraParamTypeName = "ModelLoadParams",

@@ -445,6 +445,6 @@ void DebugDraw::DrawBoundingSphere(Float4 sphere, Color4u color, uint32 numRings
         gDebugDraw.sphereCache.Push(cache);
     }
 
-    Mat4 transformMat = Mat4::ScaleRotateTranslate(sphere.w, sphere.w, sphere.w, 0, 0, 0, sphere.x, sphere.y, sphere.z);
+    Mat4 transformMat = Mat4::TransformMat(sphere.x, sphere.y, sphere.z, 0, 0, 0, sphere.w, sphere.w, sphere.w);
     _EndDrawItem(transformMat, color);
 }

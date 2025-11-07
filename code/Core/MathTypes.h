@@ -356,20 +356,21 @@ struct Mat4
     static Mat4   Perspective(float width, float height, float zn, float zf, bool d3dNdc = false);
     static Mat4   PerspectiveLH(float width, float height, float zn, float zf, bool d3dNdc = false);
     static Mat4   PerspectiveOffCenter(float xmin, float ymin, float xmax, float ymax,
-                                                 float zn, float zf, bool d3dNdc = false);
+                                       float zn, float zf, bool d3dNdc = false);
     static Mat4   PerspectiveOffCenterLH(float xmin, float ymin, float xmax, float ymax,
-                                                   float zn, float zf, bool d3dNdc = false);
+                                         float zn, float zf, bool d3dNdc = false);
     static Mat4   PerspectiveFOV(float fov_y, float aspect, float zn, float zf, bool d3dNdc = false);
     static Mat4   PerspectiveFOVLH(float fov_y, float aspect, float zn, float zf, bool d3dNdc = false);
     static Mat4   Ortho(float width, float height, float zn, float zf, float offset = 0, bool d3dNdc = false);
     static Mat4   OrthoLH(float width, float height, float zn, float zf, float offset = 0, bool d3dNdc = false);
     static Mat4   OrthoOffCenter(float xmin, float ymin, float xmax, float ymax, float zn,
-                                           float zf, float offset = 0, bool d3dNdc = false);
+                                 float zf, float offset = 0, bool d3dNdc = false);
     static Mat4   OrthoOffCenterLH(float xmin, float ymin, float xmax, float ymax, float zn,
-                                             float zf, float offset = 0, bool d3dNdc = false);
-    static Mat4   ScaleRotateTranslate(float _sx, float _sy, float _sz, 
-                                                 float _ax, float _ay, float _az,
-                                                 float _tx, float _ty, float _tz);
+                                   float zf, float offset = 0, bool d3dNdc = false);
+    static Mat4   TransformMat(float _tx, float _ty, float _tz, 
+                               float _ax, float _ay, float _az,
+                               float _sx, float _sy, float _sz);
+    static Mat4   TransformMat(Float3 translation, Quat rotation, Float3 scale);
     static Mat4   Mul(const Mat4& _a, const Mat4& _b);
     static Mat4   Inverse(const Mat4& _a);
     static Mat4   InverseTransformMat(const Mat4& _a);
@@ -561,38 +562,6 @@ struct Plane
     static Float3 Origin(Plane _plane);
 };
 
-// Simplified 3D transform. by position and rotation
-struct Transform3D 
-{
-    Float3 pos;
-    Mat3 rot;
-
-    Transform3D() = default;
-    explicit constexpr Transform3D(Float3 _pos, const Mat3& _rot) : pos(_pos), rot(_rot) {}
-
-    static Transform3D Mul(const Transform3D& txa, const Transform3D& txb);
-    static Float3      MulFloat3(const Transform3D& tx, Float3 v);
-    static Float3      MulFloat3Scale(const Transform3D& tx, Float3 scale, Float3 v);
-    static Transform3D Inverse(const Transform3D& tx);
-    static Float3      MulFloat3Inverse(const Transform3D& tx, Float3 v);
-    static Transform3D MulInverse(const Transform3D& txa, const Transform3D& txb);
-    static Mat4        ToMat4(const Transform3D& tx);
-    static Transform3D Make(float x, float y, float z, float rx, float ry, float rz);
-    static Transform3D FromMat4(const Mat4& mat);
-};
-
-// Box is a 3d primitive (cube), that extents in each X,Y,Z direction and has arbitary transform
-// This is different from AABB (AABB) where it is axis-aligned and defined by min/max points
-struct Box 
-{
-    Transform3D tx;   // transform (pos = origin of the box, rot = rotation of the box)
-    Float3 e;         // half-extent from the origin (0.5*width, 0.5*height, 0.5f*depth)
-
-    Box() = default;
-    explicit constexpr Box(const Transform3D& _tx, Float3 _e) : tx(_tx), e(_e) {}
-
-    static AABB ToAABB(const Box& box);
-};
 
 
 //
@@ -615,8 +584,9 @@ inline constexpr float M_LOGNAT2H     = 0.6931471805599453094172321214582f;
 inline constexpr float M_LOGNAT2L     = 1.90821492927058770002e-10f;
 inline constexpr float M_E            = 2.7182818284590452353602874713527f;
 inline constexpr float M_NEARZERO     = (1.0f / (float)(1 << 28));
-inline constexpr float M_FLOAT32_MIN  = (1.175494e-38f);
-inline constexpr float M_FLOAT32_MAX  = (3.402823e+38f);
+inline constexpr float M_FLOAT32_MIN  = 1.175494e-38f;
+inline constexpr float M_FLOAT32_MAX  = 3.402823e+38f;
+inline constexpr float M_FLOAT32_EPSILON = 1.192093e-07f;
 
 inline constexpr Float2 FLOAT2_ZERO  { 0.0f, 0.0f };
 inline constexpr Float2 FLOAT2_UNITX { 1.0f, 0.0f };
@@ -649,8 +619,6 @@ inline constexpr Mat4 MAT4_IDENT {
 };
 
 inline constexpr Quat QUAT_INDENT {0, 0, 0, 1.0f};
-
-inline constexpr Transform3D TRANSFORM3D_IDENT { FLOAT3_ZERO, MAT3_IDENT };
 
 inline constexpr Color4u COLOR4U_WHITE  { uint8(255), uint8(255), uint8(255), uint8(255) };
 inline constexpr Color4u COLOR4U_BLACK  { uint8(0), uint8(0), uint8(0), uint8(255) };
