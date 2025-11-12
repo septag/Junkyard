@@ -30,6 +30,7 @@
 #include "../Engine.h"
 
 #include "../Graphics/GfxBackend.h"
+#include "../Renderers/RForward.h"
 
 static const char* TESTRENDERER_MODELS[] = {
     "/data/Duck/Duck.gltf",
@@ -38,175 +39,12 @@ static const char* TESTRENDERER_MODELS[] = {
     "/data/Sponza/Sponza.gltf"
 };
 
-static inline constexpr uint32 R_LIGHT_CULL_TILE_SIZE = 16;
-static inline constexpr uint32 R_LIGHT_CULL_MAX_LIGHTS_PER_TILE = 64;
-static inline constexpr uint32 R_LIGHT_CULL_MAX_LIGHTS_PER_FRAME = 1024;
-static inline constexpr uint32 R_MSAA = 4;
-
-struct RLightBounds
-{
-    Float3 position;
-    float radius;
-};
-
-struct RLightProps
-{
-    Float4 color;  
-};
-
-enum class RDebugMode
-{
-    None = 0,
-    LightCull
-};
-
-struct RLightCullShaderFrameData
-{
-    Mat4 worldToViewMat;
-    Mat4 clipToViewMat;
-    float cameraNear;
-    float cameraFar;
-    float _reserved1[2];
-    uint32 numLights;
-    uint32 windowWidth;
-    uint32 windowHeight;
-    uint32 _reserved2;
-};
-
-struct RLightCullDebugShaderFrameData
-{
-    uint32 tilesCountX;
-    uint32 tilesCountY;
-    uint32 _reserved[2];
-};
-
-struct RLightShaderFrameData
-{
-    Mat4 worldToClipMat;
-    Float3 sunLightDir;
-    float _reserved1;
-    Float4 sunLightColor;
-    Float4 skyAmbientColor;
-    Float4 groundAmbientColor;
-    uint32 tilesCountX;
-    uint32 tilesCountY;
-    uint32 _reserved2[2];
-};
-
-struct RVertexStreamPosition
-{
-    Float3 position;
-};
-
-struct RVertexStreamLighting
-{
-    Float3 normal;
-    Float2 uv;
-};
-
-struct RGeometrySubChunk
-{
-    uint32 startIndex;
-    uint32 numIndices;
-    GfxImageHandle baseColorImg;
-};
-
-struct RGeometryChunk
-{
-    Mat4 localToWorldMat;
-
-    GfxBufferHandle posVertexBuffer;
-    uint64 posVertexBufferOffset;
-
-    GfxBufferHandle lightingVertexBuffer;
-    uint64 lightingVertexBufferOffset;
-
-    GfxBufferHandle indexBuffer;
-    uint64 indexBufferOffset;
-
-    RGeometrySubChunk* subChunks;
-    uint32 numSubChunks;
-
-    RGeometryChunk* nextChunk;
-
-    void AddSubChunk(const RGeometrySubChunk& subChunk);
-    void AddSubChunks(uint32 numSubChunks, const RGeometrySubChunk* subChunks);
-};
-
-static const ModelGeometryLayout RModelGeometryLayout = {
-    .vertexAttributes = {
-        {"POSITION", 0, 0, GfxFormat::R32G32B32_SFLOAT, offsetof(RVertexStreamPosition, position)},
-        {"NORMAL", 0, 1, GfxFormat::R32G32B32_SFLOAT, offsetof(RVertexStreamLighting, normal)},
-        {"TEXCOORD", 0, 1, GfxFormat::R32G32_SFLOAT, offsetof(RVertexStreamLighting, uv)}
-    },
-    .vertexBufferStrides = {
-        sizeof(RVertexStreamPosition),
-        sizeof(RVertexStreamLighting)
-    }
-};
-
-struct RForwardPlusContext
-{
-    MemBumpAllocatorVM frameAlloc;
-
-    RGeometryChunk* chunkList;
-    RGeometryChunk* lastChunk;
-    uint32 numGeometryChunks;
-
-    GfxImageHandle msaaColorRenderImage;
-    GfxImageHandle msaaDepthRenderImage;
-
-    AssetHandleShader sZPrepass;
-    GfxPipelineHandle pZPrepass;
-    GfxPipelineLayoutHandle pZPrepassLayout;
-    GfxBufferHandle ubZPrepass;
-
-    RLightBounds* lightBounds;
-    RLightProps* lightProps;
-    uint32 numLights;
-
-    GfxBufferHandle bVisibleLightIndices;
-    GfxBufferHandle bLightBounds; 
-    GfxBufferHandle bLightProps;
-
-    AssetHandleShader sLightCull;
-    GfxPipelineHandle pLightCull;
-    GfxPipelineLayoutHandle pLightCullLayout;
-    GfxBufferHandle ubLightCull;
-
-    AssetHandleShader sLightCullDebug;
-    GfxPipelineHandle pLightCullDebug;
-    GfxPipelineLayoutHandle pLightCullDebugLayout;
-
-    AssetHandleShader sLight;
-    GfxPipelineHandle pLight;
-    GfxPipelineLayoutHandle pLightLayout;
-    GfxBufferHandle ubLight;
-
-    AssetHandleImage checkerTex;
-
-    RLightShaderFrameData lightPerFrameData;
-};
-
 struct SceneLight
 {
     Float4 boundingSphere;
     Float4 color;
 };
 
-RForwardPlusContext gFwdPlus;
-
-namespace R 
-{
-    void SetLocalLights(uint32 numLights, const SceneLight* lights);
-    void SetAmbientLight(Float4 skyAmbientColor, Float4 groundAmbientColor);
-    void SetSunLight(Float3 direction, Float4 color);
-
-    void NewFrame();
-    void Render(GfxCommandBuffer& cmd, GfxImageHandle finalColorImage, GfxImageHandle finalDepthImage, 
-                RDebugMode debugMode = RDebugMode::None);
-    RGeometryChunk* NewGeometryChunk();
-}
 
 struct ModelScene
 {
@@ -229,18 +67,6 @@ struct ModelScene
     Float4 mGroundAmbient = Color4u::ToFloat4(Color4u(216,199,172,8));
     bool mDebugLightCull = false;
     bool mDebugLightBounds = false;
-
-    struct FrameInfo 
-    {
-        Mat4 worldToClipMat;
-        Float3 lightDir;
-        float lightFactor;
-    };
-
-    struct ModelTransform
-    {
-        Mat4 modelMat;
-    };
 
     void Initialize(AssetGroup initAssetGroup, const char* modelFilepath)
     {
@@ -281,9 +107,9 @@ struct ModelScene
 
     void Load()
     {
-        ModelLoadParams loadParams { 
-            .layout = RModelGeometryLayout
-        };
+        ModelLoadParams loadParams {};
+        R::GetCompatibleLayout(CountOf(loadParams.layout.vertexAttributes), loadParams.layout.vertexAttributes,
+                               CountOf(loadParams.layout.vertexBufferStrides), loadParams.layout.vertexBufferStrides);
         mModel = Model::Load(mModelFilepath.CStr(), loadParams, mAssetGroup);
         mAssetGroup.Load();
     }
@@ -292,6 +118,26 @@ struct ModelScene
     {
         mAssetGroup.Unload();
         mLights.Free();
+    }
+
+    void SetLocalLights()
+    {
+        uint32 numLights = mLights.Count();
+        MemTempAllocator tempAlloc;
+        RLightBounds* lightBounds = Mem::AllocTyped<RLightBounds>(numLights, &tempAlloc);
+        RLightProps* lightProps = Mem::AllocTyped<RLightProps>(numLights, &tempAlloc);
+        for (uint32 i = 0; i < numLights; i++) {
+            const SceneLight& l = mLights[i];
+            lightBounds[i] = {
+                .position = Float3(l.boundingSphere.x, l.boundingSphere.y, l.boundingSphere.z),
+                .radius = l.boundingSphere.w
+            };
+
+            lightProps[i] = {
+                .color = Color4u::ToFloat4Linear(l.color)
+            };
+        }
+        R::SetLocalLights(numLights, lightBounds, lightProps);
     }
 
     void UpdateImGui()
@@ -311,7 +157,7 @@ struct ModelScene
         ImGui::ColorEdit4("Light Color", mLightColor.f, ImGuiColorEditFlags_Float);
         if (ImGui::Button("Add Point Light")) {
             AddLightAtCameraPosition();
-            R::SetLocalLights(mLights.Count(), mLights.Ptr());
+            SetLocalLights();
         }
 
         if (ImGui::Button("Save Lights")) {
@@ -364,7 +210,7 @@ struct ModelScene
         }
 
         if (!mLights.IsEmpty()) 
-            R::SetLocalLights(mLights.Count(), mLights.Ptr());
+            SetLocalLights();
         R::SetAmbientLight(mSkyAmbient, mGroundAmbient);
         R::SetSunLight(Float3(-0.2f, M::Cos(mSunlightAngle), -M::Sin(mSunlightAngle)), mSunlightColor);
     }
@@ -379,814 +225,6 @@ struct ModelScene
         mLights.Push(light);
     }
 };
-
-namespace R
-{
-    void LoadFwdPlusAssets(AssetGroup assetGroup)
-    {
-        gFwdPlus.sZPrepass = Shader::Load("/shaders/ZPrepass.hlsl", ShaderLoadParams{}, assetGroup);
-
-        {
-            ShaderLoadParams loadParams {
-                .compileDesc = {
-                    .numDefines = 3,
-                    .defines = {
-                        {
-                            .define = "TILE_SIZE",
-                            .value = String32::Format("%d", R_LIGHT_CULL_TILE_SIZE)
-                        },
-                        {
-                            .define = "MAX_LIGHTS_PER_TILE",
-                            .value = String32::Format("%d", R_LIGHT_CULL_MAX_LIGHTS_PER_TILE)
-                        },
-                        {
-                            .define = "MSAA",
-                            .value = String32::Format("%d", R_MSAA)
-                        }
-                    }
-                }
-            };
-            gFwdPlus.sLightCull = Shader::Load("/shaders/LightCull.hlsl", loadParams, assetGroup);
-            gFwdPlus.sLight = Shader::Load("/shaders/FwdPlusLight.hlsl", loadParams, assetGroup);
-            gFwdPlus.sLightCullDebug = Shader::Load("/shaders/LightCullDebug.hlsl", loadParams, assetGroup);
-        }
-
-        gFwdPlus.checkerTex = Image::Load("/data/Checker.png", ImageLoadParams{}, assetGroup);
-    }
-
-    static void _CreateFramebufferDependentResources(uint16 width, uint16 height)
-    {
-        GfxBackend::DestroyImage(gFwdPlus.msaaDepthRenderImage);
-        GfxBackend::DestroyImage(gFwdPlus.msaaColorRenderImage);
-        GfxBackend::DestroyBuffer(gFwdPlus.bVisibleLightIndices);
-
-        //--------------------------------------------------------------------------------------------------------------
-        // Render Images
-        if (R_MSAA > 1) {
-            GfxImageDesc desc {
-                .width = width,
-                .height = height,
-                .multisampleFlags = (GfxMultiSampleCount)R_MSAA,
-                .format = GfxBackend::GetValidDepthStencilFormat(), // TODO:
-                .usageFlags = GfxImageUsageFlags::DepthStencilAttachment|GfxImageUsageFlags::Sampled,
-            };
-
-            // Note: this won't probably work with tiled GPUs because it's incompatible with Sampled flag
-            //       So we probably need to copy the contents of the zbuffer to another one
-            #if PLATFORM_MOBILE
-            desc.usageFlags |= GfxImageUsageFlags::TransientAttachment;
-            #endif
-
-            gFwdPlus.msaaDepthRenderImage = GfxBackend::CreateImage(desc);
-        }
-
-        {
-            GfxImageDesc desc {
-                .width = width,
-                .height = height,
-                .multisampleFlags = (GfxMultiSampleCount)R_MSAA,
-                .format = GfxBackend::GetSwapchainFormat(), // TODO: 
-                .usageFlags = GfxImageUsageFlags::ColorAttachment,
-            };
-
-            // Note: this won't probably work with tiled GPUs because it's incompatible with Sampled flag
-            //       So we probably need to copy the contents of the zbuffer to another one
-            #if PLATFORM_MOBILE
-            desc.usageFlags |= GfxImageUsageFlags::TransientAttachment;
-            #endif
-
-            gFwdPlus.msaaColorRenderImage = GfxBackend::CreateImage(desc);
-        }
-
-        // Buffers
-        {
-            uint32 numTilesX = M::CeilDiv(uint32(width), R_LIGHT_CULL_TILE_SIZE);
-            uint32 numTilesY = M::CeilDiv(uint32(height), R_LIGHT_CULL_TILE_SIZE);
-            GfxBufferDesc bufferDesc = {
-                .sizeBytes = sizeof(uint32)*numTilesX*numTilesY*R_LIGHT_CULL_MAX_LIGHTS_PER_TILE,
-                .usageFlags = GfxBufferUsageFlags::TransferDst | GfxBufferUsageFlags::Storage
-            };
-            gFwdPlus.bVisibleLightIndices = GfxBackend::CreateBuffer(bufferDesc);
-
-        }
-    }
-
-    bool InitializeFwdPlus()
-    {
-        gFwdPlus.frameAlloc.Initialize(SIZE_MB, SIZE_KB*128);
-
-        App::RegisterEventsCallback([](const AppEvent& ev, void*)
-        {
-            if (ev.type == AppEventType::Resized)
-                _CreateFramebufferDependentResources(ev.framebufferWidth, ev.framebufferHeight);
-        });
-
-        _CreateFramebufferDependentResources(App::GetFramebufferWidth(), App::GetFramebufferHeight());
-
-        //--------------------------------------------------------------------------------------------------------------
-        // Common buffers
-        {
-            GfxBufferDesc bufferDesc = {
-                .sizeBytes = sizeof(RLightBounds)*R_LIGHT_CULL_MAX_LIGHTS_PER_FRAME,
-                .usageFlags = GfxBufferUsageFlags::TransferDst | GfxBufferUsageFlags::Storage
-            };
-            gFwdPlus.bLightBounds = GfxBackend::CreateBuffer(bufferDesc);
-
-            bufferDesc = {
-                .sizeBytes = sizeof(RLightProps)*R_LIGHT_CULL_MAX_LIGHTS_PER_FRAME,
-                .usageFlags = GfxBufferUsageFlags::TransferDst | GfxBufferUsageFlags::Storage
-            };
-            gFwdPlus.bLightProps = GfxBackend::CreateBuffer(bufferDesc);
-        }
-
-        //--------------------------------------------------------------------------------------------------------------
-        // ZPrepass
-        {
-            // Layout
-            ASSERT(gFwdPlus.sZPrepass.IsValid());
-            AssetObjPtrScope<GfxShader> shader(gFwdPlus.sZPrepass);
-            GfxPipelineLayoutDesc::Binding pBindings[] = {
-                {
-                    .name = "PerFrameData",
-                    .type = GfxDescriptorType::UniformBuffer,
-                    .stagesUsed = GfxShaderStage::Vertex
-                }
-            };
-
-            GfxPipelineLayoutDesc::PushConstant pPushConstants[] = {
-                {
-                    .name = "PerObjectData",
-                    .stagesUsed = GfxShaderStage::Vertex,
-                    .size = sizeof(Mat4)
-                }
-            };
-
-            GfxPipelineLayoutDesc pLayoutDesc {
-                .numBindings = CountOf(pBindings),
-                .bindings = pBindings,
-                .numPushConstants = CountOf(pPushConstants),
-                .pushConstants = pPushConstants
-            };
-
-            gFwdPlus.pZPrepassLayout = GfxBackend::CreatePipelineLayout(*shader, pLayoutDesc);
-
-            // Pipeline
-            GfxVertexInputAttributeDesc vertexInputAttDescs[] = {
-                {
-                    .semantic = "POSITION",
-                    .binding = 0,
-                    .format = GfxFormat::R32G32B32_SFLOAT,
-                    .offset = 0 
-                }
-            };
-
-            GfxVertexBufferBindingDesc vertexBufferBindingDescs[] = {
-                {
-                    .binding = 0,
-                    .stride = sizeof(RVertexStreamPosition),
-                }
-            };
-
-            GfxGraphicsPipelineDesc pDesc {
-                .numVertexInputAttributes = CountOf(vertexInputAttDescs),
-                .vertexInputAttributes = vertexInputAttDescs,
-                .numVertexBufferBindings = CountOf(vertexBufferBindingDescs),
-                .vertexBufferBindings = vertexBufferBindingDescs,
-                .rasterizer = {
-                    .cullMode = GfxCullMode::Back
-                },
-                .blend = {
-                    .numAttachments = 1,
-                    .attachments = GfxBlendAttachmentDesc::GetDefault()
-                },
-                .depthStencil = {
-                    .depthTestEnable = true,
-                    .depthWriteEnable = true,
-                    .depthCompareOp = GfxCompareOp::Less
-                },
-                .msaa = {
-                    .sampleCount = (GfxMultiSampleCount)R_MSAA
-                },
-                .numColorAttachments = 0,
-                .depthAttachmentFormat = GfxBackend::GetValidDepthStencilFormat(),
-                .stencilAttachmentFormat = GfxBackend::GetValidDepthStencilFormat()
-            };
-
-            gFwdPlus.pZPrepass = GfxBackend::CreateGraphicsPipeline(*shader, gFwdPlus.pZPrepassLayout, pDesc);
-
-            // Buffers
-            GfxBufferDesc bufferDesc {
-                .sizeBytes = sizeof(Mat4),
-                .usageFlags = GfxBufferUsageFlags::TransferDst | GfxBufferUsageFlags::Uniform,
-                .arena = GfxMemoryArena::PersistentGPU
-            };
-            gFwdPlus.ubZPrepass = GfxBackend::CreateBuffer(bufferDesc);
-        }
-
-        //--------------------------------------------------------------------------------------------------------------
-        // LightCull
-        {
-            AssetObjPtrScope<GfxShader> shader(gFwdPlus.sLightCull);
-            // Layout
-            GfxPipelineLayoutDesc::Binding bindings[] = {
-                {
-                    .name = "PerFrameData",
-                    .type = GfxDescriptorType::UniformBuffer,
-                    .stagesUsed = GfxShaderStage::Compute
-                },
-                {
-                    .name = "Lights",
-                    .type = GfxDescriptorType::StorageBuffer,
-                    .stagesUsed = GfxShaderStage::Compute
-                },
-                {
-                    .name = "VisibleLightIndices",
-                    .type = GfxDescriptorType::StorageBuffer,
-                    .stagesUsed = GfxShaderStage::Compute
-                },
-                {
-                    .name = "DepthTexture",
-                    .type = GfxDescriptorType::SampledImage,
-                    .stagesUsed = GfxShaderStage::Compute
-
-                }
-            };
-
-            GfxPipelineLayoutDesc layoutDesc { 
-                .numBindings = CountOf(bindings),
-                .bindings = bindings
-            };
-
-            gFwdPlus.pLightCullLayout = GfxBackend::CreatePipelineLayout(*shader, layoutDesc);
-
-            // Pipeline
-            gFwdPlus.pLightCull = GfxBackend::CreateComputePipeline(*shader, gFwdPlus.pLightCullLayout);
-
-            // Buffers
-            GfxBufferDesc bufferDesc {
-                .sizeBytes = sizeof(RLightCullShaderFrameData),
-                .usageFlags = GfxBufferUsageFlags::TransferDst | GfxBufferUsageFlags::Uniform
-            };
-            gFwdPlus.ubLightCull = GfxBackend::CreateBuffer(bufferDesc);
-        }
-
-        //--------------------------------------------------------------------------------------------------------------
-        // Lighting
-        {
-            AssetObjPtrScope<GfxShader> shader(gFwdPlus.sLight);
-
-            // Layout
-            GfxPipelineLayoutDesc::Binding bindings[] = {
-                {
-                    .name = "PerFrameData",
-                    .type = GfxDescriptorType::UniformBuffer,
-                    .stagesUsed = GfxShaderStage::Fragment|GfxShaderStage::Vertex
-                },
-                {
-                    .name = "BaseColorTexture",
-                    .type = GfxDescriptorType::CombinedImageSampler,
-                    .stagesUsed = GfxShaderStage::Fragment
-                },
-                {
-                    .name = "VisibleLightIndices",
-                    .type = GfxDescriptorType::StorageBuffer,
-                    .stagesUsed = GfxShaderStage::Fragment
-                },
-                {
-                    .name = "LocalLights",
-                    .type = GfxDescriptorType::StorageBuffer,
-                    .stagesUsed = GfxShaderStage::Fragment
-                },
-                {
-                    .name = "LocalLightBounds",
-                    .type = GfxDescriptorType::StorageBuffer,
-                    .stagesUsed = GfxShaderStage::Fragment
-                }
-            };
-
-            GfxPipelineLayoutDesc::PushConstant pushConstants[] = {
-                {
-                    .name = "PerObjectData",
-                    .stagesUsed = GfxShaderStage::Vertex,
-                    .size = sizeof(Mat4)
-                }
-            };
-
-            GfxPipelineLayoutDesc layoutDesc {
-                .numBindings = CountOf(bindings),
-                .bindings = bindings,
-                .numPushConstants = CountOf(pushConstants),
-                .pushConstants = pushConstants
-            };
-
-            gFwdPlus.pLightLayout = GfxBackend::CreatePipelineLayout(*shader, layoutDesc);
-
-            // Pipeline
-            GfxVertexBufferBindingDesc vertexBufferBindingDescs[] = {
-                {
-                    .binding = 0,
-                    .stride = sizeof(RVertexStreamPosition),   // TODO: use renderer specific vertex 
-                },
-                {
-                    .binding = 1,
-                    .stride = sizeof(RVertexStreamLighting),
-                }
-            };
-
-            GfxVertexInputAttributeDesc vertexInputAttDescs[] = {
-                {
-                    .semantic = "POSITION",
-                    .binding = 0,
-                    .format = GfxFormat::R32G32B32_SFLOAT,
-                    .offset = offsetof(RVertexStreamPosition, position)
-                },
-                {
-                    .semantic = "NORMAL",
-                    .binding = 1,
-                    .format = GfxFormat::R32G32B32_SFLOAT,
-                    .offset = offsetof(RVertexStreamLighting, normal)
-                },
-                {
-                    .semantic = "TEXCOORD",
-                    .binding = 1,
-                    .format = GfxFormat::R32G32_SFLOAT,
-                    .offset = offsetof(RVertexStreamLighting, uv)
-                }
-            };
-
-            GfxGraphicsPipelineDesc pDesc {
-                .numVertexInputAttributes = CountOf(vertexInputAttDescs),
-                .vertexInputAttributes = vertexInputAttDescs,
-                .numVertexBufferBindings = CountOf(vertexBufferBindingDescs),
-                .vertexBufferBindings = vertexBufferBindingDescs,
-                .rasterizer = {
-                    .cullMode = GfxCullMode::Back
-                },
-                .blend = {
-                    .numAttachments = 1,
-                    .attachments = GfxBlendAttachmentDesc::GetDefault()
-                },
-                .depthStencil = {
-                    .depthTestEnable = true,
-                    .depthWriteEnable = false,
-                    .depthCompareOp = GfxCompareOp::Equal
-                },
-                .msaa = {
-                    .sampleCount = (GfxMultiSampleCount)R_MSAA
-                },
-                .numColorAttachments = 1,
-                .colorAttachmentFormats = {GfxBackend::GetSwapchainFormat()},
-                .depthAttachmentFormat = GfxBackend::GetValidDepthStencilFormat(),
-                .stencilAttachmentFormat = GfxBackend::GetValidDepthStencilFormat()
-            };
-
-            gFwdPlus.pLight = GfxBackend::CreateGraphicsPipeline(*shader, gFwdPlus.pLightLayout, pDesc);
-        }
-
-        //--------------------------------------------------------------------------------------------------------------
-        // LightCull Debug
-        {
-            AssetObjPtrScope<GfxShader> shader(gFwdPlus.sLightCullDebug);
-
-            // Layout
-            GfxPipelineLayoutDesc::Binding bindings[] = {
-                {
-                    .name = "VisibleLightIndices",
-                    .type = GfxDescriptorType::StorageBuffer,
-                    .stagesUsed = GfxShaderStage::Fragment
-                }
-            };
-
-            GfxPipelineLayoutDesc::PushConstant pushConstants[] = {
-                {
-                    .name = "PerFrameData",
-                    .stagesUsed = GfxShaderStage::Fragment,
-                    .size = sizeof(RLightCullDebugShaderFrameData)
-                }
-            };
-
-            GfxPipelineLayoutDesc layoutDesc { 
-                .numBindings = CountOf(bindings),
-                .bindings = bindings,
-                .numPushConstants = CountOf(pushConstants),
-                .pushConstants = pushConstants
-            };
-
-            gFwdPlus.pLightCullDebugLayout = GfxBackend::CreatePipelineLayout(*shader, layoutDesc);
-
-            GfxGraphicsPipelineDesc pDesc {
-                .rasterizer = {
-                    .cullMode = GfxCullMode::Back
-                },
-                .blend = {
-                    .numAttachments = 1,
-                    .attachments = GfxBlendAttachmentDesc::GetDefault()
-                },
-                .numColorAttachments = 1,
-                .colorAttachmentFormats = {GfxBackend::GetSwapchainFormat()},
-                .depthAttachmentFormat = GfxBackend::GetValidDepthStencilFormat(),
-                .stencilAttachmentFormat = GfxBackend::GetValidDepthStencilFormat()
-            };
-
-            gFwdPlus.pLightCullDebug = GfxBackend::CreateGraphicsPipeline(*shader, gFwdPlus.pLightCullDebugLayout, pDesc);
-
-            // Uniform Buffers
-            GfxBufferDesc ubDesc {
-                .sizeBytes = sizeof(RLightShaderFrameData),
-                .usageFlags = GfxBufferUsageFlags::TransferDst | GfxBufferUsageFlags::Uniform,
-            };
-
-            gFwdPlus.ubLight = GfxBackend::CreateBuffer(ubDesc);
-        }
-
-        return true;
-    }
-
-    void ReleaseFwdPlus()
-    {
-        GfxBackend::DestroyPipeline(gFwdPlus.pZPrepass);
-        GfxBackend::DestroyPipelineLayout(gFwdPlus.pZPrepassLayout);
-        GfxBackend::DestroyBuffer(gFwdPlus.ubZPrepass);
-
-        GfxBackend::DestroyPipeline(gFwdPlus.pLightCull);
-        GfxBackend::DestroyPipelineLayout(gFwdPlus.pLightCullLayout);
-        GfxBackend::DestroyBuffer(gFwdPlus.ubLightCull);
-
-        GfxBackend::DestroyPipeline(gFwdPlus.pLightCullDebug);
-        GfxBackend::DestroyPipelineLayout(gFwdPlus.pLightCullDebugLayout);
-
-        GfxBackend::DestroyPipeline(gFwdPlus.pLight);
-        GfxBackend::DestroyPipelineLayout(gFwdPlus.pLightLayout);
-        GfxBackend::DestroyBuffer(gFwdPlus.ubLight);
-
-        GfxBackend::DestroyBuffer(gFwdPlus.bLightBounds);
-        GfxBackend::DestroyBuffer(gFwdPlus.bVisibleLightIndices);
-        GfxBackend::DestroyBuffer(gFwdPlus.bLightProps);
-
-        GfxBackend::DestroyImage(gFwdPlus.msaaColorRenderImage);
-        GfxBackend::DestroyImage(gFwdPlus.msaaDepthRenderImage);
-
-        Mem::Free(gFwdPlus.lightBounds);
-        Mem::Free(gFwdPlus.lightProps);
-
-        gFwdPlus.frameAlloc.Release();
-    }
-
-    void UpdateBuffersFwdPlus(GfxCommandBuffer& cmd, const Camera& cam)
-    {
-        float vwidth = (float)App::GetFramebufferWidth();
-        float vheight = (float)App::GetFramebufferHeight();
-
-        Mat4 worldToClipMat = cam.GetPerspectiveMat(vwidth, vheight) * cam.GetViewMat();
-        if (cmd.mDrawsToSwapchain) // TODO: this is not gonna detect swapchain properly
-            worldToClipMat = GfxBackend::GetSwapchainTransformMat() * worldToClipMat;
-
-        gFwdPlus.lightPerFrameData.worldToClipMat = worldToClipMat;
-        gFwdPlus.lightPerFrameData.tilesCountX = M::CeilDiv((uint32)App::GetFramebufferWidth(), R_LIGHT_CULL_TILE_SIZE);
-        gFwdPlus.lightPerFrameData.tilesCountY = M::CeilDiv((uint32)App::GetFramebufferHeight(), R_LIGHT_CULL_TILE_SIZE);
-        uint32 numTiles = gFwdPlus.lightPerFrameData.tilesCountX * gFwdPlus.lightPerFrameData.tilesCountY;
-
-        {
-            GfxHelperBufferUpdateScope updater(cmd, gFwdPlus.ubZPrepass, -1, GfxShaderStage::Vertex|GfxShaderStage::Fragment);
-            memcpy(updater.mData, &worldToClipMat, sizeof(Mat4));
-        }
-
-        // Per-frame light culling data
-        {
-            GfxHelperBufferUpdateScope updater(cmd, gFwdPlus.ubLightCull, -1, GfxShaderStage::Compute);
-            RLightCullShaderFrameData* buffer = (RLightCullShaderFrameData*)updater.mData;
-            buffer->worldToViewMat = cam.GetViewMat();
-            buffer->clipToViewMat = Mat4::Inverse(cam.GetPerspectiveMat(vwidth, vheight));
-            buffer->cameraNear = cam.Near();
-            buffer->cameraFar = cam.Far();
-            buffer->numLights = gFwdPlus.numLights;
-            buffer->windowWidth = App::GetFramebufferWidth();
-            buffer->windowHeight = App::GetFramebufferHeight();
-        }
-
-        // Per-frame lighting data
-        {
-            GfxHelperBufferUpdateScope updater(cmd, gFwdPlus.ubLight, -1, GfxShaderStage::Fragment);
-            memcpy(updater.mData, &gFwdPlus.lightPerFrameData, sizeof(RLightShaderFrameData));
-        }
-
-        if (gFwdPlus.numLights) {
-            GfxHelperBufferUpdateScope lightBoundsUpdater(cmd, gFwdPlus.bLightBounds, sizeof(RLightBounds)*gFwdPlus.numLights,
-                                                          GfxShaderStage::Compute);
-            RLightBounds* bounds = (RLightBounds*)lightBoundsUpdater.mData;
-            memcpy(bounds, gFwdPlus.lightBounds, sizeof(RLightBounds)*gFwdPlus.numLights);
-
-            GfxHelperBufferUpdateScope lightPropsUpdater(cmd, gFwdPlus.bLightProps, sizeof(RLightProps)*gFwdPlus.numLights,
-                                                         GfxShaderStage::Fragment);
-            RLightProps* props = (RLightProps*)lightPropsUpdater.mData;
-            memcpy(props, gFwdPlus.lightProps, sizeof(RLightProps)*gFwdPlus.numLights);
-        }
-        else {
-            // Fill visible light indices buffer with sentinels (empty state)
-            GfxHelperBufferUpdateScope updater(cmd, gFwdPlus.bVisibleLightIndices, -1, GfxShaderStage::Fragment);
-            uint32* indices = (uint32*)updater.mData;
-            for (uint32 i = 0; i < numTiles; i++)
-                indices[i*R_LIGHT_CULL_MAX_LIGHTS_PER_TILE] = 0xffffffff;
-        }
-    }
-
-    void Render(GfxCommandBuffer& cmd, GfxImageHandle finalColorImage, GfxImageHandle finalDepthImage, 
-                RDebugMode debugMode)
-    {
-        GfxImageHandle renderDepthImage = R_MSAA > 1 ? gFwdPlus.msaaDepthRenderImage : finalDepthImage;
-        ASSERT(renderDepthImage.IsValid());
-
-        // Render blank screen if we have nothing to render
-        if (gFwdPlus.numGeometryChunks == 0) {
-            GfxBackendRenderPass pass { 
-                .colorAttachments = {{ 
-                    .clear = true,
-                    .clearValue = {
-                        .color = Color4u::ToFloat4(COLOR4U_BLACK)
-                    }
-                }},
-                .swapchain = true,
-                .hasDepth = false
-            };
-
-            cmd.BeginRenderPass(pass);
-            cmd.EndRenderPass();
-
-            return;
-        }
-
-        // Z-Prepass
-        {
-            cmd.TransitionImage(renderDepthImage, GfxImageTransition::RenderTarget, GfxImageTransitionFlags::DepthWrite);
-
-            GfxBackendRenderPass zprepass { 
-                .depthAttachment = {
-                    .image = renderDepthImage,
-                    .clear = true,
-                    .clearValue = {
-                        .depth = 1.0f
-                    }
-                },
-                .hasDepth = true
-            };
-            cmd.BeginRenderPass(zprepass);
-
-            cmd.BindPipeline(gFwdPlus.pZPrepass);
-            cmd.HelperSetFullscreenViewportAndScissor();
-
-            RGeometryChunk* chunk = gFwdPlus.chunkList;
-            while (chunk) {
-                cmd.PushConstants(gFwdPlus.pZPrepassLayout, "PerObjectData", &chunk->localToWorldMat, sizeof(Mat4));
-
-                cmd.BindVertexBuffers(0, 1, &chunk->posVertexBuffer, &chunk->posVertexBufferOffset);
-                cmd.BindIndexBuffer(chunk->indexBuffer, chunk->indexBufferOffset, GfxIndexType::Uint32);
-
-                GfxBindingDesc bindings[] = {
-                    {
-                        .name = "PerFrameData",
-                        .buffer = gFwdPlus.ubZPrepass
-                    }
-                };
-                cmd.PushBindings(gFwdPlus.pZPrepassLayout, CountOf(bindings), bindings);
-            
-                uint32 numIndices = 0;
-                for (uint32 sc = 0; sc < chunk->numSubChunks; sc++)
-                    numIndices += chunk->subChunks[sc].numIndices;
-
-                cmd.DrawIndexed(numIndices, 1, 0, 0, 0);
-
-                chunk = chunk->nextChunk;
-            }
-
-            cmd.EndRenderPass();
-        }
-
-        // Light culling
-        if (gFwdPlus.numLights) {
-            cmd.TransitionImage(renderDepthImage, GfxImageTransition::ShaderRead);
-            cmd.TransitionBuffer(gFwdPlus.bVisibleLightIndices, GfxBufferTransition::ComputeWrite);
-
-            GfxBindingDesc bindings[] = {
-                {
-                    .name = "PerFrameData", 
-                    .buffer = gFwdPlus.ubLightCull
-                },
-                {
-                    .name = "Lights",
-                    .buffer = gFwdPlus.bLightBounds
-                },
-                {
-                    .name = "VisibleLightIndices",
-                    .buffer = gFwdPlus.bVisibleLightIndices
-                },
-                {
-                    .name = "DepthTexture",
-                    .image = renderDepthImage
-                }
-            };
-
-            cmd.BindPipeline(gFwdPlus.pLightCull);
-            cmd.PushBindings(gFwdPlus.pLightCullLayout, CountOf(bindings), bindings);
-            cmd.Dispatch(gFwdPlus.lightPerFrameData.tilesCountX, gFwdPlus.lightPerFrameData.tilesCountY, 1);
-
-            cmd.TransitionBuffer(gFwdPlus.bVisibleLightIndices, GfxBufferTransition::FragmentRead);
-        }
-
-        cmd.TransitionImage(renderDepthImage, GfxImageTransition::RenderTarget, GfxImageTransitionFlags::DepthRead);
-
-        // Light pass
-        if (debugMode == RDebugMode::None) {
-            if (R_MSAA > 1 && finalDepthImage.IsValid()) {
-                cmd.TransitionImage(finalDepthImage, GfxImageTransition::RenderTarget, 
-                                    GfxImageTransitionFlags::DepthWrite|GfxImageTransitionFlags::DepthResolve);
-            }
-
-            // If finalColorImage is not provided, we render to Swapchain
-            GfxImageHandle renderColorImage = R_MSAA > 1 ? gFwdPlus.msaaColorRenderImage : finalColorImage;
-
-            // Render to swapchain if we don't have MSAA, otherwise, resolve to Swapchain and provided depth buffer
-            GfxBackendRenderPass pass { 
-                .numAttachments = 1,
-                .colorAttachments = {{ 
-                    .image = renderColorImage,
-                    .resolveImage = finalColorImage,
-                    .clear = true,
-                    .resolveToSwapchain = R_MSAA > 1 && !finalColorImage.IsValid(),
-                    .clearValue = {
-                        .color = gFwdPlus.lightPerFrameData.skyAmbientColor
-                    }
-                }},
-                .depthAttachment = {
-                    .image = renderDepthImage,
-                    .resolveImage = R_MSAA > 1 ? finalDepthImage : GfxImageHandle(),
-                    .load = true,
-                    .clear = false,
-                },
-                .swapchain = !renderColorImage.IsValid(), 
-                .hasDepth = true
-            };
-
-            cmd.BeginRenderPass(pass);
-            cmd.BindPipeline(gFwdPlus.pLight);
-        
-            cmd.HelperSetFullscreenViewportAndScissor();
-
-            RGeometryChunk* chunk = gFwdPlus.chunkList;
-            while (chunk) {
-                cmd.PushConstants<Mat4>(gFwdPlus.pLightLayout, "PerObjectData", chunk->localToWorldMat);
-
-                const GfxBufferHandle vertexBuffers[] = {
-                    chunk->posVertexBuffer,
-                    chunk->lightingVertexBuffer
-                };
-
-                const uint64 vertexBufferOffsets[] = {
-                    chunk->posVertexBufferOffset,
-                    chunk->lightingVertexBufferOffset
-                };
-
-                cmd.BindVertexBuffers(0, 2, vertexBuffers, vertexBufferOffsets);
-                cmd.BindIndexBuffer(chunk->indexBuffer, chunk->indexBufferOffset, GfxIndexType::Uint32);
-
-                for (uint32 sc = 0; sc < chunk->numSubChunks; sc++) {
-                    const RGeometrySubChunk& subChunk = chunk->subChunks[sc];
-                    GfxBindingDesc bindings[] = {
-                        {
-                            .name = "PerFrameData",
-                            .buffer = gFwdPlus.ubLight
-                        },
-                        {
-                            .name = "BaseColorTexture",
-                            .image = subChunk.baseColorImg.IsValid() ? subChunk.baseColorImg : Image::GetWhite1x1()
-                        },
-                        {
-                            .name = "VisibleLightIndices",
-                            .buffer = gFwdPlus.bVisibleLightIndices
-                        },
-                        {
-                            .name = "LocalLights",
-                            .buffer = gFwdPlus.bLightProps
-                        },
-                        {
-                            .name = "LocalLightBounds",
-                            .buffer = gFwdPlus.bLightBounds
-                        }
-                    };
-                    cmd.PushBindings(gFwdPlus.pLightLayout, CountOf(bindings), bindings);
-
-                    cmd.DrawIndexed(subChunk.numIndices, 1, subChunk.startIndex, 0, 0);
-                }
-
-                chunk = chunk->nextChunk;
-            }
-
-            cmd.EndRenderPass();
-        }
-        else if (debugMode == RDebugMode::LightCull) {
-            GfxBackendRenderPass pass { 
-                .swapchain = true,
-            };
-
-            cmd.BeginRenderPass(pass);
-            cmd.BindPipeline(gFwdPlus.pLightCullDebug);
-            cmd.HelperSetFullscreenViewportAndScissor();
-
-            GfxBindingDesc bindings[] = {
-                {
-                    .name = "VisibleLightIndices",
-                    .buffer = gFwdPlus.bVisibleLightIndices
-                }
-            };
-
-            cmd.PushBindings(gFwdPlus.pLightCullDebugLayout, CountOf(bindings), bindings);
-
-            RLightCullDebugShaderFrameData perFrameData {
-                .tilesCountX = gFwdPlus.lightPerFrameData.tilesCountX,
-                .tilesCountY = gFwdPlus.lightPerFrameData.tilesCountY
-            };
-            cmd.PushConstants<RLightCullDebugShaderFrameData>(gFwdPlus.pLightCullDebugLayout, "PerFrameData", perFrameData);
-
-            cmd.Draw(3, 1, 0, 0);
-
-            cmd.EndRenderPass();
-        }
-    }
-
-    void SetLocalLights(uint32 numLights, const SceneLight* lights)
-    {
-        ASSERT(numLights);
-        ASSERT(lights);
-
-        gFwdPlus.lightBounds = Mem::ReallocTyped<RLightBounds>(gFwdPlus.lightBounds, numLights);   // TODO: alloc
-        gFwdPlus.lightProps = Mem::ReallocTyped<RLightProps>(gFwdPlus.lightProps, numLights);
-        gFwdPlus.numLights = numLights;
-        for (uint32 i = 0; i < numLights; i++) {
-            const SceneLight& l = lights[i];
-            gFwdPlus.lightBounds[i] = {
-                .position = Float3(l.boundingSphere.x, l.boundingSphere.y, l.boundingSphere.z),
-                .radius = l.boundingSphere.w
-            };
-
-            gFwdPlus.lightProps[i] = {
-                .color = Color4u::ToFloat4Linear(l.color)
-            };
-        }
-    }
-
-    void SetAmbientLight(Float4 skyAmbientColor, Float4 groundAmbientColor)
-    {
-        gFwdPlus.lightPerFrameData.skyAmbientColor = Color4u::ToFloat4Linear(skyAmbientColor);
-        gFwdPlus.lightPerFrameData.groundAmbientColor = Color4u::ToFloat4Linear(groundAmbientColor);
-    }
-
-    void SetSunLight(Float3 direction, Float4 color)
-    {
-        gFwdPlus.lightPerFrameData.sunLightDir = Float3::Norm(direction);
-        gFwdPlus.lightPerFrameData.sunLightColor = Color4u::ToFloat4Linear(color);
-    }
-
-    RGeometryChunk* NewGeometryChunk()
-    {
-        RGeometryChunk* chunk = Mem::AllocZeroTyped<RGeometryChunk>(1, &gFwdPlus.frameAlloc);
-        chunk->localToWorldMat = MAT4_IDENT;
-
-        if (gFwdPlus.lastChunk)
-            gFwdPlus.lastChunk->nextChunk = chunk;
-        else
-            gFwdPlus.chunkList = chunk;
-        gFwdPlus.lastChunk = chunk;
-
-        ++gFwdPlus.numGeometryChunks;
-
-        return chunk;        
-    }
-
-    void NewFrame()
-    {
-        gFwdPlus.frameAlloc.Reset();
-        gFwdPlus.chunkList = nullptr;
-        gFwdPlus.lastChunk = nullptr;
-        gFwdPlus.numGeometryChunks = 0;
-    }
-    
-} // R
-
-void RGeometryChunk::AddSubChunk(const RGeometrySubChunk& subChunk)
-{
-    subChunks = Mem::ReallocTyped<RGeometrySubChunk>(subChunks, numSubChunks+1, &gFwdPlus.frameAlloc);
-    subChunks[numSubChunks] = subChunk;
-    ++numSubChunks;
-}
-
-void RGeometryChunk::AddSubChunks(uint32 numSubChunks, const RGeometrySubChunk* subChunks)
-{
-    ASSERT(numSubChunks);
-    ASSERT(subChunks);
-
-    this->subChunks = Mem::ReallocTyped<RGeometrySubChunk>(this->subChunks, this->numSubChunks+numSubChunks, &gFwdPlus.frameAlloc);
-    memcpy(this->subChunks + this->numSubChunks, subChunks, sizeof(RGeometrySubChunk)*numSubChunks);
-    this->numSubChunks += numSubChunks;
-}
 
 struct AppImpl final : AppCallbacks
 {
@@ -1218,13 +256,6 @@ struct AppImpl final : AppCallbacks
         mRenderTargetDepth = GfxBackend::CreateImage(desc);
     }
 
-    static void InitializeResources(void* userData)
-    {
-        AppImpl* self = (AppImpl*)userData;
-        self->InitializeFramebufferResources(App::GetFramebufferWidth(), App::GetFramebufferHeight());
-        R::InitializeFwdPlus();
-    }
-
     bool Initialize() override
     {
         bool isRemote = SettingsJunkyard::Get().engine.connectToServer;
@@ -1235,10 +266,13 @@ struct AppImpl final : AppCallbacks
         if (!Engine::Initialize())
             return false;
 
-        AssetGroup initAssetGroup = Engine::RegisterInitializeResources(InitializeResources, this);
+        AssetGroup initAssetGroup = Engine::RegisterInitializeResources([](void* userData) {
+            AppImpl* self = (AppImpl*)userData;
+            self->InitializeFramebufferResources(App::GetFramebufferWidth(), App::GetFramebufferHeight());
+        }, this);
+
         for (uint32 i = 0; i < CountOf(TESTRENDERER_MODELS); i++)
             mModelScenes[i].Initialize(initAssetGroup, TESTRENDERER_MODELS[i]);
-        R::LoadFwdPlusAssets(initAssetGroup);
 
         mSelectedSceneIdx = (uint32)Str::ToInt(Settings::GetValue("TestRenderer.SelectedScene", "0"));
         mSelectedSceneIdx = Clamp(mSelectedSceneIdx, 0u, CountOf(TESTRENDERER_MODELS)-1);
@@ -1259,8 +293,6 @@ struct AppImpl final : AppCallbacks
             mModelScenes[i].Release();
 
         GfxBackend::DestroyImage(mRenderTargetDepth);
-
-        R::ReleaseFwdPlus();
 
         Engine::Release();
     };
@@ -1286,7 +318,7 @@ struct AppImpl final : AppCallbacks
 
         // Update
         ModelScene& scene = mModelScenes[mSelectedSceneIdx];
-        R::UpdateBuffersFwdPlus(cmd, scene.mCam);
+        R::Update(cmd, scene.mCam);
 
         // Render
         {
@@ -1348,9 +380,7 @@ struct AppImpl final : AppCallbacks
             R::Render(cmd, GfxImageHandle(), mRenderTargetDepth, scene.mDebugLightCull ? RDebugMode::LightCull : RDebugMode::None);
         }
 
-        if ( R_MSAA > 1) {
-            cmd.TransitionImage(mRenderTargetDepth, GfxImageTransition::RenderTarget, GfxImageTransitionFlags::DepthRead);
-        }
+        cmd.TransitionImage(mRenderTargetDepth, GfxImageTransition::RenderTarget, GfxImageTransitionFlags::DepthRead);
 
         // DebugDraw
         if (!scene.mDebugLightCull) {

@@ -24,6 +24,8 @@
 
 #include "Tool/Console.h"
 
+#include "Renderers/RForward.h"
+
 static constexpr float  ENGINE_REMOTE_RECONNECT_INTERVAL = 5.0f;
 static constexpr uint32 ENGINE_REMOTE_CONNECT_RETRIES = 3;
 static constexpr size_t ENGINE_MAX_MEMORY_SIZE = 2*SIZE_GB;
@@ -450,6 +452,14 @@ bool Engine::Initialize()
         Console::RegisterCommand(cmdVmem);
     }
 
+    // Renderer(s)
+    if (gfxSettings.IsGraphicsEnabled()) {
+        if (!R::Initialize()) {
+            LOG_ERROR("Initializing Renderer failed");
+            return false;
+        }
+    }
+
     LOG_INFO("(init) Engine v%u.%u.%u initialized (%.1f ms)", 
              GetVersionMajor(JUNKYARD_VERSION),
              GetVersionMinor(JUNKYARD_VERSION),
@@ -483,6 +493,8 @@ void Engine::Release()
 
     const SettingsGraphics& gfxSettings = SettingsJunkyard::Get().graphics;
     if (gfxSettings.IsGraphicsEnabled()) {
+        R::Release();
+
         if (ImGui::IsEnabled()) {
             DebugHud::Release();
             ImGui::Release();

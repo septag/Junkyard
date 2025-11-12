@@ -41,6 +41,9 @@ file(GLOB HEADERS_DebugTools ../../code/DebugTools/*.h)
 file(GLOB SOURCE_Graphics ../../code/Graphics/*.cpp)
 file(GLOB HEADERS_Graphics ../../code/Graphics/*.h)
 
+file(GLOB SOURCE_Renderers ../../code/Renderers/*.cpp)
+file(GLOB HEADERS_Renderers ../../code/Renderers/*.h)
+
 file(GLOB SOURCE_ImGui ../../code/ImGui/*.cpp)
 file(GLOB HEADERS_ImGui ../../code/ImGui/*.h)
 
@@ -63,6 +66,7 @@ add_library(Junkyard STATIC
     ${SOURCE_Common} ${HEADERS_Core} 
     ${SOURCE_DebugTools} ${HEADERS_DebugTools}
     ${SOURCE_Graphics} ${HEADERS_Graphics} 
+    ${SOURCE_Renderers} ${HEADERS_Renderers} 
     ${SOURCE_ImGui} ${HEADERS_ImGui}
     ${SOURCE_Tool} ${HEADERS_Tool}
     ${SOURCE_Assets} ${HEADERS_Assets}

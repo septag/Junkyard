@@ -37,7 +37,7 @@ namespace Engine
 
     namespace _private
     {
-        void PostInitialize();
+        void PostInitialize();  // Called internally by Application after everything is initialized
     }
 } // Engine
     

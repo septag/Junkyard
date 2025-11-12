@@ -250,6 +250,7 @@
     <ClCompile Include="..\..\code\Graphics\GfxBackend.cpp" />
     <ClCompile Include="..\..\code\ImGui\ImGuiMain.cpp" />
     <ClCompile Include="..\..\code\ImGui\ImGuizmo.cpp" />
+    <ClCompile Include="..\..\code\Renderers\RForward.cpp" />
     <ClCompile Include="..\..\code\Tool\Console.cpp" />
     <ClCompile Include="..\..\code\Tool\ImageEncoder.cpp" />
     <ClCompile Include="..\..\code\Tool\MeshOptimizer.cpp" />
@@ -332,21 +333,34 @@
     <ClInclude Include="..\..\code\Graphics\GfxBackendTypes.h" />
     <ClInclude Include="..\..\code\ImGui\ImGuiMain.h" />
     <ClInclude Include="..\..\code\ImGui\ImGuizmo.h" />
+    <ClInclude Include="..\..\code\Renderers\RForward.h" />
     <ClInclude Include="..\..\code\Tool\Console.h" />
     <ClInclude Include="..\..\code\Tool\ImageEncoder.h" />
     <ClInclude Include="..\..\code\Tool\MeshOptimizer.h" />
     <ClInclude Include="..\..\code\Tool\ShaderCompiler.h" />
   </ItemGroup>
   <ItemGroup>
+    <FxCompile Include="..\..\code\Shaders\FwdPlusLight.hlsl">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
+    </FxCompile>
     <FxCompile Include="..\..\code\Shaders\ImGui.hlsl">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='ReleaseDev|x64'">true</ExcludedFromBuild>
     </FxCompile>
+    <FxCompile Include="..\..\code\Shaders\LightCull.hlsl">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
+    </FxCompile>
+    <FxCompile Include="..\..\code\Shaders\LightCullDebug.hlsl">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
+    </FxCompile>
     <FxCompile Include="..\..\code\Shaders\Quad.hlsl">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='ReleaseDev|x64'">true</ExcludedFromBuild>
+    </FxCompile>
+    <FxCompile Include="..\..\code\Shaders\ZPrepass.hlsl">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
     </FxCompile>
   </ItemGroup>
   <ItemGroup>

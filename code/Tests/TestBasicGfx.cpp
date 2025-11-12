@@ -286,7 +286,7 @@ struct ModelScene
                 continue;
 
             ModelTransform transform {
-                .modelMat = Transform3D::ToMat4(node.localTransform)
+                .modelMat = Mat4::TransformMat(node.localTransform.position, node.localTransform.rotation, node.localTransform.scale)
             };
             cmd.PushConstants(mPipelineLayout, "ModelTransform", &transform, sizeof(transform));
 

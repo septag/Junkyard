@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup>
     <Filter Include="Core">
@@ -93,6 +93,9 @@
     </Filter>
     <Filter Include="External\LivePP">
       <UniqueIdentifier>{c2977352-c411-4a8c-a32f-04c05cc93ca7}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Renderers">
+      <UniqueIdentifier>{431d3ee9-9193-42e7-9141-ac3154e38d03}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
   <ItemGroup>
@@ -237,6 +240,9 @@
     </ClCompile>
     <ClCompile Include="..\..\code\Graphics\GfxBackend.cpp">
       <Filter>Graphics</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\code\Renderers\RForward.cpp">
+      <Filter>Renderers</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -476,12 +482,27 @@
     <ClInclude Include="..\..\code\External\LivePP\API\x64\LPP_API_x64_CPP.h">
       <Filter>External\LivePP</Filter>
     </ClInclude>
+    <ClInclude Include="..\..\code\Renderers\RForward.h">
+      <Filter>Renderers</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <FxCompile Include="..\..\code\Shaders\ImGui.hlsl">
       <Filter>Shaders</Filter>
     </FxCompile>
     <FxCompile Include="..\..\code\Shaders\Quad.hlsl">
+      <Filter>Shaders</Filter>
+    </FxCompile>
+    <FxCompile Include="..\..\code\Shaders\FwdPlusLight.hlsl">
+      <Filter>Shaders</Filter>
+    </FxCompile>
+    <FxCompile Include="..\..\code\Shaders\LightCull.hlsl">
+      <Filter>Shaders</Filter>
+    </FxCompile>
+    <FxCompile Include="..\..\code\Shaders\LightCullDebug.hlsl">
+      <Filter>Shaders</Filter>
+    </FxCompile>
+    <FxCompile Include="..\..\code\Shaders\ZPrepass.hlsl">
       <Filter>Shaders</Filter>
     </FxCompile>
   </ItemGroup>
