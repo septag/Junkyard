@@ -142,10 +142,8 @@ struct ModelScene
 
     void UpdateImGui()
     {
-        if (ImGui::ColorEdit4("Sky Ambient Color", mSkyAmbient.f, ImGuiColorEditFlags_Float))
-            R::SetAmbientLight(mSkyAmbient, mGroundAmbient);
-        if (ImGui::ColorEdit4("Ground Ambient Color", mGroundAmbient.f, ImGuiColorEditFlags_Float)) 
-            R::SetAmbientLight(mSkyAmbient, mGroundAmbient);
+        ImGui::ColorEdit4("Sky Ambient Color", mSkyAmbient.f, ImGuiColorEditFlags_Float);
+        ImGui::ColorEdit4("Ground Ambient Color", mGroundAmbient.f, ImGuiColorEditFlags_Float);
         ImGui::Separator();
 
         if (ImGui::SliderFloat("Sun Light Angle", &mSunlightAngle, 0, M_PI, "%0.1f"))
@@ -155,10 +153,8 @@ struct ModelScene
 
         ImGui::SliderFloat("Point Light Radius", &mPointLightRadius, 0.1f, 10.0f, "%.1f");
         ImGui::ColorEdit4("Light Color", mLightColor.f, ImGuiColorEditFlags_Float);
-        if (ImGui::Button("Add Point Light")) {
+        if (ImGui::Button("Add Point Light"))
             AddLightAtCameraPosition();
-            SetLocalLights();
-        }
 
         if (ImGui::Button("Save Lights")) {
             SaveLights();
@@ -208,11 +204,6 @@ struct ModelScene
                 mLights.Push(light);
             }
         }
-
-        if (!mLights.IsEmpty()) 
-            SetLocalLights();
-        R::SetAmbientLight(mSkyAmbient, mGroundAmbient);
-        R::SetSunLight(Float3(-0.2f, M::Cos(mSunlightAngle), -M::Sin(mSunlightAngle)), mSunlightColor);
     }
 
     void AddLightAtCameraPosition()
@@ -323,6 +314,10 @@ struct AppImpl final : AppCallbacks
         // Render
         {
             R::NewFrame();
+
+            scene.SetLocalLights();
+            R::SetAmbientLight(scene.mSkyAmbient, scene.mGroundAmbient);
+            R::SetSunLight(Float3(-0.2f, M::Cos(scene.mSunlightAngle), -M::Sin(scene.mSunlightAngle)), scene.mSunlightColor);
 
             AssetObjPtrScope<ModelData> model(scene.mModel);
             if (!model.IsNull()) {

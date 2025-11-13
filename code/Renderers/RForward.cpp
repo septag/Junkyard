@@ -1,9 +1,11 @@
 #include "RForward.h"
 
 #include "../Core/MathAll.h"
+#include "../Core/Log.h"
 
 #include "../Common/Application.h"
 #include "../Common/Camera.h"
+#include "../Common/JunkyardSettings.h"
 
 #include "../Graphics/GfxBackend.h"
 
@@ -16,7 +18,6 @@
 static inline constexpr uint32 R_LIGHT_CULL_TILE_SIZE = 16;
 static inline constexpr uint32 R_LIGHT_CULL_MAX_LIGHTS_PER_TILE = 64;
 static inline constexpr uint32 R_LIGHT_CULL_MAX_LIGHTS_PER_FRAME = 1024;
-static inline constexpr uint32 R_MSAA = 4;
 
 struct RVertexStreamPosition
 {
@@ -120,17 +121,19 @@ namespace R
 {
     static void _CreateFramebufferDependentResources(uint16 width, uint16 height)
     {
+        uint32 msaa = SettingsJunkyard::Get().graphics.msaa;
+
         GfxBackend::DestroyImage(gFwd.msaaDepthRenderImage);
         GfxBackend::DestroyImage(gFwd.msaaColorRenderImage);
         GfxBackend::DestroyBuffer(gFwd.bVisibleLightIndices);
 
         //--------------------------------------------------------------------------------------------------------------
         // Render Images
-        if constexpr (R_MSAA > 1) {
+        if (msaa > 1) {
             GfxImageDesc desc {
                 .width = width,
                 .height = height,
-                .multisampleFlags = (GfxMultiSampleCount)R_MSAA,
+                .multisampleFlags = (GfxMultiSampleCount)msaa,
                 .format = GfxBackend::GetValidDepthStencilFormat(), // TODO:
                 .usageFlags = GfxImageUsageFlags::DepthStencilAttachment|GfxImageUsageFlags::Sampled,
             };
@@ -148,7 +151,7 @@ namespace R
             GfxImageDesc desc {
                 .width = width,
                 .height = height,
-                .multisampleFlags = (GfxMultiSampleCount)R_MSAA,
+                .multisampleFlags = (GfxMultiSampleCount)msaa,
                 .format = GfxBackend::GetSwapchainFormat(), // TODO: 
                 .usageFlags = GfxImageUsageFlags::ColorAttachment,
             };
@@ -177,6 +180,8 @@ namespace R
 
     static void _CreatePipelines()
     {
+        uint32 msaa = SettingsJunkyard::Get().graphics.msaa;
+
         //--------------------------------------------------------------------------------------------------------------
         // ZPrepass
         {
@@ -243,7 +248,7 @@ namespace R
                     .depthCompareOp = GfxCompareOp::Less
                 },
                 .msaa = {
-                    .sampleCount = (GfxMultiSampleCount)R_MSAA
+                    .sampleCount = (GfxMultiSampleCount)msaa
                 },
                 .numColorAttachments = 0,
                 .depthAttachmentFormat = GfxBackend::GetValidDepthStencilFormat(),
@@ -410,7 +415,7 @@ namespace R
                     .depthCompareOp = GfxCompareOp::Equal
                 },
                 .msaa = {
-                    .sampleCount = (GfxMultiSampleCount)R_MSAA
+                    .sampleCount = (GfxMultiSampleCount)msaa
                 },
                 .numColorAttachments = 1,
                 .colorAttachmentFormats = {GfxBackend::GetSwapchainFormat()},
@@ -493,7 +498,20 @@ void R::GetCompatibleLayout(uint32 maxAttributes, GfxVertexInputAttributeDesc* o
 
 bool R::Initialize()
 {
-    gFwd.frameAlloc.Initialize(SIZE_MB, SIZE_KB*128);
+    const SettingsJunkyard& settings = SettingsJunkyard::Get();
+
+    if (settings.graphics.msaa != 1 && 
+        settings.graphics.msaa != 2 &&
+        settings.graphics.msaa != 4 &&
+        settings.graphics.msaa != 8 &&
+        settings.graphics.msaa != 16)
+    {
+        LOG_ERROR("Invalid MSAA value in settings (%u). Should be either 1/2/4/8/16", settings.graphics.msaa);
+        return false;
+    }
+
+    bool debugAllocs = settings.engine.debugAllocations;
+    gFwd.frameAlloc.Initialize(SIZE_MB, SIZE_KB*128, debugAllocs);
 
     App::RegisterEventsCallback([](const AppEvent& ev, void*)
                                 {
@@ -542,7 +560,7 @@ bool R::Initialize()
                     },
                     {
                         .define = "MSAA",
-                        .value = String32::Format("%d", R_MSAA)
+                        .value = String32::Format("%d", settings.graphics.msaa)
                     }
                 }
             }
@@ -578,11 +596,6 @@ void R::Release()
 
     GfxBackend::DestroyImage(gFwd.msaaColorRenderImage);
     GfxBackend::DestroyImage(gFwd.msaaDepthRenderImage);
-
-    Mem::Free(gFwd.lightBounds);
-    Mem::Free(gFwd.lightProps);
-    gFwd.lightBounds = nullptr;
-    gFwd.lightProps = nullptr;
 
     gFwd.frameAlloc.Release();
 }
@@ -647,7 +660,9 @@ void R::Update(GfxCommandBuffer& cmd, const Camera& cam)
 
 void R::Render(GfxCommandBuffer& cmd, GfxImageHandle finalColorImage, GfxImageHandle finalDepthImage, RDebugMode debugMode)
 {
-    GfxImageHandle renderDepthImage = R_MSAA > 1 ? gFwd.msaaDepthRenderImage : finalDepthImage;
+    uint32 msaa = SettingsJunkyard::Get().graphics.msaa;
+
+    GfxImageHandle renderDepthImage = msaa > 1 ? gFwd.msaaDepthRenderImage : finalDepthImage;
     ASSERT(renderDepthImage.IsValid());
 
     // Render blank screen if we have nothing to render
@@ -750,13 +765,13 @@ void R::Render(GfxCommandBuffer& cmd, GfxImageHandle finalColorImage, GfxImageHa
 
     // Light pass
     if (debugMode == RDebugMode::None) {
-        if (R_MSAA > 1 && finalDepthImage.IsValid()) {
+        if (msaa > 1 && finalDepthImage.IsValid()) {
             cmd.TransitionImage(finalDepthImage, GfxImageTransition::RenderTarget, 
                                 GfxImageTransitionFlags::DepthWrite|GfxImageTransitionFlags::DepthResolve);
         }
 
         // If finalColorImage is not provided, we render to Swapchain
-        GfxImageHandle renderColorImage = R_MSAA > 1 ? gFwd.msaaColorRenderImage : finalColorImage;
+        GfxImageHandle renderColorImage = msaa > 1 ? gFwd.msaaColorRenderImage : finalColorImage;
 
         // Render to swapchain if we don't have MSAA, otherwise, resolve to Swapchain and provided depth buffer
         GfxBackendRenderPass pass { 
@@ -765,14 +780,14 @@ void R::Render(GfxCommandBuffer& cmd, GfxImageHandle finalColorImage, GfxImageHa
                 .image = renderColorImage,
                 .resolveImage = finalColorImage,
                 .clear = true,
-                .resolveToSwapchain = R_MSAA > 1 && !finalColorImage.IsValid(),
+                .resolveToSwapchain = msaa > 1 && !finalColorImage.IsValid(),
                 .clearValue = {
                     .color = gFwd.lightPerFrameData.skyAmbientColor
                 }
             }},
             .depthAttachment = {
                 .image = renderDepthImage,
-                .resolveImage = R_MSAA > 1 ? finalDepthImage : GfxImageHandle(),
+                .resolveImage = msaa > 1 ? finalDepthImage : GfxImageHandle(),
                 .load = true,
                 .clear = false,
             },
@@ -871,8 +886,8 @@ void R::SetLocalLights(uint32 numLights, const RLightBounds* bounds, const RLigh
     gFwd.numLights = numLights;
 
     if (numLights) {
-        gFwd.lightBounds = Mem::ReallocTyped<RLightBounds>(gFwd.lightBounds, numLights);   // TODO: alloc
-        gFwd.lightProps = Mem::ReallocTyped<RLightProps>(gFwd.lightProps, numLights);
+        gFwd.lightBounds = Mem::AllocTyped<RLightBounds>(numLights, &gFwd.frameAlloc);
+        gFwd.lightProps = Mem::AllocTyped<RLightProps>(numLights, &gFwd.frameAlloc);
         memcpy(gFwd.lightBounds, bounds, sizeof(RLightBounds)*numLights);
         memcpy(gFwd.lightProps, props, sizeof(RLightProps)*numLights);
     }
@@ -911,6 +926,9 @@ void R::NewFrame()
     gFwd.frameAlloc.Reset();
     gFwd.chunkList = nullptr;
     gFwd.lastChunk = nullptr;
+    gFwd.lightBounds = nullptr;
+    gFwd.lightProps = nullptr;
+    gFwd.numLights = 0;
     gFwd.numGeometryChunks = 0;
 }
 

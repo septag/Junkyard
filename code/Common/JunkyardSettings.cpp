@@ -178,6 +178,10 @@ bool SettingsJunkyardParser::ParseSetting(uint32 categoryId, const char* key, co
             graphics->preferIntegratedGpu = Str::ToBool(value);
             return true;
         }
+        else if (Str::IsEqualNoCase(key, "msaa")) {
+            graphics->msaa = Str::ToUint(value);
+            return true;
+        }
     }
     else if (category == SettingsCategory::Tooling) {
         SettingsTooling* tooling = &gSettingsJunkyard.settings.tooling;
