@@ -457,7 +457,6 @@ struct AppImpl final : AppCallbacks
         }
 
         if (ImGui::IsEnabled()) {
-            GPU_PROFILE_ZONE(cmd, "ImGui");
             DebugHud::DrawDebugHud(dt, 20);
             DebugHud::DrawStatusBar(dt);
 

@@ -257,6 +257,7 @@ struct GfxBackendProfilerContext
     void Collect(VkCommandBuffer cmdVk);
     bool IsInitialized() { return mInit; }
     void Calibrate(int64& tCpu, int64& tGpu);
+    void FindCalibratedDeviation();
     uint32 NextQueryId();
 };
 
@@ -2042,7 +2043,10 @@ bool GfxBackend::Initialize()
     }
 
     char vulkanPath[PATH_CHARS_MAX];
-    OS::GetEnvVar("VK_LAYER_PATH", vulkanPath, sizeof(vulkanPath));
+    if (OS::GetEnvVar("VK_LAYER_PATH", vulkanPath, sizeof(vulkanPath))) {
+        LOG_VERBOSE("Gfx: Vulkan SDK is installed to: %s", vulkanPath);
+    }    
+
     if (volkInitialize() != VK_SUCCESS) {
         LOG_ERROR("Volk failed to initialize. Possibly VulkanSDK is not installed (or MoltenVK dll is missing on Mac)");
         return false;
@@ -2574,6 +2578,9 @@ GfxBackendVkAllocator::GfxBackendVkAllocator()
 
 void* GfxBackendVkAllocator::VkAlloc(void*, size_t size, size_t align, VkSystemAllocationScope)
 {
+    if (size == 0)
+        return nullptr;
+
     // Align to minimum of 32 bytes 
     // because we don't know the size of alignment on free, we need to always force alignment!
     if (gBackendVk.driverAllocBase.mTlsfAlloc.IsDebugMode()) {
@@ -6575,6 +6582,27 @@ GfxFormat GfxBackend::GetValidDepthFormat()
 #ifdef TRACY_ENABLE
 
 // This implementation uses VK_EXT_host_query_reset extensions that is available in Vulkan 1.2
+void GfxBackendProfilerContext::FindCalibratedDeviation()
+{
+    constexpr uint32 NumProbes = 32;
+    VkCalibratedTimestampInfoEXT spec[2] = {
+        { VK_STRUCTURE_TYPE_CALIBRATED_TIMESTAMP_INFO_EXT, nullptr, VK_TIME_DOMAIN_DEVICE_EXT },
+        { VK_STRUCTURE_TYPE_CALIBRATED_TIMESTAMP_INFO_EXT, nullptr, mTimeDomain },
+    };
+
+    uint64 ts[2];
+    uint64 deviation[NumProbes];
+    for(uint32 i = 0; i < NumProbes; i++)
+        vkGetCalibratedTimestampsKHR(gBackendVk.device, 2, spec, ts, deviation + i);
+
+    uint64 minDeviation = deviation[0];
+    for(uint32 i = 1; i < NumProbes; i++) {
+        if (minDeviation > deviation[i])
+            minDeviation = deviation[i];
+    }
+    mDeviation = minDeviation * 3 / 2;
+}
+
 bool GfxBackendProfilerContext::Initialize(const char* name)
 {
     ASSERT(gBackendVk.extApi.hasTimestampQueries);
@@ -6609,23 +6637,7 @@ bool GfxBackendProfilerContext::Initialize(const char* name)
 
     // (TracyVulkan: FindCalibratedTimestampDeviation)
     {
-        constexpr uint32 NumProbes = 32;
-        VkCalibratedTimestampInfoEXT spec[2] = {
-            { VK_STRUCTURE_TYPE_CALIBRATED_TIMESTAMP_INFO_EXT, nullptr, VK_TIME_DOMAIN_DEVICE_EXT },
-            { VK_STRUCTURE_TYPE_CALIBRATED_TIMESTAMP_INFO_EXT, nullptr, mTimeDomain },
-        };
-
-        uint64 ts[2];
-        uint64 deviation[NumProbes];
-        for(uint32 i = 0; i < NumProbes; i++)
-            vkGetCalibratedTimestampsKHR(gBackendVk.device, 2, spec, ts, deviation + i);
-
-        uint64 minDeviation = deviation[0];
-        for(uint32 i = 1; i < NumProbes; i++) {
-            if (minDeviation > deviation[i])
-                minDeviation = deviation[i];
-        }
-        mDeviation = minDeviation * 3 / 2;
+        FindCalibratedDeviation();
 
         #if PLATFORM_WINDOWS
         LARGE_INTEGER t;
@@ -6750,9 +6762,9 @@ void GfxBackendProfilerContext::Collect(VkCommandBuffer cmdVk)
 
     ASSERT(mTimeDomain != VK_TIME_DOMAIN_DEVICE_EXT);
 
-    {
+    if ((gBackendVk.presentFrame & 511) == 0)  {
         int64 tgpu, tcpu;
-        Calibrate(tcpu, tgpu);
+        Calibrate(tcpu, tgpu); 
         int64 delta = tcpu - mPrevCalibration;
         if(delta > 0) {
             mPrevCalibration = tcpu;
@@ -6773,6 +6785,9 @@ void GfxBackendProfilerContext::Collect(VkCommandBuffer cmdVk)
 
 void GfxBackendProfilerContext::Calibrate(int64& tCpu, int64& tGpu)
 {
+    // TODO: Improve the profile calibration
+    //       We are now just retrying for a couple of times and quit when deviation is higher than the original one and recalibrate
+    PROFILE_ZONE("ProfilerCalibrate");
     ASSERT( mTimeDomain != VK_TIME_DOMAIN_DEVICE_EXT );
 
     VkCalibratedTimestampInfoEXT spec[2] = {
@@ -6782,9 +6797,17 @@ void GfxBackendProfilerContext::Calibrate(int64& tCpu, int64& tGpu)
 
     uint64 ts[2];
     uint64 deviation;
-    do {
+    constexpr uint32 MaxRetries = 5;
+    for (uint32 retries = 0; retries < MaxRetries; retries++) {
         vkGetCalibratedTimestampsKHR(gBackendVk.device, 2, spec, ts, &deviation);
-    } while(deviation > mDeviation);
+
+        if (deviation <= mDeviation)
+            break;
+        OS::PauseCPU();
+    }
+
+    [[maybe_unused]] VkResult r = vkGetCalibratedTimestampsKHR(gBackendVk.device, 2, spec, ts, &deviation);
+    ASSERT(r == VK_SUCCESS);
 
     #if PLATFORM_WINDOWS
     tGpu = ts[0];
@@ -6795,6 +6818,9 @@ void GfxBackendProfilerContext::Calibrate(int64& tCpu, int64& tGpu)
     #else
     ASSERT_MSG(false, "Not Implemented");
     #endif
+
+    if (deviation > mDeviation)
+        FindCalibratedDeviation();
 }
 
 GpuProfilerScope::GpuProfilerScope(GfxCommandBuffer& cmdBuffer, const ___tracy_source_location_data* sourceLoc, 

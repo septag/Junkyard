@@ -379,6 +379,7 @@ struct AppImpl final : AppCallbacks
 
         // DebugDraw
         if (!scene.mDebugLightCull) {
+            PROFILE_ZONE("DebugDraw");
             DebugDraw::BeginDraw(cmd, *mCam, App::GetFramebufferWidth(), App::GetFramebufferHeight());
             if (mDrawGrid) {
                 DebugDrawGridProperties gridProps {
@@ -400,7 +401,7 @@ struct AppImpl final : AppCallbacks
 
         // ImGui
         if (ImGui::IsEnabled()) {
-            GPU_PROFILE_ZONE(cmd, "ImGui");
+            PROFILE_ZONE("ImGui");
             DebugHud::DrawDebugHud(dt, 20);
             DebugHud::DrawStatusBar(dt);
 

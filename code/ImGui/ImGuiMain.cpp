@@ -674,6 +674,8 @@ bool ImGui::DrawFrame(GfxCommandBuffer cmd)
         }
     }
 
+    GPU_PROFILE_ZONE(cmd, "ImGui");
+
     // Begin Drawing to the swapchain 
     // Note: We cannot BeginRenderPass while updating the buffers
     GfxBackendRenderPass pass { 

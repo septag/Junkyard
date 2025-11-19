@@ -660,6 +660,8 @@ void R::Update(GfxCommandBuffer& cmd, const Camera& cam)
 
 void R::Render(GfxCommandBuffer& cmd, GfxImageHandle finalColorImage, GfxImageHandle finalDepthImage, RDebugMode debugMode)
 {
+    PROFILE_ZONE("R::Render");
+
     uint32 msaa = SettingsJunkyard::Get().graphics.msaa;
 
     GfxImageHandle renderDepthImage = msaa > 1 ? gFwd.msaaDepthRenderImage : finalDepthImage;
@@ -686,6 +688,7 @@ void R::Render(GfxCommandBuffer& cmd, GfxImageHandle finalColorImage, GfxImageHa
 
     // Z-Prepass
     {
+        GPU_PROFILE_ZONE(cmd, "Z-Prepass");
         cmd.TransitionImage(renderDepthImage, GfxImageTransition::RenderTarget, GfxImageTransitionFlags::DepthWrite);
 
         GfxBackendRenderPass zprepass { 
@@ -732,6 +735,7 @@ void R::Render(GfxCommandBuffer& cmd, GfxImageHandle finalColorImage, GfxImageHa
 
     // Light culling
     if (gFwd.numLights) {
+        GPU_PROFILE_ZONE(cmd, "LightCull");
         cmd.TransitionImage(renderDepthImage, GfxImageTransition::ShaderRead);
         cmd.TransitionBuffer(gFwd.bVisibleLightIndices, GfxBufferTransition::ComputeWrite);
 
@@ -765,6 +769,7 @@ void R::Render(GfxCommandBuffer& cmd, GfxImageHandle finalColorImage, GfxImageHa
 
     // Light pass
     if (debugMode == RDebugMode::None) {
+        GPU_PROFILE_ZONE(cmd, "LightPass");
         if (msaa > 1 && finalDepthImage.IsValid()) {
             cmd.TransitionImage(finalDepthImage, GfxImageTransition::RenderTarget, 
                                 GfxImageTransitionFlags::DepthWrite|GfxImageTransitionFlags::DepthResolve);

@@ -231,6 +231,8 @@ void DebugDraw::EndDraw(GfxCommandBuffer cmd, GfxImageHandle depthImage)
     ASSERT(gDebugDraw.stagingVertexBuffer.IsValid());
 
     if (!gDebugDraw.drawItems.IsEmpty()) {
+        GPU_PROFILE_ZONE(cmd, "DebugDraw");
+
         cmd.FlushBuffer(gDebugDraw.stagingVertexBuffer);
         cmd.TransitionBuffer(gDebugDraw.vertexBuffer, GfxBufferTransition::TransferWrite);
         cmd.CopyBufferToBuffer(gDebugDraw.stagingVertexBuffer, gDebugDraw.vertexBuffer, GfxShaderStage::Vertex);
