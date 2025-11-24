@@ -1,7 +1,8 @@
-#include "RForward.h"
+#include "Render.h"
 
 #include "../Core/MathAll.h"
 #include "../Core/Log.h"
+#include "../Core/Pools.h"
 
 #include "../Common/Application.h"
 #include "../Common/Camera.h"
@@ -18,6 +19,8 @@
 static inline constexpr uint32 R_LIGHT_CULL_TILE_SIZE = 16;
 static inline constexpr uint32 R_LIGHT_CULL_MAX_LIGHTS_PER_TILE = 64;
 static inline constexpr uint32 R_LIGHT_CULL_MAX_LIGHTS_PER_FRAME = 1024;
+static inline constexpr size_t R_MAX_SCRATCH_SIZE_PER_THREAD = SIZE_MB*4;
+static inline constexpr uint32 R_MAX_VIEWS = 64;
 
 struct RVertexStreamPosition
 {
@@ -74,13 +77,32 @@ static const uint32 R_VERTEXBUFFER_STRIDES[] = {
     sizeof(RVertexStreamLighting)
 };
 
-struct RFwdContext
+struct RViewData
 {
-    MemBumpAllocatorVM frameAlloc;
+    RViewType type;
+    Mat4 worldToViewMat;
+    Mat4 viewToClipMat;
+    Mat4 worldToClipMat;
+    float nearDist;
+    float farDist;
+
+    Float3 sunLightDir;
+    Float4 sunLightColor;
+    Float4 skyAmbientColor;
+    Float4 groundAmbientColor;
+
+    RLightBounds* lightBounds;
+    RLightProps* lightProps;
+    uint32 numLights;
 
     RGeometryChunk* chunkList;
     RGeometryChunk* lastChunk;
     uint32 numGeometryChunks;
+};
+
+struct RFwdContext
+{
+    MemBumpAllocatorVM frameAlloc;
 
     GfxImageHandle msaaColorRenderImage;
     GfxImageHandle msaaDepthRenderImage;
@@ -89,10 +111,6 @@ struct RFwdContext
     GfxPipelineHandle pZPrepass;
     GfxPipelineLayoutHandle pZPrepassLayout;
     GfxBufferHandle ubZPrepass;
-
-    RLightBounds* lightBounds;
-    RLightProps* lightProps;
-    uint32 numLights;
 
     GfxBufferHandle bVisibleLightIndices;
     GfxBufferHandle bLightBounds; 
@@ -112,7 +130,10 @@ struct RFwdContext
     GfxPipelineLayoutHandle pLightLayout;
     GfxBufferHandle ubLight;
 
-    RLightShaderFrameData lightPerFrameData;
+    HandlePool<RViewHandle, RViewData> viewPool;
+
+    uint32 tilesCountX;
+    uint32 tilesCountY;
 };
 
 RFwdContext gFwd;
@@ -600,19 +621,18 @@ void R::Release()
     gFwd.frameAlloc.Release();
 }
 
-void R::Update(GfxCommandBuffer& cmd, const Camera& cam)
+void R::FwdLight::Update(RView& view, GfxCommandBuffer& cmd)
 {
-    float vwidth = (float)App::GetFramebufferWidth();
-    float vheight = (float)App::GetFramebufferHeight();
+    RViewData& viewData = gFwd.viewPool.Data(view.mHandle);
 
-    Mat4 worldToClipMat = cam.GetPerspectiveMat(vwidth, vheight) * cam.GetViewMat();
+    Mat4 worldToClipMat = viewData.worldToClipMat;
     if (cmd.mDrawsToSwapchain) // TODO: this is not gonna detect swapchain properly
         worldToClipMat = GfxBackend::GetSwapchainTransformMat() * worldToClipMat;
-
-    gFwd.lightPerFrameData.worldToClipMat = worldToClipMat;
-    gFwd.lightPerFrameData.tilesCountX = M::CeilDiv((uint32)App::GetFramebufferWidth(), R_LIGHT_CULL_TILE_SIZE);
-    gFwd.lightPerFrameData.tilesCountY = M::CeilDiv((uint32)App::GetFramebufferHeight(), R_LIGHT_CULL_TILE_SIZE);
-    uint32 numTiles = gFwd.lightPerFrameData.tilesCountX * gFwd.lightPerFrameData.tilesCountY;
+    uint32 tilesCountX = M::CeilDiv((uint32)App::GetFramebufferWidth(), R_LIGHT_CULL_TILE_SIZE);
+    uint32 tilesCountY = M::CeilDiv((uint32)App::GetFramebufferHeight(), R_LIGHT_CULL_TILE_SIZE);
+    uint32 numTiles = tilesCountX * tilesCountY;
+    gFwd.tilesCountX = tilesCountX;
+    gFwd.tilesCountY = tilesCountY;
 
     {
         GfxHelperBufferUpdateScope updater(cmd, gFwd.ubZPrepass, uint32(-1), GfxShaderStage::Vertex|GfxShaderStage::Fragment);
@@ -623,11 +643,11 @@ void R::Update(GfxCommandBuffer& cmd, const Camera& cam)
     {
         GfxHelperBufferUpdateScope updater(cmd, gFwd.ubLightCull, uint32(-1), GfxShaderStage::Compute);
         RLightCullShaderFrameData* buffer = (RLightCullShaderFrameData*)updater.mData;
-        buffer->worldToViewMat = cam.GetViewMat();
-        buffer->clipToViewMat = Mat4::Inverse(cam.GetPerspectiveMat(vwidth, vheight));
-        buffer->cameraNear = cam.Near();
-        buffer->cameraFar = cam.Far();
-        buffer->numLights = gFwd.numLights;
+        buffer->worldToViewMat = viewData.worldToViewMat;
+        buffer->clipToViewMat = Mat4::Inverse(viewData.viewToClipMat);
+        buffer->cameraNear = viewData.nearDist;
+        buffer->cameraFar = viewData.farDist;
+        buffer->numLights = viewData.numLights;
         buffer->windowWidth = App::GetFramebufferWidth();
         buffer->windowHeight = App::GetFramebufferHeight();
     }
@@ -635,19 +655,26 @@ void R::Update(GfxCommandBuffer& cmd, const Camera& cam)
     // Per-frame lighting data
     {
         GfxHelperBufferUpdateScope updater(cmd, gFwd.ubLight, uint32(-1), GfxShaderStage::Fragment);
-        memcpy(updater.mData, &gFwd.lightPerFrameData, sizeof(RLightShaderFrameData));
+        RLightShaderFrameData* frameData = (RLightShaderFrameData*)updater.mData;
+        frameData->worldToClipMat = worldToClipMat;
+        frameData->sunLightDir = viewData.sunLightDir;
+        frameData->sunLightColor = viewData.sunLightColor;
+        frameData->skyAmbientColor = viewData.skyAmbientColor;
+        frameData->groundAmbientColor = viewData.groundAmbientColor;
+        frameData->tilesCountX = tilesCountX;
+        frameData->tilesCountY = tilesCountY;
     }
 
-    if (gFwd.numLights) {
-        GfxHelperBufferUpdateScope lightBoundsUpdater(cmd, gFwd.bLightBounds, sizeof(RLightBounds)*gFwd.numLights,
+    if (viewData.numLights) {
+        GfxHelperBufferUpdateScope lightBoundsUpdater(cmd, gFwd.bLightBounds, sizeof(RLightBounds)*viewData.numLights,
                                                       GfxShaderStage::Compute);
         RLightBounds* bounds = (RLightBounds*)lightBoundsUpdater.mData;
-        memcpy(bounds, gFwd.lightBounds, sizeof(RLightBounds)*gFwd.numLights);
+        memcpy(bounds, viewData.lightBounds, sizeof(RLightBounds)*viewData.numLights);
 
-        GfxHelperBufferUpdateScope lightPropsUpdater(cmd, gFwd.bLightProps, sizeof(RLightProps)*gFwd.numLights,
+        GfxHelperBufferUpdateScope lightPropsUpdater(cmd, gFwd.bLightProps, sizeof(RLightProps)*viewData.numLights,
                                                      GfxShaderStage::Fragment);
         RLightProps* props = (RLightProps*)lightPropsUpdater.mData;
-        memcpy(props, gFwd.lightProps, sizeof(RLightProps)*gFwd.numLights);
+        memcpy(props, viewData.lightProps, sizeof(RLightProps)*viewData.numLights);
     }
     else {
         // Fill visible light indices buffer with sentinels (empty state)
@@ -658,17 +685,19 @@ void R::Update(GfxCommandBuffer& cmd, const Camera& cam)
     }
 }
 
-void R::Render(GfxCommandBuffer& cmd, GfxImageHandle finalColorImage, GfxImageHandle finalDepthImage, RDebugMode debugMode)
+void R::FwdLight::Render(RView& view, GfxCommandBuffer& cmd, GfxImageHandle finalColorImage, GfxImageHandle finalDepthImage, 
+                         RDebugMode debugMode)
 {
-    PROFILE_ZONE("R::Render");
+    PROFILE_ZONE("FwdLight.Render");
 
     uint32 msaa = SettingsJunkyard::Get().graphics.msaa;
+    RViewData& viewData = gFwd.viewPool.Data(view.mHandle);
 
     GfxImageHandle renderDepthImage = msaa > 1 ? gFwd.msaaDepthRenderImage : finalDepthImage;
     ASSERT(renderDepthImage.IsValid());
 
     // Render blank screen if we have nothing to render
-    if (gFwd.numGeometryChunks == 0) {
+    if (viewData.numGeometryChunks == 0) {
         GfxBackendRenderPass pass { 
             .colorAttachments = {{ 
                 .clear = true,
@@ -706,7 +735,7 @@ void R::Render(GfxCommandBuffer& cmd, GfxImageHandle finalColorImage, GfxImageHa
         cmd.BindPipeline(gFwd.pZPrepass);
         cmd.HelperSetFullscreenViewportAndScissor();
 
-        RGeometryChunk* chunk = gFwd.chunkList;
+        RGeometryChunk* chunk = viewData.chunkList;
         while (chunk) {
             cmd.PushConstants(gFwd.pZPrepassLayout, "PerObjectData", &chunk->localToWorldMat, sizeof(Mat4));
 
@@ -734,7 +763,7 @@ void R::Render(GfxCommandBuffer& cmd, GfxImageHandle finalColorImage, GfxImageHa
     }
 
     // Light culling
-    if (gFwd.numLights) {
+    if (viewData.numLights) {
         GPU_PROFILE_ZONE(cmd, "LightCull");
         cmd.TransitionImage(renderDepthImage, GfxImageTransition::ShaderRead);
         cmd.TransitionBuffer(gFwd.bVisibleLightIndices, GfxBufferTransition::ComputeWrite);
@@ -760,7 +789,7 @@ void R::Render(GfxCommandBuffer& cmd, GfxImageHandle finalColorImage, GfxImageHa
 
         cmd.BindPipeline(gFwd.pLightCull);
         cmd.PushBindings(gFwd.pLightCullLayout, CountOf(bindings), bindings);
-        cmd.Dispatch(gFwd.lightPerFrameData.tilesCountX, gFwd.lightPerFrameData.tilesCountY, 1);
+        cmd.Dispatch(gFwd.tilesCountX, gFwd.tilesCountY, 1);
 
         cmd.TransitionBuffer(gFwd.bVisibleLightIndices, GfxBufferTransition::FragmentRead);
     }
@@ -787,7 +816,7 @@ void R::Render(GfxCommandBuffer& cmd, GfxImageHandle finalColorImage, GfxImageHa
                 .clear = true,
                 .resolveToSwapchain = msaa > 1 && !finalColorImage.IsValid(),
                 .clearValue = {
-                    .color = gFwd.lightPerFrameData.skyAmbientColor
+                    .color = viewData.skyAmbientColor
                 }
             }},
             .depthAttachment = {
@@ -805,7 +834,7 @@ void R::Render(GfxCommandBuffer& cmd, GfxImageHandle finalColorImage, GfxImageHa
         
         cmd.HelperSetFullscreenViewportAndScissor();
 
-        RGeometryChunk* chunk = gFwd.chunkList;
+        RGeometryChunk* chunk = viewData.chunkList;
         while (chunk) {
             cmd.PushConstants<Mat4>(gFwd.pLightLayout, "PerObjectData", chunk->localToWorldMat);
 
@@ -875,8 +904,8 @@ void R::Render(GfxCommandBuffer& cmd, GfxImageHandle finalColorImage, GfxImageHa
         cmd.PushBindings(gFwd.pLightCullDebugLayout, CountOf(bindings), bindings);
 
         RLightCullDebugShaderFrameData perFrameData {
-            .tilesCountX = gFwd.lightPerFrameData.tilesCountX,
-            .tilesCountY = gFwd.lightPerFrameData.tilesCountY
+            .tilesCountX = gFwd.tilesCountX,
+            .tilesCountY = gFwd.tilesCountY
         };
         cmd.PushConstants<RLightCullDebugShaderFrameData>(gFwd.pLightCullDebugLayout, "PerFrameData", perFrameData);
 
@@ -886,42 +915,64 @@ void R::Render(GfxCommandBuffer& cmd, GfxImageHandle finalColorImage, GfxImageHa
     }
 }
 
-void R::SetLocalLights(uint32 numLights, const RLightBounds* bounds, const RLightProps* props)
+void RView::SetCameraAndViewport(const Camera& cam, Float2 viewSize)
 {
-    gFwd.numLights = numLights;
+    RViewData& viewData = gFwd.viewPool.Data(mHandle);
+
+    viewData.worldToViewMat = cam.GetViewMat();
+
+    if (viewData.type == RViewType::ShadowMap)
+        viewData.viewToClipMat = cam.GetOrthoMat(viewSize.x, viewSize.y);
+    else 
+        viewData.viewToClipMat = cam.GetPerspectiveMat(viewSize.x, viewSize.y);
+    viewData.worldToClipMat = viewData.viewToClipMat * viewData.worldToViewMat;
+
+    viewData.nearDist = cam.Near();
+    viewData.farDist = cam.Far();
+}
+
+void RView::SetLocalLights(uint32 numLights, const RLightBounds* bounds, const RLightProps* props)
+{
+    RViewData& viewData = gFwd.viewPool.Data(mHandle);
+
+    viewData.numLights = numLights;
 
     if (numLights) {
-        gFwd.lightBounds = Mem::AllocTyped<RLightBounds>(numLights, &gFwd.frameAlloc);
-        gFwd.lightProps = Mem::AllocTyped<RLightProps>(numLights, &gFwd.frameAlloc);
-        memcpy(gFwd.lightBounds, bounds, sizeof(RLightBounds)*numLights);
-        memcpy(gFwd.lightProps, props, sizeof(RLightProps)*numLights);
+        viewData.lightBounds = Mem::AllocTyped<RLightBounds>(numLights, &gFwd.frameAlloc);
+        viewData.lightProps = Mem::AllocTyped<RLightProps>(numLights, &gFwd.frameAlloc);
+        memcpy(viewData.lightBounds, bounds, sizeof(RLightBounds)*numLights);
+        memcpy(viewData.lightProps, props, sizeof(RLightProps)*numLights);
     }
 }
 
-void R::SetAmbientLight(Float4 skyAmbientColor, Float4 groundAmbientColor)
+void RView::SetAmbientLight(Float4 skyAmbientColor, Float4 groundAmbientColor)
 {
-    gFwd.lightPerFrameData.skyAmbientColor = Color4u::ToFloat4Linear(skyAmbientColor);
-    gFwd.lightPerFrameData.groundAmbientColor = Color4u::ToFloat4Linear(groundAmbientColor);
+    RViewData& vdata = gFwd.viewPool.Data(mHandle);
+    vdata.skyAmbientColor = Color4u::ToFloat4Linear(skyAmbientColor);
+    vdata.groundAmbientColor = Color4u::ToFloat4Linear(groundAmbientColor);
 }
 
-void R::SetSunLight(Float3 direction, Float4 color)
+void RView::SetSunLight(Float3 direction, Float4 color)
 {
-    gFwd.lightPerFrameData.sunLightDir = Float3::Norm(direction);
-    gFwd.lightPerFrameData.sunLightColor = Color4u::ToFloat4Linear(color);
+    RViewData& viewData = gFwd.viewPool.Data(mHandle);
+    viewData.sunLightDir = Float3::Norm(direction);
+    viewData.sunLightColor = Color4u::ToFloat4Linear(color);
 }
 
-RGeometryChunk* R::NewGeometryChunk()
+RGeometryChunk* RView::NewGeometryChunk()
 {
+    RViewData& viewData = gFwd.viewPool.Data(mHandle);
+
     RGeometryChunk* chunk = Mem::AllocZeroTyped<RGeometryChunk>(1, &gFwd.frameAlloc);
     chunk->localToWorldMat = MAT4_IDENT;
 
-    if (gFwd.lastChunk)
-        gFwd.lastChunk->nextChunk = chunk;
+    if (viewData.lastChunk)
+        viewData.lastChunk->nextChunk = chunk;
     else
-        gFwd.chunkList = chunk;
-    gFwd.lastChunk = chunk;
+        viewData.chunkList = chunk;
+    viewData.lastChunk = chunk;
 
-    ++gFwd.numGeometryChunks;
+    ++viewData.numGeometryChunks;
 
     return chunk;        
 }
@@ -929,14 +980,36 @@ RGeometryChunk* R::NewGeometryChunk()
 void R::NewFrame()
 {
     gFwd.frameAlloc.Reset();
-    gFwd.chunkList = nullptr;
-    gFwd.lastChunk = nullptr;
-    gFwd.lightBounds = nullptr;
-    gFwd.lightProps = nullptr;
-    gFwd.numLights = 0;
-    gFwd.numGeometryChunks = 0;
+
+    for (RViewData& vdata : gFwd.viewPool) {
+        vdata.chunkList = nullptr;
+        vdata.lastChunk = nullptr;
+        vdata.lightBounds = nullptr;
+        vdata.lightProps = nullptr;
+        vdata.numLights = 0;
+        vdata.numGeometryChunks = 0;
+    }
 }
 
+RView R::CreateView(RViewType viewType)
+{
+    RViewData data {
+        .type = viewType,
+    };
+
+    RViewHandle handle = gFwd.viewPool.Add(data);
+    RView view {
+        .mHandle = handle,
+        .mThreadId = Thread::GetCurrentId()
+    };
+
+    return view;
+}
+
+void R::DestroyView(RView& view)
+{
+    gFwd.viewPool.Remove(view.mHandle);
+}
 
    
 //  ██████╗ ███╗   ███╗███████╗███╗   ███╗ ██████╗ ██████╗ ██╗   ██╗ ██████╗██╗  ██╗██╗   ██╗███╗   ██╗██╗  ██╗

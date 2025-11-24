@@ -30,7 +30,7 @@
 #include "../Engine.h"
 
 #include "../Graphics/GfxBackend.h"
-#include "../Renderers/RForward.h"
+#include "../Renderer/Render.h"
 
 static const char* TESTRENDERER_MODELS[] = {
     "/data/Duck/Duck.gltf",
@@ -120,7 +120,7 @@ struct ModelScene
         mLights.Free();
     }
 
-    void SetLocalLights()
+    void SetLocalLights(RView& view)
     {
         uint32 numLights = mLights.Count();
         MemTempAllocator tempAlloc;
@@ -137,19 +137,19 @@ struct ModelScene
                 .color = Color4u::ToFloat4Linear(l.color)
             };
         }
-        R::SetLocalLights(numLights, lightBounds, lightProps);
+        view.SetLocalLights(numLights, lightBounds, lightProps);
     }
 
-    void UpdateImGui()
+    void UpdateImGui(RView& view)
     {
         ImGui::ColorEdit4("Sky Ambient Color", mSkyAmbient.f, ImGuiColorEditFlags_Float);
         ImGui::ColorEdit4("Ground Ambient Color", mGroundAmbient.f, ImGuiColorEditFlags_Float);
         ImGui::Separator();
 
         if (ImGui::SliderFloat("Sun Light Angle", &mSunlightAngle, 0, M_PI, "%0.1f"))
-            R::SetSunLight(Float3(-0.2f, M::Cos(mSunlightAngle), -M::Sin(mSunlightAngle)), mSunlightColor);
+            view.SetSunLight(Float3(-0.2f, M::Cos(mSunlightAngle), -M::Sin(mSunlightAngle)), mSunlightColor);
         if (ImGui::ColorEdit4("Sun Light Color", mSunlightColor.f, ImGuiColorEditFlags_Float))
-            R::SetSunLight(Float3(-0.2f, M::Cos(mSunlightAngle), -M::Sin(mSunlightAngle)), mSunlightColor);
+            view.SetSunLight(Float3(-0.2f, M::Cos(mSunlightAngle), -M::Sin(mSunlightAngle)), mSunlightColor);
 
         ImGui::SliderFloat("Point Light Radius", &mPointLightRadius, 0.1f, 10.0f, "%.1f");
         ImGui::ColorEdit4("Light Color", mLightColor.f, ImGuiColorEditFlags_Float);
@@ -221,6 +221,7 @@ struct AppImpl final : AppCallbacks
 {
     Camera* mCam = nullptr;
     ModelScene mModelScenes[CountOf(TESTRENDERER_MODELS)];
+    RView mFwdRenderView;
     GfxImageHandle mRenderTargetDepth;
     uint32 mSelectedSceneIdx;
     bool mFirstTime = true;
@@ -273,6 +274,8 @@ struct AppImpl final : AppCallbacks
         if constexpr (PLATFORM_APPLE || PLATFORM_ANDROID)
             mDrawGrid = false;
 
+        mFwdRenderView = R::CreateView(RViewType::FwdLight);
+
         return true;
     };
 
@@ -283,6 +286,7 @@ struct AppImpl final : AppCallbacks
         for (uint32 i = 0; i < CountOf(TESTRENDERER_MODELS); i++)
             mModelScenes[i].Release();
 
+        R::DestroyView(mFwdRenderView);
         GfxBackend::DestroyImage(mRenderTargetDepth);
 
         Engine::Release();
@@ -309,22 +313,23 @@ struct AppImpl final : AppCallbacks
 
         // Update
         ModelScene& scene = mModelScenes[mSelectedSceneIdx];
-        R::Update(cmd, scene.mCam);
+        R::FwdLight::Update(mFwdRenderView, cmd);
 
         // Render
         {
             R::NewFrame();
 
-            scene.SetLocalLights();
-            R::SetAmbientLight(scene.mSkyAmbient, scene.mGroundAmbient);
-            R::SetSunLight(Float3(-0.2f, M::Cos(scene.mSunlightAngle), -M::Sin(scene.mSunlightAngle)), scene.mSunlightColor);
+            scene.SetLocalLights(mFwdRenderView);
+            mFwdRenderView.SetAmbientLight(scene.mSkyAmbient, scene.mGroundAmbient);
+            mFwdRenderView.SetSunLight(Float3(-0.2f, M::Cos(scene.mSunlightAngle), -M::Sin(scene.mSunlightAngle)), scene.mSunlightColor);
+            mFwdRenderView.SetCameraAndViewport(*mCam, Float2(float(App::GetWindowWidth()), float(App::GetWindowHeight())));
 
             AssetObjPtrScope<ModelData> model(scene.mModel);
             if (!model.IsNull()) {
                 MemTempAllocator tempAlloc;
                 Array<RGeometrySubChunk> subChunks(&tempAlloc);
 
-                RGeometryChunk* chunk = R::NewGeometryChunk();
+                RGeometryChunk* chunk = mFwdRenderView.NewGeometryChunk();
 
                 for (uint32 i = 0; i < model->numNodes; i++) {
                     const ModelNode& node = model->nodes[i];
@@ -372,7 +377,8 @@ struct AppImpl final : AppCallbacks
                 chunk->AddSubChunks(subChunks.Count(), subChunks.Ptr());
             }
 
-            R::Render(cmd, GfxImageHandle(), mRenderTargetDepth, scene.mDebugLightCull ? RDebugMode::LightCull : RDebugMode::None);
+            R::FwdLight::Render(mFwdRenderView, cmd, GfxImageHandle(), mRenderTargetDepth, 
+                                scene.mDebugLightCull ? RDebugMode::LightCull : RDebugMode::None);
         }
 
         cmd.TransitionImage(mRenderTargetDepth, GfxImageTransition::RenderTarget, GfxImageTransitionFlags::DepthRead);
@@ -428,7 +434,7 @@ struct AppImpl final : AppCallbacks
 
             ImGui::SetNextWindowSize(ImVec2(300, 200), ImGuiCond_FirstUseEver);
             if (ImGui::Begin("Scene")) {
-                scene.UpdateImGui();
+                scene.UpdateImGui(mFwdRenderView);
             }
             ImGui::End();
 

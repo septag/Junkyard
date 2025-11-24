@@ -56,6 +56,27 @@ struct RGeometryChunk
     void AddSubChunks(uint32 numSubChunks, const RGeometrySubChunk* subChunks);
 };
 
+DEFINE_HANDLE(RViewHandle);
+
+struct RView
+{
+    RViewHandle mHandle;
+    uint32 mThreadId;
+
+    void SetCameraAndViewport(const Camera& cam, Float2 viewSize);
+    void SetLocalLights(uint32 numLights, const RLightBounds* bounds, const RLightProps* props);
+    void SetAmbientLight(Float4 skyAmbientColor, Float4 groundAmbientColor);
+    void SetSunLight(Float3 direction, Float4 color);
+
+    RGeometryChunk* NewGeometryChunk();
+};
+
+enum class RViewType
+{
+    FwdLight,
+    ShadowMap
+};
+
 namespace R 
 {
     bool Initialize();
@@ -63,14 +84,21 @@ namespace R
 
     void GetCompatibleLayout(uint32 maxAttributes, GfxVertexInputAttributeDesc* outAtts, uint32 maxStrides, uint32* outStrides);
 
-    void SetLocalLights(uint32 numLights, const RLightBounds* bounds, const RLightProps* props);
-    void SetAmbientLight(Float4 skyAmbientColor, Float4 groundAmbientColor);
-    void SetSunLight(Float3 direction, Float4 color);
+    RView CreateView(RViewType viewType);
+    void DestroyView(RView& view);
 
     void NewFrame();
-    void Update(GfxCommandBuffer& cmd, const Camera& cam);
-    void Render(GfxCommandBuffer& cmd, GfxImageHandle finalColorImage, GfxImageHandle finalDepthImage, 
-                RDebugMode debugMode = RDebugMode::None);
 
-    RGeometryChunk* NewGeometryChunk();
+    namespace FwdLight
+    {
+        void Update(RView& view, GfxCommandBuffer& cmd);
+        void Render(RView& view, GfxCommandBuffer& cmd, GfxImageHandle finalColorImage, GfxImageHandle finalDepthImage, 
+                    RDebugMode debugMode = RDebugMode::None);
+    }
+
+    namespace ShadowMap
+    {
+        void Update(RView& view, GfxCommandBuffer& cmd);
+        void Render();
+    }
 } // R

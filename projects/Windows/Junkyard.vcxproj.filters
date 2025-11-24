@@ -94,7 +94,7 @@
     <Filter Include="External\LivePP">
       <UniqueIdentifier>{c2977352-c411-4a8c-a32f-04c05cc93ca7}</UniqueIdentifier>
     </Filter>
-    <Filter Include="Renderers">
+    <Filter Include="Renderer">
       <UniqueIdentifier>{431d3ee9-9193-42e7-9141-ac3154e38d03}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
@@ -241,8 +241,11 @@
     <ClCompile Include="..\..\code\Graphics\GfxBackend.cpp">
       <Filter>Graphics</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\code\Renderers\RForward.cpp">
-      <Filter>Renderers</Filter>
+    <ClCompile Include="..\..\code\Common\ThreadAllocatorArena.cpp">
+      <Filter>Common</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\code\Renderer\Render.cpp">
+      <Filter>Renderer</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -482,8 +485,11 @@
     <ClInclude Include="..\..\code\External\LivePP\API\x64\LPP_API_x64_CPP.h">
       <Filter>External\LivePP</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\code\Renderers\RForward.h">
-      <Filter>Renderers</Filter>
+    <ClInclude Include="..\..\code\Common\ThreadAllocatorArena.h">
+      <Filter>Common</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\code\Renderer\Render.h">
+      <Filter>Renderer</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

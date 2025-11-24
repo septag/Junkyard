@@ -13,6 +13,7 @@
 #include "../Common/RemoteServices.h"
 #include "../Common/JunkyardSettings.h"
 #include "../Common/Profiler.h"
+#include "../Common/ThreadAllocatorArena.h"
 
 #if PLATFORM_ANDROID
 #include "../Common/Application.h"
@@ -124,15 +125,6 @@ struct alignas(CACHE_LINE_SIZE) AssetDataHeader
     AssetParams* params;
     AssetDataInternal* data;
     uint8 _reserved[16];
-};
-
-struct AssetScratchMemArena
-{
-    SpinLockMutex threadToAllocatorTableMtx;
-    HashTableUint threadToAllocatorTable;
-    MemBumpAllocatorVM* allocators;
-    uint32 maxAllocators;
-    uint32 numAllocators;
 };
 
 enum AssetLoadTaskInputType
@@ -249,7 +241,7 @@ struct AssetMan
     Mutex pendingJobsMutex;
     Mutex hotReloadMutex;
 
-    AssetScratchMemArena memArena;
+    MemThreadAllocatorArena* memArena;
     MemBumpAllocatorCustom tempAlloc;   // Used in LoadAssetGroup, because we cannot use regular temp allocators due to dispatching
 
     Array<AssetTypeManager> typeManagers;
@@ -290,7 +282,6 @@ using DataChunk = Pair<void*, uint32>;
                                                                                                         
 namespace Asset
 {
-    static MemBumpAllocatorVM* _GetOrCreateScratchAllocator(AssetScratchMemArena& arena);
     static Span<AssetMetaKeyValue> _LoadMetaData(const char* assetFilepath, AssetPlatform::Enum platform, MemAllocator* alloc);
     static AssetHandleResult _CreateOrFetchHandle(const AssetParams& params);
     static void _LoadAssetTask(uint32 groupIdx, void* userData);
@@ -583,32 +574,6 @@ static uint32 Asset::_MakeCacheFilepath(Path* outPath, const AssetDataHeader* he
     return assetHash;
 }
 
-static MemBumpAllocatorVM* Asset::_GetOrCreateScratchAllocator(AssetScratchMemArena& arena)
-{
-    MemBumpAllocatorVM* alloc = nullptr;
-    {
-        uint32 tId = Thread::GetCurrentId();
-
-        SpinLockMutexScope mtx(arena.threadToAllocatorTableMtx);
-        uint32 allocIndex = arena.threadToAllocatorTable.FindAndFetch(tId, uint32(-1));
-
-        if (allocIndex != -1) {
-            alloc = &arena.allocators[allocIndex];
-        }
-        else {
-            allocIndex = arena.numAllocators++;
-            alloc = &arena.allocators[allocIndex];
-            arena.threadToAllocatorTable.Add(tId, allocIndex);
-        }
-    }
-
-    if (!alloc->IsInitialized())
-        alloc->Initialize(ASSET_MAX_SCRATCH_SIZE_PER_THREAD, 512*SIZE_KB);
-
-    return alloc;
-}
-
-
 static Span<AssetMetaKeyValue> Asset::_LoadMetaData(const char* assetFilepath, AssetPlatform::Enum platform, MemAllocator* alloc)
 {
     Path assetMetaPath(assetFilepath);
@@ -743,7 +708,7 @@ static void Asset::_LoadAssetTask(uint32 groupIdx, void* userData)
     ASSERT_MSG(typeManIdx != UINT32_MAX, "AssetType with FourCC %x is not registered", params.typeId);
     const AssetTypeManager& typeMan = gAssetMan.typeManagers[typeManIdx];
 
-    MemBumpAllocatorVM* alloc = _GetOrCreateScratchAllocator(gAssetMan.memArena);
+    MemBumpAllocatorVM* alloc = gAssetMan.memArena->GetOrCreateAllocatorForCurrentThread();
 
     if (taskData.inputs.type == AssetLoadTaskInputType::Source) {
         ASSERT(!taskData.inputs.isRemoteLoad);
@@ -1372,10 +1337,7 @@ static void Asset::_LoadGroupTask(uint32, void* userData)
     loadListHandles.Free();
 
     // Reset arena allocators, getting ready for the next group
-    for (uint32 i = 0; i < gAssetMan.memArena.numAllocators; i++) {
-        if (gAssetMan.memArena.allocators[i].IsInitialized())
-            gAssetMan.memArena.allocators[i].Reset();
-    }
+    gAssetMan.memArena->Reset();
 
     if (!isHotReloadGroup) {
         ReadWriteMutexReadScope rdlock(gAssetMan.groupsMutex);
@@ -1579,11 +1541,7 @@ static void Asset::_ServerLoadBatchTask(uint32, void*)
         MemSingleShotMalloc<AssetLoadTaskData>::Free(taskDatas[i]);
     gAssetMan.server.numLoadTasks = 0;
 
-    // Reset arena allocators
-    for (uint32 i = 0; i < gAssetMan.memArena.numAllocators; i++) {
-        if (gAssetMan.memArena.allocators[i].IsInitialized())
-            gAssetMan.memArena.allocators[i].Reset();
-    }
+    gAssetMan.memArena->Reset();
 }
 
 static bool Asset::_RemoteServerCallback([[maybe_unused]] uint32 cmd, const Blob& incomingData, Blob*, void*, char outErrorDesc[REMOTE_ERROR_SIZE])
@@ -1776,10 +1734,10 @@ bool Asset::Initialize()
     gAssetMan.assetCacheLookup.Reserve(512);
     gAssetMan.pendingJobs.SetAllocator(alloc);
 
-    gAssetMan.memArena.maxAllocators = Jobs::GetWorkerThreadsCount(JobsType::LongTask);
-    gAssetMan.memArena.allocators = NEW_ARRAY(alloc, MemBumpAllocatorVM, gAssetMan.memArena.maxAllocators);
-    gAssetMan.memArena.threadToAllocatorTable.SetAllocator(alloc);
-    gAssetMan.memArena.threadToAllocatorTable.Reserve(gAssetMan.memArena.maxAllocators);
+    gAssetMan.memArena = Mem::CreateThreadAllocatorArena(Jobs::GetWorkerThreadsCount(JobsType::LongTask),
+                                                         ASSET_MAX_SCRATCH_SIZE_PER_THREAD, 512*SIZE_KB,
+                                                         SettingsJunkyard::Get().engine.debugAllocations,
+                                                         alloc);
 
     gAssetMan.tempAlloc.SetAllocator(alloc);
     gAssetMan.tempAlloc.Initialize(SIZE_KB*512, SIZE_KB*64);
@@ -1876,18 +1834,11 @@ void Asset::Release()
         }
     }
 
-    MemAllocator* alloc = &gAssetMan.alloc;
-
     if (gAssetMan.isServerEnabled) {
         for (AssetLoadTaskData* taskData : gAssetMan.server.pendingTasks)
             MemSingleShotMalloc<AssetLoadTaskData>::Free(taskData);     // allocated in _RemoteServerCallback
         
         gAssetMan.server.pendingTasks.Free();
-    }
-
-    for (uint32 i = 0; i < gAssetMan.memArena.numAllocators; i++) {
-        if (gAssetMan.memArena.allocators[i].IsInitialized())
-            gAssetMan.memArena.allocators[i].Release();
     }
 
     if (gAssetMan.isHashLookupUpdated) {
@@ -1905,8 +1856,7 @@ void Asset::Release()
     Model::ReleaseManager();
     Shader::ReleaseManager();
 
-    Mem::Free(gAssetMan.memArena.allocators, alloc);
-    gAssetMan.memArena.threadToAllocatorTable.Free();
+    Mem::DestroyThreadAllocatorArena(gAssetMan.memArena);
     gAssetMan.tempAlloc.Release();
 
     gAssetMan.groups.Free();

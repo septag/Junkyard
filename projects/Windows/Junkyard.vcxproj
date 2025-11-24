@@ -250,11 +250,12 @@
     <ClCompile Include="..\..\code\Graphics\GfxBackend.cpp" />
     <ClCompile Include="..\..\code\ImGui\ImGuiMain.cpp" />
     <ClCompile Include="..\..\code\ImGui\ImGuizmo.cpp" />
-    <ClCompile Include="..\..\code\Renderers\RForward.cpp" />
+    <ClCompile Include="..\..\code\Renderer\Render.cpp" />
     <ClCompile Include="..\..\code\Tool\Console.cpp" />
     <ClCompile Include="..\..\code\Tool\ImageEncoder.cpp" />
     <ClCompile Include="..\..\code\Tool\MeshOptimizer.cpp" />
     <ClCompile Include="..\..\code\Tool\ShaderCompiler.cpp" />
+    <ClCompile Include="..\..\code\Common\ThreadAllocatorArena.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\..\code\Assets\AssetManager.h" />
@@ -333,11 +334,12 @@
     <ClInclude Include="..\..\code\Graphics\GfxBackendTypes.h" />
     <ClInclude Include="..\..\code\ImGui\ImGuiMain.h" />
     <ClInclude Include="..\..\code\ImGui\ImGuizmo.h" />
-    <ClInclude Include="..\..\code\Renderers\RForward.h" />
+    <ClInclude Include="..\..\code\Renderer\Render.h" />
     <ClInclude Include="..\..\code\Tool\Console.h" />
     <ClInclude Include="..\..\code\Tool\ImageEncoder.h" />
     <ClInclude Include="..\..\code\Tool\MeshOptimizer.h" />
     <ClInclude Include="..\..\code\Tool\ShaderCompiler.h" />
+    <ClInclude Include="..\..\code\Common\ThreadAllocatorArena.h" />
   </ItemGroup>
   <ItemGroup>
     <FxCompile Include="..\..\code\Shaders\FwdPlusLight.hlsl">

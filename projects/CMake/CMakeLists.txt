@@ -41,8 +41,8 @@ file(GLOB HEADERS_DebugTools ../../code/DebugTools/*.h)
 file(GLOB SOURCE_Graphics ../../code/Graphics/*.cpp)
 file(GLOB HEADERS_Graphics ../../code/Graphics/*.h)
 
-file(GLOB SOURCE_Renderers ../../code/Renderers/*.cpp)
-file(GLOB HEADERS_Renderers ../../code/Renderers/*.h)
+file(GLOB SOURCE_Renderers ../../code/Renderer/*.cpp)
+file(GLOB HEADERS_Renderers ../../code/Renderer/*.h)
 
 file(GLOB SOURCE_ImGui ../../code/ImGui/*.cpp)
 file(GLOB HEADERS_ImGui ../../code/ImGui/*.h)
