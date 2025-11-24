@@ -702,6 +702,7 @@ namespace GfxBackend
         return str;
     }
 
+    // TODO: Try to use functions in <vulkan/utility/vk_format_utils.h>
     [[maybe_unused]] INLINE bool _FormatIsDepthStencil(GfxFormat fmt)
     {
         return  fmt == GfxFormat::D32_SFLOAT ||

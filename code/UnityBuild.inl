@@ -22,6 +22,7 @@
 #include "Common/VirtualFS.cpp"
 #include "Common/RemoteServices.cpp"
 #include "Common/Camera.cpp"
+#include "Common/ThreadAllocatorArena.cpp"
 
 // Assets
 #include "Assets/AssetManager.cpp"
