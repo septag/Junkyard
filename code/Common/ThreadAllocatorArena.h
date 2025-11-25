@@ -12,7 +12,9 @@ struct MemThreadAllocatorArena
 
 namespace Mem
 {
-    API MemThreadAllocatorArena* CreateThreadAllocatorArena(uint32 maxAllocators, size_t capacity, size_t pageSize, bool debugMode, 
+    API MemThreadAllocatorArena* CreateThreadAllocatorArena(uint32 maxAllocators, size_t capacity, size_t pageSize, 
+                                                            const char* trackingName,
+                                                            bool debugMode = false, 
                                                             MemAllocator* alloc = Mem::GetDefaultAlloc());
     API void DestroyThreadAllocatorArena(MemThreadAllocatorArena* arena);
 }

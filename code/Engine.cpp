@@ -61,6 +61,12 @@ struct EngineDebugMemStats
     uint32 numItems;
 };
 
+struct EngineVMAllocTrackItem
+{
+    MemBumpAllocatorVM* alloc;
+    const char* name;
+};
+
 struct EngineContext
 {
     MemProxyAllocator alloc;
@@ -89,6 +95,7 @@ struct EngineContext
     Array<EngineShortcutKeys> shortcuts;
     Array<EngineInitializeResourcesPair> initResourcesCallbacks;
     Array<MemProxyAllocator*> proxyAllocs;
+    Array<EngineVMAllocTrackItem> vmAllocs;
 
     EngineDebugMemStats debugMemStats;
 };
@@ -168,143 +175,188 @@ namespace Engine
 
         EngineDebugMemStats& mstats = gEng.debugMemStats;
     
-        {
-            MemVirtualStats stats = Mem::VirtualGetStats();
-            float progress = float(double(stats.commitedBytes)/double(stats.reservedBytes));
-            ImGui::TextUnformatted("VMem: ");
-            ImGui::SameLine();
-            ImGui::ProgressBar(progress, ImVec2(-1.0f, 0), String32::Format("%_$llu/%_$llu", stats.commitedBytes, stats.reservedBytes).CStr());
+        if (ImGui::CollapsingHeader("VirtualMem", ImGuiTreeNodeFlags_DefaultOpen)) {
+            {
+                MemVirtualStats stats = Mem::VirtualGetStats();
+                float progress = float(double(stats.commitedBytes)/double(stats.reservedBytes));
+                ImGui::TextUnformatted("Total: ");
+                ImGui::SameLine();
+                ImGui::ProgressBar(progress, ImVec2(-1.0f, 0), 
+                                   String32::Format("%_$llu/%_$llu", stats.commitedBytes, stats.reservedBytes).CStr());
+            }
+
+            if (ImGui::CollapsingHeader("Temp", 0)) {
+                MemTempAllocator tempAlloc;
+                MemTempAllocator::Stats* stats;
+                uint32 statsCount;
+                MemTempAllocator::GetStats(&tempAlloc, &stats, &statsCount);
+
+                BlitSort<MemTempAllocator::Stats>(stats, statsCount, 
+                    [](const MemTempAllocator::Stats& a, const MemTempAllocator::Stats& b)->int
+                    {
+                        return a.commitedBytes < b.commitedBytes;
+                    });
+
+                for (uint32 i = 0; i < statsCount; i++) {
+                    const MemTempAllocator::Stats& s = stats[i];
+                    size_t commitBytes = s.commitedBytes;
+                    size_t reserveBytes = s.reservedBytes;
+                    float progress = float(double(commitBytes)/double(reserveBytes));
+                    ImGui::Text(s.threadName);
+                    ImGui::ProgressBar(progress, ImVec2(-1, 0), 
+                                       String32::Format("%_$llu/%_$llu", commitBytes, reserveBytes).CStr());
+                }
+            }
+
+            if (ImGui::CollapsingHeader("Tracked", 0)) {
+                BlitSort<EngineVMAllocTrackItem>(gEng.vmAllocs.Ptr(), gEng.vmAllocs.Count(), 
+                    [](const EngineVMAllocTrackItem& a, const EngineVMAllocTrackItem& b)->int
+                    {
+                        return a.alloc->GetCommitedSize() < b.alloc->GetCommitedSize();
+                    });
+
+                for (EngineVMAllocTrackItem& item : gEng.vmAllocs) {
+                    size_t commitBytes = item.alloc->GetCommitedSize();
+                    size_t reserveBytes = item.alloc->GetReservedSize();
+                    float progress = float(double(commitBytes)/double(reserveBytes));
+                    ImGui::Text("%s: ", item.name);
+                    ImGui::ProgressBar(progress, ImVec2(-1, 0), 
+                                       String32::Format("%_$llu/%_$llu", commitBytes, reserveBytes).CStr());
+                }
+            }
         }
 
-        ImGui::SeparatorVertical();
-
-        if (ImGui::Button("Refresh"))
-            mstats.refreshProxyAllocList = true;
-        ImGui::SameLine();
-        if (ImGui::Checkbox("Auto refresh", &mstats.autoRefreshProxyAllocList))
-            mstats.autoRefreshProxyAllocListElapsed = 0;
-
-        ImGui::SameLine();
-        ImGui::SetNextItemWidth(100.0f);
-        if (ImGui::InputFloat("Interval (secs)", &mstats.autoRefreshProxyAllocListInterval, 0.1f, 1.0f, "%.1f")) {
-            mstats.autoRefreshProxyAllocListInterval = Max(mstats.autoRefreshProxyAllocListInterval, 0.1f);
-            mstats.autoRefreshProxyAllocListElapsed = 0;
-        }
-
-        if (mstats.autoRefreshProxyAllocList) {
-            mstats.autoRefreshProxyAllocListElapsed += Engine::GetFrameTime();
-            if (mstats.autoRefreshProxyAllocListElapsed >= mstats.autoRefreshProxyAllocListInterval) {
-                mstats.autoRefreshProxyAllocListElapsed = 0;
+        if (ImGui::CollapsingHeader("Proxies", ImGuiTreeNodeFlags_DefaultOpen)) {
+            if (ImGui::Button("Refresh"))
                 mstats.refreshProxyAllocList = true;
-            }
-        }
+            ImGui::SameLine();
+            if (ImGui::Checkbox("Auto refresh", &mstats.autoRefreshProxyAllocList))
+                mstats.autoRefreshProxyAllocListElapsed = 0;
 
-        if (mstats.refreshProxyAllocList) {
-            mstats.refreshProxyAllocList = false;
-
-            if (mstats.numItems != gEng.proxyAllocs.Count()) {
-                mstats.numItems = gEng.proxyAllocs.Count();
-                mstats.items = Mem::ReallocTyped<EngineProxyAllocItem>(mstats.items, mstats.numItems);
-            }
-            
-            for (uint32 i = 0; i < mstats.numItems; i++) {
-                MemProxyAllocator* alloc = gEng.proxyAllocs[i];
-                EngineProxyAllocItem& item = mstats.items[i];
-
-                uint32 id = i + 1;
-                if (item.id == id) 
-                    item.sizeDiff = int(alloc->mTotalSizeAllocated) - int(item.size);
-
-                item.id = id;
-                item.name = alloc->mName;
-                item.size = alloc->mTotalSizeAllocated;
-                item.count = alloc->mNumAllocs;
+            ImGui::SameLine();
+            ImGui::SetNextItemWidth(100.0f);
+            if (ImGui::InputFloat("Interval (secs)", &mstats.autoRefreshProxyAllocListInterval, 0.1f, 1.0f, "%.1f")) {
+                mstats.autoRefreshProxyAllocListInterval = Max(mstats.autoRefreshProxyAllocListInterval, 0.1f);
+                mstats.autoRefreshProxyAllocListElapsed = 0;
             }
 
-            BlitSort<EngineProxyAllocItem>(mstats.items, mstats.numItems, [sortId=mstats.proxyAllocSortId, sortDir=mstats.proxyAllocSortDir]
-                (const EngineProxyAllocItem& a, const EngineProxyAllocItem& b)->int {
-                // TODO: can go with a more optimized approach if the list is too long
-                switch (sortId) {
-                case ProxyAllocColId_Row:
-                    if (sortDir == ImGuiSortDirection_Ascending)    return int(a.id) - int(b.id);
-                    else                                            return int(b.id) - int(a.id);
-                case ProxyAllocColId_Name:
-                    if (sortDir == ImGuiSortDirection_Ascending)    return Str::Compare(a.name, b.name);
-                    else                                            return Str::Compare(b.name, a.name);
-                case ProxyAllocColId_AllocSize:
-                    if (sortDir == ImGuiSortDirection_Ascending)    return int(int64(a.size) - int64(b.size));
-                    else                                            return int(int64(b.size) - int64(a.size));
-                case ProxyAllocColId_AllocCount:
-                    if (sortDir == ImGuiSortDirection_Ascending)    return int(int64(a.count) - int64(b.count));
-                    else                                            return int(int64(b.count) - int64(a.count));
-                default: 
-                    ASSERT(0);
-                    return 0;
-                }
-            });
-        }
-
-        const ImGuiTableFlags flags = ImGuiTableFlags_Resizable | ImGuiTableFlags_Reorderable | 
-            ImGuiTableFlags_Sortable | ImGuiTableFlags_SortMulti | ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersOuter | 
-            ImGuiTableFlags_BordersV  | ImGuiTableFlags_ScrollY;
-
-        ImVec2 outerSize = ImGui::GetContentRegionAvail();
-        if (ImGui::BeginTable("ProxyAllocatorList", ProxyAllocColId_Count, flags, outerSize)) {
-            ImGui::TableSetupColumn("Id", ImGuiTableColumnFlags_DefaultSort | ImGuiTableColumnFlags_WidthFixed, 0, ProxyAllocColId_Row);
-            ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthStretch, 0, ProxyAllocColId_Name);
-            ImGui::TableSetupColumn("Size", ImGuiTableColumnFlags_WidthFixed, 0, ProxyAllocColId_AllocSize);
-            ImGui::TableSetupColumn("Count", ImGuiTableColumnFlags_WidthFixed, 0, ProxyAllocColId_AllocCount);
-            ImGui::TableSetupScrollFreeze(0, 1);
-            ImGui::TableHeadersRow();
-
-            if (ImGuiTableSortSpecs* sortSpecs = ImGui::TableGetSortSpecs()) {
-                if (sortSpecs->SpecsDirty) {
+            if (mstats.autoRefreshProxyAllocList) {
+                mstats.autoRefreshProxyAllocListElapsed += Engine::GetFrameTime();
+                if (mstats.autoRefreshProxyAllocListElapsed >= mstats.autoRefreshProxyAllocListInterval) {
+                    mstats.autoRefreshProxyAllocListElapsed = 0;
                     mstats.refreshProxyAllocList = true;
-                    mstats.proxyAllocSortId = sortSpecs->Specs->ColumnUserID;
-                    mstats.proxyAllocSortDir = sortSpecs->Specs->SortDirection;
-                    sortSpecs->SpecsDirty = false;
                 }
             }
 
-            // TODO: use clipper if there are too many items
-            static constexpr uint32 ImGuiSelectableFlags_SelectOnNav = (1 << 21);    // imgui_internal.h
-            String<256> str;
-            ImVec4 BaseTextColor = ImGui::GetStyleColorVec4(ImGuiCol_Text);
+            if (mstats.refreshProxyAllocList) {
+                mstats.refreshProxyAllocList = false;
 
-            for (uint32 i = 0; i < mstats.numItems; i++) {
-                const EngineProxyAllocItem& item = mstats.items[i];
+                if (mstats.numItems != gEng.proxyAllocs.Count()) {
+                    mstats.numItems = gEng.proxyAllocs.Count();
+                    mstats.items = Mem::ReallocTyped<EngineProxyAllocItem>(mstats.items, mstats.numItems);
+                }
+            
+                for (uint32 i = 0; i < mstats.numItems; i++) {
+                    MemProxyAllocator* alloc = gEng.proxyAllocs[i];
+                    EngineProxyAllocItem& item = mstats.items[i];
 
-                ImGui::PushID(i);
-                ImGui::TableNextRow();
+                    uint32 id = i + 1;
+                    if (item.id == id) 
+                        item.sizeDiff = int(alloc->mTotalSizeAllocated) - int(item.size);
 
-                if (item.sizeDiff > 0) 
-                    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0, 0.9f, 0, 1.0f));
-                else if (item.sizeDiff < 0)
-                    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.9f, 0, 0, 1.0f));
-                else 
-                    ImGui::PushStyleColor(ImGuiCol_Text, BaseTextColor);
+                    item.id = id;
+                    item.name = alloc->mName;
+                    item.size = alloc->mTotalSizeAllocated;
+                    item.count = alloc->mNumAllocs;
+                }
 
-                ImGui::TableNextColumn();
-                str.FormatSelf("%u", item.id);
-                ImGui::Selectable(str.CStr(), false, ImGuiSelectableFlags_SpanAllColumns|ImGuiSelectableFlags_SelectOnNav);
-
-                ImGui::TableNextColumn();
-                ImGui::TextUnformatted(item.name);
-
-                ImGui::TableNextColumn();
-                str.FormatSelf("%_$$$llu", item.size);
-                ImGui::TextUnformatted(str.CStr());
-
-                ImGui::TableNextColumn();
-                ImGui::Text("%u", item.count);
-
-                ImGui::PopStyleColor();
-
-                ImGui::PopID();
+                BlitSort<EngineProxyAllocItem>(mstats.items, mstats.numItems, 
+                    [sortId=mstats.proxyAllocSortId, sortDir=mstats.proxyAllocSortDir]
+                    (const EngineProxyAllocItem& a, const EngineProxyAllocItem& b)->int {
+                    // TODO: can go with a more optimized approach if the list is too long
+                    switch (sortId) {
+                        case ProxyAllocColId_Row:
+                            if (sortDir == ImGuiSortDirection_Ascending)    return int(a.id) - int(b.id);
+                            else                                            return int(b.id) - int(a.id);
+                        case ProxyAllocColId_Name:
+                            if (sortDir == ImGuiSortDirection_Ascending)    return Str::Compare(a.name, b.name);
+                            else                                            return Str::Compare(b.name, a.name);
+                        case ProxyAllocColId_AllocSize:
+                            if (sortDir == ImGuiSortDirection_Ascending)    return int(int64(a.size) - int64(b.size));
+                            else                                            return int(int64(b.size) - int64(a.size));
+                        case ProxyAllocColId_AllocCount:
+                            if (sortDir == ImGuiSortDirection_Ascending)    return int(int64(a.count) - int64(b.count));
+                            else                                            return int(int64(b.count) - int64(a.count));
+                        default: 
+                            ASSERT(0);
+                            return 0;
+                    }
+                });
             }
 
-            ImGui::EndTable();
+            const ImGuiTableFlags flags = ImGuiTableFlags_Resizable | ImGuiTableFlags_Reorderable | 
+                ImGuiTableFlags_Sortable | ImGuiTableFlags_SortMulti | ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersOuter | 
+                ImGuiTableFlags_BordersV  | ImGuiTableFlags_ScrollY;
+
+            ImVec2 outerSize = ImGui::GetContentRegionAvail();
+            if (ImGui::BeginTable("ProxyAllocatorList", ProxyAllocColId_Count, flags, outerSize)) {
+                ImGui::TableSetupColumn("Id", ImGuiTableColumnFlags_DefaultSort | ImGuiTableColumnFlags_WidthFixed, 0, ProxyAllocColId_Row);
+                ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthStretch, 0, ProxyAllocColId_Name);
+                ImGui::TableSetupColumn("Size", ImGuiTableColumnFlags_WidthFixed, 0, ProxyAllocColId_AllocSize);
+                ImGui::TableSetupColumn("Count", ImGuiTableColumnFlags_WidthFixed, 0, ProxyAllocColId_AllocCount);
+                ImGui::TableSetupScrollFreeze(0, 1);
+                ImGui::TableHeadersRow();
+
+                if (ImGuiTableSortSpecs* sortSpecs = ImGui::TableGetSortSpecs()) {
+                    if (sortSpecs->SpecsDirty) {
+                        mstats.refreshProxyAllocList = true;
+                        mstats.proxyAllocSortId = sortSpecs->Specs->ColumnUserID;
+                        mstats.proxyAllocSortDir = sortSpecs->Specs->SortDirection;
+                        sortSpecs->SpecsDirty = false;
+                    }
+                }
+
+                // TODO: use clipper if there are too many items
+                static constexpr uint32 ImGuiSelectableFlags_SelectOnNav = (1 << 21);    // imgui_internal.h
+                String<256> str;
+                ImVec4 BaseTextColor = ImGui::GetStyleColorVec4(ImGuiCol_Text);
+
+                for (uint32 i = 0; i < mstats.numItems; i++) {
+                    const EngineProxyAllocItem& item = mstats.items[i];
+
+                    ImGui::PushID(i);
+                    ImGui::TableNextRow();
+
+                    if (item.sizeDiff > 0) 
+                        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0, 0.9f, 0, 1.0f));
+                    else if (item.sizeDiff < 0)
+                        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.9f, 0, 0, 1.0f));
+                    else 
+                        ImGui::PushStyleColor(ImGuiCol_Text, BaseTextColor);
+
+                    ImGui::TableNextColumn();
+                    str.FormatSelf("%u", item.id);
+                    ImGui::Selectable(str.CStr(), false, ImGuiSelectableFlags_SpanAllColumns|ImGuiSelectableFlags_SelectOnNav);
+
+                    ImGui::TableNextColumn();
+                    ImGui::TextUnformatted(item.name);
+
+                    ImGui::TableNextColumn();
+                    str.FormatSelf("%_$$$llu", item.size);
+                    ImGui::TextUnformatted(str.CStr());
+
+                    ImGui::TableNextColumn();
+                    ImGui::Text("%u", item.count);
+
+                    ImGui::PopStyleColor();
+
+                    ImGui::PopID();
+                }
+
+                ImGui::EndTable();
+            }
         }
+
     }
 } // Engine
 
@@ -323,6 +375,7 @@ bool Engine::Initialize()
     // Setup allocators
     // TODO: make main allocator commit all memory upfront in RELEASE builds (?)
     gEng.mainAlloc.Initialize(ENGINE_MAX_MEMORY_SIZE, SIZE_MB, SettingsJunkyard::Get().engine.debugAllocations);
+    Engine::RegisterVMAllocator(&gEng.mainAlloc, "Engine");
 
     Engine::HelperInitializeProxyAllocator(&gEng.alloc, "Engine");
     Engine::HelperInitializeProxyAllocator(&gEng.jobsAlloc, "Jobs");
@@ -525,6 +578,7 @@ void Engine::Release()
 
     gEng.shortcuts.Free();
     gEng.proxyAllocs.Free();
+    gEng.vmAllocs.Free();
     gEng.initResourcesCallbacks.Free();
     Mem::Free(gEng.debugMemStats.items);
 
@@ -739,4 +793,24 @@ void Engine::HelperInitializeProxyAllocator(MemProxyAllocator* alloc, const char
     else {
         alloc->Initialize(name, baseAlloc, proxyAllocFlags);
     }
+}
+
+void Engine::RegisterVMAllocator(MemBumpAllocatorVM* alloc, const char* name)
+{
+    ASSERT(alloc);
+    ASSERT(name);
+
+    EngineVMAllocTrackItem item {
+        .alloc = alloc,
+        .name = name
+    };
+
+    gEng.vmAllocs.Push(item);
+}
+
+void Engine::UnregisterVMAllocator(MemBumpAllocatorVM* alloc)
+{
+    uint32 index = gEng.vmAllocs.FindIf([alloc](const EngineVMAllocTrackItem& item) { return item.alloc == alloc; });
+    if (index != -1) 
+        gEng.vmAllocs.RemoveAndSwap(index);
 }

@@ -533,6 +533,7 @@ bool R::Initialize()
 
     bool debugAllocs = settings.engine.debugAllocations;
     gFwd.frameAlloc.Initialize(SIZE_MB, SIZE_KB*128, debugAllocs);
+    Engine::RegisterVMAllocator(&gFwd.frameAlloc, "Render");
 
     App::RegisterEventsCallback([](const AppEvent& ev, void*)
                                 {

@@ -51,6 +51,8 @@ struct alignas(CACHE_LINE_SIZE) MemTempContext
     size_t framePeaks[MEM_TEMP_FRAME_PEAKS_COUNT];
     size_t curFramePeak;
     size_t peakBytes;
+    size_t commitedBytes;
+    size_t reservedBytes;
     uint8* buffer;
     size_t bufferSize;
     
@@ -109,10 +111,12 @@ void MemTempAllocator::GetStats(MemAllocator* alloc, Stats** outStats, uint32* o
     *outCount = gMemTemp.tempCtxs.Count();
 
     for (uint32 i = 0; i < *outCount; i++) {
-        (*outStats)[i].curPeak = gMemTemp.tempCtxs[i]->curFramePeak;
-        (*outStats)[i].maxPeak = gMemTemp.tempCtxs[i]->peakBytes;
-        (*outStats)[i].threadId = gMemTemp.tempCtxs[i]->threadId;
-        (*outStats)[i].threadName = gMemTemp.tempCtxs[i]->threadName;
+        Stats& s = (*outStats)[i];
+        s.maxPeak = gMemTemp.tempCtxs[i]->peakBytes;
+        s.commitedBytes = gMemTemp.tempCtxs[i]->commitedBytes;
+        s.reservedBytes = gMemTemp.tempCtxs[i]->reservedBytes;
+        s.threadId = gMemTemp.tempCtxs[i]->threadId;
+        s.threadName = gMemTemp.tempCtxs[i]->threadName;
     }
 }
 
@@ -129,8 +133,10 @@ MemTempAllocator::ID MemTempAllocator::PushId()
     if (!ctx.init) {
         if (ctx.buffer == nullptr && !ctx.debugMode) {
             ctx.buffer = (uint8*)Mem::VirtualReserve(MEM_TEMP_MAX_BUFFER_SIZE);
+            ctx.reservedBytes = MEM_TEMP_MAX_BUFFER_SIZE;
             ctx.bufferSize = MEM_TEMP_PAGE_SIZE;
             Mem::VirtualCommit(ctx.buffer, ctx.bufferSize); 
+            ctx.commitedBytes = ctx.bufferSize;
         }
         ctx.init = true;
     }
@@ -251,10 +257,12 @@ void MemTempAllocator::Reset()
                 if (maxPeakSize > ctx->bufferSize) {
                     size_t growSize = maxPeakSize - ctx->bufferSize;
                     Mem::VirtualCommit(ctx->buffer + ctx->bufferSize, growSize);
+                    ctx->commitedBytes += growSize;
                 }
                 else if (maxPeakSize < ctx->bufferSize) {
                     size_t shrinkSize = ctx->bufferSize - maxPeakSize;
                     Mem::VirtualDecommit(ctx->buffer + maxPeakSize, shrinkSize);
+                    ctx->commitedBytes -= shrinkSize;
                 }
                 ctx->bufferSize = maxPeakSize;
             }
@@ -376,6 +384,7 @@ void* MemTempAllocator::Realloc(void* ptr, size_t size, uint32 align)
             size_t growSize = AlignValue(newSize - ctx.bufferSize, gMemTemp.pageSize);
             Mem::VirtualCommit(ctx.buffer + ctx.bufferSize, growSize);
             ctx.bufferSize += growSize;
+            ctx.commitedBytes += growSize;
         }
 
         ctx.curFramePeak = Max<size_t>(ctx.curFramePeak, endOffset);

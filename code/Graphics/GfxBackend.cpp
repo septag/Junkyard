@@ -92,6 +92,8 @@ static const char* GFXBACKEND_DEFAULT_INSTANCE_EXTENSIONS[] = {"VK_KHR_surface",
 // Linux uses glfwRequiredInstanceExtensions
 #endif
 
+static_assert(GFXBACKEND_FRAMES_IN_FLIGHT <= GFXBACKEND_BACKBUFFER_COUNT, "Cannot have more frame in flights than back buffer count");
+
 #ifdef _DEBUG
 // Put temporary exceptions
 // TODO: Fix these

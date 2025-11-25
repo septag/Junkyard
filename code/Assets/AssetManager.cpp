@@ -1736,6 +1736,7 @@ bool Asset::Initialize()
 
     gAssetMan.memArena = Mem::CreateThreadAllocatorArena(Jobs::GetWorkerThreadsCount(JobsType::LongTask),
                                                          ASSET_MAX_SCRATCH_SIZE_PER_THREAD, 512*SIZE_KB,
+                                                         "AssetMan",
                                                          SettingsJunkyard::Get().engine.debugAllocations,
                                                          alloc);
 

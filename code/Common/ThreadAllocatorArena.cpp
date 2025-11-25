@@ -4,10 +4,14 @@
 #include "../Core/Hash.h"
 #include "../Core/System.h"
 
+#include "../Engine.h"
+
 struct MemThreadAllocatorArenaInternal : MemThreadAllocatorArena
 {
     SpinLockMutex threadToAllocatorTableMtx;
     HashTableUint threadToAllocatorTable;
+    const char* rootTrackingName;
+    String32* trackingNames;
     MemAllocator* parentAlloc;
     MemBumpAllocatorVM* allocators;
     size_t capacity;
@@ -17,7 +21,9 @@ struct MemThreadAllocatorArenaInternal : MemThreadAllocatorArena
     bool debugMode;
 };
 
-MemThreadAllocatorArena* Mem::CreateThreadAllocatorArena(uint32 maxAllocators, size_t capacity, size_t pageSize, bool debugMode, 
+MemThreadAllocatorArena* Mem::CreateThreadAllocatorArena(uint32 maxAllocators, size_t capacity, size_t pageSize, 
+                                                         const char* trackingName,
+                                                         bool debugMode, 
                                                          MemAllocator* alloc)
 {
     ASSERT(maxAllocators && maxAllocators < UINT16_MAX) ;
@@ -30,11 +36,13 @@ MemThreadAllocatorArena* Mem::CreateThreadAllocatorArena(uint32 maxAllocators, s
 
     MemBumpAllocatorVM* vmAllocsMem;
     uint8* hashTableMem;
+    mallocator.AddMemberArray<String32>(offsetof(MemThreadAllocatorArenaInternal, trackingNames), maxAllocators);
     mallocator.AddExternalPointerField<uint8>(&hashTableMem, hashTableSize);
     mallocator.AddExternalPointerField<MemBumpAllocatorVM>(&vmAllocsMem, maxAllocators);
     MemThreadAllocatorArenaInternal* arena = mallocator.Calloc(alloc);
 
     arena->threadToAllocatorTable.Reserve(maxAllocators, hashTableMem, hashTableSize);
+    arena->rootTrackingName = trackingName;
     arena->parentAlloc = alloc;
     arena->allocators = PLACEMENT_NEW_ARRAY(vmAllocsMem, MemBumpAllocatorVM, maxAllocators);
     arena->capacity = capacity;
@@ -64,6 +72,7 @@ MemBumpAllocatorVM* MemThreadAllocatorArena::GetOrCreateAllocatorForCurrentThrea
 {
     MemThreadAllocatorArenaInternal* arena = (MemThreadAllocatorArenaInternal*)this;
     MemBumpAllocatorVM* alloc = nullptr;
+    String32* trackingName = nullptr;
     {
         uint32 tId = Thread::GetCurrentId();
 
@@ -79,11 +88,22 @@ MemBumpAllocatorVM* MemThreadAllocatorArena::GetOrCreateAllocatorForCurrentThrea
             allocIndex = arena->numAllocators++;
             alloc = &arena->allocators[allocIndex];
             arena->threadToAllocatorTable.Add(tId, allocIndex);
+            trackingName = &arena->trackingNames[allocIndex];
         }
     }
 
-    if (!alloc->IsInitialized())
+    if (!alloc->IsInitialized()) {
         alloc->Initialize(arena->capacity, arena->pageSize, arena->debugMode);
+
+        if (arena->rootTrackingName) {
+            ASSERT(trackingName);
+            char threadName[32];
+            Thread::GetCurrentThreadName(threadName, sizeof(threadName));
+            trackingName->FormatSelf("%s (%s)", arena->rootTrackingName, threadName);
+            Engine::RegisterVMAllocator(alloc, trackingName->CStr());
+        }
+
+    }
 
     return alloc;
 

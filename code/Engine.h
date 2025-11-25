@@ -4,6 +4,7 @@
 
 struct SysInfo;
 struct MemProxyAllocator;
+struct MemBumpAllocatorVM;
 struct AssetGroup;
 
 using EngineShortcutCallback = void(*)(void* userData);
@@ -34,6 +35,9 @@ namespace Engine
 
     API void RegisterProxyAllocator(MemProxyAllocator* alloc);
     API void HelperInitializeProxyAllocator(MemProxyAllocator* alloc, const char* name, MemAllocator* baseAlloc = nullptr);
+
+    API void RegisterVMAllocator(MemBumpAllocatorVM* alloc, const char* name);
+    API void UnregisterVMAllocator(MemBumpAllocatorVM* alloc);
 
     namespace _private
     {

@@ -122,6 +122,9 @@ struct ModelScene
 
     void SetLocalLights(RView& view)
     {
+        if (mLights.IsEmpty())
+            return;
+
         uint32 numLights = mLights.Count();
         MemTempAllocator tempAlloc;
         RLightBounds* lightBounds = Mem::AllocTyped<RLightBounds>(numLights, &tempAlloc);

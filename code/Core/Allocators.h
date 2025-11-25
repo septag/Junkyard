@@ -80,8 +80,9 @@ struct MemTempAllocator final : MemAllocator
 
     struct Stats
     {
-        size_t curPeak;
         size_t maxPeak;
+        size_t commitedBytes;
+        size_t reservedBytes;
         uint32 threadId;
         const char* threadName;
     };
