@@ -63,7 +63,7 @@ struct RView
     RViewHandle mHandle;
     uint32 mThreadId;
 
-    void SetCameraAndViewport(const Camera& cam, Float2 viewSize);
+    void SetCamera(const Camera& cam, Float2 viewSize);
     void SetLocalLights(uint32 numLights, const RLightBounds* bounds, const RLightProps* props);
     void SetAmbientLight(Float4 skyAmbientColor, Float4 groundAmbientColor);
     void SetSunLight(Float3 direction, Float4 color);
@@ -99,6 +99,6 @@ namespace R
     namespace ShadowMap
     {
         void Update(RView& view, GfxCommandBuffer& cmd);
-        void Render();
+        void Render(RView& view, GfxCommandBuffer& cmd, GfxImageHandle shadowMapDepthImage);
     }
 } // R

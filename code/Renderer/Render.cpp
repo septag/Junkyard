@@ -112,6 +112,8 @@ struct RFwdContext
     GfxPipelineLayoutHandle pZPrepassLayout;
     GfxBufferHandle ubZPrepass;
 
+    GfxPipelineHandle pShadowMap;  
+
     GfxBufferHandle bVisibleLightIndices;
     GfxBufferHandle bLightBounds; 
     GfxBufferHandle bLightProps;
@@ -251,7 +253,7 @@ namespace R
                 }
             };
 
-            GfxGraphicsPipelineDesc pDesc {
+            GfxGraphicsPipelineDesc pZPrepassDesc {
                 .numVertexInputAttributes = CountOf(vertexInputAttDescs),
                 .vertexInputAttributes = vertexInputAttDescs,
                 .numVertexBufferBindings = CountOf(vertexBufferBindingDescs),
@@ -276,7 +278,30 @@ namespace R
                 .stencilAttachmentFormat = GfxBackend::GetValidDepthStencilFormat()
             };
 
-            gFwd.pZPrepass = GfxBackend::CreateGraphicsPipeline(*shader, gFwd.pZPrepassLayout, pDesc);
+            gFwd.pZPrepass = GfxBackend::CreateGraphicsPipeline(*shader, gFwd.pZPrepassLayout, pZPrepassDesc);
+
+            // ShadowMaps are pretty much as same as ZPrepass with minor differences
+            GfxGraphicsPipelineDesc pShadowMapDesc {
+                .numVertexInputAttributes = CountOf(vertexInputAttDescs),
+                .vertexInputAttributes = vertexInputAttDescs,
+                .numVertexBufferBindings = CountOf(vertexBufferBindingDescs),
+                .vertexBufferBindings = vertexBufferBindingDescs,
+                .rasterizer = {
+                    .cullMode = GfxCullMode::Front
+                },
+                .blend = {
+                    .numAttachments = 1,
+                    .attachments = GfxBlendAttachmentDesc::GetDefault()
+                },
+                .depthStencil = {
+                    .depthTestEnable = true,
+                    .depthWriteEnable = true,
+                    .depthCompareOp = GfxCompareOp::Less
+                },
+                .numColorAttachments = 0,
+                .depthAttachmentFormat = GfxFormat::D32_SFLOAT,
+            };
+            gFwd.pShadowMap = GfxBackend::CreateGraphicsPipeline(*shader, gFwd.pZPrepassLayout, pShadowMapDesc);
 
             // Buffers
             GfxBufferDesc bufferDesc {
@@ -597,6 +622,10 @@ bool R::Initialize()
 
 void R::Release()
 {
+    Engine::UnregisterVMAllocator(&gFwd.frameAlloc);
+
+    GfxBackend::DestroyPipeline(gFwd.pShadowMap);
+
     GfxBackend::DestroyPipeline(gFwd.pZPrepass);
     GfxBackend::DestroyPipelineLayout(gFwd.pZPrepassLayout);
     GfxBackend::DestroyBuffer(gFwd.ubZPrepass);
@@ -733,6 +762,11 @@ void R::FwdLight::Render(RView& view, GfxCommandBuffer& cmd, GfxImageHandle fina
         };
         cmd.BeginRenderPass(zprepass);
 
+        GfxViewport vp {
+            .width = float(App::GetFramebufferWidth()),
+            .height = float(App::GetFramebufferHeight())
+        };
+        cmd.SetViewports(0, 1, &vp);
         cmd.BindPipeline(gFwd.pZPrepass);
         cmd.HelperSetFullscreenViewportAndScissor();
 
@@ -916,7 +950,7 @@ void R::FwdLight::Render(RView& view, GfxCommandBuffer& cmd, GfxImageHandle fina
     }
 }
 
-void RView::SetCameraAndViewport(const Camera& cam, Float2 viewSize)
+void RView::SetCamera(const Camera& cam, Float2 viewSize)
 {
     RViewData& viewData = gFwd.viewPool.Data(mHandle);
 
@@ -1011,6 +1045,82 @@ void R::DestroyView(RView& view)
 {
     gFwd.viewPool.Remove(view.mHandle);
 }
+
+void R::ShadowMap::Update(RView& view, GfxCommandBuffer& cmd)
+{
+    RViewData& viewData = gFwd.viewPool.Data(view.mHandle);
+    Mat4 worldToClipMat = viewData.worldToClipMat;
+
+    {
+        GfxHelperBufferUpdateScope updater(cmd, gFwd.ubZPrepass, uint32(-1), GfxShaderStage::Vertex);
+        memcpy(updater.mData, &worldToClipMat, sizeof(Mat4));
+    }
+
+}
+
+void R::ShadowMap::Render(RView& view, GfxCommandBuffer& cmd, GfxImageHandle shadowMapDepthImage)
+{
+    ASSERT(shadowMapDepthImage.IsValid());
+
+    RViewData& viewData = gFwd.viewPool.Data(view.mHandle);
+    
+    // ShadowMap
+    {
+        GPU_PROFILE_ZONE(cmd, "ShaowMapRender");
+        cmd.TransitionImage(shadowMapDepthImage, GfxImageTransition::RenderTarget, GfxImageTransitionFlags::DepthWrite);
+
+        GfxBackendRenderPass zprepass { 
+            .depthAttachment = {
+                .image = shadowMapDepthImage,
+                .clear = true,
+                .clearValue = {
+                    .depth = 1.0f
+                }
+            },
+            .hasDepth = true
+        };
+        cmd.BeginRenderPass(zprepass);
+
+        GfxViewport vp {};
+        {
+            const GfxImageDesc& imgDesc = GfxBackend::GetImageDesc(shadowMapDepthImage);
+            vp.width = imgDesc.width;
+            vp.height = imgDesc.height;
+        }
+
+        cmd.SetViewports(0, 1, &vp);
+        cmd.BindPipeline(gFwd.pShadowMap);
+        cmd.HelperSetFullscreenViewportAndScissor();
+
+        RGeometryChunk* chunk = viewData.chunkList;
+        while (chunk) {
+            cmd.PushConstants(gFwd.pZPrepassLayout, "PerObjectData", &chunk->localToWorldMat, sizeof(Mat4));
+
+            cmd.BindVertexBuffers(0, 1, &chunk->posVertexBuffer, &chunk->posVertexBufferOffset);
+            cmd.BindIndexBuffer(chunk->indexBuffer, chunk->indexBufferOffset, GfxIndexType::Uint32);
+
+            GfxBindingDesc bindings[] = {
+                {
+                    .name = "PerFrameData",
+                    .buffer = gFwd.ubZPrepass
+                }
+            };
+            cmd.PushBindings(gFwd.pZPrepassLayout, CountOf(bindings), bindings);
+            
+            uint32 numIndices = 0;
+            for (uint32 sc = 0; sc < chunk->numSubChunks; sc++)
+                numIndices += chunk->subChunks[sc].numIndices;
+
+            cmd.DrawIndexed(numIndices, 1, 0, 0, 0);
+
+            chunk = chunk->nextChunk;
+        }
+
+        cmd.EndRenderPass();
+    }
+
+}
+
 
    
 //  ██████╗ ███╗   ███╗███████╗███╗   ███╗ ██████╗ ██████╗ ██╗   ██╗ ██████╗██╗  ██╗██╗   ██╗███╗   ██╗██╗  ██╗

@@ -64,11 +64,12 @@ struct EngineDebugMemStats
 struct EngineVMAllocTrackItem
 {
     MemBumpAllocatorVM* alloc;
-    const char* name;
+    String32 name;
 };
 
 struct EngineContext
 {
+    SpinLockMutex vmAllocsMtx;
     MemProxyAllocator alloc;
     MemProxyAllocator jobsAlloc;
     MemBumpAllocatorVM mainAlloc;   // Virtual memory bump allocator that is used for initializing all sub-systems
@@ -185,6 +186,8 @@ namespace Engine
                                    String32::Format("%_$llu/%_$llu", stats.commitedBytes, stats.reservedBytes).CStr());
             }
 
+            size_t sum1 = 0;
+            size_t sum2 = 0;
             if (ImGui::CollapsingHeader("Temp", 0)) {
                 MemTempAllocator tempAlloc;
                 MemTempAllocator::Stats* stats;
@@ -202,13 +205,17 @@ namespace Engine
                     size_t commitBytes = s.commitedBytes;
                     size_t reserveBytes = s.reservedBytes;
                     float progress = float(double(commitBytes)/double(reserveBytes));
-                    ImGui::Text(s.threadName);
+                    sum1 += commitBytes;
+                    sum2 += reserveBytes;
+                    ImGui::Text("%s: ", s.threadName);
+                    ImGui::SameLine();
                     ImGui::ProgressBar(progress, ImVec2(-1, 0), 
-                                       String32::Format("%_$llu/%_$llu", commitBytes, reserveBytes).CStr());
+                                       String32::Format("%_$llu/%_$llu (P: %_$llu)", commitBytes, reserveBytes, s.maxPeak).CStr());
                 }
             }
 
             if (ImGui::CollapsingHeader("Tracked", 0)) {
+                SpinLockMutexScope l(gEng.vmAllocsMtx);
                 BlitSort<EngineVMAllocTrackItem>(gEng.vmAllocs.Ptr(), gEng.vmAllocs.Count(), 
                     [](const EngineVMAllocTrackItem& a, const EngineVMAllocTrackItem& b)->int
                     {
@@ -217,16 +224,23 @@ namespace Engine
 
                 for (EngineVMAllocTrackItem& item : gEng.vmAllocs) {
                     size_t commitBytes = item.alloc->GetCommitedSize();
+                    sum1 += commitBytes;
                     size_t reserveBytes = item.alloc->GetReservedSize();
+                    sum2 += reserveBytes;
                     float progress = float(double(commitBytes)/double(reserveBytes));
-                    ImGui::Text("%s: ", item.name);
+                    ImGui::Text("%s: ", item.name.CStr());
+                    ImGui::SameLine();
                     ImGui::ProgressBar(progress, ImVec2(-1, 0), 
                                        String32::Format("%_$llu/%_$llu", commitBytes, reserveBytes).CStr());
                 }
             }
+
+            ImGui::Text("Total: %_$llu/%_$llu", sum1, sum2);
         }
 
         if (ImGui::CollapsingHeader("Proxies", ImGuiTreeNodeFlags_DefaultOpen)) {
+            if (!SettingsJunkyard::Get().engine.trackAllocations) 
+                ImGui::TextColored(ImVec4(1, 1, 0, 1), "Tracking proxy allocations is disabled (-EngineTrackAllocations=1)");
             if (ImGui::Button("Refresh"))
                 mstats.refreshProxyAllocList = true;
             ImGui::SameLine();
@@ -299,7 +313,7 @@ namespace Engine
                 ImGuiTableFlags_BordersV  | ImGuiTableFlags_ScrollY;
 
             ImVec2 outerSize = ImGui::GetContentRegionAvail();
-            if (ImGui::BeginTable("ProxyAllocatorList", ProxyAllocColId_Count, flags, outerSize)) {
+            if (ImGui::BeginTable("ProxyAllocatorList", ProxyAllocColId_Count, flags, ImVec2(0, Max(outerSize.y, 150.0f)))) {
                 ImGui::TableSetupColumn("Id", ImGuiTableColumnFlags_DefaultSort | ImGuiTableColumnFlags_WidthFixed, 0, ProxyAllocColId_Row);
                 ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthStretch, 0, ProxyAllocColId_Name);
                 ImGui::TableSetupColumn("Size", ImGuiTableColumnFlags_WidthFixed, 0, ProxyAllocColId_AllocSize);
@@ -805,11 +819,13 @@ void Engine::RegisterVMAllocator(MemBumpAllocatorVM* alloc, const char* name)
         .name = name
     };
 
+    SpinLockMutexScope l(gEng.vmAllocsMtx);
     gEng.vmAllocs.Push(item);
 }
 
 void Engine::UnregisterVMAllocator(MemBumpAllocatorVM* alloc)
 {
+    SpinLockMutexScope l(gEng.vmAllocsMtx);
     uint32 index = gEng.vmAllocs.FindIf([alloc](const EngineVMAllocTrackItem& item) { return item.alloc == alloc; });
     if (index != -1) 
         gEng.vmAllocs.RemoveAndSwap(index);

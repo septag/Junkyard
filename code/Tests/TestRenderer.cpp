@@ -145,6 +145,15 @@ struct ModelScene
 
     void UpdateImGui(RView& view)
     {
+        Float3 camPos = mCam.Position();
+        String64 camPosStr = String64::Format("Camera: %.2f, %.2f, %.2f", camPos.x, camPos.y, camPos.z);
+        ImGui::TextColored(ImVec4(0.3f, 0.3f, 0.3f, 1.0f), camPosStr.CStr());
+        if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
+            App::SetClipboardString(camPosStr.CStr());
+            LOG_VERBOSE("Copied camera position to the clipboard");
+        }
+        ImGui::Separator();
+
         ImGui::ColorEdit4("Sky Ambient Color", mSkyAmbient.f, ImGuiColorEditFlags_Float);
         ImGui::ColorEdit4("Ground Ambient Color", mGroundAmbient.f, ImGuiColorEditFlags_Float);
         ImGui::Separator();
@@ -225,7 +234,9 @@ struct AppImpl final : AppCallbacks
     Camera* mCam = nullptr;
     ModelScene mModelScenes[CountOf(TESTRENDERER_MODELS)];
     RView mFwdRenderView;
+    RView mShadowMapView;
     GfxImageHandle mRenderTargetDepth;
+    GfxImageHandle mShadowMapDepth;
     uint32 mSelectedSceneIdx;
     bool mFirstTime = true;
     bool mMinimized = false;
@@ -234,21 +245,41 @@ struct AppImpl final : AppCallbacks
     void InitializeFramebufferResources(uint16 width, uint16 height)
     {
         GfxBackend::DestroyImage(mRenderTargetDepth);
+        GfxBackend::DestroyImage(mShadowMapDepth);
 
-        GfxImageDesc desc {
-            .width = uint16(width),
-            .height = uint16(height),
-            .format = GfxBackend::GetValidDepthStencilFormat(),
-            .usageFlags = GfxImageUsageFlags::DepthStencilAttachment | GfxImageUsageFlags::Sampled,
-        };
+        {
+            GfxImageDesc desc {
+                .width = uint16(width),
+                .height = uint16(height),
+                .format = GfxBackend::GetValidDepthStencilFormat(),
+                .usageFlags = GfxImageUsageFlags::DepthStencilAttachment | GfxImageUsageFlags::Sampled,
+            };
 
-        // Note: this won't probably work with tiled GPUs because it's incompatible with Sampled flag
-        //       So we probably need to copy the contents of the zbuffer to another one
-        #if PLATFORM_MOBILE
-        desc.usageFlags |= GfxImageUsageFlags::TransientAttachment;
-        #endif
+            // Note: this won't probably work with tiled GPUs because it's incompatible with Sampled flag
+            //       So we probably need to copy the contents of the zbuffer to another one
+            #if PLATFORM_MOBILE
+            desc.usageFlags |= GfxImageUsageFlags::TransientAttachment;
+            #endif
 
-        mRenderTargetDepth = GfxBackend::CreateImage(desc);
+            mRenderTargetDepth = GfxBackend::CreateImage(desc);
+        }
+
+        {
+            GfxImageDesc desc {
+                .width = 1024,
+                .height = 1024,
+                .format = GfxFormat::D32_SFLOAT,
+                .usageFlags = GfxImageUsageFlags::DepthStencilAttachment | GfxImageUsageFlags::Sampled,
+            };
+
+            // Note: this won't probably work with tiled GPUs because it's incompatible with Sampled flag
+            //       So we probably need to copy the contents of the zbuffer to another one
+            #if PLATFORM_MOBILE
+            desc.usageFlags |= GfxImageUsageFlags::TransientAttachment;
+            #endif
+
+            mShadowMapDepth = GfxBackend::CreateImage(desc);
+        }
     }
 
     bool Initialize() override
@@ -278,6 +309,7 @@ struct AppImpl final : AppCallbacks
             mDrawGrid = false;
 
         mFwdRenderView = R::CreateView(RViewType::FwdLight);
+        mShadowMapView = R::CreateView(RViewType::ShadowMap);
 
         return true;
     };
@@ -290,10 +322,69 @@ struct AppImpl final : AppCallbacks
             mModelScenes[i].Release();
 
         R::DestroyView(mFwdRenderView);
+        R::DestroyView(mShadowMapView);
+
         GfxBackend::DestroyImage(mRenderTargetDepth);
+        GfxBackend::DestroyImage(mShadowMapDepth);
 
         Engine::Release();
     };
+
+    void GatherModelRenderGeometries(AssetHandleModel modelHandle, RView& view)
+    {
+        AssetObjPtrScope<ModelData> model(modelHandle);
+        if (model.IsNull())
+            return;
+        MemTempAllocator tempAlloc;
+        Array<RGeometrySubChunk> subChunks(&tempAlloc);
+
+        RGeometryChunk* chunk = view.NewGeometryChunk();
+
+        for (uint32 i = 0; i < model->numNodes; i++) {
+            const ModelNode& node = model->nodes[i];
+            if (node.meshId == 0)
+                continue;
+
+            chunk->localToWorldMat = Mat4::TransformMat(
+                node.localTransform.position,
+                node.localTransform.rotation,
+                node.localTransform.scale);
+
+            ASSERT(model->numVertexBuffers == 2);
+            chunk->posVertexBuffer = model->vertexBuffers[0];
+            chunk->lightingVertexBuffer = model->vertexBuffers[1];
+            chunk->indexBuffer = model->indexBuffer;
+                    
+            const ModelMesh& mesh = model->meshes[IdToIndex(node.meshId)];
+
+            chunk->posVertexBufferOffset = mesh.vertexBufferOffsets[0];
+            chunk->lightingVertexBufferOffset = mesh.vertexBufferOffsets[1];
+            chunk->indexBufferOffset = mesh.indexBufferOffset;
+
+            for (uint32 smi = 0; smi < mesh.numSubmeshes; smi++) {
+                const ModelSubmesh& submesh = mesh.submeshes[smi];
+                const ModelMaterial* mtl = model->materials[IdToIndex(submesh.materialId)].Get();
+                        
+                GfxImageHandle imgHandle {};
+
+                if (mtl->pbrMetallicRoughness.baseColorTex.texture.IsValid()) {
+                    AssetObjPtrScope<GfxImage> img(mtl->pbrMetallicRoughness.baseColorTex.texture);
+                    if (!img.IsNull())
+                        imgHandle = img->handle;
+                }
+
+                RGeometrySubChunk subChunk {
+                    .startIndex = submesh.startIndex,
+                    .numIndices = submesh.numIndices,
+                    .baseColorImg = imgHandle
+                };
+                subChunks.Push(subChunk);
+            }
+
+        }
+
+        chunk->AddSubChunks(subChunks.Count(), subChunks.Ptr());
+    }
 
     void Update(float dt) override
     {
@@ -316,69 +407,35 @@ struct AppImpl final : AppCallbacks
 
         // Update
         ModelScene& scene = mModelScenes[mSelectedSceneIdx];
-        R::FwdLight::Update(mFwdRenderView, cmd);
+        
+        R::NewFrame();
 
-        // Render
+        Float3 sunlightDir = Float3(-0.2f, M::Cos(scene.mSunlightAngle), -M::Sin(scene.mSunlightAngle));
+
+        // Render ShadowMap
         {
-            R::NewFrame();
+            Float3 sunlightPos = Float3(0, /*10*/0, 0);
+            Camera shadowCam;
+            shadowCam.Setup(0, -100, 100);
+            shadowCam.SetPosDir(FLOAT3_ZERO, Float3(0, 0, -1), Float3(-1, 0, 0));
+            mShadowMapView.SetCamera(shadowCam, Float2(40, 40));
 
+            R::ShadowMap::Update(mShadowMapView, cmd);
+
+            GatherModelRenderGeometries(scene.mModel, mShadowMapView);
+
+            R::ShadowMap::Render(mShadowMapView, cmd, mShadowMapDepth);
+        }
+
+        // Render ForwardLight
+        {
             scene.SetLocalLights(mFwdRenderView);
             mFwdRenderView.SetAmbientLight(scene.mSkyAmbient, scene.mGroundAmbient);
-            mFwdRenderView.SetSunLight(Float3(-0.2f, M::Cos(scene.mSunlightAngle), -M::Sin(scene.mSunlightAngle)), scene.mSunlightColor);
-            mFwdRenderView.SetCameraAndViewport(*mCam, Float2(float(App::GetWindowWidth()), float(App::GetWindowHeight())));
+            mFwdRenderView.SetSunLight(sunlightDir, scene.mSunlightColor);
+            mFwdRenderView.SetCamera(*mCam, Float2(float(App::GetWindowWidth()), float(App::GetWindowHeight())));
+            R::FwdLight::Update(mFwdRenderView, cmd);
 
-            AssetObjPtrScope<ModelData> model(scene.mModel);
-            if (!model.IsNull()) {
-                MemTempAllocator tempAlloc;
-                Array<RGeometrySubChunk> subChunks(&tempAlloc);
-
-                RGeometryChunk* chunk = mFwdRenderView.NewGeometryChunk();
-
-                for (uint32 i = 0; i < model->numNodes; i++) {
-                    const ModelNode& node = model->nodes[i];
-                    if (node.meshId == 0)
-                        continue;
-
-                    chunk->localToWorldMat = Mat4::TransformMat(
-                        node.localTransform.position,
-                        node.localTransform.rotation,
-                        node.localTransform.scale);
-
-                    ASSERT(model->numVertexBuffers == 2);
-                    chunk->posVertexBuffer = model->vertexBuffers[0];
-                    chunk->lightingVertexBuffer = model->vertexBuffers[1];
-                    chunk->indexBuffer = model->indexBuffer;
-                    
-                    const ModelMesh& mesh = model->meshes[IdToIndex(node.meshId)];
-
-                    chunk->posVertexBufferOffset = mesh.vertexBufferOffsets[0];
-                    chunk->lightingVertexBufferOffset = mesh.vertexBufferOffsets[1];
-                    chunk->indexBufferOffset = mesh.indexBufferOffset;
-
-                    for (uint32 smi = 0; smi < mesh.numSubmeshes; smi++) {
-                        const ModelSubmesh& submesh = mesh.submeshes[smi];
-                        const ModelMaterial* mtl = model->materials[IdToIndex(submesh.materialId)].Get();
-                        
-                        GfxImageHandle imgHandle {};
-
-                        if (mtl->pbrMetallicRoughness.baseColorTex.texture.IsValid()) {
-                            AssetObjPtrScope<GfxImage> img(mtl->pbrMetallicRoughness.baseColorTex.texture);
-                            if (!img.IsNull())
-                                imgHandle = img->handle;
-                        }
-
-                        RGeometrySubChunk subChunk {
-                            .startIndex = submesh.startIndex,
-                            .numIndices = submesh.numIndices,
-                            .baseColorImg = imgHandle
-                        };
-                        subChunks.Push(subChunk);
-                    }
-
-                }
-
-                chunk->AddSubChunks(subChunks.Count(), subChunks.Ptr());
-            }
+            GatherModelRenderGeometries(scene.mModel, mFwdRenderView);
 
             R::FwdLight::Render(mFwdRenderView, cmd, GfxImageHandle(), mRenderTargetDepth, 
                                 scene.mDebugLightCull ? RDebugMode::LightCull : RDebugMode::None);

@@ -505,6 +505,9 @@ void MemBumpAllocatorBase::Release()
         Mem::Free(mDebugPointers, Mem::GetDefaultAlloc());
         mDebugPointers = nullptr;
     }
+
+    mCommitSize = 0;
+    mReserveSize = 0;
 }
 
 bool MemBumpAllocatorBase::IsInitialized() const

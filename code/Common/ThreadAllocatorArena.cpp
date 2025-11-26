@@ -61,8 +61,10 @@ void Mem::DestroyThreadAllocatorArena(MemThreadAllocatorArena* arena)
     MemThreadAllocatorArenaInternal* a = (MemThreadAllocatorArenaInternal*)arena;
 
     for (uint32 i = 0; i < a->numAllocators; i++) {
-        if (a->allocators[i].IsInitialized())
+        if (a->allocators[i].IsInitialized()) {
+            Engine::UnregisterVMAllocator(&a->allocators[i]);
             a->allocators[i].Release();
+        }
     }
 
     MemSingleShotMalloc<MemThreadAllocatorArena>::Free(a, a->parentAlloc);
@@ -102,7 +104,6 @@ MemBumpAllocatorVM* MemThreadAllocatorArena::GetOrCreateAllocatorForCurrentThrea
             trackingName->FormatSelf("%s (%s)", arena->rootTrackingName, threadName);
             Engine::RegisterVMAllocator(alloc, trackingName->CStr());
         }
-
     }
 
     return alloc;

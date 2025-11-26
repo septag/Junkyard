@@ -114,8 +114,16 @@ CameraFrustumPlanes Camera::GetFrustumPlanes(const Mat4& viewProjMat) const
 void Camera::SetLookAt(Float3 pos, Float3 target, Float3 up)
 {
     using namespace M;
-    // TODO: figure UP vector out, I hacked up vector (in the matrix) to make it work correctly
     mForward = Float3Norm(target - pos);
+    mRight = Float3Norm(Float3Cross(mForward, up));
+    mUp = Float3Cross(mRight, mForward);
+    mPos = pos;
+}
+
+void Camera::SetPosDir(Float3 pos, Float3 dir, Float3 up)
+{
+    using namespace M;
+    mForward = Float3Norm(dir);
     mRight = Float3Norm(Float3Cross(mForward, up));
     mUp = Float3Cross(mRight, mForward);
     mPos = pos;

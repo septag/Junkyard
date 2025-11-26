@@ -219,7 +219,7 @@ namespace DebugHud
     static void _DrawMemBudgets()
     {
         ImGui::SetNextWindowSizeConstraints(ImVec2(400, 200), ImVec2(M_FLOAT32_MAX, M_FLOAT32_MAX));
-        if (ImGui::Begin("Memory/Resource Stats")) {
+        if (ImGui::Begin("Memory/Resource Stats", &gDebugHud.showMemStats)) {
             ImGui::BeginTabBar("MemoryTabs");
 
             DebugHudMemStats& mstats = gDebugHud.memStats;
@@ -257,11 +257,11 @@ void DebugHud::DrawDebugHud(float dt, float yOffset)
             if (gDebugHud.enabledGraphs[i])
                 _DrawGraph(DebugHudGraphType(i));
         }
-
-        if (gDebugHud.showMemStats)
-            _DrawMemBudgets();
     }
     ImGui::End();
+
+    if (gDebugHud.showMemStats)
+        _DrawMemBudgets();
 }
 
 void DebugHud::DrawStatusBar(float dt)

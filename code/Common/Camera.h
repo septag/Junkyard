@@ -40,6 +40,7 @@ struct Camera
     void Setup(float fovDeg, float fnear, float ffar);
 
     virtual void SetLookAt(Float3 pos, Float3 target, Float3 up = FLOAT3_UNITZ);
+    virtual void SetPosDir(Float3 pos, Float3 dir, Float3 up = FLOAT3_UNITZ);
     virtual void SetViewMat(const Mat4& viewMat);
     virtual void HandleMovementKeyboard(float dt, float moveSpeed, float slowMoveSpeed);
     virtual void HandleRotationMouse(const AppEvent& ev, float rotateSpeed, float zoomStep);
