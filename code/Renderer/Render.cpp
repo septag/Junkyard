@@ -53,6 +53,13 @@ struct RLightCullDebugShaderFrameData
     uint32 _reserved[2];
 };
 
+struct RTextureDebugShaderFrameData
+{
+    float cameraNear;
+    float cameraFar;
+    float _reserved1[2];
+};
+
 struct RLightShaderFrameData
 {
     Mat4 worldToClipMat;
@@ -90,6 +97,7 @@ struct RViewData
     Float4 sunLightColor;
     Float4 skyAmbientColor;
     Float4 groundAmbientColor;
+    GfxImageHandle sunShadowMapImage;
 
     RLightBounds* lightBounds;
     RLightProps* lightProps;
@@ -131,6 +139,16 @@ struct RFwdContext
     GfxPipelineHandle pLight;
     GfxPipelineLayoutHandle pLightLayout;
     GfxBufferHandle ubLight;
+
+    AssetHandleShader sTextureDebugDepth;
+    GfxPipelineHandle pTextureDebugDepth;
+    GfxPipelineLayoutHandle pTextureDebugDepthLayout;
+
+    AssetHandleShader sTextureDebugColor;
+    GfxPipelineHandle pTextureDebugColor;
+    GfxPipelineLayoutHandle pTextureDebugColorLayout;
+
+    GfxSamplerHandle smpBilinearClamp;
 
     HandlePool<RViewHandle, RViewData> viewPool;
 
@@ -527,6 +545,60 @@ namespace R
 
             gFwd.ubLight = GfxBackend::CreateBuffer(ubDesc);
         }
+
+        //--------------------------------------------------------------------------------------------------------------
+        // TextureDebug
+        {
+            AssetObjPtrScope<GfxShader> shader(gFwd.sTextureDebugDepth);
+            GfxPipelineLayoutDesc::Binding bindings[] = {
+                {
+                    .name = "DepthTexture",
+                    .type = GfxDescriptorType::SampledImage,
+                    .stagesUsed = GfxShaderStage::Fragment
+                },
+                {
+                    .name = "TextureSampler",
+                    .type = GfxDescriptorType::Sampler,
+                    .stagesUsed = GfxShaderStage::Fragment
+                }
+            };
+
+            GfxPipelineLayoutDesc::PushConstant pushConstants[] = {
+                {
+                    .name = "PerFrameData",
+                    .stagesUsed = GfxShaderStage::Fragment,
+                    .size = sizeof(RTextureDebugShaderFrameData)
+                }
+            };
+
+            GfxPipelineLayoutDesc layoutDesc { 
+                .numBindings = CountOf(bindings),
+                .bindings = bindings,
+                .numPushConstants = CountOf(pushConstants),
+                .pushConstants = pushConstants
+            };
+
+            gFwd.pTextureDebugDepthLayout = GfxBackend::CreatePipelineLayout(*shader, layoutDesc);
+
+            GfxGraphicsPipelineDesc pDesc {
+                .rasterizer = {
+                    .cullMode = GfxCullMode::Back
+                },
+                .blend = {
+                    .numAttachments = 1,
+                    .attachments = GfxBlendAttachmentDesc::GetDefault()
+                },
+                .numColorAttachments = 1,
+                .colorAttachmentFormats = {GfxBackend::GetSwapchainFormat()}
+            };
+
+            {
+                GfxShaderPermutationVar permuts[] = {
+                    GfxShaderPermutationVar("LinearizeDepthTexture", true)
+                };
+                gFwd.pTextureDebugDepth = GfxBackend::CreateGraphicsPipeline(*shader, gFwd.pTextureDebugDepthLayout, pDesc, CountOf(permuts), permuts);
+            }
+        }
     }
 } // R
 
@@ -585,6 +657,16 @@ bool R::Initialize()
     }
 
     //------------------------------------------------------------------------------------------------------------------
+    // Other graphics objects
+    {
+        GfxSamplerDesc samplerDesc {
+            .samplerFilter = GfxSamplerFilterMode::Linear,
+            .samplerWrap = GfxSamplerWrapMode::ClampToEdge,
+        };
+        gFwd.smpBilinearClamp = GfxBackend::CreateSampler(samplerDesc);
+    }
+
+    //------------------------------------------------------------------------------------------------------------------
     // Load shaders and initialize pipelines afterwards
     const AssetGroup& assetGroup = Engine::RegisterInitializeResources([](void*) {
         _CreatePipelines();
@@ -617,6 +699,37 @@ bool R::Initialize()
         gFwd.sLightCullDebug = Shader::Load("/shaders/LightCullDebug.hlsl", loadParams, assetGroup);
     }
 
+    {
+        ShaderLoadParams loadParams {
+            .compileDesc = {
+                .numDefines = 2,
+                .defines = {
+                    {
+                        .define = "IS_DEPTH_TEXTURE",
+                        .value = "1"
+                    },
+                    {
+                        .define = "MSAA",
+                        .value = String32::Format("%d", settings.graphics.msaa)
+                    }
+                }
+            }
+        };
+        gFwd.sTextureDebugDepth = Shader::Load("/shaders/TextureDebug.hlsl", loadParams, assetGroup);
+
+        loadParams = {
+            .compileDesc = {
+                .numDefines = 1,
+                .defines = {
+                    {
+                        .define = "MSAA",
+                        .value = String32::Format("%d", settings.graphics.msaa)
+                    }
+                }
+            }
+        };
+        gFwd.sTextureDebugColor = Shader::Load("/shaders/TextureDebug.hlsl", loadParams, assetGroup);
+    }
     return true;
 }
 
@@ -641,9 +754,17 @@ void R::Release()
     GfxBackend::DestroyPipelineLayout(gFwd.pLightLayout);
     GfxBackend::DestroyBuffer(gFwd.ubLight);
 
+    GfxBackend::DestroyPipeline(gFwd.pTextureDebugDepth);
+    GfxBackend::DestroyPipelineLayout(gFwd.pTextureDebugDepthLayout);
+
+    GfxBackend::DestroyPipeline(gFwd.pTextureDebugColor);
+    GfxBackend::DestroyPipelineLayout(gFwd.pTextureDebugColorLayout);
+
     GfxBackend::DestroyBuffer(gFwd.bLightBounds);
     GfxBackend::DestroyBuffer(gFwd.bVisibleLightIndices);
     GfxBackend::DestroyBuffer(gFwd.bLightProps);
+
+    GfxBackend::DestroySampler(gFwd.smpBilinearClamp);
 
     GfxBackend::DestroyImage(gFwd.msaaColorRenderImage);
     GfxBackend::DestroyImage(gFwd.msaaDepthRenderImage);
@@ -762,11 +883,6 @@ void R::FwdLight::Render(RView& view, GfxCommandBuffer& cmd, GfxImageHandle fina
         };
         cmd.BeginRenderPass(zprepass);
 
-        GfxViewport vp {
-            .width = float(App::GetFramebufferWidth()),
-            .height = float(App::GetFramebufferHeight())
-        };
-        cmd.SetViewports(0, 1, &vp);
         cmd.BindPipeline(gFwd.pZPrepass);
         cmd.HelperSetFullscreenViewportAndScissor();
 
@@ -948,6 +1064,66 @@ void R::FwdLight::Render(RView& view, GfxCommandBuffer& cmd, GfxImageHandle fina
 
         cmd.EndRenderPass();
     }
+    else if (debugMode == RDebugMode::SunShadowMap) {
+        cmd.TransitionImage(viewData.sunShadowMapImage, GfxImageTransition::ShaderRead);
+
+        GfxBackendRenderPass pass { 
+            .colorAttachments = {{
+                .clear = true,
+                .clearValue = {
+                    .color = FLOAT4_UNITZ
+                }
+            }},
+            .swapchain = true,
+        };
+
+        cmd.BeginRenderPass(pass);
+        cmd.BindPipeline(gFwd.pTextureDebugDepth);
+        cmd.HelperSetFullscreenViewportAndScissor();
+
+        // Letterboxing (TODO: decouple this code into a function)
+        {
+            GfxImageDesc imageDesc = GfxBackend::GetImageDesc(viewData.sunShadowMapImage);
+            GfxViewport vp {};
+
+            float fbWidth = float(App::GetFramebufferWidth());
+            float fbHeight = float(App::GetFramebufferHeight());
+            float imageWidth = float(imageDesc.width);
+            float imageHeight = float(imageDesc.height);
+            float scaleX = fbWidth /  imageWidth;
+            float scaleY = fbHeight / imageHeight;
+            float scale = (scaleX < scaleY) ? scaleX : scaleY;
+            vp.width = imageWidth * scale;
+            vp.height = imageHeight * scale;
+            vp.x = (fbWidth - vp.width) * 0.5f;
+            vp.y = (fbHeight - vp.height) * 0.5f;
+
+            cmd.SetViewports(0, 1, &vp);
+        }
+
+        GfxBindingDesc bindings[] = {
+            {
+                .name = "DepthTexture",
+                .image = viewData.sunShadowMapImage
+            },
+            {
+                .name = "TextureSampler",
+                .sampler = gFwd.smpBilinearClamp
+            }
+        };
+
+        cmd.PushBindings(gFwd.pTextureDebugDepthLayout, CountOf(bindings), bindings);
+
+        RTextureDebugShaderFrameData perFrameData {
+            .cameraNear = viewData.nearDist,
+            .cameraFar = viewData.farDist
+        };
+        cmd.PushConstants<RTextureDebugShaderFrameData>(gFwd.pTextureDebugDepthLayout, "PerFrameData", perFrameData);
+
+        cmd.Draw(3, 1, 0, 0);
+
+        cmd.EndRenderPass();
+    }
 }
 
 void RView::SetCamera(const Camera& cam, Float2 viewSize)
@@ -987,11 +1163,12 @@ void RView::SetAmbientLight(Float4 skyAmbientColor, Float4 groundAmbientColor)
     vdata.groundAmbientColor = Color4u::ToFloat4Linear(groundAmbientColor);
 }
 
-void RView::SetSunLight(Float3 direction, Float4 color)
+void RView::SetSunLight(Float3 direction, Float4 color, GfxImageHandle shadowMapImage)
 {
     RViewData& viewData = gFwd.viewPool.Data(mHandle);
     viewData.sunLightDir = Float3::Norm(direction);
     viewData.sunLightColor = Color4u::ToFloat4Linear(color);
+    viewData.sunShadowMapImage = shadowMapImage;
 }
 
 RGeometryChunk* RView::NewGeometryChunk()

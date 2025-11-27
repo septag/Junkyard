@@ -4106,7 +4106,10 @@ void GfxCommandBuffer::PushBindings(GfxPipelineLayoutHandle layoutHandle, uint32
             } 
             case VK_DESCRIPTOR_TYPE_SAMPLER:
             {
-                ASSERT_MSG(0, "Not implemented");
+                pImageInfo = imageInfos.Push();
+                *pImageInfo = {
+                    .sampler = gBackendVk.samplers.Data(binding.sampler).handle
+                };
                 break;
             }
             case VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER:

@@ -24,7 +24,8 @@ struct RLightProps
 enum class RDebugMode
 {
     None = 0,
-    LightCull
+    LightCull,
+    SunShadowMap
 };
 
 struct RGeometrySubChunk
@@ -66,7 +67,7 @@ struct RView
     void SetCamera(const Camera& cam, Float2 viewSize);
     void SetLocalLights(uint32 numLights, const RLightBounds* bounds, const RLightProps* props);
     void SetAmbientLight(Float4 skyAmbientColor, Float4 groundAmbientColor);
-    void SetSunLight(Float3 direction, Float4 color);
+    void SetSunLight(Float3 direction, Float4 color, GfxImageHandle shadowMapImage);
 
     RGeometryChunk* NewGeometryChunk();
 };

@@ -1001,6 +1001,7 @@ struct GfxBindingDesc
     {
         GfxBufferHandle buffer;
         GfxImageHandle image;
+        GfxSamplerHandle sampler;
         const GfxImageHandle* imageArray;
     };
 };

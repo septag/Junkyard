@@ -66,6 +66,7 @@ struct ModelScene
     Float4 mSkyAmbient = Color4u::ToFloat4(Color4u(36,54,81,26));
     Float4 mGroundAmbient = Color4u::ToFloat4(Color4u(216,199,172,8));
     bool mDebugLightCull = false;
+    bool mDebugShadowMap = false;
     bool mDebugLightBounds = false;
 
     void Initialize(AssetGroup initAssetGroup, const char* modelFilepath)
@@ -143,7 +144,7 @@ struct ModelScene
         view.SetLocalLights(numLights, lightBounds, lightProps);
     }
 
-    void UpdateImGui(RView& view)
+    void UpdateImGui()
     {
         Float3 camPos = mCam.Position();
         String64 camPosStr = String64::Format("Camera: %.2f, %.2f, %.2f", camPos.x, camPos.y, camPos.z);
@@ -158,10 +159,8 @@ struct ModelScene
         ImGui::ColorEdit4("Ground Ambient Color", mGroundAmbient.f, ImGuiColorEditFlags_Float);
         ImGui::Separator();
 
-        if (ImGui::SliderFloat("Sun Light Angle", &mSunlightAngle, 0, M_PI, "%0.1f"))
-            view.SetSunLight(Float3(-0.2f, M::Cos(mSunlightAngle), -M::Sin(mSunlightAngle)), mSunlightColor);
-        if (ImGui::ColorEdit4("Sun Light Color", mSunlightColor.f, ImGuiColorEditFlags_Float))
-            view.SetSunLight(Float3(-0.2f, M::Cos(mSunlightAngle), -M::Sin(mSunlightAngle)), mSunlightColor);
+        ImGui::SliderFloat("Sun Light Angle", &mSunlightAngle, 0, M_PI, "%0.2f");
+        ImGui::ColorEdit4("Sun Light Color", mSunlightColor.f, ImGuiColorEditFlags_Float);
 
         ImGui::SliderFloat("Point Light Radius", &mPointLightRadius, 0.1f, 10.0f, "%.1f");
         ImGui::ColorEdit4("Light Color", mLightColor.f, ImGuiColorEditFlags_Float);
@@ -174,6 +173,7 @@ struct ModelScene
         ImGui::Separator();
 
         ImGui::Checkbox("Debug Light Culling", &mDebugLightCull);
+        ImGui::Checkbox("Debug Shadow Map", &mDebugShadowMap);
         ImGui::Checkbox("Debug Light Bounds", &mDebugLightBounds);
     }
 
@@ -414,10 +414,10 @@ struct AppImpl final : AppCallbacks
 
         // Render ShadowMap
         {
-            Float3 sunlightPos = Float3(0, /*10*/0, 0);
             Camera shadowCam;
             shadowCam.Setup(0, -100, 100);
-            shadowCam.SetPosDir(FLOAT3_ZERO, Float3(0, 0, -1), Float3(-1, 0, 0));
+            // shadowCam.SetPosDir(FLOAT3_ZERO, Float3(0, 0, -1), Float3(-1, 0, 0));
+            shadowCam.SetPosDir(FLOAT3_ZERO, sunlightDir);
             mShadowMapView.SetCamera(shadowCam, Float2(40, 40));
 
             R::ShadowMap::Update(mShadowMapView, cmd);
@@ -431,20 +431,25 @@ struct AppImpl final : AppCallbacks
         {
             scene.SetLocalLights(mFwdRenderView);
             mFwdRenderView.SetAmbientLight(scene.mSkyAmbient, scene.mGroundAmbient);
-            mFwdRenderView.SetSunLight(sunlightDir, scene.mSunlightColor);
+            mFwdRenderView.SetSunLight(sunlightDir, scene.mSunlightColor, mShadowMapDepth);
             mFwdRenderView.SetCamera(*mCam, Float2(float(App::GetWindowWidth()), float(App::GetWindowHeight())));
             R::FwdLight::Update(mFwdRenderView, cmd);
 
             GatherModelRenderGeometries(scene.mModel, mFwdRenderView);
 
-            R::FwdLight::Render(mFwdRenderView, cmd, GfxImageHandle(), mRenderTargetDepth, 
-                                scene.mDebugLightCull ? RDebugMode::LightCull : RDebugMode::None);
+            RDebugMode debugMode = RDebugMode::None;
+            if (scene.mDebugLightCull)
+                debugMode = RDebugMode::LightCull;
+            else if (scene.mDebugShadowMap)
+                debugMode = RDebugMode::SunShadowMap;
+            R::FwdLight::Render(mFwdRenderView, cmd, GfxImageHandle(), mRenderTargetDepth, debugMode);
         }
 
         cmd.TransitionImage(mRenderTargetDepth, GfxImageTransition::RenderTarget, GfxImageTransitionFlags::DepthRead);
 
         // DebugDraw
-        if (!scene.mDebugLightCull) {
+        bool debugInternals = scene.mDebugLightCull | scene.mDebugShadowMap;
+        if (!debugInternals) {
             PROFILE_ZONE("DebugDraw");
             DebugDraw::BeginDraw(cmd, *mCam, App::GetFramebufferWidth(), App::GetFramebufferHeight());
             if (mDrawGrid) {
@@ -494,7 +499,7 @@ struct AppImpl final : AppCallbacks
 
             ImGui::SetNextWindowSize(ImVec2(300, 200), ImGuiCond_FirstUseEver);
             if (ImGui::Begin("Scene")) {
-                scene.UpdateImGui(mFwdRenderView);
+                scene.UpdateImGui();
             }
             ImGui::End();
 
