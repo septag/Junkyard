@@ -498,8 +498,7 @@ FORCE_INLINE Mat4 Mat4::ToQuatTranslateHMD(Quat q, Float3 translate)
     return Mat4::ToQuatTranslate(Quat(-q.x, -q.y, q.z, q.w), translate);
 }
 
-/// multiply vector3 into 4x4 matrix without considering 4th column, which is not used in transform
-/// matrices
+// multiply vector3 into 4x4 matrix without considering 4th column, which is not used in transform matrices
 FORCE_INLINE Float3 Mat4::MulFloat3(const Mat4& _mat, Float3 _vec)
 {
     return Float3(_vec.x * _mat.m11 + _vec.y * _mat.m12 + _vec.z * _mat.m13 + _mat.m14,
@@ -507,7 +506,7 @@ FORCE_INLINE Float3 Mat4::MulFloat3(const Mat4& _mat, Float3 _vec)
                   _vec.x * _mat.m31 + _vec.y * _mat.m32 + _vec.z * _mat.m33 + _mat.m34);
 }
 
-/// multiply vector3 into rotation part of the matrix only (used for normal vectors, etc...)
+// multiply vector3 into rotation part of the matrix only (used for normal vectors, etc...)
 FORCE_INLINE Float3 Mat4::MulFloat3_xyz0(const Mat4& _mat, Float3 _vec)
 {
     return Float3(_vec.x * _mat.m11 + _vec.y * _mat.m12 + _vec.z * _mat.m13,
@@ -1109,6 +1108,11 @@ FORCE_INLINE Float3 AABB::Extents() const
     return Float3::Mul(Float3(xmax - xmin,  ymax - ymin, zmax - zmin), 0.5f);
 }
 
+FORCE_INLINE Float3 AABB::Dimensions() const
+{
+    return Float3(xmax - xmin,  ymax - ymin, zmax - zmin);
+}
+
 FORCE_INLINE Float3 AABB::Center() const
 {
     return Float3::Mul(Float3::Add(Float3(vmin), Float3(vmax)), 0.5f);
@@ -1203,6 +1207,26 @@ FORCE_INLINE Float3 operator*(Float3 v, float k)
 FORCE_INLINE Float3 operator*(float k, Float3 v)
 {
     return Float3::Mul(v, k);
+}
+
+FORCE_INLINE Float4 operator+(Float4 v1, Float4 v2)
+{
+    return Float4::Add(v1, v2);
+}
+
+FORCE_INLINE Float4 operator-(Float4 v1, Float4 v2)
+{
+    return Float4::Sub(v1, v2);
+}
+
+FORCE_INLINE Float4 operator*(Float4 v, float k)
+{
+    return Float4::Mul(v, k);
+}
+
+FORCE_INLINE Float4 operator*(float k, Float4 v)
+{
+    return Float4::Mul(v, k);
 }
 
 FORCE_INLINE Mat4 operator*(const Mat4& a, const Mat4& b)

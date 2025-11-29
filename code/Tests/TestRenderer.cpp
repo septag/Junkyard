@@ -60,7 +60,7 @@ struct ModelScene
     Array<SceneLight> mLights;
 
     float mSunlightAngle = M_HALFPI;
-    Float4 mSunlightColor = Color4u::ToFloat4(Color4u(251,250,204,8)); 
+    Float4 mSunlightColor = Color4u::ToFloat4(Color4u(251,250,204,20)); 
     float mPointLightRadius = 1.0f;
     Float4 mLightColor = Float4(1.0f, 1.0f, 1.0f, 1.0f);
     Float4 mSkyAmbient = Color4u::ToFloat4(Color4u(36,54,81,26));
@@ -266,9 +266,9 @@ struct AppImpl final : AppCallbacks
 
         {
             GfxImageDesc desc {
-                .width = 1024,
-                .height = 1024,
-                .format = GfxFormat::D32_SFLOAT,
+                .width = 2048,
+                .height = 2048,
+                .format = GfxFormat::D16_UNORM,
                 .usageFlags = GfxImageUsageFlags::DepthStencilAttachment | GfxImageUsageFlags::Sampled,
             };
 
@@ -330,7 +330,7 @@ struct AppImpl final : AppCallbacks
         Engine::Release();
     };
 
-    void GatherModelRenderGeometries(AssetHandleModel modelHandle, RView& view)
+    void GatherModelRenderGeometries(AssetHandleModel modelHandle, RView& view, AABB* outBounds = nullptr)
     {
         AssetObjPtrScope<ModelData> model(modelHandle);
         if (model.IsNull())
@@ -339,6 +339,8 @@ struct AppImpl final : AppCallbacks
         Array<RGeometrySubChunk> subChunks(&tempAlloc);
 
         RGeometryChunk* chunk = view.NewGeometryChunk();
+
+        AABB bounds = AABB_EMPTY;
 
         for (uint32 i = 0; i < model->numNodes; i++) {
             const ModelNode& node = model->nodes[i];
@@ -349,6 +351,9 @@ struct AppImpl final : AppCallbacks
                 node.localTransform.position,
                 node.localTransform.rotation,
                 node.localTransform.scale);
+
+            AABB boundsWS = AABB::Transform(node.bounds, chunk->localToWorldMat);
+            bounds = AABB::Unify(bounds, boundsWS);
 
             ASSERT(model->numVertexBuffers == 2);
             chunk->posVertexBuffer = model->vertexBuffers[0];
@@ -384,6 +389,8 @@ struct AppImpl final : AppCallbacks
         }
 
         chunk->AddSubChunks(subChunks.Count(), subChunks.Ptr());
+        if (outBounds) 
+            *outBounds = bounds;
     }
 
     void Update(float dt) override
@@ -414,16 +421,34 @@ struct AppImpl final : AppCallbacks
 
         // Render ShadowMap
         {
+            AABB boundsWS = AABB_EMPTY;
+            GatherModelRenderGeometries(scene.mModel, mShadowMapView, &boundsWS);
+
             Camera shadowCam;
             shadowCam.Setup(0, -100, 100);
             // shadowCam.SetPosDir(FLOAT3_ZERO, Float3(0, 0, -1), Float3(-1, 0, 0));
+            // Float3 camPos = boundsWS.Center() + Float3(0, 0, boundsWS.Dimensions().z);
             shadowCam.SetPosDir(FLOAT3_ZERO, sunlightDir);
-            mShadowMapView.SetCamera(shadowCam, Float2(40, 40));
+
+            if (!boundsWS.IsEmpty()) {
+                Mat4 viewMat = shadowCam.GetViewMat();
+                AABB boundsLS = AABB::Transform(boundsWS, viewMat);
+                boundsLS = AABB::Expand(boundsLS, boundsLS.Extents()*0.1f);
+                // Plane projPlane = Plane(sunlightDir*-1.0f, 0);
+
+                Float3 dim = boundsLS.Dimensions();
+                float nearDist = boundsLS.zmin;
+                float farDist = boundsLS.zmax;
+
+                mShadowMapView.SetCamera(shadowCam, Float2(dim.x, dim.y));
+                shadowCam.Setup(0, nearDist, farDist);
+            }
+            else {
+                mShadowMapView.SetCamera(shadowCam, Float2(40, 40));
+            }
+
 
             R::ShadowMap::Update(mShadowMapView, cmd);
-
-            GatherModelRenderGeometries(scene.mModel, mShadowMapView);
-
             R::ShadowMap::Render(mShadowMapView, cmd, mShadowMapDepth);
         }
 
@@ -431,7 +456,7 @@ struct AppImpl final : AppCallbacks
         {
             scene.SetLocalLights(mFwdRenderView);
             mFwdRenderView.SetAmbientLight(scene.mSkyAmbient, scene.mGroundAmbient);
-            mFwdRenderView.SetSunLight(sunlightDir, scene.mSunlightColor, mShadowMapDepth);
+            mFwdRenderView.SetSunLight(sunlightDir, scene.mSunlightColor, mShadowMapDepth, mShadowMapView.GetWorldToClipMat());
             mFwdRenderView.SetCamera(*mCam, Float2(float(App::GetWindowWidth()), float(App::GetWindowHeight())));
             R::FwdLight::Update(mFwdRenderView, cmd);
 

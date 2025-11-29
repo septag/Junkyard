@@ -63,6 +63,7 @@ struct RTextureDebugShaderFrameData
 struct RLightShaderFrameData
 {
     Mat4 worldToClipMat;
+    Mat4 worldToSunLightClipMat;
     Float3 sunLightDir;
     float _reserved1;
     Float4 sunLightColor;
@@ -93,6 +94,7 @@ struct RViewData
     float nearDist;
     float farDist;
 
+    Mat4 sunLightWorldToClipMat;
     Float3 sunLightDir;
     Float4 sunLightColor;
     Float4 skyAmbientColor;
@@ -149,6 +151,7 @@ struct RFwdContext
     GfxPipelineLayoutHandle pTextureDebugColorLayout;
 
     GfxSamplerHandle smpBilinearClamp;
+    GfxSamplerHandle smpShadowMapCmp;
 
     HandlePool<RViewHandle, RViewData> viewPool;
 
@@ -317,7 +320,7 @@ namespace R
                     .depthCompareOp = GfxCompareOp::Less
                 },
                 .numColorAttachments = 0,
-                .depthAttachmentFormat = GfxFormat::D32_SFLOAT,
+                .depthAttachmentFormat = GfxFormat::D16_UNORM,
             };
             gFwd.pShadowMap = GfxBackend::CreateGraphicsPipeline(*shader, gFwd.pZPrepassLayout, pShadowMapDesc);
 
@@ -407,6 +410,16 @@ namespace R
                 {
                     .name = "LocalLightBounds",
                     .type = GfxDescriptorType::StorageBuffer,
+                    .stagesUsed = GfxShaderStage::Fragment
+                },
+                {
+                    .name = "ShadowMap",
+                    .type = GfxDescriptorType::SampledImage,
+                    .stagesUsed = GfxShaderStage::Fragment
+                },
+                {
+                    .name = "ShadowSampler",
+                    .type = GfxDescriptorType::Sampler,
                     .stagesUsed = GfxShaderStage::Fragment
                 }
             };
@@ -664,6 +677,13 @@ bool R::Initialize()
             .samplerWrap = GfxSamplerWrapMode::ClampToEdge,
         };
         gFwd.smpBilinearClamp = GfxBackend::CreateSampler(samplerDesc);
+
+        samplerDesc = {
+            .samplerFilter = GfxSamplerFilterMode::Linear,
+            .samplerWrap = GfxSamplerWrapMode::ClampToEdge,
+            .compareOp = GfxCompareOp::LessOrEqual
+        };
+        gFwd.smpShadowMapCmp = GfxBackend::CreateSampler(samplerDesc);
     }
 
     //------------------------------------------------------------------------------------------------------------------
@@ -765,6 +785,7 @@ void R::Release()
     GfxBackend::DestroyBuffer(gFwd.bLightProps);
 
     GfxBackend::DestroySampler(gFwd.smpBilinearClamp);
+    GfxBackend::DestroySampler(gFwd.smpShadowMapCmp);
 
     GfxBackend::DestroyImage(gFwd.msaaColorRenderImage);
     GfxBackend::DestroyImage(gFwd.msaaDepthRenderImage);
@@ -808,6 +829,7 @@ void R::FwdLight::Update(RView& view, GfxCommandBuffer& cmd)
         GfxHelperBufferUpdateScope updater(cmd, gFwd.ubLight, uint32(-1), GfxShaderStage::Fragment);
         RLightShaderFrameData* frameData = (RLightShaderFrameData*)updater.mData;
         frameData->worldToClipMat = worldToClipMat;
+        frameData->worldToSunLightClipMat = viewData.sunLightWorldToClipMat;
         frameData->sunLightDir = viewData.sunLightDir;
         frameData->sunLightColor = viewData.sunLightColor;
         frameData->skyAmbientColor = viewData.skyAmbientColor;
@@ -955,6 +977,9 @@ void R::FwdLight::Render(RView& view, GfxCommandBuffer& cmd, GfxImageHandle fina
                                 GfxImageTransitionFlags::DepthWrite|GfxImageTransitionFlags::DepthResolve);
         }
 
+        if (viewData.sunShadowMapImage.IsValid())
+            cmd.TransitionImage(viewData.sunShadowMapImage, GfxImageTransition::ShaderRead);
+
         // If finalColorImage is not provided, we render to Swapchain
         GfxImageHandle renderColorImage = msaa > 1 ? gFwd.msaaColorRenderImage : finalColorImage;
 
@@ -1024,6 +1049,14 @@ void R::FwdLight::Render(RView& view, GfxCommandBuffer& cmd, GfxImageHandle fina
                     {
                         .name = "LocalLightBounds",
                         .buffer = gFwd.bLightBounds
+                    },
+                    {
+                        .name = "ShadowMap",
+                        .image = viewData.sunShadowMapImage
+                    },
+                    {
+                        .name = "ShadowSampler",
+                        .sampler = gFwd.smpShadowMapCmp
                     }
                 };
                 cmd.PushBindings(gFwd.pLightLayout, CountOf(bindings), bindings);
@@ -1156,6 +1189,12 @@ void RView::SetLocalLights(uint32 numLights, const RLightBounds* bounds, const R
     }
 }
 
+Mat4 RView::GetWorldToClipMat() const
+{
+    RViewData& viewData = gFwd.viewPool.Data(mHandle);
+    return viewData.worldToClipMat;
+}
+
 void RView::SetAmbientLight(Float4 skyAmbientColor, Float4 groundAmbientColor)
 {
     RViewData& vdata = gFwd.viewPool.Data(mHandle);
@@ -1163,12 +1202,13 @@ void RView::SetAmbientLight(Float4 skyAmbientColor, Float4 groundAmbientColor)
     vdata.groundAmbientColor = Color4u::ToFloat4Linear(groundAmbientColor);
 }
 
-void RView::SetSunLight(Float3 direction, Float4 color, GfxImageHandle shadowMapImage)
+void RView::SetSunLight(Float3 direction, Float4 color, GfxImageHandle shadowMapImage, const Mat4& sunlightWorldToClipMat)
 {
     RViewData& viewData = gFwd.viewPool.Data(mHandle);
     viewData.sunLightDir = Float3::Norm(direction);
     viewData.sunLightColor = Color4u::ToFloat4Linear(color);
     viewData.sunShadowMapImage = shadowMapImage;
+    viewData.sunLightWorldToClipMat = sunlightWorldToClipMat;
 }
 
 RGeometryChunk* RView::NewGeometryChunk()
@@ -1258,16 +1298,19 @@ void R::ShadowMap::Render(RView& view, GfxCommandBuffer& cmd, GfxImageHandle sha
         };
         cmd.BeginRenderPass(zprepass);
 
-        GfxViewport vp {};
+
+        cmd.BindPipeline(gFwd.pShadowMap);
         {
             const GfxImageDesc& imgDesc = GfxBackend::GetImageDesc(shadowMapDepthImage);
-            vp.width = imgDesc.width;
-            vp.height = imgDesc.height;
-        }
+            GfxViewport vp {
+                .width = float(imgDesc.width),
+                .height = float(imgDesc.height)
+            };
+            cmd.SetViewports(0, 1, &vp);
 
-        cmd.SetViewports(0, 1, &vp);
-        cmd.BindPipeline(gFwd.pShadowMap);
-        cmd.HelperSetFullscreenViewportAndScissor();
+            RectInt rc(0, 0, imgDesc.width, imgDesc.height);
+            cmd.SetScissors(0, 1, &rc);
+        }
 
         RGeometryChunk* chunk = viewData.chunkList;
         while (chunk) {

@@ -711,7 +711,8 @@ namespace GfxBackend
             fmt == GfxFormat::D16_UNORM_S8_UINT ||
             fmt == GfxFormat::D24_UNORM_S8_UINT ||
             fmt == GfxFormat::D32_SFLOAT_S8_UINT ||
-            fmt == GfxFormat::S8_UINT;
+            fmt == GfxFormat::S8_UINT ||
+            fmt == GfxFormat::D16_UNORM;
     }
 
     [[maybe_unused]] INLINE bool _FormatHasDepth(GfxFormat fmt)
@@ -719,7 +720,8 @@ namespace GfxBackend
         return  fmt == GfxFormat::D32_SFLOAT ||
             fmt == GfxFormat::D16_UNORM_S8_UINT ||
             fmt == GfxFormat::D24_UNORM_S8_UINT ||
-            fmt == GfxFormat::D32_SFLOAT_S8_UINT;
+            fmt == GfxFormat::D32_SFLOAT_S8_UINT || 
+            fmt == GfxFormat::D16_UNORM;
     }
 
     [[maybe_unused]] INLINE bool _FormatHasStencil(GfxFormat fmt)
@@ -6168,11 +6170,11 @@ GfxSamplerHandle GfxBackend::CreateSampler(const GfxSamplerDesc& desc)
         .addressModeU = addressMode,
         .addressModeV = addressMode,
         .addressModeW = addressMode,
-        .mipLodBias = 0.0f,
+        .mipLodBias = desc.mipLODBias,
         .anisotropyEnable = anisotropy > 1.0f ? VK_TRUE : VK_FALSE,
         .maxAnisotropy = Min(gBackendVk.gpu.props.limits.maxSamplerAnisotropy, anisotropy),
-        .compareEnable = VK_FALSE,
-        .compareOp = VK_COMPARE_OP_ALWAYS,
+        .compareEnable = desc.compareOp != GfxCompareOp::Always ? VK_TRUE : VK_FALSE,
+        .compareOp = VkCompareOp(desc.compareOp),
         .minLod = 0.0f, 
         .maxLod = 0.0f,
         .borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK,

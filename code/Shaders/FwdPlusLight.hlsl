@@ -24,11 +24,12 @@ struct PsInput
 cbuffer PerFrameData
 {
     float4x4 WorldToClipMat : packoffset(c0);
-    float3 SunLightDir : packoffset(c4);
-    float4 SunLightColorIntensity : packoffset(c5);
-    float4 SkyAmbientColor : packoffset(c6);
-    float4 GroundAmbientColor : packoffset(c7);
-    uint TilesCountX : packoffset(c8);
+    float4x4 WorldToSunLightClipMat : packoffset(c4);
+    float3 SunLightDir : packoffset(c8);
+    float4 SunLightColorIntensity : packoffset(c9);
+    float4 SkyAmbientColor : packoffset(c10);
+    float4 GroundAmbientColor : packoffset(c11);
+    uint TilesCountX : packoffset(c12);
 };
 
 [[vk_push_constant]]
@@ -52,6 +53,9 @@ Sampler2D BaseColorTexture;
 StructuredBuffer<uint> VisibleLightIndices;
 StructuredBuffer<LocalLight> LocalLights;
 StructuredBuffer<PointLightCull> LocalLightBounds;
+
+Texture2D<float> ShadowMap;
+SamplerComparisonState ShadowSampler;
 
 [shader("vertex")]
 PsInput VsMain(VsInput i)
@@ -80,15 +84,26 @@ float4 PsMain(PsInput i) : SV_Target
 
     // Sun light
     {
+        // Shadow
+        float4 shadowPos = mul(WorldToSunLightClipMat, float4(i.posWS, 1));
+        shadowPos.xyz /= shadowPos.w;
+        float2 shadowUv = shadowPos.xy * 0.5f + 0.5f;
+        // float shadowDepth = shadowPos.z * 0.5f + 0.5f;
+        float shadowDepth = shadowPos.z;
+        // shadowUv.y = 1 - shadowUv.y;
+        float shadowTerm = ShadowMap.SampleCmpLevelZero(ShadowSampler, shadowUv, shadowDepth);
+
+        // Light
         float3 L = -SunLightDir;
         float nDotL = max(0, dot(L, N));
         float3 diffuse = SunLightColorIntensity.xyz * SunLightColorIntensity.w * nDotL;
 
+        // Simple hemisphere ambient term (blend sky/ground color based on the normal angle)
         float nDotUp = dot(N, float3(0, 0, 1));
         float a = 0.5 + 0.5 * nDotUp;
         float3 ambient = lerp(GroundAmbientColor.xyz * GroundAmbientColor.w, SkyAmbientColor.xyz * SkyAmbientColor.w, a);
 
-        finalDiffuse += diffuse;
+        finalDiffuse += diffuse * shadowTerm;
         finalAmbient += ambient;
     }
 

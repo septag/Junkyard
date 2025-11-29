@@ -556,6 +556,19 @@ enum class GfxSamplerBorderColor: uint32
     OpaqueWhite
 };
 
+// VkCompareOp
+enum class GfxCompareOp : uint32
+{
+    Never = 0,
+    Less = 1,
+    Equal = 2,
+    LessOrEqual = 3,
+    Greater = 4,
+    NotEqual = 5,
+    GreaterOrEqual = 6,
+    Always = 7,
+};
+
 struct GfxSamplerDesc
 {
     GfxSamplerFilterMode samplerFilter = GfxSamplerFilterMode::Nearest;
@@ -563,7 +576,7 @@ struct GfxSamplerDesc
     GfxSamplerBorderColor borderColor = GfxSamplerBorderColor::Default;
     float anisotropy = 1.0f;
     float mipLODBias = 0;
-    // TODO: Add compare and other options
+    GfxCompareOp compareOp = GfxCompareOp::Always;
 };
 
 
@@ -672,19 +685,6 @@ enum class GfxBlendOp : uint32
     RedExt = 1000148043,
     GreenExt = 1000148044,
     BlueExt = 1000148045,
-};
-
-// VkCompareOp
-enum class GfxCompareOp : uint32
-{
-    Never = 0,
-    Less = 1,
-    Equal = 2,
-    LessOrEqual = 3,
-    Greater = 4,
-    NotEqual = 5,
-    GreaterOrEqual = 6,
-    Always = 7,
 };
 
 // VkColorComponentFlags

@@ -106,6 +106,7 @@ struct Float4
     explicit constexpr Float4(float _xxxx) : x(_xxxx), y(_xxxx), z(_xxxx), w(_xxxx) {}
     explicit constexpr Float4(const float* _f) : x(_f[0]), y(_f[1]), z(_f[2]), w(_f[3]) {}
     explicit constexpr Float4(Float3 v, float _w = 1.0f) : x(v.x), y(v.y), z(v.z), w(_w) {}
+    explicit constexpr Float4(float v[3], float _w = 1.0f) : x(v[0]), y(v[1]), z(v[2]), w(_w) {}
     explicit constexpr Float4(Float2 v, float _z = 0, float _w = 1.0f) : x(v.x), y(v.y), z(_z), w(_w) {}
 
     static Float4 Mul(Float4 _a, Float4 _b);
@@ -519,6 +520,7 @@ struct AABB
     bool IsEmpty() const;
     Float3 Extents() const;
     Float3 Center() const;
+    Float3 Dimensions() const;
 
     static void   AddPoint(AABB* aabb, Float3 pt);
     static AABB   Unify(const AABB& aabb1, const AABB& aabb2);
