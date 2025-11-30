@@ -22,6 +22,12 @@ static inline constexpr uint32 R_LIGHT_CULL_MAX_LIGHTS_PER_FRAME = 1024;
 static inline constexpr size_t R_MAX_SCRATCH_SIZE_PER_THREAD = SIZE_MB*4;
 static inline constexpr uint32 R_MAX_VIEWS = 64;
 
+enum class RPipelineBindingSetIndex : uint8
+{
+    PerFrame = 0,
+    PerObject
+};
+
 struct RVertexStreamPosition
 {
     Float3 position;
@@ -118,8 +124,11 @@ struct RFwdContext
     GfxImageHandle msaaDepthRenderImage;
 
     AssetHandleShader sZPrepass;
+    AssetHandleShader sZPrepassAlphaMask;
     GfxPipelineHandle pZPrepass;
+    GfxPipelineHandle pZPrepassAlphaMask;
     GfxPipelineLayoutHandle pZPrepassLayout;
+    GfxPipelineLayoutHandle pZPrepassLayoutAlphaMask;
     GfxBufferHandle ubZPrepass;
 
     GfxPipelineHandle pShadowMap;  
@@ -263,7 +272,7 @@ namespace R
                     .semantic = "POSITION",
                     .binding = 0,
                     .format = GfxFormat::R32G32B32_SFLOAT,
-                    .offset = 0 
+                    .offset = offsetof(RVertexStreamPosition, position) 
                 }
             };
 
@@ -301,7 +310,8 @@ namespace R
 
             gFwd.pZPrepass = GfxBackend::CreateGraphicsPipeline(*shader, gFwd.pZPrepassLayout, pZPrepassDesc);
 
-            // ShadowMaps are pretty much as same as ZPrepass with minor differences
+            // ShadowMaps are pretty much as same as ZPrepass with minor differences (CullMode and depthAttachmentFormat)
+            // Layout and shader is also the same currently
             GfxGraphicsPipelineDesc pShadowMapDesc {
                 .numVertexInputAttributes = CountOf(vertexInputAttDescs),
                 .vertexInputAttributes = vertexInputAttDescs,
@@ -331,6 +341,98 @@ namespace R
                 .arena = GfxMemoryArena::PersistentGPU
             };
             gFwd.ubZPrepass = GfxBackend::CreateBuffer(bufferDesc);
+        }
+
+        //--------------------------------------------------------------------------------------------------------------
+        // Z-Prepass Alpha Masked
+        {
+            // Layout
+            ASSERT(gFwd.sZPrepassAlphaMask.IsValid());
+            AssetObjPtrScope<GfxShader> shader(gFwd.sZPrepassAlphaMask);
+            GfxPipelineLayoutDesc::Binding pBindings[] = {
+                {
+                    .name = "PerFrameData",
+                    .type = GfxDescriptorType::UniformBuffer,
+                    .stagesUsed = GfxShaderStage::Vertex
+                },
+                {
+                    .name = "ColorTexture",
+                    .type = GfxDescriptorType::CombinedImageSampler,
+                    .stagesUsed = GfxShaderStage::Fragment
+                }
+            };
+
+            GfxPipelineLayoutDesc::PushConstant pPushConstants[] = {
+                {
+                    .name = "PerObjectData",
+                    .stagesUsed = GfxShaderStage::Vertex,
+                    .size = sizeof(Mat4)
+                }
+            };
+
+            GfxPipelineLayoutDesc pLayoutDesc {
+                .numBindings = CountOf(pBindings),
+                .bindings = pBindings,
+                .numPushConstants = CountOf(pPushConstants),
+                .pushConstants = pPushConstants
+            };
+
+            gFwd.pZPrepassLayoutAlphaMask = GfxBackend::CreatePipelineLayout(*shader, pLayoutDesc);
+
+            // Pipeline
+            GfxVertexInputAttributeDesc vertexInputAttDescs[] = {
+                {
+                    .semantic = "POSITION",
+                    .binding = 0,
+                    .format = GfxFormat::R32G32B32_SFLOAT,
+                    .offset = offsetof(RVertexStreamPosition, position)
+                },
+                {
+                    .semantic = "TEXCOORD",
+                    .binding = 1,
+                    .format = GfxFormat::R32G32_SFLOAT,
+                    .offset = offsetof(RVertexStreamLighting, uv)
+                }
+            };
+
+            GfxVertexBufferBindingDesc vertexBufferBindingDescs[] = {
+                {
+                    .binding = 0,
+                    .stride = sizeof(RVertexStreamPosition),
+                },
+                {
+                    .binding = 1,
+                    .stride = sizeof(RVertexStreamLighting)
+                }
+            };
+
+            GfxGraphicsPipelineDesc pZPrepassDesc {
+                .numVertexInputAttributes = CountOf(vertexInputAttDescs),
+                .vertexInputAttributes = vertexInputAttDescs,
+                .numVertexBufferBindings = CountOf(vertexBufferBindingDescs),
+                .vertexBufferBindings = vertexBufferBindingDescs,
+                .rasterizer = {
+                    .cullMode = GfxCullMode::Back
+                },
+                .blend = {
+                    .numAttachments = 1,
+                    .attachments = GfxBlendAttachmentDesc::GetDefault()
+                },
+                .depthStencil = {
+                    .depthTestEnable = true,
+                    .depthWriteEnable = true,
+                    .depthCompareOp = GfxCompareOp::Less
+                },
+                .msaa = {
+                    .sampleCount = (GfxMultiSampleCount)msaa,
+                    .alphaToCoverageEnable = true
+                },
+                .numColorAttachments = 0,
+                .depthAttachmentFormat = GfxBackend::GetValidDepthStencilFormat(),
+                .stencilAttachmentFormat = GfxBackend::GetValidDepthStencilFormat()
+            };
+
+            gFwd.pZPrepassAlphaMask = GfxBackend::CreateGraphicsPipeline(*shader, gFwd.pZPrepassLayoutAlphaMask, pZPrepassDesc);
         }
 
         //--------------------------------------------------------------------------------------------------------------
@@ -390,37 +492,44 @@ namespace R
                 {
                     .name = "PerFrameData",
                     .type = GfxDescriptorType::UniformBuffer,
-                    .stagesUsed = GfxShaderStage::Fragment|GfxShaderStage::Vertex
-                },
-                {
-                    .name = "BaseColorTexture",
-                    .type = GfxDescriptorType::CombinedImageSampler,
-                    .stagesUsed = GfxShaderStage::Fragment
+                    .stagesUsed = GfxShaderStage::Fragment|GfxShaderStage::Vertex,
+                    .setIndex = (uint8)RPipelineBindingSetIndex::PerFrame
                 },
                 {
                     .name = "VisibleLightIndices",
                     .type = GfxDescriptorType::StorageBuffer,
-                    .stagesUsed = GfxShaderStage::Fragment
+                    .stagesUsed = GfxShaderStage::Fragment,
+                    .setIndex = (uint8)RPipelineBindingSetIndex::PerFrame
                 },
                 {
                     .name = "LocalLights",
                     .type = GfxDescriptorType::StorageBuffer,
-                    .stagesUsed = GfxShaderStage::Fragment
+                    .stagesUsed = GfxShaderStage::Fragment,
+                    .setIndex = (uint8)RPipelineBindingSetIndex::PerFrame
                 },
                 {
                     .name = "LocalLightBounds",
                     .type = GfxDescriptorType::StorageBuffer,
-                    .stagesUsed = GfxShaderStage::Fragment
+                    .stagesUsed = GfxShaderStage::Fragment,
+                    .setIndex = (uint8)RPipelineBindingSetIndex::PerFrame
                 },
                 {
                     .name = "ShadowMap",
                     .type = GfxDescriptorType::SampledImage,
-                    .stagesUsed = GfxShaderStage::Fragment
+                    .stagesUsed = GfxShaderStage::Fragment,
+                    .setIndex = (uint8)RPipelineBindingSetIndex::PerFrame
                 },
                 {
                     .name = "ShadowSampler",
                     .type = GfxDescriptorType::Sampler,
-                    .stagesUsed = GfxShaderStage::Fragment
+                    .stagesUsed = GfxShaderStage::Fragment,
+                    .setIndex = (uint8)RPipelineBindingSetIndex::PerFrame
+                },
+                {
+                    .name = "BaseColorTexture",
+                    .type = GfxDescriptorType::CombinedImageSampler,
+                    .stagesUsed = GfxShaderStage::Fragment,
+                    // .setIndex = (uint8)RPipelineBindingSetIndex::PerObject
                 }
             };
 
@@ -480,7 +589,7 @@ namespace R
                 .numVertexBufferBindings = CountOf(vertexBufferBindingDescs),
                 .vertexBufferBindings = vertexBufferBindingDescs,
                 .rasterizer = {
-                    .cullMode = GfxCullMode::Back
+                    .cullMode = GfxCullMode::Back,
                 },
                 .blend = {
                     .numAttachments = 1,
@@ -492,7 +601,8 @@ namespace R
                     .depthCompareOp = GfxCompareOp::Equal
                 },
                 .msaa = {
-                    .sampleCount = (GfxMultiSampleCount)msaa
+                    .sampleCount = (GfxMultiSampleCount)msaa,
+                    .alphaToCoverageDynamicSetup = true
                 },
                 .numColorAttachments = 1,
                 .colorAttachmentFormats = {GfxBackend::GetSwapchainFormat()},
@@ -521,7 +631,7 @@ namespace R
                 {
                     .name = "PerFrameData",
                     .stagesUsed = GfxShaderStage::Fragment,
-                    .size = sizeof(RLightCullDebugShaderFrameData)
+                    .size = sizeof(RLightCullDebugShaderFrameData),
                 }
             };
 
@@ -692,7 +802,17 @@ bool R::Initialize()
         _CreatePipelines();
     }, nullptr);
 
-    gFwd.sZPrepass = Shader::Load("/shaders/ZPrepass.hlsl", ShaderLoadParams{}, assetGroup);
+    {
+        gFwd.sZPrepass = Shader::Load("/shaders/ZPrepass.hlsl", ShaderLoadParams{}, assetGroup);
+
+        ShaderLoadParams loadParams {
+            .compileDesc = {
+                .numDefines = 1,
+                .defines = {{ .define = "HAS_ALPHA_MASK", .value= "1" }}
+            }
+        };
+        gFwd.sZPrepassAlphaMask = Shader::Load("/shaders/ZPrepass.hlsl", loadParams, assetGroup);
+    }
 
     {
         ShaderLoadParams loadParams {
@@ -762,6 +882,9 @@ void R::Release()
     GfxBackend::DestroyPipeline(gFwd.pZPrepass);
     GfxBackend::DestroyPipelineLayout(gFwd.pZPrepassLayout);
     GfxBackend::DestroyBuffer(gFwd.ubZPrepass);
+
+    GfxBackend::DestroyPipeline(gFwd.pZPrepassAlphaMask);
+    GfxBackend::DestroyPipelineLayout(gFwd.pZPrepassLayoutAlphaMask);
 
     GfxBackend::DestroyPipeline(gFwd.pLightCull);
     GfxBackend::DestroyPipelineLayout(gFwd.pLightCullLayout);
@@ -888,11 +1011,19 @@ void R::FwdLight::Render(RView& view, GfxCommandBuffer& cmd, GfxImageHandle fina
         return;
     }
 
-    // Z-Prepass
+    // Z-Prepass (Normal + AlphaMasked)
     {
+        MemTempAllocator tempAlloc;
+        struct AlphaMaskChunkRef 
+        {
+            RGeometryChunk* chunk;
+            uint32 subChunkIdx;
+        };
+
+        Array<AlphaMaskChunkRef> alphaMaskedRefs(&tempAlloc);
+
         GPU_PROFILE_ZONE(cmd, "Z-Prepass");
         cmd.TransitionImage(renderDepthImage, GfxImageTransition::RenderTarget, GfxImageTransitionFlags::DepthWrite);
-
         GfxBackendRenderPass zprepass { 
             .depthAttachment = {
                 .image = renderDepthImage,
@@ -905,35 +1036,94 @@ void R::FwdLight::Render(RView& view, GfxCommandBuffer& cmd, GfxImageHandle fina
         };
         cmd.BeginRenderPass(zprepass);
 
-        cmd.BindPipeline(gFwd.pZPrepass);
-        cmd.HelperSetFullscreenViewportAndScissor();
+        {
+            cmd.BindPipeline(gFwd.pZPrepass);
+            cmd.HelperSetFullscreenViewportAndScissor();
 
-        RGeometryChunk* chunk = viewData.chunkList;
-        while (chunk) {
-            cmd.PushConstants(gFwd.pZPrepassLayout, "PerObjectData", &chunk->localToWorldMat, sizeof(Mat4));
+            RGeometryChunk* chunk = viewData.chunkList;
+            while (chunk) {
+                cmd.PushConstants(gFwd.pZPrepassLayout, "PerObjectData", &chunk->localToWorldMat, sizeof(Mat4));
+                cmd.BindVertexBuffers(0, 1, &chunk->posVertexBuffer, &chunk->posVertexBufferOffset);
+                cmd.BindIndexBuffer(chunk->indexBuffer, chunk->indexBufferOffset, GfxIndexType::Uint32);
 
-            cmd.BindVertexBuffers(0, 1, &chunk->posVertexBuffer, &chunk->posVertexBufferOffset);
-            cmd.BindIndexBuffer(chunk->indexBuffer, chunk->indexBufferOffset, GfxIndexType::Uint32);
-
-            GfxBindingDesc bindings[] = {
-                {
-                    .name = "PerFrameData",
-                    .buffer = gFwd.ubZPrepass
-                }
-            };
-            cmd.PushBindings(gFwd.pZPrepassLayout, CountOf(bindings), bindings);
+                GfxBindingDesc bindings[] = {
+                    {
+                        .name = "PerFrameData",
+                        .buffer = gFwd.ubZPrepass
+                    }
+                };
+                cmd.PushBindings(gFwd.pZPrepassLayout, CountOf(bindings), bindings);
             
-            uint32 numIndices = 0;
-            for (uint32 sc = 0; sc < chunk->numSubChunks; sc++)
-                numIndices += chunk->subChunks[sc].numIndices;
+                uint32 numIndices = 0;
+                bool hasAlphaMask = false;
+                for (uint32 sc = 0; sc < chunk->numSubChunks; sc++) {
+                    const RGeometrySubChunk& subChunk = chunk->subChunks[sc];
+                    numIndices += subChunk.numIndices;
 
-            cmd.DrawIndexed(numIndices, 1, 0, 0, 0);
+                    if (subChunk.hasAlphaMask) {
+                        AlphaMaskChunkRef ref { 
+                            .chunk = chunk,
+                            .subChunkIdx = sc
+                        };
+                        alphaMaskedRefs.Push(ref);
+                        hasAlphaMask = true;
+                    }
+                }
 
-            chunk = chunk->nextChunk;
+                if (!hasAlphaMask) {
+                    cmd.DrawIndexed(numIndices, 1, 0, 0, 0);
+                }
+                else {
+                    for (uint32 sc = 0; sc < chunk->numSubChunks; sc++) {
+                        const RGeometrySubChunk& subChunk = chunk->subChunks[sc];
+                        if (!subChunk.hasAlphaMask)
+                            cmd.DrawIndexed(subChunk.numIndices, 1, subChunk.startIndex, 0, 0);
+                    }
+                }
+
+                chunk = chunk->nextChunk;
+            }
+        }
+
+        // Z-Prepass (Alpha Masked): The chunks and their subchunks that has AlphaMask has already been gathered in the previous step
+        if (!alphaMaskedRefs.IsEmpty()) {
+            cmd.BindPipeline(gFwd.pZPrepassAlphaMask);
+            cmd.HelperSetFullscreenViewportAndScissor();
+
+            for (const AlphaMaskChunkRef& ref : alphaMaskedRefs) {
+                RGeometryChunk* chunk = ref.chunk;
+                const RGeometrySubChunk& subChunk = chunk->subChunks[ref.subChunkIdx];
+                const GfxBufferHandle vertexBuffers[] = {
+                    chunk->posVertexBuffer,
+                    chunk->lightingVertexBuffer
+                };
+
+                const uint64 vertexBufferOffsets[] = {
+                    chunk->posVertexBufferOffset,
+                    chunk->lightingVertexBufferOffset
+                };
+
+                cmd.PushConstants(gFwd.pZPrepassLayout, "PerObjectData", &chunk->localToWorldMat, sizeof(Mat4));
+                cmd.BindVertexBuffers(0, 2, vertexBuffers, vertexBufferOffsets);
+                cmd.BindIndexBuffer(chunk->indexBuffer, chunk->indexBufferOffset, GfxIndexType::Uint32);                
+
+                GfxBindingDesc bindings[] = {
+                    {
+                        .name = "PerFrameData",
+                        .buffer = gFwd.ubZPrepass
+                    },
+                    {
+                        .name = "ColorTexture",
+                        .image = subChunk.baseColorImg
+                    }
+                };
+                cmd.PushBindings(gFwd.pZPrepassLayoutAlphaMask, CountOf(bindings), bindings);
+                cmd.DrawIndexed(subChunk.numIndices, 1, subChunk.startIndex, 0, 0);
+            }
         }
 
         cmd.EndRenderPass();
-    }
+    }   // ZPrepass 
 
     // Light culling
     if (viewData.numLights) {
@@ -1010,6 +1200,7 @@ void R::FwdLight::Render(RView& view, GfxCommandBuffer& cmd, GfxImageHandle fina
         
         cmd.HelperSetFullscreenViewportAndScissor();
 
+        bool alphaToCoverageEnabled = false;
         RGeometryChunk* chunk = viewData.chunkList;
         while (chunk) {
             cmd.PushConstants<Mat4>(gFwd.pLightLayout, "PerObjectData", chunk->localToWorldMat);
@@ -1060,6 +1251,11 @@ void R::FwdLight::Render(RView& view, GfxCommandBuffer& cmd, GfxImageHandle fina
                     }
                 };
                 cmd.PushBindings(gFwd.pLightLayout, CountOf(bindings), bindings);
+
+                if (subChunk.hasAlphaMask != alphaToCoverageEnabled) {
+                    cmd.EnableAlphaToCoverage(subChunk.hasAlphaMask);
+                    alphaToCoverageEnabled = subChunk.hasAlphaMask;
+                }
 
                 cmd.DrawIndexed(subChunk.numIndices, 1, subChunk.startIndex, 0, 0);
             }

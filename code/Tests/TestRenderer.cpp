@@ -381,7 +381,8 @@ struct AppImpl final : AppCallbacks
                 RGeometrySubChunk subChunk {
                     .startIndex = submesh.startIndex,
                     .numIndices = submesh.numIndices,
-                    .baseColorImg = imgHandle
+                    .baseColorImg = imgHandle,
+                    .hasAlphaMask = mtl->alphaMode == ModelMaterialAlphaMode::Mask
                 };
                 subChunks.Push(subChunk);
             }

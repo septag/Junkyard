@@ -731,6 +731,7 @@ struct GfxBlendDesc
     uint32 numAttachments;
     const GfxBlendAttachmentDesc* attachments;
     float blendConstants[4];
+    bool blendEnableDynamicSetup;   // Can change blend enabled with: vkCmdSetColorBlendEnableEXT
 };
 
 
@@ -832,6 +833,9 @@ struct GfxRasterizerDesc
     float            depthBiasClamp;
     float            depthBiasSlopeFactor;
     float            lineWidth = 1.0f;
+
+    bool             cullModeDynamicSetup;  // Can be changed with: vkCmdSetCullMode
+    bool             frontFaceDynamicSetup; // Can be changed with: vkCmdSetFrontFace
 };
 
 struct GfxMultiSampleDesc
@@ -841,6 +845,7 @@ struct GfxMultiSampleDesc
     float minSampleShading = 1.0f;
     const uint32* sampleMask;
     bool alphaToCoverageEnable;
+    bool alphaToCoverageDynamicSetup;   // Can change alpha to coverage enabled with: vkCmdSetAlphaToCoverageEnableEXT
     bool alphaToOneEnable;
 };
 
@@ -1021,19 +1026,21 @@ struct GfxDynamicState
         bool depthBiasEnable;
         bool stencilTestEnable;
         bool rasterizerDiscardEnable;
+        bool alphaToCoverageEnable;
     };
 
-    uint16 setCullMode : 1;
-    uint16 setDepthBoundsTestEnable : 1;
-    uint16 setDepthCompareOp : 1;
-    uint16 setDepthTestEnable : 1;
-    uint16 setDepthBiasEnable : 1;
-    uint16 setFrontFace : 1;
-    uint16 setPrimitiveTopology : 1;
-    uint16 setStencilOp : 1;
-    uint16 setStencilTestEnable : 1;
-    uint16 setLogicOp : 1;
-    uint16 setRasterizerDiscardEnable : 1;
+    uint32 setCullMode : 1;
+    uint32 setDepthBoundsTestEnable : 1;
+    uint32 setDepthCompareOp : 1;
+    uint32 setDepthTestEnable : 1;
+    uint32 setDepthBiasEnable : 1;
+    uint32 setFrontFace : 1;
+    uint32 setPrimitiveTopology : 1;
+    uint32 setStencilOp : 1;
+    uint32 setStencilTestEnable : 1;
+    uint32 setLogicOp : 1;
+    uint32 setRasterizerDiscardEnable : 1;
+    uint32 setAlphaToCoverageEnable : 1;
 };
 
 //   ____                _           ____               

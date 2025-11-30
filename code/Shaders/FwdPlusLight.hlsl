@@ -49,13 +49,15 @@ struct LocalLight
     float4 color;
 };
 
-Sampler2D BaseColorTexture;
+
 StructuredBuffer<uint> VisibleLightIndices;
 StructuredBuffer<LocalLight> LocalLights;
 StructuredBuffer<PointLightCull> LocalLightBounds;
 
 Texture2D<float> ShadowMap;
 SamplerComparisonState ShadowSampler;
+
+Sampler2D BaseColorTexture;
 
 [shader("vertex")]
 PsInput VsMain(VsInput i)
@@ -137,6 +139,10 @@ float4 PsMain(PsInput i) : SV_Target
     }
 
     float3 litColor = albedoColor.xyz * (finalDiffuse + finalAmbient);
-    // return float4(mainFalloff.xxx, 1.0);
-    return float4(litColor, 1.0);
+    // float alpha = smoothstep(0.5, 0.6, albedoColor.w);
+    float alpha = albedoColor.w;
+    const float _Cutoff = 0.5f;
+    alpha = (alpha - _Cutoff) / max(fwidth(alpha), 0.0001) + 0.5;
+
+    return float4(litColor, alpha);
 }

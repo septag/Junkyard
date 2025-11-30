@@ -1441,6 +1441,9 @@ namespace GfxBackend
         if (!CheckAddExtension("VK_KHR_push_descriptor", true))
             return false;
         
+        if (!CheckAddExtension("VK_EXT_extended_dynamic_state3", true))
+            return false;
+
         if constexpr (PLATFORM_APPLE) {
             if (!CheckAddExtension("VK_KHR_portability_subset", true))
                 return false;
@@ -1521,6 +1524,16 @@ namespace GfxBackend
         if (settings.graphics.shaderDumpProperties && gBackendVk.extApi.hasPipelineExecutableProperties) {
             *deviceNext = &enableExecProps;
             deviceNext = &enableExecProps.pNext;
+        }
+
+        // Dyanmic state 3 features
+        {
+            VkPhysicalDeviceExtendedDynamicState3FeaturesEXT extDyn3Features {
+                .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_DYNAMIC_STATE_3_FEATURES_EXT,
+                .extendedDynamicState3AlphaToCoverageEnable = VK_TRUE
+            };
+            *deviceNext = &extDyn3Features;
+            deviceNext = &extDyn3Features.pNext;
         }
 
         if (vkCreateDevice(gpu.handle, &devCreateInfo, gBackendVk.vkAlloc, &gBackendVk.device) != VK_SUCCESS) {
@@ -3625,7 +3638,8 @@ GfxPipelineHandle GfxBackend::CreateGraphicsPipeline(const GfxShader& shader, Gf
     }
 
     ASSERT_MSG(desc.numVertexInputAttributes == shader.numVertexAttributes, 
-               "Provided number of vertex attributes does not match with the compiled shader");
+               "Provided number of vertex attributes does not match with the compiled shader: Input(%u) vs Shader(%d)",
+               desc.numVertexInputAttributes, shader.numVertexAttributes);
 
     VkVertexInputAttributeDescription* vertexInputAtts = nullptr;
 
@@ -3730,16 +3744,27 @@ GfxPipelineHandle GfxBackend::CreateGraphicsPipeline(const GfxShader& shader, Gf
         }
     };
 
-    // Dyanamic state
-    // TODO: maybe also make use of new VK_EXT_extended_dynamic_state and VK_EXT_extended_dynamic_state2 extensions
-    VkDynamicState dynamicStates[] = {
-        VK_DYNAMIC_STATE_VIEWPORT,
-        VK_DYNAMIC_STATE_SCISSOR            
-    };
+    // Dyanamic states (VK_EXT_extended_dynamic_state1-2-3 extensions)
+    // https://docs.vulkan.org/refpages/latest/refpages/source/VK_EXT_extended_dynamic_state.html
+    // https://docs.vulkan.org/refpages/latest/refpages/source/VK_EXT_extended_dynamic_state2.html
+    // https://docs.vulkan.org/refpages/latest/refpages/source/VK_EXT_extended_dynamic_state3.html
+    // TODO: maybe also make use of new  extensions
+    StaticArray<VkDynamicState, 32> dynamicStates;
+    dynamicStates.Push(VK_DYNAMIC_STATE_VIEWPORT);
+    dynamicStates.Push(VK_DYNAMIC_STATE_SCISSOR);
+    if (desc.msaa.alphaToCoverageDynamicSetup)
+        dynamicStates.Push(VK_DYNAMIC_STATE_ALPHA_TO_COVERAGE_ENABLE_EXT);
+    if (desc.blend.blendEnableDynamicSetup)
+        dynamicStates.Push(VK_DYNAMIC_STATE_COLOR_BLEND_ENABLE_EXT);
+    if (desc.rasterizer.cullModeDynamicSetup)
+        dynamicStates.Push(VK_DYNAMIC_STATE_CULL_MODE);
+    if (desc.rasterizer.frontFaceDynamicSetup)
+        dynamicStates.Push(VK_DYNAMIC_STATE_FRONT_FACE);
+
     VkPipelineDynamicStateCreateInfo dynamicState {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
-        .dynamicStateCount = CountOf(dynamicStates),
-        .pDynamicStates = dynamicStates
+        .dynamicStateCount = dynamicStates.Count(),
+        .pDynamicStates = dynamicStates.Ptr()
     };
 
     // ViewportState (dynamic)
@@ -4077,8 +4102,8 @@ void GfxCommandBuffer::PushBindings(GfxPipelineLayoutHandle layoutHandle, uint32
         uint32 numSetBindings = bindMappings[setIdx].Count();
 
         // Write descriptor sets for each set
-        Array<VkDescriptorImageInfo> imageInfos(&tempAlloc);
-        Array<VkDescriptorBufferInfo> bufferInfos(&tempAlloc);
+        StaticArray<VkDescriptorImageInfo, 16> imageInfos;
+        StaticArray<VkDescriptorBufferInfo, 16> bufferInfos;
         VkWriteDescriptorSet* descriptorWrites = tempAlloc.MallocTyped<VkWriteDescriptorSet>(numSetBindings);
 
         for (uint32 i = 0; i < numSetBindings; i++) {
@@ -4155,7 +4180,7 @@ void GfxCommandBuffer::PushBindings(GfxPipelineLayoutHandle layoutHandle, uint32
             };
         } // foreach binding
 
-        vkCmdPushDescriptorSetKHR(cmdVk, bindPoint, layoutVk, setIdx, numSetBindings, descriptorWrites);
+        vkCmdPushDescriptorSet(cmdVk, bindPoint, layoutVk, setIdx, numSetBindings, descriptorWrites);
     } // foreach descriptor set
 }
 
@@ -5282,7 +5307,7 @@ void GfxCommandBuffer::BatchFlushBuffer(uint32 numBuffers, const GfxBufferHandle
 }
 
 void GfxCommandBuffer::CopyBufferToBuffer(GfxBufferHandle srcHandle, GfxBufferHandle dstHandle, GfxShaderStage stagesUsed, 
-                                                 size_t srcOffset, size_t dstOffset, size_t sizeBytes)
+                                          size_t srcOffset, size_t dstOffset, size_t sizeBytes)
 {
     GfxCopyBufferToBufferParams param {
         .srcHandle = srcHandle,
@@ -6066,35 +6091,28 @@ void GfxCommandBuffer::SetViewports(uint32 firstViewport, uint32 numViewports, c
     vkCmdSetViewport(cmdVk, firstViewport, numViewports, viewportsVk);
 }
 
-void GfxCommandBuffer::SetDynamicState(const GfxDynamicState& state)
+void GfxCommandBuffer::SetCullMode(GfxCullMode cullMode)
 {
     VkCommandBuffer cmdVk = GfxBackend::_GetCommandBufferHandle(*this);
+    vkCmdSetCullMode(cmdVk, (VkCullModeFlags)cullMode);
+}
 
-    if (state.setCullMode) 
-        vkCmdSetCullMode(cmdVk, (VkCullModeFlags)state.cullMode);
-    if (state.setFrontFace)
-        vkCmdSetFrontFace(cmdVk, (VkFrontFace)state.frontFace);
-    if (state.setStencilOp) {
-        vkCmdSetStencilOp(cmdVk, (VkStencilFaceFlags)state.stencilOp.faceFlags, (VkStencilOp)state.stencilOp.failOp, 
-                          (VkStencilOp)state.stencilOp.passOp, (VkStencilOp)state.stencilOp.depthFailOp, (VkCompareOp)state.stencilOp.compareOp);
-    }
+void GfxCommandBuffer::SetFrontFace(GfxFrontFace frontFace)
+{
+    VkCommandBuffer cmdVk = GfxBackend::_GetCommandBufferHandle(*this);
+    vkCmdSetFrontFace(cmdVk, (VkFrontFace)frontFace);
+}
 
-    if (state.setStencilTestEnable)
-        vkCmdSetStencilTestEnable(cmdVk, state.stencilTestEnable);
-    if (state.setDepthCompareOp)
-        vkCmdSetDepthCompareOp(cmdVk, (VkCompareOp)state.depthCompareOp);
-    if (state.setDepthTestEnable)
-        vkCmdSetDepthTestEnable(cmdVk, state.depthTestEnable);
-    if (state.setPrimitiveTopology)
-        vkCmdSetPrimitiveTopology(cmdVk, (VkPrimitiveTopology)state.primitiveTopology);
-    if (state.setDepthBoundsTestEnable)
-        vkCmdSetDepthBoundsTestEnable(cmdVk, state.depthBoundsTestEnable);
-    if (state.setDepthBiasEnable)
-        vkCmdSetDepthBiasEnable(cmdVk, state.depthBiasEnable);
-    if (state.setLogicOp)
-        vkCmdSetLogicOpEXT(cmdVk, (VkLogicOp)state.logicOp);
-    if (state.setRasterizerDiscardEnable)
-        vkCmdSetRasterizerDiscardEnable(cmdVk, state.rasterizerDiscardEnable);
+void GfxCommandBuffer::EnableAlphaToCoverage(bool enable)
+{
+    VkCommandBuffer cmdVk = GfxBackend::_GetCommandBufferHandle(*this);
+    vkCmdSetAlphaToCoverageEnableEXT(cmdVk, (VkBool32)enable);
+}
+
+void GfxCommandBuffer::EnableColorBlend(uint32 firstAttachment, uint32 numAttachments, const uint32* enableFlags)
+{
+    VkCommandBuffer cmdVk = GfxBackend::_GetCommandBufferHandle(*this);
+    vkCmdSetColorBlendEnableEXT(cmdVk, firstAttachment, numAttachments, enableFlags);
 }
 
 void GfxCommandBuffer::BindVertexBuffers(uint32 firstBinding, uint32 numBindings, const GfxBufferHandle* vertexBuffers, const uint64* offsets)
@@ -6484,7 +6502,7 @@ float GfxBackend::GetRenderTimeMS()
 const GfxBlendAttachmentDesc* GfxBlendAttachmentDesc::GetDefault()
 {
     static GfxBlendAttachmentDesc desc {
-        .enable = true,
+        .enable = false,
         .srcColorBlendFactor = GfxBlendFactor::One,
         .dstColorBlendFactor = GfxBlendFactor::Zero,
         .blendOp = GfxBlendOp::Add,

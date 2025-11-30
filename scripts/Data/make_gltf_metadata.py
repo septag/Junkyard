@@ -17,7 +17,7 @@ class TextureType(Enum):
     OCCLUSION = 3
     ROUGHNESS = 4
 
-def CreateMetadata(gltfFilepath, srcFilepath, type:TextureType):
+def CreateMetadata(gltfFilepath, srcFilepath, type:TextureType, hasAlpha = False):
     global ProcessedTextures
     if srcFilepath in ProcessedTextures:
         return
@@ -29,7 +29,7 @@ def CreateMetadata(gltfFilepath, srcFilepath, type:TextureType):
     jsonData['pc'] = {}
 
     if type == TextureType.BASE_COLOR:
-        jsonData['pc']['format'] = "bc7" if not Args.force_bc1_for_albedo else "bc1"
+        jsonData['pc']['format'] = "bc7" if (not Args.force_bc1_for_albedo or hasAlpha) else "bc1"
         jsonData['sRGB'] = True
     elif type == TextureType.NORMAL:
         jsonData['pc']['format'] = "bc5"
@@ -50,6 +50,8 @@ def ProcessGLTF(gltfFilepath):
         images = data['images']
 
     for material in materials:
+        if 'alphaMode' in material:
+            alphaMode = material['alphaMode']
         if 'normalTexture' in material:
             normalTexture = material['normalTexture']['index']
         if 'occlusionTexture' in material:
@@ -64,8 +66,11 @@ def ProcessGLTF(gltfFilepath):
         print("Material:", material['name'])
         if 'baseColorTexture' in locals():
             baseColorTexturePath = images[textures[baseColorTexture]['source']]['uri']
+            hasAlphaBlendingOrMasking = False
+            if 'alphaMode' in locals():
+                hasAlphaBlendingOrMasking = (alphaMode == 'MASK') or (alphaMode == 'BLEND')
             print('\tBaseColor:', baseColorTexturePath)
-            CreateMetadata(gltfFilepath, baseColorTexturePath, TextureType.BASE_COLOR)
+            CreateMetadata(gltfFilepath, baseColorTexturePath, TextureType.BASE_COLOR, hasAlphaBlendingOrMasking)
 
         if 'normalTexture' in locals():
             normalTexturePath = images[textures[normalTexture]['source']]['uri']
@@ -81,7 +86,7 @@ def ProcessGLTF(gltfFilepath):
             metallicRoughnessTexturePath = images[textures[metallicRoughnessTexture]['source']]['uri']
             print('\tRoughness:', metallicRoughnessTexturePath)
             CreateMetadata(gltfFilepath, metallicRoughnessTexturePath, TextureType.ROUGHNESS)
-
+        
 if not Args.gltf_path and not Args.recurse_dir:
     print('Error: gltf path or --recurse_dir is not provided in arguments')
     sys.exit(-1)

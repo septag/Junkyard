@@ -56,7 +56,10 @@ struct GfxCommandBuffer
 
     void SetScissors(uint32 firstScissor, uint32 numScissors, const RectInt* scissors);
     void SetViewports(uint32 firstViewport, uint32 numViewports, const GfxViewport* viewports);
-    void SetDynamicState(const GfxDynamicState& state);
+    void SetCullMode(GfxCullMode cullMode);
+    void SetFrontFace(GfxFrontFace frontFace);
+    void EnableAlphaToCoverage(bool enable);
+    void EnableColorBlend(uint32 firstAttachment, uint32 numAttachments, const uint32* enableFlags);
 
     void HelperSetFullscreenViewportAndScissor();
 };
