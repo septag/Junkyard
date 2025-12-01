@@ -131,7 +131,8 @@ struct RFwdContext
     GfxPipelineLayoutHandle pZPrepassLayoutAlphaMask;
     GfxBufferHandle ubZPrepass;
 
-    GfxPipelineHandle pShadowMap;  
+    GfxPipelineHandle pShadowMap;
+    GfxBufferHandle ubShadowMap;
 
     GfxBufferHandle bVisibleLightIndices;
     GfxBufferHandle bLightBounds; 
@@ -227,7 +228,6 @@ namespace R
                 .usageFlags = GfxBufferUsageFlags::TransferDst | GfxBufferUsageFlags::Storage
             };
             gFwd.bVisibleLightIndices = GfxBackend::CreateBuffer(bufferDesc);
-
         }
     }
 
@@ -338,9 +338,11 @@ namespace R
             GfxBufferDesc bufferDesc {
                 .sizeBytes = sizeof(Mat4),
                 .usageFlags = GfxBufferUsageFlags::TransferDst | GfxBufferUsageFlags::Uniform,
-                .arena = GfxMemoryArena::PersistentGPU
+                .arena = GfxMemoryArena::PersistentGPU,
+                .perFrameUpdates = true
             };
             gFwd.ubZPrepass = GfxBackend::CreateBuffer(bufferDesc);
+            gFwd.ubShadowMap = GfxBackend::CreateBuffer(bufferDesc);
         }
 
         //--------------------------------------------------------------------------------------------------------------
@@ -424,8 +426,7 @@ namespace R
                     .depthCompareOp = GfxCompareOp::Less
                 },
                 .msaa = {
-                    .sampleCount = (GfxMultiSampleCount)msaa,
-                    .alphaToCoverageEnable = true
+                    .sampleCount = (GfxMultiSampleCount)msaa
                 },
                 .numColorAttachments = 0,
                 .depthAttachmentFormat = GfxBackend::GetValidDepthStencilFormat(),
@@ -477,7 +478,8 @@ namespace R
             // Buffers
             GfxBufferDesc bufferDesc {
                 .sizeBytes = sizeof(RLightCullShaderFrameData),
-                .usageFlags = GfxBufferUsageFlags::TransferDst | GfxBufferUsageFlags::Uniform
+                .usageFlags = GfxBufferUsageFlags::TransferDst | GfxBufferUsageFlags::Uniform,
+                .perFrameUpdates = true
             };
             gFwd.ubLightCull = GfxBackend::CreateBuffer(bufferDesc);
         }
@@ -611,6 +613,15 @@ namespace R
             };
 
             gFwd.pLight = GfxBackend::CreateGraphicsPipeline(*shader, gFwd.pLightLayout, pDesc);
+
+            // Uniform Buffers
+            GfxBufferDesc ubDesc {
+                .sizeBytes = sizeof(RLightShaderFrameData),
+                .usageFlags = GfxBufferUsageFlags::TransferDst | GfxBufferUsageFlags::Uniform,
+                .perFrameUpdates = true
+            };
+
+            gFwd.ubLight = GfxBackend::CreateBuffer(ubDesc);
         }
 
         //--------------------------------------------------------------------------------------------------------------
@@ -659,14 +670,6 @@ namespace R
             };
 
             gFwd.pLightCullDebug = GfxBackend::CreateGraphicsPipeline(*shader, gFwd.pLightCullDebugLayout, pDesc);
-
-            // Uniform Buffers
-            GfxBufferDesc ubDesc {
-                .sizeBytes = sizeof(RLightShaderFrameData),
-                .usageFlags = GfxBufferUsageFlags::TransferDst | GfxBufferUsageFlags::Uniform,
-            };
-
-            gFwd.ubLight = GfxBackend::CreateBuffer(ubDesc);
         }
 
         //--------------------------------------------------------------------------------------------------------------
@@ -768,13 +771,15 @@ bool R::Initialize()
     {
         GfxBufferDesc bufferDesc = {
             .sizeBytes = sizeof(RLightBounds)*R_LIGHT_CULL_MAX_LIGHTS_PER_FRAME,
-            .usageFlags = GfxBufferUsageFlags::TransferDst | GfxBufferUsageFlags::Storage
+            .usageFlags = GfxBufferUsageFlags::TransferDst | GfxBufferUsageFlags::Storage,
+            .perFrameUpdates = true
         };
         gFwd.bLightBounds = GfxBackend::CreateBuffer(bufferDesc);
 
         bufferDesc = {
             .sizeBytes = sizeof(RLightProps)*R_LIGHT_CULL_MAX_LIGHTS_PER_FRAME,
-            .usageFlags = GfxBufferUsageFlags::TransferDst | GfxBufferUsageFlags::Storage
+            .usageFlags = GfxBufferUsageFlags::TransferDst | GfxBufferUsageFlags::Storage,
+            .perFrameUpdates = true
         };
         gFwd.bLightProps = GfxBackend::CreateBuffer(bufferDesc);
     }
@@ -882,6 +887,7 @@ void R::Release()
     GfxBackend::DestroyPipeline(gFwd.pZPrepass);
     GfxBackend::DestroyPipelineLayout(gFwd.pZPrepassLayout);
     GfxBackend::DestroyBuffer(gFwd.ubZPrepass);
+    GfxBackend::DestroyBuffer(gFwd.ubShadowMap);
 
     GfxBackend::DestroyPipeline(gFwd.pZPrepassAlphaMask);
     GfxBackend::DestroyPipelineLayout(gFwd.pZPrepassLayoutAlphaMask);
@@ -1465,10 +1471,9 @@ void R::ShadowMap::Update(RView& view, GfxCommandBuffer& cmd)
     Mat4 worldToClipMat = viewData.worldToClipMat;
 
     {
-        GfxHelperBufferUpdateScope updater(cmd, gFwd.ubZPrepass, uint32(-1), GfxShaderStage::Vertex);
+        GfxHelperBufferUpdateScope updater(cmd, gFwd.ubShadowMap, uint32(-1), GfxShaderStage::Vertex);
         memcpy(updater.mData, &worldToClipMat, sizeof(Mat4));
     }
-
 }
 
 void R::ShadowMap::Render(RView& view, GfxCommandBuffer& cmd, GfxImageHandle shadowMapDepthImage)
@@ -1494,7 +1499,6 @@ void R::ShadowMap::Render(RView& view, GfxCommandBuffer& cmd, GfxImageHandle sha
         };
         cmd.BeginRenderPass(zprepass);
 
-
         cmd.BindPipeline(gFwd.pShadowMap);
         {
             const GfxImageDesc& imgDesc = GfxBackend::GetImageDesc(shadowMapDepthImage);
@@ -1518,7 +1522,7 @@ void R::ShadowMap::Render(RView& view, GfxCommandBuffer& cmd, GfxImageHandle sha
             GfxBindingDesc bindings[] = {
                 {
                     .name = "PerFrameData",
-                    .buffer = gFwd.ubZPrepass
+                    .buffer = gFwd.ubShadowMap
                 }
             };
             cmd.PushBindings(gFwd.pZPrepassLayout, CountOf(bindings), bindings);

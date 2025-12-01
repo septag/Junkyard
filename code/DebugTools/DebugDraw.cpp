@@ -141,13 +141,15 @@ namespace DebugDraw
         GfxBufferDesc vertexBufferDesc {
             .sizeBytes = sizeof(DebugDrawVertex)*DEBUGDRAW_MAX_VERTICES,
             .usageFlags = GfxBufferUsageFlags::TransferDst | GfxBufferUsageFlags::Vertex,
-            .arena = GfxMemoryArena::PersistentGPU
+            .arena = GfxMemoryArena::PersistentGPU,
+            .perFrameUpdates = true
         };
         gDebugDraw.vertexBuffer = GfxBackend::CreateBuffer(vertexBufferDesc);      
         
         GfxBufferDesc uniformBufferDesc {
             .sizeBytes = sizeof(Mat4),
-            .usageFlags = GfxBufferUsageFlags::TransferDst | GfxBufferUsageFlags::Uniform
+            .usageFlags = GfxBufferUsageFlags::TransferDst | GfxBufferUsageFlags::Uniform,
+            .perFrameUpdates = true
         };
         gDebugDraw.ubPerFrameData = GfxBackend::CreateBuffer(uniformBufferDesc);
     }

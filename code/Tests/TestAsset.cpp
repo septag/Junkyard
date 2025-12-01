@@ -569,7 +569,8 @@ struct AppImpl : AppCallbacks
         GfxBufferDesc uniformBufferDesc {
             .sizeBytes = sizeof(FrameTransform),
             .usageFlags = GfxBufferUsageFlags::TransferDst|GfxBufferUsageFlags::Uniform,
-            .arena = GfxMemoryArena::PersistentGPU
+            .arena = GfxMemoryArena::PersistentGPU,
+            .perFrameUpdates = true
         };
 
         self->mUniformBuffer = GfxBackend::CreateBuffer(uniformBufferDesc);

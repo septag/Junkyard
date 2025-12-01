@@ -27,10 +27,10 @@ struct GfxCommandBuffer
     void BatchCopyBufferToImage(uint32 numParams, const GfxCopyBufferToImageParams* params);
 
     void MapBuffer(GfxBufferHandle buffHandle, void** outPtr, size_t* outSizeBytes = nullptr);
-    void FlushBuffer(GfxBufferHandle buffHandle);
+    void FlushBuffer(GfxBufferHandle buffHandle, const GfxFlushRange* range = nullptr);
 
     void BatchMapBuffer(uint32 numParams, const GfxBufferHandle* handles, GfxMapResult* mapResults);
-    void BatchFlushBuffer(uint32 numBuffers, const GfxBufferHandle* bufferHandles);
+    void BatchFlushBuffer(uint32 numBuffers, const GfxBufferHandle* bufferHandles, const GfxFlushRange* ranges = nullptr);
 
     void ClearImageColor(GfxImageHandle imgHandle, Color4u color);
     void ClearImageColor(GfxImageHandle imgHandle, Float4 color);

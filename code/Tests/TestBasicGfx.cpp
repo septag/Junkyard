@@ -99,7 +99,8 @@ struct ModelScene
         GfxBufferDesc bufferDesc {
             .sizeBytes = sizeof(FrameInfo),
             .usageFlags = GfxBufferUsageFlags::TransferDst | GfxBufferUsageFlags::Uniform,
-            .arena = GfxMemoryArena::PersistentGPU
+            .arena = GfxMemoryArena::PersistentGPU,
+            .perFrameUpdates = true
         };
         mUniformBuffer = GfxBackend::CreateBuffer(bufferDesc);
 

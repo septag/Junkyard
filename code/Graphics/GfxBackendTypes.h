@@ -329,6 +329,12 @@ struct GfxMapResult
     size_t dataSize;
 };
 
+struct GfxFlushRange
+{
+    size_t offset;
+    size_t size;
+};
+
 struct GfxViewport
 {
     float x;
@@ -401,6 +407,7 @@ struct GfxBufferDesc
     uint64 sizeBytes;
     GfxBufferUsageFlags usageFlags;
     GfxMemoryArena arena = GfxMemoryArena::PersistentGPU;
+    bool perFrameUpdates = false;   // Hint that we update the buffer per-frame
 };
 
 enum class GfxBufferTransition

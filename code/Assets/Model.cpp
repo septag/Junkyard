@@ -862,7 +862,7 @@ bool Model::InitializeManager()
 {
     AssetTypeDesc desc {
         .fourcc = MODEL_ASSET_TYPE,
-        .cacheVersion = 1,
+        .cacheVersion = 2,
         .name = "Model",
         .impl = &gModelImpl,
         .extraParamTypeName = "ModelLoadParams",

@@ -554,8 +554,10 @@ struct GfxBackendBuffer
     VkBuffer handle;
     GfxBufferDesc desc;
     GfxBackendDeviceMemory mem;
+    size_t allocatedSize;
     VkPipelineStageFlags2 transitionedStage;
     VkAccessFlagBits2 transitionedAccess;
+    uint32 offsetAlignment;
 };
 
 struct GfxBackendPipelineLayout
@@ -4226,9 +4228,26 @@ void GfxBackend::BatchCreateBuffer(uint32 numBuffers, const GfxBufferDesc* descs
         const GfxBufferDesc& desc = descs[i];
         ASSERT(desc.sizeBytes);
 
+        uint32 offsetAlignment = CONFIG_MACHINE_ALIGNMENT;
+        size_t allocSize = desc.sizeBytes;
+
+        if (IsBitsSet<GfxBufferUsageFlags>(desc.usageFlags, GfxBufferUsageFlags::Uniform)) {
+            ASSERT(gBackendVk.gpu.props.limits.minUniformBufferOffsetAlignment <= UINT32_MAX);
+            offsetAlignment = (uint32)gBackendVk.gpu.props.limits.minUniformBufferOffsetAlignment;
+            ASSERT_MSG(desc.perFrameUpdates, "Uniform buffer is not created with a ring-buffer. Enable 'perFrameUpdates' flag");
+        }
+        else if (IsBitsSet<GfxBufferUsageFlags>(desc.usageFlags, GfxBufferUsageFlags::Storage)) {
+            ASSERT(gBackendVk.gpu.props.limits.minStorageBufferOffsetAlignment <= UINT32_MAX);
+            offsetAlignment = (uint32)gBackendVk.gpu.props.limits.minStorageBufferOffsetAlignment;
+        }
+
+        if (desc.perFrameUpdates) {
+            allocSize = GFXBACKEND_FRAMES_IN_FLIGHT * AlignValue<uint64>(desc.sizeBytes, offsetAlignment);
+        }
+
         VkBufferCreateInfo bufferCreateInfo {
             .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
-            .size = desc.sizeBytes,
+            .size = allocSize,
             .usage = VkBufferUsageFlags(desc.usageFlags)
         };
 
@@ -4247,7 +4266,9 @@ void GfxBackend::BatchCreateBuffer(uint32 numBuffers, const GfxBufferDesc* descs
         buffers[i] = {
             .handle = bufferVk,
             .desc = desc,
-            .mem = mem
+            .mem = mem,
+            .allocatedSize = allocSize,
+            .offsetAlignment = offsetAlignment
         };
     }
 
@@ -5269,15 +5290,21 @@ void GfxCommandBuffer::BatchMapBuffer(uint32 numParams, const GfxBufferHandle* h
 
         mapResults[i].dataPtr = buffer.mem.mappedData;
         mapResults[i].dataSize = buffer.desc.sizeBytes;
+
+        // Offset the mapped buffer to the correct position in the ring buffer
+        if (buffer.desc.perFrameUpdates) {
+            mapResults[i].dataPtr = (uint8*)mapResults[i].dataPtr + 
+                                    gBackendVk.queueMan.GetFrameIndex()*AlignValue<uint64>(buffer.desc.sizeBytes, buffer.offsetAlignment);
+        }
     }
 }
 
-void GfxCommandBuffer::FlushBuffer(GfxBufferHandle buffHandle)
+void GfxCommandBuffer::FlushBuffer(GfxBufferHandle buffHandle, const GfxFlushRange* range)
 {
-    BatchFlushBuffer(1, &buffHandle);
+    BatchFlushBuffer(1, &buffHandle, range);
 }
 
-void GfxCommandBuffer::BatchFlushBuffer(uint32 numBuffers, const GfxBufferHandle* bufferHandles)
+void GfxCommandBuffer::BatchFlushBuffer(uint32 numBuffers, const GfxBufferHandle* bufferHandles, const GfxFlushRange* ranges)
 {
     ASSERT(mIsRecording);
 
@@ -5289,13 +5316,20 @@ void GfxCommandBuffer::BatchFlushBuffer(uint32 numBuffers, const GfxBufferHandle
     for (uint32 i = 0; i < numBuffers; i++) {
         GfxBackendBuffer& buffer = gBackendVk.buffers.Data(bufferHandles[i]);
         if (!buffer.mem.isCoherent) {
-            size_t alignedSize = AlignValue(buffer.desc.sizeBytes, gBackendVk.gpu.props.limits.nonCoherentAtomSize);
+            size_t size = ranges ? ranges[i].size : buffer.desc.sizeBytes;
+            size_t alignedSize = AlignValue(size, gBackendVk.gpu.props.limits.nonCoherentAtomSize);
             VkMappedMemoryRange memRange {
                 .sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,
                 .memory = buffer.mem.handle,
-                .offset = buffer.mem.offset,
+                .offset = ranges ? (buffer.mem.offset + ranges[i].offset) : buffer.mem.offset,
                 .size = alignedSize
             };
+
+            // Offset the mapped buffer to the correct position in the ring buffer
+            if (buffer.desc.perFrameUpdates) {
+                memRange.offset += gBackendVk.queueMan.GetFrameIndex()*AlignValue<uint64>(buffer.desc.sizeBytes, buffer.offsetAlignment);
+            }
+
             memRanges.Push(memRange);
         }
     }
@@ -5357,9 +5391,18 @@ void GfxCommandBuffer::BatchCopyBufferToBuffer(uint32 numParams, const GfxCopyBu
         ASSERT(sizeBytes <= srcBuffer.desc.sizeBytes);
         ASSERT(sizeBytes <= dstBuffer.desc.sizeBytes);
 
+        size_t srcOffset = copyParams.srcOffset;
+        size_t dstOffset = copyParams.dstOffset;
+
+        // Adjust offsets if they are from a ring-buffer
+        if (srcBuffer.desc.perFrameUpdates)
+            srcOffset += gBackendVk.queueMan.GetFrameIndex()*AlignValue<uint64>(srcBuffer.desc.sizeBytes, srcBuffer.offsetAlignment);
+        if (dstBuffer.desc.perFrameUpdates)
+            dstOffset += gBackendVk.queueMan.GetFrameIndex()*AlignValue<uint64>(dstBuffer.desc.sizeBytes, dstBuffer.offsetAlignment);
+        
         VkBufferCopy copyRegion {
-            .srcOffset = copyParams.srcOffset,
-            .dstOffset = copyParams.dstOffset,
+            .srcOffset = srcOffset,
+            .dstOffset = dstOffset,
             .size = sizeBytes
         };
         vkCmdCopyBuffer(cmdVk, srcBuffer.handle, dstBuffer.handle, 1, &copyRegion);
@@ -5400,7 +5443,7 @@ void GfxCommandBuffer::BatchCopyBufferToBuffer(uint32 numParams, const GfxCopyBu
                 .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
                 .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
                 .buffer = dstBuffer.handle,
-                .offset = copyParams.dstOffset,
+                .offset = dstOffset,
                 .size = sizeBytes
             };
 
@@ -5422,7 +5465,7 @@ void GfxCommandBuffer::BatchCopyBufferToBuffer(uint32 numParams, const GfxCopyBu
                 .srcQueueFamilyIndex = queueFamilyIdx,
                 .dstQueueFamilyIndex = dstQueueFamilyIdx,
                 .buffer = dstBuffer.handle,
-                .offset = copyParams.dstOffset,
+                .offset = dstOffset,
                 .size = sizeBytes
             };
             bufferBarriers.Push(barrier);
@@ -5442,7 +5485,7 @@ void GfxCommandBuffer::BatchCopyBufferToBuffer(uint32 numParams, const GfxCopyBu
                     .dstAccessMask = accessFlags,
                     .srcQueueFamilyIndex = queueFamilyIdx,
                     .dstQueueFamilyIndex = dstQueueFamilyIdx,
-                    .offset = copyParams.dstOffset,
+                    .offset = dstOffset,
                     .size = sizeBytes
                 }
             };
@@ -6124,10 +6167,19 @@ void GfxCommandBuffer::BindVertexBuffers(uint32 firstBinding, uint32 numBindings
 
     MemTempAllocator tempAlloc;
     VkBuffer* buffersVk = tempAlloc.MallocTyped<VkBuffer>(numBindings);
-    for (uint32 i = 0; i < numBindings; i++) 
-        buffersVk[i] = gBackendVk.buffers.Data(vertexBuffers[i]).handle;
+    VkDeviceSize* offsetsVk = tempAlloc.MallocTyped<VkDeviceSize>(numBindings);
+    for (uint32 i = 0; i < numBindings; i++) {
+        GfxBackendBuffer& buffer = gBackendVk.buffers.Data(vertexBuffers[i]);
+        buffersVk[i] = buffer.handle;
+        offsetsVk[i] = offsets[i];
+
+        if (buffer.desc.perFrameUpdates) {
+            ASSERT(buffer.offsetAlignment);
+            offsetsVk[i] += gBackendVk.queueMan.GetFrameIndex()*AlignValue<uint64>(buffer.desc.sizeBytes, buffer.offsetAlignment);
+        }
+    }
     
-    vkCmdBindVertexBuffers(cmdVk, firstBinding, numBindings, buffersVk, reinterpret_cast<const VkDeviceSize*>(offsets));
+    vkCmdBindVertexBuffers(cmdVk, firstBinding, numBindings, buffersVk, offsetsVk);
 }
 
 void GfxCommandBuffer::BindIndexBuffer(GfxBufferHandle indexBuffer, uint64 offset, GfxIndexType indexType)
@@ -6135,6 +6187,10 @@ void GfxCommandBuffer::BindIndexBuffer(GfxBufferHandle indexBuffer, uint64 offse
     ASSERT(mIsRecording);
     VkCommandBuffer cmdVk = GfxBackend::_GetCommandBufferHandle(*this);
     GfxBackendBuffer& buffer = gBackendVk.buffers.Data(indexBuffer);
+    if (buffer.desc.perFrameUpdates) {
+        ASSERT(buffer.offsetAlignment);
+        offset += gBackendVk.queueMan.GetFrameIndex()*AlignValue<uint64>(buffer.desc.sizeBytes, buffer.offsetAlignment);
+    }
 
     vkCmdBindIndexBuffer(cmdVk, buffer.handle, VkDeviceSize(offset), VkIndexType(indexType));
 }
@@ -6985,7 +7041,8 @@ GfxHelperBufferUpdateScope::GfxHelperBufferUpdateScope(GfxCommandBuffer& cmd, Gf
     mBufferUsageStage = bufferUsageStage;
 
     if (gBackendVk.gpu.props.deviceType == VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU) {
-        cmd.MapBuffer(mBuffer, &mData);
+        size_t mappedSize;
+        cmd.MapBuffer(mBuffer, &mData, &mappedSize);
     }
     else {
         GfxBufferDesc stagingBufferDesc {
@@ -7003,7 +7060,12 @@ GfxHelperBufferUpdateScope::GfxHelperBufferUpdateScope(GfxCommandBuffer& cmd, Gf
 GfxHelperBufferUpdateScope::~GfxHelperBufferUpdateScope()
 {
     if (gBackendVk.gpu.props.deviceType == VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU) {
-        mCmd.FlushBuffer(mBuffer);
+        GfxFlushRange range {
+            .offset = 0,
+            .size = mSize
+        };
+
+        mCmd.FlushBuffer(mBuffer, &range);
     }
     else {
         mCmd.FlushBuffer(mStagingBuffer);

@@ -404,13 +404,15 @@ namespace ImGui
         {
             GfxBufferDesc vertexBufferDesc {
                 .sizeBytes = IMGUI_VERTICES_POOL_SIZE*sizeof(ImDrawVert),
-                .usageFlags = GfxBufferUsageFlags::TransferDst|GfxBufferUsageFlags::Vertex
+                .usageFlags = GfxBufferUsageFlags::TransferDst|GfxBufferUsageFlags::Vertex,
+                .perFrameUpdates = true
             };
             gImGui.vertexBuffer = GfxBackend::CreateBuffer(vertexBufferDesc);
 
             GfxBufferDesc indexBufferDesc {
                 .sizeBytes = IMGUI_VERTICES_POOL_SIZE*sizeof(ImDrawIdx),
-                .usageFlags = GfxBufferUsageFlags::TransferDst|GfxBufferUsageFlags::Index
+                .usageFlags = GfxBufferUsageFlags::TransferDst|GfxBufferUsageFlags::Index,
+                .perFrameUpdates = true
             };
             gImGui.indexBuffer = GfxBackend::CreateBuffer(indexBufferDesc);
         }
@@ -493,7 +495,8 @@ namespace ImGui
             GfxBackend::DestroyBuffer(gImGui.vertexBuffer);
             GfxBufferDesc vertexBufferDesc {
                 .sizeBytes = gImGui.maxVertices*sizeof(ImDrawVert),
-                .usageFlags = GfxBufferUsageFlags::TransferDst|GfxBufferUsageFlags::Vertex
+                .usageFlags = GfxBufferUsageFlags::TransferDst|GfxBufferUsageFlags::Vertex,
+                .perFrameUpdates = true
             };
             gImGui.vertexBuffer = GfxBackend::CreateBuffer(vertexBufferDesc);
 
@@ -505,7 +508,8 @@ namespace ImGui
             GfxBackend::DestroyBuffer(gImGui.indexBuffer);            
             GfxBufferDesc indexBufferDesc {
                 .sizeBytes = gImGui.maxIndices*sizeof(ImDrawIdx),
-                .usageFlags = GfxBufferUsageFlags::TransferDst|GfxBufferUsageFlags::Index
+                .usageFlags = GfxBufferUsageFlags::TransferDst|GfxBufferUsageFlags::Index,
+                .perFrameUpdates = true
             };
             gImGui.indexBuffer = GfxBackend::CreateBuffer(indexBufferDesc);
 
