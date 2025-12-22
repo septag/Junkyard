@@ -42,9 +42,15 @@ struct GfxCommandBuffer
 
     void PushBindings(GfxPipelineLayoutHandle layoutHandle, uint32 numBindings, const GfxBindingDesc* bindings);
 
+    // 'itemIndices' is the index of the item that is written previously (see for each set. See GfxHelperDescriptorBuffer) 
+    // CountOf(itemIndices) == setCount
+    void SetDescriptorBufferOffsets(GfxPipelineLayoutHandle layoutHandle, uint32 setIndex, uint32 setCount, const uint32* itemIndices);
+    void SetDescriptorBufferOffset(GfxPipelineLayoutHandle layoutHandle, uint32 setIndex, uint32 itemIndex);
+
     void BindPipeline(GfxPipelineHandle pipeHandle);
     void BindVertexBuffers(uint32 firstBinding, uint32 numBindings, const GfxBufferHandle* vertexBuffers, const uint64* offsets);
     void BindIndexBuffer(GfxBufferHandle indexBuffer, uint64 offset, GfxIndexType indexType);
+    void BindDescriptorBuffers(uint32 numBindings, const GfxBufferHandle* descriptorBuffers);
 
     void Dispatch(uint32 groupCountX, uint32 groupCountY, uint32 groupCountZ);
 
@@ -103,6 +109,7 @@ namespace GfxBackend
 
     GfxSamplerHandle CreateSampler(const GfxSamplerDesc& desc);
     void DestroySampler(GfxSamplerHandle& handle);
+    void SetupImmutableSamplers(const GfxImmutableSamplersDesc& desc);
 
     GfxFormat GetSwapchainFormat();
     Mat4 GetSwapchainTransformMat();
@@ -136,6 +143,45 @@ private:
     GfxBufferHandle mBuffer;
     GfxBufferHandle mStagingBuffer;
     GfxShaderStage mBufferUsageStage;
+};
+
+// Used for large uniform chunks that contain multiple cbuffers of the same type
+struct GfxHelperUniformBuffer
+{
+    GfxHelperUniformBuffer() = delete;
+    GfxHelperUniformBuffer(const GfxHelperUniformBuffer&) = delete;
+
+    static size_t GetMemoryRequirement(uint32 itemSize, uint32 numItems);
+
+    explicit GfxHelperUniformBuffer(void* dataPtr, uint32 itemSize, uint32 numItems);
+
+    // Returns the offset to the start of the data that was written
+    // We can pass this offset to GfxHelperDescriptorBuffer::WriteUniformBuffer
+    uint32 Write(uint32 index, const void* data, uint32 dataSize);
+    template <typename _T> uint32 Write(uint32 index, const _T& data) { return Write(index, &data, sizeof(data)); }
+
+private:
+    uint8* mData;
+    uint32 mStride;
+    uint32 mMaxItems;
+};
+
+// Used for filling large descriptor buffers
+struct GfxHelperDescriptorBuffer
+{
+    GfxHelperDescriptorBuffer() = delete;
+    GfxHelperDescriptorBuffer(const GfxHelperDescriptorBuffer&) = delete;
+
+    static size_t GetMemoryRequirement(GfxPipelineLayoutHandle layoutHandle, uint32 descriptorSetIndex, uint32 numItems);
+
+    explicit GfxHelperDescriptorBuffer(void* dataPtr, GfxPipelineLayoutHandle layoutHandle, uint32 descriptorSetIndex);
+
+    void WriteBindings(uint32 index, uint32 numBindings, const GfxBindingDesc* bindings);
+
+private:
+    uint8* mData;
+    GfxPipelineLayoutHandle mLayoutHandle;
+    uint32 mDescriptorSetIndex;
 };
 
 //----------------------------------------------------------------------------------------------------------------------

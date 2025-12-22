@@ -175,6 +175,7 @@ struct ModelScene
         };
 
         GfxPipelineLayoutDesc pipelineLayoutDesc {
+            .type = GfxPipelineLayoutType::PushDescriptor,
             .numBindings = CountOf(bindings),
             .bindings = bindings,
             .numPushConstants = 1,

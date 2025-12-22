@@ -106,6 +106,7 @@ namespace DebugDraw
         ASSERT(shader);
 
         GfxPipelineLayoutDesc pipelineLayoutDesc {
+            .type = GfxPipelineLayoutType::PushDescriptor,
             .numBindings = CountOf(bindings),
             .bindings = bindings,
             .numPushConstants = CountOf(pushConstants),

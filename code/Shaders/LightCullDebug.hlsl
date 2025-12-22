@@ -8,11 +8,11 @@
 
 StructuredBuffer<uint> VisibleLightIndices;
 
-[[vk_push_constant]]
+[vk_push_constant]
 cbuffer PerFrameData
 {
-    uint TilesCountX : packoffset(c0);
-    uint TilesCountY : packoffset(c0.y);
+    uint TilesCountX;
+    uint TilesCountY;
 };
 
 // Single fullscreen triangle (No input vertex buffer needed)

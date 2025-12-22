@@ -11,12 +11,19 @@
 //     Murmur3: Suitable for hashing larger data blobs. It has two versions, 32bit and 128bit. 
 // 
 // HashTable: Fibonacci based hash table. 
-//            - No allocation or deallocation happen in ctor/dtor. Memory should be allocated explicity with `Reserve` and `Free` calls.
+//            - No allocation or deallocation happen in ctor/dtor. 
+//            - Memory should be allocated explicity with `Reserve` and `Free` calls.
 //            - It can grow if you provide allocator, otherwise, it cannot if you provide pre-allocated buffer/size pairs instead
 //            - Becareful not to add duplicates. `Add` method can add multiple hashes if any free slot is found. 
 //              In that case, you should use `AddIfNotFound` method.
+//
+// HashStringLiteral: Wrapper constexpr type that is used to store fixed string literals that are computed at compile time
+//                    Stores the hashed value in 'hash' field and 'cstr' for debugging purposes only
+//                    Example: HashStringLiteral myStringHash = HashStringLiteral("Test");  // Compile time hash calculation
 //                               
-//      
+// HashMurmur32Incremental: Incremental murmur hash. As the name says, used to hash data incrementally
+//                          Feed data with 'Add' methods and in the end, get the hash with 'Hash()' method
+//
 
 #include "Base.h"
 
@@ -61,6 +68,31 @@ namespace Hash
     API uint32 Murmur32(const void* key, uint32 len, uint32 seed = 0);
     API HashResult128 Murmur128(const void* key, size_t len, uint32 seed = 0);
 }
+
+struct HashStringLiteral
+{
+    inline constexpr HashStringLiteral(const char* _cstr) :
+#if CONFIG_ENABLE_ASSERT
+        cstr(_cstr),
+#endif
+        hash(Hash::Fnv32Str(_cstr))
+    {        
+    }
+
+    inline constexpr HashStringLiteral& operator=(const char* _cstr)
+    {
+    #if CONFIG_ENABLE_ASSERT
+        cstr = _cstr;
+    #endif
+        hash = Hash::Fnv32Str(_cstr);
+        return *this;
+    }
+
+#if CONFIG_ENABLE_ASSERT
+    const char* cstr;
+#endif
+    uint32 hash;
+};
 
 struct HashMurmur32Incremental
 {

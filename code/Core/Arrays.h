@@ -589,9 +589,9 @@ template<typename _T, uint32 _MaxCount>
 inline void StaticArray<_T, _MaxCount>::RemoveAndSwap(uint32 index)
 {
     ASSERT(mBuffer);
-    #ifdef CONFIG_CHECK_OUTOFBOUNDS
+#ifdef CONFIG_CHECK_OUTOFBOUNDS
     ASSERT_MSG(index <= mCount, "Index out of bounds (count: %u, index: %u)", mCount, index);
-    #endif
+#endif
     Swap<_T>(mBuffer[index], mBuffer[--mCount]);
 }
 

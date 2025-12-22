@@ -26,13 +26,13 @@ struct PointLightCull
 
 cbuffer PerFrameData
 {
-    float4x4 WorldToViewMat : packoffset(c0);
-    float4x4 ClipToViewMat : packoffset(c4);
-    float CameraNear : packoffset(c8);
-    float CameraFar : packoffset(c8.y);
-    uint NumLights : packoffset(c9);
-    uint WindowWidth : packoffset(c9.y);
-    uint WindowHeight : packoffset(c9.z);
+    float4x4 WorldToViewMat;
+    float4x4 ClipToViewMat;
+    float CameraNear;
+    float CameraFar;
+    uint NumLights;
+    uint WindowWidth;
+    uint WindowHeight;
 };
 
 StructuredBuffer<PointLightCull> Lights;

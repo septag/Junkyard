@@ -21,12 +21,71 @@ static inline constexpr uint32 R_LIGHT_CULL_MAX_LIGHTS_PER_TILE = 64;
 static inline constexpr uint32 R_LIGHT_CULL_MAX_LIGHTS_PER_FRAME = 1024;
 static inline constexpr size_t R_MAX_SCRATCH_SIZE_PER_THREAD = SIZE_MB*4;
 static inline constexpr uint32 R_MAX_VIEWS = 64;
+static inline constexpr uint32 R_MAX_DRAW_OBJECTS = 200;
 
-enum class RPipelineBindingSetIndex : uint8
+enum class RDescriptorSetIndex : uint8
 {
     PerFrame = 0,
-    PerObject
+    PerObject,
+    Samplers
 };
+
+//----------------------------------------------------------------------------------------------------------------------
+// Global samplers
+// See Samplers.h.hlsl
+// Add samplers here and keep those two in sync. 
+enum class RSamplerType : uint32
+{
+    BilinearClamp = 0,
+    TrilinearWrap,
+    ShadowMapCmp,
+    _Count
+};
+
+static const GfxSamplerDesc R_SAMPLER_DESCS[uint32(RSamplerType::_Count)] = {
+    {
+        .samplerFilter = GfxSamplerFilterMode::LinearMipmapNearest,
+        .samplerWrap = GfxSamplerWrapMode::ClampToEdge,
+    },
+    {
+        .samplerFilter = GfxSamplerFilterMode::LinearMipmapLinear,
+        .samplerWrap = GfxSamplerWrapMode::Repeat,
+    },
+    {
+        .samplerFilter = GfxSamplerFilterMode::Linear,
+        .samplerWrap = GfxSamplerWrapMode::ClampToEdge,
+        .compareOp = GfxCompareOp::LessOrEqual
+    }
+};
+
+#if !CONFIG_GFX_IMMUTABLE_SAMPLERS
+    static const char* R_SAMPLER_NAMES[uint32(RSamplerType::_Count)] = {
+        "SamplerBilinear",
+        "SamplerTrilinear",
+        "SamplerBilinearLess"
+    };
+    #define R_INSERT_IMMUTABLE_SAMPLER_BINDINGS() \
+    { \
+        .name = R_SAMPLER_NAMES[0], \
+        .type = GfxDescriptorType::Sampler, \
+        .stagesUsed = GfxShaderStage::Fragment | GfxShaderStage::Vertex, \
+        .setIndex = uint8(RDescriptorSetIndex::Samplers) \
+    }, \
+    { \
+        .name = R_SAMPLER_NAMES[1], \
+        .type = GfxDescriptorType::Sampler, \
+        .stagesUsed = GfxShaderStage::Fragment | GfxShaderStage::Vertex, \
+        .setIndex = uint8(RDescriptorSetIndex::Samplers) \
+    }, \
+    { \
+        .name = R_SAMPLER_NAMES[2], \
+        .type = GfxDescriptorType::Sampler, \
+        .stagesUsed = GfxShaderStage::Fragment | GfxShaderStage::Vertex, \
+        .setIndex = uint8(RDescriptorSetIndex::Samplers) \
+    },
+#else
+    #define R_INSERT_IMMUTABLE_SAMPLER_BINDINGS()
+#endif
 
 struct RVertexStreamPosition
 {
@@ -39,45 +98,43 @@ struct RVertexStreamLighting
     Float2 uv;
 };
 
-struct RLightCullShaderFrameData
+struct GFX_UNIFORM_BUFFER_ALIGNMENT RLightCullShaderFrameData
 {
     Mat4 worldToViewMat;
     Mat4 clipToViewMat;
     float cameraNear;
     float cameraFar;
-    float _reserved1[2];
     uint32 numLights;
     uint32 windowWidth;
     uint32 windowHeight;
-    uint32 _reserved2;
+    STRUCT_PADDING_12_BYTES();
 };
 
-struct RLightCullDebugShaderFrameData
+struct GFX_UNIFORM_BUFFER_ALIGNMENT RLightCullDebugShaderFrameData
 {
     uint32 tilesCountX;
     uint32 tilesCountY;
-    uint32 _reserved[2];
+    STRUCT_PADDING_8_BYTES();
 };
 
-struct RTextureDebugShaderFrameData
+struct GFX_UNIFORM_BUFFER_ALIGNMENT RTextureDebugShaderFrameData
 {
     float cameraNear;
     float cameraFar;
-    float _reserved1[2];
+    STRUCT_PADDING_8_BYTES();
 };
 
-struct RLightShaderFrameData
+struct GFX_UNIFORM_BUFFER_ALIGNMENT RLightShaderFrameData
 {
     Mat4 worldToClipMat;
     Mat4 worldToSunLightClipMat;
     Float3 sunLightDir;
-    float _reserved1;
+    STRUCT_PADDING_4_BYTES();
     Float4 sunLightColor;
     Float4 skyAmbientColor;
     Float4 groundAmbientColor;
     uint32 tilesCountX;
-    uint32 tilesCountY;
-    uint32 _reserved2[2];
+    STRUCT_PADDING_12_BYTES();
 };
 
 static const GfxVertexInputAttributeDesc R_VERTEX_ATTRIBUTES[] = {
@@ -150,7 +207,14 @@ struct RFwdContext
     AssetHandleShader sLight;
     GfxPipelineHandle pLight;
     GfxPipelineLayoutHandle pLightLayout;
-    GfxBufferHandle ubLight;
+    GfxBufferHandle ubLightPerFrameData;
+    GfxBufferHandle ubLightPerObjectData;
+    GfxBufferHandle dbLightPerFrameResources;
+    GfxBufferHandle dbLightPerObjectResources;
+#if !CONFIG_GFX_IMMUTABLE_SAMPLERS
+    GfxBufferHandle dbImmutableSamplers;
+    bool immutableSamplersUpdated;
+#endif
 
     AssetHandleShader sTextureDebugDepth;
     GfxPipelineHandle pTextureDebugDepth;
@@ -160,8 +224,7 @@ struct RFwdContext
     GfxPipelineHandle pTextureDebugColor;
     GfxPipelineLayoutHandle pTextureDebugColorLayout;
 
-    GfxSamplerHandle smpBilinearClamp;
-    GfxSamplerHandle smpShadowMapCmp;
+    GfxSamplerHandle samplers[uint32(RSamplerType::_Count)];
 
     HandlePool<RViewHandle, RViewData> viewPool;
 
@@ -175,6 +238,7 @@ namespace R
 {
     static void _CreateFramebufferDependentResources(uint16 width, uint16 height)
     {
+        // TODO: This leaks now. cuz it's allocating from the Persistant buffer
         uint32 msaa = SettingsJunkyard::Get().graphics.msaa;
 
         GfxBackend::DestroyImage(gFwd.msaaDepthRenderImage);
@@ -225,7 +289,9 @@ namespace R
             uint32 numTilesY = M::CeilDiv(uint32(height), R_LIGHT_CULL_TILE_SIZE);
             GfxBufferDesc bufferDesc = {
                 .sizeBytes = sizeof(uint32)*numTilesX*numTilesY*R_LIGHT_CULL_MAX_LIGHTS_PER_TILE,
-                .usageFlags = GfxBufferUsageFlags::TransferDst | GfxBufferUsageFlags::Storage
+                .usageFlags = GfxBufferUsageFlags::TransferDst | GfxBufferUsageFlags::Storage | GfxBufferUsageFlags::ShaderDeviceAddress,
+                .arena = GfxMemoryArena::PersistentAddressGPU,
+                .perFrameUpdates = true
             };
             gFwd.bVisibleLightIndices = GfxBackend::CreateBuffer(bufferDesc);
         }
@@ -258,6 +324,7 @@ namespace R
             };
 
             GfxPipelineLayoutDesc pLayoutDesc {
+                .type = GfxPipelineLayoutType::PushDescriptor,
                 .numBindings = CountOf(pBindings),
                 .bindings = pBindings,
                 .numPushConstants = CountOf(pPushConstants),
@@ -373,6 +440,7 @@ namespace R
             };
 
             GfxPipelineLayoutDesc pLayoutDesc {
+                .type = GfxPipelineLayoutType::PushDescriptor,
                 .numBindings = CountOf(pBindings),
                 .bindings = pBindings,
                 .numPushConstants = CountOf(pPushConstants),
@@ -414,7 +482,7 @@ namespace R
                 .numVertexBufferBindings = CountOf(vertexBufferBindingDescs),
                 .vertexBufferBindings = vertexBufferBindingDescs,
                 .rasterizer = {
-                    .cullMode = GfxCullMode::Back
+                    .cullMode = GfxCullMode::Back,
                 },
                 .blend = {
                     .numAttachments = 1,
@@ -426,7 +494,8 @@ namespace R
                     .depthCompareOp = GfxCompareOp::Less
                 },
                 .msaa = {
-                    .sampleCount = (GfxMultiSampleCount)msaa
+                    .sampleCount = (GfxMultiSampleCount)msaa,
+                    .alphaToCoverageEnable = true
                 },
                 .numColorAttachments = 0,
                 .depthAttachmentFormat = GfxBackend::GetValidDepthStencilFormat(),
@@ -466,6 +535,7 @@ namespace R
             };
 
             GfxPipelineLayoutDesc layoutDesc { 
+                .type = GfxPipelineLayoutType::PushDescriptor,
                 .numBindings = CountOf(bindings),
                 .bindings = bindings
             };
@@ -495,59 +565,52 @@ namespace R
                     .name = "PerFrameData",
                     .type = GfxDescriptorType::UniformBuffer,
                     .stagesUsed = GfxShaderStage::Fragment|GfxShaderStage::Vertex,
-                    .setIndex = (uint8)RPipelineBindingSetIndex::PerFrame
+                    .setIndex = (uint8)RDescriptorSetIndex::PerFrame
                 },
                 {
                     .name = "VisibleLightIndices",
                     .type = GfxDescriptorType::StorageBuffer,
                     .stagesUsed = GfxShaderStage::Fragment,
-                    .setIndex = (uint8)RPipelineBindingSetIndex::PerFrame
+                    .setIndex = (uint8)RDescriptorSetIndex::PerFrame
                 },
                 {
                     .name = "LocalLights",
                     .type = GfxDescriptorType::StorageBuffer,
                     .stagesUsed = GfxShaderStage::Fragment,
-                    .setIndex = (uint8)RPipelineBindingSetIndex::PerFrame
+                    .setIndex = (uint8)RDescriptorSetIndex::PerFrame
                 },
                 {
                     .name = "LocalLightBounds",
                     .type = GfxDescriptorType::StorageBuffer,
                     .stagesUsed = GfxShaderStage::Fragment,
-                    .setIndex = (uint8)RPipelineBindingSetIndex::PerFrame
+                    .setIndex = (uint8)RDescriptorSetIndex::PerFrame
                 },
                 {
                     .name = "ShadowMap",
                     .type = GfxDescriptorType::SampledImage,
                     .stagesUsed = GfxShaderStage::Fragment,
-                    .setIndex = (uint8)RPipelineBindingSetIndex::PerFrame
+                    .setIndex = (uint8)RDescriptorSetIndex::PerFrame
                 },
                 {
-                    .name = "ShadowSampler",
-                    .type = GfxDescriptorType::Sampler,
-                    .stagesUsed = GfxShaderStage::Fragment,
-                    .setIndex = (uint8)RPipelineBindingSetIndex::PerFrame
+                    .name = "PerObjectData",
+                    .type = GfxDescriptorType::UniformBuffer,
+                    .stagesUsed = GfxShaderStage::Vertex | GfxShaderStage::Fragment,
+                    .setIndex = (uint8)RDescriptorSetIndex::PerObject
                 },
                 {
                     .name = "BaseColorTexture",
-                    .type = GfxDescriptorType::CombinedImageSampler,
+                    .type = GfxDescriptorType::SampledImage,
                     .stagesUsed = GfxShaderStage::Fragment,
-                    // .setIndex = (uint8)RPipelineBindingSetIndex::PerObject
-                }
-            };
-
-            GfxPipelineLayoutDesc::PushConstant pushConstants[] = {
-                {
-                    .name = "PerObjectData",
-                    .stagesUsed = GfxShaderStage::Vertex,
-                    .size = sizeof(Mat4)
-                }
+                    .setIndex = (uint8)RDescriptorSetIndex::PerObject
+                },
+                R_INSERT_IMMUTABLE_SAMPLER_BINDINGS()
             };
 
             GfxPipelineLayoutDesc layoutDesc {
+                .type = GfxPipelineLayoutType::DescriptorBuffer,
                 .numBindings = CountOf(bindings),
                 .bindings = bindings,
-                .numPushConstants = CountOf(pushConstants),
-                .pushConstants = pushConstants
+                .useImmutableSamplers = true
             };
 
             gFwd.pLightLayout = GfxBackend::CreatePipelineLayout(*shader, layoutDesc);
@@ -617,11 +680,50 @@ namespace R
             // Uniform Buffers
             GfxBufferDesc ubDesc {
                 .sizeBytes = sizeof(RLightShaderFrameData),
-                .usageFlags = GfxBufferUsageFlags::TransferDst | GfxBufferUsageFlags::Uniform,
+                .usageFlags = GfxBufferUsageFlags::TransferDst | GfxBufferUsageFlags::Uniform | GfxBufferUsageFlags::ShaderDeviceAddress,
+                .arena = GfxMemoryArena::PersistentAddressGPU,
                 .perFrameUpdates = true
             };
 
-            gFwd.ubLight = GfxBackend::CreateBuffer(ubDesc);
+            gFwd.ubLightPerFrameData = GfxBackend::CreateBuffer(ubDesc);
+
+            ubDesc = {
+                .sizeBytes = GfxHelperUniformBuffer::GetMemoryRequirement(sizeof(Mat4), R_MAX_DRAW_OBJECTS),
+                .usageFlags = GfxBufferUsageFlags::TransferDst | GfxBufferUsageFlags::Uniform | GfxBufferUsageFlags::ShaderDeviceAddress,
+                .arena = GfxMemoryArena::PersistentAddressGPU,
+                .perFrameUpdates = true
+            };
+            gFwd.ubLightPerObjectData = GfxBackend::CreateBuffer(ubDesc);
+
+            // Descriptor Buffers
+            GfxBufferDesc dbDesc {
+                .sizeBytes = GfxHelperDescriptorBuffer::GetMemoryRequirement(gFwd.pLightLayout, 
+                                                                             (uint32)RDescriptorSetIndex::PerFrame, 1),
+                .usageFlags = GfxBufferUsageFlags::TransferDst | GfxBufferUsageFlags::ResourceDescriptorBuffer | GfxBufferUsageFlags::ShaderDeviceAddress,
+                .arena = GfxMemoryArena::PersistentAddressGPU,
+                .perFrameUpdates = true
+            };
+            gFwd.dbLightPerFrameResources = GfxBackend::CreateBuffer(dbDesc);
+
+            dbDesc = {
+                .sizeBytes = GfxHelperDescriptorBuffer::GetMemoryRequirement(gFwd.pLightLayout, 
+                                                                             (uint32)RDescriptorSetIndex::PerObject,
+                                                                             R_MAX_DRAW_OBJECTS),
+                .usageFlags = GfxBufferUsageFlags::TransferDst | GfxBufferUsageFlags::ResourceDescriptorBuffer | GfxBufferUsageFlags::ShaderDeviceAddress,
+                .arena = GfxMemoryArena::PersistentAddressGPU,
+                .perFrameUpdates = true
+            };
+            gFwd.dbLightPerObjectResources = GfxBackend::CreateBuffer(dbDesc);
+    #if !CONFIG_GFX_IMMUTABLE_SAMPLERS
+            dbDesc = {
+                .sizeBytes = GfxHelperDescriptorBuffer::GetMemoryRequirement(gFwd.pLightLayout,
+                                                                             (uint32)RDescriptorSetIndex::Samplers,
+                                                                             CountOf(R_SAMPLER_DESCS)),
+                .usageFlags = GfxBufferUsageFlags::TransferDst | GfxBufferUsageFlags::SamplerDescriptorBuffer | GfxBufferUsageFlags::ShaderDeviceAddress,
+                .arena = GfxMemoryArena::PersistentAddressGPU
+            };
+            gFwd.dbImmutableSamplers = GfxBackend::CreateBuffer(dbDesc);
+    #endif
         }
 
         //--------------------------------------------------------------------------------------------------------------
@@ -647,6 +749,7 @@ namespace R
             };
 
             GfxPipelineLayoutDesc layoutDesc { 
+                .type = GfxPipelineLayoutType::PushDescriptor,
                 .numBindings = CountOf(bindings),
                 .bindings = bindings,
                 .numPushConstants = CountOf(pushConstants),
@@ -698,6 +801,7 @@ namespace R
             };
 
             GfxPipelineLayoutDesc layoutDesc { 
+                .type = GfxPipelineLayoutType::PushDescriptor,
                 .numBindings = CountOf(bindings),
                 .bindings = bindings,
                 .numPushConstants = CountOf(pushConstants),
@@ -771,34 +875,37 @@ bool R::Initialize()
     {
         GfxBufferDesc bufferDesc = {
             .sizeBytes = sizeof(RLightBounds)*R_LIGHT_CULL_MAX_LIGHTS_PER_FRAME,
-            .usageFlags = GfxBufferUsageFlags::TransferDst | GfxBufferUsageFlags::Storage,
+            .usageFlags = GfxBufferUsageFlags::TransferDst | GfxBufferUsageFlags::Storage | GfxBufferUsageFlags::ShaderDeviceAddress,
+            .arena = GfxMemoryArena::PersistentAddressGPU,
             .perFrameUpdates = true
         };
         gFwd.bLightBounds = GfxBackend::CreateBuffer(bufferDesc);
 
         bufferDesc = {
             .sizeBytes = sizeof(RLightProps)*R_LIGHT_CULL_MAX_LIGHTS_PER_FRAME,
-            .usageFlags = GfxBufferUsageFlags::TransferDst | GfxBufferUsageFlags::Storage,
+            .usageFlags = GfxBufferUsageFlags::TransferDst | GfxBufferUsageFlags::Storage | GfxBufferUsageFlags::ShaderDeviceAddress,
+            .arena = GfxMemoryArena::PersistentAddressGPU,
             .perFrameUpdates = true
         };
         gFwd.bLightProps = GfxBackend::CreateBuffer(bufferDesc);
     }
 
     //------------------------------------------------------------------------------------------------------------------
-    // Other graphics objects
-    {
-        GfxSamplerDesc samplerDesc {
-            .samplerFilter = GfxSamplerFilterMode::Linear,
-            .samplerWrap = GfxSamplerWrapMode::ClampToEdge,
-        };
-        gFwd.smpBilinearClamp = GfxBackend::CreateSampler(samplerDesc);
+    // Samplers 
+    for (uint32 i = 0; i < CountOf(R_SAMPLER_DESCS); i++)
+        gFwd.samplers[i] = GfxBackend::CreateSampler(R_SAMPLER_DESCS[i]);
 
-        samplerDesc = {
-            .samplerFilter = GfxSamplerFilterMode::Linear,
-            .samplerWrap = GfxSamplerWrapMode::ClampToEdge,
-            .compareOp = GfxCompareOp::LessOrEqual
+    {
+        uint32 bindings[uint32(RSamplerType::_Count)];
+        for (uint32 i = 0; i < uint32(RSamplerType::_Count); i++) 
+            bindings[i] = i;
+        GfxImmutableSamplersDesc desc {
+            .descriptorSetIndex = uint32(RDescriptorSetIndex::Samplers),
+            .numSamplers = uint32(RSamplerType::_Count),
+            .samplerBindings = bindings,
+            .samplers = gFwd.samplers
         };
-        gFwd.smpShadowMapCmp = GfxBackend::CreateSampler(samplerDesc);
+        GfxBackend::SetupImmutableSamplers(desc);
     }
 
     //------------------------------------------------------------------------------------------------------------------
@@ -901,7 +1008,10 @@ void R::Release()
 
     GfxBackend::DestroyPipeline(gFwd.pLight);
     GfxBackend::DestroyPipelineLayout(gFwd.pLightLayout);
-    GfxBackend::DestroyBuffer(gFwd.ubLight);
+    GfxBackend::DestroyBuffer(gFwd.ubLightPerFrameData);
+    GfxBackend::DestroyBuffer(gFwd.ubLightPerObjectData);
+    GfxBackend::DestroyBuffer(gFwd.dbLightPerObjectResources);
+    GfxBackend::DestroyBuffer(gFwd.dbLightPerFrameResources);
 
     GfxBackend::DestroyPipeline(gFwd.pTextureDebugDepth);
     GfxBackend::DestroyPipelineLayout(gFwd.pTextureDebugDepthLayout);
@@ -913,8 +1023,11 @@ void R::Release()
     GfxBackend::DestroyBuffer(gFwd.bVisibleLightIndices);
     GfxBackend::DestroyBuffer(gFwd.bLightProps);
 
-    GfxBackend::DestroySampler(gFwd.smpBilinearClamp);
-    GfxBackend::DestroySampler(gFwd.smpShadowMapCmp);
+    for (uint32 i = 0; i < uint32(RSamplerType::_Count); i++)
+        GfxBackend::DestroySampler(gFwd.samplers[i]);    
+#if !CONFIG_GFX_IMMUTABLE_SAMPLERS
+    GfxBackend::DestroyBuffer(gFwd.dbImmutableSamplers);
+#endif
 
     GfxBackend::DestroyImage(gFwd.msaaColorRenderImage);
     GfxBackend::DestroyImage(gFwd.msaaDepthRenderImage);
@@ -955,8 +1068,8 @@ void R::FwdLight::Update(RView& view, GfxCommandBuffer& cmd)
 
     // Per-frame lighting data
     {
-        GfxHelperBufferUpdateScope updater(cmd, gFwd.ubLight, uint32(-1), GfxShaderStage::Fragment);
-        RLightShaderFrameData* frameData = (RLightShaderFrameData*)updater.mData;
+        GfxHelperBufferUpdateScope uniformBufferUpdater(cmd, gFwd.ubLightPerFrameData, uint32(-1), GfxShaderStage::Vertex);
+        RLightShaderFrameData* frameData = (RLightShaderFrameData*)uniformBufferUpdater.mData;
         frameData->worldToClipMat = worldToClipMat;
         frameData->worldToSunLightClipMat = viewData.sunLightWorldToClipMat;
         frameData->sunLightDir = viewData.sunLightDir;
@@ -964,8 +1077,77 @@ void R::FwdLight::Update(RView& view, GfxCommandBuffer& cmd)
         frameData->skyAmbientColor = viewData.skyAmbientColor;
         frameData->groundAmbientColor = viewData.groundAmbientColor;
         frameData->tilesCountX = tilesCountX;
-        frameData->tilesCountY = tilesCountY;
+
+        GfxHelperBufferUpdateScope descriptorBufferUpdater(cmd, gFwd.dbLightPerFrameResources, uint32(-1), GfxShaderStage::Vertex);
+        GfxHelperDescriptorBuffer descriptorBuffer(descriptorBufferUpdater.mData, gFwd.pLightLayout, (uint32)RDescriptorSetIndex::PerFrame);
+
+        GfxBindingDesc perFrameBindings[] = {
+            {
+                .name = "PerFrameData",
+                .buffer = gFwd.ubLightPerFrameData,
+            },
+            {
+                .name = "VisibleLightIndices",
+                .buffer = gFwd.bVisibleLightIndices,
+            },
+            {
+                .name = "LocalLights",
+                .buffer = gFwd.bLightProps
+            },
+            {
+                .name = "LocalLightBounds",
+                .buffer = gFwd.bLightBounds
+            },
+            {
+                .name = "ShadowMap",
+                .image = viewData.sunShadowMapImage
+            }
+        };
+
+        descriptorBuffer.WriteBindings(0, CountOf(perFrameBindings), perFrameBindings);
     }
+    cmd.TransitionBuffer(gFwd.dbLightPerFrameResources, GfxBufferTransition::DescriptorBufferRead);
+
+    // Per-Object lighting data
+    {
+        GfxHelperBufferUpdateScope uniformBufferUpdater(cmd, gFwd.ubLightPerObjectData, uint32(-1), GfxShaderStage::Vertex);
+        GfxHelperUniformBuffer uniformBuffer(uniformBufferUpdater.mData, sizeof(Mat4), R_MAX_DRAW_OBJECTS);
+
+        GfxHelperBufferUpdateScope descriptorBufferUpdater(cmd, gFwd.dbLightPerObjectResources, uint32(-1), GfxShaderStage::Vertex);
+        GfxHelperDescriptorBuffer descriptorBuffer(descriptorBufferUpdater.mData, gFwd.pLightLayout, (uint32)RDescriptorSetIndex::PerObject);
+
+        uint32 index = 0;
+        RGeometryChunk* chunk = viewData.chunkList;
+        while (chunk) {
+
+            for (uint32 sc = 0; sc < chunk->numSubChunks; sc++) {
+                RGeometrySubChunk& subChunk = chunk->subChunks[sc];
+                ASSERT_MSG(index < R_MAX_DRAW_OBJECTS, "Too many objects are being drawn. Increase R_MAX_DRAW_OBJECTS");
+                subChunk.perObjectDescriptorSetIndex = index;
+
+                GfxBindingDesc bindings[] = {
+                    {
+                        .name = "PerObjectData",
+                        .buffer = gFwd.ubLightPerObjectData,
+                        .bufferRange = {
+                            .offset = uniformBuffer.Write<Mat4>(index, chunk->localToWorldMat),
+                            .size = sizeof(Mat4)
+                        }
+                    },
+                    {
+                        .name = "BaseColorTexture",
+                        .image = subChunk.baseColorImg
+                    }
+                };
+
+                descriptorBuffer.WriteBindings(index, CountOf(bindings), bindings);     
+                ++index;
+            }
+
+            chunk = chunk->nextChunk;
+        }
+    }
+    cmd.TransitionBuffer(gFwd.dbLightPerObjectResources, GfxBufferTransition::DescriptorBufferRead);
 
     if (viewData.numLights) {
         GfxHelperBufferUpdateScope lightBoundsUpdater(cmd, gFwd.bLightBounds, sizeof(RLightBounds)*viewData.numLights,
@@ -985,6 +1167,29 @@ void R::FwdLight::Update(RView& view, GfxCommandBuffer& cmd)
         for (uint32 i = 0; i < numTiles; i++)
             indices[i*R_LIGHT_CULL_MAX_LIGHTS_PER_TILE] = 0xffffffff;
     }
+
+#if !CONFIG_GFX_IMMUTABLE_SAMPLERS
+    if (!gFwd.immutableSamplersUpdated) {
+        GfxHelperBufferUpdateScope samplersBufferUpdater(cmd, gFwd.dbImmutableSamplers, uint32(-1), GfxShaderStage::Vertex);
+        GfxHelperDescriptorBuffer samplersDescriptorBuffer(samplersBufferUpdater.mData, gFwd.pLightLayout, (uint32)RDescriptorSetIndex::Samplers);
+        GfxBindingDesc bindings[uint32(RSamplerType::_Count)] = {
+            {
+                .name = R_SAMPLER_NAMES[0],
+                .sampler = gFwd.samplers[0],
+            },
+            {
+                .name = R_SAMPLER_NAMES[1],
+                .sampler = gFwd.samplers[1],
+            },
+            {
+                .name = R_SAMPLER_NAMES[2],
+                .sampler = gFwd.samplers[2],
+            }
+        };
+        samplersDescriptorBuffer.WriteBindings(0, CountOf(bindings), bindings);
+        gFwd.immutableSamplersUpdated = true;
+    }
+#endif
 }
 
 void R::FwdLight::Render(RView& view, GfxCommandBuffer& cmd, GfxImageHandle finalColorImage, GfxImageHandle finalDepthImage, 
@@ -1090,9 +1295,25 @@ void R::FwdLight::Render(RView& view, GfxCommandBuffer& cmd, GfxImageHandle fina
                 chunk = chunk->nextChunk;
             }
         }
+        cmd.EndRenderPass();
 
         // Z-Prepass (Alpha Masked): The chunks and their subchunks that has AlphaMask has already been gathered in the previous step
         if (!alphaMaskedRefs.IsEmpty()) {
+            GfxBackendRenderPass zprepassExtra {
+                .numAttachments = 1,
+                .colorAttachments = {{
+                    .image = gFwd.msaaColorRenderImage,
+                    .ignoreStore = true
+                }},
+                .depthAttachment = {
+                    .image = renderDepthImage,
+                    .load = true
+                },
+                .hasDepth = true
+            };
+
+            cmd.BeginRenderPass(zprepassExtra);
+
             cmd.BindPipeline(gFwd.pZPrepassAlphaMask);
             cmd.HelperSetFullscreenViewportAndScissor();
 
@@ -1120,15 +1341,17 @@ void R::FwdLight::Render(RView& view, GfxCommandBuffer& cmd, GfxImageHandle fina
                     },
                     {
                         .name = "ColorTexture",
-                        .image = subChunk.baseColorImg
+                        .image = subChunk.baseColorImg,
+                        .sampler = gFwd.samplers[uint32(RSamplerType::TrilinearWrap)]
                     }
                 };
                 cmd.PushBindings(gFwd.pZPrepassLayoutAlphaMask, CountOf(bindings), bindings);
                 cmd.DrawIndexed(subChunk.numIndices, 1, subChunk.startIndex, 0, 0);
             }
+
+            cmd.EndRenderPass();
         }
 
-        cmd.EndRenderPass();
     }   // ZPrepass 
 
     // Light culling
@@ -1202,15 +1425,27 @@ void R::FwdLight::Render(RView& view, GfxCommandBuffer& cmd, GfxImageHandle fina
         };
 
         cmd.BeginRenderPass(pass);
-        cmd.BindPipeline(gFwd.pLight);
-        
+        cmd.BindPipeline(gFwd.pLight);        
         cmd.HelperSetFullscreenViewportAndScissor();
+
+        GfxBufferHandle descriptorBuffers[] = {
+            gFwd.dbLightPerFrameResources,
+            gFwd.dbLightPerObjectResources,
+#if !CONFIG_GFX_IMMUTABLE_SAMPLERS
+            gFwd.dbImmutableSamplers
+#endif
+        };
+
+        cmd.BindDescriptorBuffers(CountOf(descriptorBuffers), descriptorBuffers);
+        cmd.SetDescriptorBufferOffset(gFwd.pLightLayout, (uint32)RDescriptorSetIndex::PerFrame, 0);
+#if !CONFIG_GFX_IMMUTABLE_SAMPLERS
+        cmd.SetDescriptorBufferOffset(gFwd.pLightLayout, (uint32)RDescriptorSetIndex::Samplers, 0);
+#endif
+        cmd.EnableAlphaToCoverage(false);
 
         bool alphaToCoverageEnabled = false;
         RGeometryChunk* chunk = viewData.chunkList;
         while (chunk) {
-            cmd.PushConstants<Mat4>(gFwd.pLightLayout, "PerObjectData", chunk->localToWorldMat);
-
             const GfxBufferHandle vertexBuffers[] = {
                 chunk->posVertexBuffer,
                 chunk->lightingVertexBuffer
@@ -1226,43 +1461,13 @@ void R::FwdLight::Render(RView& view, GfxCommandBuffer& cmd, GfxImageHandle fina
 
             for (uint32 sc = 0; sc < chunk->numSubChunks; sc++) {
                 const RGeometrySubChunk& subChunk = chunk->subChunks[sc];
-                GfxBindingDesc bindings[] = {
-                    {
-                        .name = "PerFrameData",
-                        .buffer = gFwd.ubLight
-                    },
-                    {
-                        .name = "BaseColorTexture",
-                        .image = subChunk.baseColorImg.IsValid() ? subChunk.baseColorImg : Image::GetWhite1x1()
-                    },
-                    {
-                        .name = "VisibleLightIndices",
-                        .buffer = gFwd.bVisibleLightIndices
-                    },
-                    {
-                        .name = "LocalLights",
-                        .buffer = gFwd.bLightProps
-                    },
-                    {
-                        .name = "LocalLightBounds",
-                        .buffer = gFwd.bLightBounds
-                    },
-                    {
-                        .name = "ShadowMap",
-                        .image = viewData.sunShadowMapImage
-                    },
-                    {
-                        .name = "ShadowSampler",
-                        .sampler = gFwd.smpShadowMapCmp
-                    }
-                };
-                cmd.PushBindings(gFwd.pLightLayout, CountOf(bindings), bindings);
 
                 if (subChunk.hasAlphaMask != alphaToCoverageEnabled) {
                     cmd.EnableAlphaToCoverage(subChunk.hasAlphaMask);
                     alphaToCoverageEnabled = subChunk.hasAlphaMask;
                 }
 
+                cmd.SetDescriptorBufferOffset(gFwd.pLightLayout, (uint32)RDescriptorSetIndex::PerObject, subChunk.perObjectDescriptorSetIndex);
                 cmd.DrawIndexed(subChunk.numIndices, 1, subChunk.startIndex, 0, 0);
             }
 
@@ -1343,7 +1548,7 @@ void R::FwdLight::Render(RView& view, GfxCommandBuffer& cmd, GfxImageHandle fina
             },
             {
                 .name = "TextureSampler",
-                .sampler = gFwd.smpBilinearClamp
+                .sampler = gFwd.samplers[uint32(RSamplerType::BilinearClamp)]
             }
         };
 

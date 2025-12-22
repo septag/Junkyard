@@ -6,6 +6,8 @@
 #define MAX_LIGHTS_PER_TILE 4
 #endif
 
+#include "Samplers.h.hlsl"
+
 struct VsInput
 {
     float3 position : POSITION;
@@ -21,53 +23,56 @@ struct PsInput
     float3 normalWS : TEXCOORD2;
 };
 
-cbuffer PerFrameData
-{
-    float4x4 WorldToClipMat : packoffset(c0);
-    float4x4 WorldToSunLightClipMat : packoffset(c4);
-    float3 SunLightDir : packoffset(c8);
-    float4 SunLightColorIntensity : packoffset(c9);
-    float4 SkyAmbientColor : packoffset(c10);
-    float4 GroundAmbientColor : packoffset(c11);
-    uint TilesCountX : packoffset(c12);
-};
-
-[[vk_push_constant]]
-cbuffer PerObjectData
-{
-    float4x4 LocalToWorldMat;
-};
-
-struct PointLightCull
+struct RLightBounds
 {
     float3 position;
     float radius;
 };
 
-struct LocalLight
+struct RLightProps
 {
     float4 color;
 };
 
+struct RLightShaderFrameData
+{
+    float4x4 worldToClipMat;
+    float4x4 worldToSunLightClipMat;
+    float3 sunLightDir;
+    float4 sunLightColorIntensity;
+    float4 skyAmbientColor;
+    float4 groundAmbientColor;
+    uint tilesCountX;
+};
 
+// PerFrame
+ConstantBuffer<RLightShaderFrameData> PerFrameData;
 StructuredBuffer<uint> VisibleLightIndices;
-StructuredBuffer<LocalLight> LocalLights;
-StructuredBuffer<PointLightCull> LocalLightBounds;
-
+StructuredBuffer<RLightProps> LocalLights;
+StructuredBuffer<RLightBounds> LocalLightBounds;
 Texture2D<float> ShadowMap;
-SamplerComparisonState ShadowSampler;
 
-Sampler2D BaseColorTexture;
+// PerObject
+[vk::binding(0, 1)]
+cbuffer PerObjectData
+{
+    float4x4 LocalToWorldMat;
+};
+
+[vk::binding(1, 1)]
+Texture2D BaseColorTexture;
 
 [shader("vertex")]
-PsInput VsMain(VsInput i)
+PsInput VsMain(VsInput v)
 {
     PsInput o;
-    float4 posWS = mul(LocalToWorldMat, float4(i.position, 1.0f));
-    o.position = mul(WorldToClipMat, posWS);
-    o.uv = i.uv;
+    float4 posWS = mul(LocalToWorldMat, float4(v.position, 1.0f));
+    o.position = mul(PerFrameData.worldToClipMat, posWS);
+    
+    o.uv = v.uv;
     o.posWS = posWS.xyz;
-    o.normalWS = mul((float3x3)LocalToWorldMat, i.normal);
+    o.normalWS = v.normal;
+    o.normalWS = mul((float3x3)LocalToWorldMat, v.normal);
 
     return o;
 }
@@ -77,9 +82,9 @@ float4 PsMain(PsInput i) : SV_Target
 {
     uint2 loc = uint2(i.position.xy);
     uint2 tileId = loc / uint2(TILE_SIZE, TILE_SIZE);
-    uint index = tileId.y * TilesCountX + tileId.x;
+    uint index = tileId.y * PerFrameData.tilesCountX + tileId.x;
 
-    float4 albedoColor = BaseColorTexture.Sample(i.uv);
+    float4 albedoColor = BaseColorTexture.Sample(SamplerTrilinear, i.uv);
     float3 N = normalize(i.normalWS);
     float3 finalDiffuse = float3(0, 0, 0);
     float3 finalAmbient = float3(0, 0, 0);
@@ -87,23 +92,21 @@ float4 PsMain(PsInput i) : SV_Target
     // Sun light
     {
         // Shadow
-        float4 shadowPos = mul(WorldToSunLightClipMat, float4(i.posWS, 1));
-        shadowPos.xyz /= shadowPos.w;
-        float2 shadowUv = shadowPos.xy * 0.5f + 0.5f;
-        // float shadowDepth = shadowPos.z * 0.5f + 0.5f;
-        float shadowDepth = shadowPos.z;
-        // shadowUv.y = 1 - shadowUv.y;
-        float shadowTerm = ShadowMap.SampleCmpLevelZero(ShadowSampler, shadowUv, shadowDepth);
+        float4 posLS = mul(PerFrameData.worldToSunLightClipMat, float4(i.posWS, 1));
+        posLS.xyz /= posLS.w;
+        float2 shadowUv = posLS.xy * 0.5f + 0.5f;   // From clip-space to uv-space
+        float shadowTerm = ShadowMap.SampleCmpLevelZero(SamplerBilinearLess, shadowUv, posLS.z);
 
         // Light
-        float3 L = -SunLightDir;
+        float3 L = -PerFrameData.sunLightDir;
         float nDotL = max(0, dot(L, N));
-        float3 diffuse = SunLightColorIntensity.xyz * SunLightColorIntensity.w * nDotL;
+        float3 diffuse = PerFrameData.sunLightColorIntensity.xyz * PerFrameData.sunLightColorIntensity.w * nDotL;
 
         // Simple hemisphere ambient term (blend sky/ground color based on the normal angle)
         float nDotUp = dot(N, float3(0, 0, 1));
         float a = 0.5 + 0.5 * nDotUp;
-        float3 ambient = lerp(GroundAmbientColor.xyz * GroundAmbientColor.w, SkyAmbientColor.xyz * SkyAmbientColor.w, a);
+        float3 ambient = lerp(PerFrameData.groundAmbientColor.xyz * PerFrameData.groundAmbientColor.w,
+                              PerFrameData.skyAmbientColor.xyz * PerFrameData.skyAmbientColor.w, a);
 
         finalDiffuse += diffuse * shadowTerm;
         finalAmbient += ambient;

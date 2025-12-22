@@ -324,7 +324,7 @@ private:
         bool   relativePtr;
     };
 
-    Field  mFields[_MaxFields];
+    Field  mFields[_MaxFields+1];
     size_t mSize;
     uint32 mNumFields;
 };
@@ -353,7 +353,7 @@ template <typename _FieldType> inline MemSingleShotMalloc<_T, _MaxFields>&
     MemSingleShotMalloc<_T, _MaxFields>::AddMemberArray(uint32 offsetInStruct, size_t arrayCount, bool relativePtr, uint32 align)
 {
     uint32 index = mNumFields;
-    ASSERT_MSG(index < _MaxFields, "Cannot add more fields, increase the _MaxFields");
+    ASSERT_MSG(index < (_MaxFields + 1), "Cannot add more fields, increase the _MaxFields");
     
     align = Max(CONFIG_MACHINE_ALIGNMENT, align);
     size_t size = sizeof(_FieldType) * arrayCount;
@@ -382,7 +382,7 @@ inline MemSingleShotMalloc<_T, _MaxFields>&
                                                                   size_t arrayCount, bool relativePtr, uint32 align)
 {
     uint32 index = mNumFields;
-    ASSERT_MSG(index < _MaxFields, "Cannot add more fields, increase the _MaxFields");
+    ASSERT_MSG(index < (_MaxFields+1), "Cannot add more fields, increase the _MaxFields");
     
     align = Max(CONFIG_MACHINE_ALIGNMENT, align);
     size_t size = childSingleShot.GetMemoryRequirement() * arrayCount;
@@ -414,7 +414,7 @@ template <typename _FieldType> inline MemSingleShotMalloc<_T, _MaxFields>&
     ASSERT(pPtr);
 
     uint32 index = mNumFields;
-    ASSERT_MSG(index < _MaxFields, "Cannot add more fields, increase the _MaxFields");
+    ASSERT_MSG(index < (_MaxFields+1), "Cannot add more fields, increase the _MaxFields");
     
     align = Max(CONFIG_MACHINE_ALIGNMENT, align);
     size_t size = sizeof(_FieldType) * arrayCount;

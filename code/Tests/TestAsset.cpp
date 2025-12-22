@@ -558,6 +558,7 @@ struct AppImpl : AppCallbacks
         };
 
         GfxPipelineLayoutDesc pipelineLayoutDesc {
+            .type = GfxPipelineLayoutType::PushDescriptor,
             .numBindings = CountOf(bindingLayout),
             .bindings = bindingLayout,
             .numPushConstants = 1,

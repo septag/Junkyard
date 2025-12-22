@@ -12,8 +12,8 @@ SamplerState TextureSampler;
 [[vk_push_constant]]
 cbuffer PerFrameData
 {
-    float CameraNear : packoffset(c0);
-    float CameraFar : packoffset(c0.y);
+    float CameraNear;
+    float CameraFar;
 };
 
 // Single fullscreen triangle (No input vertex buffer needed)

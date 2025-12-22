@@ -163,6 +163,7 @@ bool Image::InitializeManager()
 
     AssetTypeDesc assetDesc {
         .fourcc = IMAGE_ASSET_TYPE,
+        .cacheVersion = ASSET_CACHE_IMAGE_VERSION,
         .name = "Image",
         .impl = &gImageMgr.imageImpl,
         .extraParamTypeName = "ImageLoadParams",

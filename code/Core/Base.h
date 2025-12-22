@@ -430,6 +430,13 @@
 
 #define HAS_INCLUDE(incl) __has_include(incl)
 
+// Padding
+#define STRUCT_PADDING_2_BYTES() uint8 CONCAT(_padding, __LINE__)[2]
+#define STRUCT_PADDING_4_BYTES() uint8 CONCAT(_padding, __LINE__)[4]
+#define STRUCT_PADDING_8_BYTES() uint8 CONCAT(_padding, __LINE__)[8]
+#define STRUCT_PADDING_12_BYTES() uint8 CONCAT(_padding, __LINE__)[12]
+#define STRUCT_PADDING_16_BYTES() uint8 CONCAT(_padding, __LINE__)[16]
+
 
 //    ██╗   ██╗████████╗██╗██╗     
 //    ██║   ██║╚══██╔══╝██║██║     

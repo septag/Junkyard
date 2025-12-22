@@ -124,7 +124,7 @@ struct alignas(CACHE_LINE_SIZE) AssetDataHeader
     const char* typeName;
     AssetParams* params;
     AssetDataInternal* data;
-    uint8 _reserved[16];
+    STRUCT_PADDING_16_BYTES();
 };
 
 enum AssetLoadTaskInputType

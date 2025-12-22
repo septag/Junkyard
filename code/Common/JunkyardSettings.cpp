@@ -146,6 +146,10 @@ bool SettingsJunkyardParser::ParseSetting(uint32 categoryId, const char* key, co
             graphics->validateSynchronization = Str::ToBool(value);
             return true;
         }
+        else if (Str::IsEqualNoCase(key, "validateGpuAssisted")) {
+            graphics->validateGpuAssisted = Str::ToBool(value);
+            return true;
+        }
         else if (Str::IsEqualNoCase(key, "shaderDumpIntermediates")) {
             graphics->shaderDumpIntermediates = Str::ToBool(value);
             return true;
@@ -180,6 +184,10 @@ bool SettingsJunkyardParser::ParseSetting(uint32 categoryId, const char* key, co
         }
         else if (Str::IsEqualNoCase(key, "msaa")) {
             graphics->msaa = Str::ToUint(value);
+            return true;
+        }
+        else if (Str::IsEqualNoCase(key, "enableGpuCrashDumps")) {
+            graphics->enableGpuCrashDumps = Str::ToBool(value);
             return true;
         }
     }

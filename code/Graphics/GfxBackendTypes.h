@@ -10,10 +10,32 @@
 
 #include "../Core/MathTypes.h"
 #include "../Core/StringUtil.h"
+#include "../Core/Hash.h"
 
 inline constexpr uint32 GFXBACKEND_MAX_RENDERPASS_COLOR_ATTACHMENTS = 8;
 inline constexpr uint32 GFXBACKEND_MAX_MIPS_PER_IMAGE = 12;  // up to 4096
 inline constexpr uint32 GFXBACKEND_MAX_SHADER_MUTATION_VARS = 4;
+
+// std140 vs std430 layout rules
+//
+// Type        | std140 align | std140 size/stride | std430 align | std430 size/stride
+// ------------+--------------+--------------------+--------------+-------------------
+// float       | 4            | 4                  | 4            | 4
+// float2      | 8            | 8                  | 8            | 8
+// float3      | 16           | 16                 | 12           | 12
+// float4      | 16           | 16                 | 16           | 16
+// matrix col  | 16           | 16                 | 16           | 16
+// struct      | max member   | rounded to align   | max member   | padded
+// array elem  | 16           | 16                 | elem align   | elem size
+//
+// Notes:
+// - std140 rounds vec3 to a full 16-byte slot (vec4-like behavior)
+// - std140 arrays always have 16-byte stride
+// - std430 only aligns to what is actually required
+// - Uniform buffers use std140
+// - Storage buffers use std430
+// It is recommended Use STRUCT_PADDING_ macros for uniform and storage buffers on the C++ side
+#define GFX_UNIFORM_BUFFER_ALIGNMENT alignas(16)
 
 enum class GfxFormat: uint32
 {
@@ -302,11 +324,12 @@ enum class GfxFormat: uint32
 
 enum class GfxMemoryArena : uint8 
 {
-    PersistentGPU = 0,  // Always Device_Local
-    PersistentCPU,      // Permanent staging resources
-    TransientCPU,       // Temp staging resources
-    DynamicImageGPU,    // Device_Local but dynamically allocated
-    DynamicBufferGPU    // Device_Local but dynamically allocated
+    PersistentGPU = 0,      // Always Device_Local
+    PersistentAddressGPU,   // Always Device_Local but with device address flag (descriptor buffers/etc)
+    PersistentCPU,          // Permanent staging resources
+    TransientCPU,           // Temp staging resources
+    DynamicImageGPU,        // Device_Local but dynamically allocated
+    DynamicBufferGPU        // Device_Local but dynamically allocated
 #if PLATFORM_APPLE || PLATFORM_ANDROID
     , TiledGPU          // Only on Tiled GPUs, transient virtual resources on Tile mem
 #endif
@@ -396,7 +419,10 @@ enum class GfxBufferUsageFlags : uint32
     Storage = 0x00000020,
     Index = 0x00000040,
     Vertex = 0x00000080,
-    Indirect = 0x00000100
+    Indirect = 0x00000100,
+    ShaderDeviceAddress = 0x00020000,
+    SamplerDescriptorBuffer = 0x00200000,
+    ResourceDescriptorBuffer = 0x00400000
 };
 ENABLE_BITMASK(GfxBufferUsageFlags);
 
@@ -407,7 +433,7 @@ struct GfxBufferDesc
     uint64 sizeBytes;
     GfxBufferUsageFlags usageFlags;
     GfxMemoryArena arena = GfxMemoryArena::PersistentGPU;
-    bool perFrameUpdates = false;   // Hint that we update the buffer per-frame
+    bool perFrameUpdates = false;   // Hint that we update the buffer per-frame (Internal RingBuffers)
 };
 
 enum class GfxBufferTransition
@@ -415,7 +441,8 @@ enum class GfxBufferTransition
     TransferWrite,
     ComputeRead,
     ComputeWrite,
-    FragmentRead
+    FragmentRead,
+    DescriptorBufferRead
 };
 
 struct GfxCopyBufferToBufferParams
@@ -584,6 +611,15 @@ struct GfxSamplerDesc
     float anisotropy = 1.0f;
     float mipLODBias = 0;
     GfxCompareOp compareOp = GfxCompareOp::Always;
+};
+
+struct GfxImmutableSamplersDesc
+{
+    uint32 descriptorSetIndex;  // For validation
+
+    uint32 numSamplers;
+    const uint32* samplerBindings;
+    const GfxSamplerHandle* samplers;
 };
 
 
@@ -899,6 +935,12 @@ enum class GfxDescriptorType : uint32
     MutableValve              = 1000351000,
 };
 
+enum class GfxPipelineLayoutType : uint32
+{
+    PushDescriptor = 0,
+    DescriptorBuffer
+};
+
 struct GfxPipelineLayoutDesc
 {
     struct Binding 
@@ -920,11 +962,12 @@ struct GfxPipelineLayoutDesc
         uint32 size;
     };
     
+    GfxPipelineLayoutType type;
     uint32 numBindings;
     const Binding* bindings;
     uint32 numPushConstants;
     const PushConstant* pushConstants;
-    bool usePushDescriptors = true;    
+    bool useImmutableSamplers;
 };
 
 // VkVertexInputRate
@@ -996,26 +1039,27 @@ struct GfxGraphicsPipelineDesc
     GfxFormat stencilAttachmentFormat;
 };
 
+
+// TODO: As an optimization trick we can use macros and whatnot to pass uint32 hash values instead of the name
+//       so with constexpr hash function, we can evaluate the hash values at compile-time
 struct GfxBindingDesc
 {   
-    const char* name;
-
-    union {
-        struct {
-            uint32 offset = 0;
-            uint32 size = 0;
-        } bufferRange;
+    struct BufferRange {
+        uint32 offset;
+        uint32 size;
     };
 
-    uint32 imageArrayCount = 1;
-
+    HashStringLiteral name;
     union
     {
         GfxBufferHandle buffer;
         GfxImageHandle image;
-        GfxSamplerHandle sampler;
         const GfxImageHandle* imageArray;
     };
+
+    BufferRange bufferRange;
+    uint32 imageArrayCount = 1;
+    GfxSamplerHandle sampler;
 };
 
 struct GfxDynamicState
@@ -1064,6 +1108,7 @@ struct GfxRenderPassAttachment
     bool load;
     bool clear;
     bool resolveToSwapchain;
+    bool ignoreStore;
 
     struct {
         Float4 color;

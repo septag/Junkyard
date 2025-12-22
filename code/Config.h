@@ -15,3 +15,7 @@
     #define CONFIG_DEBUG_GFXBACKEND 0
 #endif
 
+// Graphics
+#ifndef CONFIG_GFX_IMMUTABLE_SAMPLERS
+    #define CONFIG_GFX_IMMUTABLE_SAMPLERS 0
+#endif

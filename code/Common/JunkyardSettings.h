@@ -29,6 +29,7 @@ struct SettingsGraphics
     bool listExtensions = false;    // Show device extensions upon initialization
     bool validateBestPractices = false;   // see VK_EXT_validation_features
     bool validateSynchronization = true;   // see VK_EXT_validation_features
+    bool validateGpuAssisted = false;       // Validate GPU assisted APIs that cannot be immediately validated with CPU on submission
     bool shaderDumpIntermediates = false;   // Dumps all shader intermediates (glsl/spv/asm) in the current working dir
     bool shaderDumpProperties = false;      // Dumps all internal shader properties, if device supports VK_KHR_pipeline_executable_properties
     bool shaderDebug = false;               // Adds debugging information to all shaders
@@ -37,6 +38,7 @@ struct SettingsGraphics
     bool enableVsync = true;                // Enables Vsync. Some hardware doesn't support this feature
     bool trackResourceLeaks = false;        // Store buffers/image/etc. resource stacktraces and shows leakage information at exit
     bool preferIntegratedGpu = false;       // By default, Backend prefers discrete GPUs but this setting defaults preference to integrated
+    bool enableGpuCrashDumps = false;       // Enables gpu crash dumps. currently, only works for nvidia through nvidia aftermath SDK
     uint32 gpuIndex = uint32(-1);           // By default, graphics backend prefers the discrete GPUs
     uint32 msaa = 4;                        // Use MSAA (multisampling) for renderers
 

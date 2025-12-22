@@ -75,9 +75,9 @@ PRAGMA_DIAGNOSTIC_POP()
 static constexpr uint32 GFXBACKEND_MAX_GARBAGE_COLLECT_PER_FRAME = 32;
 static constexpr uint32 GFXBACKEND_BACKBUFFER_COUNT = 3;
 static constexpr uint32 GFXBACKEND_FRAMES_IN_FLIGHT = 2;
-static constexpr uint32 GFXBACKEND_MAX_SETS_PER_PIPELINE = 4;
 static constexpr uint32 GFXBACKEND_MAX_ENTRIES_IN_OFFSET_ALLOCATOR = 64*1024;
 static constexpr uint32 GFXBACKEND_MAX_QUEUES = 4;
+static constexpr uint32 GFXBACKEND_MAX_SETS_PER_PIPELINE = 4;
 #ifdef TRACY_ENABLE
 static constexpr uint32 GFXBACKEND_PROFILE_CONTEXT_QUERY_COUNT = 64*1024;
 #endif
@@ -383,6 +383,7 @@ struct GfxBackendVkExtensions
     bool hasMemoryBudget;
     bool hasAstcDecodeMode;
     bool hasPipelineExecutableProperties;
+    bool hasNvidiaAftermath;
 };
 
 struct GfxBackendGpu
@@ -396,6 +397,7 @@ struct GfxBackendGpu
     VkPhysicalDeviceVulkan11Features features2;
     VkPhysicalDeviceVulkan12Features features3;
     VkPhysicalDeviceVulkan13Features features4;
+    VkPhysicalDeviceDescriptorBufferPropertiesEXT descriptorBufferProps;
     VkExtensionProperties* extensions;
     uint32 numExtensions;
 };
@@ -421,7 +423,13 @@ static_assert(sizeof(GfxBackendDeviceMemory) <= 32);
 
 struct GfxBackendMemoryBumpAllocator
 {
-    bool Initialize(VkDeviceSize blockSize, uint32 memoryTypeIndex);
+    enum class AllocationFlags
+    {
+        None = 0,
+        DeviceAddress
+    };
+
+    bool Initialize(VkDeviceSize blockSize, uint32 memoryTypeIndex, AllocationFlags allocFlags = AllocationFlags::None);
     void Release();
     GfxBackendDeviceMemory Malloc(const VkMemoryRequirements& memReq);
     void Reset();
@@ -443,6 +451,7 @@ struct GfxBackendMemoryBumpAllocator
     VkMemoryPropertyFlags mTypeFlags;
     VkMemoryHeapFlags mHeapFlags;
     Array<Block> mBlocks;
+    bool mDeviceAddress;
 };
 
 struct GfxBackendMemoryOffsetAllocator
@@ -498,6 +507,7 @@ private:
     VkPhysicalDeviceMemoryBudgetPropertiesEXT mBudget;   // only valid with
     
     GfxBackendMemoryBumpAllocator mPersistentGPU;
+    GfxBackendMemoryBumpAllocator mPersistentAddressGPU;
     GfxBackendMemoryBumpAllocator mPersistentCPU;
     GfxBackendMemoryBumpAllocator mTransientCPU[GFXBACKEND_FRAMES_IN_FLIGHT];
     GfxBackendMemoryOffsetAllocator mDynamicImageGPU;
@@ -555,6 +565,7 @@ struct GfxBackendBuffer
     GfxBufferDesc desc;
     GfxBackendDeviceMemory mem;
     size_t allocatedSize;
+    VkDeviceAddress deviceAddress;      // For DEVICE_LOCAL buffers only (VK_KHR_buffer_device_address)
     VkPipelineStageFlags2 transitionedStage;
     VkAccessFlagBits2 transitionedAccess;
     uint32 offsetAlignment;
@@ -566,10 +577,12 @@ struct GfxBackendPipelineLayout
     {
         String32 name;
         uint32 arrayCount;     // For descriptor_indexing
-        uint8 setIndex;       
+        uint32 offset;         // For descriptor_buffer 
+        uint8 setIndex;
     };
 
     VkPipelineLayout handle;
+    GfxPipelineLayoutType type;
     uint32 hash;
     uint32 numBindings;
     uint32 refCount;
@@ -577,6 +590,7 @@ struct GfxBackendPipelineLayout
     uint32 numSets;
     Binding* bindings; // count = numBindings
     VkDescriptorSetLayoutBinding* bindingsVk;   // count = numBindings. bindings[].setIndex shows where this binding belongs to
+    uint32* setSizes;   // count = numSets
     VkDescriptorSetLayout* sets;    // count = numSets
     VkPushConstantRange* pushConstantRanges; // count = numPushConstants
     uint32* bindingNameHashes;  // count = numBindings
@@ -670,9 +684,13 @@ struct GfxBackendVk
 
     AtomicUint32 tempSubmittedEverything;
 
-    VkSampler samplerDefault;
     VkPipelineCache pipelineCache;
     HashTable<GfxBackendShaderToPipelineMapEntry> shaderToPipelineTable;
+
+#if CONFIG_GFX_IMMUTABLE_SAMPLERS
+    uint32 immutableSamplersDescriptorSetIndex;
+    VkDescriptorSetLayout immutableSamplersLayout;
+#endif
 
     float prevFrameGpuTime;     // This is the one before the last frame. (frameIdx - FRAMES_IN_FLIGHT)
 };
@@ -732,6 +750,16 @@ namespace GfxBackend
             fmt == GfxFormat::D16_UNORM_S8_UINT ||
             fmt == GfxFormat::D32_SFLOAT_S8_UINT ||
             fmt == GfxFormat::S8_UINT;
+    }
+
+    INLINE uint32 _FindBindingIndexByHash(const GfxBackendPipelineLayout* layout, uint32 nameHash)
+    {
+        for (uint32 k = 0; k < layout->numBindings; k++) {
+            if (layout->bindingNameHashes[k] == nameHash)
+                return k;
+        }
+
+        return uint32(-1);
     }
 
     // Returns the proper vulkan stage based the destination queue type and the stage that buffer should be transitioned to
@@ -1059,6 +1087,16 @@ namespace GfxBackend
             }
         }
 
+        if (settings.graphics.enableGpuCrashDumps) {
+            if (HasLayer("VK_LAYER_LUNARG_crash_diagnostic")) {
+                enabledLayers.Push("VK_LAYER_LUNARG_crash_diagnostic");
+            }
+            else {
+                LOG_ERROR("Gfx: Vulkan backend doesn't have diagnostic layer support. Turn it off in the settings.");
+                return false;
+            }
+        }
+
         VkApplicationInfo appInfo {
             .sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
             .pApplicationName = settings.app.appName,
@@ -1149,6 +1187,8 @@ namespace GfxBackend
                     validationFeatureFlags.Push(VK_VALIDATION_FEATURE_ENABLE_BEST_PRACTICES_EXT);
                 if (settings.graphics.validateSynchronization) 
                     validationFeatureFlags.Push(VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT);
+                if (settings.graphics.validateGpuAssisted)
+                    validationFeatureFlags.Push(VK_VALIDATION_FEATURE_ENABLE_GPU_ASSISTED_EXT);
                 validationFeatures = {
                     .sType = VK_STRUCTURE_TYPE_VALIDATION_FEATURES_EXT,
                     .pNext = nullptr,
@@ -1334,7 +1374,12 @@ namespace GfxBackend
         };
 
         gpu.props4 = {
-            .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_PROPERTIES
+            .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_PROPERTIES,
+            .pNext = &gpu.descriptorBufferProps
+        };
+
+        gpu.descriptorBufferProps = {
+            .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_BUFFER_PROPERTIES_EXT
         };
 
         vkGetPhysicalDeviceProperties2(gpu.handle, &props);
@@ -1425,6 +1470,12 @@ namespace GfxBackend
         }
         enabledFeatures.Push("DescriptorIndexing (VK_EXT_descriptor_indexing)");
 
+        if (!gpu.features3.bufferDeviceAddress) {
+            LOG_ERROR("Gfx: descriptorBuffers feature is required (VK_EXT_descriptor_buffer)");
+            return false;
+        }
+        enabledFeatures.Push("DescriptorBuffers (VK_EXT_descriptor_buffer)");
+
         if (!gpu.features3.uniformBufferStandardLayout) {
             LOG_ERROR("Gfx: Standard uniform buffer layout feature is required (VK_KHR_uniform_buffer_standard_layout)");
             return false;
@@ -1446,6 +1497,12 @@ namespace GfxBackend
         if (!CheckAddExtension("VK_EXT_extended_dynamic_state3", true))
             return false;
 
+        if (!CheckAddExtension("VK_EXT_descriptor_buffer", true))
+            return false;
+
+        if (!CheckAddExtension("VK_KHR_buffer_device_address", true))
+            return false;
+
         if constexpr (PLATFORM_APPLE) {
             if (!CheckAddExtension("VK_KHR_portability_subset", true))
                 return false;
@@ -1463,6 +1520,10 @@ namespace GfxBackend
         if constexpr (PLATFORM_MOBILE)
             gBackendVk.extApi.hasAstcDecodeMode = CheckAddExtension("VK_EXT_astc_decode_mode");
         gBackendVk.extApi.hasPipelineExecutableProperties = settings.graphics.shaderDumpProperties ? CheckAddExtension("VK_KHR_pipeline_executable_properties") : false;
+        if (settings.graphics.enableGpuCrashDumps) {
+            gBackendVk.extApi.hasNvidiaAftermath = CheckAddExtension("VK_NV_device_diagnostic_checkpoints") && 
+                CheckAddExtension("VK_NV_device_diagnostics_config");
+        }
 
         if (enabledExtensions.Count()) {
             LOG_VERBOSE("Enabled device extensions (%u):", enabledExtensions.Count());
@@ -1519,6 +1580,17 @@ namespace GfxBackend
         *deviceNext = &features;
         deviceNext = &gpu.features4.pNext;
 
+        // VK_EXT_descriptor_buffer feature 
+        VkPhysicalDeviceDescriptorBufferFeaturesEXT descBuffFeatures {
+            .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_BUFFER_FEATURES_EXT,
+            .descriptorBuffer = VK_TRUE,
+            .descriptorBufferCaptureReplay = VK_TRUE,
+            .descriptorBufferPushDescriptors = VK_TRUE
+        };
+
+        *deviceNext = &descBuffFeatures;
+        deviceNext = &descBuffFeatures.pNext;
+
         VkPhysicalDevicePipelineExecutablePropertiesFeaturesKHR enableExecProps {
             .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PIPELINE_EXECUTABLE_PROPERTIES_FEATURES_KHR,
             .pipelineExecutableInfo = VK_TRUE
@@ -1528,16 +1600,25 @@ namespace GfxBackend
             deviceNext = &enableExecProps.pNext;
         }
 
-        // Dyanmic state 3 features
-        {
-            VkPhysicalDeviceExtendedDynamicState3FeaturesEXT extDyn3Features {
-                .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_DYNAMIC_STATE_3_FEATURES_EXT,
-                .extendedDynamicState3AlphaToCoverageEnable = VK_TRUE
-            };
-            *deviceNext = &extDyn3Features;
-            deviceNext = &extDyn3Features.pNext;
+        VkDeviceDiagnosticsConfigCreateInfoNV deviceDiagNv {
+            .sType = VK_STRUCTURE_TYPE_DEVICE_DIAGNOSTICS_CONFIG_CREATE_INFO_NV,
+            .flags = VK_DEVICE_DIAGNOSTICS_CONFIG_ENABLE_SHADER_DEBUG_INFO_BIT_NV |
+                     VK_DEVICE_DIAGNOSTICS_CONFIG_ENABLE_RESOURCE_TRACKING_BIT_NV |
+                     VK_DEVICE_DIAGNOSTICS_CONFIG_ENABLE_AUTOMATIC_CHECKPOINTS_BIT_NV
+        };
+        if (gBackendVk.extApi.hasNvidiaAftermath) {
+            *deviceNext = &deviceDiagNv;
+            deviceNext = const_cast<void**>(&deviceDiagNv.pNext);
         }
 
+        // Dyanmic state 3 features
+        VkPhysicalDeviceExtendedDynamicState3FeaturesEXT extDyn3Features {
+            .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_DYNAMIC_STATE_3_FEATURES_EXT,
+            .extendedDynamicState3AlphaToCoverageEnable = VK_TRUE
+        };
+        *deviceNext = &extDyn3Features;
+        deviceNext = &extDyn3Features.pNext;
+        
         if (vkCreateDevice(gpu.handle, &devCreateInfo, gBackendVk.vkAlloc, &gBackendVk.device) != VK_SUCCESS) {
             LOG_ERROR("Gfx: CreateDevice failed");
             return false;
@@ -2034,7 +2115,7 @@ namespace GfxBackend
             .resolveImageView = resolveImageView,
             .resolveImageLayout = layout,
             .loadOp = loadOp,
-            .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+            .storeOp = attachment.ignoreStore ? VK_ATTACHMENT_STORE_OP_DONT_CARE : VK_ATTACHMENT_STORE_OP_STORE,
             .clearValue = clearValue,
         };
 
@@ -2195,33 +2276,6 @@ bool GfxBackend::Initialize()
 
     gBackendVk.shaderToPipelineTableMtx.Initialize();
     gBackendVk.shaderToPipelineTable.SetAllocator(&gBackendVk.runtimeAlloc);
-
-    // Make a trilinear sampler as default sampler
-    // TODO: Make a better sampler system
-    {
-        VkSamplerCreateInfo samplerInfo {
-            .sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
-            .magFilter = VK_FILTER_LINEAR,
-            .minFilter = VK_FILTER_LINEAR,
-            .mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR,
-            .addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT,
-            .addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT,
-            .addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT,
-            .mipLodBias = 0.0f,
-            .anisotropyEnable = VK_FALSE,
-            .maxAnisotropy = 1.0f,
-            .compareEnable = VK_FALSE,
-            .compareOp = VK_COMPARE_OP_ALWAYS,
-            .minLod = 0,
-            .maxLod = VK_LOD_CLAMP_NONE,
-            .borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK,
-            .unnormalizedCoordinates = VK_FALSE, 
-        };
-
-        if (vkCreateSampler(gBackendVk.device, &samplerInfo, gBackendVk.vkAlloc, &gBackendVk.samplerDefault) != VK_SUCCESS) {
-            LOG_ERROR("Gfx: CreateSampler failed");
-        }
-    }
 
     // Pipeline Cache
     // TODO: Serialize the cache
@@ -2500,14 +2554,16 @@ void GfxBackend::Release()
         vkDeviceWaitIdle(gBackendVk.device);
     gBackendVk.queueMan.Release();
 
-    if (gBackendVk.samplerDefault)
-        vkDestroySampler(gBackendVk.device, gBackendVk.samplerDefault, gBackendVk.vkAlloc);        
-
     _CollectGarbage(true);
 
     // TODO: Save the cache to disk
     if (gBackendVk.pipelineCache) 
         vkDestroyPipelineCache(gBackendVk.device, gBackendVk.pipelineCache, gBackendVk.vkAlloc);
+
+#if CONFIG_GFX_IMMUTABLE_SAMPLERS
+    if (gBackendVk.immutableSamplersLayout)
+        vkDestroyDescriptorSetLayout(gBackendVk.device, gBackendVk.immutableSamplersLayout, gBackendVk.vkAlloc);
+#endif
 
     gBackendVk.pipelineLayouts.Free();
     gBackendVk.images.Free();
@@ -2819,7 +2875,7 @@ void GfxBackend::EndCommandBuffer(GfxCommandBuffer& cmdBuffer)
     Atomic::FetchSub(&queue.numCmdBuffersInRecording, 1);
 }
 
-bool GfxBackendMemoryBumpAllocator::Initialize(VkDeviceSize blockSize, uint32 memoryTypeIndex)
+bool GfxBackendMemoryBumpAllocator::Initialize(VkDeviceSize blockSize, uint32 memoryTypeIndex, AllocationFlags allocFlags)
 {
     ASSERT(memoryTypeIndex != -1);
     ASSERT(gBackendVk.device);
@@ -2828,6 +2884,7 @@ bool GfxBackendMemoryBumpAllocator::Initialize(VkDeviceSize blockSize, uint32 me
     mMemTypeIndex = memoryTypeIndex;
     mBlockSize = blockSize;
     mBlocks.SetAllocator(&gBackendVk.runtimeAlloc);
+    mDeviceAddress = allocFlags == AllocationFlags::DeviceAddress;
 
     const VkMemoryType& memType = gBackendVk.memMan.GetProps().memoryTypes[memoryTypeIndex];
     mTypeFlags = memType.propertyFlags;
@@ -2856,8 +2913,14 @@ bool GfxBackendMemoryBumpAllocator::CreateBlock(Block* block)
                    "Not enough GPU memory available in the specified heap");
     }
 
+    VkMemoryAllocateFlagsInfo allocFlags {
+        .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_FLAGS_INFO,
+        .flags = VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT
+    };
+
     VkMemoryAllocateInfo allocInfo {
         .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+        .pNext = mDeviceAddress ? &allocFlags : nullptr,
         .allocationSize = mBlockSize,
         .memoryTypeIndex = mMemTypeIndex
     };
@@ -2895,6 +2958,8 @@ GfxBackendDeviceMemory GfxBackendMemoryBumpAllocator::Malloc(const VkMemoryRequi
 
     ASSERT(memReq.alignment);
 
+    // TODO: Refactor allocator so that it only allocates blocks on demand
+    //       And if we require a larger size than the block size, allocate extra but throw warning
     if (memReq.size > mBlockSize) {
         ASSERT_MSG(0, "GpuMemoryAllocator block size (%u MB) is smaller than requested size (%u MB)", mBlockSize/SIZE_MB, memReq.size/SIZE_MB);
         MEM_FAIL();
@@ -3164,6 +3229,7 @@ GfxPipelineLayoutHandle GfxBackend::CreatePipelineLayout(const GfxShader& shader
         // Create descriptor sets
         uint32 setBindingStartIndex = 0;
         uint32 setBindingCount = 0;
+
         uint8 setIndex = bindings[0].setIndex;
         for (uint32 i = 0; i < bindings.Count(); i++) {
             const GfxPipelineLayoutDesc::Binding& binding = bindings[i];
@@ -3192,14 +3258,14 @@ GfxPipelineLayoutHandle GfxBackend::CreatePipelineLayout(const GfxShader& shader
                 sets.Push({setBindingStartIndex, setBindingCount});
                 setBindingCount = 1;
                 setBindingStartIndex = i;
+                setIndex = binding.setIndex;
             }
             else {
                 ++setBindingCount;
             }
         }
         sets.Push({setBindingStartIndex, setBindingCount});
-    }    
-
+    }
 
     VkPushConstantRange* pushConstantsVk = nullptr;
     if (desc.numPushConstants)
@@ -3221,12 +3287,12 @@ GfxPipelineLayoutHandle GfxBackend::CreatePipelineLayout(const GfxShader& shader
                   totalPushConstantSize, gBackendVk.gpu.props.limits.maxPushConstantsSize);
 
     // HASH everything related to pipeline layout
-    // Search in existing descriptor set layouts and try to find a match. 
+    // Search in existing pipeline layouts and try to find a match. 
     HashMurmur32Incremental hasher;
-    hasher.Add<VkDescriptorSetLayoutBinding>(bindingsVk, bindings.Count())
+    hasher.Add<GfxPipelineLayoutType>(desc.type)
+          .Add<VkDescriptorSetLayoutBinding>(bindingsVk, bindings.Count())
           .AddCStringArray(names.Ptr(), bindings.Count() + desc.numPushConstants)
-          .Add<DescriptorSetRef>(sets.Ptr(), sets.Count())
-          .Add<bool>(desc.usePushDescriptors);
+          .Add<DescriptorSetRef>(sets.Ptr(), sets.Count());
     if (desc.numPushConstants)
         hasher.Add<VkPushConstantRange>(pushConstantsVk, desc.numPushConstants);
     uint32 hash = hasher.Hash();
@@ -3248,6 +3314,7 @@ GfxPipelineLayoutHandle GfxBackend::CreatePipelineLayout(const GfxShader& shader
     mallocator.AddMemberArray<GfxBackendPipelineLayout::Binding>(offsetof(GfxBackendPipelineLayout, bindings), bindings.Count());
     mallocator.AddMemberArray<uint32>(offsetof(GfxBackendPipelineLayout, bindingNameHashes), bindings.Count());
     mallocator.AddMemberArray<VkDescriptorSetLayoutBinding>(offsetof(GfxBackendPipelineLayout, bindingsVk), bindings.Count());
+    mallocator.AddMemberArray<uint32>(offsetof(GfxBackendPipelineLayout, setSizes), sets.Count());
     mallocator.AddMemberArray<VkDescriptorSetLayout>(offsetof(GfxBackendPipelineLayout, sets), sets.Count());
     if (desc.numPushConstants) {
         mallocator.AddMemberArray<VkPushConstantRange>(offsetof(GfxBackendPipelineLayout, pushConstantRanges), desc.numPushConstants);
@@ -3255,6 +3322,7 @@ GfxPipelineLayoutHandle GfxBackend::CreatePipelineLayout(const GfxShader& shader
     }
     GfxBackendPipelineLayout* layout = mallocator.Calloc(&gBackendVk.runtimeAlloc);
     
+    layout->type = desc.type;
     layout->hash = hash;
     layout->numBindings = bindings.Count();
     layout->refCount = 1;
@@ -3282,8 +3350,8 @@ GfxPipelineLayoutHandle GfxBackend::CreatePipelineLayout(const GfxShader& shader
     }
 
     // Create the descriptor set layouts 
-    for (uint32 i = 0; i < sets.Count(); i++) {
-        const DescriptorSetRef& set = sets[i];
+    for (uint32 setIdx = 0; setIdx < sets.Count(); setIdx++) {
+        const DescriptorSetRef& set = sets[setIdx];
         VkDescriptorSetLayoutBinding* setBindings = tempAlloc.MallocTyped<VkDescriptorSetLayoutBinding>(set.count);
         ASSERT(set.startIndex < bindings.Count());
         ASSERT(set.startIndex + set.count <= bindings.Count());
@@ -3291,10 +3359,18 @@ GfxPipelineLayoutHandle GfxBackend::CreatePipelineLayout(const GfxShader& shader
 
         VkDescriptorSetLayoutCreateInfo setCreateInfo {
             .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
-            .flags = desc.usePushDescriptors ? VK_DESCRIPTOR_SET_LAYOUT_CREATE_PUSH_DESCRIPTOR_BIT_KHR : 0u,
             .bindingCount = set.count,
             .pBindings = setBindings
         };
+
+        switch (desc.type) {
+        case GfxPipelineLayoutType::PushDescriptor:
+            setCreateInfo.flags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_PUSH_DESCRIPTOR_BIT;
+            break;
+        case GfxPipelineLayoutType::DescriptorBuffer:
+            setCreateInfo.flags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_DESCRIPTOR_BUFFER_BIT_EXT;
+            break;
+        }
 
         // VK_EXT_descriptor_indexing
         VkDescriptorSetLayoutBindingFlagsCreateInfoEXT layoutBindingFlags {
@@ -3303,23 +3379,55 @@ GfxPipelineLayoutHandle GfxBackend::CreatePipelineLayout(const GfxShader& shader
         };
 
         VkDescriptorBindingFlags* setBindingFlags = tempAlloc.MallocTyped<VkDescriptorBindingFlags>(set.count);
-        for (uint32 k = 0; k < set.count; k++)
-            setBindingFlags[k] = (setBindings[k].descriptorCount > 1) ? VK_DESCRIPTOR_BINDING_VARIABLE_DESCRIPTOR_COUNT_BIT: 0;
+        for (uint32 i = 0; i < set.count; i++)
+            setBindingFlags[i] = (setBindings[i].descriptorCount > 1) ? VK_DESCRIPTOR_BINDING_VARIABLE_DESCRIPTOR_COUNT_BIT: 0;
         layoutBindingFlags.pBindingFlags = setBindingFlags;
         setCreateInfo.pNext = &layoutBindingFlags;
 
-        if (vkCreateDescriptorSetLayout(gBackendVk.device, &setCreateInfo, gBackendVk.vkAlloc, &layout->sets[i]) != VK_SUCCESS) {
+        if (vkCreateDescriptorSetLayout(gBackendVk.device, &setCreateInfo, gBackendVk.vkAlloc, &layout->sets[setIdx]) != VK_SUCCESS) {
             MemSingleShotMalloc<GfxBackendPipelineLayout>::Free(layout, &gBackendVk.runtimeAlloc);      
             ASSERT(0);
             return GfxPipelineLayoutHandle();
         }
+
+        // Assign individual binding offsets and sizes for each set layout for descriptor buffers
+        if (desc.type == GfxPipelineLayoutType::DescriptorBuffer) {
+            VkDeviceSize sizeVk;
+            vkGetDescriptorSetLayoutSizeEXT(gBackendVk.device, layout->sets[setIdx], &sizeVk);
+            ASSERT(sizeVk <= UINT32_MAX);
+            layout->setSizes[setIdx] = uint32(sizeVk);
+
+            for (uint32 bindingIdx = 0; bindingIdx < bindings.Count(); bindingIdx++) {
+                GfxBackendPipelineLayout::Binding& dstBinding = layout->bindings[bindingIdx];
+                if (dstBinding.setIndex == setIdx) {
+                    VkDeviceSize offsetVk;
+                    vkGetDescriptorSetLayoutBindingOffsetEXT(gBackendVk.device, layout->sets[setIdx], 
+                                                             layout->bindingsVk[bindingIdx].binding, &offsetVk);
+                    ASSERT(offsetVk <= UINT32_MAX);
+                    dstBinding.offset = uint32(offsetVk);
+                }
+            }
+        }
     }
+
+    StaticArray<VkDescriptorSetLayout, GFXBACKEND_MAX_SETS_PER_PIPELINE> setLayouts;
+    for (uint32 i = 0; i < sets.Count(); i++) 
+        setLayouts.Push(layout->sets[i]);
+
+#if CONFIG_GFX_IMMUTABLE_SAMPLERS
+    if (desc.useImmutableSamplers && gBackendVk.immutableSamplersLayout) {
+        ASSERT_MSG(setLayouts.Count() == gBackendVk.immutableSamplersDescriptorSetIndex, 
+                   "Immutable samplers are setup for DescriptorSet %u, but pipeline layout does not match the descriptor sets", 
+                   gBackendVk.immutableSamplersDescriptorSetIndex);
+        setLayouts.Push(gBackendVk.immutableSamplersLayout);
+    }
+#endif
 
     // Now create pipeline layout itself
     VkPipelineLayoutCreateInfo pipelineLayoutCreateInfo {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
-        .setLayoutCount = sets.Count(),
-        .pSetLayouts = layout->sets,
+        .setLayoutCount = setLayouts.Count(),
+        .pSetLayouts = setLayouts.Ptr(),
         .pushConstantRangeCount = desc.numPushConstants,
         .pPushConstantRanges = layout->pushConstantRanges
     };
@@ -3403,11 +3511,11 @@ void GfxBackend::ReloadShaderPipelines(const GfxShader& shader)
                     psInfo = &shader.stages[i];
             }
             ASSERT_MSG(vsInfo, "Shader '%s' is missing Vertex shader program", shader.name);
-            ASSERT_MSG(psInfo, "Shader '%s' is missing Pixel shader program", shader.name);
-            VkShaderModule psShaderModule;
+
             VkShaderModule vsShaderModule;
+            VkShaderModule psShaderModule = nullptr;
             uint32 vsShaderModuleHash;
-            uint32 psShaderModuleHash;
+            uint32 psShaderModuleHash = 0;
 
             {
                 VkShaderModuleCreateInfo shaderStageCreateInfo {
@@ -3422,9 +3530,12 @@ void GfxBackend::ReloadShaderPipelines(const GfxShader& shader)
                 }
 
                 vsShaderModuleHash = Hash::Murmur32(vsInfo->data.Get(), vsInfo->dataSize);
+
+                const_cast<VkPipelineShaderStageCreateInfo*>(&pipeline.createInfo.graphics->pStages[0])->module = vsShaderModule;
+                const_cast<VkPipelineShaderStageCreateInfo*>(&pipeline.createInfo.graphics->pStages[0])->pSpecializationInfo = specInfo;
             }
 
-            {
+            if (psInfo) {
                 VkShaderModuleCreateInfo shaderStageCreateInfo {
                     .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
                     .codeSize = psInfo->dataSize,
@@ -3437,14 +3548,10 @@ void GfxBackend::ReloadShaderPipelines(const GfxShader& shader)
                 }
 
                 psShaderModuleHash = Hash::Murmur32(psInfo->data.Get(), psInfo->dataSize);
+
+                const_cast<VkPipelineShaderStageCreateInfo*>(&pipeline.createInfo.graphics->pStages[1])->module = psShaderModule;
+                const_cast<VkPipelineShaderStageCreateInfo*>(&pipeline.createInfo.graphics->pStages[1])->pSpecializationInfo = specInfo;
             }
-
-            // Reassign shader modules and specialization parameters
-            const_cast<VkPipelineShaderStageCreateInfo*>(&pipeline.createInfo.graphics->pStages[0])->module = vsShaderModule;
-            const_cast<VkPipelineShaderStageCreateInfo*>(&pipeline.createInfo.graphics->pStages[0])->pSpecializationInfo = specInfo;
-
-            const_cast<VkPipelineShaderStageCreateInfo*>(&pipeline.createInfo.graphics->pStages[1])->module = psShaderModule;
-            const_cast<VkPipelineShaderStageCreateInfo*>(&pipeline.createInfo.graphics->pStages[1])->pSpecializationInfo = specInfo;
 
             VkPipeline pipelineVk;
             if (vkCreateGraphicsPipelines(gBackendVk.device, nullptr, 1, pipeline.createInfo.graphics, gBackendVk.vkAlloc, &pipelineVk) != VK_SUCCESS) 
@@ -3455,8 +3562,8 @@ void GfxBackend::ReloadShaderPipelines(const GfxShader& shader)
 
             ASSERT(pipesEntry->graphics.vs);
             vkDestroyShaderModule(gBackendVk.device, pipesEntry->graphics.vs, gBackendVk.vkAlloc);
-            ASSERT(pipesEntry->graphics.ps);
-            vkDestroyShaderModule(gBackendVk.device, pipesEntry->graphics.ps, gBackendVk.vkAlloc);
+            if (pipesEntry->graphics.ps)
+                vkDestroyShaderModule(gBackendVk.device, pipesEntry->graphics.ps, gBackendVk.vkAlloc);
             
             pipesEntry->graphics.vs = vsShaderModule;
             pipesEntry->graphics.ps = psShaderModule;
@@ -3538,10 +3645,13 @@ GfxPipelineHandle GfxBackend::CreateGraphicsPipeline(const GfxShader& shader, Gf
     // ASSERT_MSG(psInfo, "Shader '%s' is missing Pixel shader program", shader.name);
 
     VkPipelineLayout layoutVk;
+    bool isDescriptorBuffer;
     
     {
         ReadWriteMutexReadScope objPoolLock(gBackendVk.objectPoolsMutex);
-        layoutVk = gBackendVk.pipelineLayouts.Data(layoutHandle)->handle;
+        GfxBackendPipelineLayout* layout = gBackendVk.pipelineLayouts.Data(layoutHandle);
+        layoutVk = layout->handle;
+        isDescriptorBuffer = layout->type == GfxPipelineLayoutType::DescriptorBuffer;
     }
 
     VkShaderModule psShaderModule = nullptr;
@@ -3750,7 +3860,6 @@ GfxPipelineHandle GfxBackend::CreateGraphicsPipeline(const GfxShader& shader, Gf
     // https://docs.vulkan.org/refpages/latest/refpages/source/VK_EXT_extended_dynamic_state.html
     // https://docs.vulkan.org/refpages/latest/refpages/source/VK_EXT_extended_dynamic_state2.html
     // https://docs.vulkan.org/refpages/latest/refpages/source/VK_EXT_extended_dynamic_state3.html
-    // TODO: maybe also make use of new  extensions
     StaticArray<VkDynamicState, 32> dynamicStates;
     dynamicStates.Push(VK_DYNAMIC_STATE_VIEWPORT);
     dynamicStates.Push(VK_DYNAMIC_STATE_SCISSOR);
@@ -3802,7 +3911,6 @@ GfxPipelineHandle GfxBackend::CreateGraphicsPipeline(const GfxShader& shader, Gf
     VkGraphicsPipelineCreateInfo pipelineInfo {
         .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
         .pNext = &renderCreateInfo,
-        .flags = gBackendVk.extApi.hasPipelineExecutableProperties ? VK_PIPELINE_CREATE_CAPTURE_STATISTICS_BIT_KHR : (VkPipelineCreateFlags)0,
         .stageCount = numShaderStages,
         .pStages = shaderStages,
         .pVertexInputState = &vertexInputInfo,
@@ -3819,6 +3927,11 @@ GfxPipelineHandle GfxBackend::CreateGraphicsPipeline(const GfxShader& shader, Gf
         .basePipelineHandle = VK_NULL_HANDLE,
         .basePipelineIndex = -1
     };
+
+    if (gBackendVk.extApi.hasPipelineExecutableProperties)
+        pipelineInfo.flags |= VK_PIPELINE_CREATE_CAPTURE_STATISTICS_BIT_KHR;
+    if (isDescriptorBuffer)
+        pipelineInfo.flags |= VK_PIPELINE_CREATE_DESCRIPTOR_BUFFER_BIT_EXT;
 
     // TODO: implement hasPipelineExecutableProperties (shaderDumpProperties option):
     //  Dump shader properties into text files
@@ -3840,6 +3953,8 @@ GfxPipelineHandle GfxBackend::CreateGraphicsPipeline(const GfxShader& shader, Gf
             .graphics = _DuplicateGraphicsPipelineCreateInfo(pipelineInfo)
         }
     };
+    ASSERT(pipeline.createInfo.graphics->pVertexInputState->pVertexBindingDescriptions);
+    ASSERT(pipeline.createInfo.graphics->pVertexInputState->pVertexAttributeDescriptions);
 
     GfxPipelineHandle handle;
 
@@ -4072,7 +4187,7 @@ void GfxCommandBuffer::PushBindings(GfxPipelineLayoutHandle layoutHandle, uint32
 
     for (uint32 i = 0; i < numBindings; i++) {
         const GfxBindingDesc& binding = bindings[i];
-        uint32 nameHash = Hash::Fnv32Str(binding.name);
+        uint32 nameHash = binding.name.hash;
         uint32 foundBinding = uint32(-1);
         for (uint32 k = 0; k < layout.numBindings; k++) {
             if (layout.bindingNameHashes[k] == nameHash) {
@@ -4129,8 +4244,12 @@ void GfxCommandBuffer::PushBindings(GfxPipelineLayoutHandle layoutHandle, uint32
                 *pBufferInfo = {
                     .buffer = buffer.handle,
                     .offset = binding.bufferRange.offset,
-                    .range = binding.bufferRange.size == 0 ? VK_WHOLE_SIZE : binding.bufferRange.size
+                    .range = binding.bufferRange.size ? binding.bufferRange.size : buffer.desc.sizeBytes
                 };
+
+                if (buffer.desc.perFrameUpdates)
+                    pBufferInfo->offset += gBackendVk.queueMan.GetFrameIndex()*AlignValue<uint64>(buffer.desc.sizeBytes, buffer.offsetAlignment);
+
                 break;
             } 
             case VK_DESCRIPTOR_TYPE_SAMPLER:
@@ -4147,8 +4266,8 @@ void GfxCommandBuffer::PushBindings(GfxPipelineLayoutHandle layoutHandle, uint32
                     imgLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
                 pImageInfo = imageInfos.Push();
                 *pImageInfo = {
-                    .sampler = gBackendVk.samplerDefault,
-                    .imageView = binding.image.IsValid() ? gBackendVk.images.Data(binding.image).viewHandle : VK_NULL_HANDLE,
+                    .sampler = gBackendVk.samplers.Data(binding.sampler).handle,
+                    .imageView = gBackendVk.images.Data(binding.image).viewHandle,
                     .imageLayout = imgLayout
                 };
                 break;
@@ -4161,7 +4280,7 @@ void GfxCommandBuffer::PushBindings(GfxPipelineLayoutHandle layoutHandle, uint32
                     imgLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
                 pImageInfo = imageInfos.Push();
                 *pImageInfo = {
-                    .imageView = binding.image.IsValid() ? gBackendVk.images.Data(binding.image).viewHandle : VK_NULL_HANDLE,
+                    .imageView = gBackendVk.images.Data(binding.image).viewHandle,
                     .imageLayout = imgLayout
                 };
                 break;
@@ -4240,6 +4359,12 @@ void GfxBackend::BatchCreateBuffer(uint32 numBuffers, const GfxBufferDesc* descs
             ASSERT(gBackendVk.gpu.props.limits.minStorageBufferOffsetAlignment <= UINT32_MAX);
             offsetAlignment = (uint32)gBackendVk.gpu.props.limits.minStorageBufferOffsetAlignment;
         }
+        else if (IsBitsSet<GfxBufferUsageFlags>(desc.usageFlags, GfxBufferUsageFlags::ResourceDescriptorBuffer) ||
+                 IsBitsSet<GfxBufferUsageFlags>(desc.usageFlags, GfxBufferUsageFlags::SamplerDescriptorBuffer))
+        {
+            ASSERT(gBackendVk.gpu.descriptorBufferProps.descriptorBufferOffsetAlignment <= UINT32_MAX);
+            offsetAlignment = (uint32)gBackendVk.gpu.descriptorBufferProps.descriptorBufferOffsetAlignment;
+        }
 
         if (desc.perFrameUpdates) {
             allocSize = GFXBACKEND_FRAMES_IN_FLIGHT * AlignValue<uint64>(desc.sizeBytes, offsetAlignment);
@@ -4255,6 +4380,13 @@ void GfxBackend::BatchCreateBuffer(uint32 numBuffers, const GfxBufferDesc* descs
         [[maybe_unused]] VkResult r = vkCreateBuffer(gBackendVk.device, &bufferCreateInfo, gBackendVk.vkAlloc, &bufferVk);
         ASSERT_ALWAYS(r == VK_SUCCESS, "vkCreateBuffer failed");
 
+        if constexpr (CONFIG_ENABLE_ASSERT) {
+            if (IsBitsSet<GfxBufferUsageFlags>(desc.usageFlags, GfxBufferUsageFlags::ShaderDeviceAddress)) {
+                ASSERT_MSG(desc.arena == GfxMemoryArena::PersistentAddressGPU, 
+                           "Buffers with ShaderDeviceAddress usage flag should only allocated in PersistentAddressGPU arena");
+            }
+        }
+
         VkMemoryRequirements memReq;
         vkGetBufferMemoryRequirements(gBackendVk.device, bufferVk, &memReq);
         GfxBackendDeviceMemory mem = gBackendVk.memMan.Malloc(memReq, desc.arena);
@@ -4263,11 +4395,22 @@ void GfxBackend::BatchCreateBuffer(uint32 numBuffers, const GfxBufferDesc* descs
         if (desc.arena == GfxMemoryArena::TransientCPU)
             ++numTransientIncrements;
 
+        VkDeviceAddress deviceAddress = 0;
+        if (IsBitsSet<GfxBufferUsageFlags>(desc.usageFlags, GfxBufferUsageFlags::ShaderDeviceAddress)) {
+            VkBufferDeviceAddressInfo addrInfo {
+                .sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO,
+                .buffer = bufferVk
+            };
+            deviceAddress = vkGetBufferDeviceAddress(gBackendVk.device, &addrInfo);
+            ASSERT(deviceAddress % offsetAlignment == 0);
+        }
+
         buffers[i] = {
             .handle = bufferVk,
             .desc = desc,
             .mem = mem,
             .allocatedSize = allocSize,
+            .deviceAddress = deviceAddress,
             .offsetAlignment = offsetAlignment
         };
     }
@@ -4342,6 +4485,10 @@ GfxBackendDeviceMemory GfxBackendDeviceMemoryManager::Malloc(const VkMemoryRequi
     switch (arena) {
         case GfxMemoryArena::PersistentGPU:
             mem = mPersistentGPU.Malloc(memReq);
+            break;
+
+        case GfxMemoryArena::PersistentAddressGPU:
+            mem = mPersistentAddressGPU.Malloc(memReq);
             break;
 
         case GfxMemoryArena::PersistentCPU:
@@ -4490,6 +4637,11 @@ bool GfxBackendDeviceMemoryManager::Initialize()
         return false;
     LOG_VERBOSE("\t\tPersistentGPU: #%u", mPersistentGPU.mMemTypeIndex);
 
+    if (!mPersistentAddressGPU.Initialize(64*SIZE_MB, FindDeviceMemoryType(memLocalProp, true), 
+                                          GfxBackendMemoryBumpAllocator::AllocationFlags::DeviceAddress))
+        return false;
+    LOG_VERBOSE("\t\tPersistentAddressGPU: #%u", mPersistentGPU.mMemTypeIndex);
+
     {
         VkMemoryPropertyFlags flags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
         VkMemoryPropertyFlags fallbackFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT;
@@ -4532,6 +4684,7 @@ bool GfxBackendDeviceMemoryManager::Initialize()
 void GfxBackendDeviceMemoryManager::Release()
 {
     mPersistentGPU.Release();
+    mPersistentAddressGPU.Release();
     mPersistentCPU.Release();
     mDynamicImageGPU.Release();
     mDynamicBufferGPU.Release();
@@ -5753,6 +5906,11 @@ void GfxCommandBuffer::TransitionBuffer(GfxBufferHandle buffHandle, GfxBufferTra
         .buffer = buffer.handle,
         .size = VK_WHOLE_SIZE
     };
+
+    if (buffer.desc.perFrameUpdates) {
+        barrier.offset = gBackendVk.queueMan.GetFrameIndex() * AlignValue<uint64>(buffer.desc.sizeBytes, buffer.offsetAlignment);
+        barrier.size = buffer.desc.sizeBytes;
+    }
     
     barrier.srcStageMask = buffer.transitionedStage;
     barrier.srcAccessMask = buffer.transitionedAccess;
@@ -5779,7 +5937,10 @@ void GfxCommandBuffer::TransitionBuffer(GfxBufferHandle buffHandle, GfxBufferTra
             barrier.dstStageMask = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
             barrier.dstAccessMask = VK_ACCESS_2_MEMORY_READ_BIT;
             break;
-
+        case GfxBufferTransition::DescriptorBufferRead:
+            barrier.dstStageMask = VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
+            barrier.dstAccessMask = VK_ACCESS_2_DESCRIPTOR_BUFFER_READ_BIT_EXT;
+            break;
         default:
             break;
     }
@@ -6168,6 +6329,8 @@ void GfxCommandBuffer::BindVertexBuffers(uint32 firstBinding, uint32 numBindings
     MemTempAllocator tempAlloc;
     VkBuffer* buffersVk = tempAlloc.MallocTyped<VkBuffer>(numBindings);
     VkDeviceSize* offsetsVk = tempAlloc.MallocTyped<VkDeviceSize>(numBindings);
+
+    gBackendVk.objectPoolsMutex.EnterRead();
     for (uint32 i = 0; i < numBindings; i++) {
         GfxBackendBuffer& buffer = gBackendVk.buffers.Data(vertexBuffers[i]);
         buffersVk[i] = buffer.handle;
@@ -6178,6 +6341,7 @@ void GfxCommandBuffer::BindVertexBuffers(uint32 firstBinding, uint32 numBindings
             offsetsVk[i] += gBackendVk.queueMan.GetFrameIndex()*AlignValue<uint64>(buffer.desc.sizeBytes, buffer.offsetAlignment);
         }
     }
+    gBackendVk.objectPoolsMutex.ExitRead();
     
     vkCmdBindVertexBuffers(cmdVk, firstBinding, numBindings, buffersVk, offsetsVk);
 }
@@ -6186,13 +6350,17 @@ void GfxCommandBuffer::BindIndexBuffer(GfxBufferHandle indexBuffer, uint64 offse
 {
     ASSERT(mIsRecording);
     VkCommandBuffer cmdVk = GfxBackend::_GetCommandBufferHandle(*this);
+
+    gBackendVk.objectPoolsMutex.EnterRead();
     GfxBackendBuffer& buffer = gBackendVk.buffers.Data(indexBuffer);
     if (buffer.desc.perFrameUpdates) {
         ASSERT(buffer.offsetAlignment);
         offset += gBackendVk.queueMan.GetFrameIndex()*AlignValue<uint64>(buffer.desc.sizeBytes, buffer.offsetAlignment);
     }
+    VkBuffer bufferVk = buffer.handle;
+    gBackendVk.objectPoolsMutex.ExitRead();
 
-    vkCmdBindIndexBuffer(cmdVk, buffer.handle, VkDeviceSize(offset), VkIndexType(indexType));
+    vkCmdBindIndexBuffer(cmdVk, bufferVk, VkDeviceSize(offset), VkIndexType(indexType));
 }
 
 void GfxCommandBuffer::HelperSetFullscreenViewportAndScissor()
@@ -6211,6 +6379,61 @@ void GfxCommandBuffer::HelperSetFullscreenViewportAndScissor()
     SetScissors(0, 1, &scissor);
 }
 
+void GfxCommandBuffer::BindDescriptorBuffers(uint32 numBindings, const GfxBufferHandle* descriptorBuffers)
+{
+    ASSERT(mIsRecording);
+
+    VkCommandBuffer cmdVk = GfxBackend::_GetCommandBufferHandle(*this);
+
+    gBackendVk.objectPoolsMutex.EnterRead();
+    VkDescriptorBufferBindingInfoEXT bindingInfos[GFXBACKEND_MAX_SETS_PER_PIPELINE] {};
+    for (uint32 i = 0; i < numBindings; i++) {
+        GfxBackendBuffer& buffer = gBackendVk.buffers.Data(descriptorBuffers[i]);
+        ASSERT(buffer.deviceAddress);
+        bindingInfos[i].sType = VK_STRUCTURE_TYPE_DESCRIPTOR_BUFFER_BINDING_INFO_EXT;
+        bindingInfos[i].usage = (VkBufferUsageFlags)buffer.desc.usageFlags & (VK_BUFFER_USAGE_SAMPLER_DESCRIPTOR_BUFFER_BIT_EXT | VK_BUFFER_USAGE_RESOURCE_DESCRIPTOR_BUFFER_BIT_EXT);
+        bindingInfos[i].address = buffer.deviceAddress;
+        if (buffer.desc.perFrameUpdates)
+            bindingInfos[i].address += gBackendVk.queueMan.GetFrameIndex()*AlignValue<uint64>(buffer.desc.sizeBytes, buffer.offsetAlignment);
+        ASSERT(bindingInfos[i].address % gBackendVk.gpu.descriptorBufferProps.descriptorBufferOffsetAlignment == 0);
+    }
+    gBackendVk.objectPoolsMutex.ExitRead();
+
+    vkCmdBindDescriptorBuffersEXT(cmdVk, numBindings, bindingInfos);
+}
+
+void GfxCommandBuffer::SetDescriptorBufferOffsets(GfxPipelineLayoutHandle layoutHandle, uint32 setIndex, uint32 setCount, 
+                                                  const uint32* itemIndices)
+{
+    ASSERT(mIsRecording);
+    static_assert(sizeof(uint64) == sizeof(VkDeviceSize));
+
+    VkCommandBuffer cmdVk = GfxBackend::_GetCommandBufferHandle(*this);
+
+    uint32 descriptorBufferIndices[GFXBACKEND_MAX_SETS_PER_PIPELINE] {};   // Currently maps 1-1 to the buffers we set in BindDescriptorBuffers
+    VkDeviceSize offsetsVk[GFXBACKEND_MAX_SETS_PER_PIPELINE] {};
+    VkPipelineLayout layoutVk;
+
+    gBackendVk.objectPoolsMutex.EnterRead();
+    GfxBackendPipelineLayout* layout = gBackendVk.pipelineLayouts.Data(layoutHandle);
+    ASSERT(setIndex + setCount <= layout->numSets);
+    for (uint32 i = 0; i < setCount; i++) {        
+        descriptorBufferIndices[i] = i + setIndex;
+        offsetsVk[i] = VkDeviceSize(layout->setSizes[setIndex + i]) * VkDeviceSize(itemIndices[i]);
+        ASSERT(offsetsVk[i] % gBackendVk.gpu.descriptorBufferProps.descriptorBufferOffsetAlignment == 0);
+    }
+    layoutVk = layout->handle;
+    gBackendVk.objectPoolsMutex.ExitRead();
+
+    vkCmdSetDescriptorBufferOffsetsEXT(cmdVk, VK_PIPELINE_BIND_POINT_GRAPHICS, layoutVk, setIndex, setCount, 
+                                       descriptorBufferIndices, offsetsVk);
+}
+
+void GfxCommandBuffer::SetDescriptorBufferOffset(GfxPipelineLayoutHandle layoutHandle, uint32 setIndex, uint32 itemIndex)
+{
+    SetDescriptorBufferOffsets(layoutHandle, setIndex, 1, &itemIndex);
+}
+
 GfxSamplerHandle GfxBackend::CreateSampler(const GfxSamplerDesc& desc)
 {
     VkFilter minMagFilter = VK_FILTER_MAX_ENUM;
@@ -6221,7 +6444,7 @@ GfxSamplerHandle GfxBackend::CreateSampler(const GfxSamplerDesc& desc)
     switch (desc.samplerFilter) {
     case GfxSamplerFilterMode::Default:
     case GfxSamplerFilterMode::Nearest:               minMagFilter = VK_FILTER_NEAREST; mipFilter = VK_SAMPLER_MIPMAP_MODE_NEAREST; break;
-    case GfxSamplerFilterMode::Linear:                minMagFilter = VK_FILTER_LINEAR;  mipFilter = VK_SAMPLER_MIPMAP_MODE_LINEAR;  break;
+    case GfxSamplerFilterMode::Linear:                minMagFilter = VK_FILTER_LINEAR;  mipFilter = VK_SAMPLER_MIPMAP_MODE_NEAREST;  break;
     case GfxSamplerFilterMode::NearestMipmapNearest:  minMagFilter = VK_FILTER_NEAREST; mipFilter = VK_SAMPLER_MIPMAP_MODE_NEAREST; break;
     case GfxSamplerFilterMode::NearestMipmapLinear:   minMagFilter = VK_FILTER_NEAREST; mipFilter = VK_SAMPLER_MIPMAP_MODE_LINEAR;  break;
     case GfxSamplerFilterMode::LinearMipmapNearest:   minMagFilter = VK_FILTER_LINEAR;  mipFilter = VK_SAMPLER_MIPMAP_MODE_NEAREST; break;
@@ -6266,6 +6489,46 @@ GfxSamplerHandle GfxBackend::CreateSampler(const GfxSamplerDesc& desc)
 
     ReadWriteMutexWriteScope objPoolLock(gBackendVk.objectPoolsMutex);
     return gBackendVk.samplers.Add(sampler);
+}
+
+void GfxBackend::SetupImmutableSamplers(const GfxImmutableSamplersDesc& desc)
+{
+#if CONFIG_GFX_IMMUTABLE_SAMPLERS
+    ASSERT_MSG(desc.descriptorSetIndex, "Immutable samplers cannot reside in Descriptor Index 0");
+    ASSERT(desc.numSamplers);
+    ASSERT(desc.samplers);
+    ASSERT(desc.samplerBindings);
+
+    MemTempAllocator tempAlloc;
+    VkDescriptorSetLayoutBinding* bindings = tempAlloc.MallocTyped<VkDescriptorSetLayoutBinding>(desc.numSamplers);
+
+    ReadWriteMutexWriteScope objPoolLock(gBackendVk.objectPoolsMutex);
+
+    for (uint32 i = 0; i < desc.numSamplers; i++) {
+        bindings[i] = {
+            .binding = desc.samplerBindings[i],
+            .descriptorType = VK_DESCRIPTOR_TYPE_SAMPLER,
+            .descriptorCount = 1,
+            .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_VERTEX_BIT,
+            .pImmutableSamplers = &gBackendVk.samplers.Data(desc.samplers[i]).handle
+        };
+    }
+
+    if (gBackendVk.immutableSamplersLayout)
+        vkDestroyDescriptorSetLayout(gBackendVk.device, gBackendVk.immutableSamplersLayout, gBackendVk.vkAlloc);
+
+    VkDescriptorSetLayoutCreateInfo layoutCreateInfo {
+        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+        .flags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_EMBEDDED_IMMUTABLE_SAMPLERS_BIT_EXT | 
+            VK_DESCRIPTOR_SET_LAYOUT_CREATE_DESCRIPTOR_BUFFER_BIT_EXT,
+        .bindingCount = desc.numSamplers,
+        .pBindings = bindings
+    };
+    vkCreateDescriptorSetLayout(gBackendVk.device, &layoutCreateInfo, gBackendVk.vkAlloc, &gBackendVk.immutableSamplersLayout);
+    gBackendVk.immutableSamplersDescriptorSetIndex = desc.descriptorSetIndex;
+#else
+    UNUSED(desc);
+#endif
 }
 
 void GfxBackend::DestroySampler(GfxSamplerHandle& handle)
@@ -7072,5 +7335,153 @@ GfxHelperBufferUpdateScope::~GfxHelperBufferUpdateScope()
         mCmd.TransitionBuffer(mBuffer, GfxBufferTransition::TransferWrite);
         mCmd.CopyBufferToBuffer(mStagingBuffer, mBuffer, mBufferUsageStage);
         GfxBackend::DestroyBuffer(mStagingBuffer);
+    }
+}
+
+//----------------------------------------------------------------------------------------------------------------------
+size_t GfxHelperUniformBuffer::GetMemoryRequirement(uint32 itemSize, uint32 numItems)
+{
+    ASSERT(itemSize);
+    ASSERT(numItems);
+
+    uint32 alignedSize = AlignValue(itemSize, uint32(gBackendVk.gpu.props.limits.minUniformBufferOffsetAlignment));
+    return size_t(alignedSize) * size_t(numItems);
+}
+
+GfxHelperUniformBuffer::GfxHelperUniformBuffer(void* dataPtr, uint32 itemSize, uint32 numItems) 
+{
+    ASSERT(dataPtr);
+    ASSERT(itemSize);
+    ASSERT(numItems);
+
+    mStride = AlignValue(itemSize, uint32(gBackendVk.gpu.props.limits.minUniformBufferOffsetAlignment));
+    mData = (uint8*)dataPtr;
+    mMaxItems = numItems;
+}
+
+uint32 GfxHelperUniformBuffer::Write(uint32 index, const void* data, uint32 dataSize)
+{
+#ifdef CONFIG_CHECK_OUTOFBOUNDS
+    ASSERT_MSG(index < mMaxItems, "Index out of bounds (count: %u, index: %u)", mMaxItems, index);
+#endif
+
+    ASSERT(data);
+    ASSERT(dataSize);
+    ASSERT(dataSize <= mStride);
+
+    uint32 offset = mStride * index;
+    memcpy(mData + offset, data, dataSize);
+    return offset;
+}
+
+//----------------------------------------------------------------------------------------------------------------------
+size_t GfxHelperDescriptorBuffer::GetMemoryRequirement(GfxPipelineLayoutHandle layoutHandle, uint32 descriptorSetIndex, uint32 numItems)
+{
+    ASSERT(numItems);
+
+    ReadWriteMutexReadScope objPoolLock(gBackendVk.objectPoolsMutex);
+    const GfxBackendPipelineLayout* layout = gBackendVk.pipelineLayouts.Data(layoutHandle);
+    ASSERT(descriptorSetIndex < layout->numSets);
+
+    return size_t(layout->setSizes[descriptorSetIndex]) * size_t(numItems);
+}
+
+GfxHelperDescriptorBuffer::GfxHelperDescriptorBuffer(void* dataPtr, GfxPipelineLayoutHandle layoutHandle, uint32 descriptorSetIndex)
+{
+    ASSERT(dataPtr);
+
+    ReadWriteMutexReadScope objPoolLock(gBackendVk.objectPoolsMutex);
+    mDescriptorSetIndex = descriptorSetIndex;
+    mLayoutHandle = layoutHandle;
+    mData = (uint8*)dataPtr;
+}
+
+void GfxHelperDescriptorBuffer::WriteBindings(uint32 index, uint32 numBindings, const GfxBindingDesc* bindings)
+{
+    ReadWriteMutexReadScope objPoolLock(gBackendVk.objectPoolsMutex);
+    const GfxBackendPipelineLayout* layout = gBackendVk.pipelineLayouts.Data(mLayoutHandle);
+
+    uint8* descriptorSetPtr = mData + size_t(layout->setSizes[mDescriptorSetIndex])*size_t(index);
+
+    for (uint32 i = 0; i < numBindings; i++) {
+        const GfxBindingDesc& binding = bindings[i];
+        uint32 bindingIdx = GfxBackend::_FindBindingIndexByHash(layout, binding.name.hash);
+        ASSERT_MSG(bindingIdx != -1, "Resource '%s' does not exist in the pipeline layout", binding.name.cstr);
+        const VkDescriptorSetLayoutBinding& bindingVk = layout->bindingsVk[bindingIdx];
+        ASSERT_MSG(layout->bindings[bindingIdx].setIndex == mDescriptorSetIndex, 
+                   "Binding '%s' doesn't belong to this descriptor buffer (DescriptorIndex=%u)", binding.name.cstr, mDescriptorSetIndex);
+
+        VkDescriptorGetInfoEXT getDescInfo {
+            .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_GET_INFO_EXT,
+            .type = bindingVk.descriptorType
+        };
+
+        switch (bindingVk.descriptorType) {
+            case VK_DESCRIPTOR_TYPE_SAMPLER: 
+            {
+                GfxBackendSampler& sampler = gBackendVk.samplers.Data(binding.sampler);
+                getDescInfo.data = { .pSampler = &sampler.handle };
+                vkGetDescriptorEXT(gBackendVk.device, &getDescInfo, 
+                                   gBackendVk.gpu.descriptorBufferProps.samplerDescriptorSize, 
+                                   descriptorSetPtr + layout->bindings[bindingIdx].offset);
+                break;
+            }
+            case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER:
+            case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER:
+            {
+                const GfxBackendBuffer& buffer = gBackendVk.buffers.Data(binding.buffer);
+                VkDeviceAddress deviceAddress = buffer.deviceAddress;
+                ASSERT_MSG(deviceAddress, "Invalid device address. Create this buffer with ShaderDeviceAddress usage flag");
+                if (buffer.desc.perFrameUpdates)
+                    deviceAddress += gBackendVk.queueMan.GetFrameIndex()*AlignValue<uint64>(buffer.desc.sizeBytes, buffer.offsetAlignment);
+    
+                VkDescriptorAddressInfoEXT addrInfo {
+                    .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_ADDRESS_INFO_EXT,
+                    .address = deviceAddress + binding.bufferRange.offset,
+                    .range = binding.bufferRange.size ? binding.bufferRange.size : buffer.desc.sizeBytes
+                };
+
+                size_t descriptorSize = 0;
+                if (bindingVk.descriptorType == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER) {
+                    getDescInfo.data = { .pUniformBuffer = &addrInfo };
+                    descriptorSize = gBackendVk.gpu.descriptorBufferProps.uniformBufferDescriptorSize;
+                }
+                else if (bindingVk.descriptorType == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER) {
+                    getDescInfo.data = { .pStorageBuffer = &addrInfo };
+                    descriptorSize = gBackendVk.gpu.descriptorBufferProps.storageBufferDescriptorSize;
+                }
+
+                vkGetDescriptorEXT(gBackendVk.device, &getDescInfo, descriptorSize, 
+                                   descriptorSetPtr + layout->bindings[bindingIdx].offset);
+                break;
+            }
+            case VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE:
+            case VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER:
+            {
+                GfxBackendImage& image = gBackendVk.images.Data(binding.image);
+                VkDescriptorImageInfo imageInfo {
+                    .imageView = image.viewHandle,
+                    .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+                };
+
+                size_t descriptorSize = 0;
+                if (bindingVk.descriptorType == VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE) {
+                    getDescInfo.data = { .pSampledImage = &imageInfo };
+                    descriptorSize = gBackendVk.gpu.descriptorBufferProps.sampledImageDescriptorSize;
+                }
+                else if (bindingVk.descriptorType == VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER) {
+                    getDescInfo.data = { .pCombinedImageSampler = &imageInfo };
+                    descriptorSize = gBackendVk.gpu.descriptorBufferProps.combinedImageSamplerDescriptorSize;
+                }
+
+                vkGetDescriptorEXT(gBackendVk.device, &getDescInfo, 
+                                   descriptorSize,
+                                   descriptorSetPtr + layout->bindings[bindingIdx].offset);
+                break;
+            }
+            default:
+                ASSERT_MSG(0, "Not implemented");
+                break;
+        }
     }
 }

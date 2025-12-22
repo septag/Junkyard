@@ -33,6 +33,7 @@ struct RGeometrySubChunk
     uint32 startIndex;
     uint32 numIndices;
     GfxImageHandle baseColorImg;
+    uint32 perObjectDescriptorSetIndex;
     bool hasAlphaMask;
 };
 

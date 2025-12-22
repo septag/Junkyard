@@ -66,6 +66,7 @@ struct ImGuiState
     GfxPipelineLayoutHandle pipelineLayout;
     GfxPipelineHandle pipeline;
     GfxImageHandle fontImage;
+    GfxSamplerHandle sampler;
     AssetHandleShader shader;
     float* alphaControl;      // alpha value that will be modified by mouse-wheel + ALT
 
@@ -373,6 +374,7 @@ namespace ImGui
         };
 
         GfxPipelineLayoutDesc layoutDesc {
+            .type = GfxPipelineLayoutType::PushDescriptor,
             .numBindings = 1,
             .bindings = layoutBindings,
             .numPushConstants = 1,
@@ -461,6 +463,13 @@ namespace ImGui
 
             conf.Fonts->SetTexID( reinterpret_cast<ImTextureID>((uintptr_t)uint32(gImGui.fontImage)));
         }
+
+        // Sampler
+        GfxSamplerDesc samplerDesc {
+            .samplerFilter = GfxSamplerFilterMode::Linear,
+            .samplerWrap = GfxSamplerWrapMode::ClampToEdge,
+        };
+        gImGui.sampler = GfxBackend::CreateSampler(samplerDesc);
     }
 
     static void _SetSetting(const char* key, const char* value)
@@ -698,17 +707,29 @@ bool ImGui::DrawFrame(GfxCommandBuffer cmd)
         .height = displaySize.y
     };
 
-    ImGuiShaderTransform transform {
-        .projMat = GfxBackend::GetSwapchainTransformMat() * Mat4::OrthoOffCenter(displayPos.x, displayPos.y + displaySize.y, 
-                                                                                 displayPos.x + displaySize.x, displayPos.y, 
-                                                                                 -1.0f, 1.0f)
-    };
+
 
     uint64 offsets[] = {0};
     cmd.BindPipeline(gImGui.pipeline);
     cmd.SetViewports(0, 1, &viewport);
     cmd.BindVertexBuffers(0, 1, &gImGui.vertexBuffer, offsets);
     cmd.BindIndexBuffer(gImGui.indexBuffer, 0, GfxIndexType::Uint16);
+
+    ImGuiShaderTransform transform {
+        .projMat = GfxBackend::GetSwapchainTransformMat() * Mat4::OrthoOffCenter(displayPos.x, displayPos.y + displaySize.y, 
+                                                                                 displayPos.x + displaySize.x, displayPos.y, 
+                                                                                 -1.0f, 1.0f)
+    };
+    cmd.PushConstants<ImGuiShaderTransform>(gImGui.pipelineLayout, "Transform", transform);
+
+    GfxBindingDesc bindings[] = {
+        {
+            .name = "MainTexture",
+            .image = gImGui.fontImage,
+            .sampler = gImGui.sampler
+        }
+    };
+    cmd.PushBindings(gImGui.pipelineLayout, CountOf(bindings), bindings);
 
     uint32 globalVertexOffset = 0;
     uint32 globalIndexOffset = 0;
@@ -735,17 +756,9 @@ bool ImGui::DrawFrame(GfxCommandBuffer cmd)
 
                 RectInt scissor(int(clipRect.x), int(clipRect.y), int(clipRect.z), int(clipRect.w));
                 GfxImageHandle img(PtrToInt<uint32>(drawCmd->TextureId));
-                GfxBindingDesc bindings[] = {
-                    {
-                        .name = "MainTexture",
-                        .image = img
-                    }
-                };
+                ASSERT_MSG(img == gImGui.fontImage, "Several images are not supported yet");
 
-                cmd.SetScissors(0, 1, &scissor);
-                cmd.PushBindings(gImGui.pipelineLayout, CountOf(bindings), bindings);
-                cmd.PushConstants<ImGuiShaderTransform>(gImGui.pipelineLayout, "Transform", transform);
-                
+                cmd.SetScissors(0, 1, &scissor);                
                 cmd.DrawIndexed(drawCmd->ElemCount, 1, drawCmd->IdxOffset + globalIndexOffset, drawCmd->VtxOffset + globalVertexOffset, 0);
             }
         }
@@ -769,6 +782,7 @@ void ImGui::Release()
         GfxBackend::DestroyPipeline(gImGui.pipeline);
         GfxBackend::DestroyPipelineLayout(gImGui.pipelineLayout);
         GfxBackend::DestroyImage(gImGui.fontImage);
+        GfxBackend::DestroySampler(gImGui.sampler);
         App::UnregisterEventsCallback(_OnEventCallback);
         DestroyContext(gImGui.ctx);
         gImGui.ctx = nullptr;

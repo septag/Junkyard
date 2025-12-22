@@ -459,9 +459,8 @@ struct AppImpl final : AppCallbacks
             mFwdRenderView.SetAmbientLight(scene.mSkyAmbient, scene.mGroundAmbient);
             mFwdRenderView.SetSunLight(sunlightDir, scene.mSunlightColor, mShadowMapDepth, mShadowMapView.GetWorldToClipMat());
             mFwdRenderView.SetCamera(*mCam, Float2(float(App::GetWindowWidth()), float(App::GetWindowHeight())));
-            R::FwdLight::Update(mFwdRenderView, cmd);
-
             GatherModelRenderGeometries(scene.mModel, mFwdRenderView);
+            R::FwdLight::Update(mFwdRenderView, cmd);
 
             RDebugMode debugMode = RDebugMode::None;
             if (scene.mDebugLightCull)

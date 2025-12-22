@@ -39,8 +39,8 @@ Sampler2D ColorTexture;
 PsInput VsMain(VsInput v)
 {
     PsInput o;
-    float4x4 localToClipMat = mul(WorldToClipMat, LocalToWorldMat);
-    o.position = mul(localToClipMat, float4(v.position, 1));
+    float4 posWS = mul(LocalToWorldMat, float4(v.position, 1));
+    o.position = mul(WorldToClipMat, posWS);
 #if HAS_ALPHA_MASK
     o.uv = v.uv;
 #endif
@@ -49,13 +49,12 @@ PsInput VsMain(VsInput v)
 
 #if HAS_ALPHA_MASK
 [shader("fragment")]
-void PsMain(PsInput i)
+float4 PsMain(PsInput i) : SV_Target
 {
     float alpha = ColorTexture.Sample(i.uv).w;
-
-    const float _Cutoff = 0.9f;
+    const float _Cutoff = 0.5f;
     alpha = (alpha - _Cutoff) / max(fwidth(alpha), 0.0001) + 0.5;
-    if (alpha <= 0)
-        discard;
+
+    return float4(1, 1, 1, alpha);
 }
 #endif

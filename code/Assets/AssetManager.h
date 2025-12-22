@@ -5,6 +5,11 @@
 
 #include "../Common/CommonTypes.h"
 
+// Cache versions for each asset type
+inline constexpr uint32 ASSET_CACHE_SHADER_VERSION = 4;
+inline constexpr uint32 ASSET_CACHE_IMAGE_VERSION = 1;
+inline constexpr uint32 ASSET_CACHE_MODEL_VERSION = 3;
+
 struct AssetDataInternal;
 struct GfxImageDesc;
 struct GfxBufferDesc;

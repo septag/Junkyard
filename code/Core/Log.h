@@ -49,4 +49,5 @@ namespace Log
 #define LOG_VERBOSE(_text, ...)   Log::_private::PrintVerbose(0, __FILE__, __LINE__, _text, ##__VA_ARGS__)
 #define LOG_WARNING(_text, ...)   Log::_private::PrintWarning(0, __FILE__, __LINE__, _text, ##__VA_ARGS__)
 #define LOG_ERROR(_text, ...)     Log::_private::PrintError(0, __FILE__, __LINE__, _text, ##__VA_ARGS__)
+#define LOG_TEMP LOG_VERBOSE
 
