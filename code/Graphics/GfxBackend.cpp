@@ -6472,8 +6472,8 @@ GfxSamplerHandle GfxBackend::CreateSampler(const GfxSamplerDesc& desc)
         .maxAnisotropy = Min(gBackendVk.gpu.props.limits.maxSamplerAnisotropy, anisotropy),
         .compareEnable = desc.compareOp != GfxCompareOp::Always ? VK_TRUE : VK_FALSE,
         .compareOp = VkCompareOp(desc.compareOp),
-        .minLod = 0.0f, 
-        .maxLod = 0.0f,
+        .minLod = 0, 
+        .maxLod = VK_LOD_CLAMP_NONE,
         .borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK,
         .unnormalizedCoordinates = VK_FALSE, 
     };
