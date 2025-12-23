@@ -162,14 +162,14 @@ bool Image::InitializeManager()
     }
 
     AssetTypeDesc assetDesc {
+        .name = "Image",
         .fourcc = IMAGE_ASSET_TYPE,
         .cacheVersion = ASSET_CACHE_IMAGE_VERSION,
-        .name = "Image",
         .impl = &gImageMgr.imageImpl,
+        .failedObj = &whiteImage,
+        .asyncObj = &whiteImage,
         .extraParamTypeName = "ImageLoadParams",
         .extraParamTypeSize = sizeof(ImageLoadParams),
-        .failedObj = &whiteImage,
-        .asyncObj = &whiteImage
     };
     Asset::RegisterType(assetDesc);
 

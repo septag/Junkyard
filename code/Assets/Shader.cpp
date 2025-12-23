@@ -11,6 +11,7 @@
 #include "../Graphics/GfxBackend.h"
 
 static constexpr uint32 SHADER_ASSET_TYPE = MakeFourCC('S', 'H', 'A', 'D');
+static constexpr uint32 SHADER_INCLUDE_ASSET_TYPE = MakeFourCC('S', 'H' , 'A', 'H');
 
 struct AssetShaderImpl final : AssetTypeImplBase
 {
@@ -24,17 +25,26 @@ bool Shader::InitializeManager()
 {
     // Register asset loader
     AssetTypeDesc shaderTypeDesc {
+        .name = "Shader",
         .fourcc = SHADER_ASSET_TYPE,
         .cacheVersion = ASSET_CACHE_SHADER_VERSION,
-        .name = "Shader",
         .impl = &gShaderImpl,
+        .failedObj = nullptr,
+        .asyncObj = nullptr,
         .extraParamTypeName = "ShaderCompileDesc",
         .extraParamTypeSize = sizeof(ShaderCompileDesc),
-        .failedObj = nullptr,
-        .asyncObj = nullptr
     };
 
     Asset::RegisterType(shaderTypeDesc);
+
+    AssetTypeDesc shaderIncludeTypeDesc {
+        .name = "ShaderInclude",
+        .fourcc = SHADER_INCLUDE_ASSET_TYPE,
+        .cacheVersion = ASSET_CACHE_SHADER_VERSION,
+        .flags = AssetTypeFlags::Virtual | AssetTypeFlags::HotReloadParents
+    };
+
+    Asset::RegisterType(shaderIncludeTypeDesc);
 
     return true;
 }
@@ -66,7 +76,12 @@ bool AssetShaderImpl::Bake(const AssetParams& params, AssetData* data, const Spa
             shaderAbsolutePath.ConvertToWin();
             
         char errorDiag[256];
-        Pair<GfxShader*, uint32> shader = ShaderCompiler::Compile(srcData, shaderAbsolutePath.CStr(), compileDesc, errorDiag, sizeof(errorDiag), &tmpAlloc);
+        Path* includes;
+        uint32 numIncludes = 0;
+        Pair<GfxShader*, uint32> shader = ShaderCompiler::Compile(srcData, shaderAbsolutePath.CStr(), compileDesc, 
+                                                                  errorDiag, sizeof(errorDiag), 
+                                                                  &includes, &numIncludes,
+                                                                  &tmpAlloc);
         if (!shader.first) {
             outErrorDesc->FormatSelf("Compiling shader failed: %s", errorDiag);
             return false;
@@ -76,6 +91,20 @@ bool AssetShaderImpl::Bake(const AssetParams& params, AssetData* data, const Spa
         shader.first->paramsHash = data->mParamsHash;
 
         data->SetObjData(shader.first, shader.second);
+
+        if (numIncludes) {
+            Path fileDir = params.path.GetDirectory();
+            for (uint32 i = 0; i < numIncludes; i++) {
+                // Currently, only include paths under the same folder are supported
+                Path includeFilename = includes[i].GetFileNameAndExt();
+
+                AssetParams includeParams {
+                    .typeId = SHADER_INCLUDE_ASSET_TYPE,
+                    .path = Path::JoinUnix(fileDir, includeFilename)
+                };
+                data->AddDependency(nullptr, includeParams);
+            }
+        }
         return true;
     #else
         UNUSED(params);

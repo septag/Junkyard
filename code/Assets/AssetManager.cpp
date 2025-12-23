@@ -33,7 +33,6 @@
 //    ╚██████╔╝███████╗╚██████╔╝██████╔╝██║  ██║███████╗███████║
 //     ╚═════╝ ╚══════╝ ╚═════╝ ╚═════╝ ╚═╝  ╚═╝╚══════╝╚══════╝
 static inline constexpr uint32 ASSET_CACHE_FILE_ID = MakeFourCC('A', 'C', 'C', 'H');
-static inline constexpr uint32 ASSET_CACHE_VERSION = 1;
 static inline constexpr uint32 ASSET_LOAD_ASSET_REMOTE_CMD = MakeFourCC('L', 'D', 'A', 'S');
 static inline constexpr float ASSET_SAVE_CACHE_LOOKUP_INTERVAL = 1.0f;
 static inline constexpr float ASSET_HOT_RELOAD_INTERVAL = 0.2f;
@@ -44,6 +43,7 @@ static inline constexpr uint32 ASSET_SERVER_MAX_IN_FLIGHT = 128;
 static inline constexpr uint32 ASSET_HOT_RELOAD_MAX_IN_FLIGHT = 128;
 static inline constexpr uint32 ASSET_MAX_TRANSFER_SIZE_PER_FRAME = 50*SIZE_MB;  
 static inline constexpr const char* ASSET_CACHE_LOOKUP_FILEPATH = "/cache/_CacheLookup.txt";
+static inline constexpr const char* ASSET_METADATA_EXT = ".asset";
 
 struct AssetTypeManager
 {
@@ -51,10 +51,11 @@ struct AssetTypeManager
     uint32 fourcc;
     uint32 cacheVersion;
     AssetTypeImplBase* impl;
-    uint32 extraParamTypeSize;
-    String32 extraParamTypeName;
     void* failedObj;
     void* asyncObj;
+    String32 extraParamTypeName;
+    uint32 extraParamTypeSize;
+    AssetTypeFlags flags;
     bool unregistered;
 };
 
@@ -124,7 +125,8 @@ struct alignas(CACHE_LINE_SIZE) AssetDataHeader
     const char* typeName;
     AssetParams* params;
     AssetDataInternal* data;
-    STRUCT_PADDING_16_BYTES();
+    AssetTypeFlags typeFlags;
+    STRUCT_PADDING_12_BYTES();
 };
 
 enum AssetLoadTaskInputType
@@ -230,6 +232,14 @@ struct AssetCacheRef
     Path sourceFilepath;
 };
 
+// This is used to track parent asset dependencies for AssetTypeFlags::HotReloadParents functionality
+struct AssetDependencyParentRef
+{
+    AssetHandle handle;
+    AssetDependencyParentRef* next;
+    AssetDependencyParentRef* prev;
+};
+
 struct AssetMan
 {
     MemProxyAllocator alloc;
@@ -258,6 +268,8 @@ struct AssetMan
     JobsSignal* curJobSignal;
 
     Array<AssetHandle> hotReloadList;
+    FixedSizePool<AssetDependencyParentRef> hotReloadParentTrackItems;
+    HashTable<AssetDependencyParentRef*> hotReloadParentTrackLookup;        // Key=Child Asset Handle id, Value: Linked-list of parents
 
     AssetServer server;
     bool isServerEnabled;
@@ -343,7 +355,7 @@ static void Asset::_UnloadDatasManually(Span<AssetDataPair> datas)
             AssetDataInternal::Dependency* dep = data->deps.Get();
             while (dep) {
                 AssetHandle* targetHandle = dep->bindToHandle.Get();
-                if (targetHandle->IsValid()) 
+                if (targetHandle && targetHandle->IsValid()) 
                     depHandles.Push(*targetHandle);
                 dep = dep->next.Get();
             }
@@ -393,9 +405,9 @@ static void Asset::_OnFileChanged(const char* filepath)
 
     // Metadata check: if filepath is a metadata file, then check the asset filepath instead
     Path path(filepath);
-    if (path.EndsWith(".asset")) {
+    if (path.EndsWith(ASSET_METADATA_EXT)) {
         char* p = path.Ptr();
-        p[path.Length() - 6] = '\0';
+        p[path.Length() - Str::LenStringLiteral(ASSET_METADATA_EXT)] = '\0';
         path.CalcLength();
     }
 
@@ -534,7 +546,7 @@ static uint32 Asset::_MakeCacheFilepath(Path* outPath, const AssetDataHeader* he
     //  - If meta file exists, Modified Time + size of the meta file
     if (assetHash == 0) {
         Path assetMetaPath = assetFilepath;
-        assetMetaPath.Append(".asset");
+        assetMetaPath.Append(ASSET_METADATA_EXT);
 
         PathInfo assetFileInfo = Vfs::GetFileInfo(assetFilepath.CStr());
         if (assetFileInfo.type == PathType::File) {
@@ -577,7 +589,7 @@ static uint32 Asset::_MakeCacheFilepath(Path* outPath, const AssetDataHeader* he
 static Span<AssetMetaKeyValue> Asset::_LoadMetaData(const char* assetFilepath, AssetPlatform::Enum platform, MemAllocator* alloc)
 {
     Path assetMetaPath(assetFilepath);
-    assetMetaPath.Append(".asset");
+    assetMetaPath.Append(ASSET_METADATA_EXT);
     
     uint32 tempId = MemTempAllocator::PushId();
     MemTempAllocator tmpAlloc(tempId);
@@ -686,6 +698,7 @@ static AssetHandleResult Asset::_CreateOrFetchHandle(const AssetParams& params)
         r.header->params->path = params.path;
         r.header->params->platform = params.platform;
         r.header->typeName = typeMan.name.CStr();
+        r.header->typeFlags = typeMan.flags;
         if (params.extraParams)
             memcpy(r.header->params->extraParams, params.extraParams, typeMan.extraParamTypeSize);
 
@@ -740,6 +753,7 @@ static void Asset::_LoadAssetTask(uint32 groupIdx, void* userData)
 
         // Parse/Bake
         Span<uint8> srcData((uint8*)const_cast<void*>(fileData), fileSize);
+        ASSERT(typeMan.impl);
         if (!typeMan.impl->Bake(params, &assetData, srcData, &taskData.outputs.errorDesc)) {
             // taskData.outputs.errorDesc = "Bake failed";
             alloc->SetOffset(startOffset);
@@ -964,10 +978,52 @@ static void Asset::_LoadGroupTask(uint32, void* userData)
         loadListHandles.Reserve(group.loadList.Count());
 
         for (AssetHandle handle : group.loadList) {
-            if (gAssetMan.assetDb.IsValid(handle)) {
-                loadList.Push(gAssetMan.assetDb.Data(handle));
+            if (!gAssetMan.assetDb.IsValid(handle))
+                continue;
+
+            AssetDataHeader* header = gAssetMan.assetDb.Data(handle);
+            if (!IsBitsSet<AssetTypeFlags>(header->typeFlags, AssetTypeFlags::Virtual)) {
+                loadList.Push(header);
                 loadListHandles.Push(handle);
             }
+
+            // For Hot reloading parents
+            // Go through the dependencies of all assets and check if this handle is owned by them and reload them as well
+            if constexpr (CONFIG_DEV_MODE) {
+                if (isHotReloadGroup && IsBitsSet<AssetTypeFlags>(header->typeFlags, AssetTypeFlags::HotReloadParents)) {
+                    uint32 parentListIdx = gAssetMan.hotReloadParentTrackLookup.Find(handle.mId);
+                    if (parentListIdx != -1) {
+                        AssetDependencyParentRef* pRef = gAssetMan.hotReloadParentTrackLookup.Get(parentListIdx);
+                        AssetDependencyParentRef* pFirstRef = pRef;
+                        while (pRef) {
+                            ASSERT(pRef->handle.IsValid());
+                            ASSERT(pRef->handle != handle);
+                            // Just remove invalided (unloaded) parents
+                            if (!gAssetMan.assetDb.IsValid(pRef->handle)) {
+                                if (pRef == pFirstRef) {
+                                    if (pRef->next == nullptr)
+                                        gAssetMan.hotReloadParentTrackLookup.Remove(parentListIdx);
+                                    else
+                                        gAssetMan.hotReloadParentTrackLookup.Set(parentListIdx, pRef->next);
+                                }
+                                else {
+                                    if (pRef->next)
+                                        pRef->next->prev = pRef->prev;
+                                    if (pRef->prev)
+                                        pRef->prev->next = pRef->next;
+                                }
+
+                                pRef = pRef->next;
+                                continue;
+                            }
+
+                            loadList.Push(gAssetMan.assetDb.Data(pRef->handle));
+                            loadListHandles.Push(pRef->handle);
+                            pRef = pRef->next;
+                        }
+                    }
+                } // HotReloadParents
+            } // CONFIG_DEV_MODE
         }
 
         group.loadList.Clear();
@@ -1086,10 +1142,9 @@ static void Asset::_LoadGroupTask(uint32, void* userData)
                 continue;
             }
 
-            AssetDataHeader* header = loadList[i + k];
             uint32 typeManIdx = gAssetMan.typeManagers.FindIf(
-                [typeId = header->typeId](const AssetTypeManager& typeMgr) { return typeMgr.fourcc == typeId; });
-            ASSERT_MSG(typeManIdx != UINT32_MAX, "AssetType with FourCC %x is not registered", header->typeId);
+                [typeId = in.header->typeId](const AssetTypeManager& typeMgr) { return typeMgr.fourcc == typeId; });
+            ASSERT_MSG(typeManIdx != UINT32_MAX, "AssetType with FourCC %x is not registered", in.header->typeId);
             const AssetTypeManager& typeMan = gAssetMan.typeManagers[typeManIdx];
 
             AssetQueuedItem qa {
@@ -1118,17 +1173,46 @@ static void Asset::_LoadGroupTask(uint32, void* userData)
 
                 AssetHandleResult depHandleResult = _CreateOrFetchHandle(params);
                 AssetHandle* targetHandle = dep->bindToHandle.Get();
-                *targetHandle = depHandleResult.handle;
-                if (depHandleResult.newlyCreated) {
-                    // Before pushing to loadList, we need to check if we are running the next loop, if not, fix the index
-                    if (i > loadList.Count())
-                        i = loadList.Count();
+                if (targetHandle) {
+                    *targetHandle = depHandleResult.handle;
 
-                    loadList.Push(depHandleResult.header);
-                    loadListHandles.Push(depHandleResult.handle);
-                    ++allCount;
+                    if (depHandleResult.newlyCreated) {
+                        // Before pushing to loadList, we need to check if we are running the next loop, if not, fix the index
+                        if (i > loadList.Count())
+                            i = loadList.Count();
+
+                        loadList.Push(depHandleResult.header);
+                        loadListHandles.Push(depHandleResult.handle);
+                        ++allCount;
+                    }
                 }
 
+                if constexpr (CONFIG_DEV_MODE) {
+                    uint32 depTypeManIdx = gAssetMan.typeManagers.FindIf(
+                        [typeId = dep->typeId](const AssetTypeManager& typeMgr) { return typeMgr.fourcc == typeId; });
+                    ASSERT_MSG(depTypeManIdx != UINT32_MAX, "AssetType with FourCC %x is not registered", dep->typeId);
+                    const AssetTypeManager& depTypeMan = gAssetMan.typeManagers[depTypeManIdx];
+
+                    if (!isHotReloadGroup && IsBitsSet<AssetTypeFlags>(depTypeMan.flags, AssetTypeFlags::HotReloadParents)) {
+                        AssetDependencyParentRef* pRef = gAssetMan.hotReloadParentTrackItems.New();
+                        pRef->handle = loadListHandles[i + k];
+                        pRef->next = nullptr;
+                        pRef->prev = nullptr;
+
+                        uint32 hotReloadDepIdx = gAssetMan.hotReloadParentTrackLookup.Find(depHandleResult.handle.mId);
+                        if (hotReloadDepIdx != -1) {
+                            AssetDependencyParentRef* pFirstRef = gAssetMan.hotReloadParentTrackLookup.Get(hotReloadDepIdx);
+                            ASSERT(pFirstRef);
+                            pFirstRef->prev = pRef;
+                            pRef->next = pFirstRef;
+                            gAssetMan.hotReloadParentTrackLookup.Set(hotReloadDepIdx, pRef);
+                        }
+                        else {
+                            gAssetMan.hotReloadParentTrackLookup.Add(depHandleResult.handle.mId, pRef);
+                        }
+                    }
+                }
+                
                 dep = dep->next.Get();
             }
         } 
@@ -1317,6 +1401,7 @@ static void Asset::_LoadGroupTask(uint32, void* userData)
             ASSERT_MSG(typeManIdx != UINT32_MAX, "AssetType with FourCC %x is not registered", header->typeId);
             const AssetTypeManager& typeMan = gAssetMan.typeManagers[typeManIdx];
 
+            ASSERT(typeMan.impl);
             if (!typeMan.impl->Reload(header->data->objData.Get(), oldDatas[i].first->objData.Get())) {
                 LOG_ERROR("Reloading %s '%s' failed", typeMan.name.CStr(), header->params->path.CStr());
 
@@ -1397,9 +1482,11 @@ static void Asset::_UnloadGroupTask(uint32, void* userData)
                 // Add dependencies to the unload list
                 AssetDataInternal::Dependency* dep = header->data->deps.Get();
                 while (dep) {
-                    AssetHandle* targetHandle = dep->bindToHandle.Get();
-                    if (targetHandle->IsValid()) 
-                        unloadList.Push(*targetHandle);
+                    if (!dep->bindToHandle.IsNull()) {
+                        AssetHandle* targetHandle = dep->bindToHandle.Get();
+                        if (targetHandle->IsValid()) 
+                            unloadList.Push(*targetHandle);
+                    }
                     dep = dep->next.Get();
                 }
 
@@ -1439,6 +1526,20 @@ static void Asset::_UnloadGroupTask(uint32, void* userData)
         ReadWriteMutexWriteScope wlock(gAssetMan.assetMutex);
         for (AssetHandle handle : unloadList) {
             AssetDataHeader* header = gAssetMan.assetDb.Data(handle);
+
+            if constexpr (CONFIG_DEV_MODE) {
+                if (IsBitsSet<AssetTypeFlags>(header->typeFlags, AssetTypeFlags::HotReloadParents)) {
+                    uint32 hotReloadDepIdx = gAssetMan.hotReloadParentTrackLookup.Find(handle.mId);
+                    if (hotReloadDepIdx != -1) {
+                        AssetDependencyParentRef* pRef = gAssetMan.hotReloadParentTrackLookup.Get(hotReloadDepIdx);
+                        while (pRef) {
+                            gAssetMan.hotReloadParentTrackItems.Delete(pRef);
+                            pRef = pRef->next;
+                        }
+                        gAssetMan.hotReloadParentTrackLookup.Remove(hotReloadDepIdx);
+                    }
+                }
+            }
             
             gAssetMan.assetLookup.FindAndRemove(header->paramsHash);
             gAssetMan.assetDb.Remove(handle);
@@ -1685,10 +1786,11 @@ void Asset::RegisterType(const AssetTypeDesc& desc)
         .fourcc = desc.fourcc,
         .cacheVersion = desc.cacheVersion,
         .impl = desc.impl,
-        .extraParamTypeSize = desc.extraParamTypeSize,
-        .extraParamTypeName = desc.extraParamTypeName,
         .failedObj = desc.failedObj,
         .asyncObj = desc.asyncObj,
+        .extraParamTypeName = desc.extraParamTypeName ? desc.extraParamTypeName : "",
+        .extraParamTypeSize = desc.extraParamTypeSize,
+        .flags = desc.flags
     };
 
     gAssetMan.typeManagers.Push(mgr);
@@ -1760,10 +1862,17 @@ bool Asset::Initialize()
         LOG_INFO("(init) Asset Server");
     }
 
+    // Hot-reload data
     if constexpr (CONFIG_DEV_MODE) {
         gAssetMan.isHotReloadEnabled = true;
         gAssetMan.hotReloadMutex.Initialize();
         gAssetMan.hotReloadList.SetAllocator(alloc);
+        
+        gAssetMan.hotReloadParentTrackItems.SetAllocator(alloc);
+        gAssetMan.hotReloadParentTrackItems.Reserve(512);
+
+        gAssetMan.hotReloadParentTrackLookup.SetAllocator(alloc);
+        gAssetMan.hotReloadParentTrackLookup.Reserve(512);
 
         Vfs::RegisterFileChangeCallback(_OnFileChanged);
     }
@@ -1851,6 +1960,8 @@ void Asset::Release()
         gAssetMan.isHotReloadEnabled = false;
         gAssetMan.hotReloadMutex.Release();
         gAssetMan.hotReloadList.Free();
+        gAssetMan.hotReloadParentTrackItems.Free();
+        gAssetMan.hotReloadParentTrackLookup.Free();
     }
 
     Image::ReleaseManager();
@@ -2111,11 +2222,15 @@ void AssetData::AddDependency(AssetHandle* bindToHandle, const AssetParams& para
         [typeId = params.typeId](const AssetTypeManager& typeMgr) { return typeMgr.fourcc == typeId; });
     ASSERT_MSG(typeManIdx != UINT32_MAX, "AssetType with FourCC %x is not registered", params.typeId);
     const AssetTypeManager& typeMan = gAssetMan.typeManagers[typeManIdx];
+    ASSERT_MSG(!IsBitsSet<AssetTypeFlags>(typeMan.flags, AssetTypeFlags::Virtual) || bindToHandle == nullptr, 
+               "Virtual asset types cannot be binded to any handles, because the don't have data associated with them");
 
     AssetDataInternal::Dependency* dep = Mem::AllocZeroTyped<AssetDataInternal::Dependency>(1, mAlloc);
     dep->path = params.path;
     dep->typeId = params.typeId;
-    dep->bindToHandle = Asset::_TranslatePointer<AssetHandle>(bindToHandle, mOrigObjPtr, mData->objData.Get());
+
+    if (bindToHandle)
+        dep->bindToHandle = Asset::_TranslatePointer<AssetHandle>(bindToHandle, mOrigObjPtr, mData->objData.Get());
     if (params.extraParams)
         dep->typeSpecificParams = Mem::AllocCopy<uint8>((uint8*)params.extraParams, typeMan.extraParamTypeSize, mAlloc);
     
@@ -2220,6 +2335,15 @@ void AssetGroup::AddToLoadQueue(const AssetParams* paramsArray, uint32 numAssets
     // So put some restrictions or management here
     for (uint32 i = 0; i < numAssets; i++) {
         const AssetParams& params = paramsArray[i];
+
+        if constexpr(CONFIG_ENABLE_ASSERT) {
+            uint32 typeManIdx = gAssetMan.typeManagers.FindIf(
+                [typeId = params.typeId](const AssetTypeManager& typeMgr) { return typeMgr.fourcc == typeId; });
+            ASSERT_MSG(typeManIdx != UINT32_MAX, "AssetType with FourCC %x is not registered", params.typeId);
+            ASSERT_MSG(!IsBitsSet<AssetTypeFlags>(gAssetMan.typeManagers[typeManIdx].flags, AssetTypeFlags::Virtual), 
+                       "Virtual assets cannot be directly loaded");
+        }
+
         AssetHandleResult r = Asset::_CreateOrFetchHandle(params);
         if (r.newlyCreated)
             group.loadList.Push(r.handle);

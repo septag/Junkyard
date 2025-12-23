@@ -14,6 +14,7 @@ namespace Str
     API char* Concat(char* RESTRICT dst, uint32 dstSize, const char* RESTRICT src);
     API char* ConcatCount(char* RESTRICT dst, uint32 dstSize, const char* RESTRICT src, uint32 count);
     NO_ASAN API uint32 Len(const char* str);
+    FORCE_INLINE constexpr uint32 LenStringLiteral(const char* str);
     API uint32 PrintFmt(char* str, uint32 size, const char* fmt, ...);
     API uint32 PrintFmtArgs(char* str, uint32 size, const char* fmt, va_list args);
     API char* PrintFmtAlloc(MemAllocator* alloc, const char* fmt, ...);
@@ -413,4 +414,12 @@ inline uint32 String<_Size>::CalcLength()
 {
     mLen = Str::Len(mStr);
     return mLen;
+}
+
+FORCE_INLINE constexpr uint32 Str::LenStringLiteral(const char* str)
+{
+    uint32 count = 0;
+    while (*(str++)) 
+        ++count;
+    return count;
 }

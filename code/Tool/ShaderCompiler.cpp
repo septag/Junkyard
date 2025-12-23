@@ -86,7 +86,9 @@ static GfxFormat shaderTranslateVertexInputFormat([[maybe_unused]] uint32 rows, 
 }
 
 Pair<GfxShader*, uint32> Compile(const Span<uint8>& sourceCode, const char* filepath, const ShaderCompileDesc& desc, 
-                                 char* errorDiag, uint32 errorDiagSize, MemAllocator* alloc)
+                                 char* errorDiag, uint32 errorDiagSize, 
+                                 Path** outIncludes, uint32* outNumIncludes,
+                                 MemAllocator* alloc)
 {
     if (gSlangSession == nullptr) {
         gSlangSession = spCreateSession();
@@ -124,7 +126,7 @@ Pair<GfxShader*, uint32> Compile(const Span<uint8>& sourceCode, const char* file
     spAddTranslationUnitSourceStringSpan(req, translationUnitIdx, filepath, (const char*)sourceCode.Ptr(), (const char*)sourceCode.Ptr() + sourceCode.Count());
     
     int result = spCompile(req);
-    
+
     const char* diag = spGetDiagnosticOutput(req);
     if (result != 0) {
         if (errorDiag)
@@ -249,6 +251,32 @@ Pair<GfxShader*, uint32> Compile(const Span<uint8>& sourceCode, const char* file
     }
 
     uint32 shaderBufferSize = uint32(tmpAlloc.GetOffset() - tmpAlloc.GetPointerOffset(shader));
+    // End: shader load
+
+    // Check dependencies (includes) and fill an extra buffer
+    Array<Path> includes(&tmpAlloc);
+    uint32 numFileDependencies = spGetDependencyFileCount(req);
+    for (uint32 i = 1; i < numFileDependencies; i++)
+        includes.Push(spGetDependencyFilePath(req, i));
+
+    spDestroyCompileRequest(req);
+
+    if (!includes.IsEmpty()) {
+        if (outNumIncludes) {
+            ASSERT(outIncludes);
+            if (tmpAlloc.OwnsId()) {
+                *outIncludes = Mem::AllocCopy<Path>(includes.Ptr(), includes.Count(), alloc);
+                *outNumIncludes = includes.Count();
+            }
+            else {
+                includes.Detach(outIncludes, outNumIncludes);
+            }
+        }
+        else {
+            *outNumIncludes = 0;
+        }
+    }
+
     if (tmpAlloc.OwnsId())
         return Pair<GfxShader*, uint32>(Mem::AllocCopyRawBytes<GfxShader>(shader, shaderBufferSize, alloc), shaderBufferSize);
     else

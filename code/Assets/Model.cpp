@@ -861,14 +861,14 @@ namespace GLTF
 bool Model::InitializeManager()
 {
     AssetTypeDesc desc {
+        .name = "Model",
         .fourcc = MODEL_ASSET_TYPE,
         .cacheVersion = ASSET_CACHE_MODEL_VERSION,
-        .name = "Model",
         .impl = &gModelImpl,
+        .failedObj = nullptr,
+        .asyncObj = nullptr,
         .extraParamTypeName = "ModelLoadParams",
         .extraParamTypeSize = sizeof(ModelLoadParams),
-        .failedObj = nullptr,
-        .asyncObj = nullptr
     };
 
     Asset::RegisterType(desc);

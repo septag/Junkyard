@@ -31,7 +31,9 @@ namespace ShaderCompiler
 {
     // Note: `alloc` should not be tmpAlloc
     API Pair<GfxShader*, uint32> Compile(const Span<uint8>& sourceCode, const char* filepath, const ShaderCompileDesc& desc, 
-                                         char* errorDiag, uint32 errorDiagSize, MemAllocator* alloc);
+                                         char* errorDiag, uint32 errorDiagSize, 
+                                         Path** outIncludes = nullptr, uint32* outNumIncludes = nullptr, 
+                                         MemAllocator* alloc = Mem::GetDefaultAlloc());
     API void ReleaseLiveSessions();
 }
 

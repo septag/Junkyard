@@ -6,6 +6,7 @@
 #include "../Common/CommonTypes.h"
 
 // Cache versions for each asset type
+inline constexpr uint32 ASSET_CACHE_VERSION = 2;
 inline constexpr uint32 ASSET_CACHE_SHADER_VERSION = 4;
 inline constexpr uint32 ASSET_CACHE_IMAGE_VERSION = 1;
 inline constexpr uint32 ASSET_CACHE_MODEL_VERSION = 3;
@@ -75,16 +76,25 @@ enum AssetGroupState : uint32
     Unloading
 };
 
+enum class AssetTypeFlags : uint32
+{
+    None = 0,
+    Virtual,            // Virtual assets doesn't have data or any loading process associated with them (ex. shader includes)
+    HotReloadParents    // Hot reload parent dependencies if reloaded
+};
+ENABLE_BITMASK(AssetTypeFlags);
+
 struct AssetTypeDesc
 {
+    const char* name;               // For verbosity (logging, debugging and such)
     uint32 fourcc;                  // Unique asset type identifier
     uint32 cacheVersion;            // Cache version per asset type. You should bump this cache version if the underlying asset data has changed
-    const char* name;               // For verbosity (logging, debugging and such)
     AssetTypeImplBase* impl;        // Asset type implementation. Since every asset type has it's own data and is baked differently
-    const char* extraParamTypeName; // (optional) For verbosity. "Param types" are custom types that are passed to asset load function
-    uint32 extraParamTypeSize;      // (optional) Extra paramters struct size for loading an asset. Basically `sizeof` of that struct.
     void* failedObj;                // the pointer to a static data that asset manager returns when asset fails to load
     void* asyncObj;                 // the pointer to a static data that asset manager returns while it's loading the asset
+    const char* extraParamTypeName; // (optional) For verbosity. "Param types" are custom types that are passed to asset load function
+    uint32 extraParamTypeSize;      // (optional) Extra paramters struct size for loading an asset. Basically `sizeof` of that struct.
+    AssetTypeFlags flags;           // (optional) Additional flags. See AssetTypeFlags
 };
 
 
