@@ -129,12 +129,7 @@ The beginning of headers usually include some important documentation about the 
 For some general coding and styling rules see [Coding Standard](doc/misc/CodingStandard.md)
 
 ### Blog posts and design documents
-Design documents can be browsed offline locally. The [main page](doc/index.md.html) is under `doc` folder:
-- [**Introduction**](doc/junkyard-intro/index.md.html): It's just an introduction to design principles, goals and essential 3rdparty tools that I use.
-- [**Memory Basics**](doc/junkyard-memory-01/index.md.html): This covers basic memory allocation and design at the core level. It's an essential read if you want to make the best use of memory and understand the memory concepts behind the engine.
-- [**Relative Pointers**](doc/junkyard-relativeptr/index.md.html): A kind of a follow up to the memory basics. Covers the concept of *Relative Pointers* used in some parts of the engine, especially binary serialization.
-- [**Project Structure**](doc/junkyard-struct/index.md.html): Covers build structure and platform projects in more detail, directory structures and basic things you should know about adding modules and dependency checking between the modules. 
-- [**Asset Manager**](doc/junkyard-assetman/index.md.html): Asset manager design goals and details on the internals. Also quite useful if someone wants to add a new asset type to the engine.
+Design documents can be browsed offline locally. The [main page](doc/index.md.html) is under `doc` folder. Just open the index html file in your browser after fetching the repo.
 
 ## Dependencies
 External dependencies are a pretty big deal imo, so I'm going to pay special attention to them. They are part of your code even if you don't write them yourself and they all play a big role in compile-times, maintenance, deployment and technical debt of your code. So I try to keep the dependencies small and to minimum. Most of the dependencies here are simple stb-style single-header C libs, but some just can't be as small and quick-to-compile as I want them to be (eg Physics/Audio/Baking/ShaderCompilers/etc), usually those ones are downloaded off the internet and not part of the repo. Anyway, here they are:
