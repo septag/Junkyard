@@ -66,6 +66,7 @@ struct AppImpl : AppCallbacks
     GfxPipelineLayoutHandle mPipelineLayout;
     GfxBufferHandle mUniformBuffer;
     GfxImageHandle mRenderTargetDepth;
+    GfxSamplerHandle mSampler;
 
     AssetHandleShader mUnlitShader;
     uint32 mNumFilePaths = 0;
@@ -273,8 +274,9 @@ struct AppImpl : AppCallbacks
                             },
                             {
                                 .name = "BaseColorTexture",
-                                .image = image->handle
-                            }
+                                .image = image->handle,
+                                .sampler = mSampler
+                            },
                         };
                         cmd.PushBindings(mPipelineLayout, CountOf(bindings), bindings);
                         cmd.DrawIndexed(mesh.numIndices, 1, 0, 0, 0);
@@ -471,7 +473,7 @@ struct AppImpl : AppCallbacks
             .hasDepth = true
         };
 
-        cmd.TransitionImage(mRenderTargetDepth, GfxImageTransition::RenderTarget, GfxImageTransitionFlags::DepthRead);
+        cmd.TransitionImage(mRenderTargetDepth, GfxImageTransition::RenderTarget, GfxImageTransitionFlags::DepthWrite);
         cmd.BeginRenderPass(pass);
 
         cmd.BindPipeline(mPipeline);
@@ -602,7 +604,7 @@ struct AppImpl : AppCallbacks
 
         self->mPipeline = GfxBackend::CreateGraphicsPipeline(*shader, self->mPipelineLayout, pipelineDesc);
 
-        GfxImageDesc desc {
+        GfxImageDesc renderTargetDesc {
             .width = App::GetFramebufferWidth(),
             .height = App::GetFramebufferHeight(),
             .multisampleFlags = GfxMultiSampleCount::SampleCount1,
@@ -611,7 +613,14 @@ struct AppImpl : AppCallbacks
             .arena = GfxMemoryArena::PersistentGPU
         };
 
-        self->mRenderTargetDepth = GfxBackend::CreateImage(desc);
+        self->mRenderTargetDepth = GfxBackend::CreateImage(renderTargetDesc);
+
+        GfxSamplerDesc samplerDesc {
+            .samplerFilter = GfxSamplerFilterMode::LinearMipmapLinear,
+            .samplerWrap = GfxSamplerWrapMode::Repeat
+        };
+
+        self->mSampler = GfxBackend::CreateSampler(samplerDesc);
     }
 
     void ReleaseGraphicsObjects()
@@ -620,6 +629,7 @@ struct AppImpl : AppCallbacks
         GfxBackend::DestroyPipelineLayout(mPipelineLayout);
         GfxBackend::DestroyBuffer(mUniformBuffer);
         GfxBackend::DestroyImage(mRenderTargetDepth);
+        GfxBackend::DestroySampler(mSampler);
     }
 };
 

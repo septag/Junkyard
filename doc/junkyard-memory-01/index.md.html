@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="en">
+    <meta charset="utf-8">
+    <title>Junkyard: Memory Management</title>
+    <meta name="description" content="">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, shrink-to-fit=no">
+    <link href="../css/normalize.css" rel="stylesheet" media="all">
+    <link href="../css/styles.css" rel="stylesheet" media="all">
+    <link rel="stylesheet" href="../css/base-min.css">
+    <link rel="stylesheet" href="../css/grids-core-min.css">
+    <link rel="stylesheet" href="../css/grids-min.css">
+</html>
+
+<body style="margin:auto">
+                        **Junkyard - Memory Management**
+                        <small>24 feb 2023</small>
+                        <small>edit: 28 april 2025</small>
+
+<small><b>Github project: [https://github.com/septag/Junkyard](https://github.com/septag/Junkyard)</b></small>
+
+I've put a lot of effort into coming up with a good core lib/stl replacement for *Junkyard*. Especially for handling memory. But also, made some radical decisions that I might regret in the future or maybe, it becomes one the few best decisions I've ever made. 
+
+# Allocators
+
+[*`Core/Base.h`*](https://github.com/septag/Junkyard/blob/main/code/Core/Base.h)
+[*`Core/Allocators.h`*](https://github.com/septag/Junkyard/blob/main/code/Core/Allocators.h)
+
+Pretty much every memory allocation goes into a custom allocator, unless it's out of our hands (external libs/libc/etc.). Custom allocators can be overrided from a base class like this:
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~ c++
+// see Core/Base.h
+struct NO_VTABLE MemAllocator
+{
+    virtual void* Malloc(size_t size, uint32 align) = 0;
+    virtual void* Realloc(void* ptr, size_t size, uint32 align) = 0;
+    virtual void  Free(void* ptr, uint32 align) = 0;
+    virtual AllocatorType GetType() = 0;
+};
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+## Allocator types
+
+The purpose of using allocators extensively is to avoid granular allocations and actually think about the context of allocation and use the best approach for each scenario.  
+In terms of scope of the allocation and usage pattern, these are a few most common cases I can think of:
+
+- **Temp allocations**: You either need to allocate memory within a function scope, or allocate a chunk that you use temporary within the scope of the frame or a process. These allocations can be quite fast and there is no need to free them as they are automatically freed by the system.
+- **Init-time/Load-time allocations**: These allocations stay resident in memory during the lifetime of the program or the level. The scope is known, they also usually reside within a single sub-system.
+- **Fully dynamic allocations**: The usage of fully dynamic allocation is actually not as common as many people may think of. Their scope is not known, can be any size and can be shared across many systems.
+
+That being said, I wrote a few built-in allocators to address these use cases:
+
+### Heap allocator
+This is the mother allocator, most generic and also less-efficient of all. Basically stdc `malloc` and `free`. *Heap allocator* is passed to almost every allocating function as the default parameter for convenience. And of course it covers the `Fully dynamic` use case mentioned above. It also works best when we need to diagnose memory issues as it plays well with ASAN and other system tools.
+
+### Temp allocator
+This is a **stack-like bump allocator**. Covers all *Temp allocations* that happen within a small scope, like within functions. Very simple in concept:
+
+- Every thread, has it's own local temp allocator. Backed by virtual memory pages.
+- It advances on allocations by incrementing the offset.
+- The entire buffer can grow by commiting pages to virtual memory.
+- It relies heavily on RAII allocations, this is an exception of not using RAII for allocations mainly because of it's limited known scope and convenience of using RAII for stack-based allocation pattern. Declare a new instance of `MemTempAllocator` and you will get a new offset in the stack. The offset is popped whenever the allocator goes out of scope. 
+- At the end of the frame, there is heuristic function that checks each *used* temp allocator and see if we need to shrink or grow the buffer based on the last N peak allocations. This is to avoid having large temp allocations linger for too long.
+
+![Temp allocator: Stack based allocation per-thread. In this figure, growable page size is 256kb](stack-alloc.drawio.png)
+
+This type, is used extensively all over the code. Allocations are usually temporary, like opening files and copy the data into a blob, allocating a temporary buffer for processing, parsing json and other intermediate formats, baking data, etc. So they are thrown away afterwards and mostly used in a single function scope. Here is an example usage:
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~ c++
+{
+    MemTempAllocator tmpAlloc;
+    Blob blob = Vfs::ReadFile("test.json", 0, &tmpAlloc);
+
+    {
+        MemTempAllocator tmpAlloc2;
+        JsonData* json = ParseJson(blob, &tmpAlloc2)
+        ...
+    } // "json" buffer will be freed and is invalid after this scope ends
+} // data in the "blob" will be freed and is invalid after this scope ends
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+#### Caveats
+This is not a perfect solution and has it's own caveats. So there are a few things that one should be aware of when using this allocator:
+
+- **Beware of passing temp allocator to functions that use temp allocations internally:** This is a tricky thing, because it can potentially cause coding complications and undefined behavior. Here's an example of a wrong usage:
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~ c++
+struct DataItem
+{
+    uint32 a;
+    uint32 b;
+};
+
+static Span<DataItem> ReadData(const char* filepath, Allocator* alloc)
+{
+    Array<DataItem> data(alloc);    // declare an array with the incoming allocator
+    
+    // Start reading file and extract data
+    MemTempAllocator tempAlloc;
+    Blob blob = vfsReadFile(filepath, 0, &tempAlloc);
+    
+    uint32 numItems;
+    blob.Read<uint32>(&numItems);
+    for (uint32 i = 0; i < numItems; i++) {
+        DataItem item;
+        blob.Read<uint32>(&item.a);
+        blob.Read<uint32>(&item.b);
+        data.Push(item);    // DANG! array with the previous temp-allocator in the stack is trying to allocate
+    }
+
+    return data.Detach();
+}
+
+void main()
+{
+    MemTempAllocator tempAlloc;
+    Span<DataItem> myData = ReadData("test.bin", &tempAlloc);
+} // data in the "blob" will be freed and is invalid after this scope ends
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The code is basically trying to load a file and extract an array of `DataItem` and it all happens in a temp allocator context.  
+
+But as you can see in the code above, this will mess up the temp allocators. As we have already pushed a new temp allocator to the stack in the `main()` function, meanwhile, `ReadData` function pushes it's own temp allocator into the stack and allocates the file blob. Afterwards, we are trying to allocate data for the array with allocator coming from the previous stack. This will cause the memory system to throw an assert and give you a descriptive message that you should restructure your code.
+
+So basically, this means that **temp allocators should not overlap each other**. There are a few things that can be done in this case to fix it:
+- Do not use temp allocator in the `main` (caller) function.
+- Get the number of entries in the file first, then allocate the needed memory beforehand and pass that to `ReadData`
+- If performance is critical and you want the function stay generic, you can use manual temp allocator management to detect the incoming allocator and use that for the next allocations instead.
+
+As for the last solution, we can rewrite `ReadData` and hack our way with something like this:
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~ c++
+static Span<DataItem> ReadData(const char* filepath, Allocator* alloc)
+{
+    // The created temp allocator is now aware of incoming allocators so it can reuse it if it's temp
+    bool mainAllocIsTemp = alloc->GetType() == AllocatorType::Temp;
+    MemTempId tempMemId = mainAllocIsTemp ? ((MemTempAllocator*)alloc)->GetId() : MemTempAllocator::PushId();
+    MemTempAllocator tempAlloc(tempMemId);
+
+    Array<DataItem> data(alloc);    // declare an array with the incoming allocator
+    
+    // Start reading file and extract data
+    MemTempAllocator tempAlloc;
+    Blob blob = vfsReadFile(filepath, 0, &tempAlloc);
+    
+    uint32 numItems;
+    blob.Read<uint32>(&numItems);
+    for (uint32 i = 0; i < numItems; i++) {
+        DataItem item;
+        blob.Read<uint32>(&item.a);
+        blob.Read<uint32>(&item.b);
+        data.Push(item);    // DANG! array with the previous temp-allocator in the stack is trying to allocate
+    }
+
+    if (!mainAllocIsTemp)
+        memTempPopId(tempMemId);
+    return data.Detach();
+}
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Now, unfortunately, `ReadData` became lightly more complicated and less readable.  
+
+We are now checking for incoming allocator. If it's *temp* then get it's Id in the stack and use it for temp allocator object. 
+If it's not, then manually push a new temp Id in the temp allocator stack and pop it in the end.
+
+### Bump allocator
+This is a simple form of **linear allocator**. Like temp allocator, the logic is that all allocated memory is layed out continuously in memory. Increases size by a user specified page size. And on each allocation, a "bump offset" increments the allocator pointer. Very simple, very fast and indeed very useful!  
+
+This type of allocator never frees anything and unlike temp allocators, it just grows until you *Reset* the whole thing and get back to beginning or you can also go a bit more advanced by saving the offset and getting back to that offset later. And it can have several backends as it's allocation backend.
+It follows the model of VM allocation, where there is an initial *Reserve* operation, then for each block, it calls *Commit*/*Decommit* and finally when destroyed, it calls *Release*.  
+
+Currently, there is a virtual memory backend and a fully custom one, in which you implement your own backend and it will call it's *Malloc*/*Free* allocator callbacks when doing *Reserve* and *Release* operations.
+
+![Bump allocator: In this example, one big allocator holds all systems init data and others hold level chunks. All are bump allocators](budget-alloc.drawio.png)
+
+### TLSF Allocator
+TLSF is a generic embeddable dynamic allocator (`MemTlsfAllocator`) using Two-Level Segregated Fit memory allocator implementation ([here](https://github.com/mattconte/tlsf)). This type of allocator, alongside heap allocator is used for *Fully dynamic allocations*. You can start with one pool of memory, and it can grow by creating new TLSF pools if there's no space left in the previous ones. 
+So it stays inside other sub-systems for their dynamic allocation needs and mostly places where I don't have full control over allocations, like 3rdparty libs and driver allocations, but with the benefit of containing all allocations in a single big buffer and have better fragmentation. 
+
+!!! note
+    So as you can see, except *dynamic allocations* which it's usage is very much limited by design, all allocators are based on *bump/offset* based allocation model, which is the simplest and fastest type of allocator. And their implementations are easy to understand, modify and debug. 
+
+### Thread-Safe Allocator
+With the exception of generic *Heap allocator* and *Temp allocator*, none of the other allocators above are thread-safe by default. It is generally advised that you choose not to allocate from several threads at a time, but of course this is not always possible. So for this purpose, we have *MemThreadSafeAllocator*.
+
+*MemThreadSafeAllocator* is just a thin wrapper around other allocators that basically locks a *SpinLock* mutex around each allocator function, making it thread-safe for a small performance cost (if you are careful).  
+
+### Proxy Allocator
+This one is also a thin wrapper around other allocators. I use this to track memory quickly instead of digging into external tools like *MemPro* or *Tracy* every time.
+
+What we do usually in sub-systems is that for every major allocator, there's a *ProxyAllocator* which wraps around them. This proxy allocator has a name, and has the option to keep track of allocations (we can turn it off for performance critical situations). The memory tracker itself is also inherently  *Thread-safe* and protected by a *SpinLock*. This is a simple usage example: 
+
+```cpp
+Engine::HelperInitializeProxyAllocator(&gAssetMan.alloc, "AssetMan");
+Engine::HelperInitializeProxyAllocator(&gAssetMan.assetDataAlloc, "AssetMan.Data", &gAssetMan.assetDataAllocBase);
+Engine::HelperInitializeProxyAllocator(&gAssetMan.assetHeaderAlloc, "AssetMan.Headers", &gAssetMan.assetHeaderAllocBase);
+
+Engine::RegisterProxyAllocator(&gAssetMan.alloc);
+Engine::RegisterProxyAllocator(&gAssetMan.assetDataAlloc);
+Engine::RegisterProxyAllocator(&gAssetMan.assetHeaderAlloc);
+
+gAssetMan.assetHeaderAllocBase.Initialize(gAssetMan.alloc, ASSET_HEADER_BUFFER_POOL_SIZE, false);
+gAssetMan.assetDataAllocBase.Initialize(gAssetMan.alloc, ASSET_DATA_BUFFER_POOL_SIZE, false);
+```
+
+`HelperInitializeProxyAllocator` and `RegisterProxyAllocator` are helper functions to initialize *Proxy allocators* and register them in the engine, so that GUI tool can track and show their stats.
+So in this example (see AssetManager.cpp), `gAssetMan.alloc` is the master allocator which binds to engine's global memory allocator (if you don't provide the third parameter). `assetDataAllocBase` and `assetHeaderAllocBase` are later initialized from the master allocator.
+
+So as you can see in the GUI tool below, each of the *Base* allocators are being tracked by proxy allocators (`alloc`, `assetDataAlloc` and `assetHeaderAlloc`) and we get a quick overview of how much memory each allocator within each system is allocating.
+
+![Quick memory tracking GUI](memory-tracking.png)
+
+# Buffers and Containers
+
+So far, I've implemented a few useful container buffers that all work with the allocation model:
+
+- [**Array<>**](https://github.com/septag/Junkyard/blob/main/code/Core/Arrays.h) : Regular growable array, very much like std::vector but very much simplified.
+- [**StaticArray<>**](https://github.com/septag/Junkyard/blob/main/code/Core/Arrays.h): Like Array but of course static and on the stack
+- [**MemSingleShotMalloc<>**](https://github.com/septag/Junkyard/blob/main/code/Core/Allocators.h): POD struct single-shot memory malloc. I'll describe this with more detail in below.
+- [**Blob**](https://github.com/septag/Junkyard/blob/main/code/Core/Blobs.h): Readable and Writable blob of memory. Can grow in size.
+- [**RingBlob**](https://github.com/septag/Junkyard/blob/main/code/Core/Blobs.h): Regular fixed size ring-buffer
+- [**FixedSizePool<>**](https://github.com/septag/Junkyard/blob/main/code/Core/Pools.h): Fast pool memory allocator with Fixed sized elements
+- [**HandlePool<>**](https://github.com/septag/Junkyard/blob/main/code/Core/Pools.h): This construct is a sparse array with handles (generation+index) as references to data. Used pretty much everywhere that we need to export some data from sub-systems. The main difference of this container versus Arrays is that `HandlePool` retains handle's references to their data after adding/removing elements, but Array indices do not.
+
+There are common properties shared among all of these containers:
+
+- They are designed to work with *POD (plain-old-data)* structs only. Obviously the "Modern C++" mindset doesn't like this approach, but this approach avoids many complexities involved with C++ move semantics, ctors and dtors and all that and simplifies the implementation for containers. In fact, *Junkyard* never uses move semantics because we don't need them.
+- Besides a custom allocator, we have the option to pass custom *Buffer/Size* pairs instead. This way, no containers will have the ability to grow anymore and the whole memory management is passed on to the user.
+- They don't allocate anything in *ctor* or deallocate in *dtor*. Again, this is in contrast to "Modern C++" mindset where RAII memory management is encouraged with smart pointers and all those stuff. But with this approach, memory allocation/deallocation is very explicit and done by calling functions. This helps me to track the lifetime of allocations and frees, which is very essential to keep memory lifetime in control. 
+
+## MemSingleShotMalloc
+
+This is an interesting memory helper. It helps me with allocating several buffers with one allocation call. You can have a struct with arbitrary-sized pointers as members and allocate the whole thing with a single chunk of memory. This trick is usually used by C programmers, but not that common with "Modern C++" mindset. It also takes care of alignment between buffers and nested pointers.
+
+Here is a simple example of allocating a hash table with two arbitrary sized buffers:
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~ cpp
+struct HashTableData
+{
+    uint32* keys;
+    T*   	values;      // Can be any POD data or opaque type
+    uint32	count;
+    uint32	capacity;
+};
+
+MemSingleShotMalloc<HashTableData> hashTableBuff;
+hashTableBuff.AddMemberField<uint32>(offsetof(HashTableData, keys), capacity)
+             .AddMemberField<T>(offsetof(HashTableData, values), capacity);
+HashTableData* tbl = hashTableBuff.Calloc(alloc);
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+So in the example above, I added two member pointers that needs allocation, defining their offset in the parent struct and capacity. Finally with the `Calloc` call, we get the final HashTable buffer with `keys` and `values` members pointing to an offset in a single chunk of memory.
+
+## Virtual memory backend
+
+Every allocator mentioned above, except the heap allocators, are backed by virtual memory. Because of the simple linear allocation approach, we can easily reserve a large maximum chunk and commit a certain number of pages upon growing. For example, each *Temp allocator* reserve a gigabyte of memory, and commit a certain page size multiplier like 512kb when the allocator offset passes current committed memory. This way, we won't need to reallocate memory or allocate an unnecessary large size. 
+
+# Debugging
+
+As I'm extensively using custom allocators everywhere. It can get difficult to track leaks and memory corruption. In micro-allocation systems, most memory is tracked by OS or sanitizers and finding leaks is relatively easy. Tools and some tricks comes to help here.
+
+So the main trick I did was pretty simple, there is a setting in the engine called `debugAllocations`. By enabling this setting, every custom allocator in the engine allocates directly from heap instead of whatever it is supposed to do, even *Temp* and *Bump* allocators. This can lead to a performance hits obviously, but we use this only for occasional debugging and ASAN. There is also an option to turn the debug mode for each allocator, if we actually know which part caused it. So this will avoid the global override and save us debug time performance.
+
+For our many allocators, there is actually no *Free* operation as they are mostly simple linear allocators. So to garbage collect them properly, an *Array* in *debugMode* is enabled to track the allocated pointers, so we can free them automatically:
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~ c++
+struct MemDebugPointer
+{
+    void* ptr;
+    uint32 align;
+};
+
+struct BumpAllocatorBase
+{
+    void* Malloc(size_t size, uint32 align) override;
+    ...
+    void Reset();
+    ...
+    bool debugMode
+    Array<MemDebugPointer> debugPointers;
+};
+
+void* BumpAllocatorBase::Malloc(size_t size, uint32 align)
+{
+    if (debugMode) {
+        void* ptr = gHeapAllocator->Malloc(size, align);
+        debugPointers.Push(MemDebugPointer {ptr, align});
+        return ptr;
+    }
+    else {
+        // do the regular bump allocation
+    }
+}
+
+void BumpAllocatorBase::Reset()
+{
+    if (debugMode) {
+        for (MemDebugPointer& dbgPtr : debugPointers)
+            gHeapAllocator->Free(dbgPtr.ptr, dpgPtr.align);
+        debugPointers.Clear();
+    }
+    else {
+        // ...
+    }
+}
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+## Leaks
+
+First off, I'll start this with an unpopular opinion in gamedev that "leaks are not a big deal". I dunno why devs put number one concern on memory leaks that lead to all kinds of "modern" C++ design decisions that hurt performance. Leaks can be nasty of course, but can be detected with good tooling in the development process. 
+
+Besides that, having the knowledge of the context of your program and use the correct allocators can even *drastically eliminate the possibility* of leaks anyways. For example, using *bump allocators* for initialization and persistent data, or *temp allocators* for doing stuff that we want to throw away, eliminates the need for explicit *Free* calls. Basically with this approach, for the majority of allocations, you don't even need to care for garbage collection, since it's handled automatically for you.
+
+So I chose to keep it simple again and not have any built-in leak detection. Instead, all allocations are being tracked by *Tracy* and it is actually helpful for this purpose as well. I just run the program, quit and look in tracy for any active allocations, which would be global leaks:
+
+![Example: detecting a leak in tracy with callstack](tracy-leak.png)
+
+For harder to catch ones, we can enable `debugAllocations` and use a tool like [MemPro](https://www.puredevsoftware.com/mempro/index.htm) to track potential leaks. This tool can also diff between two memory snapshots to help us better find these type of leaks.
+
+## Corruption and the use of Address Sanitizer
+
+For hard to catch *memory corruptions*, I make use of compiler instrumentation and ASAN (Address sanitizer). 
+
+Luckily both CL and clang have that now. I also maintain a unity build batch script that can build the project with any additional compiler flag: 
+
+`build.cmd entry_file.cpp /fsanitize=address` 
+
+This builds the program with ASAN enabled (`/fsanitize=address`). Combine this with `debugAllocations` setting and I get all allocations instrumented by the compiler and get them checked for corruption at runtime as well as stack allocations.
+
++++++
+
+That's all for the basics of memory management. Please put your feedbacks, comments under this [twitter post](https://twitter.com/septagh/status/1629197668340695042?s=20).
+
+- Next up: [Relative Pointers](../junkyard-relativeptr)
+- Back to: [Introduction](../junkyard-intro).
+
+<br>
+(insert ../footer.md.html here)
+</body>
+    
+<!-- Markdeep: --><style class="fallback">body{visibility:hidden;white-space:pre;font-family:monospace;}</style><script src="../js/markdeep.min.js" charset="utf-8"></script><script src="https://casual-effects.com/markdeep/latest/markdeep.min.js" charset="utf-8"></script><script>window.alreadyProcessedMarkdeep||(document.body.style.visibility="visible")</script>

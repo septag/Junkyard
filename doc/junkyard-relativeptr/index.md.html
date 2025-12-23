@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+    <meta charset="utf-8">
+    <title>Junkyard: Relative Pointers</title>
+    <meta name="description" content="">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, shrink-to-fit=no">
+    <link href="../css/normalize.css" rel="stylesheet" media="all">
+    <link href="../css/styles.css" rel="stylesheet" media="all">
+    <link rel="stylesheet" href="../css/base-min.css">
+    <link rel="stylesheet" href="../css/grids-core-min.css">
+    <link rel="stylesheet" href="../css/grids-min.css">
+</html>
+
+<body style="margin:auto">
+                        **Junkyard - Relative Pointers**
+                        <small>1 may 2023</small>
+                        <small>edit: 7 may 2025</small>
+
+<small><b>Github project: [https://github.com/septag/Junkyard](https://github.com/septag/Junkyard)</b></small>
+
+In the previous post, I briefly described the underlying memory approach and allocator designs. Now in this post, I want to describe a little bit of another tool I use extensively, based on the concept of _Relative pointers_. 
+
+I stumbled upon this idea a while ago, while watching a [talk](https://youtu.be/Nsf2_Au6KxU?t=1500) on performance from Sergiy Migdalskiy (Valve). So, thanks to him, I took the idea and ran with it. A *relative pointer* as the name suggests, is an offset in memory from the current pointer object, instead of regular pointers, where it's an absolute offset in memory. The offset can be either be unsigned or signed, in the case of latter, addressing both sides of the pointer. For 32bit offsets, you can have 4 gigabytes of addressable space around the pointer, which is quite enough.
+
+This concept also fits perfectly with **Linear/Bump allocators** which I mentioned a few times in the [previous post](../junkyard-memory-01) and are the most common type of allocations in my program. When data is allocated and laid out linearly in the memory, besides the benefits of fast allocations and minimal fragmentation. We can use tools like *relative pointers* to address arrays and buffers in the structures. 
+
+![Our pointer is storing a relative offset from allocated object(s) to the pointer object.](relativeptr.png)
+
+# The code
+
+Lets get through the minimal C++ template implementation:
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ c++
+<script type="preformatted">template <typename _T></script>
+struct RelativePtr
+{
+    RelativePtr() : offset(0) {}
+    RelativePtr(_T* ptr) { Set(ptr); }
+    _T* operator->() { return Get(); }
+    const _T* operator->() const { return Get(); }
+    RelativePtr<_T>& operator=(_T* ptr) { Set(ptr); return *this; }
+    RelativePtr<_T>& operator=(const _T* ptr) { Set(ptr); return *this; }
+    _T& operator[](uint32 index) { return Get()[index]; }
+    const _T& operator[](uint32 index) const { return Get()[index]; }
+    bool IsNull() const { return offset == 0; };
+    void SetNull() { offset = 0; }
+    bool operator!() const { return IsNull(); }
+    operator bool() const { return !IsNull(); }
+    _T& operator*() const { return *Get(); }
+
+    void Set(const _T* ptr) 
+    { 
+        if (ptr == nullptr) {
+            mOffset = 0;
+        }
+        else {
+            intptr_t offset = intptr_t(ptr) - intptr_t(this);
+            ASSERT(offset <= INT_MAX && offset >= INT_MIN);
+            mOffset = int(offset);
+        }
+    }
+
+    _T* Get() const 
+    { 
+        if (mOffset == 0)
+            return nullptr;
+        return (_T*)((uint8*)this + mOffset); 
+    }
+
+private:
+    int offset;
+};
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The main functions to consider here are *Set* and *Get*. As you can see, setting the regular pointer, calculates the offset from the current pointer object and store it as a 32bit value. The reverse is happening when you try to *Get* the actual memory pointer. It adds the offset to the current location in memory and gives you the absolute pointer. *offset=0* points to itself and it basically means not assigned or `nullptr`.
+
+By using *singed* integer, I can either address the memory ahead or behind the pointer variable.
+
+# Pros and Cons of relative pointers
+
+Compared to regular pointers, these pointers can bring major benefits. As with many other things and design approaches, they also have their downsides as well.
+
+## Pros
+
+- They are currently 32 bits (1 integer for offset) and it can either. Which brings down the size of structures and data and better packs them together.
+- Because they store relative offset value, they can be safely copied and moved around, stored to disk, transferred over the network, etc. along with their entire allocated buffers, and maintain their validity.
+- If you use them in your data structures, they will impose linear allocation model to your data, and thus, automatically lead to less fragmentation and better cache locality for your data.
+
+## Cons
+
+- Writing code can be more error prone and more care should be taken with allocations. Because the memory should be laid out linearly in my use case, we should be aware that the new allocations that we assign to *relative pointers*, are properly allocated from the correct allocator (*linear based*) and are in the same memory space as the pointer itself. For example, while writing code, I ran into a few occasions myself where I had the pointer object located on stack, but tried to assign a regular pointer to it which was allocated from a temp allocator. The asserts in *Set* method didn't break the program, so I ran into read access violations at runtime. Debugging these errors can be tricky as well, because compilers and tools can't help you with that. 
+- You also should be aware not to fragment the linear allocator and leave gaps and holes between your allocations for the object if you want to move buffers around. It is valid though, but it just can waste space if you do in some cases. This can also add up to the "writing complexity" of the code.
+- Debugging is not that intuitive, cuz debuggers cannot show the contents of the actual pointer it resolves to. So you should either resolve them in the code and debug that, or use some sort of special scripting/evaluation in your debugger.
+
+# Example usage
+
+As an example usage, we will take a quick peek into asset manager and see how it allocates data for a *3D Model* data structure and serializes it. 
+I will get into asset manager in more detail later, but lets say for now we have loaded a *GLTF* file and want to store it in our own engine friendly format. Something very simple like this:
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ c++
+struct ModelMesh 
+{
+    struct CpuBuffers
+    {
+        RelativePtr<uint8>  vertexBuffers[kModelMaxVertexBuffersPerShader];    // void cast struct for each vbuff (count=numVertexBuffers)
+        RelativePtr<uint32> indexBuffer;
+    };
+
+    String32 name;
+    uint32 numSubmeshes;
+    uint32 numVertices;
+    uint32 numIndices;
+    uint32 numVertexBuffers;
+    RelativePtr<ModelSubmesh> submeshes;
+    CpuBuffers cpuBuffers;
+};
+
+struct ModelNode 
+{
+    String32 name;
+    uint32 meshId;       // =0 if it's not renderable
+    uint32 parentId;     // index to Model::nodes
+    uint32 numChilds;
+    Transform3D localTransform;
+    AABB bounds;
+    RelativePtr<uint32> childIds;     // indices to Model::nodes
+};
+
+struct Model 
+{
+    uint32 numMeshes;
+    uint32 numNodes;
+    uint32 numMaterialTextures;
+
+    Transform3D rootTransform;
+
+    RelativePtr<ModelNode> nodes;
+    RelativePtr<ModelMesh> meshes;
+    ModelGeometryLayout layout;
+};
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+I didn't list all the data in the model, but this should make the point. The key thing to notice here is the how we store arrays. Instead of regular pointers, we used *relative pointers*. So by this approach, we can store the entire data of the model in one big chunk of continuous memory blob. In this example, the data is allocated from [Temp allocator](../junkyard-memory-01/#allocations/allocatortypes/tempallocator) which is basically a simple stack-based linear allocator.
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ cpp
+MemTempAllocator tmpAlloc;  // Linear allocator
+Model* model = tmpAlloc.MallocZeroTyped<Model>();
+
+// Meshes
+model->meshes = tmpAlloc.MallocZeroTyped<ModelMesh>(meshCount);
+foreach (mesh) {
+    ModelMesh* mesh = &model->meshes[i];
+    mesh->submeshes = tmpAlloc.MallocZeroTyped<ModelSubmesh>(numSubMeshes);
+    ...
+}
+
+// Nodes
+model->nodes = tmpAlloc.MallocZeroTyped<ModelNode>((uint32)data->nodes_count);
+// and so on ...
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Then, finally at the end where all data is allocated and laid out in the Model struct. I calculate the entire blob size, by getting the current temp allocator offset and subtract the model offset from it. Afterwards, we have all the stuff we want, we can just copy the data into a persistent memory so we can safely get out of the scope:
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ c++
+// Copy the data into heap 
+uint32 modelBufferSize = uint32(tmpAlloc.GetOffset() - tmpAlloc.GetPointerOffset(model));
+// This function does allocate and copy from heap all together
+return Mem::AllocCopyRawBytes<Model>(model, modelBufferSize), modelBufferSize);
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Now, here is the interesting bit. There is no need for complex or custom serialization code. If we want to save the data to disk and load it as a cache later. We can just save the memory blob:
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ c++
+Blob blob(modelBuffer, modelBufferSize);
+Vfs::WriteToDisk("cached.bin", blob);
+
+// later
+blob = Vfs::ReadFromDisk("cached.bin");
+Model* model = (Model*)blob.Data(); 
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+In my opinion, this is one of the major spots where relative pointers really shine. It basically removes any need for serialization/reflection complexities and maintains a good memory locality, load/save performance and simplicity. _Almost_ perfect!
+
+- You can put your comments under the [twitter post](https://twitter.com/septagh/status/1653029203812466688?s=20)
+- Back to: [Memory Management](../junkyard-memory-01)
+
+<br>
+(insert ../footer.md.html here)
+</body>
+    
+<!-- Markdeep: --><style class="fallback">body{visibility:hidden;white-space:pre;font-family:monospace;}</style><script src="../js/markdeep.min.js" charset="utf-8"></script><script src="https://casual-effects.com/markdeep/latest/markdeep.min.js" charset="utf-8"></script><script>window.alreadyProcessedMarkdeep||(document.body.style.visibility="visible")</script>

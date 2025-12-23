@@ -1,0 +1,55 @@
+<mxfile host="Electron" agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) draw.io/27.0.2 Chrome/134.0.6998.205 Electron/35.3.0 Safari/537.36" version="27.0.2">
+  <diagram name="Page-1" id="jLM2D0LqxT1vfg9vtdwN">
+    <mxGraphModel dx="1096" dy="1000" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="ozkRZOpByPHizO-iroQE-7" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="ozkRZOpByPHizO-iroQE-1" target="ozkRZOpByPHizO-iroQE-6">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ozkRZOpByPHizO-iroQE-1" value="Allocator Table" style="rounded=0;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+          <mxGeometry x="30" y="55" width="110" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="ozkRZOpByPHizO-iroQE-17" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0;entryY=0.5;entryDx=0;entryDy=0;shape=link;" edge="1" parent="1" source="ozkRZOpByPHizO-iroQE-2" target="ozkRZOpByPHizO-iroQE-14">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ozkRZOpByPHizO-iroQE-2" value="LongTask Thread #1" style="rounded=0;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+          <mxGeometry x="260" y="30" width="140" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="ozkRZOpByPHizO-iroQE-18" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0;entryY=0.5;entryDx=0;entryDy=0;shape=link;" edge="1" parent="1" source="ozkRZOpByPHizO-iroQE-3" target="ozkRZOpByPHizO-iroQE-15">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ozkRZOpByPHizO-iroQE-3" value="LongTask Thread #2" style="rounded=0;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+          <mxGeometry x="260" y="70" width="140" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="ozkRZOpByPHizO-iroQE-19" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0;entryY=0.5;entryDx=0;entryDy=0;shape=link;" edge="1" parent="1" source="ozkRZOpByPHizO-iroQE-4" target="ozkRZOpByPHizO-iroQE-16">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ozkRZOpByPHizO-iroQE-4" value="LongTask Thread #3" style="rounded=0;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+          <mxGeometry x="260" y="110" width="140" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="ozkRZOpByPHizO-iroQE-8" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="ozkRZOpByPHizO-iroQE-6" target="ozkRZOpByPHizO-iroQE-2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ozkRZOpByPHizO-iroQE-9" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="ozkRZOpByPHizO-iroQE-6" target="ozkRZOpByPHizO-iroQE-3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ozkRZOpByPHizO-iroQE-10" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="ozkRZOpByPHizO-iroQE-6" target="ozkRZOpByPHizO-iroQE-4">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ozkRZOpByPHizO-iroQE-6" value="Thread&lt;br&gt;Id" style="ellipse;whiteSpace=wrap;html=1;aspect=fixed;" vertex="1" parent="1">
+          <mxGeometry x="170" y="62.5" width="45" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="ozkRZOpByPHizO-iroQE-14" value="BumpAllocatorVM" style="shape=process;whiteSpace=wrap;html=1;backgroundOutline=1;" vertex="1" parent="1">
+          <mxGeometry x="430" y="30" width="145" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="ozkRZOpByPHizO-iroQE-15" value="BumpAllocatorVM" style="shape=process;whiteSpace=wrap;html=1;backgroundOutline=1;" vertex="1" parent="1">
+          <mxGeometry x="430" y="70" width="145" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="ozkRZOpByPHizO-iroQE-16" value="BumpAllocatorVM" style="shape=process;whiteSpace=wrap;html=1;backgroundOutline=1;" vertex="1" parent="1">
+          <mxGeometry x="430" y="110" width="145" height="30" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

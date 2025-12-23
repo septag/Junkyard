@@ -1,0 +1,40 @@
+Early results: (Samsung 990 PRO)
+	Dataset: 532 files, 1.1 GB
+	
+	# Warm cache
+	Allocator: BumpVM + WarmUP + 64MB pages
+	Bandwidth: 4270 MB/s
+	Time: 230 ms
+	ReadFile (win32): Mean=371 us, Median=67 us
+	* Most predictable and possibly fastest, but takes some time to warm up the memory
+	
+	Allocator: BumpVM + 64MB pages
+	First Time: 456ms (2260 MB/s)
+	Second time: 241 ms (4268 MB/s)
+	
+	Allocator: BumpHeap 
+	Time: 300 ms first time, 227 ms 2nd time
+	ReadFile (win32): Mean=403 us, Median=69 us
+	
+	Synchronous (TaskManager Dispatch):
+	Bandwidth: 4280 MB/s
+	Second Time: 4557 MB/s
+	Time: 226 ms
+	ReadFile (win32): Mean=498 us, Median=91 us
+	* Second time for this was fastest, but it blocks the task threads 
+	
+-- BatchSize: ThreadCount
+Baked (blocked mode): 38~39 ms
+Baked (async mode): 49 ms
+
+Source (blocked mode): 123 ms
+Source (async mode): 127 ms
+
+-- BatchSize: NumAssets
+Baked (Blocked mode): 36 ms
+Baked (Async mode): 49 ms
+
+Source (async mode): 128 ms
+Source (blocked mode): 113 ms - With Parallel save: 106 ms
+
+

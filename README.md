@@ -12,8 +12,8 @@ It's very much WIP, so not much to show off right now.
 
 - Multiplatform. Currently supported platforms (ARM64, x86_64 architectures only):
     - Windows (Tested on Windows 10 x64)
-    - Linux (Tested on Ubuntu 22/PopOS)
-    - MacOS-Arm64 M1 and up (through MoltenVk 1.3)
+    - Linux (Tested on Ubuntu 22/PopOS): *Not Tested with latest updates* 
+    - MacOS-Arm64 M1 and up (through MoltenVk 1.3): *Not Tested with latest updates*
     - ~~Android~~ (Currently broken, might work with Vulkan 1.3 hardware)
 - Minimal C'ish C++20: Some people call it Sane-C++ or similarly [Orthodox-C++](https://gist.github.com/bkaradzic/2e39896bc7d8c34e042b). I use a very small subset of newer C++ standards:
     - No stdc++ allowed in the code
@@ -50,7 +50,7 @@ It's very much WIP, so not much to show off right now.
 *PC/Windows* is the primary platform, because it's the platform I use for my daily development. Maintaining build and tooling on multiple OSes is just a lot of work. So please keep in mind that other platforms might be buggy, not as polished or not fully feature complete. To build and run the projects, first thing is running the Setup script after fetching the repo:
 
 ### Setup.bat/Setup.sh
-This script fetches, heavier dependencies for baking assets. And there is also the option to download and install required or optional SDKs and standalone tools.
+After pulling or updating the repo, run this script. This script fetches, heavier dependencies for baking assets. And there is also the option to download and install required or optional SDKs and standalone tools.
 
 So first, you need to run `Setup.bat` (or `Setup.sh` if you are in a Unix environment).
 
@@ -59,12 +59,12 @@ Steps:
     - Slang
     - meshoptimizer
     - ISPC Texture compressor
+- *Example assets*: Extracts example assets for some examples.
 - *Vulkan SDK*: This is also mandatory if you haven't installed it yet. This also fetches vulkan validation layer for all platforms. For windows, make sure `VULKAN_SDK` and `VK_LAYER_PATH` env vars are set.
 - *MoltenVK*: (MacOS required) This is a Vulkan-to-Metal translation layer that is required only on MacOS setup.
 - *Tracy Profiler*: (optional) This is a very good GUI tool for profiling
 - *LivePP*: (Windows optional) A powerful commercial C++ code-reloading software. Note that you'll need a valid license to use this feature.
 - Python 3.10+: (Windows optional) If you want some extra script goodies to work, mainly platform helpers, have python installed.
-- *Android extra*: (optional) For android development some additional tools can be downloaded which is optional of course!
 
 ### Windows
 Compatible with **Visual studio 2019 (build tools v142)** and **Visual Studio 2022 (build tools v143)** build environments.   
@@ -102,14 +102,10 @@ Next step is downloading VulkanSDK 1.3 (will be automated later through Setup sc
 
 And that's it. Open the Xcode project and run your targets.
 
-## Running the Examples
+## Examples
 Currently, there are a few very basic examples. First thing to consider is that you must run the examples with **Current Directory** set to the root path of the project so `data` directory can be accessed by them.
 
-They also usually require some sort of asset files. The example assets are not included in the repo, so you need to download those with provided scripts. All test/example apps reside in `code/Tests` directory, each as a single cpp file:
-
-- *TestAsset*: Synthetic asset manager test program. Loads and unloads blocks of unique assets laid out on a grid. Before running the example, make sure to run the script `code/Tests/TestAsset.bat` (or `code/Tests/TestAsset.sh`). This will actually run a python script to procedurally generate some assets in `data/TestAsset`.
-- *TestBasicGfx*: Basic graphics backend tests. Contains multiple scenes, mostly with GLTF meshes. Before running this example, make sure to run the script `code/Tests/TestBasicGfx.bat` (or `code/Tests/TestBasicGfx.sh`). This will also fetch some GLTF meshes+textures from the internet and put them in `data/TestBasicGfx`.
-- *TestIO*: Synthetic IO (Async) tests. Before running this one, make sure to run the script `code/Tests/TestIO.bat` (or `code/Tests/TestIO.sh`). 
+**Note**: Example assets are zip compressed in the `data` folder. If you have ran the `Setup.bat` script, it should ask for that and extract it already. For some other examples that use procedurally created assets by the scripts, read `data/README.txt` 
 
 ### Remote Asset Baking
 Optionally. you can load bake assets remotely through TCP/IP connection. For example, on mobile platforms, There is no deployment of source assets on the device and APKs are kept light and does not contain anything other than executable binaries. So for those platforms, it is actually a requirement to bake assets remotely, after they are baked, they will be cached on the target device.
@@ -130,14 +126,15 @@ Or set it with command line arguments: `-EngineConnectToServer=1 -EngineRemoteSe
 The beginning of headers usually include some important documentation about the API. But separate documents are written and maintained for coding standards, principles or design details.
 
 ### Coding standard and rules
-For some general coding and styling rules see [Coding Standard](doc/CodingStandard.md)
+For some general coding and styling rules see [Coding Standard](doc/misc/CodingStandard.md)
 
 ### Blog posts and design documents
-- [**Introduction**](https://septag.dev/blog/posts/junkyard-intro): It's just an introduction to design principles, goals and essential 3rdparty tools that I use.
-- [**Memory Basics**](https://septag.dev/blog/posts/junkyard-memory-01): This covers basic memory allocation and design at the core level. It's an essential read if you want to make the best use of memory and understand the memory concepts behind the engine.
-- [**Relative Pointers**](https://septag.dev/blog/posts/junkyard-relativeptr): A kind of a follow up to the memory basics. Covers the concept of *Relative Pointers* used in some parts of the engine, especially binary serialization.
-- [**Project Structure**](https://septag.dev/blog/posts/junkyard-struct): Covers build structure and platform projects in more detail, directory structures and basic things you should know about adding modules and dependency checking between the modules. 
-- [**Asset Manager**](https://septag.dev/blog/posts/junkyard-assetman): Asset manager design goals and details on the internals. Also quite useful if someone wants to add a new asset type to the engine.
+Design documents can be browsed offline locally. The [main page](doc/index.md.html) is under `doc` folder:
+- [**Introduction**](doc/junkyard-intro/index.md.html): It's just an introduction to design principles, goals and essential 3rdparty tools that I use.
+- [**Memory Basics**](doc/junkyard-memory-01/index.md.html): This covers basic memory allocation and design at the core level. It's an essential read if you want to make the best use of memory and understand the memory concepts behind the engine.
+- [**Relative Pointers**](doc/junkyard-relativeptr/index.md.html): A kind of a follow up to the memory basics. Covers the concept of *Relative Pointers* used in some parts of the engine, especially binary serialization.
+- [**Project Structure**](doc/junkyard-struct/index.md.html): Covers build structure and platform projects in more detail, directory structures and basic things you should know about adding modules and dependency checking between the modules. 
+- [**Asset Manager**](doc/junkyard-assetman/index.md.html): Asset manager design goals and details on the internals. Also quite useful if someone wants to add a new asset type to the engine.
 
 ## Dependencies
 External dependencies are a pretty big deal imo, so I'm going to pay special attention to them. They are part of your code even if you don't write them yourself and they all play a big role in compile-times, maintenance, deployment and technical debt of your code. So I try to keep the dependencies small and to minimum. Most of the dependencies here are simple stb-style single-header C libs, but some just can't be as small and quick-to-compile as I want them to be (eg Physics/Audio/Baking/ShaderCompilers/etc), usually those ones are downloaded off the internet and not part of the repo. Anyway, here they are:

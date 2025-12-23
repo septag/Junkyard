@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+    <meta charset="utf-8">
+    <title>Junkyard: Project Structure</title>
+    <meta name="description" content="">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, shrink-to-fit=no">
+    <link href="../css/normalize.css" rel="stylesheet" media="all">
+    <link href="../css/styles.css" rel="stylesheet" media="all">
+    <link rel="stylesheet" href="../css/base-min.css">
+    <link rel="stylesheet" href="../css/grids-core-min.css">
+    <link rel="stylesheet" href="../css/grids-min.css">
+</html>
+
+<body style="margin:auto">
+                        **Junkyard - Project Structure**
+                        <small>25 march 2024</small>
+                        <small>edit: 6 may 2024</small>
+
+<small><b>Github project: [https://github.com/septag/Junkyard](https://github.com/septag/Junkyard)</b></small>
+
+# Platforms and portability
+
+The main platform is *Windows (x64)*. All my favorite development tools and libraries are on it. This would be one that is regularly maintained and will have the best tooling experience.
+
+All the other supported platforms will act as though they are clients of *Windows* platform. Which means that the future editing tools will be tested and developed on *Windows* first. Other desktop platforms (*MacOS* and *Linux*) will be supported but with less testing and polish. They might also lack certain extra editing tools if I find maintaining them too time consuming. But basic functionality like asset baking and hosting will work on these platforms as well.
+
+All other platforms are basically just minimal game binaries and use the data baked on PC/Desktop wither fetched remotely or packaged locally. So a *Desktop* system is always reqiured in order to be able to run and deploy stuff on other platforms like any future consoles or mobile devices.
+
+So currently here are the platforms *Junkyard* supports:
+
+- **Windows (x64):** The main one, contains all extra tooling, libraries and editing tools.
+- **MacOS (Arm64):** I have an M1 Macbook and sometimes I'd like to work and experiment on the Mac. So I wanted to keep a minimal support for it. Porting to iOS in the future would also be relatively easy. It's also working with the same *Vulkan* backend using *MoltenVk*. It's not meant for actual production.
+- **Linux (x64):** Like MacOS, linux also has basic support.
+- ~~**Android (Arm64):**~~ I wanted to keep a minimal support for *Android* platform as well, again using the same *Vulkan* backend. But currently broken because I don't have the actual Vulkan 1.3 compatible hardware to test my code. Since I don't care that much about Android for the time being, and I don't have the hardware for it, I might actually scrap this one completely. 
+
+!!! Note 
+    Like I said, I'm not planning to have everything on *Windows* run exactly the same on other platforms. So I might implement a fully featured renderer on *PC* but leave others with a simple example. The other platforms are just there for code portability improvements and experimentation. 
+
+!!! Note
+    Tiled based GPUs is another thing that is a second class currently. Those GPUs has a very different architecture from regular desktop GPUs and sometimes require special code paths. Although the engine currently can run basic examples on tile based GPUs (like Macbook M1), but do not expect super bug free experience or performance from those, since they require `Vulkan Prepasses` which the rendering backend doesn't support them currently. 
+
+# Build
+
+Before I dive into project structure and other details, I'll start with the build system. To keep things convenient on Windows, I use a *Visual Studio solution* which can be opened and edited directly. But as an alternative, I also have *CMake* scripts for generating other projects. *CMake* is mainly useful on linux platforms where we don't have a dominant IDE.
+
+## IDE projects
+
+All project files go into `projects` directory. I maintain a separate project for each platform:
+
+- **Windows:** Windows would be my main development platform, so most of the dev time goes there. It has a Microsoft visual C++ 2022 solution in `projects/Windows`. There are also common visual studio `.props` files that can be used for creating new apps that are linked to the engine library. For build configurations, we have the following:
+    - *Debug*: Non-optimized. Includes debug symbols. Enables assertion checks. Dynamically linked to debug CRT.
+    - *ReleaseDev*: Optimized. Includes debug symbols. Enables Tracy profiler. Enables assertion checks. Dynamically linked to CRT.
+    - *Release*: Optimized. Disables assertion checks. Statically linked to CRT. Defines `CONFIG_FINAL_BUILD=1` optional code paths.
+- **Android:** Android also uses a Microsoft visual studio 2022 project as well and resides in `projects/Android`. 
+- **MacOS:** Uses Xcode and resides in `projects/MacOS`
+- **Linux:** Primary IDE on linux is *vscode* with *CMake-tools*, *CodeLLDB* and *Clangd* extensions. If you have these extensions installed on vscode, you can just open the root directory of the project as the workspace. *Cmake-tools* will automatically use vscode settings and configure your project properly. By default it tries to configure *Ninja* projects, so Build/Code completion/debugging will all run out of the box if you already have all these prequisites installed.
+
+## Unity/Blobbed build scripts
+
+Besides the IDE projects, I also maintain unity build scripts as batch files. They all go into `scripts/Build` directory.
+There is also an inline C++ unity file that simply includes all source files. `UnityBuild.inl`, is something like this:
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ cpp
+#ifdef BUILD_UNITY
+
+// Core library
+#include "Core/Base.cpp"
+#include "Core/Allocators.cpp"
+#include "Core/Pools.cpp"
+#include "Core/System.cpp"
+#include "Core/StringUtil.cpp"
+#include "Core/Log.cpp"
+#include "Core/Hash.cpp"
+
+// Graphics
+#include "Graphics/Graphics.cpp"
+
+// etc..
+
+#include "Engine.cpp"
+
+#endif // BUILD_UNITY
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Whatever source file I add to the main engine project, I also include it here as well. So every new project/example can just include this file and when `BUILD_UNITY` is defined, all these files will get fed to the compiler.
+
+The main batch script is `build.cmd`. Other scripts call on to this with some extra flags and extra source files. For example, `build-tool.bat` is like this:
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ bat
+@echo off
+
+set LIBS="ispc_texcomp.lib" "slang.lib" "meshoptimizer.lib"
+set DEFINES=-DCONFIG_TOOLMODE=1
+set COMPILE_FLAGS=
+set LINK_FLAGS=
+
+call build.cmd code\Tool\ToolMain.cpp %1
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+As you can see, `build.cmd` accepts a couple of variables to modify compiler flags, like `LIBS` , `DEFINES`, `COMPILE_FLAGS` and `LINK_FLAGS`. It also accepts an extra argument. This argument defines which configuration it should build. Default configuration is "debug", and it accepts the following configurations:
+
+- **debug**:  Non-optimized. Includes debug symbols. Enables assertion checks. Dynamically linked to debug CRT.
+- **debugasan**: Same as *debug* but enables address sanitizer.
+- **releasedev**: Optimized. Includes debug symbols. Enables Tracy profiler. Enables assertion checks. Dynamically linked to CRT.
+- **releaseasan**: Optimized. Includes debug symbols. Enables assertion checks. Dynamically linked to CRT. Enables address sanitizer.
+- **release**: Optimized. Disables assertion checks. Statically linked to CRT. Defines `CONFIG_FINAL_BUILD=1` for optional code paths.
+
+So for example, if you want to build Tooling program with address sanitizer enabled and optimized code. Just call the build script with "releaseasan" argument:
+
+```
+scripts\Build> build-tool releaseasan
+```
+
+# Directory Structure
+
+For now, I'm just gonna go through the main `code` directory:
+
+![Early code-base](code-dir.jpg)
+
+In here, each folder along with it's source files is called a *Module* which I'll explain in the next section.
+
+For instance, some essential *Modules* are:
+- **Core**: Core library. Every other module has dependency to this. Includes all essential typedefs, memory management, containers, macros, portable system APIs, etc. The file `Core/Base.h` is included almost everywhere. 
+- **Common**: Common code that is mostly the bootstrap code of the engine (besides `Engine.cpp`). Like application/window handler for each platform, virtual file-system, settings, etc.
+- **External**: External 3rdparty libraries and headers. Mostly small libs and single-headers. But some of them that has large code-bases, might only include headers and get their binaries fetched from `Setup.bat` script.
+- **Tests**: Some tests and example files. Mostly individual .cpp files for each projoct. 
+- **Tool**: Tooling code goes here. Mostly used for baking assets. They usually depend on 3rdparty libraries like shader compilation and texture baking libs. They are stripped away with `CONFIG_TOOLMODE=0` for the game binaries.
+
+!!! Note
+    To keep build system simple, I do not use include directories in compile flags and no extra defines outside of `Config.h`. So every `#include` is the actual relative path on disk. This simple decision actually helps a lot with simplifying the build system (making unity blobs is effortless) and code readability. It also helps other editors parsing the code for intellisense and linting. You can also just feed the files to the compiler of your choice and get your code compiled correctly. The only required C++ flag is `/std:c++20`.
+
+# Modules and Dependencies
+
+Here's a little back story. In my previous engine [rizz](https://github.com/septag/rizz), I planned to make a "modular" engine with clean code dependency graph. So the idea was that the core of the engine is tiny, but everything else is a plugin. Picked up this idea from "TheMachinery" engine blogs. So I implemented a plugin-system with dependency checking, API versioning, dynamic reloading and all the fancy stuff. You could even switch between "dynamically load" or "statically link" modes with a CMake flag. It might have looked good at first, but turns out it was totally unnecessary and soon it became an over-engineered mess!
+
+When you are writing new systems and adding features, you have no actual idea of what you really need. So the design and API goes through constant changes all the time. When you implement such a plugin system, it involves a lot of boilerplate code and proxy APIs (Overview of the design [here](../rizz-basics/index.md.html#pluginsandapps)). Maintaining all those extra code is a huge burden and doesn't provide a real value unless you have many clients and on-going projects. Well, actually the real architectural value it provided was the enforced correct code dependency and isolation of modules. 
+
+In the last section, I described the code directory and mentioned that each folder is called a *Module*. It is just an abstract concept and doesn't have much meaning except that it's just a folder with bunch of source files that can be categorized and isolated and somewhat resembles a plugin, like `Graphics` code or low-level `Asset` system. 
+
+I figured that there is one issue that might cause problems in the future, and that's code dependencies. 
+
+First off, there should be no circular dependency between modules. And secondly, there should be clear code dependency relationship that is set by some rule, so the module code base should not breach that rule, otherwise it will get out of hand as the code grows and it will get really difficult to fix false entanglements. 
+In the figure below. Here's a simplified example:
+
+![Correct code dependency between engine modules](dependency-1.png)
+
+As you can see in the figure above, as a rule, *Core* should not depend on any other module and *Common* should only depend on *Core* code base and should not use any other APIs from higher-level modules and so on.
+
+I wanted to enforce these dependencies early on while the code is still lean and clean, but complicating the code or build system is not an option. So I chose a post process approach. A script that runs over the code and checks it. It's dead simple. Here's how it works.
+
+Every subfolder (aka *Module*), includes a file named `DEPENDS` which is simply a newline separated list of depending modules. Here's an example for `Tools` module (`code/Tool/DEPENDS`)
+
+```
+Core
+Common
+Graphics
+External/ispc_texcomp
+External/meshoptimizer
+External/slang
+```
+
+Putting aside the external 3rdparty dependencies, The rule for `Tool` module is that it only should depend on `Core`, `Common` and `Graphics`. So that basicallty means, no files from other modules should be included in any source file in `Tool` subfolder. Again, having relative paths for include files helps here. A simple python script can go through the code, search for `#include` directives, extract paths outside of the module subfolder and check it against the items in `DEPENDS` file. 
+
+Here's an example of running the code dependency checker script:
+
+~~~~~~~~~~~~~~~~~~~~~~~ bat
+Scripts\Code> check-code-deps
+
+Checking module: Assets
+	Dependencies: ['Core', 'Common', 'Graphics', 'Tool', 'External/stb', 'External/cgltf']
+Checking module: Common
+	Dependencies: ['Core', 'External/dmon']
+Checking module: Core
+Checking module: DebugTools
+	Dependencies: ['Core', 'Common', 'Graphics', 'Assets', 'ImGui']
+Checking module: Graphics
+	Dependencies: ['Core', 'Common', 'External/stb', 'External/vulkan', 'External/volk', 'External/vma', 'External/cgltf']
+Checking module: ImGui
+	Dependencies: ['Core', 'Common', 'Graphics', 'Assets', 'External/imgui']
+Checking module: Shaders
+Checking module: Tool
+	Dependencies: ['Core', 'Common', 'Graphics', 'External/ispc_texcomp', 'External/meshoptimizer', 'External/slang']
+All seems to be good!
+~~~~~~~~~~~~~~~~~~~~~~~
+
+Now lets say, you include and use the API from ImGui in the `Tool` module that you aren't suppose to be using:
+
+~~~~~~~~~~~~~~~~~~~~~~ cpp
+#include "ImageEncoder.h"
+
+#include "../Core/StringUtil.h"
+#include "../Core/Allocators.h"
+
+#include "../ImGui/ImGuiWrapper.h"      // Invalid dependency
+~~~~~~~~~~~~~~~~~~~~~~
+
+The code will compile and you can do tests or whatnot. But running the code dependency check will fail:
+
+~~~~~~~~~~~~~~~~~~~~~~ bat
+Scripts\Code> check-code-deps
+
+Checking module: Assets
+	Dependencies: ['Core', 'Common', 'Graphics', 'Tool', 'External/stb', 'External/cgltf']
+Checking module: Common
+	Dependencies: ['Core', 'External/dmon']
+Checking module: Core
+Checking module: DebugTools
+	Dependencies: ['Core', 'Common', 'Graphics', 'Assets', 'ImGui']
+Checking module: Graphics
+	Dependencies: ['Core', 'Common', 'External/stb', 'External/vulkan', 'External/volk', 'External/vma', 'External/cgltf']
+Checking module: ImGui
+	Dependencies: ['Core', 'Common', 'Graphics', 'Assets', 'External/imgui']
+Checking module: Shaders
+Checking module: Tool
+	Dependencies: ['Core', 'Common', 'Graphics', 'External/ispc_texcomp', 'External/meshoptimizer', 'External/slang']
+	Found 1 errors:
+		#include "../ImGui/ImGuiWrapper.h": ImageEncoder.cpp - line: 9
+~~~~~~~~~~~~~~~~~~~~~~
+
+I think this is a very simple and effective way of checking your code dependencies. Knowing code relationship between modules early on and having strict rules on that, also helps you organize overall structure of the project much better and avoid entangled mess of dependencies that even happens to big commercial code bases. 
+
+- You can put your comments under the [twitter post](https://x.com/septagh/status/1772326041069015484?s=20)
+- Back to: [Relative pointers](../junkyard-relativeptr)
+
+<br>
+(insert ../footer.md.html here)
+</body>
+    
+<!-- Markdeep: --><style class="fallback">body{visibility:hidden;white-space:pre;font-family:monospace;}</style><script src="../js/markdeep.min.js" charset="utf-8"></script><script src="https://casual-effects.com/markdeep/latest/markdeep.min.js" charset="utf-8"></script><script>window.alreadyProcessedMarkdeep||(document.body.style.visibility="visible")</script>

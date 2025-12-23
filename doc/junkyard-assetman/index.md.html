@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="en">
+    <meta charset="utf-8">
+    <title>Junkyard: Asset Manager</title>
+    <meta name="description" content="">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, shrink-to-fit=no">
+    <link href="../css/normalize.css" rel="stylesheet" media="all">
+    <link href="../css/styles.css" rel="stylesheet" media="all">
+    <link rel="stylesheet" href="../css/base-min.css">
+    <link rel="stylesheet" href="../css/grids-core-min.css">
+    <link rel="stylesheet" href="../css/grids-min.css">
+</html>
+
+<body style="margin:auto">
+                        **Junkyard - Asset Manager**
+                        <small>11 may 2025</small>
+
+<small><b>Github project: [https://github.com/septag/Junkyard](https://github.com/septag/Junkyard)</b></small>
+
+This post describes the inner workings of *Junkyard*'s Asset Manager sub system. Particularly what happens inside [AssetManager.cpp](https://github.com/septag/Junkyard/blob/main/code/Assets/AssetManager.cpp). This document could also be useful for a reader who needs to add a new asset type to the engine.
+
+# Features
+This implementation could be somewhat a *poor man*'s AAA asset system. By that, I mean it meets some major requirements of what a AAA asset system should have but in a more simplified and dumbed down kind of way.
+
+## Streaming
+Streaming is a very difficult problem to solve elegantly and it can change a lot for each game and context. For example, First person/3rd person shooter game has a different streaming requirements than a top-down RTS game. FPS games have narrow forward facing camera with rapid movement, it requires predictive and aggressive streaming, since you need to see the near details as quick as possible. In RTS games, you have a camera that shows large parts of maps at once, camera doesn't change angle that much but instead it pans and moves a lot. RTS uses tile-based streaming and is usually easier to manage. FPS usually uses occlusion culling techniques to cull hidden objects and needs priority-based streaming which also operates on a more fine-grained level (like loading lower texture mips of the object first then replace them with higher ones).
+
+So how does *Junkyard* tackle this problem? It simplifies it. It just gives the user the ability to load assets in chunks or *Asset Groups*. The game should implement it's own streaming scheme. But it also doesn't give more fine-grained controls, like loading priorities for texture mips and things like that. Basically, it is more tailored towards more generic chunk based/tile based schemes. The goal is to be generic but simple at the same time because we don't actually know the context. But pretty much without a doubt, this engine won't be used for AAA open-world FPS games :) So even for first person/3rd person camera, you'd go for more indie like, lighter assets and load the world in chunks and use the old "Airlock" technique to load the neighboring chunks. This can work across many types of loading schemes, even like GUI or games that doesn't even require streaming and you just want to load stuff asynchronously. 
+
+## Hot-Reload 
+Major part of the strategy for *Junkyard* is fast iteration. And fast iteration cannot be possible without hot-reloading. Every *Asset Type* should be able to hot reload right after saving the source file.
+
+## Baking
+Each *Asset Type* goes through a bake process. Baking means that you process the source asset data to be more optimized for the engine, either in terms of quick loading or other runtime performance optimizations.
+
+Ideally, no external tooling should be required to bake the data. Meaning that the in-game code that loads the assets reference the asset files directly. For example, path of the source image, GLTF model file or whatever else we are using. Instead of loading them directly, engine bakes them first, and then use the baked data instead. Some examples are normal image files, converted to compressed BC formats or geometries going through [meshoptimizer](https://github.com/zeux/meshoptimizer). This also leads us to next point. 
+
+## Caching
+Baked data should be reusable, because it's usually a heavy and long process. So we gotta have some sort of caching system to store that data for later use. For the final build, we actually only use that cache to deploy with the game. But this is a tricky topic. Cache folders can accumulate a lot of excessive unwanted data and also might miss some crucial assets in the deployment (if we don't collect them in development) which can be catastrophic. So we likely need some more tools to gather and pack them properly for deployment.
+
+## Remote Streaming
+It should be able to stream assets remotely. Some platforms including consoles and mobile, doesn't have full tooling and baking available to them. They also might not have direct access to the source data. So this feature is essential to them in order to keep iterations quick. PC acts as the asset-server and hosts loading requests from the remote device. It receives the requests, bakes them and basically passes the cache data chunk back to the client. 
+
+This also combines with *Hot-reload*. So every asset source that changes on the host PC, gets reloaded on the connected devices as well.
+
+## Compression
+Haven't implemented this one yet. It's just planned, but a simple lossless compression with the help of one of the free open-source libraries, would be enough to meet pretty much all indie game demands. But before that, the main decision I have to make is to wether compress and pack all cached data at the end for deployment, or compress cached data individually. 
+
+So I'm not in a rush to implement this yet because it's not an integral part of the asset system design-wise. Other features mentioned above are all critical parts of my design, since skipping one of them can have drastic changes on how the asset system is implemented and can lead to rewrite major parts or even lead to API changes, but not this one.
+
+# Terminology
+## Types
+An asset type refers to the category or format of an engine resource. Image, Model, Audio, etc. are all different asset types. Each asset type implements it's own data format and bake function, and also registers itself into the engine. 
+
+Every type is distinguished by a FourCC code. This code is basically it's ID and should be unique per type.
+
+They are also registered into the asset manager, with `RegisterType` API function. See `AssetManager.h` for more info on the API and related types.
+
+### AssetTypeImplBase 
+As mentioned earlier, every asset type should provide implementation for baking and loading it's data. This is implemented by inheriting from `AssetTypeImplBase`:
+
+~~~~~~~~~~~ cpp
+struct AssetTypeImplBase
+{
+    virtual bool Bake(const AssetParams& params, AssetData* data, const Span<uint8>& srcData, String<256>* outErrorDesc) = 0;
+    virtual bool Reload(void* newData, void* oldData) = 0;
+};
+~~~~~~~~~~~
+
+The main one is `Bake`. Provided with `params` and `srcData` (raw binary data). This function fills out `AssetData` and returns true, or in case of errors, fills out `outErrorDesc` and returns false. Parsing the data file format and extra baking all happens inside this function. For some examples of this, see [Image.cpp](https://github.com/septag/Junkyard/blob/main/code/Assets/Image.cpp) and [Model.cpp](https://github.com/septag/Junkyard/blob/main/code/Assets/Model.cpp).
+
+The other callback `Reload` is rather optional and mainly used for extra book keeping that engine might need after reloading an asset type. For example, shaders, upon reloads, needs to recreate their bound graphics pipelines so it needs to implement this function. 
+
+### Parameter type (ParamType)
+For loading each asset, Besides the general parameters (like file path and type Id), each asset type can require different parameters to load. For example, images, has this custom parameter type:
+
+~~~~~~~~~~~~~ cpp
+struct ImageLoadParams
+{
+    uint32 firstMip = 0;
+    GfxSamplerFilterMode samplerFilter = GfxSamplerFilterMode::Default;
+    GfxSamplerWrapMode samplerWrap = GfxSamplerWrapMode::Default;
+};
+~~~~~~~~~~~~~
+
+So these extra parameters, are passed for loading and because it's a custom type, we have to provide a param type name and param type size to the asset system. So with all these being said, this would be how we register the "Image" asset type:
+
+~~~~~~~~~~~~~ cpp
+AssetTypeDesc assetDesc {
+    .fourcc = IMAGE_ASSET_TYPE,
+    .name = "Image",
+    .impl = &imageImpl,
+    .extraParamTypeName = "ImageLoadParams",
+    .extraParamTypeSize = sizeof(ImageLoadParams),
+    .failedObj = &whiteImage,
+    .asyncObj = &whiteImage
+};
+Asset::RegisterType(assetDesc);
+~~~~~~~~~~~~~
+
+!!! Note 
+    If an asset type doesn't have extra load parameters, we can just pass zero size for `extraParamTypeSize`. Same goes for `failedObj` and `asyncObj` if we don't care what objects to return when it fails to load, or while it's loading. But in this case, we just show a 1x1 white texture.
+
+## Groups
+Asset manager and it's API is designed in such way that it only loads assets in groups, and groups are loaded and unloaded sequentially by the order they are submitted. By batching everything into groups, asset manager can optimize memory management, resource creation and task dispatching. So groups are basically just a batch of individual asset handles that should be perceived as a chunk of the world that can be loaded and unloaded by higher level game systems.
+
+You start first by calling `Asset::CreateGroup()` function, which returns the group object that is basically a handle with bunch of API functions. The first step is to add loading requests to the group with `AddToLoadQueue` function. Then after all requests are added, you can call `Load` function to actually queue the group for loading. And later on, `IsLoadFinished` will let you know when all the assets within the group has loaded and you can use the individual asset handles you added earlier. After finishing with the assets, `Unload` will free all the assets in the group.
+
+**Thread Safety**: Asset groups are **not** thread-safe. Meaning that, for each group, the API should not be called across threads. However, using different groups in separate threads is allowed.
+
+## Metadata
+Meta data are extra baking information that can be included along side each asset source file. It is basically a set of keys and values and is represented as a JSON5 file format, with the same filename of the asset source file and the addition of ".asset" extension at the end.
+
+So for example:
+
+```
+DuckCM.png
+DuckCM.png.asset
+```
+
+For the png image above, the metadata file would be the one with ".asset" extension. and the contents is like the following:
+
+```
+{
+    sRGB: false,
+    generateMips: true,
+    android: {
+        format: "astc_6x6"
+    },
+    pc: {
+        format: "bc1"
+    }
+}
+```
+
+When trying to bake the asset before caching, asset manager looks for this file, parses it, also flattens the correct platform key/values and in the end, gives the user just an array of key/value strings. Then the custom/per-asset-type bake function can query for those keys and do whatever they want with it. Basically acts as "persistent bake arguments".
+
+So in the Image `Bake` function, we fetch the values above and bake the image based on those parameters. Also note that for `firstMip`, we have put priority on the runtime input parameters:
+
+~~~~~~~~~ cpp
+String32 formatStr = String32(data->GetMetaValue("format", ""));
+bool sRGB = data->GetMetaValue("sRGB", false);
+bool generateMips = data->GetMetaValue("generateMips", false);
+uint32 firstMip = imageParams->firstMip ? imageParams->firstMip : data->GetMetaValue("firstMip", 0u);
+~~~~~~~~~
+
+!!! Note 
+    Metadata also enforces hot-reloading of it's asset if modified and invalidates asset's cache.
+
+## Data
+Asset data is a continuous block of memory that contains all the information that asset needs to be cached, serialized and used. With the help of [Relative Pointers](../junkyard-relativeptr) in asset data, the serialization is simplified down to a simple `memcpy`. So it is a requirement to **only use *Relative Pointers* in your custom asset data types**:
+
+![Asset data layout](AssetData.drawio.png)
+
+- **Metadata**: I already discussed this [here](#terminology/metadata). Basically a collection of key/value strings that was used for baking.
+- **Object Data**: The actual asset object and it's data. It can be casted to specific asset type structs and be used at runtime. For example, for images it can be casted to `GfxImage`, for shaders `GfxShader` and for models, `ModelData`. So the data is arbitrary and defined by each asset type implementation.
+- **Dependencies**: Each asset also stores a list of dependencies that should be loaded. For example, model materials might include extra images that are stored in this section. It's basically an array of full loading parameters for each dependency.
+- **GPU Objects**: GPU objects are either a *GPU Buffer* or a *GPU Image*. This information is required in order to create asset's GPU objects. For *cache*, I actually store the contents of the GPU data alongside the header. But for *runtime*, I strip that data after the GPU object is created.
+
+!!! Note 
+    Since the data is continuous, so the order of the data has importance and must match the above order. For instance, the implementations should first set the data (`AssetData::SetObjData`), then proceed with adding dependencies (`AssetData::AddDependency`) and in the end, add GPU objects (`AssetData::AddGpuTextureObject`/`AssetData::AddGpuBufferObject`). Otherwise, the API will throw assertion error.
+
+**Locking data**: To access asset data at runtime, we should always lock/unlock it. There's a `AssetObjPtrScope` helper class that is recommended to use whenever you need to fetch asset's *object data*. The lock/unlock process, makes sure that no other thread is using the data. I might change that behavior to readonly/write locking behavior, so that multiple reads may not lock the data.
+
+## Params Hash
+Params hash is a hash for all the information passed on to API for loading an asset:
+    - Asset type id/fourCC code
+    - File path
+    - Platform
+    - Extra type-specific parameters
+
+## Asset Hash
+This hash is to determine the actual uniqueness of the source asset file:
+    - Asset source file path
+    - Params hash
+    - Source asset file size and last modified date
+    - Metadata file size and last modified date
+
+# Internals
+These are mainly a brief explanations of the main functions inside `AssetManager.cpp` presented as bullet points. 
+
+![Overview diagram of update loop and tasks](TasksDiagram.drawio.png)
+
+## Update
+So as I described earlier, the process of loading a "chunk" or asset group, first starts with adding requests to the group (`AddToLoadQueue` function). Each type we add the asset to the load queue, a new handle is created. Upon `Load`, the asset group is queued for loading.
+Later on, the request is picked up by asset manager's `Asset::Update` function. Here's a brief description of what the update loop does:
+
+- Runs at the beginning of the frame (`Engine::BeginFrame`)
+- Only executes one job at a time (Load/Unload/Server requests)
+- Checks if *asset database* has changed. If so, save **cache lookup** file.
+- Get modified asset files from the virtual file-system, creates a new special "hot-reload" asset group and submits it.
+
+## CreateOrFetchHandle
+- Creates the [Params Hash](#terminology/paramshash)
+- Check with existing asset database. If it's already loaded, just add *reference count* instead of loading it and return it's handle.
+- Otherwise, create and allocate *Asset Header*, a new handle and add it to the database
+
+## LoadGroupTask
+LoadGroupTask is dispatched by the [Update](#internals/update) loop and is basically a single task that takes care of loading a group.
+
+- **Preparation**: Copy all *Asset Headers* from the group and clear them
+- **Loading/Baking**: For each load item:
+    - Set asset state to loading
+    - Decide if we load cached file or bake from the source
+    - Always load from cache if it's in *remote* mode
+    - Hot-reload requests already has a cached file since they currently exist, delete that file since it's not gonna be valid anymore
+    - For non-remote mode, create [Asset Hash](#terminology/assethash) and make a new cache path
+    - If the cache file doesn't exist, fallback to loading from source/baking
+    - Dispatch *LoadAssetTask* to long tasks and wait for them to finish (fork/join model). For *remote* mode, send requests to the server instead
+    - Gather any dependencies for each asset and add those to the current list of assets that we are loading
+- **Save cache**: Send asynchronous save requests to the virtual file-system for cache files that are newly created
+- **GPU Objects**: Create GPU objects for the assets. This is where we interact with the graphics backend and use *GPU transfer queues* to push those buffers and images into the GPU. It also requires GPU/CPU syncing which I'll describe later in the graphics backend post.
+- **Allocate Data**: So far, all allocations were done temporarily by [Scratch allocators](#memorymanagement/scratchallocators). But now we need to store it into each asset data. So allocate that data, copy it and also strip the GPU data because it's already uploaded to the GPU.
+- **Hot-Reload**: Run *Reload* callbacks for each asset. See [AssetTypeImplBase](#terminology/types/assettypeimplbase)
+- **Clean up**: And finally, reset [Scratch allocators](#memorymanagement/scratchallocators), set loaded status for the group.
+
+## LoadAssetTask
+These tasks are dispatched by [LoadGroupTask](#internals/loadgrouptask) and takes care of either loading from the cache or baking each asset.
+
+- **Preparation**: Create a scratch allocator or fetch an existing one.
+- **Load from source/bake**
+    - Allocate asset data from the scratch allocator
+    - Load [Metadata](#terminology/metadata)
+    - Read asset file
+    - Run *Bake* callback. See [AssetTypeImplBase](#terminology/types/assettypeimplbase)
+- **Load from cache**
+    - For *remote* mode, wait for the data to arrive
+    - For *local* mode, just load the cache file (wait for IO to finish)
+    - Read cache data, and check it's version. If the version doesn't match, fallback to loading from source
+- Save size and return the whole [data chunk](#terminology/data).
+
+## SaveBakedTask
+Again, this is also spawned by [LoadGroupTask](#internals/loadgrouptask) in the *save cache* step and takes care of saving the final cache binary into disk.
+
+- Write cache file header
+- Issue asynchronous save to the virtual file-system. These requests are queued up and later executed by the IO system.
+- We register a callback here as well, so that after each asset cache is saved, we update the *Asset Cache Lookup* table. It's basically a hash table with [Params Hash](#terminology/paramshash) as the key and [Asset Hash](#terminology/assethash) + source file path for it's value. This table is useful for platforms that doesn't have access to source assets, so they can resolve the actual cache file from load input parameters.
+
+## UnloadGroupTask
+LoadGroupTask is dispatched by the [Update](#internals/update) loop and is basically a single task that takes care of unloading group's assets.
+
+- **Preparation**: Gather all the handles needed to be unloaded
+- **Unloading**: For each unload item:
+    - First decrement ref count. If the count hits zero, continue unloading. Otherwise go to the next object.
+    - Add dependencies of each asset to the unload list.
+    - Destroy GPU objects and data.
+    - Free header and remove it from *asset lookup* table.
+    - For *hot-reload* mode, destroy the group
+
+# Memory Management
+## Scratch allocators
+The main runtime memory allocators that are particularly used in [LoadAssetTasks](#internals/loadassettask) are *scratch allocators*. They are basically a group of virtual memory backed, [bump allocators](../junkyard-memory-01/#allocators/allocatortypes/bumpallocator) that are local to each thread. The function `GetOrCreateScratchAllocator` checks if we have already initialized the allocator for that thread and return it, otherwise create a new one and assign it to the thread.
+
+And at the end of each main task (loading a group), we reset those allocators so we can reuse them later.
+
+![Scratch allocators](ScratchAllocators.drawio.png)
+
+By design, *bump allocators* have an initial warm-up round. On the first allocations, they commit new virtual memory pages and grow. But since these allocators doesn't de-commit memory when we reset them, the later allocations can be extremely fast. 
+
+## Persistent runtime allocators
+Other than scratch allocators, there are a few persistent [dynamic allocators](../junkyard-memory-01/#allocators/allocatortypes/tlsfallocator) to store asset data. The way they are used, the allocations are pretty much contention free:
+
+- **AssetHeaderAllocator**: Allocator that is used to create each asset data header. They are allocated when the user adds load requests ([CreateOrFetchHandle](#internals/createorfetchhandle))
+- **AssetDataAllocator**: Allocator that is used to create each [asset data](#terminology/data). They are allocated and unallocated in `LoadGroupTask` and `UnloadGroupTask`. So there is actually no need to lock this allocator since only one major task runs at a time.
+
+# Performance
+Well, it's still too early to tell because I still don't have real world assets and I haven't done any special optimizations. So far it's just a bare bone dead simple implementation, but even with that, early numbers are showing pretty good promise. 
+
+- *Hardware:* AMD Zen3 5900, Samsung SSD 990, B550 chipset.
+- *Scene:* Sponza scene. Total 70 assets. 1 Sponza model and 69 1024x1024 textures.
+- *Clean cache + Baking*: 1900 ms (1.9 seconds). Textures decompressed and compressed again from JPG to BC7. Model goes through VertexCache and Overdraw optimization. (roughly 25 MB/s)
+- *Load from baked Cache*: 24 ms (roughly 3580 MB/s)
+- *Total assets data size*: 48MB
+- *Total baked data size*: 86MB
+
+Synthetic benchmark for my SSD speed for sequential reads says 6800 MB/s (my TestIO also approves that). So the scene loading bandwidth of already baked data is roughly half the bandwidth of SSD speed itself. This shows, how fast even a simple unoptimized code can perform on modern hardware. ChatGPT says the average 3D LowPoly games on PC is somewhere between 1~5 GB. So with these numbers - if it stays roughly the same - it can load the entire indie game assets from around 0.5 to 2 seconds.
+
+<br>
+(insert ../footer.md.html here)
+</body>
+    
+<!-- Markdeep: --><style class="fallback">body{visibility:hidden;white-space:pre;font-family:monospace;}</style><script src="../js/markdeep.min.js" charset="utf-8"></script><script src="https://casual-effects.com/markdeep/latest/markdeep.min.js" charset="utf-8"></script><script>window.alreadyProcessedMarkdeep||(document.body.style.visibility="visible")</script>

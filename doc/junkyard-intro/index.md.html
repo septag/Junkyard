@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+    <meta charset="utf-8">
+    <title>Junkyard: Intro</title>
+    <meta name="description" content="">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, shrink-to-fit=no">
+    <link href="../css/normalize.css" rel="stylesheet" media="all">
+    <link href="../css/styles.css" rel="stylesheet" media="all">
+    <link rel="stylesheet" href="../css/base-min.css">
+    <link rel="stylesheet" href="../css/grids-core-min.css">
+    <link rel="stylesheet" href="../css/grids-min.css">
+</html>
+
+<body style="margin:auto">
+                        **Junkyard - Intro**
+                        <small>23 feb 2023</small>
+                        <small>edit: 7 may 2025</small>
+
+Project github link: [https://github.com/septag/Junkyard](https://github.com/septag/Junkyard)
+
+# Introduction
+
+The purpose of starting *Junkyard* is mainly personal satisfaction while being educational. I hope that I can build something that I can eventually make something cool with it. Currently, I'm working full time and have too many other stuff to do as well. So the goal for this project is to be able to keep growing and learning at times when my job is boring. slowly and gradually develop a solid foundation for a bespoke engine. And above all, have fun playing around with different things. That is actually why the name *Junkyard* came from. 
+
+## Language
+
+I don't want to get in too many details on this one. There are countless arguments and debates everywhere about which language is best. I'm sure everyone got into that before and may have an opinion on it. 
+
+As for my experience, I mainly came from a **C** background and I've gone through the full circle. From C ([this]("../../about/#opticut(2002-2003)"))-to-C++ ([this]("../../about/#hammerenginev0.3(2004-2005)"), [this]("../../about/#hammerenginev0.6(2006-2007)") and [that]("../../about/#hammerenginev0.7(2007-2009)"))-to-C ([this]("../../about/#darkhammerengine(2012-2014)") and [this](https://github.com/septag/rizz)) and back again ([this]("../../about/#fisherboy(2017-2018)")). Everytime I switched from C++ to C, I felt like I just have more freedom to write programs for my actual purpose rather than fighting with the pitfalls of the language and trying to get some fancy C++ feature work as I expect it. But on the other hand, there are still some nice things missing from the C language, especially with math operators, returning structs value from functions, minimal templating and some others that also helps alot with programming on a higher/game level.
+
+So just like what an idiot would do, I'm starting over again with a simplified version of **C++**. If you are on the [Orthodox C++](https://gist.github.com/bkaradzic/2e39896bc7d8c34e042b) train, you would probably not get digusted reading the code. The mindset that I have with C++ is very C-like, like relying very much on PODs (plain-old-data) and functions. But I also pick a few nice things from every C++ revision, some listed [here](https://github.com/septag/Junkyard/blob/main/doc/CppFeatures.txt). 
+
+There are newer exciting projects like *Rust*, *Zig*, *Odin* and *JAI* etc. But right now, I don't really care about them, since there is steep learning curve and I still don't see how much they solve my problems.
+
+## Design principles
+
+*Our Machinery* had a kick-ass document describing their design principles in which I strongly agreed. But unfortunately, they suddenly disappeared along with their website and documents.
+
+So anyway, I can't go into much detail, but I have simplified it down for myself to a few bullet points. Some of these points are so crucial on keeping this project alive:
+
+- **Write code for easy reading and modifying**: The code should be very easy to read in general and thus easy to modify. My rule is whenever I revisit my code after a couple of months, it should be easily understandable, otherwise there is something wrong and I should refactor the code. 
+- **Less is more**: Keep dependencies and code size as small as possible. Avoid fancy features, multiple paths and crazy optimizations as much as possible, unless absolutely required. 
+- **Keep it as simple as possible**: Use simple data constructs and algorithms as simple as it can be. This is actually a very hard to hit all the time. The trick is not to over-simplify and not over-complicate. 
+- **Document and take notes**: This is also a big deal that is very much overlooked by many including myself. It's kind of obvious that programmers are not good with documenting things. But it's something that has to be done in order to be able to maintain a rather large software in a long-run. Especially if you have many systems and are a solo developer. No matter how much simplicity you are going for, there would always be at least a few systems that need design documents and constant care and revisiting. Without well maintained documentation, I'd be forgetting all the details and edge cases and getting back to them can become quite difficult and might actually mess up the design too.
+- **Fast iteration**: Design everything from early stage for fast iteration. Build times, asset baking, tools, testing, everything. I describe this with more detail in the next section.
+- **Avoid Coupling**: Strong coupling between systems is the problem with many commercial engines as well. I have tried this concept with API interfaces and plugin dependency in my previous [project](https://github.com/septag/rizz). But there is problem with that as well. For my purpose and use case, it took a lot of time maintaining the plugins and all those APIs complicated things and contradicted the "keep in simple" principle. For this project, I'm not going to go that way, instead I'll try to keep the engine structure clean by structuring source files and headers in a way that I avoid tight systems coupling by not including headers that break the dependency chain. For example, all core library files go in `Core` directory, so no source file should include anything outside of that directory. As for dependencies between modules, I will write a tool to check all the includes in sources and check those dependencies. 
+- **Avoid unwanted work and design for performance**: I don't want to be super performant everywhere, just to keep things as simple and readable as possible, but what I can do is just not do what I shouldn't do for the specific problem. Avoid too much boilerplate code, avoid generalization, and just design the data for better CPU cache locality and basically design roughly for the hardware I'm running on. One of the big lessons I've learned from working on big engines and AAA development is the danger of over-generalization, over-abstraction. Luckily, I wouldn't have those problems with a small project like this. But with the modern hardware, you'll be amazed to see what it can do if you just solve the problem in a dumb way and not have a hundred abstractions over it.
+
+## Iteration
+
+This is a pretty big deal for me. I don't have much time to put on side-projects anymore, so the everything needs to compile fast and overall, have fast iteration. I may have to work on the project for one hour a day and I need to get things up and running very quickly. 
+Some bullet points for keeping iteration as fast as possible are:
+
+- **Compile times:** They should be kept as short as possible. Unfortunately with C++ (unlike C), extra care and discipline should be enforced in order to keep this small. Some examples are, not using heavy templates, include only what you want, keep headers small, and free of stl and other crap, always monitor compile times, avoid using heavy dependencies, etc.
+- **Hot Reloads:** Especially on Windows (PC) which is my main development platform, I should add hot-reload functionality for as many things as I can. For start, all asset types, shaders and also C++ code itself.
+- **Robust Asset System:** Right from the start, the asset system must be taken seriously. It should be able to bake, cache and load assets remotely and perform all of that quick enough.
+- **Potential use of LLMs:** Another experimental plan is to train the code and docs with LLMs, mainly for two things, smarter code generation and smarter wiki.
+ 
+## Developer tools
+
+During the past couple of months, I put a lot of time and effort trying out and changing my development tools. Obviously, everyone has their own favorite tools for the job, I'll list mine here as someone might not like their existing tools and want to give them a try:
+
+- **C++ Editor**: I chose [10xEditor](https://10xeditor.com/) for this purpose. Fed up with visual-studio+VAX and vscode (C++ extension), none of the tools I tried was what I really like. But in my opinion, this editor has that magic. It's very minimal, super performant, parses C++ code very fast, search is instant, has python support for extensions and is visual-studio friendly, meaning that it can open sln files, handle large code-bases and have similar work-flow/shortcuts like VAX. The community is just super great. Reported bugs get fixed in a day by the author and most good suggestions actually gets implemented. It feels like you have your own in-house code editor developer. It's just great to be part of a developer community like this. 
+- **Script/Shader editor**: For this purpose, small python scripts, HLSL shaders, batch files etc. I think [VsCode](https://code.visualstudio.com/) is still the best tool. It is quite extensive and the extensions work pretty well for small programs and scripting languages. I also use vscode for alternative editor support and actually primary IDE on the Linux platform.
+- **Debugger**: I chose [RemedyBG](https://remedybg.itch.io/remedybg) as my default windows debugger. Same with 10xEditor, it just feels fast and cool and has some cool features over visual-studio (watch the Casey Muratori video on it's website). Sometimes I have to switch to visual-studio because of better ASM view, parallel stacks or android debugging. But this is now, my main debugger program. I also developed a [RemedyBG integration](https://github.com/slynch8/10x/tree/main/PythonScripts/RemedyBG) for 10xEditor with the help of both of their authors, which works pretty good for me so far.
+- **Git client**: [fork](https://git-fork.com/). Pretty solid and fast GIT client. Although I still have to write some git commands from time to time, but it's no biggie. 
+- **Profiler**: I chose the open-source [Tracy Profiler](https://github.com/wolfpld/tracy) and integrated it into the engine. Client program is fast, It's got memory tracking, gpu profiling and lua support. So far so good. I also use native tools like [VTune](https://www.intel.com/content/www/us/en/develop/documentation/vtune-help/top.html) and [Very Sleepy](https://github.com/VerySleepy/verysleepy) for some extra insight.
+- **C++ live coding**: [LivePP](https://liveplusplus.tech/) tool from Molecular Matters is just magic! On my Windows development platform, it's been working flawlessly so far. It adds hot-reload functionality to your C++ program by extracting compile and other info from PDB, only build modified translation units and inject it in to your program. Obviously, there's a lot of magic involved for many edge cases like callbacks and such, but it just works out of the box and is quite crucial for many parts, like gameplay coding, GUI and many other things that needs a lot of iterations. 
+- **GPU Debugger**: Of course, I use everyone's favorite open-source graphics API debugging tool [RenderDoc](https://github.com/baldurk/renderdoc) for API debugging and native tools like Nvidia's [nsight](https://developer.nvidia.com/nsight-graphics) (or any other native platform specific tools) for lower level stuff.
+- **File manager**: A good file manager is sort of a big deal when doing daily work. Fed up with windows explorer, I tried a few programs out there, and finally settled with [Far Manager](https://www.farmanager.com/). It's a terminal based norton-commander like program, very old school. But actually, it's quite extensive and does almost everything I need. Besides that, there is this up and coming windows GUI based file manager called [FilePilot](https://filepilot.tech/) which is showing a great promise, so I've been using that recently besides *FarManager* mainly for the stuff that doesn't involve command-line interaction.
+- **Other useful utilities**: Other good stuff I can think of is diffing program [WinMerge](https://winmerge.org/) and [Sysinternals system utilities](https://learn.microsoft.com/en-us/sysinternals/), [Notepad++](https://notepad-plus-plus.org/), [MemPro](https://www.puredevsoftware.com/mempro/index.htm) and Windows resource monitor.
+
++++++
+
+That's all for now. Next, I'll be covering some aspects of [Memory Management in Junkyard](../junkyard-memory-01).
+
+<br>
+(insert ../footer.md.html here)
+</body>
+    
+<!-- Markdeep: --><style class="fallback">body{visibility:hidden;white-space:pre;font-family:monospace;}</style><script src="../js/markdeep.min.js" charset="utf-8"></script><script src="https://casual-effects.com/markdeep/latest/markdeep.min.js" charset="utf-8"></script><script>window.alreadyProcessedMarkdeep||(document.body.style.visibility="visible")</script>

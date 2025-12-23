@@ -53,6 +53,7 @@ struct ModelScene
     GfxPipelineHandle mPipeline;
     GfxPipelineLayoutHandle mPipelineLayout;
     GfxBufferHandle mUniformBuffer;
+    GfxSamplerHandle mSampler;
 
     AssetGroup mAssetGroup;
 
@@ -104,6 +105,12 @@ struct ModelScene
         };
         mUniformBuffer = GfxBackend::CreateBuffer(bufferDesc);
 
+        GfxSamplerDesc samplerDesc {
+            .samplerFilter = GfxSamplerFilterMode::LinearMipmapLinear,
+            .samplerWrap = GfxSamplerWrapMode::Repeat,
+        };
+        mSampler = GfxBackend::CreateSampler(samplerDesc);
+
         mShader = Shader::Load("/shaders/Model.hlsl", ShaderLoadParams{}, initAssetGroup);
 
         mAssetGroup = Asset::CreateGroup();
@@ -122,6 +129,7 @@ struct ModelScene
 
         Unload();
         GfxBackend::DestroyBuffer(mUniformBuffer);
+        GfxBackend::DestroySampler(mSampler);
     }
 
     void Load()
@@ -317,7 +325,8 @@ struct ModelScene
                     },
                     {
                         .name = "BaseColorTexture",
-                        .image = imgHandle.IsValid() ? imgHandle : Image::GetWhite1x1()
+                        .image = imgHandle.IsValid() ? imgHandle : Image::GetWhite1x1(),
+                        .sampler = mSampler
                     }
                 };
                 cmd.PushBindings(mPipelineLayout, CountOf(bindings), bindings);

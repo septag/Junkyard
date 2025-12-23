@@ -1,7 +1,0 @@
-## Quest 2 Snapdragon specs
-- CPU: Qualcomm Kryo 280, Octa-core 2.45ghz
-       64bit
-- GPU: Qualcomm Adreno 540 - Vulkan 1.1
-- Display: 1832x1920 per eye
-           72hz - 90hz refresh rate
-- Memory: 6GB - LPDDR4 - 1866MHZ
