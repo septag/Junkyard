@@ -3,6 +3,7 @@
 #include "../Core/MathAll.h"
 #include "../Core/Log.h"
 #include "../Core/Pools.h"
+#include "../Core/TracyHelper.h"
 
 #include "../Common/Application.h"
 #include "../Common/Camera.h"

@@ -81,10 +81,10 @@ if (WIN32)
 
     # Copy files after succesful build
     set (FILES_TO_COPY 
-        ../code/External/slang/bin/slang.dll
-        ../code/External/ispc_texcomp/lib/win64/ispc_texcomp.dll 
-        ../code/External/dbghelp/dbghelp.dll
-        ../code/External/meshoptimizer/lib/win64/meshoptimizer.dll)
+        ${CMAKE_SOURCE_DIR}/../../code/External/slang/bin/slang.dll
+        ${CMAKE_SOURCE_DIR}/../../code/External/ispc_texcomp/lib/win64/ispc_texcomp.dll 
+        ${CMAKE_SOURCE_DIR}/../../code/External/dbghelp/dbghelp.dll
+        ${CMAKE_SOURCE_DIR}/../../code/External/meshoptimizer/lib/win64/meshoptimizer.dll)
     set (FILES_DEST_DIR ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/$<CONFIG>)
 
     add_custom_command(TARGET Junkyard POST_BUILD 
@@ -149,9 +149,9 @@ else()
 
         # Copy files after succesful build
         set (FILES_TO_COPY 
-            ../code/External/slang/lib/libslang.so
-            ../code/External/ispc_texcomp/lib/libispc_texcomp.so 
-            ../code/External/meshoptimizer/lib/linux-x86_64/libmeshoptimizer.so)
+            ${CMAKE_SOURCE_DIR}/../../code/External/slang/lib/libslang.so
+            ${CMAKE_SOURCE_DIR}/../../code/External/ispc_texcomp/lib/libispc_texcomp.so 
+            ${CMAKE_SOURCE_DIR}/../../code/External/meshoptimizer/lib/linux-x86_64/libmeshoptimizer.so)
         set (FILES_DEST_DIR ${CMAKE_RUNTIME_OUTPUT_DIRECTORY})
 
         add_custom_command(TARGET Junkyard POST_BUILD 
