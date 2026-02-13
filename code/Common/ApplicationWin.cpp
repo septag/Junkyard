@@ -798,7 +798,7 @@ namespace App
         TimerStopWatch stopwatch;
 
         #if CONFIG_ENABLE_LIVEPP
-        if (!OS::IsPathDir("code/External/LivePP")) {
+        if (!OS::IsPathDir(CONCAT(CONFIG_LIVEPP_ROOT_PATH, "code/External/LivePP"))) {
             ASSERT_ALWAYS(0, "Cannot find path './code/External/LivePP'. Perhaps CWD is not set to project's root directory");
             return false;
         }
