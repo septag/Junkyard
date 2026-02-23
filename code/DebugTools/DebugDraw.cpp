@@ -46,6 +46,7 @@ struct DebugDrawContext
     AssetHandleShader shaderAsset;
     GfxBufferHandle vertexBuffer;
     GfxBufferHandle ubPerFrameData;
+    GfxMultiSampleCount msaa = GfxMultiSampleCount::SampleCount1;
 
     GfxCommandBuffer cmd;
     Array<DebugDrawVertex> vertices;      // Mapped vertices from the staging buffer. We stream all verts into this
@@ -129,6 +130,9 @@ namespace DebugDraw
                 .depthTestEnable = true,
                 .depthWriteEnable = false,
                 .depthCompareOp = GfxCompareOp::Less
+            },
+            .msaa = {
+                .sampleCount = gDebugDraw.msaa
             },
             .numColorAttachments = 1,
             .colorAttachmentFormats = {GfxBackend::GetSwapchainFormat()},
@@ -226,7 +230,7 @@ void DebugDraw::BeginDraw(GfxCommandBuffer cmd, const Camera& cam, uint16 viewWi
     }
 }
 
-void DebugDraw::EndDraw(GfxCommandBuffer cmd, GfxImageHandle depthImage)
+void DebugDraw::EndDraw(GfxCommandBuffer cmd, GfxImageHandle depthImage, GfxImageHandle colorImage)
 {
     ASSERT_MSG(cmd.mIsRecording && !cmd.mIsInRenderPass, "%s must be called while CommandBuffer is recording and not in the RenderPass", __FUNCTION__);
     ASSERT(gDebugDraw.isDrawing);
@@ -245,15 +249,30 @@ void DebugDraw::EndDraw(GfxCommandBuffer cmd, GfxImageHandle depthImage)
             .height = float(gDebugDraw.viewExtents.y)
         };
 
+        bool isMSAA = false;
+        if (colorImage.IsValid()) {
+            GfxMultiSampleCount sampleCount = GfxBackend::GetImageDesc(colorImage).multisampleFlags;
+            isMSAA = sampleCount != GfxMultiSampleCount::SampleCount1;
+            ASSERT_MSG(sampleCount == gDebugDraw.msaa, "DebugDraw MSAA does not match the provided render target image sample count");
+        }
+        else {
+            ASSERT_MSG(gDebugDraw.msaa == GfxMultiSampleCount::SampleCount1, "If MSAA is set for DebugDraw, then you should provide a matching render target image");
+        }        
+
         // Begin Drawing to the swapchain 
         // Note: We cannot BeginRenderPass while updating the buffers
-        GfxBackendRenderPass pass { 
-            .colorAttachments = {{ .load = true }},
+        GfxBackendRenderPass pass {
+            .numAttachments = colorImage.IsValid() ? 1u : 0u,
+            .colorAttachments = {{ 
+                .image = colorImage,
+                .load = true,
+                .resolveToSwapchain = isMSAA,
+            }},
             .depthAttachment = { 
                 .image = depthImage,
                 .load = true
             },
-            .swapchain = true,
+            .swapchain = !colorImage.IsValid(),
             .hasDepth = true
         };
         cmd.BeginRenderPass(pass);
@@ -452,4 +471,9 @@ void DebugDraw::DrawBoundingSphere(Float4 sphere, Color4u color, uint32 numRings
 
     Mat4 transformMat = Mat4::TransformMat(sphere.x, sphere.y, sphere.z, 0, 0, 0, sphere.w, sphere.w, sphere.w);
     _EndDrawItem(transformMat, color);
+}
+
+void DebugDraw::SetMSAA(GfxMultiSampleCount sampleCount)
+{
+    gDebugDraw.msaa = sampleCount;    
 }

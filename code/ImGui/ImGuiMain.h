@@ -66,9 +66,11 @@ namespace ImGui
 
     API bool IsEnabled();
     API void BeginFrame(float dt);
-    API bool DrawFrame(GfxCommandBuffer cmd);
+    API bool DrawFrame(GfxCommandBuffer cmd, GfxImageHandle colorImage = GfxImageHandle());
 
-    API bool Initialize();
-    API void Release();
+    API void SetMSAA(GfxMultiSampleCount sampleCount);  // Should be set before initialization
+
+    bool Initialize();
+    void Release();
 }
 

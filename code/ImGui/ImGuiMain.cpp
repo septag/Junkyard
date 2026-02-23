@@ -68,6 +68,7 @@ struct ImGuiState
     GfxImageHandle fontImage;
     GfxSamplerHandle sampler;
     AssetHandleShader shader;
+    GfxMultiSampleCount msaa = GfxMultiSampleCount::SampleCount1;
     float* alphaControl;      // alpha value that will be modified by mouse-wheel + ALT
 
     HashTable<const char*> settingsCacheTable;
@@ -394,6 +395,9 @@ namespace ImGui
                 .numAttachments = 1,
                 .attachments = GfxBlendAttachmentDesc::GetAlphaBlending()
             },
+            .msaa = {
+                .sampleCount = gImGui.msaa,
+            },
             .numColorAttachments = 1,
             .colorAttachmentFormats = {GfxBackend::GetSwapchainFormat()}
         };
@@ -651,7 +655,7 @@ void ImGui::BeginFrame(float dt)
     ImGuizmo::SetRect(0, 0, io.DisplaySize.x, io.DisplaySize.y);
 }
 
-bool ImGui::DrawFrame(GfxCommandBuffer cmd)
+bool ImGui::DrawFrame(GfxCommandBuffer cmd, GfxImageHandle colorImage)
 {
     if (gImGui.ctx == nullptr) 
         return false;
@@ -689,11 +693,25 @@ bool ImGui::DrawFrame(GfxCommandBuffer cmd)
 
     GPU_PROFILE_ZONE(cmd, "ImGui");
 
+    bool isMSAA = false;
+    if (colorImage.IsValid()) {
+        GfxMultiSampleCount sampleCount = GfxBackend::GetImageDesc(colorImage).multisampleFlags;
+        isMSAA = sampleCount != GfxMultiSampleCount::SampleCount1;
+        ASSERT_MSG(sampleCount == gImGui.msaa, "ImGui MSAA does not match the provided render target image sample count");
+    }
+    else {
+        ASSERT_MSG(gImGui.msaa == GfxMultiSampleCount::SampleCount1, "If MSAA is set for ImGui, then you should provide a matching render target image");
+    }
+
     // Begin Drawing to the swapchain 
     // Note: We cannot BeginRenderPass while updating the buffers
     GfxBackendRenderPass pass { 
-        .colorAttachments = {{ .load = true }},
-        .swapchain = true
+        .colorAttachments = {{ 
+            .image = colorImage,
+            .load = true,
+            .resolveToSwapchain = isMSAA,
+        }},
+        .swapchain = !colorImage.IsValid()
     };
     cmd.BeginRenderPass(pass);
 
@@ -825,3 +843,7 @@ void ImGui::SeparatorVertical(float)
     SeparatorEx(ImGuiSeparatorFlags_Vertical);
 }
 
+void ImGui::SetMSAA(GfxMultiSampleCount sampleCount)
+{
+    gImGui.msaa = sampleCount;
+}

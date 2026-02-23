@@ -4,7 +4,7 @@
 //
 // MIT License
 //
-// Copyright (c) 2020 Sepehr Taghdisian
+// Copyright (c) 2026 Sepehr Taghdisian
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -61,7 +61,13 @@
 //          // use token helper functions (see below) to access the values 
 //          float my_num = cj5_seekget_float(&r, 0, "my_num", 0 /* default value if not found*/ );
 //        } 
-// 
+//
+// Token factory:
+//      To dynamically allocate tokens while parsing. You can use `cj5_parse_with_factory` and provide it with cj5_factory callbacks:
+//      Factory can be a dynamically growing array (std::vector) that allocate tokens instead of allocating them up front
+//          create_token: Allocates a token and returns it's pointer.
+//          get_all: returns the pointer to all tokens allocated. 
+//     
 // Customization:
 //  This library doesn't use any memory allocations so hooray for that !
 //  But in order to not use default stdc functions, you can override those by defining these macros:
@@ -448,8 +454,12 @@ found:
     } else {
         // detect other types, subtypes
         // note that we have to use memcpy here or we will get unaligned access on some
-        uint32_t fourcc_;
-        CJ5_MEMCPY(&fourcc_, &json5[start], 4);
+        uint32_t fourcc_ = 0;
+        if (parser->pos - start >= 4)
+            CJ5_MEMCPY(&fourcc_, &json5[start], 4);
+        else
+            CJ5_MEMCPY(&fourcc_, &json5[start], parser->pos - start);
+
         uint32_t* fourcc = &fourcc_;
  
         if (*fourcc == CJ5__NULL_FOURCC) {

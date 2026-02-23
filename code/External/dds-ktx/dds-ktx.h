@@ -57,7 +57,7 @@
 //              assert(!(tc.flags & DDSKTX_TEXTURE_FLAG_CUBEMAP));
 //              assert(tc.num_layers == 1);
 //              // Create GPU texture from tc data
-//              for (int mip = 0; mip < tc->num_mips; mip++) {
+//              for (int mip = 0; mip < tc.num_mips; mip++) {
 //                  ddsktx_sub_data sub_data;
 //                  ddsktx_get_sub(&tc, &sub_data, dds_data, size, 0, 0, mip);
 //                  // Fill/Set texture sub resource data (mips in this case)
@@ -71,6 +71,8 @@
 //                  Added KTX support
 //      1.0.1       Fixed major bugs in KTX parsing
 //      1.1.0       Fixed bugs in get_sub routine, refactored some parts, image-viewer example
+//      1.2.0       Improved support for DirectX XRGB formats
+//      1.2.1       Fixed two exploit bugs
 //
 // TODO
 //      Write KTX/DDS
@@ -112,7 +114,7 @@ typedef enum ddsktx_format
     DDSKTX_FORMAT_ETC1,        // ETC1 RGB8
     DDSKTX_FORMAT_ETC2,        // ETC2 RGB8
     DDSKTX_FORMAT_ETC2A,       // ETC2 RGBA8
-    DDSKTX_FORMAT_ETC2A1,      // ETC2 RGBA8A1
+	DDSKTX_FORMAT_ETC2A1,      // ETC2 RGB8A1
     DDSKTX_FORMAT_PTC12,       // PVRTC1 RGB 2bpp
     DDSKTX_FORMAT_PTC14,       // PVRTC1 RGB 4bpp
     DDSKTX_FORMAT_PTC12A,      // PVRTC1 RGBA 2bpp
@@ -158,6 +160,7 @@ typedef enum ddsktx_texture_flags
     DDSKTX_TEXTURE_FLAG_DDS     = 0x08,       // container was DDS file
     DDSKTX_TEXTURE_FLAG_KTX     = 0x10,       // container was KTX file
     DDSKTX_TEXTURE_FLAG_VOLUME  = 0x20,       // 3D volume
+    DDSKTX_TEXTURE_FLAG_ALPHA_X = 0x40        // Alpha channel is not used (DirectX XRGB formats)
 } ddsktx_texture_flags;
 
 typedef struct ddsktx_texture_info
@@ -547,6 +550,7 @@ static const ddsktx__dds_translate_pixel_format k__translate_dds_pixel[] = {
     { 24, DDSKTX__DDPF_RGB,                  { 0x00ff0000, 0x0000ff00, 0x000000ff, 0x00000000 }, DDSKTX_FORMAT_RGB8    },
     { 24, DDSKTX__DDPF_RGB,                  { 0x000000ff, 0x0000ff00, 0x00ff0000, 0x00000000 }, DDSKTX_FORMAT_RGB8    },
     { 32, DDSKTX__DDPF_RGB,                  { 0x00ff0000, 0x0000ff00, 0x000000ff, 0x00000000 }, DDSKTX_FORMAT_BGRA8   },
+    { 32, DDSKTX__DDPF_RGB,                  { 0x000000ff, 0x0000ff00, 0x00ff0000, 0x00000000 }, DDSKTX_FORMAT_BGRA8   },   // D3DFMT_X8R8G8B8
     { 32, DDSKTX__DDPF_RGB|DDSKTX__DDPF_ALPHAPIXELS, { 0x000000ff, 0x0000ff00, 0x00ff0000, 0xff000000 }, DDSKTX_FORMAT_RGBA8   },
     { 32, DDSKTX__DDPF_BUMPDUDV,             { 0x000000ff, 0x0000ff00, 0x00ff0000, 0xff000000 }, DDSKTX_FORMAT_RGBA8S  },
     { 32, DDSKTX__DDPF_RGB,                  { 0x00ff0000, 0x0000ff00, 0x000000ff, 0xff000000 }, DDSKTX_FORMAT_BGRA8   },
@@ -921,6 +925,10 @@ static bool ddsktx__parse_ktx(ddsktx_texture_info* tc, const void* file_data, in
 
     tc->metadata_offset = r.offset;
     tc->metadata_size = (int)header.metadata_size;
+
+    if (header.metadata_size > (uint32_t)(r.total - r.offset)) {
+        ddsktx__err(err, "ktx: metadata_size exceeds file bounds");
+    }
     r.offset += (int)header.metadata_size;
 
     ddsktx_format format = _DDSKTX_FORMAT_COUNT;
@@ -1065,6 +1073,8 @@ static bool ddsktx__parse_dds(ddsktx_texture_info* tc, const void* file_data, in
     tc->bpp = k__block_info[format].bpp;
     if (has_alpha || k__formats_info[format].has_alpha)
         tc->flags |= DDSKTX_TEXTURE_FLAG_ALPHA;
+    if (!has_alpha && k__formats_info[format].has_alpha)
+        tc->flags |= DDSKTX_TEXTURE_FLAG_ALPHA_X;
     if (cubemap)
         tc->flags |= DDSKTX_TEXTURE_FLAG_CUBEMAP;
     if (volume)
@@ -1077,8 +1087,8 @@ static bool ddsktx__parse_dds(ddsktx_texture_info* tc, const void* file_data, in
 }   
 
 void ddsktx_get_sub(const ddsktx_texture_info* tc, ddsktx_sub_data* sub_data, 
-                 const void* file_data, int size,
-                 int array_idx, int slice_face_idx, int mip_idx)
+                    const void* file_data, int size,
+                    int array_idx, int slice_face_idx, int mip_idx)
 {
     ddsktx_assert(tc);
     ddsktx_assert(sub_data);
@@ -1139,9 +1149,20 @@ void ddsktx_get_sub(const ddsktx_texture_info* tc, ddsktx_sub_data* sub_data,
                     }
                    
                     for (int slice = 0; slice < num_slices; slice++) {
+                        if ((r.offset + mip_size) > r.total) {
+                            ddsktx_assert(false && "texture buffer overflow");
+                            ddsktx_memset(sub_data, 0x0, sizeof(*sub_data));
+                            return;
+                        }
+
                         if (layer == array_idx && mip == mip_idx && 
                             slice == slice_idx && face_idx == face) 
                         {
+                            if ((r.offset + mip_size) > r.total) {
+                                sub_data->buff = NULL;
+                                return;
+                            }
+
                             sub_data->buff = r.buff + r.offset;
                             sub_data->width = width;
                             sub_data->height = height;
@@ -1151,7 +1172,6 @@ void ddsktx_get_sub(const ddsktx_texture_info* tc, ddsktx_sub_data* sub_data,
                         }
 
                         r.offset += mip_size;
-                        ddsktx_assert(r.offset <= r.total && "texture buffer overflow");
                     } // foreach slice
 
                     width >>= 1;

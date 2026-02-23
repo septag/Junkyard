@@ -18,11 +18,13 @@ struct DebugDrawGridProperties
 // Note: API is not thread-safe, all calls should happen in a single thread
 namespace DebugDraw
 {
+    API void SetMSAA(GfxMultiSampleCount sampleCount);  // Should be set before initialization
+
     bool Initialize();
     void Release();
 
     API void BeginDraw(GfxCommandBuffer cmd, const Camera& cam, uint16 viewWidth, uint16 viewHeight);
-    API void EndDraw(GfxCommandBuffer cmd, GfxImageHandle depthImage);
+    API void EndDraw(GfxCommandBuffer cmd, GfxImageHandle depthImage, GfxImageHandle colorImage = GfxImageHandle());
 
     API void DrawGroundGrid(const Camera& cam, const DebugDrawGridProperties& props);
     API void DrawBoundingSphere(Float4 sphere, Color4u color, uint32 numRings = 8, uint32 numSectors= 12);
