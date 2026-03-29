@@ -68,6 +68,7 @@ struct Array
     bool IsFull() const;
     const _T* Ptr() const;
     _T* Ptr();
+    void ForceSetCount(uint32 count);
     
     void Detach(_T** outBuffer, uint32* outCount);
     Span<_T> Detach();
@@ -308,6 +309,13 @@ template <typename _T>
 inline uint32 Array<_T>::Count() const
 {
     return mCount;
+}
+
+template <typename _T>
+inline void Array<_T>::ForceSetCount(uint32 count)
+{
+    ASSERT(count <= mCapacity);
+    mCount = count;
 }
 
 template <typename _T>

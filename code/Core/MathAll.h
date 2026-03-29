@@ -120,8 +120,7 @@ FORCE_INLINE Float3 Quat::TransformFloat3(Float3 v, Quat q)
 }
 
 
-// The product of two rotation quaternions will be equivalent to the rotation q followed by
-// the rotation p
+// The product of two rotation quaternions will be equivalent to the rotation "q" followed by the rotation "p"
 FORCE_INLINE Quat Quat::Mul(Quat p, Quat q)
 {
     return Quat(
@@ -386,13 +385,17 @@ FORCE_INLINE Float4 Mat4::Row4() const
     return Float4(m41, m42, m43, m44);
 }
 
-
 FORCE_INLINE Mat4 Mat4::Translate(float _tx, float _ty, float _tz)
 {
     return Mat4(1.0f, 0.0f, 0.0f, _tx, 
                 0.0f, 1.0f, 0.0f, _ty, 
                 0.0f, 0.0f, 1.0f, _tz, 
                 0.0f, 0.0f, 0.0f, 1.0f);
+}
+
+FORCE_INLINE Mat4 Mat4::Translate(Float3 _t)
+{
+    return Translate(_t.x, _t.y, _t.z);
 }
 
 FORCE_INLINE Mat4 Mat4::Scale(float _sx, float _sy, float _sz)
@@ -892,9 +895,9 @@ FORCE_INLINE bool RectFloat::Test(const RectFloat rc1, const RectFloat rc2)
     return true;
 }
 
-FORCE_INLINE void RectFloat::AddPoint(RectFloat* rc, Float2 pt)
+FORCE_INLINE void RectFloat::AddPoint(RectFloat& rc, Float2 pt)
 {
-    *rc = RectFloat(Float2::Min(Float2(rc->vmin), pt), Float2::Max(Float2(rc->vmax), pt));
+    rc = RectFloat(Float2::Min(Float2(rc.vmin), pt), Float2::Max(Float2(rc.vmax), pt));
 }
 
 FORCE_INLINE bool RectFloat::IsEmpty() const
@@ -918,7 +921,7 @@ FORCE_INLINE Float2 RectFloat::GetCorner(const RectFloat* rc, int index)
     return Float2((index & 1) ? rc->xmax : rc->xmin, (index & 2) ? rc->ymax : rc->ymin);
 }
 
-FORCE_INLINE void RectFloat::GetCorners(Float2 corners[4], const RectFloat* rc)
+FORCE_INLINE void RectFloat::GetCorners(const RectFloat* rc, Float2 corners[4])
 {
     for (int i = 0; i < 4; i++)
         corners[0] = RectFloat::GetCorner(rc, i);
@@ -970,9 +973,9 @@ FORCE_INLINE bool RectInt::Test(const RectInt rc1, const RectInt rc2)
     return true;
 }
 
-FORCE_INLINE void RectInt::AddPoint(RectInt* rc, Int2 pt)
+FORCE_INLINE void RectInt::AddPoint(RectInt& rc, Int2 pt)
 {
-    *rc = RectInt(Int2::Min(Int2(rc->vmin), pt), Int2::Max(Int2(rc->vmax), pt));
+    rc = RectInt(Int2::Min(Int2(rc.vmin), pt), Int2::Max(Int2(rc.vmax), pt));
 }
 
 FORCE_INLINE bool RectInt::IsEmpty() const
@@ -1017,7 +1020,7 @@ FORCE_INLINE Int2 RectInt::GetCorner(const RectInt* rc, int index)
     return Int2((index & 1) ? rc->xmax : rc->xmin, (index & 2) ? rc->ymax : rc->ymin);
 }
 
-FORCE_INLINE void RectInt::GetCorners(Int2 corners[4], const RectInt* rc)
+FORCE_INLINE void RectInt::GetCorners(const RectInt* rc, Int2 corners[4])
 {
     for (int i = 0; i < 4; i++)
         corners[0] = GetCorner(rc, i);
@@ -1035,16 +1038,21 @@ FORCE_INLINE bool AABB::IsEmpty() const
     return xmin >= xmax || ymin >= ymax || zmin >= zmax;
 }
 
-FORCE_INLINE void AABB::AddPoint(AABB* aabb, Float3 pt)
+FORCE_INLINE AABB AABB::CenterExtents(Float3 center, Float3 extents)
 {
-    *aabb = AABB(Float3::Min(Float3(aabb->vmin), pt), Float3::Max(Float3(aabb->vmax), pt));
+    return AABB(Float3::Sub(center, extents), Float3::Add(center, extents));
+}
+
+FORCE_INLINE void AABB::AddPoint(AABB& aabb, Float3 pt)
+{
+    aabb = AABB(Float3::Min(Float3(aabb.vmin), pt), Float3::Max(Float3(aabb.vmax), pt));
 }
 
 FORCE_INLINE AABB AABB::Unify(const AABB& aabb1, const AABB& aabb2)
 {
     AABB r = aabb1;
-    AABB::AddPoint(&r, Float3(aabb2.vmin));
-    AABB::AddPoint(&r, Float3(aabb2.vmax));
+    AABB::AddPoint(r, Float3(aabb2.vmin));
+    AABB::AddPoint(r, Float3(aabb2.vmax));
     return r;
 }
 
@@ -1097,7 +1105,7 @@ FORCE_INLINE Float3 AABB::GetCorner(const AABB& aabb, int index)
                   (index & 2) ? aabb.zmax : aabb.zmin);
 }
 
-FORCE_INLINE void AABB::GetCorners(Float3 corners[8], const AABB& aabb)
+FORCE_INLINE void AABB::GetCorners(const AABB& aabb, Float3 corners[8])
 {
     for (int i = 0; i < 8; i++)
         corners[i] = AABB::GetCorner(aabb, i);
@@ -1405,9 +1413,9 @@ namespace M
     FORCE_INLINE RectFloat   RectExpand(const RectFloat rc, Float2 expand) { return RectFloat::Expand(rc, expand); }
     FORCE_INLINE bool   RectTestPoint(const RectFloat rc, Float2 pt) { return RectFloat::TestPoint(rc, pt); }
     FORCE_INLINE bool   RectTest(const RectFloat rc1, const RectFloat rc2) { return RectFloat::Test(rc1, rc2); }
-    FORCE_INLINE void   RectAddPoint(RectFloat* rc, Float2 pt) { RectFloat::AddPoint(rc, pt); }
+    FORCE_INLINE void   RectAddPoint(RectFloat& rc, Float2 pt) { RectFloat::AddPoint(rc, pt); }
     FORCE_INLINE Float2 RectGetCorner(const RectFloat* rc, int index) { return RectFloat::GetCorner(rc, index); }
-    FORCE_INLINE void   RectGetCorners(Float2 corners[4], const RectFloat* rc) { RectFloat::GetCorners(corners, rc); }
+    FORCE_INLINE void   RectGetCorners(const RectFloat* rc, Float2 corners[4]) { RectFloat::GetCorners(rc, corners); }
     FORCE_INLINE Float2 RectExtents(const RectFloat rc) { return RectFloat::Extents(rc); }
     FORCE_INLINE Float2 RectCenter(const RectFloat rc) { return RectFloat::Center(rc); }
     FORCE_INLINE RectFloat   RectTranslate(const RectFloat rc, Float2 pos) { return RectFloat::Translate(rc, pos); }
@@ -1416,17 +1424,18 @@ namespace M
     FORCE_INLINE RectInt  RectIntExpand(const RectInt rc, Int2 expand) { return RectInt::Expand(rc, expand); }
     FORCE_INLINE bool     RectIntTestPoint(const RectInt rc, Int2 pt) { return RectInt::TestPoint(rc, pt); }
     FORCE_INLINE bool     RectIntTest(const RectInt rc1, const RectInt rc2) { return RectInt::Test(rc1, rc2); }
-    FORCE_INLINE void     RectIntAddPoint(RectInt* rc, Int2 pt) { return RectInt::AddPoint(rc, pt); }
+    FORCE_INLINE void     RectIntAddPoint(RectInt& rc, Int2 pt) { return RectInt::AddPoint(rc, pt); }
     FORCE_INLINE Int2     RectIntGetCorner(const RectInt* rc, int index) { return RectInt::GetCorner(rc, index); }
-    FORCE_INLINE void     RectIntGetCorners(Int2 corners[4], const RectInt* rc) { return RectInt::GetCorners(corners, rc); }
+    FORCE_INLINE void     RectIntGetCorners(const RectInt* rc, Int2 corners[4]) { return RectInt::GetCorners(rc, corners); }
 
     // AABB
-    FORCE_INLINE void   AABBAddPoint(AABB* aabb, Float3 pt) { return AABB::AddPoint(aabb, pt); }
+    FORCE_INLINE AABB   AABBCenterExtents(Float3 center, Float3 extents) { return AABB::CenterExtents(center, extents); }
+    FORCE_INLINE void   AABBAddPoint(AABB& aabb, Float3 pt) { return AABB::AddPoint(aabb, pt); }
     FORCE_INLINE AABB   AABBUnify(const AABB& aabb1, const AABB& aabb2) { return AABB::Unify(aabb1, aabb2); }
     FORCE_INLINE bool   AABBTestPoint(const AABB& aabb, Float3 pt) { return AABB::TestPoint(aabb, pt); }
     FORCE_INLINE bool   AABBTest(const AABB& aabb1, const AABB& aabb2) { return AABB::Test(aabb1, aabb2); }
     FORCE_INLINE Float3 AABBGetCorner(const AABB& aabb, int index) { return AABB::GetCorner(aabb, index); }
-    FORCE_INLINE void   AABBGetCorners(Float3 corners[8], const AABB& aabb) { return AABB::GetCorners(corners, aabb); }
+    FORCE_INLINE void   AABBGetCorners(const AABB& aabb, Float3 corners[8]) { return AABB::GetCorners(aabb, corners); }
     FORCE_INLINE AABB   AABBTranslate(const AABB& aabb, Float3 offset) { return AABB::Translate(aabb, offset); }
     FORCE_INLINE AABB   AABBSetPos(const AABB& aabb, Float3 pos) { return AABB::SetPos(aabb, pos); }
     FORCE_INLINE AABB   AABBExpand(const AABB& aabb, Float3 expand) { return AABB::Expand(aabb, expand); }

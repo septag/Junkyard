@@ -36,6 +36,7 @@
 
 // Graphics
 #include "Graphics/GfxBackend.cpp"
+#include "Graphics/Geometry.cpp"
 
 // Tool
 #include "Tool/ShaderCompiler.cpp"
@@ -53,6 +54,9 @@
 
 // Renderer
 #include "Renderer/Render.cpp"
+
+// Collision
+#include "Collision/Collision.cpp"
 
 #include "Engine.cpp"
 

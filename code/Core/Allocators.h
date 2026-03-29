@@ -125,6 +125,10 @@ private:
     bool mOwnsId = false;
 };
 
+// Use this Helper macro to define a safe temp allocator when we might already have another temp allocator passing to the function
+// In the end, the user should use "if (tempAlloc.OwnsId())" to check if temp allocator is newly created and data should be copied
+#define DEFINE_SAFE_TEMP_ALLOCATOR(_name, _alloc) MemTempAllocator _name(_alloc->GetType() == MemAllocatorType::Temp ? ((MemTempAllocator*)_alloc)->GetId() : 0);
+
 //    ██████╗ ██╗   ██╗███╗   ███╗██████╗      █████╗ ██╗     ██╗      ██████╗  ██████╗
 //    ██╔══██╗██║   ██║████╗ ████║██╔══██╗    ██╔══██╗██║     ██║     ██╔═══██╗██╔════╝
 //    ██████╔╝██║   ██║██╔████╔██║██████╔╝    ███████║██║     ██║     ██║   ██║██║     

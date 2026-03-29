@@ -109,8 +109,7 @@ struct ModelScene
     void Load()
     {
         ModelLoadParams loadParams {};
-        R::GetCompatibleLayout(CountOf(loadParams.layout.vertexAttributes), loadParams.layout.vertexAttributes,
-                               CountOf(loadParams.layout.vertexBufferStrides), loadParams.layout.vertexBufferStrides);
+        R::GetCompatibleLayout(loadParams.layout);
         mModel = Model::Load(mModelFilepath.CStr(), loadParams, mAssetGroup);
         mAssetGroup.Load();
     }

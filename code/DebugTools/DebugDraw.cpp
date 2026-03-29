@@ -334,10 +334,10 @@ void DebugDraw::DrawGroundGrid(const Camera& cam, const DebugDrawGridProperties&
     for (uint32 i = 0; i < frustumPts.Count(); i++) {
         if (i < 4) {
             Float3 offsetPt = frustumPts[i] - nearPlaneN*spacing;
-            AABB::AddPoint(&bb, Float3(offsetPt.x, offsetPt.y, 0));
+            AABB::AddPoint(bb, Float3(offsetPt.x, offsetPt.y, 0));
         } 
         else {
-            AABB::AddPoint(&bb, Float3(frustumPts[i].x, frustumPts[i].y, 0));
+            AABB::AddPoint(bb, Float3(frustumPts[i].x, frustumPts[i].y, 0));
         }
     }
 

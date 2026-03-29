@@ -97,6 +97,9 @@
     <Filter Include="Renderer">
       <UniqueIdentifier>{431d3ee9-9193-42e7-9141-ac3154e38d03}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Collision">
+      <UniqueIdentifier>{000dd537-b8a7-42e8-81ae-d9098d0da9ad}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\..\code\External\imgui\imgui.cpp">
@@ -246,6 +249,12 @@
     </ClCompile>
     <ClCompile Include="..\..\code\Renderer\Render.cpp">
       <Filter>Renderer</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\code\Collision\Collision.cpp">
+      <Filter>Collision</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\code\Graphics\Geometry.cpp">
+      <Filter>Graphics</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -490,6 +499,12 @@
     </ClInclude>
     <ClInclude Include="..\..\code\Renderer\Render.h">
       <Filter>Renderer</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\code\Collision\Collision.h">
+      <Filter>Collision</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\code\Graphics\Geometry.h">
+      <Filter>Graphics</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

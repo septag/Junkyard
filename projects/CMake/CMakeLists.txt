@@ -53,6 +53,9 @@ file(GLOB HEADERS_Tool ../../code/Tool/*.h)
 file(GLOB SOURCE_Assets ../../code/Assets/*.cpp)
 file(GLOB HEADERS_Assets ../../code/Assets/*.h)
 
+file(GLOB SOURCE_Collision ../../code/Collision/*.cpp)
+file(GLOB HEADERS_Collision ../../code/Collision/*.h)
+
 file(GLOB SOURCE_Shaders ../../code/Shaders/*.hlsl)
 
 file(GLOB_RECURSE SOURCE_External ../../code/External/*.cpp)
@@ -69,7 +72,8 @@ add_library(Junkyard STATIC
     ${SOURCE_Renderers} ${HEADERS_Renderers} 
     ${SOURCE_ImGui} ${HEADERS_ImGui}
     ${SOURCE_Tool} ${HEADERS_Tool}
-    ${SOURCE_Assets} ${HEADERS_Assets}
+    ${SOURCE_Assets} ${HEADERS_Assets} 
+    ${SOURCE_Collision} ${HEADERS_Collision} 
     ${SOURCE_External} ${HEADERS_External}
     ${SOURCE_Root} ${HEADERS_Root})
 

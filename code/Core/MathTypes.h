@@ -331,6 +331,7 @@ struct Mat4
     Float4 Row4() const;
 
     static Mat4   Translate(float _tx, float _ty, float _tz);
+    static Mat4   Translate(Float3 _t);
     static Mat4   Scale(float _sx, float _sy, float _sz);
     static Mat4   Scale(float _scale);
     static Mat4   RotateX(float _ax);
@@ -378,6 +379,7 @@ struct Mat4
     static Quat   ToQuat(const Mat4& _mat);
     static Mat4   FromQuat(Quat q);
     static Mat4   ProjectPlane(Float3 planeNormal);
+    static Mat4   FromMat3(const Mat3& _mat);
 };
 
 struct RectFloat 
@@ -424,9 +426,9 @@ struct RectFloat
     static RectFloat   Expand(const RectFloat rc, Float2 expand);
     static bool   TestPoint(const RectFloat rc, Float2 pt);
     static bool   Test(const RectFloat rc1, const RectFloat rc2);
-    static void   AddPoint(RectFloat* rc, Float2 pt);
+    static void   AddPoint(RectFloat& rc, Float2 pt);
     static Float2 GetCorner(const RectFloat* rc, int index);
-    static void   GetCorners(Float2 corners[4], const RectFloat* rc);
+    static void   GetCorners(const RectFloat* rc, Float2 corners[4]);
     static Float2 Extents(const RectFloat rc);
     static Float2 Center(const RectFloat rc);
     static RectFloat   Translate(const RectFloat rc, Float2 pos);
@@ -478,9 +480,9 @@ struct RectInt
     static RectInt  Expand(const RectInt rc, Int2 expand);
     static bool   TestPoint(const RectInt rc, Int2 pt);
     static bool   Test(const RectInt rc1, const RectInt rc2);
-    static void   AddPoint(RectInt* rc, Int2 pt);
+    static void   AddPoint(RectInt& rc, Int2 pt);
     static Int2   GetCorner(const RectInt* rc, int index);
-    static void   GetCorners(Int2 corners[4], const RectInt* rc);
+    static void   GetCorners(const RectInt* rc, Int2 corners[4]);
 };
 
 struct AABB 
@@ -522,12 +524,13 @@ struct AABB
     Float3 Center() const;
     Float3 Dimensions() const;
 
-    static void   AddPoint(AABB* aabb, Float3 pt);
+    static AABB   CenterExtents(Float3 center, Float3 extents);
+    static void   AddPoint(AABB& aabb, Float3 pt);
     static AABB   Unify(const AABB& aabb1, const AABB& aabb2);
     static bool   TestPoint(const AABB& aabb, Float3 pt);
     static bool   Test(const AABB& aabb1, const AABB& aabb2);
     static Float3 GetCorner(const AABB& aabb, int index);
-    static void   GetCorners(Float3 corners[8], const AABB& aabb);
+    static void   GetCorners(const AABB& aabb, Float3 corners[8]);
     static AABB   Translate(const AABB& aabb, Float3 offset);
     static AABB   SetPos(const AABB& aabb, Float3 pos);
     static AABB   Expand(const AABB& aabb, Float3 expand);

@@ -10,6 +10,7 @@
 #include "../Common/JunkyardSettings.h"
 
 #include "../Graphics/GfxBackend.h"
+#include "../Graphics/Geometry.h"
 
 #include "../Assets/AssetManager.h"
 #include "../Assets/Shader.h"
@@ -833,16 +834,11 @@ namespace R
     }
 } // R
 
-void R::GetCompatibleLayout(uint32 maxAttributes, GfxVertexInputAttributeDesc* outAtts, uint32 maxStrides, uint32* outStrides)
+void R::GetCompatibleLayout(GeometryVertexLayout& outLayout)
 {
-    ASSERT(maxAttributes);
-    ASSERT(maxStrides);
-
-    uint32 numAttributes = Min(maxAttributes, CountOf(R_VERTEX_ATTRIBUTES));
-    uint32 numStrides = Min(maxStrides, CountOf(R_VERTEXBUFFER_STRIDES));
-
-    memcpy(outAtts, R_VERTEX_ATTRIBUTES, sizeof(GfxVertexInputAttributeDesc)*numAttributes);
-    memcpy(outStrides, R_VERTEXBUFFER_STRIDES, sizeof(uint32)*numStrides);
+    memset(&outLayout, 0x0, sizeof(outLayout));
+    memcpy(outLayout.vertexAttributes, R_VERTEX_ATTRIBUTES, sizeof(GfxVertexInputAttributeDesc)*CountOf(R_VERTEX_ATTRIBUTES));
+    memcpy(outLayout.vertexBufferStrides, R_VERTEXBUFFER_STRIDES, sizeof(uint32)*CountOf(R_VERTEXBUFFER_STRIDES));
 }
 
 bool R::Initialize()
@@ -1124,7 +1120,7 @@ void R::FwdLight::Update(RView& view, GfxCommandBuffer& cmd)
             for (uint32 sc = 0; sc < chunk->numSubChunks; sc++) {
                 RGeometrySubChunk& subChunk = chunk->subChunks[sc];
                 ASSERT_MSG(index < R_MAX_DRAW_OBJECTS, "Too many objects are being drawn. Increase R_MAX_DRAW_OBJECTS");
-                subChunk.perObjectDescriptorSetIndex = index;
+                subChunk._drawItemIndex = index;
 
                 GfxBindingDesc bindings[] = {
                     {
@@ -1468,7 +1464,7 @@ void R::FwdLight::Render(RView& view, GfxCommandBuffer& cmd, GfxImageHandle fina
                     alphaToCoverageEnabled = subChunk.hasAlphaMask;
                 }
 
-                cmd.SetDescriptorBufferOffset(gFwd.pLightLayout, (uint32)RDescriptorSetIndex::PerObject, subChunk.perObjectDescriptorSetIndex);
+                cmd.SetDescriptorBufferOffset(gFwd.pLightLayout, (uint32)RDescriptorSetIndex::PerObject, subChunk._drawItemIndex);
                 cmd.DrawIndexed(subChunk.numIndices, 1, subChunk.startIndex, 0, 0);
             }
 

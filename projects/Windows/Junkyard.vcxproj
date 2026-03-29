@@ -169,6 +169,7 @@
     <ClCompile Include="..\..\code\Assets\Image.cpp" />
     <ClCompile Include="..\..\code\Assets\Model.cpp" />
     <ClCompile Include="..\..\code\Assets\Shader.cpp" />
+    <ClCompile Include="..\..\code\Collision\Collision.cpp" />
     <ClCompile Include="..\..\code\Common\Application.cpp">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
     </ClCompile>
@@ -256,12 +257,14 @@
     <ClCompile Include="..\..\code\Tool\MeshOptimizer.cpp" />
     <ClCompile Include="..\..\code\Tool\ShaderCompiler.cpp" />
     <ClCompile Include="..\..\code\Common\ThreadAllocatorArena.cpp" />
+    <ClCompile Include="..\..\code\Graphics\Geometry.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\..\code\Assets\AssetManager.h" />
     <ClInclude Include="..\..\code\Assets\Image.h" />
     <ClInclude Include="..\..\code\Assets\Model.h" />
     <ClInclude Include="..\..\code\Assets\Shader.h" />
+    <ClInclude Include="..\..\code\Collision\Collision.h" />
     <ClInclude Include="..\..\code\Common\Application.h" />
     <ClInclude Include="..\..\code\Common\Camera.h" />
     <ClInclude Include="..\..\code\Common\CommonTypes.h" />
@@ -340,6 +343,7 @@
     <ClInclude Include="..\..\code\Tool\MeshOptimizer.h" />
     <ClInclude Include="..\..\code\Tool\ShaderCompiler.h" />
     <ClInclude Include="..\..\code\Common\ThreadAllocatorArena.h" />
+    <ClInclude Include="..\..\code\Graphics\Geometry.h" />
   </ItemGroup>
   <ItemGroup>
     <FxCompile Include="..\..\code\Shaders\FwdPlusLight.hlsl">

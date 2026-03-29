@@ -28,12 +28,9 @@
 #include "../Core/StringUtil.h"
 #include "../Core/MathTypes.h"
 #include "../Common/CommonTypes.h"
+#include "../Graphics/Geometry.h"
 
 #include "Image.h"
-
-
-inline constexpr uint32 MODEL_MAX_VERTEX_ATTRIBUTES = 8;
-inline constexpr uint32 MODEL_MAX_VERTEX_BUFFERS_PER_SHADER = 4;
 
 //------------------------------------------------------------------------
 // Material
@@ -101,13 +98,6 @@ struct ModelMaterial
     bool unlit;
 };
 
-//------------------------------------------------------------------------
-struct ModelGeometryLayout 
-{
-    GfxVertexInputAttributeDesc vertexAttributes[MODEL_MAX_VERTEX_ATTRIBUTES];
-    uint32 vertexBufferStrides[MODEL_MAX_VERTEX_BUFFERS_PER_SHADER];
-};
-
 struct ModelSubmesh 
 {
     uint32 startIndex;
@@ -121,8 +111,8 @@ struct ModelMesh
     uint32 numSubmeshes;
     uint32 numVertices;
     uint32 numIndices;
-    uint64 vertexBufferSizes[MODEL_MAX_VERTEX_BUFFERS_PER_SHADER];
-    uint64 vertexBufferOffsets[MODEL_MAX_VERTEX_BUFFERS_PER_SHADER];
+    uint64 vertexBufferSizes[GEOMETRY_MAX_VERTEX_BUFFERS_PER_SHADER];
+    uint64 vertexBufferOffsets[GEOMETRY_MAX_VERTEX_BUFFERS_PER_SHADER];
     uint64 indexBufferSize;
     uint64 indexBufferOffset;
     RelativePtr<ModelSubmesh> submeshes;
@@ -158,19 +148,17 @@ struct ModelData
     RelativePtr<ModelNode> nodes;
     RelativePtr<ModelMesh> meshes;
     RelativePtr<RelativePtr<ModelMaterial>> materials;
-    ModelGeometryLayout layout;
+    GeometryVertexLayout layout;
 
     uint32 numVertexBuffers;
-    GfxBufferHandle vertexBuffers[MODEL_MAX_VERTEX_BUFFERS_PER_SHADER];
+    GfxBufferHandle vertexBuffers[GEOMETRY_MAX_VERTEX_BUFFERS_PER_SHADER];
     GfxBufferHandle indexBuffer;
 };
 
-// provide this for loading "model" asset
-// if layout is zero initialized, default layout will be used:
-//  buffer #1: position/normal/uv/color
+// provide this for loading "Model" asset
 struct ModelLoadParams 
 {
-    ModelGeometryLayout layout;
+    GeometryVertexLayout layout;
 };
 
 namespace Model

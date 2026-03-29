@@ -69,7 +69,10 @@ namespace ImGui
     API bool DrawFrame(GfxCommandBuffer cmd, GfxImageHandle colorImage = GfxImageHandle());
 
     API void SetMSAA(GfxMultiSampleCount sampleCount);  // Should be set before initialization
-
+    
+    API ImDrawList* BeginFullscreenView(const char* name = "fullscreen_view");
+    API ImVec2 ProjectToScreen(Float3 point, const Mat4& worldToClipMat, const RectFloat& viewport);
+    
     bool Initialize();
     void Release();
 }

@@ -27,21 +27,12 @@ struct ModelVertexAttribute
     uint32 index;
 };
 
-struct ModelCpuBuffers
-{
-    uint8* vertexBuffers[MODEL_MAX_VERTEX_BUFFERS_PER_SHADER];
-    uint8* indexBuffer;
-    uint64 vertexBufferSizes[MODEL_MAX_VERTEX_BUFFERS_PER_SHADER];
-    uint64 indexBufferSize;
-};
-
 struct AssetModelImpl final : AssetTypeImplBase
 {
     bool Bake(const AssetParams& params, AssetData* data, const Span<uint8>& srcData, String<256>* outErrorDesc) override;
     bool Reload(void* newData, void* oldData) override;
 };
 
-static ModelGeometryLayout gModelDefaultLayout;
 static AssetModelImpl gModelImpl;
 
 enum GLTFFilter 
@@ -63,66 +54,7 @@ enum GLTFWrap
 
 namespace ModelUtil
 {
-    static uint32 _GetVertexStride(GfxFormat fmt)
-    {
-        switch (fmt) {
-        case GfxFormat::R32_SFLOAT:
-            return sizeof(float);
-        case GfxFormat::R32G32_SFLOAT:
-            return sizeof(float)*2;
-        case GfxFormat::R32G32B32_SFLOAT:
-            return sizeof(float)*3;
-        case GfxFormat::R32G32B32A32_SFLOAT:
-            return sizeof(float)*4;
-        case GfxFormat::R8G8B8A8_SINT:
-        case GfxFormat::R8G8B8A8_SNORM:
-        case GfxFormat::R8G8B8A8_UINT:
-        case GfxFormat::R8G8B8A8_UNORM:
-            return sizeof(uint8)*4;
-        case GfxFormat::R16G16_SINT: 
-        case GfxFormat::R16G16_UNORM:
-        case GfxFormat::R16G16_SNORM:
-        case GfxFormat::R16G16_UINT:
-            return sizeof(uint16)*2;
-        case GfxFormat::R16G16B16A16_SNORM:
-        case GfxFormat::R16G16B16A16_UNORM:
-        case GfxFormat::R16G16B16A16_SINT:
-        case GfxFormat::R16G16B16A16_UINT:
-            return sizeof(uint16)*4;
-        default:
-            return 0;
-        }
-    }
-
-    static bool _LayoutHasTangents(const ModelGeometryLayout& vertexLayout)
-    {
-        const GfxVertexInputAttributeDesc* attr = &vertexLayout.vertexAttributes[0];
-        while (!attr->semantic.IsEmpty()) {
-            if (attr->semantic == "TANGENT")
-                return true;
-            ++attr;
-        }
-        return false;
-    }
-
-    static uint8* _GetVertexAttributePointer(ModelMesh* mesh, ModelCpuBuffers* cpuBuffers, const ModelGeometryLayout& vertexLayout, 
-                                             const char* semantic, uint32 semanticIdx, uint32* outVertexStride)
-    {
-        const GfxVertexInputAttributeDesc* attr = &vertexLayout.vertexAttributes[0];
-    
-        while (!attr->semantic.IsEmpty()) {
-            if (attr->semantic == semantic && attr->semanticIdx == semanticIdx) {
-                *outVertexStride = vertexLayout.vertexBufferStrides[attr->binding];
-                uint8* dstBuff = cpuBuffers->vertexBuffers[attr->binding] + mesh->vertexBufferOffsets[attr->binding];
-                return dstBuff + attr->offset;
-            }
-            ++attr;
-        }
-
-        return nullptr;
-    }
-
-    static void _CalculateTangents(ModelMesh* mesh, ModelCpuBuffers* cpuBuffers, const ModelGeometryLayout& vertexLayout)
+    static void _CalculateTangents(ModelMesh* mesh, GeometryCpuBuffers* cpuBuffers, const GeometryVertexLayout& vertexLayout)
     {
         using namespace M;
 
@@ -133,14 +65,18 @@ namespace ModelUtil
         Float3* tan1 = tmpAlloc.MallocZeroTyped<Float3>(mesh->numVertices);
         Float3* tan2 = tmpAlloc.MallocZeroTyped<Float3>(mesh->numVertices);
 
+        uint32 posStride = 0, uvStride = 0;
+        uint32 normalStride = 0, tangentStride = 0, bitangentStride = 0;
+        uint8* posPtr = vertexLayout.GetVertexAttributePointer(mesh->vertexBufferOffsets, *cpuBuffers, "POSITION", 0, posStride);
+        uint8* uvPtr = vertexLayout.GetVertexAttributePointer(mesh->vertexBufferOffsets, *cpuBuffers, "TEXCOORD", 0, uvStride);
+        uint8* normalPtr = vertexLayout.GetVertexAttributePointer(mesh->vertexBufferOffsets, *cpuBuffers, "NORMAL", 0, normalStride);
+        uint8* tangentPtr = vertexLayout.GetVertexAttributePointer(mesh->vertexBufferOffsets, *cpuBuffers, "TANGENT", 0, tangentStride);
+        uint8* bitangentPtr = vertexLayout.GetVertexAttributePointer(mesh->vertexBufferOffsets, *cpuBuffers, "BINORMAL", 0, bitangentStride);
+
         for (uint32 i = 0; i < mesh->numIndices; i+=3) {
             uint32 i1 = indexBuffer[i];
             uint32 i2 = indexBuffer[i+1];
             uint32 i3 = indexBuffer[i+2];
-
-            uint32 posStride = 0, uvStride = 0;
-            uint8* posPtr = ModelUtil::_GetVertexAttributePointer(mesh, cpuBuffers, vertexLayout, "POSITION", 0, &posStride);
-            uint8* uvPtr = ModelUtil::_GetVertexAttributePointer(mesh, cpuBuffers, vertexLayout, "TEXCOORD", 0, &uvStride);
 
             Float3 v1 = *((Float3*)(posPtr + posStride*i1));
             Float3 v2 = *((Float3*)(posPtr + posStride*i2));
@@ -177,11 +113,6 @@ namespace ModelUtil
         }
 
         for (uint32 i = 0; i < mesh->numVertices; i++) {
-            uint32 normalStride = 0, tangentStride = 0, bitangentStride = 0;
-            uint8* normalPtr = ModelUtil::_GetVertexAttributePointer(mesh, cpuBuffers, vertexLayout, "NORMAL", 0, &normalStride);
-            uint8* tangentPtr = ModelUtil::_GetVertexAttributePointer(mesh, cpuBuffers, vertexLayout, "TANGENT", 0, &tangentStride);
-            uint8* bitangentPtr = ModelUtil::_GetVertexAttributePointer(mesh, cpuBuffers, vertexLayout, "BINORMAL", 0, &bitangentStride);
-
             Float3 n = *((Float3*)(normalPtr + normalStride*i));
             Float3 t = tan1[i];
     
@@ -197,19 +128,8 @@ namespace ModelUtil
         }
     }
 
-    static const GfxVertexInputAttributeDesc* _FindAttribute(const ModelGeometryLayout& layout, const char* semantic, uint32 semanticIdx)
-    {
-        const GfxVertexInputAttributeDesc* attr = &layout.vertexAttributes[0];
-        while (!attr->semantic.IsEmpty()) {
-            if (attr->semantic == semantic && attr->semanticIdx == semanticIdx)
-                return attr;
-            ++attr;
-        }
-        return nullptr;
-    }
-
     #if CONFIG_TOOLMODE
-    static void _Optimize(ModelData* model, ModelCpuBuffers* cpuBuffers, const ModelLoadParams& modelParams)
+    static void _Optimize(ModelData* model, GeometryCpuBuffers* cpuBuffers, const ModelLoadParams& modelParams)
     {
         MemTempAllocator tmpAlloc;
         MeshOptModel bakeModel;
@@ -457,8 +377,8 @@ namespace GLTF
         }
     }
 
-    static bool _MapVertexAttributesToBuffer(ModelCpuBuffers* cpuBuffers, const ModelMesh& mesh,
-                                             const ModelGeometryLayout& vertexLayout, 
+    static bool _MapVertexAttributesToBuffer(GeometryCpuBuffers* cpuBuffers, const ModelMesh& mesh,
+                                             const GeometryVertexLayout& vertexLayout, 
                                              cgltf_attribute* srcAttribute, uint32 startVertex)
     {
         cgltf_accessor* access = srcAttribute->data;
@@ -474,7 +394,7 @@ namespace GLTF
 
                 uint32 count = static_cast<uint32>(access->count);
                 uint32 srcDataSize = static_cast<uint32>(access->stride); 
-                uint32 dstDataSize = ModelUtil::_GetVertexStride(attr->format);
+                uint32 dstDataSize = Geometry::GetVertexStride(attr->format);
                 ASSERT_MSG(dstDataSize != 0, "you must explicitly declare formats for vertex_layout attributes");
                 uint32 stride = Min<uint32>(dstDataSize, srcDataSize);
                 for (uint32 i = 0; i < count; i++)
@@ -498,7 +418,7 @@ namespace GLTF
         return false;
     }
 
-    static void _SetupBuffers(ModelMesh* mesh, ModelCpuBuffers* cpuBuffers, const ModelGeometryLayout& vertexLayout, cgltf_mesh* srcMesh)
+    static void _SetupBuffers(ModelMesh* mesh, GeometryCpuBuffers* cpuBuffers, const GeometryVertexLayout& vertexLayout, cgltf_mesh* srcMesh)
     {
         // create buffers based on input vertexLayout
 
@@ -507,7 +427,7 @@ namespace GLTF
         uint32 startIndex = 0;
         uint32 startVertex = 0;
         bool calcTangents = false;
-        bool layoutHasTangents = ModelUtil::_LayoutHasTangents(vertexLayout);
+        bool layoutHasTangents = vertexLayout.HasTangents();
 
         for (uint32 i = 0; i < (uint32)srcMesh->primitives_count; i++) {
             cgltf_primitive* srcPrim = &srcMesh->primitives[i];
@@ -572,9 +492,10 @@ namespace GLTF
     }
 
     static Pair<ModelData*, uint32> _Load(Blob& fileBlob, const Path& fileDir, MemTempAllocator* tmpAlloc, const ModelLoadParams& params, 
-                                      String<256>* outErrorDesc, ModelCpuBuffers* outCpuBuffers)
+                                      String<256>* outErrorDesc, GeometryCpuBuffers* outCpuBuffers)
     {
-        const ModelGeometryLayout& layout = params.layout.vertexBufferStrides[0] ? params.layout : gModelDefaultLayout;
+        const GeometryVertexLayout& layout = params.layout;
+        ASSERT_MSG(layout.vertexBufferStrides[0] && !layout.vertexAttributes[0].semantic.IsEmpty(), "Vertex layout is not correctly defined");
 
         cgltf_options options {
             .type = cgltf_file_type_invalid,
@@ -802,7 +723,7 @@ namespace GLTF
         uint32 modelBufferSize = uint32(tmpAlloc->GetOffset() - tmpAlloc->GetPointerOffset(model));
 
         // Buffers
-        ModelCpuBuffers* cpuBuffers = outCpuBuffers;
+        GeometryCpuBuffers* cpuBuffers = outCpuBuffers;
         ASSERT(cpuBuffers->indexBufferSize == 0);
         ASSERT(cpuBuffers->vertexBufferSizes[0] == 0);
 
@@ -842,12 +763,12 @@ namespace GLTF
             AABB bounds = AABB_EMPTY;
             if (dstNode->meshId) {
                 const ModelMesh& mesh = model->meshes[IdToIndex(dstNode->meshId)];
-                const GfxVertexInputAttributeDesc* attr = ModelUtil::_FindAttribute(layout, "POSITION", 0);
+                const GfxVertexInputAttributeDesc* attr = layout.FindAttribute("POSITION", 0);
                 uint32 vertexStride = layout.vertexBufferStrides[attr->binding];
                 uint8* vbuffu8 = cpuBuffers->vertexBuffers[attr->binding] + mesh.vertexBufferOffsets[attr->binding];
                 for (uint32 v = 0; v < mesh.numVertices; v++) {
                     Float3 pos = *((Float3*)(vbuffu8 + v*vertexStride + attr->offset));
-                    AABB::AddPoint(&bounds, pos);
+                    AABB::AddPoint(bounds, pos);
                 }
             }
             dstNode->bounds = bounds;
@@ -894,7 +815,7 @@ bool AssetModelImpl::Bake(const AssetParams& params, AssetData* data, const Span
     fileBlob.SetSize(srcData.Count());
 
     Path fileDir = params.path.GetDirectory();
-    ModelCpuBuffers cpuBuffers {};
+    GeometryCpuBuffers cpuBuffers {};
     Pair<ModelData*, uint32> modelResult = GLTF::_Load(fileBlob, fileDir, &tmpAlloc, *modelParams, outErrorDesc, &cpuBuffers);
     ModelData* model = modelResult.first;
     uint32 modelBufferSize = modelResult.second;

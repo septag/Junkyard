@@ -847,3 +847,43 @@ void ImGui::SetMSAA(GfxMultiSampleCount sampleCount)
 {
     gImGui.msaa = sampleCount;
 }
+
+ImDrawList* ImGui::BeginFullscreenView(const char* name)
+{
+    ImGuiIO& io = GetIO();
+    const uint32 flags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
+                         ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoInputs |
+                         ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoFocusOnAppearing |
+                         ImGuiWindowFlags_NoBringToFrontOnFocus;
+    ImGui::SetNextWindowSize(io.DisplaySize, 0);
+    ImGui::SetNextWindowPos(ImVec2(0, 0));
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, 0);
+    ImGui::PushStyleColor(ImGuiCol_Border, 0);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0);
+
+    ImGui::Begin(name, nullptr, flags);
+    ImDrawList* drawList = ImGui::GetWindowDrawList();
+    ImGui::End();
+
+    ImGui::PopStyleVar();
+    ImGui::PopStyleColor(2);
+
+    return drawList;
+}
+
+ImVec2 ImGui::ProjectToScreen(Float3 point, const Mat4& worldToClipMat, const RectFloat& viewport)
+{
+    Float4 pos = Float4(point, 1);
+    pos = Mat4::MulFloat4(worldToClipMat, pos);
+    pos = pos * (0.5f/pos.w);
+    pos.x += 0.5f;
+    pos.y += 0.5f;
+    pos.y = 1.0f - pos.y;
+
+    pos.x *= viewport.Width();
+    pos.y *= viewport.Height();
+    pos.x += viewport.xmin;
+    pos.y += viewport.ymin;
+
+    return ImVec2(pos.x, pos.y);
+}

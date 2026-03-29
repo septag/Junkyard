@@ -496,6 +496,14 @@ Mat4 Mat4::FromQuat(Quat q)
                 0.0f,               0.0f,               0.0f,           1.0f);
 }
 
+Mat4 Mat4::FromMat3(const Mat3& _mat)
+{
+    return Mat4(_mat.m11, _mat.m12, _mat.m13, 0,
+                _mat.m21, _mat.m22, _mat.m23, 0,
+                _mat.m31, _mat.m32, _mat.m33, 0, 
+                0       , 0       , 0       , 1);
+}
+
 Mat4 Mat4::FromNormalAngle(Float3 _normal, float _scale, Float3 _pos, float _angle)
 {
     Float3 tangent;

@@ -9,6 +9,7 @@ struct GfxCommandBuffer;
 struct Camera;
 struct GfxVertexInputAttributeDesc;
 struct ShaderLoadParams;
+struct GeometryVertexLayout;
 
 struct RLightBounds
 {
@@ -33,8 +34,8 @@ struct RGeometrySubChunk
     uint32 startIndex;
     uint32 numIndices;
     GfxImageHandle baseColorImg;
-    uint32 perObjectDescriptorSetIndex;
     bool hasAlphaMask;
+    uint32 _drawItemIndex;  // Internal use only
 };
 
 struct RGeometryChunk
@@ -87,7 +88,7 @@ namespace R
     bool Initialize();
     void Release();
 
-    void GetCompatibleLayout(uint32 maxAttributes, GfxVertexInputAttributeDesc* outAtts, uint32 maxStrides, uint32* outStrides);
+    void GetCompatibleLayout(GeometryVertexLayout& outLayout);
 
     RView CreateView(RViewType viewType);
     void DestroyView(RView& view);
