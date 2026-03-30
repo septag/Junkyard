@@ -60,7 +60,7 @@ struct Grid
     float cellDim;      // in world units
 };
 
-struct AppImpl : AppCallbacks
+struct TestAssetApp : AppCallbacks
 {
     GfxPipelineHandle mPipeline;
     GfxPipelineLayoutHandle mPipelineLayout;
@@ -302,7 +302,7 @@ struct AppImpl : AppCallbacks
         mCam = &mFpsCam;
 
         Engine::RegisterShortcut("TAB", [](void* userData) {
-           AppImpl* app = reinterpret_cast<AppImpl*>(userData);
+           TestAssetApp* app = reinterpret_cast<TestAssetApp*>(userData);
            if (app->mCam == &app->mOrbitCam) {
                app->mFpsCam.SetViewMat(app->mCam->GetViewMat());
                app->mCam = &app->mFpsCam;
@@ -315,7 +315,7 @@ struct AppImpl : AppCallbacks
         LOG_INFO("Use right mouse button to rotate camera. And [TAB] to switch between Orbital and FPS (WASD) camera");
 
         {
-            AssetGroup group = Engine::RegisterInitializeResources(AppImpl::CreateGraphicsResources, this);
+            AssetGroup group = Engine::RegisterInitializeResources(TestAssetApp::CreateGraphicsResources, this);
             mUnlitShader = Shader::Load("/shaders/Unlit.hlsl", {}, group);
         }
 
@@ -515,7 +515,7 @@ struct AppImpl : AppCallbacks
 
     static void CreateGraphicsResources(void* userData)
     {
-        AppImpl* self = (AppImpl*)userData;
+        TestAssetApp* self = (TestAssetApp*)userData;
 
         GfxVertexBufferBindingDesc vertexBufferBindingDesc {
             .binding = 0,
@@ -645,7 +645,7 @@ int Main(int argc, char* argv[])
 
     LOG_DEBUG("Initializing engine.");
     
-    static AppImpl impl;
+    static TestAssetApp impl;
     App::Run(AppDesc { 
         .callbacks = &impl, 
         .windowTitle = "Junkyard: Asset Loading test",

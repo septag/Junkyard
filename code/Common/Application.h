@@ -98,11 +98,12 @@ struct AppDesc
     uint16 initWidth          = 1280;
     uint16 initHeight         = 800;
     const char* windowTitle   = nullptr;
+    size_t clipboardSizeBytes = 4096;
     bool highDPI              = true;
     bool fullscreen           = false;
     bool userCursor           = true;
     bool enableClipboard      = true;
-    size_t clipboardSizeBytes = 4096;
+    bool updateWhenMinimized  = false;
 };
 
 struct AppDisplayInfo

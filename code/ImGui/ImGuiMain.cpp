@@ -2,7 +2,7 @@
 
 #include <stdarg.h>
 
-#include "CousineFont.h"
+#include "SegoeFont.h"
 
 #include "../External/imgui/imgui.h"
 #include "../External/imgui/imgui_internal.h"
@@ -431,7 +431,7 @@ namespace ImGui
             ImFontConfig fontConfig;
             fontConfig.OversampleH = 3;
             fontConfig.RasterizerMultiply = 1.5f;
-            conf.Fonts->AddFontFromMemoryCompressedTTF(kCousineFont_compressed_data, kCousineFont_compressed_size, 14.0f, &fontConfig, nullptr);
+            conf.Fonts->AddFontFromMemoryCompressedTTF(SEGOE_CUSTOM_compressed_data, SEGOE_CUSTOM_compressed_size, 14.0f, &fontConfig, nullptr);
 
             uint8* fontPixels;
             int fontWidth, fontHeight, fontBpp;

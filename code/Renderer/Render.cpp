@@ -23,7 +23,7 @@ static inline constexpr uint32 R_LIGHT_CULL_MAX_LIGHTS_PER_TILE = 64;
 static inline constexpr uint32 R_LIGHT_CULL_MAX_LIGHTS_PER_FRAME = 1024;
 static inline constexpr size_t R_MAX_SCRATCH_SIZE_PER_THREAD = SIZE_MB*4;
 static inline constexpr uint32 R_MAX_VIEWS = 64;
-static inline constexpr uint32 R_MAX_DRAW_OBJECTS = 200;
+static inline constexpr uint32 R_MAX_DRAW_OBJECTS = 5000;
 
 enum class RDescriptorSetIndex : uint8
 {
@@ -1034,6 +1034,7 @@ void R::Release()
 
 void R::FwdLight::Update(RView& view, GfxCommandBuffer& cmd)
 {
+    PROFILE_ZONE("R_FwdLightUpdate");
     RViewData& viewData = gFwd.viewPool.Data(view.mHandle);
 
     Mat4 worldToClipMat = viewData.worldToClipMat;
@@ -1116,7 +1117,6 @@ void R::FwdLight::Update(RView& view, GfxCommandBuffer& cmd)
         uint32 index = 0;
         RGeometryChunk* chunk = viewData.chunkList;
         while (chunk) {
-
             for (uint32 sc = 0; sc < chunk->numSubChunks; sc++) {
                 RGeometrySubChunk& subChunk = chunk->subChunks[sc];
                 ASSERT_MSG(index < R_MAX_DRAW_OBJECTS, "Too many objects are being drawn. Increase R_MAX_DRAW_OBJECTS");
@@ -1192,7 +1192,7 @@ void R::FwdLight::Update(RView& view, GfxCommandBuffer& cmd)
 void R::FwdLight::Render(RView& view, GfxCommandBuffer& cmd, GfxImageHandle finalColorImage, GfxImageHandle finalDepthImage, 
                          RDebugMode debugMode)
 {
-    PROFILE_ZONE("FwdLight.Render");
+    PROFILE_ZONE("R_FwdLight");
 
     uint32 msaa = SettingsJunkyard::Get().graphics.msaa;
     RViewData& viewData = gFwd.viewPool.Data(view.mHandle);
@@ -1669,6 +1669,7 @@ void R::DestroyView(RView& view)
 
 void R::ShadowMap::Update(RView& view, GfxCommandBuffer& cmd)
 {
+    PROFILE_ZONE("R_ShadowMapUpdate");
     RViewData& viewData = gFwd.viewPool.Data(view.mHandle);
     Mat4 worldToClipMat = viewData.worldToClipMat;
 
@@ -1687,6 +1688,7 @@ void R::ShadowMap::Render(RView& view, GfxCommandBuffer& cmd, GfxImageHandle sha
     // ShadowMap
     {
         GPU_PROFILE_ZONE(cmd, "ShaowMapRender");
+        PROFILE_ZONE("R_ShadowMap");
         cmd.TransitionImage(shadowMapDepthImage, GfxImageTransition::RenderTarget, GfxImageTransitionFlags::DepthWrite);
 
         GfxBackendRenderPass zprepass { 

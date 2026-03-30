@@ -337,7 +337,7 @@ struct ModelScene
     }
 };
 
-struct AppImpl final : AppCallbacks
+struct TestBasicGfxApp final : AppCallbacks
 {
     Camera* mCam = nullptr;
     ModelScene mModelScenes[CountOf(TESTBASICGFX_MODELS)];
@@ -349,7 +349,7 @@ struct AppImpl final : AppCallbacks
 
     static void InitializeResources(void* userData)
     {
-        AppImpl* self = (AppImpl*)userData;
+        TestBasicGfxApp* self = (TestBasicGfxApp*)userData;
 
         {
             Int2 extent = GfxBackend::GetSwapchainExtent();
@@ -531,7 +531,7 @@ int Main(int argc, char* argv[])
     Settings::InitializeFromINI("TestBasicGfx.ini");
     Settings::InitializeFromCommandLine(argc, argv);
 
-    static AppImpl impl;
+    static TestBasicGfxApp impl;
     App::Run(AppDesc { 
         .callbacks = &impl, 
         .windowTitle = "Junkyard: Basic Graphics test"

@@ -131,10 +131,12 @@ void Camera::SetPosDir(Float3 pos, Float3 dir, Float3 up)
 
 void Camera::HandleMovementKeyboard(float, float, float)
 {
+    ASSERT_MSG(0, "Default camera does not handle input. Use inherited cameras");
 }
 
 void Camera::HandleRotationMouse(const AppEvent&, float, float)
 {
+    ASSERT_MSG(0, "Default camera does not handle input. Use inherited cameras");
 }
 
 void CameraFPS::SetLookAt(Float3 pos, Float3 target, Float3 up)

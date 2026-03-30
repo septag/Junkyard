@@ -3127,8 +3127,10 @@ void GfxBackend::BatchCreateImage(uint32 numImages, const GfxImageDesc* descs, G
 
 void GfxBackend::DestroyImage(GfxImageHandle& handle)
 {
-    if (handle.IsValid()) 
+    if (handle.IsValid()) {
         GfxBackend::BatchDestroyImage(1, &handle);
+        handle = GfxImageHandle();
+    }
 }
 
 void GfxBackend::BatchDestroyImage(uint32 numImages, GfxImageHandle* handles)
@@ -4427,8 +4429,10 @@ void GfxBackend::BatchCreateBuffer(uint32 numBuffers, const GfxBufferDesc* descs
 
 void GfxBackend::DestroyBuffer(GfxBufferHandle& handle)
 {
-    if (handle.IsValid())
+    if (handle.IsValid()) {
         GfxBackend::BatchDestroyBuffer(1, &handle);
+        handle = GfxBufferHandle();
+    }
 }
 
 void GfxBackend::BatchDestroyBuffer(uint32 numBuffers, GfxBufferHandle* handles)

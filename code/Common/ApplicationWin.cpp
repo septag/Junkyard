@@ -955,10 +955,12 @@ namespace App
 
             tmNow = Timer::GetTicks();
             float dt = float(Timer::ToSec(tmNow - tmPrev));
-            if (!gApp.overrideUpdateCallback.first)
-                desc.callbacks->Update(dt);
-            else
-                gApp.overrideUpdateCallback.first(dt, gApp.overrideUpdateCallback.second);
+            if (!gApp.iconified || (gApp.iconified && gApp.desc.updateWhenMinimized)) {
+                if (!gApp.overrideUpdateCallback.first) 
+                    desc.callbacks->Update(dt);
+                else
+                    gApp.overrideUpdateCallback.first(dt, gApp.overrideUpdateCallback.second);
+            }
 
             tmPrev = tmNow;
         }

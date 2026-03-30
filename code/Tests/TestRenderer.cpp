@@ -228,7 +228,7 @@ struct ModelScene
     }
 };
 
-struct AppImpl final : AppCallbacks
+struct TestRendererApp final : AppCallbacks
 {
     Camera* mCam = nullptr;
     ModelScene mModelScenes[CountOf(TESTRENDERER_MODELS)];
@@ -292,7 +292,7 @@ struct AppImpl final : AppCallbacks
             return false;
 
         AssetGroup initAssetGroup = Engine::RegisterInitializeResources([](void* userData) {
-            AppImpl* self = (AppImpl*)userData;
+            TestRendererApp* self = (TestRendererApp*)userData;
             self->InitializeFramebufferResources(App::GetFramebufferWidth(), App::GetFramebufferHeight());
         }, this);
 
@@ -565,7 +565,7 @@ int Main(int argc, char* argv[])
     Settings::InitializeFromINI("TestRenderer.ini");
     Settings::InitializeFromCommandLine(argc, argv);
 
-    static AppImpl impl;
+    static TestRendererApp impl;
     App::Run(AppDesc { 
         .callbacks = &impl, 
         .windowTitle = "Junkyard: Renderer Test"
