@@ -39,6 +39,11 @@ struct DebugDrawSphereCacheItem
     DebugDrawVertex* vertices;
 };
 
+struct DebugDrawAABB
+{
+    DebugDrawVertex vertices[24];   // 12 Edges
+};
+
 struct DebugDrawContext
 {
     GfxPipelineHandle pipeline;
@@ -52,6 +57,7 @@ struct DebugDrawContext
     Array<DebugDrawVertex> vertices;      // Mapped vertices from the staging buffer. We stream all verts into this
     uint32 vertexIndex;
     Int2 viewExtents;
+    DebugDrawAABB aabb;
     Array<DebugDrawItem> drawItems;
     Array<DebugDrawSphereCacheItem> sphereCache;
     GfxBufferHandle stagingVertexBuffer;
@@ -386,6 +392,33 @@ bool DebugDraw::Initialize()
     gDebugDraw.shaderAsset = Shader::Load("/shaders/DebugDraw.hlsl", ShaderLoadParams(),
                                           Engine::RegisterInitializeResources(_InitializeGraphicsResources));
 
+    // AABB just has one shape that is gonna get transformed to different sizes
+    {
+        AABB unitBox = AABB(Float3(-0.5f, -0.5f, -0.5f), Float3(0.5f, 0.5f, 0.5f));
+        Float3 corners[8];
+        AABB::GetCorners(unitBox, corners);
+        DebugDrawVertex* vertices = gDebugDraw.aabb.vertices;
+
+        for (uint32 i = 0; i < CountOf(gDebugDraw.aabb.vertices); i++)
+            vertices[i].color = COLOR4U_WHITE;
+        
+        vertices[0].pos = corners[0];       vertices[1].pos = corners[1];
+        vertices[2].pos = corners[1];       vertices[3].pos = corners[3];
+        vertices[4].pos = corners[3];       vertices[5].pos = corners[2];
+        vertices[6].pos = corners[2];       vertices[7].pos = corners[0];
+
+        vertices[8].pos = corners[6];       vertices[9].pos = corners[7];
+        vertices[10].pos = corners[7];      vertices[11].pos = corners[5];
+        vertices[12].pos = corners[5];      vertices[13].pos = corners[4];
+        vertices[14].pos = corners[4];      vertices[15].pos = corners[6];
+
+        vertices[16].pos = corners[3];      vertices[17].pos = corners[7];
+        vertices[18].pos = corners[1];      vertices[19].pos = corners[5];
+        vertices[20].pos = corners[2];      vertices[21].pos = corners[6];
+        vertices[22].pos = corners[0];      vertices[23].pos = corners[4];
+    }
+
+
     LOG_INFO("(init) DebugDraw initialized");
     return true;
 }
@@ -471,6 +504,26 @@ void DebugDraw::DrawBoundingSphere(Float4 sphere, Color4u color, uint32 numRings
 
     Mat4 transformMat = Mat4::TransformMat(sphere.x, sphere.y, sphere.z, 0, 0, 0, sphere.w, sphere.w, sphere.w);
     _EndDrawItem(transformMat, color);
+}
+
+void DebugDraw::DrawAxisAlignedBoundingBox(AABB aabb, Color4u color)
+{
+    _BeginDrawItem();
+
+    gDebugDraw.vertices.PushBatch(gDebugDraw.aabb.vertices, CountOf(gDebugDraw.aabb.vertices));
+
+    Mat4 transformMat = Mat4::TransformMat(aabb.Center(), QUAT_INDENT, aabb.Dimensions());
+    _EndDrawItem(transformMat, color);
+}
+
+void DebugDraw::DrawBox(Float3 extents, Float3 position, Quat rotation, Color4u color)
+{
+    _BeginDrawItem();
+    gDebugDraw.vertices.PushBatch(gDebugDraw.aabb.vertices, CountOf(gDebugDraw.aabb.vertices));
+
+    Mat4 transformMat = Mat4::TransformMat(position, rotation, extents*2);
+    _EndDrawItem(transformMat, color);
+
 }
 
 void DebugDraw::SetMSAA(GfxMultiSampleCount sampleCount)

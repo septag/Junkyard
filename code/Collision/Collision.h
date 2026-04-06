@@ -54,7 +54,7 @@ struct CollisionQueryResult
 struct CollisionRay
 {
     Float3 origin;
-    Float3 direction;
+    Float3 direction;   // normalized
     float length;
 };
 
@@ -97,6 +97,8 @@ struct CollisionShapeData
 
 #if CONFIG_DEBUG_COLLISIONS
     uint64 collisionFrameIdx;
+    uint64 raymarchFrameIdx;
+    uint64 rayhitFrameIdx;
 #endif
 
 };
@@ -121,7 +123,7 @@ struct CollisionAddBoxDesc
     CollisionEntityId id;
     CollisionShapeBox shape;
     CollisionTransform transform;
-    uint32 mask;
+    uint32 mask = 0xffffffff;
 };
 
 struct CollisionAddPolyDesc
@@ -147,14 +149,18 @@ struct CollisionIsland
 
     void UpdateTransforms(uint32 numEntities, const CollisionEntityId* ids, const CollisionTransform* transforms);
     void UpdateTransform(CollisionEntityId id, const CollisionTransform& transform);
+    void Invalidate(CollisionEntityId id);
+    void ClearUpdates();
 
     Span<CollisionPair> DetectCollisions(MemAllocator* alloc = Mem::GetDefaultAlloc());
     Span<CollisionEntityId> IntersectSphere(Float3 center, float radius, uint32 mask, MemAllocator* alloc = Mem::GetDefaultAlloc());
     Span<CollisionEntityId> IntersectPolygon(const CollisionShapePolygon2D& poly, uint32 mask, MemAllocator* alloc = Mem::GetDefaultAlloc());
-    Span<CollisionRayHit> IntersectRay(const CollisionRay& ray, uint32 mask, MemAllocator* alloc = Mem::GetDefaultAlloc());
+    Span<CollisionEntityId> IntersectBox(const CollisionShapeBox& box, uint32 mask, MemAllocator* alloc = Mem::GetDefaultAlloc());
+    Span<CollisionRayHit> IntersectRay(CollisionRay ray, uint32 mask, MemAllocator* alloc = Mem::GetDefaultAlloc());
 
     void DebugCollisionsGUI(float opacity, CollisionDebugMode mode, float heatmapLimit);
-    void DebugRaycastGUI(float opacity, CollisionDebugRaycastMode mode, float heatmapLimit);
+    void DebugRaycastGUI(float opacity, CollisionDebugRaycastMode mode, float heatmapLimit, const CollisionRay* rays, uint32 numRays);
+    void DebugShapeBounds();
 
     uint32 GetCellCount(uint32* outNumCellsX, uint32* outNumCellsY);
     RectFloat GetCellRect(uint32 cellIdx);

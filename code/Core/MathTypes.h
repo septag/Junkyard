@@ -200,10 +200,11 @@ struct Quat
 
     static Float3 MulXYZ(Quat _qa, Quat _qb);
     static Quat   Mul(Quat p, Quat q);
-    static Quat   Inverse(Quat _q);
+    static Quat   Conjugate(Quat _q);       // Inverse = Conjucate if length of the quaternion = 1. (IsNorm() == true)
     static float  Dot(Quat _a, Quat _b);
     static float  Angle(Quat _a, Quat _b);
     static Quat   Norm(Quat _q);
+    static bool   IsNorm(Quat _q);
     static Quat   RotateAxis(Float3 _axis, float _angle);
     static Quat   RotateX(float _ax);
     static Quat   RotateY(float _ay);
@@ -330,6 +331,11 @@ struct Mat4
     Float4 Row3() const;
     Float4 Row4() const;
 
+    void SetCol1(Float4 _col1);
+    void SetCol2(Float4 _col2);
+    void SetCol3(Float4 _col3);
+    void SetCol4(Float4 _col4);
+
     static Mat4   Translate(float _tx, float _ty, float _tz);
     static Mat4   Translate(Float3 _t);
     static Mat4   Scale(float _sx, float _sy, float _sz);
@@ -376,7 +382,7 @@ struct Mat4
     static Mat4   Mul(const Mat4& _a, const Mat4& _b);
     static Mat4   Inverse(const Mat4& _a);
     static Mat4   InverseTransformMat(const Mat4& _a);
-    static Quat   ToQuat(const Mat4& _mat);
+    static Quat   ToQuat(const Mat4& _mat);     // Matrix should be Orthonormal (Pure rotation)
     static Mat4   FromQuat(Quat q);
     static Mat4   ProjectPlane(Float3 planeNormal);
     static Mat4   FromMat3(const Mat3& _mat);
@@ -393,8 +399,8 @@ struct RectFloat
 
         struct 
         {
-            float vmin[2];
-            float vmax[2];
+            Float2 vmin;
+            Float2 vmax;
         };
 
         float f[4];
@@ -414,7 +420,7 @@ struct RectFloat
     }
 
     explicit constexpr RectFloat(Float2 _vmin, Float2 _vmax) :
-        RectFloat(_vmin.f, _vmax.f)
+        vmin(_vmin), vmax(_vmax)
     {
     }
 
@@ -445,8 +451,8 @@ struct RectInt
 
         struct 
         {
-            int vmin[3];
-            int vmax[3];
+            Int2 vmin;
+            Int2 vmax;
         };
 
         int n[4];
@@ -467,7 +473,7 @@ struct RectInt
     }
 
     explicit constexpr RectInt(Int2 _vmin, Int2 _vmax) :
-        RectInt(_vmin.n, _vmax.n)
+        vmin(_vmin), vmax(_vmax)
     { 
     }
 
@@ -496,8 +502,8 @@ struct AABB
 
         struct 
         {
-            float vmin[3];
-            float vmax[3];
+            Float3 vmin;
+            Float3 vmax;
         };
 
         float f[6];
@@ -515,7 +521,7 @@ struct AABB
     {   
     }
     explicit constexpr AABB(Float3 _vmin, Float3 _vmax) :
-        AABB(_vmin.f, _vmax.f)
+        vmin(_vmin), vmax(_vmax)
     {
     }
 
@@ -545,8 +551,8 @@ struct Plane
         Float4 p;
 
         struct {
-            float normal[3];
-            float dist;
+            Float3 normal;
+            float d;
         };
 
         float f[4];
@@ -555,7 +561,7 @@ struct Plane
     Plane() = default;
     explicit constexpr Plane(float _nx, float _ny, float _nz, float _d) : p(_nx, _ny, _nz, _d) {}
     explicit constexpr Plane(Float3 _normal, float _d) :
-        normal { _normal.x,     _normal.y,  _normal.z}, dist(_d)
+        normal { _normal.x,     _normal.y,  _normal.z}, d(_d)
     {   
     }
 
@@ -564,7 +570,8 @@ struct Plane
     static Plane  FromNormalPoint(Float3 _normal, Float3 _p);
     static float  Distance(Plane _plane, Float3 _p);
     static Float3 ProjectPoint(Plane _plane, Float3 _p);
-    static Float3 Origin(Plane _plane);
+    static Float3 ClosestPointToOrigin(Plane _plane);
+    static float  HitRay(Plane _plane, Float3 _origin, Float3 _direction);
 };
 
 

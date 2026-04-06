@@ -139,6 +139,12 @@ struct GFX_UNIFORM_BUFFER_ALIGNMENT RLightShaderFrameData
     STRUCT_PADDING_12_BYTES();
 };
 
+struct GFX_UNIFORM_BUFFER_ALIGNMENT RLightShaderObjectData
+{
+    Mat4 localToWorldMat;
+    Float4 materialTintColor;
+};
+
 static const GfxVertexInputAttributeDesc R_VERTEX_ATTRIBUTES[] = {
     {"POSITION", 0, 0, GfxFormat::R32G32B32_SFLOAT, offsetof(RVertexStreamPosition, position)},
     {"NORMAL", 0, 1, GfxFormat::R32G32B32_SFLOAT, offsetof(RVertexStreamLighting, normal)},
@@ -690,7 +696,7 @@ namespace R
             gFwd.ubLightPerFrameData = GfxBackend::CreateBuffer(ubDesc);
 
             ubDesc = {
-                .sizeBytes = GfxHelperUniformBuffer::GetMemoryRequirement(sizeof(Mat4), R_MAX_DRAW_OBJECTS),
+                .sizeBytes = GfxHelperUniformBuffer::GetMemoryRequirement(sizeof(RLightShaderObjectData), R_MAX_DRAW_OBJECTS),
                 .usageFlags = GfxBufferUsageFlags::TransferDst | GfxBufferUsageFlags::Uniform | GfxBufferUsageFlags::ShaderDeviceAddress,
                 .arena = GfxMemoryArena::PersistentAddressGPU,
                 .perFrameUpdates = true
@@ -1109,7 +1115,7 @@ void R::FwdLight::Update(RView& view, GfxCommandBuffer& cmd)
     // Per-Object lighting data
     {
         GfxHelperBufferUpdateScope uniformBufferUpdater(cmd, gFwd.ubLightPerObjectData, uint32(-1), GfxShaderStage::Vertex);
-        GfxHelperUniformBuffer uniformBuffer(uniformBufferUpdater.mData, sizeof(Mat4), R_MAX_DRAW_OBJECTS);
+        GfxHelperUniformBuffer uniformBuffer(uniformBufferUpdater.mData, sizeof(RLightShaderObjectData), R_MAX_DRAW_OBJECTS);
 
         GfxHelperBufferUpdateScope descriptorBufferUpdater(cmd, gFwd.dbLightPerObjectResources, uint32(-1), GfxShaderStage::Vertex);
         GfxHelperDescriptorBuffer descriptorBuffer(descriptorBufferUpdater.mData, gFwd.pLightLayout, (uint32)RDescriptorSetIndex::PerObject);
@@ -1122,13 +1128,18 @@ void R::FwdLight::Update(RView& view, GfxCommandBuffer& cmd)
                 ASSERT_MSG(index < R_MAX_DRAW_OBJECTS, "Too many objects are being drawn. Increase R_MAX_DRAW_OBJECTS");
                 subChunk._drawItemIndex = index;
 
+                RLightShaderObjectData objectData {
+                    .localToWorldMat = chunk->localToWorldMat,
+                    .materialTintColor = Color4u::ToFloat4(subChunk.tintColor)
+                };
+
                 GfxBindingDesc bindings[] = {
                     {
                         .name = "PerObjectData",
                         .buffer = gFwd.ubLightPerObjectData,
                         .bufferRange = {
-                            .offset = uniformBuffer.Write<Mat4>(index, chunk->localToWorldMat),
-                            .size = sizeof(Mat4)
+                            .offset = uniformBuffer.Write<RLightShaderObjectData>(index, objectData),
+                            .size = sizeof(RLightShaderObjectData)
                         }
                     },
                     {

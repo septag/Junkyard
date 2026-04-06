@@ -27,8 +27,8 @@
 // Extra modules
 #include "ImGuizmo.h"
 
-static constexpr size_t IMGUI_RUNTIME_HEAP_SIZE = SIZE_MB;
-static constexpr uint32 IMGUI_VERTICES_POOL_SIZE = 30*1000;
+static constexpr size_t IMGUI_RUNTIME_HEAP_SIZE = 4*SIZE_MB;
+static constexpr uint32 IMGUI_VERTICES_POOL_SIZE = 60*1000;
 static constexpr uint32 IMGUI_INDICES_POOL_SIZE =  IMGUI_VERTICES_POOL_SIZE*3; 
 
 enum ImGuiDescriptorSet : uint32
@@ -431,7 +431,7 @@ namespace ImGui
             ImFontConfig fontConfig;
             fontConfig.OversampleH = 3;
             fontConfig.RasterizerMultiply = 1.5f;
-            conf.Fonts->AddFontFromMemoryCompressedTTF(SEGOE_CUSTOM_compressed_data, SEGOE_CUSTOM_compressed_size, 14.0f, &fontConfig, nullptr);
+            conf.Fonts->AddFontFromMemoryCompressedTTF(SEGOE_CUSTOM_compressed_data, SEGOE_CUSTOM_compressed_size, 16.0f, &fontConfig, nullptr);
 
             uint8* fontPixels;
             int fontWidth, fontHeight, fontBpp;
@@ -794,6 +794,8 @@ bool ImGui::DrawFrame(GfxCommandBuffer cmd, GfxImageHandle colorImage)
 
 void ImGui::Release()
 {
+    ImGuizmo::Destruct();
+
     if (gImGui.ctx) {
         GfxBackend::DestroyBuffer(gImGui.vertexBuffer);
         GfxBackend::DestroyBuffer(gImGui.indexBuffer);
@@ -875,10 +877,9 @@ ImVec2 ImGui::ProjectToScreen(Float3 point, const Mat4& worldToClipMat, const Re
 {
     Float4 pos = Float4(point, 1);
     pos = Mat4::MulFloat4(worldToClipMat, pos);
-    pos = pos * (0.5f/pos.w);
-    pos.x += 0.5f;
-    pos.y += 0.5f;
-    pos.y = 1.0f - pos.y;
+    pos = pos * (1/pos.w);
+    pos.x = 0.5f*pos.x + 0.5f;
+    pos.y = 0.5f*pos.y + 0.5f;
 
     pos.x *= viewport.Width();
     pos.y *= viewport.Height();

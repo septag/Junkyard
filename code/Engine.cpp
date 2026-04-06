@@ -731,6 +731,7 @@ void Engine::RegisterShortcut(const char* shortcut, EngineShortcutCallback callb
             else if (Str::IsEqualNoCase(keystr, "HOME"))      keys[numKeys++] = InputKeycode::Home;
             else if (Str::IsEqualNoCase(keystr, "END"))       keys[numKeys++] = InputKeycode::End;
             else if (Str::IsEqualNoCase(keystr, "TAB"))       keys[numKeys++] = InputKeycode::Tab;
+            else if (Str::IsEqualNoCase(keystr, "SPACE"))     keys[numKeys++] = InputKeycode::Space;
             else    ASSERT_MSG(0, "Shortcut not recognized: %s", keystr);
         } 
         else if (len == 1 && numKeys < 2) {

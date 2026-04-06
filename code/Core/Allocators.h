@@ -364,8 +364,10 @@ template <typename _FieldType> inline MemSingleShotMalloc<_T, _MaxFields>&
     size = AlignValue<size_t>(size, align);
 
     size_t offset = mSize;
-    if (offset % align != 0)
+    if (offset % align != 0) {
         offset = AlignValue<size_t>(offset, align);
+        size += offset - mSize;
+    }
 
     Field& buff = mFields[index];
     buff.pPtr = nullptr;

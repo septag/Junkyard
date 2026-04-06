@@ -29,18 +29,33 @@
 #include "../Renderer/Render.h"
 #include "../Engine.h"
 
-inline constexpr uint32 SHAPE_COUNT = 2000;
-inline constexpr Float2 MAP_EXTENTS = Float2(100, 100);
+inline constexpr uint32 SHAPE_COUNT = 1000;
+inline constexpr Float2 MAP_EXTENTS = Float2(50, 50);
 
 struct TestShape
 {
     Mat4 transformMat;
+    Quat rotation;
+    Float3 scale;
     Float3 p1;
     Float3 p2;
     float speed;
     float t;
     uint64 collisionFrameIdx;
     uint64 raycastFrameIdx;
+};
+
+enum class TestMode : int
+{
+    Collision = 0,
+    Rayhit,
+    Intersection
+};
+
+enum class IntersectionShape 
+{
+    Sphere = 0,
+    Box
 };
 
 struct TestCollisionApp final : AppCallbacks
@@ -51,18 +66,33 @@ struct TestCollisionApp final : AppCallbacks
     RView mFwdRenderView;
     RView mShadowMapView;
 
-    CollisionIsland colIsland;
+    CollisionIsland mCollisionIsland;
     CameraFPS mCamera;
-    float mSunlightAngle = M_HALFPI;
     Float2 mMapExtents = MAP_EXTENTS;
     GeometryData mBox;
     GeometryData mPlane;
 
+    float mSunlightAngle = M_HALFPI;
+    float mSimulationSpeed = 1;
+    float mPrevSimulationSpeed = 1;
+
     TestShape mShapes[SHAPE_COUNT];
+    TestMode mTestMode;
+    IntersectionShape mIntersectionShape;
+    float mRayLength = 20;
+    Float3 mIntersectionShapeSize;
+    Mat4 mIntersectionShapeMat = MAT4_IDENT;
 
     bool mShowGrid = true;
+    bool mShowAABBs = false;
+    bool mShowDebugGUI = false;
+    CollisionDebugMode mDebugCollisionsMode = CollisionDebugMode::Collisions;
+    float mDebugCollisionsHeatLimit = 1;
 
-    void GatherGeometries(const GeometryData& geo, RView& view, const Mat4& localToWorldMat)
+    CollisionDebugRaycastMode mDebugRaycastMode = CollisionDebugRaycastMode::Rayhits;
+    float mDebugRaycastHeatLimit = 1;
+
+    void GatherGeometries(const GeometryData& geo, RView& view, const Mat4& localToWorldMat, bool highlight = false)
     {
         RGeometryChunk* chunk = view.NewGeometryChunk();
         chunk->localToWorldMat = localToWorldMat;
@@ -70,10 +100,11 @@ struct TestCollisionApp final : AppCallbacks
         chunk->lightingVertexBuffer = geo.vertexBuffers[1];
         chunk->indexBuffer = geo.indexBuffer;
 
-        RGeometrySubChunk subchunk = {
+        RGeometrySubChunk subchunk {
             .startIndex = 0,
             .numIndices = geo.numIndices,
-            .baseColorImg = Image::GetWhite1x1()
+            .baseColorImg = Image::GetWhite1x1(),
+            .tintColor = highlight ? COLOR4U_RED : COLOR4U_WHITE
         };
         chunk->AddSubChunk(subchunk);
     }
@@ -90,6 +121,7 @@ struct TestCollisionApp final : AppCallbacks
             TestShape& shape = mShapes[i];
 
             Float3 position = Float3(Random::Float(-MAP_EXTENTS.x, MAP_EXTENTS.x), Random::Float(-MAP_EXTENTS.y, MAP_EXTENTS.y), 0.5f);
+            float zrot = M::ToRad(45);
             Quat rotation = Quat::FromEuler(Float3(0, 0, Random::Float(0, M_PI2)));
             Float3 scale = Float3(Random::Float(), Random::Float(), Random::Float()) + Float3(0.4f);
 
@@ -100,13 +132,50 @@ struct TestCollisionApp final : AppCallbacks
             shape.p2 = position - Float3(moveRange*M::Cos(theta), moveRange*M::Sin(theta), 0);
             shape.speed = Random::Float();
 
-            shape.transformMat = Mat4::TransformMat(position, rotation, scale);
+            shape.transformMat = Mat4::TransformMat(shape.p1, rotation, scale);
+
+            shape.rotation = rotation;
+            shape.scale = scale;
+
+            CollisionAddBoxDesc boxDesc {
+                .id = IndexToId(i),
+                .shape = {
+                    .transform = {
+                        .position = FLOAT3_ZERO,
+                        .rotation = QUAT_INDENT
+                    },
+                    .extents = scale * 0.5f
+                },
+                .transform = {
+                    .position = shape.p1,
+                    .rotation = rotation
+                }
+            };
+            mCollisionIsland.AddBox(boxDesc);
         }
     }
 
-    void UpdateShapes()
+    void UpdateShapes(float dt)
     {
+        PROFILE_ZONE("UpdateShapes");
+        for (uint32 i = 0; i < CountOf(mShapes); i++) {
+            TestShape& shape = mShapes[i];
 
+            float t = M::Sin(shape.t*shape.speed)*0.5f + 0.5f;
+            Float3 position = Float3::Lerp(shape.p1, shape.p2, t);
+            Quat rotation = Quat::RotateZ(t*M_PI2);
+
+            // shape.transformMat.SetCol4(Float4(position, 1));
+            shape.transformMat = Mat4::TransformMat(position, rotation, shape.scale);
+
+            CollisionTransform transform {
+                .position = position,
+                .rotation = rotation
+            };
+            mCollisionIsland.UpdateTransform(IndexToId(i), transform);
+
+            shape.t += dt;
+        }
     }
 
     void InitializeFramebufferResources(uint16 width, uint16 height)
@@ -123,9 +192,9 @@ struct TestCollisionApp final : AppCallbacks
 
             // Note: this won't probably work with tiled GPUs because it's incompatible with Sampled flag
             //       So we probably need to copy the contents of the zbuffer to another one
-            #if PLATFORM_MOBILE
+    #if PLATFORM_MOBILE
             desc.usageFlags |= GfxImageUsageFlags::TransientAttachment;
-            #endif
+    #endif
 
             mRenderTargetDepth = GfxBackend::CreateImage(desc);
         }
@@ -140,9 +209,9 @@ struct TestCollisionApp final : AppCallbacks
 
             // Note: this won't probably work with tiled GPUs because it's incompatible with Sampled flag
             //       So we probably need to copy the contents of the zbuffer to another one
-            #if PLATFORM_MOBILE
+    #if PLATFORM_MOBILE
             desc.usageFlags |= GfxImageUsageFlags::TransientAttachment;
-            #endif
+    #endif
 
             mShadowMapDepth = GfxBackend::CreateImage(desc);
             mCamera.SetLookAt(Float3(0, -2, 3), FLOAT3_ZERO);
@@ -171,13 +240,28 @@ struct TestCollisionApp final : AppCallbacks
         mShadowMapView = R::CreateView(RViewType::ShadowMap);
 
         Collision::Initialize();
+
+        RectFloat mapRect = RectFloat::CenterExtents(FLOAT2_ZERO, mMapExtents);
+        mCollisionIsland = Collision::CreateIsland(mapRect, 4);
         SetupShapes();
+
+        Engine::RegisterShortcut("SPACE", [](void* userData) { 
+            TestCollisionApp* app = (TestCollisionApp*)userData;
+            if (app->mSimulationSpeed != 0) {
+                app->mPrevSimulationSpeed = app->mSimulationSpeed;
+                app->mSimulationSpeed = 0;
+            }
+            else {
+                app->mSimulationSpeed = app->mPrevSimulationSpeed;
+            }
+        }, this);
 
         return true;
     }
 
     void Cleanup() override
     {
+        Collision::DestroyIsland(mCollisionIsland);
         Collision::Release();
 
         Geometry::Destroy(mBox);
@@ -196,11 +280,92 @@ struct TestCollisionApp final : AppCallbacks
         if (ImGui::Begin("Collision Test")) {
             if (ImGui::BeginTabBar("MainTabBar")) {
                 if (ImGui::BeginTabItem("Main")) {
+                    ImGui::TextColored(ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled), "SPACE will toggle pause");
+                    if (mSimulationSpeed != 0)
+                        ImGui::SliderFloat("Simulation Speed", &mSimulationSpeed, 0.1f, 2.0f);
+
+                    ImGui::Separator();
+                    {
+                        ImGui::PushID("TestModeRadio");
+                        if (ImGui::RadioButton("Collisions", mTestMode == TestMode::Collision))
+                            mTestMode = TestMode::Collision;
+                        if (ImGui::RadioButton("Rayhit", mTestMode == TestMode::Rayhit))
+                            mTestMode = TestMode::Rayhit;
+                        if (ImGui::RadioButton("Intersection", mTestMode == TestMode::Intersection)) {
+                            mTestMode = TestMode::Intersection;
+                            mIntersectionShapeSize = Float3(1, 1, 1);
+                            mIntersectionShapeMat = MAT4_IDENT;
+                        }
+                        ImGui::PopID();
+                    }
+
+                    if (mTestMode == TestMode::Rayhit) {
+                        ImGui::SliderFloat("Ray Length", &mRayLength, 1, 100, "%.0f");
+                    }
+                    else if (mTestMode == TestMode::Intersection) {
+                        ImGui::Separator();
+                        ImGui::PushID("IntersectionTypeRadio");
+                        if (ImGui::RadioButton("Sphere", mIntersectionShape == IntersectionShape::Sphere))
+                            mIntersectionShape = IntersectionShape::Sphere;
+                        ImGui::SameLine();
+                        if (ImGui::RadioButton("Box", mIntersectionShape == IntersectionShape::Box))
+                            mIntersectionShape = IntersectionShape::Box;
+                        ImGui::PopID();
+
+                        switch (mIntersectionShape) {
+                            case IntersectionShape::Sphere:
+                                ImGui::DragFloat("Radius", &mIntersectionShapeSize.x, 0.1f, 0.1f, 20);
+                                break;
+                            case IntersectionShape::Box:
+                                ImGui::DragFloat3("Extents", mIntersectionShapeSize.f, 0.2f, 0.1f, 20);
+                                break;
+                        }
+                    }
+
                     ImGui::EndTabItem();
                 }
 
                 if (ImGui::BeginTabItem("Visuals")) {
                     ImGui::Checkbox("Show Grid", &mShowGrid);
+                    ImGui::Checkbox("Show AABBs", &mShowAABBs);
+                    {
+                        ImGui::Checkbox("Debug", &mShowDebugGUI);
+                        ImGui::PushID("CollisionModeRadio");
+                        if (ImGui::RadioButton("Collisions", mDebugCollisionsMode ==  CollisionDebugMode::Collisions)) {
+                            mDebugCollisionsMode = CollisionDebugMode::Collisions;
+                        }
+                        ImGui::SameLine();
+                        if (ImGui::RadioButton("Collisions Heat Map", mDebugCollisionsMode ==  CollisionDebugMode::Heatmap)) {
+                            mDebugCollisionsMode = CollisionDebugMode::Heatmap;
+                            mDebugCollisionsHeatLimit = 10;
+                        }
+                        ImGui::SameLine();
+                        if (ImGui::RadioButton("Entity Heat Map", mDebugCollisionsMode ==  CollisionDebugMode::EntityHeatmap)) {
+                            mDebugCollisionsMode = CollisionDebugMode::EntityHeatmap;
+                            mDebugCollisionsHeatLimit = 20;
+                        }
+                        ImGui::PopID();
+
+                        ImGui::Separator();
+
+                        ImGui::PushID("RaycastModeRadio");
+                        if (ImGui::RadioButton("Ray Hits", mDebugRaycastMode == CollisionDebugRaycastMode::Rayhits)) {
+                            mDebugRaycastMode = CollisionDebugRaycastMode::Rayhits;
+                        }
+                        ImGui::SameLine();
+                        if (ImGui::RadioButton("Ray Heat Map", mDebugRaycastMode == CollisionDebugRaycastMode::RayhitHeatmap)) {
+                            mDebugRaycastMode = CollisionDebugRaycastMode::RayhitHeatmap;
+                            mDebugRaycastHeatLimit = 5;
+                        }
+                        ImGui::SameLine();
+                        if (ImGui::RadioButton("Ray March Heat Map", mDebugRaycastMode == CollisionDebugRaycastMode::RaymarchHeatmap)) {
+                            mDebugRaycastMode = CollisionDebugRaycastMode::RaymarchHeatmap;
+                            mDebugRaycastHeatLimit = 1;
+                        }
+
+                        ImGui::PopID();
+                    }
+                    ImGui::Separator();
                     ImGui::SliderFloat("Sun Light Angle", &mSunlightAngle, 0, M_PI, "%0.2f");
                     ImGui::EndTabItem();
                 }
@@ -215,8 +380,56 @@ struct TestCollisionApp final : AppCallbacks
     {
         mCamera.HandleMovementKeyboard(dt, 20, 5);
         Engine::BeginFrame(dt);
+        uint64 frameIdx = Engine::GetFrameIndex();
 
-        UpdateShapes();
+        UpdateShapes(dt*mSimulationSpeed);
+
+        if (mTestMode == TestMode::Collision) {
+            MemTempAllocator tempAlloc;
+
+            Span<CollisionPair> collisionPairs = mCollisionIsland.DetectCollisions(&tempAlloc);
+            for (CollisionPair collisionPair : collisionPairs) {
+                mShapes[IdToIndex(collisionPair.entity1)].collisionFrameIdx = frameIdx;
+                mShapes[IdToIndex(collisionPair.entity2)].collisionFrameIdx = frameIdx;
+            }
+        }
+        else if (mTestMode == TestMode::Rayhit) {
+            MemTempAllocator tempAlloc;
+
+            CollisionRay ray {
+                .origin = mCamera.Position(),
+                .direction = mCamera.Forward(),
+                .length = mRayLength
+            };
+
+            Span<CollisionRayHit> hits = mCollisionIsland.IntersectRay(ray, 0xffffffff, &tempAlloc);
+            for (CollisionRayHit hit : hits) {
+                mShapes[IdToIndex(hit.entity)].raycastFrameIdx = frameIdx;
+            }
+        }
+        else if (mTestMode == TestMode::Intersection) {
+            MemTempAllocator tempAlloc;
+            if (mIntersectionShape == IntersectionShape::Sphere) {
+                Span<CollisionEntityId> intersections = 
+                    mCollisionIsland.IntersectSphere(Float3(mIntersectionShapeMat.fc4), mIntersectionShapeSize.x, 0xffffffff, &tempAlloc);
+                for (CollisionEntityId id : intersections) 
+                    mShapes[IdToIndex(id)].collisionFrameIdx = frameIdx;
+            }
+            else if (mIntersectionShape == IntersectionShape::Box) {
+                CollisionShapeBox box {
+                    .transform = {
+                        .position = Float3(mIntersectionShapeMat.fc4),
+                        .rotation = Mat4::ToQuat(mIntersectionShapeMat)
+                    },
+                    .extents = mIntersectionShapeSize
+                };
+                Span<CollisionEntityId> intersections = mCollisionIsland.IntersectBox(box, 0xffffffff, &tempAlloc);
+                for (CollisionEntityId id : intersections) 
+                    mShapes[IdToIndex(id)].collisionFrameIdx = frameIdx;
+            }
+        }
+
+        mCollisionIsland.ClearUpdates();
 
         GfxCommandBuffer cmd = GfxBackend::BeginCommandBuffer(GfxQueueType::Graphics);
         if (!mBox.firstUpdate)
@@ -263,7 +476,7 @@ struct TestCollisionApp final : AppCallbacks
 
             mFwdRenderView.SetAmbientLight(Color4u::ToFloat4(Color4u(36,54,81,26)), 
                                            Color4u::ToFloat4(Color4u(216,199,172,8)));
-            mFwdRenderView.SetSunLight(sunlightDir, Color4u::ToFloat4(Color4u(251,250,204,20)),
+            mFwdRenderView.SetSunLight(sunlightDir, Color4u::ToFloat4(Color4u(251,250,204,50)),
                                        mShadowMapDepth, mShadowMapView.GetWorldToClipMat());
             mFwdRenderView.SetCamera(mCamera, Float2(float(App::GetWindowWidth()), float(App::GetWindowHeight())));
 
@@ -272,7 +485,8 @@ struct TestCollisionApp final : AppCallbacks
             {
                 PROFILE_ZONE("MainPass_GatherGeometries");
                 for (uint32 i = 0; i < CountOf(mShapes); i++) {
-                    GatherGeometries(mBox, mFwdRenderView, mShapes[i].transformMat);
+                    GatherGeometries(mBox, mFwdRenderView, mShapes[i].transformMat, 
+                                     mShapes[i].collisionFrameIdx == frameIdx || mShapes[i].raycastFrameIdx == frameIdx);
                 }
             }
 
@@ -294,6 +508,21 @@ struct TestCollisionApp final : AppCallbacks
 
                 DebugDraw::DrawGroundGrid(mCamera, gridProps);
             }
+
+            if (mShowAABBs)
+                mCollisionIsland.DebugShapeBounds();
+
+            if (mTestMode == TestMode::Intersection) {
+                switch (mIntersectionShape) {
+                case IntersectionShape::Sphere: 
+                    DebugDraw::DrawBoundingSphere(Float4(mIntersectionShapeMat.fc4, mIntersectionShapeSize.x), COLOR4U_WHITE);
+                    break;
+                case IntersectionShape::Box:
+                    DebugDraw::DrawBox(mIntersectionShapeSize, Float3(mIntersectionShapeMat.fc4), Mat4::ToQuat(mIntersectionShapeMat), COLOR4U_WHITE);
+                    break;
+                }
+            }
+
             DebugDraw::EndDraw(cmd, mRenderTargetDepth);
         }
 
@@ -304,6 +533,41 @@ struct TestCollisionApp final : AppCallbacks
 
             UpdateGUI();
 
+            if (mShowDebugGUI) {
+                if (mTestMode == TestMode::Collision) {
+                    mCollisionIsland.DebugCollisionsGUI(0.5f, mDebugCollisionsMode, mDebugCollisionsHeatLimit);
+                }
+                else if (mTestMode == TestMode::Rayhit) {
+                    CollisionRay ray {
+                        .origin = mCamera.Position(),
+                        .direction = mCamera.Forward(),
+                        .length = mRayLength
+                    };
+
+                    mCollisionIsland.DebugRaycastGUI(0.5f, mDebugRaycastMode, mDebugRaycastHeatLimit, &ray, 1);
+                }
+            }
+
+            if (mTestMode == TestMode::Rayhit) {
+                ImDrawList* drawList = ImGui::BeginFullscreenView("Crossair");
+                ImVec2 center = ImVec2(ImGui::GetIO().DisplaySize.x*0.5f, ImGui::GetIO().DisplaySize.y*0.5f);
+                drawList->AddCircle(center, 5, COLOR4U_YELLOW.n, 12, 4);
+            }
+            else if (mTestMode == TestMode::Intersection) {
+                ImGuizmo::SetOrthographic(false);
+                ImGuizmo::AllowAxisFlip(false);
+                Mat4 proj = mCamera.GetPerspectiveMat(float(App::GetWindowWidth()), float(App::GetWindowHeight()));
+                proj.m22 *= -1.0f;      // YIKES!
+
+                ImGuizmo::Manipulate(mCamera.GetViewMat().f, 
+                                     proj.f,
+                                     mIntersectionShape == IntersectionShape::Sphere ? 
+                                        ImGuizmo::TRANSLATE : 
+                                        (ImGuizmo::ROTATE_Z|ImGuizmo::TRANSLATE),
+                                     ImGuizmo::WORLD,
+                                     mIntersectionShapeMat.f);
+            }
+            
             ImGui::DrawFrame(cmd);
         }
 
@@ -315,7 +579,7 @@ struct TestCollisionApp final : AppCallbacks
 
     void OnEvent(const AppEvent& ev) override
     {
-        if (!ImGui::IsAnyItemHovered() && !ImGui::GetIO().WantCaptureMouse && !ImGuizmo::IsOver())
+        if (!ImGui::IsAnyItemHovered() && !ImGui::GetIO().WantCaptureMouse)
             mCamera.HandleRotationMouse(ev, 0.2f, 0.1f);
         else if (ev.type == AppEventType::Resized) 
             InitializeFramebufferResources(ev.framebufferWidth, ev.framebufferHeight);

@@ -113,12 +113,13 @@ FORCE_INLINE Float3 Quat::MulXYZ(Quat qa, Quat qb)
 
 FORCE_INLINE Float3 Quat::TransformFloat3(Float3 v, Quat q)
 {
-    Quat tmp0 = Quat::Inverse(q);
+    ASSERT(Quat::IsNorm(q));
+
+    Quat tmp0 = Quat::Conjugate(q);
     Quat qv = Quat(v.x, v.y, v.z, 0.0f);
     Quat tmp1 = Quat::Mul(qv, tmp0);
     return Quat::MulXYZ(q, tmp1);
 }
-
 
 // The product of two rotation quaternions will be equivalent to the rotation "q" followed by the rotation "p"
 FORCE_INLINE Quat Quat::Mul(Quat p, Quat q)
@@ -131,7 +132,7 @@ FORCE_INLINE Quat Quat::Mul(Quat p, Quat q)
     );
 }
 
-FORCE_INLINE Quat Quat::Inverse(Quat q)
+FORCE_INLINE Quat Quat::Conjugate(Quat q)
 {
     return Quat(-q.x, -q.y, -q.z, q.w);
 }
@@ -151,12 +152,19 @@ FORCE_INLINE Quat Quat::Norm(Quat q)
 {
     float d = Quat::Dot(q, q);
     if (d > M_FLOAT32_EPSILON) {
-        float inv_norm = M::Rsqrt(d);
-        return Quat(q.x*inv_norm, q.y*inv_norm, q.z*inv_norm, q.w*inv_norm);
+        float invNorm = M::Rsqrt(d);
+        return Quat(q.x*invNorm, q.y*invNorm, q.z*invNorm, q.w*invNorm);
     }
     else {
+        // Invalid quaternion
         return QUAT_INDENT;    
     }
+}
+
+FORCE_INLINE bool Quat::IsNorm(Quat q)
+{
+    float d = Quat::Dot(q, q);
+    return M::IsEqual(d, 1);
 }
 
 FORCE_INLINE Quat Quat::RotateAxis(Float3 _axis, float _angle)
@@ -383,6 +391,38 @@ FORCE_INLINE Float4 Mat4::Row3() const
 FORCE_INLINE Float4 Mat4::Row4() const
 {
     return Float4(m41, m42, m43, m44);
+}
+
+FORCE_INLINE void Mat4::SetCol1(Float4 _col1)
+{
+    fc1[0] = _col1.x;  
+    fc1[1] = _col1.y;
+    fc1[2] = _col1.z;
+    fc1[3] = _col1.w;
+}
+
+FORCE_INLINE void Mat4::SetCol2(Float4 _col2)
+{
+    fc2[0] = _col2.x;  
+    fc2[1] = _col2.y;
+    fc2[2] = _col2.z;
+    fc2[3] = _col2.w;
+}
+
+FORCE_INLINE void Mat4::SetCol3(Float4 _col3)
+{
+    fc3[0] = _col3.x;  
+    fc3[1] = _col3.y;
+    fc3[2] = _col3.z;
+    fc3[3] = _col3.w;
+}
+
+FORCE_INLINE void Mat4::SetCol4(Float4 _col4)
+{
+    fc4[0] = _col4.x;  
+    fc4[1] = _col4.y;
+    fc4[2] = _col4.z;
+    fc4[3] = _col4.w;
 }
 
 FORCE_INLINE Mat4 Mat4::Translate(float _tx, float _ty, float _tz)
@@ -1329,7 +1369,7 @@ namespace M
     // Quat
     FORCE_INLINE Float3 QuatMulXYZ(Quat _qa, Quat _qb) { return Quat::MulXYZ(_qa, _qb); }
     FORCE_INLINE Quat   QuatMul(Quat p, Quat q) { return Quat::Mul(p, q); }
-    FORCE_INLINE Quat   QuatInverse(Quat _q) { return Quat::Inverse(_q); }
+    FORCE_INLINE Quat   QuatInverse(Quat _q) { return Quat::Conjugate(_q); }
     FORCE_INLINE float  QuatDot(Quat _a, Quat _b) { return Quat::Dot(_a, _b); }
     FORCE_INLINE float  QuatAngle(Quat _a, Quat _b) { return Quat::Angle(_a, _b); }
     FORCE_INLINE Quat   QuatNorm(Quat _q) { return Quat::Norm(_q); }
@@ -1448,5 +1488,5 @@ namespace M
     FORCE_INLINE Plane  PlaneFromNormalPoint(Float3 _normal, Float3 _p) { return Plane::FromNormalPoint(_normal, _p); }
     FORCE_INLINE float  PlaneDistance(Plane _plane, Float3 _p) { return Plane::Distance(_plane, _p); }
     FORCE_INLINE Float3 PlaneProjectPoint(Plane _plane, Float3 _p) { return Plane::ProjectPoint(_plane, _p); }
-    FORCE_INLINE Float3 PlaneOrigin(Plane _plane) { return Plane::Origin(_plane); }
+    FORCE_INLINE Float3 PlaneOrigin(Plane _plane) { return Plane::ClosestPointToOrigin(_plane); }
 }

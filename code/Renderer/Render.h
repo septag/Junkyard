@@ -34,6 +34,7 @@ struct RGeometrySubChunk
     uint32 startIndex;
     uint32 numIndices;
     GfxImageHandle baseColorImg;
+    Color4u tintColor = COLOR4U_WHITE;
     bool hasAlphaMask;
     uint32 _drawItemIndex;  // Internal use only
 };

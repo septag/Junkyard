@@ -116,6 +116,13 @@ void MemTempAllocator::GetStats(MemAllocator* alloc, Stats** outStats, uint32* o
         s.commitedBytes = gMemTemp.tempCtxs[i]->commitedBytes;
         s.reservedBytes = gMemTemp.tempCtxs[i]->reservedBytes;
         s.threadId = gMemTemp.tempCtxs[i]->threadId;
+
+        if (gMemTemp.tempCtxs[i]->threadName[0] == 0) {
+            Thread::GetCurrentThreadName(gMemTemp.tempCtxs[i]->threadName, sizeof(gMemTemp.tempCtxs[i]->threadName));
+            if (gMemTemp.tempCtxs[i]->threadName[0] == 0)
+                Str::PrintFmt(gMemTemp.tempCtxs[i]->threadName, sizeof(gMemTemp.tempCtxs[i]->threadName), "Thread #%u", s.threadId);
+        }
+
         s.threadName = gMemTemp.tempCtxs[i]->threadName;
     }
 }

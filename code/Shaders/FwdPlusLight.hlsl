@@ -57,6 +57,7 @@ Texture2D<float> ShadowMap;
 cbuffer PerObjectData
 {
     float4x4 LocalToWorldMat;
+    float4 MaterialTintColor;
 };
 
 [vk::binding(1, 1)]
@@ -147,5 +148,7 @@ float4 PsMain(PsInput i) : SV_Target
     const float _Cutoff = 0.5f;
     alpha = (alpha - _Cutoff) / max(fwidth(alpha), 0.0001) + 0.5;
 
-    return float4(litColor, alpha);
+    float4 finalColor = float4(litColor, alpha) * MaterialTintColor;
+
+    return finalColor;
 }
