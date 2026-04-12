@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__10xEditor__get_current_file",
+      "mcp__10xEditor__get_cursor_position"
+    ]
+  }
+}
