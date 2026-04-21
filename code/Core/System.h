@@ -388,7 +388,7 @@ struct File
     size_t Seek(size_t offset, FileSeekMode mode = FileSeekMode::Start);
 
     template <typename _T> uint32 Read(_T* dst, uint32 count);
-    template <typename _T> uint32 Write(_T* dst, uint32 count);
+    template <typename _T> uint32 Write(const _T* dst, uint32 count);
 
     size_t GetSize() const;
     uint64 GetLastModified() const;
@@ -991,7 +991,7 @@ template <typename _T> inline uint32 File::Read(_T* dst, uint32 count)
     return static_cast<uint32>(Read((void*)dst, sizeof(_T)*count)/sizeof(_T));
 }
 
-template <typename _T> inline uint32 File::Write(_T* dst, uint32 count)
+template <typename _T> inline uint32 File::Write(const _T* dst, uint32 count)
 {
     return static_cast<uint32>(Write((const void*)dst, sizeof(_T)*count)/sizeof(_T));
 }
