@@ -471,3 +471,49 @@ GfxImageHandle Image::GetWhite1x1()
 {
     return gImageMgr.imageWhite;
 }
+
+GfxImageHandle Image::CreateCheckerTexture(uint32 textureSize, uint32 checkerSize, Color4u color0, Color4u color1)
+{
+    MemTempAllocator tmpAlloc;
+    uint32 pixelCount = textureSize * textureSize;
+    uint32* pixels = Mem::AllocTyped<uint32>(pixelCount, &tmpAlloc);
+
+    for (uint32 y = 0; y < textureSize; y++) {
+        for (uint32 x = 0; x < textureSize; x++) {
+            uint32 cell = (x / checkerSize + y / checkerSize) & 1;
+            pixels[y * textureSize + x] = cell ? color1.n : color0.n;
+        }
+    }
+
+    GfxImageDesc imageDesc {
+        .width = uint16(textureSize),
+        .height = uint16(textureSize),
+        .format = GfxFormat::R8G8B8A8_UNORM,
+        .usageFlags = GfxImageUsageFlags::TransferDst|GfxImageUsageFlags::Sampled
+    };
+    GfxImageHandle handle = GfxBackend::CreateImage(imageDesc);
+    if (!handle.IsValid())
+        return handle;
+
+    size_t bufferSize = pixelCount * sizeof(uint32);
+    GfxBufferDesc stagingBufferDesc {
+        .sizeBytes = bufferSize,
+        .usageFlags = GfxBufferUsageFlags::TransferSrc,
+        .arena = GfxMemoryArena::TransientCPU
+    };
+    GfxBufferHandle stagingBuffer = GfxBackend::CreateBuffer(stagingBufferDesc);
+
+    GfxCommandBuffer cmd = GfxBackend::BeginCommandBuffer(GfxQueueType::Transfer);
+    void* stagingData;
+    size_t stagingDataSize;
+    cmd.MapBuffer(stagingBuffer, &stagingData, &stagingDataSize);
+    memcpy(stagingData, pixels, bufferSize);
+    cmd.FlushBuffer(stagingBuffer);
+    cmd.CopyBufferToImage(stagingBuffer, handle, GfxShaderStage::Fragment);
+    GfxBackend::EndCommandBuffer(cmd);
+    GfxBackend::SubmitQueue(GfxQueueType::Transfer);
+
+    GfxBackend::DestroyBuffer(stagingBuffer);
+
+    return handle;
+}

@@ -92,7 +92,10 @@ struct TestCollisionApp final : AppCallbacks
     CollisionDebugRaycastMode mDebugRaycastMode = CollisionDebugRaycastMode::Rayhits;
     float mDebugRaycastHeatLimit = 1;
 
-    void GatherGeometries(const GeometryData& geo, RView& view, const Mat4& localToWorldMat, bool highlight = false)
+    GfxImageHandle mCheckerImage;
+
+    void GatherGeometries(const GeometryData& geo, RView& view, const Mat4& localToWorldMat, bool highlight = false, 
+                          bool checkerTexture = false)
     {
         RGeometryChunk* chunk = view.NewGeometryChunk();
         chunk->localToWorldMat = localToWorldMat;
@@ -103,7 +106,7 @@ struct TestCollisionApp final : AppCallbacks
         RGeometrySubChunk subchunk {
             .startIndex = 0,
             .numIndices = geo.numIndices,
-            .baseColorImg = Image::GetWhite1x1(),
+            .baseColorImg = checkerTexture ? mCheckerImage : Image::GetWhite1x1(),
             .tintColor = highlight ? COLOR4U_RED : COLOR4U_WHITE
         };
         chunk->AddSubChunk(subchunk);
@@ -233,6 +236,8 @@ struct TestCollisionApp final : AppCallbacks
             Geometry::CreateAxisAlignedBox(Float3(0.5f, 0.5f, 0.5f), layout, mBox);
             Geometry::CreatePlane(mMapExtents, layout, mPlane);
         }
+
+        mCheckerImage = Image::CreateCheckerTexture(256, 128, COLOR4U_WHITE, Color4u(128, 128, 128));
         
         mCamera.SetLookAt(Float3(0, -2, 3), FLOAT3_ZERO);
 
@@ -261,6 +266,8 @@ struct TestCollisionApp final : AppCallbacks
 
     void Cleanup() override
     {
+        GfxBackend::DestroyImage(mCheckerImage);
+
         Collision::DestroyIsland(mCollisionIsland);
         Collision::Release();
 
@@ -486,7 +493,8 @@ struct TestCollisionApp final : AppCallbacks
                 PROFILE_ZONE("MainPass_GatherGeometries");
                 for (uint32 i = 0; i < CountOf(mShapes); i++) {
                     GatherGeometries(mBox, mFwdRenderView, mShapes[i].transformMat, 
-                                     mShapes[i].collisionFrameIdx == frameIdx || mShapes[i].raycastFrameIdx == frameIdx);
+                                     mShapes[i].collisionFrameIdx == frameIdx || mShapes[i].raycastFrameIdx == frameIdx,
+                                     true);
                 }
             }
 
