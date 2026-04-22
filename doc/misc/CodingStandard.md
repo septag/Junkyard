@@ -18,7 +18,7 @@ Only one level namespaces are allowed. Nested namespaces are **not allowed**.
 - **Indentations are 4-spaces**
 
 ### Naming
-- **Namespaces, functions, type names, file names**: PascalCase
+- **Namespaces, functions, lambdas, type names, file names**: PascalCase
     - **static functions (privately accessed within a translation unit)**: _PascalCase
 - **Local and argument variables**: camelCase
 - **Member variables (if the type also includes functions that operate on them)**: mPascalCase
@@ -66,6 +66,7 @@ Only one level namespaces are allowed. Nested namespaces are **not allowed**.
     - Should not be overused
     - Nested/complicated template classes are not allowed
     - If templates contain large non-trivial code, put them inside `_private::` functions, implement those functions inside the CPP file and call those functions inside template functions instead.
+- **Lambdas**: capture only what's needed explicitly — never use [=] or [&] default captures. Keep lambdas minimal. No more than a few lines. Otherwise create separate functions.
 
 ## C++ standard
 General C++ flags and rules:
