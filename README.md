@@ -163,8 +163,6 @@ allocation library
     - [LivePP](https://liveplusplus.tech): Commercial tool for Hot-reloading C++ code. This software is magic!
     - [MemPro](https://puredevsoftware.com/mempro/index.htm): Commercial tool for debugging memory allocations
     - [Python 3.10+](https://www.python.org/downloads/): Optional but highly recommended. Used in some tooling scripts and utilities. 
-    - [ScrCpy](https://github.com/Genymobile/scrcpy): Display and control your Android device
-    - [Gnirehtet](https://github.com/Genymobile/gnirehtet): provides reverse tethering for Android
 
 ## [License (MIT)](https://github.com/septag/Junkyard/blob/main/LICENSE)
 
