@@ -2,6 +2,7 @@
 
 #include "Base.h"
 #include "MathTypes.h"
+#include "StringUtil.h"
 
 struct JsonContext;
 
@@ -44,6 +45,7 @@ struct JsonNode
     template <typename _T> _T GetValue() const;
     template <typename _T> uint32 GetArrayValues(_T* _values, uint32 _maxValues) const;
 
+    const char* GetChildValueString(const char* _childNode, char* _outValue, uint32 _valueSize, const char* _defaultValue);
     template <typename _T> _T GetChildValue(const char* _childNode, _T _defaultValue);
     template <typename _T> uint32 GetChildArrayValues(const char* _childNode, _T* _values, uint32 _maxValues);
 
@@ -212,6 +214,14 @@ template <> inline Int2 JsonNode::GetValue() const
     [[maybe_unused]] uint32 n = GetArrayValues<int>(v.n, 2);
     ASSERT(n == 2);
     return v;
+}
+
+inline const char* JsonNode::GetChildValueString(const char* _childNode, char* _outValue, uint32 _valueSize, const char* _defaultValue)
+{
+    const char* r = cj5_seekget_string(reinterpret_cast<cj5_result*>(mCtx), mTokenId, _childNode, _outValue, _valueSize, _defaultValue);
+    if (r == _defaultValue)
+        Str::Copy(_outValue, (int)_valueSize, _defaultValue);
+    return _outValue;
 }
 
 template <> inline uint32 JsonNode::GetChildValue(const char* _childNode, uint32 _defaultValue)

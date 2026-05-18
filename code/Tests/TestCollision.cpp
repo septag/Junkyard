@@ -523,7 +523,12 @@ struct TestCollisionApp final : AppCallbacks
             if (mTestMode == TestMode::Intersection) {
                 switch (mIntersectionShape) {
                 case IntersectionShape::Sphere: 
-                    DebugDraw::DrawBoundingSphere(Float4(mIntersectionShapeMat.fc4, mIntersectionShapeSize.x), COLOR4U_WHITE);
+                    // DebugDraw::DrawBoundingSphere(Float4(mIntersectionShapeMat.fc4, mIntersectionShapeSize.x), COLOR4U_WHITE);
+                    DebugDraw::DrawCapsule(Float3(mIntersectionShapeMat.fc4) + Float3(0, 0, 0.5f), 
+                                           Float3(mIntersectionShapeMat.fc4) - Float3(0, 0, 0.5f),
+                                           0.2f,
+                                           COLOR4U_WHITE);
+
                     break;
                 case IntersectionShape::Box:
                     DebugDraw::DrawBox(mIntersectionShapeSize, Float3(mIntersectionShapeMat.fc4), Mat4::ToQuat(mIntersectionShapeMat), COLOR4U_WHITE);

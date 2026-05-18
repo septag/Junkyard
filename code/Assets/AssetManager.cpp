@@ -25,6 +25,7 @@
 #include "Image.h"
 #include "Model.h"
 #include "Shader.h"
+#include "Font.h"
 
 //     ██████╗ ██╗      ██████╗ ██████╗  █████╗ ██╗     ███████╗
 //    ██╔════╝ ██║     ██╔═══██╗██╔══██╗██╔══██╗██║     ██╔════╝
@@ -699,7 +700,7 @@ static AssetHandleResult Asset::_CreateOrFetchHandle(const AssetParams& params)
         r.header->params->platform = params.platform;
         r.header->typeName = typeMan.name.CStr();
         r.header->typeFlags = typeMan.flags;
-        if (params.extraParams)
+        if (params.extraParams && typeMan.extraParamTypeSize)
             memcpy(r.header->params->extraParams, params.extraParams, typeMan.extraParamTypeSize);
 
         r.handle = gAssetMan.assetDb.Add(r.header);
@@ -1676,7 +1677,8 @@ static bool Asset::_RemoteServerCallback([[maybe_unused]] uint32 cmd, const Blob
     header->params->path.CalcLength();
 
     incomingData.Read<uint32>(&platformId);
-    incomingData.Read(header->params->extraParams, typeMan.extraParamTypeSize);
+    if (typeMan.extraParamTypeSize)
+        incomingData.Read(header->params->extraParams, typeMan.extraParamTypeSize);
 
     header->params->typeId = typeId;
     header->params->platform = AssetPlatform::Enum(platformId);
@@ -1907,6 +1909,11 @@ bool Asset::Initialize()
         return false;
     }
 
+    if (!Font::InitializeManager()) {
+        LOG_ERROR("Failed to initialize FontManager");
+        return false;
+    }
+
     LOG_INFO("(init) Asset Manager");
     LOG_VERBOSE("Registered asset types:");
     for (AssetTypeManager& tm : gAssetMan.typeManagers)
@@ -1964,8 +1971,9 @@ void Asset::Release()
         gAssetMan.hotReloadParentTrackLookup.Free();
     }
 
-    Image::ReleaseManager();
+    Font::ReleaseManager();
     Model::ReleaseManager();
+    Image::ReleaseManager();
     Shader::ReleaseManager();
 
     Mem::DestroyThreadAllocatorArena(gAssetMan.memArena);
@@ -2231,7 +2239,7 @@ void AssetData::AddDependency(AssetHandle* bindToHandle, const AssetParams& para
 
     if (bindToHandle)
         dep->bindToHandle = Asset::_TranslatePointer<AssetHandle>(bindToHandle, mOrigObjPtr, mData->objData.Get());
-    if (params.extraParams)
+    if (params.extraParams && typeMan.extraParamTypeSize)
         dep->typeSpecificParams = Mem::AllocCopy<uint8>((uint8*)params.extraParams, typeMan.extraParamTypeSize, mAlloc);
     
     if (mLastDependencyPtr) 

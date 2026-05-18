@@ -164,7 +164,7 @@ bool Image::InitializeManager()
     AssetTypeDesc assetDesc {
         .name = "Image",
         .fourcc = IMAGE_ASSET_TYPE,
-        .cacheVersion = ASSET_CACHE_IMAGE_VERSION,
+        .cacheVersion = IMAGE_ASSET_CACHE_VERSION,
         .impl = &gImageMgr.imageImpl,
         .failedObj = &whiteImage,
         .asyncObj = &whiteImage,

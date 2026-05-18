@@ -11,6 +11,7 @@
 #include "../Graphics/GfxBackend.h"
 
 static constexpr uint32 SHADER_ASSET_TYPE = MakeFourCC('S', 'H', 'A', 'D');
+static constexpr uint32 SHADER_ASSET_CACHE_VERSION = 4;
 static constexpr uint32 SHADER_INCLUDE_ASSET_TYPE = MakeFourCC('S', 'H' , 'A', 'H');
 
 struct AssetShaderImpl final : AssetTypeImplBase
@@ -27,7 +28,7 @@ bool Shader::InitializeManager()
     AssetTypeDesc shaderTypeDesc {
         .name = "Shader",
         .fourcc = SHADER_ASSET_TYPE,
-        .cacheVersion = ASSET_CACHE_SHADER_VERSION,
+        .cacheVersion = SHADER_ASSET_CACHE_VERSION,
         .impl = &gShaderImpl,
         .failedObj = nullptr,
         .asyncObj = nullptr,
@@ -40,7 +41,7 @@ bool Shader::InitializeManager()
     AssetTypeDesc shaderIncludeTypeDesc {
         .name = "ShaderInclude",
         .fourcc = SHADER_INCLUDE_ASSET_TYPE,
-        .cacheVersion = ASSET_CACHE_SHADER_VERSION,
+        .cacheVersion = SHADER_ASSET_CACHE_VERSION,
         .flags = AssetTypeFlags::Virtual | AssetTypeFlags::HotReloadParents
     };
 

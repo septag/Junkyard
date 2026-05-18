@@ -7,6 +7,7 @@
 struct AssetGroup;
 
 inline constexpr uint32 IMAGE_ASSET_TYPE = MakeFourCC('I', 'M', 'A', 'G');
+inline constexpr uint32 IMAGE_ASSET_CACHE_VERSION = 1;
 
 struct ImageLoadParams
 {

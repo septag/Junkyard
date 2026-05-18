@@ -19,7 +19,8 @@
 
 #include "../Tool/MeshOptimizer.h"
 
-constexpr uint32 MODEL_ASSET_TYPE = MakeFourCC('M', 'O', 'D', 'L');
+static constexpr uint32 MODEL_ASSET_TYPE = MakeFourCC('M', 'O', 'D', 'L');
+static constexpr uint32 MODEL_ASSET_CACHE_VERSION = 3;
 
 struct ModelVertexAttribute
 {
@@ -720,7 +721,8 @@ namespace GLTF
         }
 
         // Allocate one big chunk and copy the temp data over to it
-        uint32 modelBufferSize = uint32(tmpAlloc->GetOffset() - tmpAlloc->GetPointerOffset(model));
+        size_t modelBufferSize = tmpAlloc->GetOffset() - tmpAlloc->GetPointerOffset(model);
+        ASSERT(modelBufferSize <= UINT32_MAX);
 
         // Buffers
         GeometryCpuBuffers* cpuBuffers = outCpuBuffers;
@@ -774,7 +776,7 @@ namespace GLTF
             dstNode->bounds = bounds;
         }
 
-        return Pair<ModelData*, uint32>(model, modelBufferSize);
+        return Pair<ModelData*, uint32>(model, (uint32)modelBufferSize);
     }
 
 } // GLTF
@@ -784,7 +786,7 @@ bool Model::InitializeManager()
     AssetTypeDesc desc {
         .name = "Model",
         .fourcc = MODEL_ASSET_TYPE,
-        .cacheVersion = ASSET_CACHE_MODEL_VERSION,
+        .cacheVersion = MODEL_ASSET_CACHE_VERSION,
         .impl = &gModelImpl,
         .failedObj = nullptr,
         .asyncObj = nullptr,
@@ -826,7 +828,6 @@ bool AssetModelImpl::Bake(const AssetParams& params, AssetData* data, const Span
     ModelUtil::_Optimize(model, &cpuBuffers, *modelParams);
     #endif // CONFIG_TOOLMODE
 
-    ASSERT(modelBufferSize <= UINT32_MAX);
     data->SetObjData(model, modelBufferSize);
 
     // Dependencies (Textures)

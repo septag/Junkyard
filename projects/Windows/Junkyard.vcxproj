@@ -166,6 +166,7 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="..\..\code\Assets\AssetManager.cpp" />
+    <ClCompile Include="..\..\code\Assets\Font.cpp" />
     <ClCompile Include="..\..\code\Assets\Image.cpp" />
     <ClCompile Include="..\..\code\Assets\Model.cpp" />
     <ClCompile Include="..\..\code\Assets\Shader.cpp" />
@@ -249,6 +250,7 @@
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\..\code\Graphics\GfxBackend.cpp" />
+    <ClCompile Include="..\..\code\Graphics\TextBuilder.cpp" />
     <ClCompile Include="..\..\code\ImGui\ImGuiMain.cpp" />
     <ClCompile Include="..\..\code\ImGui\ImGuizmo.cpp" />
     <ClCompile Include="..\..\code\Renderer\Render.cpp" />
@@ -261,6 +263,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\..\code\Assets\AssetManager.h" />
+    <ClInclude Include="..\..\code\Assets\Font.h" />
     <ClInclude Include="..\..\code\Assets\Image.h" />
     <ClInclude Include="..\..\code\Assets\Model.h" />
     <ClInclude Include="..\..\code\Assets\Shader.h" />
@@ -335,6 +338,7 @@
     <ClInclude Include="..\..\code\External\volk\volk.h" />
     <ClInclude Include="..\..\code\Graphics\GfxBackend.h" />
     <ClInclude Include="..\..\code\Graphics\GfxBackendTypes.h" />
+    <ClInclude Include="..\..\code\Graphics\TextBuilder.h" />
     <ClInclude Include="..\..\code\ImGui\ImGuiMain.h" />
     <ClInclude Include="..\..\code\ImGui\ImGuizmo.h" />
     <ClInclude Include="..\..\code\Renderer\Render.h" />
@@ -346,6 +350,16 @@
     <ClInclude Include="..\..\code\Graphics\Geometry.h" />
   </ItemGroup>
   <ItemGroup>
+    <FxCompile Include="..\..\code\Shaders\DebugDraw.hlsl">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='ReleaseDev|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
+    </FxCompile>
+    <FxCompile Include="..\..\code\Shaders\DrawText.hlsl">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='ReleaseDev|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
+    </FxCompile>
     <FxCompile Include="..\..\code\Shaders\FwdPlusLight.hlsl">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='ReleaseDev|x64'">true</ExcludedFromBuild>

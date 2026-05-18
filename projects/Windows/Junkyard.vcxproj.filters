@@ -256,6 +256,12 @@
     <ClCompile Include="..\..\code\Graphics\Geometry.cpp">
       <Filter>Graphics</Filter>
     </ClCompile>
+    <ClCompile Include="..\..\code\Graphics\TextBuilder.cpp">
+      <Filter>Graphics</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\code\Assets\Font.cpp">
+      <Filter>Assets</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\..\code\External\slang\slang.h">
@@ -506,6 +512,12 @@
     <ClInclude Include="..\..\code\Graphics\Geometry.h">
       <Filter>Graphics</Filter>
     </ClInclude>
+    <ClInclude Include="..\..\code\Graphics\TextBuilder.h">
+      <Filter>Graphics</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\code\Assets\Font.h">
+      <Filter>Assets</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <FxCompile Include="..\..\code\Shaders\ImGui.hlsl">
@@ -524,6 +536,12 @@
       <Filter>Shaders</Filter>
     </FxCompile>
     <FxCompile Include="..\..\code\Shaders\ZPrepass.hlsl">
+      <Filter>Shaders</Filter>
+    </FxCompile>
+    <FxCompile Include="..\..\code\Shaders\DrawText.hlsl">
+      <Filter>Shaders</Filter>
+    </FxCompile>
+    <FxCompile Include="..\..\code\Shaders\DebugDraw.hlsl">
       <Filter>Shaders</Filter>
     </FxCompile>
   </ItemGroup>

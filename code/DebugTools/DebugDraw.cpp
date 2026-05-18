@@ -526,6 +526,123 @@ void DebugDraw::DrawBox(Float3 extents, Float3 position, Quat rotation, Color4u 
 
 }
 
+void DebugDraw::DrawCapsule(Float3 p0, Float3 p1, float radius, Color4u color, uint32 numRings, uint32 numSectors)
+{
+    _BeginDrawItem();
+
+    Float3 axisVec = p1 - p0;
+    float length = Float3::Len(axisVec);
+    Float3 axisDir = length > 0.0001f ? axisVec * (1.0f / length) : Float3(0, 0, 1);
+    float halfHeight = length * 0.5f;
+
+    float numSectorsRcp = 1.0f / float(numSectors);
+    float numRingsRcp = 1.0f / float(numRings);
+
+    // Top hemisphere rings: phi from 0 (pole) to PI/2 (equator), centered at z = +halfHeight
+    for (uint32 i = 0; i <= numRings; i++) {
+        float phi = M_HALFPI * float(i) * numRingsRcp;
+        float ringRadius = radius * M::Sin(phi);
+        float z = radius * M::Cos(phi) + halfHeight;
+
+        for (uint32 j = 0; j < numSectors; j++) {
+            float theta = M_PI2 * float(j) * numSectorsRcp;
+            float nextTheta = M_PI2 * float(j + 1) * numSectorsRcp;
+
+            DebugDrawVertex* v1 = gDebugDraw.vertices.Push();
+            v1->pos = Float3(ringRadius * M::Cos(theta), ringRadius * M::Sin(theta), z);
+
+            DebugDrawVertex* v2 = gDebugDraw.vertices.Push();
+            v2->pos = Float3(ringRadius * M::Cos(nextTheta), ringRadius * M::Sin(nextTheta), z);
+
+            v1->color = v2->color = COLOR4U_WHITE;
+        }
+    }
+
+    // Bottom hemisphere rings: phi from PI/2 (equator) to PI (pole), centered at z = -halfHeight
+    for (uint32 i = 0; i <= numRings; i++) {
+        float phi = M_HALFPI + M_HALFPI * float(i) * numRingsRcp;
+        float ringRadius = radius * M::Sin(phi);
+        float z = radius * M::Cos(phi) - halfHeight;
+
+        for (uint32 j = 0; j < numSectors; j++) {
+            float theta = M_PI2 * float(j) * numSectorsRcp;
+            float nextTheta = M_PI2 * float(j + 1) * numSectorsRcp;
+
+            DebugDrawVertex* v1 = gDebugDraw.vertices.Push();
+            v1->pos = Float3(ringRadius * M::Cos(theta), ringRadius * M::Sin(theta), z);
+
+            DebugDrawVertex* v2 = gDebugDraw.vertices.Push();
+            v2->pos = Float3(ringRadius * M::Cos(nextTheta), ringRadius * M::Sin(nextTheta), z);
+
+            v1->color = v2->color = COLOR4U_WHITE;
+        }
+    }
+
+    // Meridians: hemisphere arcs + cylinder side line
+    for (uint32 j = 0; j < numSectors; j++) {
+        float theta = M_PI2 * float(j) * numSectorsRcp;
+        float cosTheta = M::Cos(theta);
+        float sinTheta = M::Sin(theta);
+
+        // Top hemisphere meridian
+        for (uint32 i = 0; i < numRings; i++) {
+            float phi1 = M_HALFPI * float(i) * numRingsRcp;
+            float phi2 = M_HALFPI * float(i + 1) * numRingsRcp;
+
+            DebugDrawVertex* v1 = gDebugDraw.vertices.Push();
+            v1->pos = Float3(radius * M::Sin(phi1) * cosTheta, radius * M::Sin(phi1) * sinTheta, radius * M::Cos(phi1) + halfHeight);
+
+            DebugDrawVertex* v2 = gDebugDraw.vertices.Push();
+            v2->pos = Float3(radius * M::Sin(phi2) * cosTheta, radius * M::Sin(phi2) * sinTheta, radius * M::Cos(phi2) + halfHeight);
+
+            v1->color = v2->color = COLOR4U_WHITE;
+        }
+
+        // Cylinder side line (between hemisphere equators)
+        if (halfHeight > 0.0f) {
+            DebugDrawVertex* v1 = gDebugDraw.vertices.Push();
+            v1->pos = Float3(radius * cosTheta, radius * sinTheta, halfHeight);
+
+            DebugDrawVertex* v2 = gDebugDraw.vertices.Push();
+            v2->pos = Float3(radius * cosTheta, radius * sinTheta, -halfHeight);
+
+            v1->color = v2->color = COLOR4U_WHITE;
+        }
+
+        // Bottom hemisphere meridian
+        for (uint32 i = 0; i < numRings; i++) {
+            float phi1 = M_HALFPI + M_HALFPI * float(i) * numRingsRcp;
+            float phi2 = M_HALFPI + M_HALFPI * float(i + 1) * numRingsRcp;
+
+            DebugDrawVertex* v1 = gDebugDraw.vertices.Push();
+            v1->pos = Float3(radius * M::Sin(phi1) * cosTheta, radius * M::Sin(phi1) * sinTheta, radius * M::Cos(phi1) - halfHeight);
+
+            DebugDrawVertex* v2 = gDebugDraw.vertices.Push();
+            v2->pos = Float3(radius * M::Sin(phi2) * cosTheta, radius * M::Sin(phi2) * sinTheta, radius * M::Cos(phi2) - halfHeight);
+
+            v1->color = v2->color = COLOR4U_WHITE;
+        }
+    }
+
+    // Rotate local Z axis to align with (p1 - p0)
+    Quat rotation = QUAT_INDENT;
+    if (length > 0.0001f) {
+        Float3 zAxis = Float3(0, 0, 1);
+        float d = Float3::Dot(zAxis, axisDir);
+        if (d < -0.99999f) {
+            rotation = Quat::RotateAxis(Float3(1, 0, 0), M_PI);
+        }
+        else if (d < 0.99999f) {
+            Float3 rotAxis = Float3::Norm(Float3::Cross(zAxis, axisDir));
+            rotation = Quat::RotateAxis(rotAxis, M::ACos(d));
+        }
+    }
+
+    Float3 center = (p0 + p1) * 0.5f;
+    Mat4 transformMat = Mat4::TransformMat(center, rotation, Float3(1.0f, 1.0f, 1.0f));
+    _EndDrawItem(transformMat, color);
+}
+
 void DebugDraw::SetMSAA(GfxMultiSampleCount sampleCount)
 {
     gDebugDraw.msaa = sampleCount;    

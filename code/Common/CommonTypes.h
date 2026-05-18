@@ -24,6 +24,7 @@ DEFINE_HANDLE(AssetBarrier);
 using AssetHandleImage = AssetHandle;
 using AssetHandleShader = AssetHandle;
 using AssetHandleModel = AssetHandle;
+using AssetHandleFont = AssetHandle;
 
 // Clipboard
 DEFINE_HANDLE(ClipboardVarHandle);
