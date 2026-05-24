@@ -82,12 +82,17 @@ setup_linux()
     }
 
     if prompt_choice; then
+        . /etc/os-release
+
         # Check if apt package manager exists (Ubuntu-based system)
-        if command -v apt &> /dev/null; then
-            echo "Ubuntu package manager detected. Installing required packages ..."
+        if [[ "$ID" == "fedora" ]]; then
+            echo "Fedora detected. Installing required packages ..."
+            sudo dnf install pkg-config clang clang-tools-extra cmake ninja-build lldb lld libuuid-devel glfw-devel libcxxabi-devel libxkbcommon libwayland-cursor libwayland-egl
+        elif [[ "$ID" == "ubuntu" ]]; then
+            echo "Ubuntu detected. Installing required packages ..."
             sudo apt install pkg-config libglfw3-dev uuid-dev clang libc++-dev libc++abi-dev cmake ninja-build
         else
-            echo "Ubuntu/apt package manager is not detected."
+            echo "Unsupported package manager ($ID)"
             echo "Skipping package installation."
             echo "Make sure you have these packages installed for your distro:"
             echo "  clang"
@@ -101,8 +106,25 @@ setup_linux()
         fi    
     fi
 
+    # Extract sample assets
+    prompt_choice() {
+        read -p "Extract assets for basic graphics examples? (Y/N): " choice
+        case "$choice" in
+            Y|y) return 0 ;;
+            N|n) return 1 ;;
+            *) echo "Invalid choice. Please enter Y or N." ; prompt_choice ;;
+        esac
+    }
+
+    if prompt_choice; then
+        if ! unzip -o data/TestBasicGfx.zip -d data; then
+            echo "Extraction failed"
+            exit 1
+        fi
+    fi
+
     # Install vulkan sdk
-    vulkan_sdk_version="1.3.296.0"
+    vulkan_sdk_version="1.4.328.1"
 
     prompt_choice() {
         read -p "Download Vulkan SDK $vulkan_sdk_version? (Y/N): " choice
@@ -177,6 +199,7 @@ setup_linux()
 
         echo Downloaded tracy into $tracy_dir
     fi
+
 
     return 0
 }

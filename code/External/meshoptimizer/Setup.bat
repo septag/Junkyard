@@ -29,7 +29,7 @@ if defined CUR if /I "%CUR%"=="%VERSION%" (
 echo [INFO] meshoptimizer is out of date. Updating ...
 call :Cleanup
 
-set "MESHOPT_DIST=v%VERSION%/MESHOPT_DIST-win64.zip"
+set "MESHOPT_DIST=v%VERSION%/meshopt_dist-win64.zip"
 
 if not exist %ROOT%meshopt.zip (
     powershell Invoke-WebRequest -Uri https://github.com/septag/meshoptimizer/releases/download/%MESHOPT_DIST% -OutFile %ROOT%meshopt.zip

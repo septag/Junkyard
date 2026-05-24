@@ -21,8 +21,6 @@
 static inline constexpr uint32 R_LIGHT_CULL_TILE_SIZE = 16;
 static inline constexpr uint32 R_LIGHT_CULL_MAX_LIGHTS_PER_TILE = 64;
 static inline constexpr uint32 R_LIGHT_CULL_MAX_LIGHTS_PER_FRAME = 1024;
-static inline constexpr size_t R_MAX_SCRATCH_SIZE_PER_THREAD = SIZE_MB*4;
-static inline constexpr uint32 R_MAX_VIEWS = 64;
 static inline constexpr uint32 R_MAX_DRAW_OBJECTS = 5000;
 
 enum class RDescriptorSetIndex : uint8

@@ -117,14 +117,22 @@ uint32 Str::ScanFmt(const char* str, const char* fmt, ...)
 {
     va_list args;
     va_start(args, fmt);
+#if PLATFORM_WINDOWS
     uint32 r = vsscanf_s(str, fmt, args);
+#else
+    uint32 r = vsscanf(str, fmt, args);
+#endif 
     va_end(args);
     return r;
 }
 
 uint32 Str::ScanFmtArgs(const char* str, const char* fmt, va_list args)
 {
+#if PLATFORM_WINDOWS
     return vsscanf_s(str, fmt, args);
+#else
+    return vsscanf  (str, fmt, args);
+#endif
 }
 
 char* Str::PrintFmtAllocArgs(MemAllocator* alloc, const char* fmt, va_list args)

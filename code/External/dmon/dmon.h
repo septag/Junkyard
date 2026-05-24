@@ -765,7 +765,7 @@ DMON_API_IMPL void dmon_unwatch(dmon_watch_id id)
     LeaveCriticalSection(&_dmon.mutex);
 }
 
-#elif DMON_OS_LINUX
+#elif DMON_OS_INOTIFY
 // ---------------------------------------------------------------------------------------------------------------------
 // @Linux
 // inotify linux backend

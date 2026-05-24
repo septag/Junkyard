@@ -4,6 +4,8 @@
 #include "../Core/MathAll.h"
 #include "../Core/Hash.h"
 #include "../Core/BlitSort.h"
+#include "../Core/TracyHelper.h"                                    
+
 #include "../Engine.h"
 #include "../Common/Application.h"
 
@@ -17,6 +19,8 @@
 PRAGMA_DIAGNOSTIC_PUSH()
 PRAGMA_DIAGNOSTIC_IGNORED_MSVC(4456)    
 PRAGMA_DIAGNOSTIC_IGNORED_MSVC(4505)
+PRAGMA_DIAGNOSTIC_IGNORED_CLANG_GCC("-Wswitch")
+PRAGMA_DIAGNOSTIC_IGNORED_CLANG_GCC("-Wunused-function")
 #include "../External/cute_headers/cute_c2.h"
 PRAGMA_DIAGNOSTIC_POP()
 

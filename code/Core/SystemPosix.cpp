@@ -11,6 +11,7 @@
     #include <sys/prctl.h>          // prctl
     #include <semaphore.h>
     #include <sys/syscall.h>
+    #include <sys/sendfile.h>
 #else
     #include <sched.h>
 #endif
@@ -706,8 +707,9 @@ char* OS::GetAbsolutePath(const char* path, char* dst, size_t dstSize)
 {
     char absPath[PATH_CHARS_MAX];
     if (realpath(path, absPath) != NULL) {
-    Str::Copy(dst, (uint32)dstSize, absPath);
-    } else {
+        Str::Copy(dst, (uint32)dstSize, absPath);
+    } 
+    else {
         dst[0] = '\0';
     }
     return dst;
@@ -743,9 +745,44 @@ bool OS::CreateDir(const char* path)
     return mkdir(path, S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH) == 0;
 }
 
+bool OS::CopyFile(const char *srcPath, const char *destPath)
+{
+    int in = open(srcPath, O_RDONLY);
+    if (in < 0) 
+        return -1;
+
+    struct stat st;
+    fstat(in, &st);
+
+    int out = open(destPath, O_WRONLY | O_CREAT | O_TRUNC, st.st_mode);
+    if (out < 0) { 
+        close(in); 
+        return -1; 
+    }
+
+    off_t offset = 0;
+    ssize_t ret = sendfile(out, in, &offset, st.st_size);
+
+    close(in);
+    close(out);
+    return ret >= 0;
+}
+
 bool OS::MovePath(const char* src, const char* dest)
 {
-    return rename(src, dest) == 0;
+    bool r = rename(src, dest) == 0;
+    if (!r && errno == EXDEV) {
+        // It is possible that the path is a bind mount (not symlink). 
+        // For example Bazzite (Fedora Atomic) does a bind mount from /var/home to /home. Which realpath doesn't even resolve
+        // So rename doesn't do cross bind point copies (from /tmp to /home which should be resolved to /var/home)
+        // Then we have to fallback to copy/delete
+        if (CopyFile(src, dest)) {
+            unlink(src);
+            r = true;
+        }
+    }
+    ASSERT_MSG(r, "rename failed: %d", errno);
+    return r;
 }
 
 bool OS::DeleteFilePath(const char* path)
@@ -939,7 +976,8 @@ bool File::Open(const char* filepath, FileOpenFlags flags)
         openFlags |= O_WRONLY;
         if ((flags & FileOpenFlags::Append) == FileOpenFlags::Append) {
             openFlags |= O_APPEND;
-        } else {
+        } 
+        else {
             openFlags |= (O_CREAT | O_TRUNC);
             mode |= (S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH); 
         }
@@ -1406,7 +1444,7 @@ AsyncFile* Async::ReadFile(const char* filepath, const AsyncFileRequest& request
     mallocator.AddExternalPointerField<uint8>(&data, fileSize);
     
     AsyncFilePosix* file = mallocator.Malloc(request.alloc);
-    memset(file, 0x0, sizeof(*file));
+    memset((void*)file, 0x0, sizeof(*file));
     
     file->f.filepath = filepath;
     file->f.data = data;

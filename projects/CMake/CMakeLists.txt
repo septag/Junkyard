@@ -120,6 +120,7 @@ if (WIN32)
 
     set_property(GLOBAL PROPERTY VS_STARTUP_PROJECT TestBasicGfx)
 else()
+    target_include_directories(Junkyard SYSTEM PUBLIC ../../.downloads/vulkan-1.4.328.1/x86_64/include)
     target_compile_definitions(Junkyard PUBLIC -DCONFIG_TOOLMODE=1)
     target_compile_options(Junkyard PUBLIC -fno-rtti -fno-exceptions -Wall)
     target_compile_options(Junkyard PUBLIC -Wno-backslash-newline-escape)    # Because of some fancy ascii comments
@@ -144,12 +145,10 @@ else()
         pkg_check_modules(GLFW REQUIRED glfw3)
         target_include_directories(Junkyard PUBLIC ${GLFW_INCLUDE_DIRS})
 
-        find_package(VulkanHeaders REQUIRED)
-        target_link_libraries(Junkyard PUBLIC Vulkan::Headers)
-
         target_link_directories(Junkyard PUBLIC ${GLFW_LIBRARY_DIRS})
         target_link_libraries(Junkyard PUBLIC ${GLFW_LIBRARIES})
         target_link_libraries(Junkyard PUBLIC uuid m c++abi)
+        target_compile_options(Junkyard PUBLIC -Wno-nontrivial-memcall)
 
         # Copy files after succesful build
         set (FILES_TO_COPY 
@@ -176,6 +175,9 @@ else()
 
     add_executable(TestBasicGfx ../../code/Tests/TestBasicGfx.cpp)
     target_link_libraries(TestBasicGfx Junkyard)
+
+    add_executable(TestRenderer ../../code/Tests/TestRenderer.cpp)
+    target_link_libraries(TestRenderer Junkyard)
 
 endif()
 

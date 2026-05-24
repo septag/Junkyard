@@ -1,33 +1,72 @@
-#!/bin/bash
+download_url="https://github.com/shader-slang/slang/releases/download/v$slang_ver/$slang_dist"
+#!/usr/bin/env bash
+set -euo pipefail
 
-slang_ver="2025.5.1"
+# === Config ===
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/"
+VERSION_FILE="${ROOT}VERSION.TXT"
+CUR_FILE="${ROOT}_CURVERSION.TXT"
+
+# === Helper: read and trim a file ===
+read_trimmed() {
+    local filepath="$1"
+    if [[ ! -f "$filepath" ]]; then
+        echo ""
+        return 1
+    fi
+    # Read, strip BOM if present, trim leading/trailing whitespace
+    sed 's/^\xEF\xBB\xBF//' "$filepath" | tr -d '\r' | awk '{$1=$1};1' | head -n1
+}
+
+# === Read version strings ===
+VERSION="$(read_trimmed "$VERSION_FILE" || true)"
+CUR="$(read_trimmed "$CUR_FILE" || true)"
+
+if [[ -z "$VERSION" ]]; then
+    echo "[ERROR] $VERSION_FILE not found or empty. Aborting."
+    exit 2
+fi
+
+if [[ -n "$CUR" ]]; then
+    echo "REQUIRED_VERSION: $VERSION"
+    echo "CURRENT_VERSION:  $CUR"
+fi
+
+# === Compare and decide ===
+if [[ -n "$CUR" && "${CUR,,}" == "${VERSION,,}" ]]; then
+    echo "[OK]"
+    exit 0
+fi
+
+echo "[INFO] meshoptimizer is out of date. Updating ..."
+
+# === Cleanup ===
+cleanup() {
+    rm -rf "${ROOT}include" 2>/dev/null || true
+    rm -rf "${ROOT}lib"     2>/dev/null || true
+}
+cleanup
+
+# === Download ===
+# Determine OS-specific filename
 os_name=$(uname -s)
-
-# Linux: https://github.com/shader-slang/slang/releases/download/v2025.5.1/slang-2025.5.1-linux-x86_64.zip
-# Mac: https://github.com/shader-slang/slang/releases/download/v2025.5.1/slang-2025.5.1-macos-aarch64.zip
-
-# Determine OS-specific distribution name
 case "$os_name" in
-    Linux*)     slang_dist="slang-$slang_ver-linux-x86_64.zip";;
-    Darwin*)    slang_dist="slang-$slang_ver-macos-aarch64.zip";;
-    *)          echo "Unsupported OS"; exit 1;;
+    Linux*)  SLANG_DIST="v${VERSION}/slang-${VERSION}-linux-x86_64.zip";;
+    Darwin*) SLANG_DIST="v${VERSION}/slang-${VERSION}-macos-aarch64.zip";;
+    *)       echo "Unsupported OS"; exit 1;;
 esac
 
-download_url="https://github.com/shader-slang/slang/releases/download/v$slang_ver/$slang_dist"
+ZIPFILE="${ROOT}slang.zip"
 
-# Download if doesn't exist
-if [ ! -f "slang.zip" ]; then
-    echo "Downloading slang..."
-    if ! curl -fL -o slang.zip "$download_url"; then
-        echo "Download failed"
-        rm -f slang.zip  # Cleanup partial download
-        exit 1
-    fi
+if [[ ! -f "$ZIPFILE" ]]; then
+    curl -fL \
+        "https://github.com/shader-slang/slang/releases/download/${SLANG_DIST}" \
+        -o "$ZIPFILE"
 fi
 
-# Extract and clean up
-if ! unzip -o slang.zip; then
-    echo "Extraction failed"
-    exit 1
-fi
-rm -f slang.zip
+# === Extract ===
+unzip -o "$ZIPFILE" -d "$ROOT"
+cp -f "$VERSION_FILE" "$CUR_FILE"
+
+# === Cleanup zip ===
+rm -f "$ZIPFILE"

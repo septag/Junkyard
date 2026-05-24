@@ -1265,6 +1265,11 @@ bool OS::CreateDir(const char* path)
     return bool(CreateDirectoryA(path, nullptr)); 
 }
 
+bool OS::CopyFile(const char *srcPath, const char *destPath)
+{
+    return bool(CopyFileA(srcPath, destPath, FALSE));
+}
+
 bool OS::MovePath(const char* src, const char* dest)
 {
     return bool(MoveFileExA(src, dest, MOVEFILE_REPLACE_EXISTING|MOVEFILE_COPY_ALLOWED));

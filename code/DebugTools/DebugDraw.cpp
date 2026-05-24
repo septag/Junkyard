@@ -440,7 +440,7 @@ void DebugDraw::Release()
 
 void DebugDraw::DrawBoundingSphere(Float4 sphere, Color4u color, uint32 numRings, uint32 numSectors)
 {
-    uint32 cacheIdx = gDebugDraw.sphereCache.FindIf([numRings, numSectors](const DebugDrawSphereCacheItem& i) { return i.numSectors == numSectors && i.numRings == i.numRings; });
+    uint32 cacheIdx = gDebugDraw.sphereCache.FindIf([numRings, numSectors](const DebugDrawSphereCacheItem& i) { return i.numSectors == numSectors && i.numRings == numRings; });
 
     _BeginDrawItem();
     if (cacheIdx != -1) {

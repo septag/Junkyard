@@ -54,6 +54,7 @@ struct AppWindowState
 
     Array<AppEventCallbackPair> eventCallbacks;
     Pair<AppUpdateOverrideCallback, void*> overrideUpdateCallback;
+    AppFramebufferSizeQueryFunc queryFramebufferFunc;
 
     GLFWcursor* cursors[uint32(AppMouseCursor::_Count)];
 };
@@ -315,6 +316,10 @@ namespace App
             .framebufferWidth = gApp.framebufferWidth,
             .framebufferHeight = gApp.framebufferHeight
         };
+
+        // Fix framebuffer dimensions by getting the values straight from the graphics backend surface
+        if (gApp.queryFramebufferFunc)
+            gApp.queryFramebufferFunc(&gApp.framebufferWidth, &gApp.framebufferHeight);
 
         _CallEvent(event);
     }
@@ -734,6 +739,8 @@ const char* App::GetClipboardString()
     return glfwGetClipboardString(gApp.window);
 }
 
-
-
+void App::RegisterFramebufferSizeQueryFunc(AppFramebufferSizeQueryFunc fn)
+{
+    gApp.queryFramebufferFunc = fn;
+}
 #endif // PLATFORM_LINUX
