@@ -1075,7 +1075,7 @@ static void Asset::_LoadGroupTask(uint32, void* userData)
                     Path prevCacheFilepath;
                     _MakeCacheFilepath(&prevCacheFilepath, header, tmpAssetHash);
                     Vfs::ResolveFilepath(prevCacheFilepath.CStr());
-                    OS::DeleteFilePath(Vfs::ResolveFilepath(prevCacheFilepath.CStr()).CStr());
+                    OS::DeletePath(Vfs::ResolveFilepath(prevCacheFilepath.CStr()).CStr());
                 }
             }
 
@@ -1727,7 +1727,7 @@ static void Asset::_RemoteClientCallback([[maybe_unused]] uint32 cmd, const Blob
 
             if (!inputs->bakedFilepath.IsEmpty()) {
                 Path absOldBakedFilepath = Vfs::ResolveFilepath(inputs->bakedFilepath.CStr());
-                OS::DeleteFilePath(absOldBakedFilepath.CStr());
+                OS::DeletePath(absOldBakedFilepath.CStr());
             }
 
             inputs->assetHash = _MakeCacheFilepath(&inputs->bakedFilepath, inputs->header, assetHash);

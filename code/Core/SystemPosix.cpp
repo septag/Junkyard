@@ -745,7 +745,7 @@ bool OS::CreateDir(const char* path)
     return mkdir(path, S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH) == 0;
 }
 
-bool OS::CopyFile(const char *srcPath, const char *destPath)
+bool OS::CopyPath(const char *srcPath, const char *destPath)
 {
     int in = open(srcPath, O_RDONLY);
     if (in < 0) 
@@ -776,7 +776,7 @@ bool OS::MovePath(const char* src, const char* dest)
         // For example Bazzite (Fedora Atomic) does a bind mount from /var/home to /home. Which realpath doesn't even resolve
         // So rename doesn't do cross bind point copies (from /tmp to /home which should be resolved to /var/home)
         // Then we have to fallback to copy/delete
-        if (CopyFile(src, dest)) {
+        if (CopyPath(src, dest)) {
             unlink(src);
             r = true;
         }
@@ -785,7 +785,7 @@ bool OS::MovePath(const char* src, const char* dest)
     return r;
 }
 
-bool OS::DeleteFilePath(const char* path)
+bool OS::DeletePath(const char* path)
 {
     return remove(path) == 0;
 }

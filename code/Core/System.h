@@ -609,8 +609,8 @@ namespace OS
     API bool CreateDir(const char* path);
     API bool MovePath(const char* src, const char* dest);
     API bool MakeTempPath(char* dst, size_t dstSize, const char* namePrefix, const char* dir = nullptr);
-    API bool DeleteFilePath(const char* path);
-    API bool CopyFile(const char* srcPath, const char* destPath);
+    API bool DeletePath(const char* path);
+    API bool CopyPath(const char* srcPath, const char* destPath);
 }
 
 #if PLATFORM_PC

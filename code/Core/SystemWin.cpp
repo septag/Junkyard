@@ -1265,7 +1265,7 @@ bool OS::CreateDir(const char* path)
     return bool(CreateDirectoryA(path, nullptr)); 
 }
 
-bool OS::CopyFile(const char *srcPath, const char *destPath)
+bool OS::CopyPath(const char *srcPath, const char *destPath)
 {
     return bool(CopyFileA(srcPath, destPath, FALSE));
 }
@@ -1324,7 +1324,7 @@ bool OS::MakeTempPath(char* dst, [[maybe_unused]] size_t dstSize, const char* na
     return GetTempFileNameA(dir, namePrefix, 0, dst) != 0;
 }
 
-bool OS::DeleteFilePath(const char* path)
+bool OS::DeletePath(const char* path)
 {
     ASSERT(path);
     return DeleteFileA(path);
