@@ -49,6 +49,7 @@ struct GfxCommandBuffer
 
     void BindPipeline(GfxPipelineHandle pipeHandle);
     void BindVertexBuffers(uint32 firstBinding, uint32 numBindings, const GfxBufferHandle* vertexBuffers, const uint64* offsets);
+    void BindVertexBuffer(GfxBufferHandle vertexBuffer, uint64 offset);
     void BindIndexBuffer(GfxBufferHandle indexBuffer, uint64 offset, GfxIndexType indexType);
     void BindDescriptorBuffers(uint32 numBindings, const GfxBufferHandle* descriptorBuffers);
 

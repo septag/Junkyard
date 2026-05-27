@@ -322,6 +322,7 @@
     <ClInclude Include="..\..\code\External\imgui\imstb_textedit.h" />
     <ClInclude Include="..\..\code\External\imgui\imstb_truetype.h" />
     <ClInclude Include="..\..\code\External\ispc_texcomp\include\ispc_texcomp.h" />
+    <ClInclude Include="..\..\code\External\kb\kb_text_shape.h" />
     <ClInclude Include="..\..\code\External\LivePP\API\x64\LPP_API.h" />
     <ClInclude Include="..\..\code\External\LivePP\API\x64\LPP_API_Helpers.h" />
     <ClInclude Include="..\..\code\External\LivePP\API\x64\LPP_API_Hooks.h" />

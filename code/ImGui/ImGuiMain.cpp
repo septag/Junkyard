@@ -877,7 +877,11 @@ ImVec2 ImGui::ProjectToScreen(Float3 point, const Mat4& worldToClipMat, const Re
 {
     Float4 pos = Float4(point, 1);
     pos = Mat4::MulFloat4(worldToClipMat, pos);
+    if (pos.w <= 0)
+        return ImVec2(-1, -1);
+
     pos = pos * (1/pos.w);
+
     pos.x = 0.5f*pos.x + 0.5f;
     pos.y = 0.5f*pos.y + 0.5f;
 

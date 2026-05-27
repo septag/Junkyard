@@ -31,4 +31,5 @@ namespace DebugDraw
     API void DrawAxisAlignedBoundingBox(AABB aabb, Color4u color);
     API void DrawBox(Float3 extents, Float3 position, Quat rotation, Color4u color);
     API void DrawCapsule(Float3 p0, Float3 p1, float radius, Color4u color, uint32 numRings = 4, uint32 numSectors = 12);
+    API bool DrawText3D(Float3 p, float scale, const char* text, uint32 textLen = 0, Color4u color = COLOR4U_WHITE);
 }

@@ -100,6 +100,9 @@
     <Filter Include="Collision">
       <UniqueIdentifier>{000dd537-b8a7-42e8-81ae-d9098d0da9ad}</UniqueIdentifier>
     </Filter>
+    <Filter Include="External\kb">
+      <UniqueIdentifier>{faf93845-d217-4907-ba79-c58dafb523e4}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\..\code\External\imgui\imgui.cpp">
@@ -517,6 +520,9 @@
     </ClInclude>
     <ClInclude Include="..\..\code\Assets\Font.h">
       <Filter>Assets</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\code\External\kb\kb_text_shape.h">
+      <Filter>External\kb</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

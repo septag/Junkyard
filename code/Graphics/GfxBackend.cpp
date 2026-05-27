@@ -4198,7 +4198,7 @@ void GfxCommandBuffer::PushBindings(GfxPipelineLayoutHandle layoutHandle, uint32
             }
         }
 
-        ASSERT_MSG(foundBinding != -1, "Binding '%s' doesn't exist in this pipeline layout", binding.name);
+        ASSERT_MSG(foundBinding != -1, "Binding '%s' doesn't exist in this pipeline layout", binding.name.cstr);
 
         uint32 setIndex = layout.bindings[foundBinding].setIndex;
         const VkDescriptorSetLayoutBinding& bindingVk = layout.bindingsVk[foundBinding];
@@ -6321,6 +6321,11 @@ void GfxCommandBuffer::EnableColorBlend(uint32 firstAttachment, uint32 numAttach
 {
     VkCommandBuffer cmdVk = GfxBackend::_GetCommandBufferHandle(*this);
     vkCmdSetColorBlendEnableEXT(cmdVk, firstAttachment, numAttachments, enableFlags);
+}
+
+void GfxCommandBuffer::BindVertexBuffer(GfxBufferHandle vertexBuffer, uint64 offset)
+{
+    BindVertexBuffers(0, 1, &vertexBuffer, &offset);
 }
 
 void GfxCommandBuffer::BindVertexBuffers(uint32 firstBinding, uint32 numBindings, const GfxBufferHandle* vertexBuffers, const uint64* offsets)

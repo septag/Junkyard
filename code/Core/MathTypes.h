@@ -331,6 +331,11 @@ struct Mat4
     Float4 Row3() const;
     Float4 Row4() const;
 
+    Float3 XAxis() const;
+    Float3 YAxis() const;
+    Float3 ZAxis() const;
+    Float3 Position() const;
+
     void SetCol1(Float4 _col1);
     void SetCol2(Float4 _col2);
     void SetCol3(Float4 _col3);
@@ -574,7 +579,10 @@ struct Plane
     static float  HitRay(Plane _plane, Float3 _origin, Float3 _direction);
 };
 
-
+namespace MathUtil
+{
+    Float2 ProjectPointToScreenPixels(Float3 pt, const Mat4& cameraWorldToClipMat, const RectFloat& viewport);
+}
 
 //
 //     ██████╗ ██████╗ ███╗   ██╗███████╗████████╗ █████╗ ███╗   ██╗████████╗███████╗

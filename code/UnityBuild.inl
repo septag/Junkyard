@@ -29,6 +29,7 @@
 #include "Assets/Image.cpp"
 #include "Assets/Model.cpp"
 #include "Assets/Shader.cpp"
+#include "Assets/Font.cpp"
 
 // DebugTools
 #include "DebugTools/DebugHud.cpp"
@@ -37,6 +38,7 @@
 // Graphics
 #include "Graphics/GfxBackend.cpp"
 #include "Graphics/Geometry.cpp"
+#include "Graphics/TextBuilder.cpp"
 
 // Tool
 #include "Tool/ShaderCompiler.cpp"

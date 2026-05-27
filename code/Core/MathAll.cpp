@@ -930,5 +930,22 @@ AABB AABB::Transform(const AABB& aabb, const Mat4& mat)
     return AABB(Float3::Sub(newCenter, newExtents), Float3::Add(newCenter, newExtents));
 }
 
+Float2 MathUtil::ProjectPointToScreenPixels(Float3 pt, const Mat4& cameraWorldToClipMat, const RectFloat& viewport)
+{
+    Float4 pos = Float4(pt, 1);
+    pos = Mat4::MulFloat4(cameraWorldToClipMat, pos);
+    if (pos.w <= 0)
+        return Float2(-1, -1);  // Behind the camera
 
+    pos = pos * (1/pos.w);
 
+    pos.x = 0.5f*pos.x + 0.5f;
+    pos.y = 0.5f*pos.y + 0.5f;
+
+    pos.x *= viewport.Width();
+    pos.y *= viewport.Height();
+    pos.x += viewport.xmin;
+    pos.y += viewport.ymin;
+
+    return Float2(pos.x, pos.y);
+}

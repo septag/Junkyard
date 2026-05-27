@@ -150,7 +150,7 @@ else()
         target_link_libraries(Junkyard PUBLIC uuid m c++abi)
         target_compile_options(Junkyard PUBLIC -Wno-nontrivial-memcall)
 
-        # Copy files after succesful build
+        # Copy files after successful build
         set (FILES_TO_COPY 
             ${CMAKE_SOURCE_DIR}/../../code/External/slang/lib/libslang.so
             ${CMAKE_SOURCE_DIR}/../../code/External/ispc_texcomp/lib/libispc_texcomp.so 

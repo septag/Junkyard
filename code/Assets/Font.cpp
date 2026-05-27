@@ -122,20 +122,24 @@ bool AssetFontImpl::Bake(const AssetParams& params, AssetData* data, const Span<
             glyph.xadvance = jglyph.GetChildValue("advance", 0.0f);
             
             JsonNode jpb = jglyph.GetChild("planeBounds");
-            glyph.planeBounds = RectFloat(
-                jpb.GetChildValue("left", 0.0f),
-                jpb.GetChildValue("top", 0.0f),
-                jpb.GetChildValue("right", 0.0f),
-                jpb.GetChildValue("bottom", 0.0f)
-            );
+            if (jpb.IsValid()) {
+                glyph.planeBounds = RectFloat(
+                    jpb.GetChildValue("left", 0.0f),
+                    jpb.GetChildValue("top", 0.0f),
+                    jpb.GetChildValue("right", 0.0f),
+                    jpb.GetChildValue("bottom", 0.0f)
+                );
+            }
             
             JsonNode jab = jglyph.GetChild("atlasBounds");
-            glyph.uvBounds = RectFloat(
-                jab.GetChildValue("left", 0.0f),
-                jab.GetChildValue("top", 0.0f),
-                jab.GetChildValue("right", 0.0f),
-                jab.GetChildValue("bottom", 0.0f)
-            );
+            if (jab.IsValid()) {
+                glyph.uvBounds = RectFloat(
+                    jab.GetChildValue("left", 0.0f),
+                    jab.GetChildValue("top", 0.0f),
+                    jab.GetChildValue("right", 0.0f),
+                    jab.GetChildValue("bottom", 0.0f)
+                );
+            }
         }
     }
 

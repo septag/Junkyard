@@ -393,6 +393,26 @@ FORCE_INLINE Float4 Mat4::Row4() const
     return Float4(m41, m42, m43, m44);
 }
 
+FORCE_INLINE Float3 Mat4::XAxis() const
+{
+    return Float3(fc1);
+}
+
+FORCE_INLINE Float3 Mat4::YAxis() const
+{
+    return Float3(fc2);
+}
+
+FORCE_INLINE Float3 Mat4::ZAxis() const
+{
+    return Float3(fc3);
+}
+
+FORCE_INLINE Float3 Mat4::Position() const
+{
+    return Float3(fc4);
+}
+
 FORCE_INLINE void Mat4::SetCol1(Float4 _col1)
 {
     fc1[0] = _col1.x;  

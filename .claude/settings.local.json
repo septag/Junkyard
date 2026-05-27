@@ -2,7 +2,10 @@
   "permissions": {
     "allow": [
       "Bash(xargs grep *)",
-      "mcp__10xEditor__get_editor_context"
+      "mcp__10xEditor__get_editor_context",
+      "mcp__10xEditor__list_editors",
+      "mcp__10xEditor__get_open_files",
+      "mcp__10xEditor__get_build_results"
     ]
   }
 }
