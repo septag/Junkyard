@@ -318,7 +318,7 @@ namespace ImGui
         
         case AppEventType::Resized: {
                 io.DisplaySize = ImVec2(ev.framebufferWidth, ev.framebufferHeight);
-                float frameBufferScale = App::GetDisplayInfo().dpiScale;
+                float frameBufferScale = App::GetWindowDPIScale();
                 io.DisplayFramebufferScale = ImVec2(frameBufferScale, frameBufferScale);
             }
             break;
@@ -556,7 +556,7 @@ bool ImGui::Initialize()
     Str::PrintFmt(iniFilename, sizeof(iniFilename), "%s_imgui.ini", App::GetName());
     conf.IniFilename = iniFilename;
 
-    float frameBufferScale = App::GetDisplayInfo().dpiScale;
+    float frameBufferScale = App::GetWindowDPIScale();
     conf.DisplayFramebufferScale = ImVec2(frameBufferScale, frameBufferScale);
 
     conf.KeyMap[ImGuiKey_Tab]           = static_cast<int>(InputKeycode::Tab);
@@ -615,7 +615,7 @@ void ImGui::BeginFrame(float dt)
 
     ImGuiIO& io = GetIO();
     io.DisplaySize = ImVec2(float(App::GetFramebufferWidth()), float(App::GetFramebufferHeight()));
-    io.FontGlobalScale = App::GetDisplayInfo().dpiScale;
+    io.FontGlobalScale = App::GetWindowDPIScale();
     io.DeltaTime = dt;
     if (io.DeltaTime == 0) 
         io.DeltaTime = 0.033f;

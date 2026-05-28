@@ -23,7 +23,7 @@
 #include "../ImGui/ImGuizmo.h"
 
 #include "../DebugTools/DebugDraw.h"
-#include "../Debugtools/DebugHud.h"
+#include "../DebugTools/DebugHud.h"
 
 #include "../Collision/Collision.h"
 #include "../Renderer/Render.h"
@@ -124,7 +124,6 @@ struct TestCollisionApp final : AppCallbacks
             TestShape& shape = mShapes[i];
 
             Float3 position = Float3(Random::Float(-MAP_EXTENTS.x, MAP_EXTENTS.x), Random::Float(-MAP_EXTENTS.y, MAP_EXTENTS.y), 0.5f);
-            float zrot = M::ToRad(45);
             Quat rotation = Quat::FromEuler(Float3(0, 0, Random::Float(0, M_PI2)));
             Float3 scale = Float3(Random::Float(), Random::Float(), Random::Float()) + Float3(0.4f);
 

@@ -376,7 +376,7 @@ namespace App
 
     static void _GlfwMouseMoveCallback(GLFWwindow* window, double xpos, double ypos)
     {
-        gApp.mousePos = Float2(xpos/gApp.dpiScale, ypos/gApp.dpiScale);
+        gApp.mousePos = Float2(xpos, ypos);
         AppEvent event {
             .type = AppEventType::MouseMove,
             .keyMods = gApp.keyMods,
@@ -638,6 +638,11 @@ uint16 App::GetFramebufferHeight()
 AppFramebufferTransform App::GetFramebufferTransform()
 {
     return AppFramebufferTransform::None;
+}
+
+float App::GetWindowDPIScale()
+{
+    return gApp.dpiScale;
 }
 
 AppDisplayInfo App::GetDisplayInfo()

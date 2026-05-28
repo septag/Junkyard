@@ -179,6 +179,9 @@ else()
     add_executable(TestRenderer ../../code/Tests/TestRenderer.cpp)
     target_link_libraries(TestRenderer Junkyard)
 
+    add_executable(TestCollision ../../code/Tests/TestCollision.cpp)
+    target_link_libraries(TestCollision Junkyard)
+
 endif()
 
 

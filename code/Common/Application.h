@@ -127,6 +127,7 @@ namespace App
     API uint16 GetWindowHeight();
     API uint16 GetFramebufferWidth();
     API uint16 GetFramebufferHeight();
+    API float GetWindowDPIScale();
     API AppFramebufferTransform GetFramebufferTransform();
 
     API bool IsMouseShown();

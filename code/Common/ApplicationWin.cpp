@@ -1071,6 +1071,11 @@ namespace App
         return gApp.framebufferHeight;
     }
 
+    float GetWindowDPIScale()
+    {
+        return gApp.dpiScale;
+    }
+
     AppDisplayInfo GetDisplayInfo()
     {
         return AppDisplayInfo {
