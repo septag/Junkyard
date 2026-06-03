@@ -669,7 +669,7 @@ bool UniqueID::operator==(const UniqueID& uuid) const
     return memcmp(data, uuid.data, sizeof(UUIDImpl)) == 0;
 }
 
-bool uuidGenerate(UniqueID* _uuid)
+bool UniqueID::Generate(UniqueID* _uuid)
 {
     _LoadOle32();
 
@@ -680,7 +680,7 @@ bool uuidGenerate(UniqueID* _uuid)
     return true;
 }
 
-bool uuidToString(const UniqueID& _uuid, char* str, uint32 size)
+bool UniqueID::ToString(const UniqueID& _uuid, char* str, uint32 size)
 {
     _LoadOle32();
 
@@ -702,7 +702,7 @@ bool uuidToString(const UniqueID& _uuid, char* str, uint32 size)
     return true;
 }
 
-bool uuidFromString(UniqueID* _uuid, const char* str)
+bool UniqueID::FromString(UniqueID* _uuid, const char* str)
 {
     _LoadOle32();
 
