@@ -283,10 +283,9 @@ struct TestRendererApp final : AppCallbacks
 
     bool Initialize() override
     {
-        bool isRemote = SettingsJunkyard::Get().engine.connectToServer;
+        ASSERT_MSG(!SettingsJunkyard::Get().engine.connectToServer, "Not implemented");
 
-        // For remote mode, you also have to use "-ToolingServerCustomDataMountDir=data/TestAsset" argument for the server tool
-        Vfs::HelperMountDataAndShaders(isRemote, isRemote ? "data" : "data/TestBasicGfx");
+        Vfs::MountLocal("data/TestBasicGfx", "data", true);
 
         if (!Engine::Initialize())
             return false;

@@ -525,7 +525,7 @@ bool DebugDraw::Initialize()
     AssetGroup loadAssetGroup = Engine::RegisterInitializeResources(_InitializeGraphicsResources);
     gDebugDraw.shaderAsset = Shader::Load("/shaders/DebugDraw.hlsl", ShaderLoadParams(), loadAssetGroup);
     gDebugDraw.textShaderAsset = Shader::Load("/shaders/DrawText.hlsl", ShaderLoadParams(), loadAssetGroup);
-    gDebugDraw.textFont = Font::Load("/data/fonts/arial.jfnt", loadAssetGroup);
+    gDebugDraw.textFont = Font::Load("/fonts/arial.jfnt", loadAssetGroup);
 
     // AABB just has one shape that is gonna get transformed to different sizes
     {

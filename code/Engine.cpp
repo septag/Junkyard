@@ -12,6 +12,7 @@
 #include "Common/RemoteServices.h"
 #include "Common/Application.h"
 #include "Common/JunkyardSettings.h"
+#include "Common/VirtualFS.h"
 
 #include "Graphics/GfxBackend.h"
 
@@ -385,6 +386,11 @@ bool Engine::Initialize()
 
     Thread::SetCurrentThreadName("Main");
     gEng.mainThreadId = Thread::GetCurrentId();
+
+    // Mounts for essential engine assets
+    // These assets should always be included in the app package
+    Vfs::MountLocal("code/Shaders", "shaders", true);
+    Vfs::MountLocal("data/fonts", "fonts", false);
 
     // Setup allocators
     // TODO: make main allocator commit all memory upfront in RELEASE builds (?)

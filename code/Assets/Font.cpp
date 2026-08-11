@@ -180,7 +180,7 @@ bool AssetFontImpl::Bake(const AssetParams& params, AssetData* data, const Span<
     ImageLoadParams atlasLoadParams {};
     AssetParams atlasParams {
         .typeId = IMAGE_ASSET_TYPE,
-        .path = Path::Join(fileDir, filename).Append(".png"),
+        .path = Path::JoinUnix(fileDir, filename).Append(".png"),
         .platform = params.platform,
         .extraParams = &atlasLoadParams
     };

@@ -222,8 +222,6 @@ struct TestCollisionApp final : AppCallbacks
 
     bool Initialize() override
     {
-        Vfs::HelperMountDataAndShaders(false);
-
         if (!Engine::Initialize())
             return false;
 
