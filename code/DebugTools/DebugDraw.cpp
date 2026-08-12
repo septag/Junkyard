@@ -325,7 +325,7 @@ void DebugDraw::EndDraw(GfxCommandBuffer cmd, GfxImageHandle depthImage, GfxImag
     ASSERT(gDebugDraw.stagingTextVertexBuffer.IsValid());
     ASSERT(gDebugDraw.stagingTextIndexBuffer.IsValid());
 
-    bool hasAnything = !gDebugDraw.drawItems.IsEmpty() | !gDebugDraw.textVertices.IsEmpty();
+    bool hasAnything = !gDebugDraw.drawItems.IsEmpty() || !gDebugDraw.textVertices.IsEmpty();
 
     GPU_PROFILE_ZONE(cmd, "DebugDraw");
 

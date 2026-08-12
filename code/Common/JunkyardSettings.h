@@ -49,7 +49,8 @@ struct SettingsTooling
 {
     bool enableServer = false;          // Starts server service (ShaderCompiler/Baking/etc.)
     uint16 serverPort = 6006;           // Local server port number
-    Path serverCustomDataMountDir;      // Mount /data into a different directory 
+    String32 serverDataMountAlias;      // Mount alias (must be reference by Vfs::MountRemote in the client)
+    Path serverDataMountDir;            // Mount local directory
 };
 
 struct SettingsApp

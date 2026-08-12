@@ -19,9 +19,14 @@ struct AppImpl final : AppCallbacks
 {
     bool Initialize() override
     {
-        const char* customMountDir = SettingsJunkyard::Get().tooling.serverCustomDataMountDir.IsEmpty() ?
-            "data" : SettingsJunkyard::Get().tooling.serverCustomDataMountDir.CStr();
-        Vfs::HelperMountDataAndShaders(SettingsJunkyard::Get().engine.connectToServer, customMountDir);
+        const SettingsJunkyard& settings = SettingsJunkyard::Get();
+        if (!settings.tooling.serverDataMountDir.IsEmpty() && !settings.tooling.serverDataMountAlias.IsEmpty()) {
+            Vfs::MountLocal(settings.tooling.serverDataMountDir.CStr(), settings.tooling.serverDataMountAlias.CStr(), true);
+        }
+        else {
+            LOG_ERROR("-ToolingServerDataMountAlias and -ToolingServerDataMountDir arguments must be set");
+            return false;
+        }
 
         if (!Engine::Initialize())
             return false;

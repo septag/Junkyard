@@ -160,7 +160,9 @@ bool Vfs::MountLocal(const char* rootDir, const char* alias, [[maybe_unused]] bo
         OS::GetAbsolutePath(rootDir, absRootPath, sizeof(absRootPath));
         LOG_ERROR("VirtualFS: '%s' is not a valid directory (%s)", rootDir, absRootPath);
         if constexpr(!CONFIG_FINAL_BUILD) {
-            LOG_ERROR("VirtualFS: Make sure cwd on the root directory of the project and assets are downloaded for this app");
+            char cwd[CONFIG_MAX_PATH];
+            OS::GetCurrentDir(cwd, sizeof(cwd));
+            LOG_ERROR("VirtualFS: Make sure cwd on the root directory of the project and assets are downloaded for this app (CWD: %s)", cwd);
         }
         return false;
     }

@@ -201,8 +201,12 @@ bool SettingsJunkyardParser::ParseSetting(uint32 categoryId, const char* key, co
             tooling->serverPort = static_cast<uint16>(Str::ToInt(value));
             return true;
         }
-        else if (Str::IsEqualNoCase(key, "serverCustomDataMountDir")) {
-            tooling->serverCustomDataMountDir = value;
+        else if (Str::IsEqualNoCase(key, "serverDataMountAlias")) {
+            tooling->serverDataMountAlias = value;
+            return true;
+        }
+        else if (Str::IsEqualNoCase(key, "serverDataMountDir")) {
+            tooling->serverDataMountDir = value;
             return true;
         }
     }
