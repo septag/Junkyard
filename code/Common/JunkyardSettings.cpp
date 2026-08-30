@@ -170,6 +170,18 @@ bool SettingsJunkyardParser::ParseSetting(uint32 categoryId, const char* key, co
             graphics->enableImGui = Str::ToBool(value);
             return true;
         }
+        else if (Str::IsEqualNoCase(key, "enableDebugDraw")) {
+            graphics->enableDebugDraw = Str::ToBool(value);
+            return true;
+        }
+        else if (Str::IsEqualNoCase(key, "enable3DRenderer")) {
+            graphics->enable3DRenderer = Str::ToBool(value);
+            return true;
+        }
+        else if (Str::IsEqualNoCase(key, "enableGUI")) {
+            graphics->enableGUI = Str::ToBool(value);
+            return true;
+        }
         else if (Str::IsEqualNoCase(key, "enableVsync")) {
             graphics->enableVsync = Str::ToBool(value);
             return true;

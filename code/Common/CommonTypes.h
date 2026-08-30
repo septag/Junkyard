@@ -2,7 +2,7 @@
 
 #include "../Core/Pools.h"
 
-static inline constexpr uint32 JUNKYARD_VERSION = MakeVersion(0, 1, 0);
+static inline constexpr uint32 JUNKYARD_VERSION = MakeVersion(0, 2, 0);
 
 // Memory
 struct MemAllocator;

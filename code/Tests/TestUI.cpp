@@ -299,6 +299,10 @@ int Main(int argc, char* argv[])
     SettingsJunkyard initSettings {
         .app = {
             .appName = "TestUI"
+        },
+        .graphics = {
+            .enableDebugDraw = false,
+            .enable3DRenderer = false
         }
     };
     SettingsJunkyard::Initialize(initSettings);

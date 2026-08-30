@@ -596,7 +596,8 @@ int Main(int argc, char* argv[])
             .appName = "TestCollision"
         },
         .graphics = {
-            .surfaceSRGB = true
+            .surfaceSRGB = true,
+            .enableGUI = false
         }
     };
     SettingsJunkyard::Initialize(initSettings);

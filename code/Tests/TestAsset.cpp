@@ -635,7 +635,16 @@ struct TestAssetApp : AppCallbacks
 
 int Main(int argc, char* argv[])
 {
-    SettingsJunkyard::Initialize({});
+    SettingsJunkyard initSettings {
+        .app = {
+            .appName = "TestAsset"
+        },
+        .graphics = {
+            .enable3DRenderer = false,
+            .enableGUI = false,
+        }
+    };
+    SettingsJunkyard::Initialize(initSettings);
 
     #if PLATFORM_ANDROID
         Settings::InitializeFromAndroidAsset(App::AndroidGetAssetManager(), "Settings.ini");

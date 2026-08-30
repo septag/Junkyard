@@ -22,6 +22,7 @@ namespace DebugDraw
 
     bool Initialize();
     void Release();
+    bool IsEnabled();
 
     API void BeginDraw(GfxCommandBuffer cmd, const Camera& cam, uint16 viewWidth, uint16 viewHeight);
     API void EndDraw(GfxCommandBuffer cmd, GfxImageHandle depthImage, GfxImageHandle colorImage = GfxImageHandle());

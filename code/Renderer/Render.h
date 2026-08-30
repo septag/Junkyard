@@ -95,6 +95,7 @@ namespace R
     void DestroyView(RView& view);
 
     void NewFrame();
+    bool IsEnabled();
 
     namespace FwdLight
     {

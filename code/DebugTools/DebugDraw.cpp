@@ -82,6 +82,7 @@ struct DebugDrawContext
     GfxBufferHandle stagingTextIndexBuffer;
     bool isDrawing;
     bool isInDrawItem;
+    bool initialized;
 };
 
 static DebugDrawContext gDebugDraw;
@@ -260,6 +261,7 @@ namespace DebugDraw
 
 void DebugDraw::BeginDraw(GfxCommandBuffer cmd, const Camera& cam, uint16 viewWidth, uint16 viewHeight)
 {
+    ASSERT(gDebugDraw.initialized);
     ASSERT(viewWidth > 0);
     ASSERT(viewHeight > 0);
     ASSERT(!gDebugDraw.isDrawing);
@@ -553,6 +555,7 @@ bool DebugDraw::Initialize()
         vertices[22].pos = corners[0];      vertices[23].pos = corners[4];
     }
 
+    gDebugDraw.initialized = true;
     LOG_INFO("(init) DebugDraw initialized");
     return true;
 }
@@ -578,6 +581,7 @@ void DebugDraw::Release()
     gDebugDraw.vertices.Free();
     gDebugDraw.sphereCache.Free();
 
+    gDebugDraw.initialized = false;
 }
 
 void DebugDraw::DrawBoundingSphere(Float4 sphere, Color4u color, uint32 numRings, uint32 numSectors)
@@ -820,4 +824,9 @@ bool DebugDraw::DrawText3D(Float3 p, float scale, const char* text, uint32 textL
     else {
         return false;
     }
+}
+
+bool DebugDraw::IsEnabled()
+{
+    return gDebugDraw.initialized;
 }

@@ -74,6 +74,7 @@ struct GUIContext
 
     void* clayMemory;
     bool inFlight;
+    bool initialized;
 };
 
 static GUIContext gGUI;
@@ -407,6 +408,7 @@ bool GUI::Initialize()
     Clay_SetMeasureTextFunction(_MeasureText, nullptr);
 
     gGUI.frameBufferScale = App::GetWindowDPIScale();
+    gGUI.initialized = true;
     LOG_INFO("(init) GUI initialized");
 
     return true;
@@ -423,10 +425,12 @@ void GUI::Release()
     GfxBackend::DestroyPipelineLayout(gGUI.shapePipelineLayout);
 
     Mem::Free(gGUI.clayMemory, &gGUI.alloc);
+    gGUI.initialized = false;
 }
 
 void GUI::Begin()
 {
+    ASSERT(gGUI.initialized);
     PROFILE_ZONE("GUI.Begin");
 
     ASSERT_MSG(!gGUI.inFlight, "End() should be called before Begin()");
@@ -697,4 +701,9 @@ void GUI::End(GfxCommandBuffer cmd)
     }
 
     cmd.EndRenderPass();
+}
+
+bool GUI::IsEnabled()
+{
+    return gGUI.initialized;
 }

@@ -35,6 +35,9 @@ struct SettingsGraphics
     bool shaderDebug = false;               // Adds debugging information to all shaders
     bool enableGpuProfile = false;          // Enables GPU Profiling with Tracy and other tools
     bool enableImGui = true;                // Enables ImGui GUI
+    bool enableDebugDraw = true;            // Enables Debug Drawing
+    bool enable3DRenderer = true;           // Enables 3D renderer
+    bool enableGUI = true;                  // Enables 2D GUI
     bool enableVsync = true;                // Enables Vsync. Some hardware doesn't support this feature
     bool trackResourceLeaks = false;        // Store buffers/image/etc. resource stacktraces and shows leakage information at exit
     bool preferIntegratedGpu = false;       // By default, Backend prefers discrete GPUs but this setting defaults preference to integrated

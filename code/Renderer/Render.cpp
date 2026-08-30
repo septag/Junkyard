@@ -236,6 +236,7 @@ struct RFwdContext
 
     uint32 tilesCountX;
     uint32 tilesCountY;
+    bool initialized;
 };
 
 RFwdContext gFwd;
@@ -985,6 +986,9 @@ bool R::Initialize()
         };
         gFwd.sTextureDebugColor = Shader::Load("/shaders/TextureDebug.hlsl", loadParams, assetGroup);
     }
+
+    gFwd.initialized = true;
+    LOG_INFO("(init) 3D renderer initialized");
     return true;
 }
 
@@ -1036,6 +1040,7 @@ void R::Release()
     GfxBackend::DestroyImage(gFwd.msaaDepthRenderImage);
 
     gFwd.frameAlloc.Release();
+    gFwd.initialized = false;
 }
 
 void R::FwdLight::Update(RView& view, GfxCommandBuffer& cmd)
@@ -1646,6 +1651,7 @@ RGeometryChunk* RView::NewGeometryChunk()
 
 void R::NewFrame()
 {
+    ASSERT(gFwd.initialized);
     gFwd.frameAlloc.Reset();
 
     for (RViewData& vdata : gFwd.viewPool) {
@@ -1756,6 +1762,10 @@ void R::ShadowMap::Render(RView& view, GfxCommandBuffer& cmd, GfxImageHandle sha
 
 }
 
+bool R::IsEnabled()
+{
+    return gFwd.initialized;
+}
 
    
 //  ██████╗ ███╗   ███╗███████╗███╗   ███╗ ██████╗ ██████╗ ██╗   ██╗ ██████╗██╗  ██╗██╗   ██╗███╗   ██╗██╗  ██╗

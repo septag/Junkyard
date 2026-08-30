@@ -10,4 +10,6 @@ namespace GUI
 
     void Begin();
     void End(GfxCommandBuffer cmd);
+
+    bool IsEnabled();
 } // namespace GUI

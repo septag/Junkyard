@@ -530,6 +530,10 @@ int Main(int argc, char* argv[])
     SettingsJunkyard initSettings {
         .app = {
             .appName = "TestBasicGfx"
+        },
+        .graphics = {
+            .enable3DRenderer = false,
+            .enableGUI = false,
         }
     };
     SettingsJunkyard::Initialize(initSettings);

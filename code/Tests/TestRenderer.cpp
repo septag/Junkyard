@@ -412,6 +412,7 @@ struct TestRendererApp final : AppCallbacks
         // Update
         ModelScene& scene = mModelScenes[mSelectedSceneIdx];
         
+        ASSERT(R::IsEnabled());
         R::NewFrame();
 
         Float3 sunlightDir = Float3(-0.2f, M::Cos(scene.mSunlightAngle), -M::Sin(scene.mSunlightAngle));
@@ -554,7 +555,8 @@ int Main(int argc, char* argv[])
             .appName = "TestRenderer"
         },
         .graphics = {
-            .surfaceSRGB = true
+            .surfaceSRGB = true,
+            .enableGUI = false
         }
     };
     SettingsJunkyard::Initialize(initSettings);

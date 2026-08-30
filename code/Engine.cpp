@@ -498,7 +498,7 @@ bool Engine::Initialize()
             return false;
         }
 
-        if (!DebugDraw::Initialize()) {
+        if (gfxSettings.enableDebugDraw && !DebugDraw::Initialize()) {
             LOG_ERROR("Initializing DebugDraw failed");
             return false;
         }
@@ -529,12 +529,12 @@ bool Engine::Initialize()
 
     // Renderer(s)
     if (gfxSettings.IsGraphicsEnabled()) {
-        if (!R::Initialize()) {
+        if (gfxSettings.enable3DRenderer && !R::Initialize()) {
             LOG_ERROR("Initializing Renderer failed");
             return false;
         }
 
-        if (!GUI::Initialize()) {
+        if (gfxSettings.enableGUI && !GUI::Initialize()) {
             LOG_ERROR("Initializing GUI failed");
             return false;
         }
@@ -573,14 +573,18 @@ void Engine::Release()
 
     const SettingsGraphics& gfxSettings = SettingsJunkyard::Get().graphics;
     if (gfxSettings.IsGraphicsEnabled()) {
-        GUI::Release();
-        R::Release();
+        if (GUI::IsEnabled())
+            GUI::Release();
+        if (R::IsEnabled())
+            R::Release();
 
         if (ImGui::IsEnabled()) {
             DebugHud::Release();
             ImGui::Release();
         }
-        DebugDraw::Release();
+
+        if (DebugDraw::IsEnabled())
+            DebugDraw::Release();
     } 
 
     if (gEng.initResourcesGroup.mHandle.IsValid()) {
