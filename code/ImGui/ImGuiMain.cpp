@@ -28,7 +28,7 @@
 #include "ImGuizmo.h"
 
 static constexpr size_t IMGUI_RUNTIME_HEAP_SIZE = 4*SIZE_MB;
-static constexpr uint32 IMGUI_VERTICES_POOL_SIZE = 60*1000;
+static constexpr uint32 IMGUI_VERTICES_POOL_SIZE = 32*1000;
 static constexpr uint32 IMGUI_INDICES_POOL_SIZE =  IMGUI_VERTICES_POOL_SIZE*3; 
 
 enum ImGuiDescriptorSet : uint32
@@ -416,7 +416,7 @@ namespace ImGui
             gImGui.vertexBuffer = GfxBackend::CreateBuffer(vertexBufferDesc);
 
             GfxBufferDesc indexBufferDesc {
-                .sizeBytes = IMGUI_VERTICES_POOL_SIZE*sizeof(ImDrawIdx),
+                .sizeBytes = IMGUI_INDICES_POOL_SIZE*sizeof(ImDrawIdx),
                 .usageFlags = GfxBufferUsageFlags::TransferDst|GfxBufferUsageFlags::Index,
                 .perFrameUpdates = true
             };
@@ -517,7 +517,7 @@ namespace ImGui
         }
 
         if (numIndices > gImGui.maxIndices) {
-            gImGui.maxIndices = AlignValue(numIndices, IMGUI_VERTICES_POOL_SIZE);
+            gImGui.maxIndices = AlignValue(numIndices, IMGUI_INDICES_POOL_SIZE);
             GfxBackend::DestroyBuffer(gImGui.indexBuffer);            
             GfxBufferDesc indexBufferDesc {
                 .sizeBytes = gImGui.maxIndices*sizeof(ImDrawIdx),

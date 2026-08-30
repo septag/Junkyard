@@ -553,7 +553,6 @@ bool DebugDraw::Initialize()
         vertices[22].pos = corners[0];      vertices[23].pos = corners[4];
     }
 
-
     LOG_INFO("(init) DebugDraw initialized");
     return true;
 }
@@ -795,19 +794,26 @@ bool DebugDraw::DrawText3D(Float3 p, float scale, const char* text, uint32 textL
 {
     ASSERT(gDebugDraw.isDrawing);
 
-    MemTempAllocator tempAlloc;
+    if (textLen == 0)
+        textLen = Str::Len(text);
+    if (textLen == 0)
+        return false;
+
+    const uint32 numVertices = textLen*4;
+    const uint32 numIndices = textLen*6;
+    ASSERT_MSG((gDebugDraw.textVertices.Count() + numVertices)/4 <=  DEBUGDRAW_MAX_TEXT_CHARACTERS, 
+               "Too many debug text characters. Increase DEBUGDRAW_MAX_TEXT_CHARACTERS");
+    ASSERT_MSG((gDebugDraw.textVertices.Count() + numIndices)/6 <=  DEBUGDRAW_MAX_TEXT_CHARACTERS, 
+               "Too many debug text characters. Increase DEBUGDRAW_MAX_TEXT_CHARACTERS");
+
     AssetObjPtrScope<FontData> font(gDebugDraw.textFont);
     Float2 pos = MathUtil::ProjectPointToScreenPixels(p, gDebugDraw.worldToClipMat, 
                                                       RectFloat(0, 0, float(gDebugDraw.viewExtents.x), float(gDebugDraw.viewExtents.y)));
     if (pos.x >=0 && pos.y >= 0) {
-        Float2 textSize = TextBuilder::CalculateTextSize(*font, scale, text, textLen);
-        pos = Float2(pos.x - textSize.x*0.5f, pos.y);
-        TextGeometry textGeo = TextBuilder::CreateText(*font, pos, scale, text, textLen, color, TextType::Ascii, &tempAlloc);
-        ASSERT_MSG((gDebugDraw.textVertices.Count() + textGeo.numVertices)/4 <=  DEBUGDRAW_MAX_TEXT_CHARACTERS, 
-                   "Too many debug text characters. Increase DEBUGDRAW_MAX_TEXT_CHARACTERS");
-
-        gDebugDraw.textVertices.PushBatch(textGeo.vertices, textGeo.numVertices);
-        gDebugDraw.textIndices.PushBatch(textGeo.indices, textGeo.numIndices);
+        TextVertex* vertices = gDebugDraw.textVertices.PushBatch(numVertices);
+        uint32* indices = gDebugDraw.textIndices.PushBatch(numIndices);
+        TextBuilder::CreateText(vertices, numVertices, indices, numIndices, text, textLen, *font, pos, 
+                                TextAlignment::Center, color, scale);
 
         return true;
     }

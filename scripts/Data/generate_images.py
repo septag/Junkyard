@@ -7,9 +7,10 @@ import sys
 
 arg_parser = argparse.ArgumentParser(description='')
 arg_parser.add_argument('--outputdir', help='RootDir of generated images', default='./images')
-arg_parser.add_argument('--datasize', help='Total data size of the images in Gigabytes', default='1')
+arg_parser.add_argument('--datasize', help='Total data size of the images in Megabytes', default='1024')
 arg_parser.add_argument('--imagedim', help='Dimension of the generated image in pixels', default='1024')
 arg_parser.add_argument('--prefix', help='Prefix of the image names', default='')
+arg_parser.add_argument("--generatemips", help='Set generate mips meta property for images', action='store_true')
 args = arg_parser.parse_args(sys.argv[1:])
 
 IMAGE_W = int(args.imagedim)
@@ -18,30 +19,33 @@ STROKE_COLOR = (255, 255, 255, 255)
 BG_COLOR = (0, 0, 0, 255)
 IMAGE_FORMAT = "tga"
 OUTPUT_DIR = args.outputdir
-MAX_DATA_SIZE = int(args.datasize)*1024*1024*1024
+MAX_DATA_SIZE = int(args.datasize)*1024*1024
 
 image = Image.new('RGBA', (IMAGE_W, IMAGE_H))
 canvas = ImageDraw.Draw(image)
-font = ImageFont.truetype("Impact.ttf", 512)
+
+font = ImageFont.truetype("Impact.ttf", int(args.imagedim)/2)
+border_size = int(50*float(args.imagedim)/1024)
 
 index:int = 1
 total_size:int = 0
 image_size = IMAGE_W*IMAGE_H*4
+generate_mips_flag = 'true' if args.generatemips else 'false'
 
-meta_template = """
-{
+meta_template = f"""
+{{
     normalMap: false,
     hasAlpha: false,
     sRGB: true,
     isMask: false,
-	generateMips: true,
-    android: {
+	generateMips: {generate_mips_flag},
+    android: {{
         format: "astc_6x6"
-    },
-    pc: {
+    }},
+    pc: {{
         format: "bc1"
-    }
-}
+    }}
+}}
 """
 
 if not os.path.exists(OUTPUT_DIR): 
@@ -56,7 +60,7 @@ while True:
     text_width = text_right - text_left
     text_height = text_bottom - text_top
 
-    canvas.rectangle([(0, 0), (IMAGE_W, IMAGE_H)], outline=STROKE_COLOR, fill=BG_COLOR, width=50)
+    canvas.rectangle([(0, 0), (IMAGE_W, IMAGE_H)], outline=STROKE_COLOR, fill=BG_COLOR, width=border_size)
     canvas.text(((IMAGE_W - text_width)/2, (IMAGE_H - text_height*1.5)/2), text, font=font, fill=STROKE_COLOR)
 
     filename = args.prefix + text + "." + IMAGE_FORMAT

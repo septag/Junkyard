@@ -103,6 +103,12 @@
     <Filter Include="External\kb">
       <UniqueIdentifier>{faf93845-d217-4907-ba79-c58dafb523e4}</UniqueIdentifier>
     </Filter>
+    <Filter Include="External\clay">
+      <UniqueIdentifier>{83803C16-840E-4C13-950C-F832A6374F6E}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="GUI">
+      <UniqueIdentifier>{D7CC7C89-8DAB-42A7-A95F-5D9583F3DB7F}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\..\code\External\imgui\imgui.cpp">
@@ -264,6 +270,9 @@
     </ClCompile>
     <ClCompile Include="..\..\code\Assets\Font.cpp">
       <Filter>Assets</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\code\GUI\GUI.cpp">
+      <Filter>GUI</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -523,6 +532,12 @@
     </ClInclude>
     <ClInclude Include="..\..\code\External\kb\kb_text_shape.h">
       <Filter>External\kb</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\code\External\clay\clay.h">
+      <Filter>External\clay</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\code\GUI\GUI.h">
+      <Filter>GUI</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

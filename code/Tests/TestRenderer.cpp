@@ -69,7 +69,7 @@ struct ModelScene
     bool mDebugShadowMap = false;
     bool mDebugLightBounds = false;
 
-    void Initialize(AssetGroup initAssetGroup, const char* modelFilepath)
+    void Initialize(const char* modelFilepath)
     {
         ASSERT(mModelFilepath.IsEmpty());
 
@@ -244,7 +244,6 @@ struct TestRendererApp final : AppCallbacks
     void InitializeFramebufferResources(uint16 width, uint16 height)
     {
         GfxBackend::DestroyImage(mRenderTargetDepth);
-        GfxBackend::DestroyImage(mShadowMapDepth);
 
         {
             GfxImageDesc desc {
@@ -252,6 +251,7 @@ struct TestRendererApp final : AppCallbacks
                 .height = uint16(height),
                 .format = GfxBackend::GetValidDepthStencilFormat(),
                 .usageFlags = GfxImageUsageFlags::DepthStencilAttachment | GfxImageUsageFlags::Sampled,
+                .arena = GfxMemoryArena::DynamicAddressGPU
             };
 
             // Note: this won't probably work with tiled GPUs because it's incompatible with Sampled flag
@@ -262,6 +262,18 @@ struct TestRendererApp final : AppCallbacks
 
             mRenderTargetDepth = GfxBackend::CreateImage(desc);
         }
+    }
+
+    bool Initialize() override
+    {
+        ASSERT_MSG(!SettingsJunkyard::Get().engine.connectToServer, "Not implemented");
+
+        Vfs::MountLocal("data/TestBasicGfx", "data", true);
+
+        if (!Engine::Initialize())
+            return false;
+
+        InitializeFramebufferResources(App::GetFramebufferWidth(), App::GetFramebufferHeight());
 
         {
             GfxImageDesc desc {
@@ -279,24 +291,10 @@ struct TestRendererApp final : AppCallbacks
 
             mShadowMapDepth = GfxBackend::CreateImage(desc);
         }
-    }
 
-    bool Initialize() override
-    {
-        ASSERT_MSG(!SettingsJunkyard::Get().engine.connectToServer, "Not implemented");
-
-        Vfs::MountLocal("data/TestBasicGfx", "data", true);
-
-        if (!Engine::Initialize())
-            return false;
-
-        AssetGroup initAssetGroup = Engine::RegisterInitializeResources([](void* userData) {
-            TestRendererApp* self = (TestRendererApp*)userData;
-            self->InitializeFramebufferResources(App::GetFramebufferWidth(), App::GetFramebufferHeight());
-        }, this);
 
         for (uint32 i = 0; i < CountOf(TESTRENDERER_MODELS); i++)
-            mModelScenes[i].Initialize(initAssetGroup, TESTRENDERER_MODELS[i]);
+            mModelScenes[i].Initialize(TESTRENDERER_MODELS[i]);
 
         mSelectedSceneIdx = (uint32)Str::ToInt(Settings::GetValue("TestRenderer.SelectedScene", "0"));
         mSelectedSceneIdx = Clamp(mSelectedSceneIdx, 0u, CountOf(TESTRENDERER_MODELS)-1);

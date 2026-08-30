@@ -45,6 +45,7 @@ choice /c YN /M "Extract assets for basic graphics examples "
 if errorlevel 2 goto :InstallTracyClient
 if errorlevel 1 (
     powershell Expand-Archive -Force -Path data\TestBasicGfx.zip -DestinationPath data\
+    powershell Expand-Archive -Force -Path data\TestUI.zip -DestinationPath data\
 )
 
 :InstallTracyClient

@@ -54,8 +54,9 @@
 #include "ImGui/ImGuiMain.cpp"
 #include "ImGui/ImGuizmo.cpp"
 
-// Renderer
+// Renderer/UI
 #include "Renderer/Render.cpp"
+#include "GUI/GUI.cpp"
 
 // Collision
 #include "Collision/Collision.cpp"

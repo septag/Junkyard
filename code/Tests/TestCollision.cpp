@@ -112,12 +112,6 @@ struct TestCollisionApp final : AppCallbacks
         chunk->AddSubChunk(subchunk);
     }
 
-    void ReleaseFramebufferResources()
-    {
-        GfxBackend::DestroyImage(mRenderTargetDepth);
-        GfxBackend::DestroyImage(mShadowMapDepth);
-    }
-
     void SetupShapes()
     {
         for (uint32 i = 0; i < CountOf(mShapes); i++) {
@@ -182,7 +176,7 @@ struct TestCollisionApp final : AppCallbacks
 
     void InitializeFramebufferResources(uint16 width, uint16 height)
     {
-        ReleaseFramebufferResources();
+        GfxBackend::DestroyImage(mRenderTargetDepth);
 
         {
             GfxImageDesc desc {
@@ -190,6 +184,7 @@ struct TestCollisionApp final : AppCallbacks
                 .height = uint16(height),
                 .format = GfxBackend::GetValidDepthStencilFormat(),
                 .usageFlags = GfxImageUsageFlags::DepthStencilAttachment | GfxImageUsageFlags::Sampled,
+                .arena = GfxMemoryArena::DynamicImageGPU
             };
 
             // Note: this won't probably work with tiled GPUs because it's incompatible with Sampled flag
@@ -200,6 +195,14 @@ struct TestCollisionApp final : AppCallbacks
 
             mRenderTargetDepth = GfxBackend::CreateImage(desc);
         }
+    }
+
+    bool Initialize() override
+    {
+        if (!Engine::Initialize())
+            return false;
+
+        InitializeFramebufferResources(App::GetFramebufferWidth(), App::GetFramebufferHeight());
 
         {
             GfxImageDesc desc {
@@ -211,21 +214,12 @@ struct TestCollisionApp final : AppCallbacks
 
             // Note: this won't probably work with tiled GPUs because it's incompatible with Sampled flag
             //       So we probably need to copy the contents of the zbuffer to another one
-    #if PLATFORM_MOBILE
+            #if PLATFORM_MOBILE
             desc.usageFlags |= GfxImageUsageFlags::TransientAttachment;
-    #endif
+            #endif
 
             mShadowMapDepth = GfxBackend::CreateImage(desc);
-            mCamera.SetLookAt(Float3(0, -2, 3), FLOAT3_ZERO);
         }
-    }
-
-    bool Initialize() override
-    {
-        if (!Engine::Initialize())
-            return false;
-
-        InitializeFramebufferResources(App::GetFramebufferWidth(), App::GetFramebufferHeight());
 
         {
             GeometryVertexLayout layout;
@@ -274,7 +268,9 @@ struct TestCollisionApp final : AppCallbacks
         R::DestroyView(mFwdRenderView);
         R::DestroyView(mShadowMapView);
 
-        ReleaseFramebufferResources();
+        GfxBackend::DestroyImage(mShadowMapDepth);
+        GfxBackend::DestroyImage(mRenderTargetDepth);
+
         Engine::Release();
     }
 
@@ -586,8 +582,10 @@ struct TestCollisionApp final : AppCallbacks
     {
         if (!ImGui::IsAnyItemHovered() && !ImGui::GetIO().WantCaptureMouse)
             mCamera.HandleRotationMouse(ev, 0.2f, 0.1f);
-        else if (ev.type == AppEventType::Resized) 
+
+        if (ev.type == AppEventType::Resized) {
             InitializeFramebufferResources(ev.framebufferWidth, ev.framebufferHeight);
+        }
     }
 };
 

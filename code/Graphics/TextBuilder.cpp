@@ -71,119 +71,132 @@ namespace TextBuilder
     #endif        
 } // TextBuilder
 
-TextGeometry TextBuilder::CreateText(const FontData& font, Float2 pos, float scale, const char* text, uint32 textLen, 
-                                     Color4u color, TextType type, MemAllocator* alloc)
+void TextBuilder::CreateText(TextVertex* outVertices, uint32 maxVertices, uint32* outIndices, uint32 maxIndices,
+                             const char* text, uint32 textLen, const FontData& font, Float2 pos, 
+                             TextAlignment align, Color4u color, float scale)
 {
-    ASSERT(alloc);
-    UNUSED(type);
-    ASSERT_MSG(type == TextType::Ascii, "Not implemented");
-
     if (textLen == 0) 
         textLen = Str::Len(text);
     if (textLen == 0) {
         ASSERT_MSG(0, "Text length cannot be zero");
-        return {};
+        return;
     }
-
-    TextGeometry geo {
-        .alloc = alloc,
-        .vertices = Mem::AllocTyped<TextVertex>(textLen*4, alloc),
-        .indices = Mem::AllocTyped<uint32>(textLen*6, alloc)
-    };
 
     const uint16* glyphIds = font.glyphIds.Get();
     float x = 0;
-    float y = 0;
     float fontSize = float(font.size) * scale;
+    float textWidth = 0;
     float yoffset = float(font.descender);
     uint32 numVertices = 0;
     uint32 numIndices = 0;
 
+    MemTempAllocator tempAlloc;
+    Array<uint32> chars(&tempAlloc);
+    chars.Reserve(textLen);
+
+    uint32 spaceIndex = _FindCharIndex(glyphIds, font.numGlyphs, ' ');
+    if (spaceIndex == -1) {
+        ASSERT_MSG(0, "Font does not contain space character");
+        return;
+    }
+
     for (uint32 i = 0; i < textLen; i++) {
         // Whitespace
         if (text[i] == ' ') {
-            uint32 spaceIndex = _FindCharIndex(glyphIds, font.numGlyphs, text[i]);
-            ASSERT_MSG(spaceIndex != -1, "Font does not contain space character");
+            textWidth += font.glyphs[spaceIndex].xadvance;
+            chars.Push(uint32(-1));
+        }
+        else if (text[i] == '\r' || text[i] == '\n')    // Ignore new-lines, they should be handled at higher level
+            continue;
+        else if (text[i] == '\t') {
+            for (uint32 s = 0; s < TEXT_BUILDER_TAB_SIZE; s++) {
+                textWidth += font.glyphs[spaceIndex].xadvance;
+                chars.Push(uint32(-1));
+            }
+        }
+        else {
+            // Normal characters
+            uint32 charIndex = _FindCharIndex(glyphIds, font.numGlyphs, text[i]);
+            if (charIndex == -1) {
+                ASSERT_MSG(0, "Character not found: %c", text[i]);
+                continue;
+            }
+            textWidth += font.glyphs[charIndex].xadvance;
+            chars.Push(charIndex);
+
+            if (i < textLen - 1)
+                textWidth += _GetKerning(font.kernings.Get(), font.numKernings, text[i], text[i + 1]);
+        }
+    }
+
+    textWidth *= fontSize;
+    if (align == TextAlignment::Center)
+        pos.x -= textWidth*0.5f;
+    else if (align == TextAlignment::Right)
+        pos.x -= textWidth;
+    
+    for (uint32 i = 0; i < chars.Count(); i++) {
+        uint32 vertexIndex = numVertices;
+        uint32 charIndex = chars[i];
+
+        // Whitespace
+        if (charIndex == -1) {
             x += font.glyphs[spaceIndex].xadvance;
             continue;
         }
-        else if (text[i] == '\r')
-            continue;
-        else if (text[i] == '\t') {
-            uint32 spaceIndex = _FindCharIndex(glyphIds, font.numGlyphs, text[i]);
-            ASSERT_MSG(spaceIndex != -1, "Font does not contain space character");
-            for (uint32 s = 0; s < TEXT_BUILDER_TAB_SIZE; s++)
-                x += font.glyphs[spaceIndex].xadvance;
-            continue;
-        }
-        else if (text[i] == '\n') {
-            y += font.lineHeight;
-            x = 0;
-            continue;
-        }
 
-        // Normal characters
-        uint32 charIndex = _FindCharIndex(glyphIds, font.numGlyphs, text[i]);
-        if (charIndex == -1) {
-            ASSERT_MSG(0, "Character not found: %c", text[i]);
-            continue;
-        }
-
-        uint32 vertexIndex = numVertices;
-        const FontGlyph& glyph = font.glyphs[charIndex];
+        const FontGlyph& glyph = font.glyphs[chars[i]];
 
         // top-left
-        geo.vertices[vertexIndex] = {
-            .pos = pos + Float2(x + glyph.planeBounds.xmin, y + glyph.planeBounds.ymin + yoffset) * fontSize,
+        outVertices[vertexIndex] = {
+            .pos = pos + Float2(x + glyph.planeBounds.xmin, glyph.planeBounds.ymin + yoffset) * fontSize,
             .uv = Float2(glyph.uvBounds.xmin, glyph.uvBounds.ymin),
             .color = color
         };
 
         // bottom-left
-        geo.vertices[vertexIndex + 1] = {
-            .pos = pos + Float2(x + glyph.planeBounds.xmin, y + glyph.planeBounds.ymax + yoffset) * fontSize,
+        outVertices[vertexIndex + 1] = {
+            .pos = pos + Float2(x + glyph.planeBounds.xmin, glyph.planeBounds.ymax + yoffset) * fontSize,
             .uv = Float2(glyph.uvBounds.xmin, glyph.uvBounds.ymax),
             .color = color
         };
 
         // bottom-right
-        geo.vertices[vertexIndex + 2] = {
-            .pos = pos + Float2(x + glyph.planeBounds.xmax, y + glyph.planeBounds.ymax + yoffset) * fontSize,
+        outVertices[vertexIndex + 2] = {
+            .pos = pos + Float2(x + glyph.planeBounds.xmax, glyph.planeBounds.ymax + yoffset) * fontSize,
             .uv = Float2(glyph.uvBounds.xmax, glyph.uvBounds.ymax),
             .color = color
         };
 
         // top-right
-        geo.vertices[vertexIndex + 3] = {
-            .pos = pos + Float2(x + glyph.planeBounds.xmax, y + glyph.planeBounds.ymin + yoffset) * fontSize,
+        outVertices[vertexIndex + 3] = {
+            .pos = pos + Float2(x + glyph.planeBounds.xmax,  glyph.planeBounds.ymin + yoffset) * fontSize,
             .uv = Float2(glyph.uvBounds.xmax, glyph.uvBounds.ymin),
             .color = color
         };
 
-        if (i < textLen - 1)
-            x += _GetKerning(font.kernings.Get(), font.numKernings, text[i], text[i + 1]);
+        if (i < chars.Count() - 1 && chars[i + 1] != -1)
+            x += _GetKerning(font.kernings.Get(), font.numKernings, glyph.id, font.glyphs[chars[i + 1]].id);
 
         uint32 indicesIndex = numIndices;
         // Winding: CCW
         // Triangle 1
-        geo.indices[indicesIndex] = vertexIndex;
-        geo.indices[indicesIndex + 1] = vertexIndex + 1;
-        geo.indices[indicesIndex + 2] = vertexIndex + 2;
+        outIndices[indicesIndex] = vertexIndex;
+        outIndices[indicesIndex + 1] = vertexIndex + 1;
+        outIndices[indicesIndex + 2] = vertexIndex + 2;
 
         // Triangle 2
-        geo.indices[indicesIndex + 3] = vertexIndex + 2;
-        geo.indices[indicesIndex + 4] = vertexIndex + 3;
-        geo.indices[indicesIndex + 5] = vertexIndex;
+        outIndices[indicesIndex + 3] = vertexIndex + 2;
+        outIndices[indicesIndex + 4] = vertexIndex + 3;
+        outIndices[indicesIndex + 5] = vertexIndex;
 
         x += glyph.xadvance;
         numVertices += 4;
         numIndices += 6;
+
+        if (numVertices >= maxVertices || numIndices >= maxIndices)
+            break;
     }
-
-    geo.numVertices = numVertices;
-    geo.numIndices = numIndices;
-
-    return geo;
 }
 
 Float2 TextBuilder::CalculateTextSize(const FontData& font, float scale, const char* text, uint32 textLen, TextType type)
@@ -199,65 +212,41 @@ Float2 TextBuilder::CalculateTextSize(const FontData& font, float scale, const c
     }
 
     const uint16* glyphIds = font.glyphIds.Get();
-    float x = 0;
-    float y = 0;
     float fontSize = float(font.size) * scale;
-    float yoffset = float(font.descender);
-    RectFloat bounds = RECTFLOAT_EMPTY;
+    float textWidth = 0;
+
+    uint32 spaceIndex = _FindCharIndex(glyphIds, font.numGlyphs, ' ');
+    if (spaceIndex == -1) {
+        ASSERT_MSG(0, "Font does not contain space character");
+        return {};
+    }
 
     for (uint32 i = 0; i < textLen; i++) {
         // Whitespace
         if (text[i] == ' ') {
-            uint32 spaceIndex = _FindCharIndex(glyphIds, font.numGlyphs, text[i]);
-            ASSERT_MSG(spaceIndex != -1, "Font does not contain space character");
-            x += font.glyphs[spaceIndex].xadvance;
-            continue;
+            textWidth += font.glyphs[spaceIndex].xadvance;
         }
-        else if (text[i] == '\r')
+        else if (text[i] == '\r' || text[i] == '\n')    // Ignore new-lines, they should be handled at higher level
             continue;
         else if (text[i] == '\t') {
-            uint32 spaceIndex = _FindCharIndex(glyphIds, font.numGlyphs, text[i]);
-            ASSERT_MSG(spaceIndex != -1, "Font does not contain space character");
             for (uint32 s = 0; s < TEXT_BUILDER_TAB_SIZE; s++)
-                x += font.glyphs[spaceIndex].xadvance;
-            continue;
+                textWidth += font.glyphs[spaceIndex].xadvance;
         }
-        else if (text[i] == '\n') {
-            y += font.lineHeight;
-            x = 0;
-            continue;
+        else {
+            // Normal characters
+            uint32 charIndex = _FindCharIndex(glyphIds, font.numGlyphs, text[i]);
+            if (charIndex == -1) {
+                ASSERT_MSG(0, "Character not found: %c", text[i]);
+                continue;
+            }
+            textWidth += font.glyphs[charIndex].xadvance;
+
+            if (i < textLen - 1)
+                textWidth += _GetKerning(font.kernings.Get(), font.numKernings, text[i], text[i + 1]);
         }
-
-        // Normal characters
-        uint32 charIndex = _FindCharIndex(glyphIds, font.numGlyphs, text[i]);
-        if (charIndex == -1) {
-            ASSERT_MSG(0, "Character not found: %c", text[i]);
-            continue;
-        }
-
-        const FontGlyph& glyph = font.glyphs[charIndex];
-
-        Float2 vmin = Float2(x + glyph.planeBounds.xmin, y + glyph.planeBounds.ymin + yoffset) * fontSize;
-        Float2 vmax = Float2(x + glyph.planeBounds.xmax, y + glyph.planeBounds.ymax + yoffset) * fontSize;
-        RectFloat::AddPoint(bounds, vmin);
-        RectFloat::AddPoint(bounds, vmax);
-
-        if (i < textLen - 1)
-            x += _GetKerning(font.kernings.Get(), font.numKernings, text[i], text[i + 1]);
-
-        x += glyph.xadvance;
     }
 
-    return Float2(bounds.Width(), bounds.Height());
-}
-
-void TextBuilder::Destroy(TextGeometry& geo)
-{
-    if (geo.alloc) {
-        Mem::Free(geo.vertices, geo.alloc);
-        Mem::Free(geo.indices, geo.alloc);
-        geo.alloc = nullptr;
-    }
+    return Float2(textWidth, font.lineHeight) * fontSize;
 }
 
 TextDrawGraphicsObjects TextBuilder::HelperCreateGraphicsObjects(const GfxShader& textDrawShader, TextEffect effect,

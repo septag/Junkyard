@@ -260,6 +260,7 @@ namespace R
                 .multisampleFlags = (GfxMultiSampleCount)msaa,
                 .format = GfxBackend::GetValidDepthStencilFormat(), // TODO:
                 .usageFlags = GfxImageUsageFlags::DepthStencilAttachment|GfxImageUsageFlags::Sampled,
+                .arena = GfxMemoryArena::DynamicImageGPU
             };
 
             // Note: this won't probably work with tiled GPUs because it's incompatible with Sampled flag
@@ -278,6 +279,7 @@ namespace R
                 .multisampleFlags = (GfxMultiSampleCount)msaa,
                 .format = GfxBackend::GetSwapchainFormat(), // TODO: 
                 .usageFlags = GfxImageUsageFlags::ColorAttachment,
+                .arena = GfxMemoryArena::DynamicImageGPU
             };
 
             // Note: this won't probably work with tiled GPUs because it's incompatible with Sampled flag
@@ -296,7 +298,7 @@ namespace R
             GfxBufferDesc bufferDesc = {
                 .sizeBytes = sizeof(uint32)*numTilesX*numTilesY*R_LIGHT_CULL_MAX_LIGHTS_PER_TILE,
                 .usageFlags = GfxBufferUsageFlags::TransferDst | GfxBufferUsageFlags::Storage | GfxBufferUsageFlags::ShaderDeviceAddress,
-                .arena = GfxMemoryArena::PersistentAddressGPU,
+                .arena = GfxMemoryArena::DynamicAddressGPU,
                 .perFrameUpdates = true
             };
             gFwd.bVisibleLightIndices = GfxBackend::CreateBuffer(bufferDesc);

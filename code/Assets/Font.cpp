@@ -118,7 +118,9 @@ bool AssetFontImpl::Bake(const AssetParams& params, AssetData* data, const Span<
         for (uint32 i = 0; i < font->numGlyphs; i++) {
             JsonNode jglyph = jglyphs.GetArrayItem(i);
             FontGlyph& glyph = font->glyphs[i];
-            font->glyphIds[i] = (uint16)jglyph.GetChildValue("unicode", uint32(-1));
+            uint16 glyphId = (uint16)jglyph.GetChildValue("unicode", uint32(-1));
+            glyph.id = glyphId;
+            font->glyphIds[i] = glyphId;
             glyph.xadvance = jglyph.GetChildValue("advance", 0.0f);
             
             JsonNode jpb = jglyph.GetChild("planeBounds");

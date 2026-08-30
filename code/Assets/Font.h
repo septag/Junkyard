@@ -7,6 +7,7 @@ struct AssetGroup;
 
 struct FontGlyph
 {
+    uint16 id;
     float xadvance;
     RectFloat planeBounds;
     RectFloat uvBounds;

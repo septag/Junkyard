@@ -260,6 +260,7 @@
     <ClCompile Include="..\..\code\Tool\ShaderCompiler.cpp" />
     <ClCompile Include="..\..\code\Common\ThreadAllocatorArena.cpp" />
     <ClCompile Include="..\..\code\Graphics\Geometry.cpp" />
+    <ClCompile Include="..\..\code\GUI\GUI.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\..\code\Assets\AssetManager.h" />
@@ -349,6 +350,8 @@
     <ClInclude Include="..\..\code\Tool\ShaderCompiler.h" />
     <ClInclude Include="..\..\code\Common\ThreadAllocatorArena.h" />
     <ClInclude Include="..\..\code\Graphics\Geometry.h" />
+    <ClInclude Include="..\..\code\External\clay\clay.h" />
+    <ClInclude Include="..\..\code\GUI\GUI.h" />
   </ItemGroup>
   <ItemGroup>
     <FxCompile Include="..\..\code\Shaders\DebugDraw.hlsl">

@@ -325,13 +325,14 @@ enum class GfxFormat: uint32
 enum class GfxMemoryArena : uint8 
 {
     PersistentGPU = 0,      // Always Device_Local
-    PersistentAddressGPU,   // Always Device_Local but with device address flag (descriptor buffers/etc)
+    PersistentAddressGPU,   // Always Device_Local but with device address flag
     PersistentCPU,          // Permanent staging resources
     TransientCPU,           // Temp staging resources
     DynamicImageGPU,        // Device_Local but dynamically allocated
-    DynamicBufferGPU        // Device_Local but dynamically allocated
+    DynamicBufferGPU,       // Device_Local but dynamically allocated
+    DynamicAddressGPU,      // Always Device_Local but with device address flag and dynamically allocated
 #if PLATFORM_APPLE || PLATFORM_ANDROID
-    , TiledGPU          // Only on Tiled GPUs, transient virtual resources on Tile mem
+    TiledGPU          // Only on Tiled GPUs, transient virtual resources on Tile mem
 #endif
 };
 

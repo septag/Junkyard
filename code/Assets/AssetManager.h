@@ -112,7 +112,8 @@ struct AssetGroup
     void Unload();
 
     // Waits for assets to load. This is not recommended since it blocks the thread, unless you really have to
-    void Wait();    
+    void WaitForLoad();    
+    void WaitForIdle();
     bool IsValid() const;
     bool IsLoadFinished() const;
     bool IsIdle() const;

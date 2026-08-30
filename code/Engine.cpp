@@ -26,6 +26,7 @@
 #include "Tool/Console.h"
 
 #include "Renderer/Render.h"
+#include "GUI/GUI.h"
 
 static constexpr float  ENGINE_REMOTE_RECONNECT_INTERVAL = 5.0f;
 static constexpr uint32 ENGINE_REMOTE_CONNECT_RETRIES = 3;
@@ -490,6 +491,7 @@ bool Engine::Initialize()
     // Initialization time resources
     gEng.initResourcesGroup = Asset::CreateGroup();
 
+    // Debugging and editor tools
     if (gfxSettings.IsGraphicsEnabled()) {
         if (gfxSettings.enableImGui && !ImGui::Initialize()) {
             LOG_ERROR("Initializing ImGui failed");
@@ -531,6 +533,11 @@ bool Engine::Initialize()
             LOG_ERROR("Initializing Renderer failed");
             return false;
         }
+
+        if (!GUI::Initialize()) {
+            LOG_ERROR("Initializing GUI failed");
+            return false;
+        }
     }
 
     LOG_INFO("(init) Engine v%u.%u.%u initialized (%.1f ms)", 
@@ -566,6 +573,7 @@ void Engine::Release()
 
     const SettingsGraphics& gfxSettings = SettingsJunkyard::Get().graphics;
     if (gfxSettings.IsGraphicsEnabled()) {
+        GUI::Release();
         R::Release();
 
         if (ImGui::IsEnabled()) {

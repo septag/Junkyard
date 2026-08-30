@@ -423,13 +423,13 @@ static_assert(sizeof(GfxBackendDeviceMemory) <= 32);
 
 struct GfxBackendMemoryBumpAllocator
 {
-    enum class AllocationFlags
+    enum class AllocationType
     {
         None = 0,
         DeviceAddress
     };
 
-    bool Initialize(VkDeviceSize blockSize, uint32 memoryTypeIndex, AllocationFlags allocFlags = AllocationFlags::None);
+    bool Initialize(VkDeviceSize blockSize, uint32 memoryTypeIndex, AllocationType allocFlags = AllocationType::None);
     void Release();
     GfxBackendDeviceMemory Malloc(const VkMemoryRequirements& memReq);
     void Reset();
@@ -456,7 +456,13 @@ struct GfxBackendMemoryBumpAllocator
 
 struct GfxBackendMemoryOffsetAllocator
 {
-    bool Initialize(VkDeviceSize blockSize, uint32 memoryTypeIndex);
+    enum class AllocationType
+    {
+        None = 0,
+        DeviceAddress
+    };
+
+    bool Initialize(VkDeviceSize blockSize, uint32 memoryTypeIndex, AllocationType allocType = AllocationType::None);
     void Release();
     void Reset();
 
@@ -480,6 +486,7 @@ struct GfxBackendMemoryOffsetAllocator
     VkMemoryPropertyFlags mTypeFlags;
     VkMemoryHeapFlags mHeapFlags;
     Array<Block*> mBlocks;
+    bool mDeviceAddress;
 };
 
 // TODO: For memory management, we can improve the initial allocation methods
@@ -510,6 +517,7 @@ private:
     GfxBackendMemoryBumpAllocator mPersistentAddressGPU;
     GfxBackendMemoryBumpAllocator mPersistentCPU;
     GfxBackendMemoryBumpAllocator mTransientCPU[GFXBACKEND_FRAMES_IN_FLIGHT];
+    GfxBackendMemoryOffsetAllocator mDynamicAddressGPU;
     GfxBackendMemoryOffsetAllocator mDynamicImageGPU;
     GfxBackendMemoryOffsetAllocator mDynamicBufferGPU;
     
@@ -585,7 +593,7 @@ struct GfxBackendPipelineLayout
     GfxPipelineLayoutType type;
     uint32 hash;
     uint32 numBindings;
-    uint32 refCount;
+    AtomicUint32 refCount;  // Identical layouts are shared between callers of CreatePipelineLayout
     uint32 numPushConstants;
     uint32 numSets;
     Binding* bindings; // count = numBindings
@@ -2875,7 +2883,7 @@ void GfxBackend::EndCommandBuffer(GfxCommandBuffer& cmdBuffer)
     Atomic::FetchSub(&queue.numCmdBuffersInRecording, 1);
 }
 
-bool GfxBackendMemoryBumpAllocator::Initialize(VkDeviceSize blockSize, uint32 memoryTypeIndex, AllocationFlags allocFlags)
+bool GfxBackendMemoryBumpAllocator::Initialize(VkDeviceSize blockSize, uint32 memoryTypeIndex, AllocationType allocType)
 {
     ASSERT(memoryTypeIndex != -1);
     ASSERT(gBackendVk.device);
@@ -2884,7 +2892,7 @@ bool GfxBackendMemoryBumpAllocator::Initialize(VkDeviceSize blockSize, uint32 me
     mMemTypeIndex = memoryTypeIndex;
     mBlockSize = blockSize;
     mBlocks.SetAllocator(&gBackendVk.runtimeAlloc);
-    mDeviceAddress = allocFlags == AllocationFlags::DeviceAddress;
+    mDeviceAddress = allocType == AllocationType::DeviceAddress;
 
     const VkMemoryType& memType = gBackendVk.memMan.GetProps().memoryTypes[memoryTypeIndex];
     mTypeFlags = memType.propertyFlags;
@@ -2909,8 +2917,8 @@ bool GfxBackendMemoryBumpAllocator::CreateBlock(Block* block)
     *block = {};
 
     if (gBackendVk.extApi.hasMemoryBudget) {
-        ASSERT_MSG(gBackendVk.memMan.GetDeviceMemoryBudget(mMemTypeIndex) >= mBlockSize, 
-                   "Not enough GPU memory available in the specified heap");
+        ASSERT_ALWAYS(gBackendVk.memMan.GetDeviceMemoryBudget(mMemTypeIndex) >= mBlockSize, 
+                      "Not enough GPU memory available in the specified heap");
     }
 
     VkMemoryAllocateFlagsInfo allocFlags {
@@ -2962,7 +2970,6 @@ GfxBackendDeviceMemory GfxBackendMemoryBumpAllocator::Malloc(const VkMemoryRequi
     //       And if we require a larger size than the block size, allocate extra but throw warning
     if (memReq.size > mBlockSize) {
         ASSERT_MSG(0, "GpuMemoryAllocator block size (%u MB) is smaller than requested size (%u MB)", mBlockSize/SIZE_MB, memReq.size/SIZE_MB);
-        MEM_FAIL();
         return GfxBackendDeviceMemory {};
     }
 
@@ -3299,16 +3306,17 @@ GfxPipelineLayoutHandle GfxBackend::CreatePipelineLayout(const GfxShader& shader
         hasher.Add<VkPushConstantRange>(pushConstantsVk, desc.numPushConstants);
     uint32 hash = hasher.Hash();
 
+    // The lock is held for the rest of the function: if two threads request the same layout and both miss
+    // the search below, they would each create an identical layout and add a duplicate to the pool.
+    // Creating layouts happens rarely (load-time), so holding the pool exclusively here is acceptable
+    ReadWriteMutexWriteScope objPoolLock(gBackendVk.objectPoolsMutex);
+    if (GfxPipelineLayoutHandle layoutHandle = gBackendVk.pipelineLayouts.FindIf(
+        [hash](const GfxBackendPipelineLayout* item)->bool { return item->hash == hash; });
+        layoutHandle.IsValid())
     {
-        ReadWriteMutexReadScope objPoolLock(gBackendVk.objectPoolsMutex);
-        if (GfxPipelineLayoutHandle layoutHandle = gBackendVk.pipelineLayouts.FindIf(
-            [hash](const GfxBackendPipelineLayout* item)->bool { return item->hash == hash; }); 
-            layoutHandle.IsValid())
-        {
-            GfxBackendPipelineLayout* item = gBackendVk.pipelineLayouts.Data(layoutHandle);
-            ++item->refCount;
-            return layoutHandle;
-        }
+        GfxBackendPipelineLayout* item = gBackendVk.pipelineLayouts.Data(layoutHandle);
+        Atomic::FetchAdd(&item->refCount, 1);
+        return layoutHandle;
     }
 
     // Create pipeline data
@@ -3439,16 +3447,25 @@ GfxPipelineLayoutHandle GfxBackend::CreatePipelineLayout(const GfxShader& shader
         return GfxPipelineLayoutHandle();
     }
 
-    ReadWriteMutexWriteScope objPoolLock(gBackendVk.objectPoolsMutex);
     return gBackendVk.pipelineLayouts.Add(layout);
 }
 
 void GfxBackend::DestroyPipelineLayout(GfxPipelineLayoutHandle& handle)
 {
     if (handle.IsValid()) {
-        ReadWriteMutexReadScope objPoolLock(gBackendVk.objectPoolsMutex);
+        // Write scope: we are mutating the pool with Remove() below, and the ref-count check must not
+        // interleave with the lookup/increment in CreatePipelineLayout
+        ReadWriteMutexWriteScope objPoolLock(gBackendVk.objectPoolsMutex);
         GfxBackendPipelineLayout* pipelineLayout = gBackendVk.pipelineLayouts.Data(handle);
-    
+
+        // Layouts are shared (see CreatePipelineLayout), so only the last owner actually destroys it
+        uint32 prevRefCount = Atomic::FetchSub(&pipelineLayout->refCount, 1);
+        ASSERT_MSG(prevRefCount > 0, "PipelineLayout is already destroyed");
+        if (prevRefCount > 1) {
+            handle = {};
+            return;
+        }
+
         MutexScope lock(gBackendVk.garbageMtx);
 
         for (uint32 i = 0; i < pipelineLayout->numSets; i++)  {
@@ -4384,8 +4401,8 @@ void GfxBackend::BatchCreateBuffer(uint32 numBuffers, const GfxBufferDesc* descs
 
         if constexpr (CONFIG_ENABLE_ASSERT) {
             if (IsBitsSet<GfxBufferUsageFlags>(desc.usageFlags, GfxBufferUsageFlags::ShaderDeviceAddress)) {
-                ASSERT_MSG(desc.arena == GfxMemoryArena::PersistentAddressGPU, 
-                           "Buffers with ShaderDeviceAddress usage flag should only allocated in PersistentAddressGPU arena");
+                ASSERT_MSG(desc.arena == GfxMemoryArena::PersistentAddressGPU || desc.arena == GfxMemoryArena::DynamicAddressGPU, 
+                           "Buffers with ShaderDeviceAddress usage flag should only allocated in PersistentAddressGPU or DynamicAddressGPU arenas");
             }
         }
 
@@ -4482,34 +4499,45 @@ void GfxBackend::BatchDestroyBuffer(uint32 numBuffers, GfxBufferHandle* handles)
 
 GfxBackendDeviceMemory GfxBackendDeviceMemoryManager::Malloc(const VkMemoryRequirements& memReq, GfxMemoryArena arena)
 {
-    GfxBackendDeviceMemory mem {
-        .arena = arena
-    };
+    GfxBackendDeviceMemory mem;
+    const char* arenaName;
 
     switch (arena) {
         case GfxMemoryArena::PersistentGPU:
+            arenaName = "PersistentGPU";
             mem = mPersistentGPU.Malloc(memReq);
             break;
 
         case GfxMemoryArena::PersistentAddressGPU:
+            arenaName = "PersistentAddressGPU";
             mem = mPersistentAddressGPU.Malloc(memReq);
             break;
 
         case GfxMemoryArena::PersistentCPU:
+            arenaName = "PersistentCPU";
             mem = mPersistentCPU.Malloc(memReq);
             break;
 
         case GfxMemoryArena::TransientCPU:
+            arenaName = "TransientCPU";
             mem = mTransientCPU[mStagingIndex].Malloc(memReq);
             break;
 
         case GfxMemoryArena::DynamicImageGPU:
+            arenaName = "DynamicImageGPU";
             mem = mDynamicImageGPU.Malloc(memReq);
             break;
 
         case GfxMemoryArena::DynamicBufferGPU:
+            arenaName = "DynamicBufferGPU";
             mem = mDynamicBufferGPU.Malloc(memReq);
             break;
+
+        case GfxMemoryArena::DynamicAddressGPU:
+            arenaName = "DynamicAddressGPU";
+            mem = mDynamicAddressGPU.Malloc(memReq);
+            break;
+
     #if PLATFORM_APPLE || PLATFORM_ANDROID
         case GfxMemoryArena::TiledGPU:
             mem = mTiledGPU.Malloc(memReq);
@@ -4517,7 +4545,13 @@ GfxBackendDeviceMemory GfxBackendDeviceMemoryManager::Malloc(const VkMemoryRequi
     #endif
 
         default:
+            arenaName = "";
             ASSERT_MSG(0, "Not implemented");
+    }
+
+    if (!mem.IsValid()) {
+        LOG_ERROR("Allocating %_$$$llu from GPU memory arena '%s' failed", arenaName);
+        MEM_FAIL();
     }
 
     mem.arena = arena;
@@ -4642,7 +4676,7 @@ bool GfxBackendDeviceMemoryManager::Initialize()
     LOG_VERBOSE("\t\tPersistentGPU: #%u", mPersistentGPU.mMemTypeIndex);
 
     if (!mPersistentAddressGPU.Initialize(64*SIZE_MB, FindDeviceMemoryType(memLocalProp, true), 
-                                          GfxBackendMemoryBumpAllocator::AllocationFlags::DeviceAddress))
+                                          GfxBackendMemoryBumpAllocator::AllocationType::DeviceAddress))
         return false;
     LOG_VERBOSE("\t\tPersistentAddressGPU: #%u", mPersistentGPU.mMemTypeIndex);
 
@@ -4664,13 +4698,21 @@ bool GfxBackendDeviceMemoryManager::Initialize()
     LOG_VERBOSE("\t\tTransientCPU: #%u", mTransientCPU[0].mMemTypeIndex);
 
     {
-        if (!mDynamicImageGPU.Initialize(128*SIZE_MB, FindDeviceMemoryType(memLocalProp, true)))
+        if (!mDynamicImageGPU.Initialize(256*SIZE_MB, FindDeviceMemoryType(memLocalProp, true)))
             return false;
         LOG_VERBOSE("\t\tDynamicImageGPU: #%u", mDynamicImageGPU.mMemTypeIndex);
 
-        if (!mDynamicBufferGPU.Initialize(128*SIZE_MB, FindDeviceMemoryType(memLocalProp, true)))
+        if (!mDynamicBufferGPU.Initialize(256*SIZE_MB, FindDeviceMemoryType(memLocalProp, true)))
             return false;
         LOG_VERBOSE("\t\tDynamicBufferGPU: #%u", mDynamicBufferGPU.mMemTypeIndex);
+
+        if (!mDynamicAddressGPU.Initialize(64*SIZE_MB, FindDeviceMemoryType(memLocalProp, true), 
+                                           GfxBackendMemoryOffsetAllocator::AllocationType::DeviceAddress))
+        {
+            return false;
+        }
+        LOG_VERBOSE("\t\tDynamicAddressGPU: #%u", mDynamicAddressGPU.mMemTypeIndex);
+
     }
 
 #if PLATFORM_APPLE || PLATFORM_ANDROID
@@ -4692,6 +4734,7 @@ void GfxBackendDeviceMemoryManager::Release()
     mPersistentCPU.Release();
     mDynamicImageGPU.Release();
     mDynamicBufferGPU.Release();
+    mDynamicAddressGPU.Release();
     for (uint32 i = 0; i < GFXBACKEND_FRAMES_IN_FLIGHT; i++)
         mTransientCPU[i].Release();
 #if PLATFORM_APPLE || PLATFORM_ANDROID
@@ -5336,8 +5379,6 @@ void GfxBackendQueueManager::BeginFrame()
     ++mGeneration;
     mFrameIndex = mGeneration % GFXBACKEND_FRAMES_IN_FLIGHT;
 
-    GFX_DEBUG("Begin: %u", mFrameIndex);
-
     for (uint32 i = mNumQueues; i-- > 0;) {
         GfxBackendQueue& queue = mQueues[i];
         GfxBackendCommandBufferContext& cmdBufferCtx = queue.cmdBufferContexts[mFrameIndex];
@@ -5348,6 +5389,7 @@ void GfxBackendQueueManager::BeginFrame()
 
         // Wait for all submitted command-buffers to finish in the queue
         if (!cmdBufferCtx.fences.IsEmpty()) {
+            PROFILE_ZONE("WaitForFences");
             static constexpr uint64 TIMEOUT = 500*1000*1000;
             [[maybe_unused]] VkResult r = vkWaitForFences(gBackendVk.device, cmdBufferCtx.fences.Count(), cmdBufferCtx.fences.Ptr(), true, TIMEOUT);
             if (r == VK_TIMEOUT) {
@@ -6561,7 +6603,7 @@ void GfxBackend::DestroySampler(GfxSamplerHandle& handle)
     }
 }
 
-bool GfxBackendMemoryOffsetAllocator::Initialize(VkDeviceSize blockSize, uint32 memoryTypeIndex)
+bool GfxBackendMemoryOffsetAllocator::Initialize(VkDeviceSize blockSize, uint32 memoryTypeIndex, AllocationType allocType)
 {
     ASSERT(memoryTypeIndex != -1);
     ASSERT(gBackendVk.device);
@@ -6571,6 +6613,8 @@ bool GfxBackendMemoryOffsetAllocator::Initialize(VkDeviceSize blockSize, uint32 
     mMemTypeIndex = memoryTypeIndex;
     mBlockSize = uint32(blockSize);
     mBlocks.SetAllocator(&gBackendVk.runtimeAlloc);
+
+    mDeviceAddress = allocType == AllocationType::DeviceAddress;
 
     const VkMemoryType& memType = gBackendVk.memMan.GetProps().memoryTypes[memoryTypeIndex];
     mTypeFlags = memType.propertyFlags;
@@ -6613,12 +6657,18 @@ GfxBackendMemoryOffsetAllocator::Block* GfxBackendMemoryOffsetAllocator::CreateB
                                                 offsetAllocMem, offsetAllocMemSize);
 
     if (gBackendVk.extApi.hasMemoryBudget) {
-        ASSERT_MSG(gBackendVk.memMan.GetDeviceMemoryBudget(mMemTypeIndex) >= mBlockSize, 
-                   "Not enough GPU memory available in the specified heap");
+        ASSERT_ALWAYS(gBackendVk.memMan.GetDeviceMemoryBudget(mMemTypeIndex) >= mBlockSize, 
+                      "Not enough GPU memory available in the specified heap");
     }
+
+    VkMemoryAllocateFlagsInfo allocFlags {
+        .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_FLAGS_INFO,
+        .flags = VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT
+    };
 
     VkMemoryAllocateInfo allocInfo {
         .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+        .pNext = mDeviceAddress ? &allocFlags : nullptr,
         .allocationSize = mBlockSize,
         .memoryTypeIndex = mMemTypeIndex
     };
@@ -6658,13 +6708,12 @@ GfxBackendDeviceMemory GfxBackendMemoryOffsetAllocator::Malloc(const VkMemoryReq
     ASSERT(memReq.alignment);
 
     if (!((memReq.memoryTypeBits >> mMemTypeIndex) & 0x1)) {
-        ASSERT_ALWAYS(0, "Allocation for this resource is not supported by this memory type");
+        ASSERT_MSG(0, "Allocation for this resource is not supported by this memory type");
         return GfxBackendDeviceMemory {};
     }
 
     if (memReq.size > mBlockSize) {
         ASSERT_MSG(0, "GpuMemoryAllocator block size (%_$$$llu) is smaller than requested size (%_$$$llu)", mBlockSize, memReq.size);
-        MEM_FAIL();
         return GfxBackendDeviceMemory {};
     }
 

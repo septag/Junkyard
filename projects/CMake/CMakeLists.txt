@@ -44,6 +44,9 @@ file(GLOB HEADERS_Graphics ../../code/Graphics/*.h)
 file(GLOB SOURCE_Renderers ../../code/Renderer/*.cpp)
 file(GLOB HEADERS_Renderers ../../code/Renderer/*.h)
 
+file(GLOB SOURCE_GUI ../../code/GUI/*.cpp)
+file(GLOB HEADERS_GUI ../../code/GUI/*.h)
+
 file(GLOB SOURCE_ImGui ../../code/ImGui/*.cpp)
 file(GLOB HEADERS_ImGui ../../code/ImGui/*.h)
 
@@ -70,6 +73,7 @@ add_library(Junkyard STATIC
     ${SOURCE_DebugTools} ${HEADERS_DebugTools}
     ${SOURCE_Graphics} ${HEADERS_Graphics} 
     ${SOURCE_Renderers} ${HEADERS_Renderers} 
+    ${SOURCE_GUI} ${HEADERS_GUI}
     ${SOURCE_ImGui} ${HEADERS_ImGui}
     ${SOURCE_Tool} ${HEADERS_Tool}
     ${SOURCE_Assets} ${HEADERS_Assets} 
@@ -181,6 +185,9 @@ else()
 
     add_executable(TestCollision ../../code/Tests/TestCollision.cpp)
     target_link_libraries(TestCollision Junkyard)
+
+    add_executable(TestUI ../../code/Tests/TestUI.cpp)
+    target_link_libraries(TestUI Junkyard)
 
 endif()
 

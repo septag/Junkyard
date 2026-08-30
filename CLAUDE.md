@@ -39,7 +39,7 @@ Setup.sh    # Linux/macOS
 
 The codebase is a portable C++ game/application framework built in minimal C++20 (no STL, no RTTI, no exceptions). Vulkan is the only graphics API.
 
-**Module layout under `code/`:**
+**Main source code under `code/`:**
 
 | Directory | Purpose |
 |-----------|---------|
@@ -60,7 +60,12 @@ The codebase is a portable C++ game/application framework built in minimal C++20
 
 **Asset pipeline**: Assets are baked on the PC. For platforms without local baking support, run `JunkyardTool` as a server and configure `Settings.ini` with `connectToServer=true` and `remoteServicesUrl=[host_ip]:6006`.
 
-**Memory**: Only `Mem::Alloc/Free/Realloc` — never `malloc/free/new/delete`. For placement-new scenarios use `NEW`/`NEW_ARRAY`/`PLACEMENT_NEW` macros. Temp allocator (`Mem::GetTempAllocator()`) for short-lived frame allocations.
+**Memory**: Only `Mem::Alloc/Free/Realloc` — never `malloc/free/new/delete`. For placement-new scenarios use `NEW`/`NEW_ARRAY`/`PLACEMENT_NEW` macros. Temp allocator (`MemTempAllocator`) for short-lived frame allocations.
+
+**Dear ImGui**: Used for editor/tooling UI. `code/ImGui/ImGuiMain.h` has all the helper functions
+**Clay**: UI layout library used for in-game UI. `code/External/clay/clay.h` and documentation is in `code/External/clay/README.md`. 
+
+**Examples**: All test/example code is under `code/Tests`
 
 ## Coding Conventions
 

@@ -347,30 +347,34 @@ struct TestBasicGfxApp final : AppCallbacks
     bool mMinimized = false;
     bool mDrawGrid = true;
 
+    void RecreateRenderTargetDepth(uint16 width, uint16 height)
+    {
+        if (mRenderTargetDepth.IsValid())
+            GfxBackend::DestroyImage(mRenderTargetDepth);
+
+        GfxImageDesc desc {
+            .width = width,
+            .height = height,
+            .multisampleFlags = GfxMultiSampleCount::SampleCount1,
+            .format = GfxBackend::GetValidDepthStencilFormat(),
+            .usageFlags = GfxImageUsageFlags::DepthStencilAttachment|GfxImageUsageFlags::TransientAttachment,
+            .arena = GfxMemoryArena::DynamicImageGPU
+        };
+
+        mRenderTargetDepth = GfxBackend::CreateImage(desc);
+    }
+
     static void InitializeResources(void* userData)
     {
         TestBasicGfxApp* self = (TestBasicGfxApp*)userData;
-
-        {
-            Int2 extent = GfxBackend::GetSwapchainExtent();
-            GfxImageDesc desc {
-                .width = uint16(extent.x),
-                .height = uint16(extent.y),
-                .multisampleFlags = GfxMultiSampleCount::SampleCount1,
-                .format = GfxBackend::GetValidDepthStencilFormat(),
-                .usageFlags = GfxImageUsageFlags::DepthStencilAttachment|GfxImageUsageFlags::TransientAttachment,
-                .arena = GfxMemoryArena::PersistentGPU
-            };
-
-            self->mRenderTargetDepth = GfxBackend::CreateImage(desc);
-        }
+        self->RecreateRenderTargetDepth(App::GetFramebufferWidth(), App::GetFramebufferHeight());
     }
 
     bool Initialize() override
     {
         ASSERT_MSG(!SettingsJunkyard::Get().engine.connectToServer, "Not implemented");
 
-        // For remote mode, you also have to use "-ToolingServerCustomDataMountDir=data/TestAsset" argument for the server tool
+        // For remote mode, you also have to use "-ToolingServerCustomDataMountDir=data/TestBasicGfx" argument for the server tool
         Vfs::MountLocal("data/TestBasicGfx", "data", true);
 
         if (!Engine::Initialize())
@@ -516,6 +520,8 @@ struct TestBasicGfxApp final : AppCallbacks
             mMinimized = true;            
         else if (ev.type == AppEventType::Restored)
             mMinimized = false;
+        else if (ev.type == AppEventType::Resized)
+            RecreateRenderTargetDepth(ev.framebufferWidth, ev.framebufferHeight);
     }
 };
 

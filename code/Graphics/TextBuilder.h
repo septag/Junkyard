@@ -13,15 +13,6 @@ struct TextVertex
     Color4u color;
 };
 
-struct TextGeometry
-{
-    uint32 numIndices;
-    uint32 numVertices;
-    MemAllocator* alloc;
-    TextVertex* vertices;
-    uint32* indices;
-};
-
 enum class TextType
 {
     Ascii = 0,
@@ -36,6 +27,12 @@ enum class TextEffect : int
     Outline
 };
 
+enum class TextAlignment 
+{
+    Left = 0,
+    Center,
+    Right
+};
 
 struct TextDrawGraphicsObjects
 {
@@ -46,15 +43,14 @@ struct TextDrawGraphicsObjects
 
 namespace TextBuilder
 {
-    TextGeometry CreateText(const FontData& font, Float2 pos, float scale,
-                            const char* text, uint32 textLen = 0, 
-                            Color4u color = COLOR4U_WHITE, TextType type = TextType::Ascii, 
-                            MemAllocator* alloc = Mem::GetDefaultAlloc());
+    // numIndices = textLen * 6
+    // numVertices = textLen * 4
+    void CreateText(TextVertex* outVertices, uint32 maxVertices, uint32* outIndices, uint32 maxIndices,
+                    const char* text, uint32 textLen, const FontData& font, Float2 pos, 
+                    TextAlignment align = TextAlignment::Left, Color4u color = COLOR4U_WHITE, float scale = 1);
     Float2 CalculateTextSize(const FontData& font, float scale, 
                              const char* text, uint32 textLen = 0, 
                              TextType type = TextType::Ascii);
-
-    void Destroy(TextGeometry& geo);
 
     TextDrawGraphicsObjects HelperCreateGraphicsObjects(const GfxShader& textDrawShader, TextEffect effect,
                                                         GfxFormat colorAttachmentFmt, GfxFormat depthStencilAttachmentFmt);

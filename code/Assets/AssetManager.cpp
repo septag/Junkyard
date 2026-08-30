@@ -1999,7 +1999,7 @@ AssetGroup Asset::CreateGroup()
 {
     AssetGroupInternal groupInternal {};
 
-    MemAllocator* alloc = Mem::GetDefaultAlloc();
+    MemAllocator* alloc = Mem::GetDefaultAlloc(); 
 
     groupInternal.loadList.SetAllocator(alloc);
     groupInternal.handles.SetAllocator(alloc);
@@ -2418,11 +2418,22 @@ void AssetGroup::Unload()
     }
 }
 
-void AssetGroup::Wait()
+void AssetGroup::WaitForLoad()
 {
     ReadWriteMutexReadScope rdlock(gAssetMan.groupsMutex);
     AssetGroupInternal& group = gAssetMan.groups.Data(mHandle);
     while (Atomic::LoadExplicit(&group.state, AtomicMemoryOrder::Acquire) != uint32(AssetGroupState::Loaded)) {
+        OS::PauseCPU();
+        if (Engine::IsMainThread())
+            Asset::Update();
+    }
+}
+
+void AssetGroup::WaitForIdle()
+{
+    ReadWriteMutexReadScope rdlock(gAssetMan.groupsMutex);
+    AssetGroupInternal& group = gAssetMan.groups.Data(mHandle);
+    while (Atomic::LoadExplicit(&group.state, AtomicMemoryOrder::Acquire) != uint32(AssetGroupState::Idle)) {
         OS::PauseCPU();
         if (Engine::IsMainThread())
             Asset::Update();

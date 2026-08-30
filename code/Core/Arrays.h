@@ -40,6 +40,7 @@ struct Array
     [[nodiscard]] _T* Push();
     _T* Push(const _T& item);
     _T* PushBatch(const _T* items, uint32 numItems);
+    _T* PushBatch(uint32 numItems);
 
     // _Func = [](const _T& a, const _T& b)->int
     // This is just a naive insertion sort. Works for small/relatively sorted data sets
@@ -260,6 +261,29 @@ inline _T* Array<_T>::PushBatch(const _T* items, uint32 numItems)
 
     _T* dest = &mBuffer[mCount];
     memcpy(dest, items, sizeof(_T)*numItems);
+    mCount += numItems;
+
+    return dest;
+}
+
+template <typename _T>
+inline _T* Array<_T>::PushBatch(uint32 numItems)
+{
+    ASSERT(numItems);
+
+    uint32 targetCount = mCount + numItems;
+    if (targetCount > mCapacity) {
+        if (mAlloc) {
+            Reserve(AlignValue(targetCount, 8u));
+        }
+        else {
+            ASSERT(mBuffer);
+            ASSERT_MSG(mCount < mCapacity, "Array overflow, capacity=%u", mCapacity);
+            return nullptr;
+        }
+    }
+
+    _T* dest = &mBuffer[mCount];
     mCount += numItems;
 
     return dest;

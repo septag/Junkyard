@@ -433,13 +433,13 @@ struct RectFloat
     float  Width() const;
     float  Height() const;
 
-    static RectFloat   CenterExtents(Float2 center, Float2 extents);
-    static RectFloat   Expand(const RectFloat rc, Float2 expand);
-    static bool   TestPoint(const RectFloat rc, Float2 pt);
-    static bool   Test(const RectFloat rc1, const RectFloat rc2);
-    static void   AddPoint(RectFloat& rc, Float2 pt);
+    static RectFloat CenterExtents(Float2 center, Float2 extents);
+    static RectFloat Expand(const RectFloat rc, Float2 expand);
+    static bool TestPoint(const RectFloat rc, Float2 pt);
+    static bool Test(const RectFloat rc1, const RectFloat rc2);
+    static void AddPoint(RectFloat& rc, Float2 pt);
     static Float2 GetCorner(const RectFloat* rc, int index);
-    static void   GetCorners(const RectFloat* rc, Float2 corners[4]);
+    static void GetCorners(const RectFloat* rc, Float2 corners[4]);
     static Float2 Extents(const RectFloat rc);
     static Float2 Center(const RectFloat rc);
     static RectFloat   Translate(const RectFloat rc, Float2 pos);
