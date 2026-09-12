@@ -284,7 +284,9 @@ void CameraOrbit::SetLookAt(Float3 pos, Float3 target, Float3 up)
     Float3 look = target - pos;
 
     mDistance = Float3::Len(look);
-    mOrbit = -ACos(Float2Dot(Float2Norm(Float2(look.f)*-1.0f), Float2(1.0f, 0)));
+
+    // Orbit is the azimuth of the camera around the target. ACos cannot be used here, because it discards the sign
+    mOrbit = ATan2(pos.y - target.y, pos.x - target.x);
 
     float a = ACos(Float3Dot(Float3Norm(look), IsEqual(look.z, 0, 0.00001f) ? FLOAT3_ZERO : Float3Norm(Float3(0, 0, look.z))));
     mElevation = M_HALFPI - a;
@@ -304,11 +306,14 @@ void CameraOrbit::RotateOrbit(float orbit)
 {
     mOrbit += orbit;
 
-    float x = mDistance * M::Cos(mOrbit);
-    float y = mDistance * M::Sin(mOrbit);
+    // Position on the sphere around the target. `mElevation` shrinks the radius of the horizontal circle,
+    // so that the camera stays `mDistance` away from the target on every elevation
+    float radius = mDistance * M::Cos(mElevation);
+    float x = radius * M::Cos(mOrbit);
+    float y = radius * M::Sin(mOrbit);
     float z = mDistance * M::Cos(M_HALFPI - mElevation);
 
-    Camera::SetLookAt(Float3(x, y, z), mTarget);
+    Camera::SetLookAt(mTarget + Float3(x, y, z), mTarget);
 }
 
 void CameraOrbit::HandleRotationMouse(const AppEvent& ev, float rotateSpeed, float zoomStep)
