@@ -445,7 +445,7 @@ struct TestBasicGfxApp final : AppCallbacks
                     .depth = 1.0f
                 }
             },
-            .swapchain = true,
+            .swapchain = GfxBackend::GetMainSwapchain(),
             .hasDepth = true
         };
 
@@ -520,7 +520,7 @@ struct TestBasicGfxApp final : AppCallbacks
             mMinimized = true;            
         else if (ev.type == AppEventType::Restored)
             mMinimized = false;
-        else if (ev.type == AppEventType::Resized)
+        else if (ev.type == AppEventType::Resized && ev.window == App::GetMainWindow())
             RecreateRenderTargetDepth(ev.framebufferWidth, ev.framebufferHeight);
     }
 };

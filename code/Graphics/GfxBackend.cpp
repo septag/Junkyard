@@ -137,34 +137,6 @@ struct GfxBackendVkAllocator
     VkAllocationCallbacks mCallbacks;
 };
 
-struct GfxBackendSwapchain
-{
-    struct ImageState
-    {
-        VkPipelineStageFlags2 lastStage;
-        VkImageLayout lastLayout;
-        VkAccessFlags2 lastAccessFlags;
-    };
-
-    uint32 imageIndex;
-    uint32 numImages;
-    VkSwapchainKHR handle;
-    VkSurfaceFormatKHR format;
-    VkImage images[GFXBACKEND_BACKBUFFER_COUNT];
-    VkImageView imageViews[GFXBACKEND_BACKBUFFER_COUNT];
-    VkSemaphore imageReadySemaphores[GFXBACKEND_FRAMES_IN_FLIGHT];         // Signals when image is acquired for rendering. 
-    VkSemaphore renderFinishedSemaphores[GFXBACKEND_BACKBUFFER_COUNT];     // Signals after all rendering is finished (Ready for present)
-    ImageState imageStates[GFXBACKEND_BACKBUFFER_COUNT];
-    VkExtent2D extent;
-    bool resize;
-
-    VkSemaphore GetSwapchainReadySemaphore(uint32 frameIdx) { return imageReadySemaphores[frameIdx]; }
-    VkSemaphore GetSwapchainRenderFinishedSemaphore() { return renderFinishedSemaphores[imageIndex]; }
-    VkImage GetImage() { return images[imageIndex]; }
-    VkImageView GetImageView() { return imageViews[imageIndex]; }
-    ImageState& GetImageState() { return imageStates[imageIndex]; }
-};
-
 struct GfxBackendSwapchainInfo
 {
     VkSurfaceCapabilitiesKHR caps;
@@ -174,11 +146,51 @@ struct GfxBackendSwapchainInfo
     VkPresentModeKHR* presentModes;
 };
 
+struct GfxBackendSwapchain
+{
+    struct ImageState
+    {
+        VkPipelineStageFlags2 lastStage;
+        VkImageLayout lastLayout;
+        VkAccessFlags2 lastAccessFlags;
+    };
+
+    VkSurfaceKHR surface;
+    GfxBackendSwapchainInfo info;
+    uint32 imageIndex;
+    uint32 numImages;
+    VkSwapchainKHR handle;
+    bool isMain;
+    VkSurfaceFormatKHR format;
+    VkImage images[GFXBACKEND_BACKBUFFER_COUNT];
+    VkImageView imageViews[GFXBACKEND_BACKBUFFER_COUNT];
+    VkSemaphore imageReadySemaphores[GFXBACKEND_FRAMES_IN_FLIGHT];         // Signals when image is acquired for rendering. 
+    VkSemaphore renderFinishedSemaphores[GFXBACKEND_BACKBUFFER_COUNT];     // Signals after all rendering is finished (Ready for present)
+    ImageState imageStates[GFXBACKEND_BACKBUFFER_COUNT];
+    VkExtent2D extent;
+    // Secondary swapchains are resized and destroyed at a safe point in End(), never inline:
+    // vkDeviceWaitIdle needs every VkQueue externally synchronized, and the submission thread
+    // is only known to be idle after End() drains frameSyncSignal
+    Int2 requestedSize;
+    bool wantDestroy;
+    bool resize;
+
+    VkSemaphore GetSwapchainReadySemaphore(uint32 frameIdx) { return imageReadySemaphores[frameIdx]; }
+    VkSemaphore GetSwapchainRenderFinishedSemaphore() { return renderFinishedSemaphores[imageIndex]; }
+    VkImage GetImage() { return images[imageIndex]; }
+    VkImageView GetImageView() { return imageViews[imageIndex]; }
+    ImageState& GetImageState() { return imageStates[imageIndex]; }
+};
+
+
 struct GfxBackendQueueFamily
 {
     GfxQueueType type;
     uint32 count;
 };
+
+// Swapchains presented from a single queue submission. One per ImGui viewport plus the main window
+inline constexpr uint32 GFXBACKEND_MAX_SWAPCHAIN_TARGETS = 8;
 
 struct GfxBackendQueueSubmitRequest
 {
@@ -188,6 +200,8 @@ struct GfxBackendQueueSubmitRequest
     VkFence fence;
     VkSemaphore semaphore;
     uint32 numCmdBuffers;
+    GfxSwapchainHandle swapchainTargets[GFXBACKEND_MAX_SWAPCHAIN_TARGETS];
+    uint32 numSwapchainTargets;
 };
 
 struct GfxBackendCommandBufferContext
@@ -312,6 +326,9 @@ struct GfxBackendQueue
     Array<PendingBarrier> pendingBarriers;  // Buffers transfers coming into this queue
     Array<PendingBarrier> dependentBarriers; // Barriers that needs to be submitted for dependent queues (after current submission)
     GfxQueueType internalDependents;
+    // Filled while recording (alongside internalDependents), drained into the submit request
+    GfxSwapchainHandle swapchainTargets[GFXBACKEND_MAX_SWAPCHAIN_TARGETS];
+    uint32 numSwapchainTargets;
     AtomicUint32 numCmdBuffersInRecording;
     AtomicUint32 numPendingCmdBuffers;
 
@@ -674,9 +691,12 @@ struct GfxBackendVk
     VkDebugUtilsMessengerEXT debugMessenger;
     GfxBackendGpu gpu;
     VkDevice device;
-    VkSurfaceKHR surface;
-    GfxBackendSwapchainInfo swapchainInfo;
-    GfxBackendSwapchain swapchain;
+    HandlePool<GfxSwapchainHandle, GfxBackendSwapchain> swapchains;
+    GfxSwapchainHandle mainSwapchain;
+    // Swapchains whose image was acquired this frame. Every one of them must be presented in End()
+    GfxSwapchainHandle acquiredSwapchains[GFXBACKEND_MAX_SWAPCHAIN_TARGETS];
+    uint32 numAcquiredSwapchains;
+    SpinLockMutex acquiredSwapchainsMtx;
     GfxBackendVkExtensions extApi;
     GfxBackendDeviceMemoryManager memMan;
     GfxBackendQueueManager queueMan;
@@ -704,6 +724,126 @@ struct GfxBackendVk
 };
 
 static GfxBackendVk gBackendVk;
+
+// The swapchain that presents to the main window. Registered at the very start of Initialize so that every
+// call site predating multi-swapchain support resolves through here, including in headless mode where
+// `surface` simply stays null
+static inline GfxBackendSwapchain& _MainSwapchain()
+{
+    return gBackendVk.swapchains.Data(gBackendVk.mainSwapchain);
+}
+
+// An invalid handle means the main swapchain, so existing single-window call sites need no change
+static inline GfxBackendSwapchain& _GetSwapchain(GfxSwapchainHandle handle)
+{
+    return handle.IsValid() ? gBackendVk.swapchains.Data(handle) : _MainSwapchain();
+}
+
+// Acquires an image if this swapchain has not been acquired yet in the current frame.
+// The main swapchain is acquired eagerly by Begin(), secondary ones lazily on first use
+namespace GfxBackend
+{
+    // Defined further down, next to the rest of the swapchain handling
+    static bool _ResizeSwapchain(GfxBackendSwapchain* swapchain, Int2 size, bool forceSRGB);
+    static void _ReleaseSwapchain(GfxBackendSwapchain* swapchain);
+}
+
+// Deferred swapchain resize/destroy. Only safe where the submission thread is idle, which is why
+// this runs at the start of a frame (after queueMan.BeginFrame waits on the in-flight fences)
+// and never inline from a window event
+static void _ServicePendingSwapchainWork()
+{
+    bool forceSRGB = SettingsJunkyard::Get().graphics.surfaceSRGB;
+
+    GfxSwapchainHandle pendingDestroy[GFXBACKEND_MAX_SWAPCHAIN_TARGETS];
+    uint32 numPendingDestroy = 0;
+    bool needsWaitIdle = false;
+
+    for (uint32 i = 0; i < gBackendVk.swapchains.Count(); i++) {
+        GfxSwapchainHandle handle = gBackendVk.swapchains.HandleAt(i);
+        const GfxBackendSwapchain& swapchain = gBackendVk.swapchains.Data(handle);
+        if (swapchain.wantDestroy || swapchain.resize)
+            needsWaitIdle = true;
+        if (swapchain.wantDestroy && numPendingDestroy < GFXBACKEND_MAX_SWAPCHAIN_TARGETS)
+            pendingDestroy[numPendingDestroy++] = handle;
+    }
+
+    if (needsWaitIdle)
+        vkDeviceWaitIdle(gBackendVk.device);
+
+    for (uint32 i = 0; i < gBackendVk.swapchains.Count(); i++) {
+        GfxSwapchainHandle handle = gBackendVk.swapchains.HandleAt(i);
+        GfxBackendSwapchain& swapchain = gBackendVk.swapchains.Data(handle);
+        if (swapchain.wantDestroy || !swapchain.resize)
+            continue;
+
+        // The main swapchain follows the window, secondary ones follow what their owner asked for
+        Int2 size = swapchain.isMain ?
+            Int2(App::GetFramebufferWidth(), App::GetFramebufferHeight()) :
+            swapchain.requestedSize;
+        GfxBackend::_ResizeSwapchain(&swapchain, size, forceSRGB);
+    }
+
+    for (uint32 i = 0; i < numPendingDestroy; i++) {
+        GfxBackend::_ReleaseSwapchain(&gBackendVk.swapchains.Data(pendingDestroy[i]));
+        gBackendVk.swapchains.Remove(pendingDestroy[i]);
+    }
+}
+
+// Returns false when no image could be acquired. In that case the ready semaphore is NOT signalled,
+// so nothing may wait on it and the swapchain must not be presented, otherwise the submission
+// blocks forever and the next frame times out waiting on its fence
+static bool _AcquireSwapchainOnce(GfxSwapchainHandle handle)
+{
+    ASSERT(handle.IsValid());
+
+    SpinLockMutexScope lock(gBackendVk.acquiredSwapchainsMtx);
+    for (uint32 i = 0; i < gBackendVk.numAcquiredSwapchains; i++) {
+        if (gBackendVk.acquiredSwapchains[i] == handle)
+            return true;
+    }
+
+    ASSERT_MSG(gBackendVk.numAcquiredSwapchains < GFXBACKEND_MAX_SWAPCHAIN_TARGETS,
+               "Too many swapchains presented in a single frame");
+
+    GfxBackendSwapchain& swapchain = gBackendVk.swapchains.Data(handle);
+    VkResult r = vkAcquireNextImageKHR(gBackendVk.device, swapchain.handle, UINT64_MAX,
+                                       swapchain.GetSwapchainReadySemaphore(gBackendVk.queueMan.GetFrameIndex()),
+                                       nullptr, &swapchain.imageIndex);
+    if (r == VK_ERROR_OUT_OF_DATE_KHR) {
+        // Rebuilt at the start of the next frame, this one is dropped for that swapchain
+        swapchain.resize = true;
+        return false;
+    }
+    if (r != VK_SUCCESS && r != VK_SUBOPTIMAL_KHR)
+        ASSERT_ALWAYS(0, "Gfx: AcquireSwapchain failed");
+
+    gBackendVk.acquiredSwapchains[gBackendVk.numAcquiredSwapchains++] = handle;
+    return true;
+}
+
+static bool _IsSwapchainAcquired(GfxSwapchainHandle handle)
+{
+    SpinLockMutexScope lock(gBackendVk.acquiredSwapchainsMtx);
+    for (uint32 i = 0; i < gBackendVk.numAcquiredSwapchains; i++) {
+        if (gBackendVk.acquiredSwapchains[i] == handle)
+            return true;
+    }
+    return false;
+}
+
+// Records that the queue currently being recorded into will present to this swapchain
+static void _AddQueueSwapchainTarget(GfxBackendQueue& queue, GfxSwapchainHandle handle)
+{
+    for (uint32 i = 0; i < queue.numSwapchainTargets; i++) {
+        if (queue.swapchainTargets[i] == handle)
+            return;
+    }
+
+    ASSERT_MSG(queue.numSwapchainTargets < GFXBACKEND_MAX_SWAPCHAIN_TARGETS,
+               "Too many swapchains targeted by a single queue submission");
+    queue.swapchainTargets[queue.numSwapchainTargets++] = handle;
+}
 
 namespace GfxBackend
 {
@@ -1648,14 +1788,53 @@ namespace GfxBackend
         Mem::Free(gBackendVk.gpu.extensions, alloc);
     }
 
-    static bool _ResizeSwapchain(GfxBackendSwapchain* swapchain, VkSurfaceKHR surface, Int2 size, bool forceSRGB)
+    static void _QuerySwapchainInfo(GfxBackendSwapchain* swapchain)
     {
-        vkGetPhysicalDeviceSurfaceCapabilitiesKHR(gBackendVk.gpu.handle, gBackendVk.surface, &gBackendVk.swapchainInfo.caps);
+        ASSERT(swapchain->surface);
+        GfxBackendSwapchainInfo& info = swapchain->info;
+
+        uint32 numFormats = 0;
+        vkGetPhysicalDeviceSurfaceFormatsKHR(gBackendVk.gpu.handle, swapchain->surface, &numFormats, nullptr);
+        info.numFormats = numFormats;
+        info.formats = Mem::AllocTyped<VkSurfaceFormatKHR>(numFormats, &gBackendVk.parentAlloc);
+        vkGetPhysicalDeviceSurfaceFormatsKHR(gBackendVk.gpu.handle, swapchain->surface, &numFormats, info.formats);
+
+        uint32 numPresentModes = 0;
+        vkGetPhysicalDeviceSurfacePresentModesKHR(gBackendVk.gpu.handle, swapchain->surface, &numPresentModes, nullptr);
+        info.numPresentModes = numPresentModes;
+        info.presentModes = Mem::AllocTyped<VkPresentModeKHR>(numPresentModes, &gBackendVk.parentAlloc);
+        vkGetPhysicalDeviceSurfacePresentModesKHR(gBackendVk.gpu.handle, swapchain->surface, &numPresentModes, info.presentModes);
+    }
+
+    // A present that fails with OUT_OF_DATE does not necessarily consume its wait semaphore, so a
+    // renderFinished semaphore can survive signalled. Signalling an already-signalled binary semaphore
+    // on the next frame wedges the queue, so they are all rebuilt whenever the swapchain is.
+    // Caller must have made the device idle first
+    static void _RecreateSwapchainSemaphores(GfxBackendSwapchain* swapchain)
+    {
+        VkSemaphoreCreateInfo semCreateInfo { .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO };
+
+        for (uint32 i = 0; i < GFXBACKEND_BACKBUFFER_COUNT; i++) {
+            if (swapchain->renderFinishedSemaphores[i])
+                vkDestroySemaphore(gBackendVk.device, swapchain->renderFinishedSemaphores[i], gBackendVk.vkAlloc);
+            vkCreateSemaphore(gBackendVk.device, &semCreateInfo, gBackendVk.vkAlloc, &swapchain->renderFinishedSemaphores[i]);
+        }
+
+        for (uint32 i = 0; i < GFXBACKEND_FRAMES_IN_FLIGHT; i++) {
+            if (swapchain->imageReadySemaphores[i])
+                vkDestroySemaphore(gBackendVk.device, swapchain->imageReadySemaphores[i], gBackendVk.vkAlloc);
+            vkCreateSemaphore(gBackendVk.device, &semCreateInfo, gBackendVk.vkAlloc, &swapchain->imageReadySemaphores[i]);
+        }
+    }
+
+    static bool _ResizeSwapchain(GfxBackendSwapchain* swapchain, Int2 size, bool forceSRGB)
+    {
+        vkGetPhysicalDeviceSurfaceCapabilitiesKHR(gBackendVk.gpu.handle, swapchain->surface, &swapchain->info.caps);
 
         // Take care of possible swapchain transform, specifically on android!
         // https://android-developers.googleblog.com/2020/02/handling-device-orientation-efficiently.html
         # if PLATFORM_ANDROID
-        const VkSurfaceCapabilitiesKHR& swapchainCaps = gBackendVk.swapchainInfo.caps;
+        const VkSurfaceCapabilitiesKHR& swapchainCaps = swapchain->info.caps;
         if (swapchainCaps.currentTransform & VK_SURFACE_TRANSFORM_ROTATE_90_BIT_KHR)
             App::AndroidSetFramebufferTransform(AppFramebufferTransform::Rotate90);
         if (swapchainCaps.currentTransform & VK_SURFACE_TRANSFORM_ROTATE_180_BIT_KHR)
@@ -1664,7 +1843,7 @@ namespace GfxBackend
             App::AndroidSetFramebufferTransform(AppFramebufferTransform::Rotate270);
         #endif
 
-        const GfxBackendSwapchainInfo& info = gBackendVk.swapchainInfo;
+        const GfxBackendSwapchainInfo& info = swapchain->info;
         VkSurfaceFormatKHR chosenFormat {};
 
         // Prefer BGRA first
@@ -1724,7 +1903,7 @@ namespace GfxBackend
         uint32 numImages = Clamp(GFXBACKEND_BACKBUFFER_COUNT, info.caps.minImageCount, info.caps.maxImageCount);
         VkSwapchainCreateInfoKHR createInfo {
             .sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
-            .surface = surface,
+            .surface = swapchain->surface,
             .minImageCount = numImages,
             .imageFormat = chosenFormat.format,
             .imageColorSpace = chosenFormat.colorSpace,
@@ -1791,28 +1970,17 @@ namespace GfxBackend
         swapchain->format = chosenFormat;
         swapchain->resize = false;
         memset(swapchain->imageStates, 0x0, sizeof(swapchain->imageStates));
+        _RecreateSwapchainSemaphores(swapchain);
 
         return true;
     }
 
-    static bool _InitializeSwapchain(GfxBackendSwapchain* swapchain, VkSurfaceKHR surface, Int2 size)
+    static bool _InitializeSwapchain(GfxBackendSwapchain* swapchain, Int2 size)
     {
         bool forceSRGB = SettingsJunkyard::Get().graphics.surfaceSRGB;
-        if (!_ResizeSwapchain(swapchain, surface, size, forceSRGB))
+        // _ResizeSwapchain creates the semaphores as part of building the swapchain
+        if (!_ResizeSwapchain(swapchain, size, forceSRGB))
             return false;
-
-        // Semaphores
-        VkSemaphoreCreateInfo semCreateInfo {
-            .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
-        };
-
-        for (uint32 i = 0; i < GFXBACKEND_BACKBUFFER_COUNT; i++) {
-            vkCreateSemaphore(gBackendVk.device, &semCreateInfo, gBackendVk.vkAlloc, &swapchain->renderFinishedSemaphores[i]);
-        }
-
-        for (uint32 i = 0; i < GFXBACKEND_FRAMES_IN_FLIGHT; i++) {
-            vkCreateSemaphore(gBackendVk.device, &semCreateInfo, gBackendVk.vkAlloc, &swapchain->imageReadySemaphores[i]);
-        }
 
         return true;
     }
@@ -1820,6 +1988,10 @@ namespace GfxBackend
     static void _ReleaseSwapchain(GfxBackendSwapchain* swapchain)
     {
         ASSERT(swapchain);
+
+        Mem::Free(swapchain->info.formats, &gBackendVk.parentAlloc);
+        Mem::Free(swapchain->info.presentModes, &gBackendVk.parentAlloc);
+        swapchain->info = GfxBackendSwapchainInfo {};
 
         for (uint32 i = 0; i < swapchain->numImages; i++) {
             if (swapchain->imageViews[i])
@@ -1839,6 +2011,11 @@ namespace GfxBackend
             }
 
         }
+
+        // The swapchain owns its surface. Destroyed here, after the VkSwapchainKHR that depends on it,
+        // and before the memset below wipes the handle
+        if (swapchain->surface)
+            vkDestroySurfaceKHR(gBackendVk.instance.handle, swapchain->surface, gBackendVk.vkAlloc);
 
         memset(swapchain, 0x0, sizeof(*swapchain));
     }
@@ -1976,7 +2153,7 @@ namespace GfxBackend
         return Mem::AllocCopy<VkComputePipelineCreateInfo>(&createInfo, 1, &gBackendVk.runtimeAlloc);
     }
 
-    static VkRenderingAttachmentInfo _TransitionAndMakeAttachment(const GfxRenderPassAttachment& attachment, VkCommandBuffer cmdVk, bool toSwapchain)
+    static VkRenderingAttachmentInfo _TransitionAndMakeAttachment(const GfxRenderPassAttachment& attachment, VkCommandBuffer cmdVk, GfxSwapchainHandle toSwapchain)
     {
         ASSERT_MSG(!(attachment.load & attachment.clear), "Cannot have both load/clear ops on color attachment");
     
@@ -1987,7 +2164,7 @@ namespace GfxBackend
         VkResolveModeFlagBits resolveMode = VK_RESOLVE_MODE_NONE;
         VkImageView viewHandle = nullptr;
 
-        if (!toSwapchain) {
+        if (!toSwapchain.IsValid()) {
             ASSERT(attachment.image.IsValid());
             GfxBackendImage& img = gBackendVk.images.Data(attachment.image);
 
@@ -2010,7 +2187,7 @@ namespace GfxBackend
             }
 
             // Transition the initial layout to attachment
-            if (img.layout == VK_IMAGE_LAYOUT_UNDEFINED && !toSwapchain) {
+            if (img.layout == VK_IMAGE_LAYOUT_UNDEFINED && !toSwapchain.IsValid()) {
                 VkImageMemoryBarrier2 imageBarrier {
                     .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
                     .dstStageMask = dstStageMask,
@@ -2046,7 +2223,7 @@ namespace GfxBackend
             dstStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
             dstAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
             aspectMask |= VK_IMAGE_ASPECT_COLOR_BIT;
-            viewHandle = gBackendVk.swapchain.GetImageView();
+            viewHandle = gBackendVk.swapchains.Data(toSwapchain).GetImageView();
         }
 
         VkAttachmentLoadOp loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
@@ -2062,12 +2239,12 @@ namespace GfxBackend
         }
         else {
             clearValue.depthStencil = {.depth = attachment.clearValue.depth, .stencil = attachment.clearValue.stencil};
-            ASSERT_MSG(!toSwapchain, "Swapchain doesn't have any DepthStencil views");
+            ASSERT_MSG(!toSwapchain.IsValid(), "Swapchain doesn't have any DepthStencil views");
         }
 
         VkImageView resolveImageView = nullptr;
         if (attachment.resolveImage.IsValid()) {
-            ASSERT_MSG(!toSwapchain && !attachment.resolveToSwapchain, "Cannot render and resolve to swapchain at the same time");
+            ASSERT_MSG(!toSwapchain.IsValid() && !attachment.resolveToSwapchain, "Cannot render and resolve to swapchain at the same time");
             GfxBackendImage& resolveImg = gBackendVk.images.Data(attachment.resolveImage);
             resolveImageView = resolveImg.viewHandle;
 
@@ -2111,7 +2288,9 @@ namespace GfxBackend
         }
         else if (attachment.resolveToSwapchain) {
             ASSERT_MSG(layout != VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, "DepthStencil attachments cannot be resolved to swapchain");
-            resolveImageView = gBackendVk.swapchain.GetImageView();    
+            // resolveToSwapchain always means the main swapchain: secondary (ImGui viewport) swapchains
+            // are never MSAA targets, so there is nothing to resolve into them
+            resolveImageView = _MainSwapchain().GetImageView();    
             resolveMode = VK_RESOLVE_MODE_AVERAGE_BIT;
         }
 
@@ -2137,11 +2316,13 @@ bool GfxBackend::Initialize()
 
     App::RegisterEventsCallback([](const AppEvent& ev, void*) 
     {
-        if (ev.type == AppEventType::Resized) {
-            vkDeviceWaitIdle(gBackendVk.device);
-            GfxBackend::_ResizeSwapchain(&gBackendVk.swapchain, gBackendVk.surface, 
-                                         Int2(App::GetFramebufferWidth(), App::GetFramebufferHeight()),
-                                         SettingsJunkyard::Get().graphics.surfaceSRGB);
+        // Only the main window drives the main swapchain. Secondary windows are ImGui viewports and
+        // resize their own swapchain through GfxBackend::ResizeSwapchain
+        if (ev.type == AppEventType::Resized && ev.window == App::GetMainWindow()) {
+            // Flag only. Secondary windows deliver WM_SIZE synchronously from inside the frame
+            // (Platform_SetWindowSize -> SetWindowPos), and recreating the swapchain there would
+            // invalidate the image Begin() already acquired
+            _MainSwapchain().resize = true;
         }
     });
 
@@ -2212,10 +2393,19 @@ bool GfxBackend::Initialize()
     if (!_InitializeGPU(settings))
         return false;
 
+    // Register the main swapchain up front so _MainSwapchain() is valid everywhere below.
+    // In headless mode it stays a shell with a null surface and no VkSwapchainKHR
+    {
+        GfxBackendSwapchain mainSwapchain {};
+        mainSwapchain.isMain = true;
+        gBackendVk.swapchains.SetAllocator(&gBackendVk.parentAlloc);
+        gBackendVk.mainSwapchain = gBackendVk.swapchains.Add(mainSwapchain);
+    }
+
     // Window surface
     if (!settings.graphics.headless) {
-        gBackendVk.surface = _CreateWindowSurface(App::GetNativeWindowHandle());
-        if (!gBackendVk.surface) {
+        _MainSwapchain().surface = _CreateWindowSurface(App::GetNativeWindowHandle());
+        if (!_MainSwapchain().surface) {
             LOG_ERROR("Gfx: Creating window surface failed");
             return false;
         }
@@ -2223,7 +2413,7 @@ bool GfxBackend::Initialize()
         App::RegisterFramebufferSizeQueryFunc([](uint16* width, uint16* height) 
         {
             VkSurfaceCapabilitiesKHR caps;
-            VkResult r = vkGetPhysicalDeviceSurfaceCapabilitiesKHR(gBackendVk.gpu.handle, gBackendVk.surface, &caps);
+            VkResult r = vkGetPhysicalDeviceSurfaceCapabilitiesKHR(gBackendVk.gpu.handle, _MainSwapchain().surface, &caps);
             if (r != VK_SUCCESS)
                 return false;
 
@@ -2248,23 +2438,11 @@ bool GfxBackend::Initialize()
     }
 
     // Swapchain and it's capabilities
-    // We can only create this after device is created. 
+    // We can only create this after device is created.
     if (!settings.graphics.headless) {
-        uint32 numFormats;
-        uint32 numPresentModes;
+        _QuerySwapchainInfo(&_MainSwapchain());
 
-        // TODO: Maybe also take these into InitializeSwapchain and use different data structuring for swapchains
-        vkGetPhysicalDeviceSurfaceFormatsKHR(gBackendVk.gpu.handle, gBackendVk.surface, &numFormats, nullptr);
-        gBackendVk.swapchainInfo.numFormats = numFormats;
-        gBackendVk.swapchainInfo.formats = Mem::AllocTyped<VkSurfaceFormatKHR>(numFormats, &gBackendVk.parentAlloc);
-        vkGetPhysicalDeviceSurfaceFormatsKHR(gBackendVk.gpu.handle, gBackendVk.surface, &numFormats, gBackendVk.swapchainInfo.formats);
-
-        vkGetPhysicalDeviceSurfacePresentModesKHR(gBackendVk.gpu.handle, gBackendVk.surface, &numPresentModes, nullptr);
-        gBackendVk.swapchainInfo.numPresentModes = numPresentModes;
-        gBackendVk.swapchainInfo.presentModes = Mem::AllocTyped<VkPresentModeKHR>(numPresentModes, &gBackendVk.parentAlloc);
-        vkGetPhysicalDeviceSurfacePresentModesKHR(gBackendVk.gpu.handle, gBackendVk.surface, &numPresentModes, gBackendVk.swapchainInfo.presentModes);
-
-        if (!_InitializeSwapchain(&gBackendVk.swapchain, gBackendVk.surface, Int2(App::GetFramebufferWidth(), App::GetFramebufferHeight())))
+        if (!_InitializeSwapchain(&_MainSwapchain(), Int2(App::GetFramebufferWidth(), App::GetFramebufferHeight())))
             return false;
     }
 
@@ -2308,17 +2486,12 @@ void GfxBackend::Begin()
     gBackendVk.externalFrameSyncSignal.Decrement();
     gBackendVk.externalFrameSyncSignal.Raise();
 
-    {
-        GfxBackendSwapchain& swapchain = gBackendVk.swapchain;
+    // Must precede the acquire: acquiring from a swapchain that is pending a resize returns
+    // OUT_OF_DATE and leaves the ready semaphore unsignalled
+    _ServicePendingSwapchainWork();
 
-        VkResult r = vkAcquireNextImageKHR(gBackendVk.device, swapchain.handle, UINT64_MAX, 
-                                           swapchain.GetSwapchainReadySemaphore(gBackendVk.queueMan.GetFrameIndex()),   
-                                           nullptr, &swapchain.imageIndex);
-        if (r == VK_ERROR_OUT_OF_DATE_KHR)
-            swapchain.resize = true;
-        else if (r != VK_SUCCESS && r != VK_SUBOPTIMAL_KHR) 
-            ASSERT_ALWAYS(0, "Gfx: AcquireSwapchain failed");
-    }
+    gBackendVk.numAcquiredSwapchains = 0;
+    _AcquireSwapchainOnce(gBackendVk.mainSwapchain);
 }
 
 void GfxCommandBuffer::ClearImageColor(GfxImageHandle imgHandle, Color4u color)
@@ -2358,7 +2531,7 @@ void GfxCommandBuffer::ClearSwapchainColor(Float4 color)
 
     VkCommandBuffer cmdVk = GfxBackend::_GetCommandBufferHandle(*this);
 
-    VkImage imageVk = gBackendVk.swapchain.GetImage();
+    VkImage imageVk = _MainSwapchain().GetImage();
 
     {
         VkImageMemoryBarrier2 imageBarrier {
@@ -2392,12 +2565,16 @@ void GfxCommandBuffer::ClearSwapchainColor(Float4 color)
     };
     vkCmdClearColorImage(cmdVk, imageVk, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &clearVal, 1, &clearRange);
 
-    GfxBackendSwapchain::ImageState& state = gBackendVk.swapchain.GetImageState();
+    GfxBackendSwapchain::ImageState& state = _MainSwapchain().GetImageState();
     state.lastStage = VK_PIPELINE_STAGE_2_CLEAR_BIT;
     state.lastLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
     state.lastAccessFlags = VK_ACCESS_2_TRANSFER_WRITE_BIT;
-    mDrawsToSwapchain = true;
-    gBackendVk.queueMan.GetQueue(mQueueIndex).internalDependents |= GfxQueueType::Present;
+    mSwapchainTarget = gBackendVk.mainSwapchain;
+    if (_IsSwapchainAcquired(gBackendVk.mainSwapchain)) {
+        GfxBackendQueue& swapchainQueue = gBackendVk.queueMan.GetQueue(mQueueIndex);
+        swapchainQueue.internalDependents |= GfxQueueType::Present;
+        _AddQueueSwapchainTarget(swapchainQueue, gBackendVk.mainSwapchain);
+    }
 }
 
 void GfxCommandBuffer::CopyImageToSwapchain(GfxImageHandle imgHandle)
@@ -2415,7 +2592,7 @@ void GfxCommandBuffer::CopyImageToSwapchain(GfxImageHandle imgHandle)
     int imageHeight = int(image.desc.height);
     gBackendVk.objectPoolsMutex.ExitRead();
 
-    VkImage swapchainImage = gBackendVk.swapchain.GetImage();
+    VkImage swapchainImage = _MainSwapchain().GetImage();
     
     {
         VkImageMemoryBarrier2 imageBarrier {
@@ -2458,7 +2635,7 @@ void GfxCommandBuffer::CopyImageToSwapchain(GfxImageHandle imgHandle)
             },
             .dstOffsets = {
                 {0, 0, 0},
-                {int(gBackendVk.swapchain.extent.width), int(gBackendVk.swapchain.extent.height), 1}
+                {int(_MainSwapchain().extent.width), int(_MainSwapchain().extent.height), 1}
             },
         };
 
@@ -2476,14 +2653,18 @@ void GfxCommandBuffer::CopyImageToSwapchain(GfxImageHandle imgHandle)
         vkCmdBlitImage2(cmdVk, &blitInfo);
     }
 
-    GfxBackendSwapchain::ImageState& state = gBackendVk.swapchain.GetImageState();
+    GfxBackendSwapchain::ImageState& state = _MainSwapchain().GetImageState();
     state.lastStage = VK_PIPELINE_STAGE_2_COPY_BIT;
     state.lastLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
     state.lastAccessFlags = VK_ACCESS_2_TRANSFER_WRITE_BIT;
-    mDrawsToSwapchain = true;
+    mSwapchainTarget = gBackendVk.mainSwapchain;
     mShouldSubmit = true;
 
-    gBackendVk.queueMan.GetQueue(mQueueIndex).internalDependents |= GfxQueueType::Present;
+    if (_IsSwapchainAcquired(gBackendVk.mainSwapchain)) {
+        GfxBackendQueue& swapchainQueue = gBackendVk.queueMan.GetQueue(mQueueIndex);
+        swapchainQueue.internalDependents |= GfxQueueType::Present;
+        _AddQueueSwapchainTarget(swapchainQueue, gBackendVk.mainSwapchain);
+    }
 }
 
 void GfxBackend::End()
@@ -2516,41 +2697,53 @@ void GfxBackend::End()
         vkDeviceWaitIdle(gBackendVk.device);
     }
 
-    // Present
+    // Present every swapchain acquired this frame in a single call
     {
-        VkSemaphore waitSemaphore = gBackendVk.swapchain.GetSwapchainRenderFinishedSemaphore();
+        uint32 numSwapchains = gBackendVk.numAcquiredSwapchains;
+        ASSERT(numSwapchains);
+
+        VkSemaphore waitSemaphores[GFXBACKEND_MAX_SWAPCHAIN_TARGETS];
+        VkSwapchainKHR swapchainHandles[GFXBACKEND_MAX_SWAPCHAIN_TARGETS];
+        uint32 imageIndices[GFXBACKEND_MAX_SWAPCHAIN_TARGETS];
+        VkResult presentResults[GFXBACKEND_MAX_SWAPCHAIN_TARGETS];
+
+        for (uint32 i = 0; i < numSwapchains; i++) {
+            GfxBackendSwapchain& swapchain = gBackendVk.swapchains.Data(gBackendVk.acquiredSwapchains[i]);
+            waitSemaphores[i] = swapchain.GetSwapchainRenderFinishedSemaphore();
+            swapchainHandles[i] = swapchain.handle;
+            imageIndices[i] = swapchain.imageIndex;
+        }
+
         uint32 queueIndex = gBackendVk.queueMan.FindQueue(GfxQueueType::Present);
         ASSERT(queueIndex != -1);
         GfxBackendQueue& queue = gBackendVk.queueMan.GetQueue(queueIndex);
 
         VkPresentInfoKHR presentInfo {
             .sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
-            .waitSemaphoreCount = 1u,
-            .pWaitSemaphores = &waitSemaphore,
-            .swapchainCount = 1,
-            .pSwapchains = &gBackendVk.swapchain.handle,
-            .pImageIndices = &gBackendVk.swapchain.imageIndex
+            .waitSemaphoreCount = numSwapchains,
+            .pWaitSemaphores = waitSemaphores,
+            .swapchainCount = numSwapchains,
+            .pSwapchains = swapchainHandles,
+            .pImageIndices = imageIndices,
+            .pResults = presentResults
         };
 
         VkResult r = vkQueuePresentKHR(queue.handle, &presentInfo);
-        if (r == VK_ERROR_OUT_OF_DATE_KHR) {
-            gBackendVk.swapchain.resize = true;
-        }
-        else if (r != VK_SUCCESS && r != VK_SUBOPTIMAL_KHR) {
+        if (r != VK_SUCCESS && r != VK_ERROR_OUT_OF_DATE_KHR && r != VK_SUBOPTIMAL_KHR) {
             // TODO: VK_SUBOPTIMAL_KHR doc says " A swapchain no longer matches the surface properties exactly, but can still be used to present to the surface successfully."
             //       But I need to investigate a bit more on when this happens actually
             ASSERT_ALWAYS(false, "Gfx: Present swapchain failed");
+        }
+
+        // pResults reports per-swapchain status, so one stale window does not resize the others
+        for (uint32 i = 0; i < numSwapchains; i++) {
+            if (presentResults[i] == VK_ERROR_OUT_OF_DATE_KHR)
+                gBackendVk.swapchains.Data(gBackendVk.acquiredSwapchains[i]).resize = true;
         }
     }
 
     _CollectGarbage(false);
 
-    if (gBackendVk.swapchain.resize) {
-        vkDeviceWaitIdle(gBackendVk.device);
-        GfxBackend::_ResizeSwapchain(&gBackendVk.swapchain, gBackendVk.surface, 
-                                     Int2(App::GetFramebufferWidth(), App::GetFramebufferHeight()),
-                                     SettingsJunkyard::Get().graphics.surfaceSRGB);
-    }
 
     ++gBackendVk.presentFrame;
 }
@@ -2587,17 +2780,18 @@ void GfxBackend::Release()
     gBackendVk.shaderToPipelineTableMtx.Release();
 
     gBackendVk.memMan.Release();
-    _ReleaseSwapchain(&gBackendVk.swapchain);
+
+    // Secondary swapchains should have been destroyed by their owner already, but do not leak them if not
+    for (GfxBackendSwapchain& swapchain : gBackendVk.swapchains)
+        _ReleaseSwapchain(&swapchain);
 
     _ReleaseDevice();
 
-    if (gBackendVk.surface)
-        vkDestroySurfaceKHR(gBackendVk.instance.handle, gBackendVk.surface, gBackendVk.vkAlloc);
+    gBackendVk.swapchains.Free();
+    gBackendVk.mainSwapchain = GfxSwapchainHandle();
     if (gBackendVk.debugMessenger) 
         vkDestroyDebugUtilsMessengerEXT(gBackendVk.instance.handle, gBackendVk.debugMessenger, gBackendVk.vkAlloc);
 
-    Mem::Free(gBackendVk.swapchainInfo.formats, alloc);
-    Mem::Free(gBackendVk.swapchainInfo.presentModes, alloc);
 
     _ReleaseInstance();
     gBackendVk.frameSyncSignal.Release();
@@ -2836,9 +3030,10 @@ void GfxBackend::EndCommandBuffer(GfxCommandBuffer& cmdBuffer)
     VkCommandBuffer cmdVk = GfxBackend::_GetCommandBufferHandle(cmdBuffer);
     GfxBackendQueue& queue = gBackendVk.queueMan.GetQueue(cmdBuffer.mQueueIndex);
 
-    if (cmdBuffer.mDrawsToSwapchain) {
+    if (cmdBuffer.mSwapchainTarget.IsValid()) {
         // Transition the swapchain to PRESENT layout if we have drawn to it
-        GfxBackendSwapchain::ImageState& state = gBackendVk.swapchain.GetImageState();
+        GfxBackendSwapchain& target = gBackendVk.swapchains.Data(cmdBuffer.mSwapchainTarget);
+        GfxBackendSwapchain::ImageState& state = target.GetImageState();
 
         VkImageMemoryBarrier2 imageBarrier {
             .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
@@ -2847,7 +3042,7 @@ void GfxBackend::EndCommandBuffer(GfxCommandBuffer& cmdBuffer)
             .dstStageMask = VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT,
             .oldLayout = state.lastLayout,
             .newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
-            .image = gBackendVk.swapchain.GetImage(),
+            .image = target.GetImage(),
             .subresourceRange = {
                 .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
                 .levelCount = VK_REMAINING_MIP_LEVELS,
@@ -2867,8 +3062,13 @@ void GfxBackend::EndCommandBuffer(GfxCommandBuffer& cmdBuffer)
         state.lastLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
         state.lastAccessFlags = 0;
 
-        // _Most likely_ the last call. write the end time query
-        vkCmdWriteTimestamp(cmdVk, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, queue.timeQueries[gBackendVk.queueMan.GetFrameIndex()], 1);
+        // _Most likely_ the last call. write the end time query.
+        // Only the main swapchain does this: the query pool holds one pair per frame and is reset once,
+        // so ImGui viewport CommandBuffers (which also target a swapchain) must not write it again
+        if (cmdBuffer.mSwapchainTarget == gBackendVk.mainSwapchain) {
+            vkCmdWriteTimestamp(cmdVk, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
+                                queue.timeQueries[gBackendVk.queueMan.GetFrameIndex()], 1);
+        }
     }
 
     #ifdef TRACY_ENABLE
@@ -4813,9 +5013,9 @@ bool GfxBackendQueueManager::Initialize()
 
         fam.count = props.queueCount;
 
-        if (gBackendVk.surface) {
+        if (_MainSwapchain().surface) {
             VkBool32 supportsPresentation = false;
-            vkGetPhysicalDeviceSurfaceSupportKHR(gpu.handle, i, gBackendVk.surface, &supportsPresentation);
+            vkGetPhysicalDeviceSurfaceSupportKHR(gpu.handle, i, _MainSwapchain().surface, &supportsPresentation);
             if (supportsPresentation)
                 fam.type |= GfxQueueType::Present;
         }
@@ -5231,6 +5431,11 @@ void GfxBackendQueueManager::SubmitQueue(GfxQueueType queueType, GfxQueueType de
     req->dependents = dependentQueues | queue.internalDependents;
     queue.internalDependents = GfxQueueType::None;
 
+    req->numSwapchainTargets = queue.numSwapchainTargets;
+    for (uint32 i = 0; i < queue.numSwapchainTargets; i++)
+        req->swapchainTargets[i] = queue.swapchainTargets[i];
+    queue.numSwapchainTargets = 0;
+
     // Create a fence for each submission
     if (!cmdBufferCtx.fenceFreeList.IsEmpty()) {
         req->fence = cmdBufferCtx.fenceFreeList.PopLast();
@@ -5281,9 +5486,13 @@ bool GfxBackendQueueManager::SubmitQueueInternal(GfxBackendQueueSubmitRequest& r
     if (IsBitsSet<GfxQueueType>(req.dependents, GfxQueueType::Present)) 
     {
         ASSERT(req.type == GfxQueueType::Graphics);
-        // Notify the queue that the next Submit is gonna depend on swapchain
-        queue.waitSemaphores.Push({gBackendVk.swapchain.GetSwapchainReadySemaphore(gBackendVk.queueMan.GetFrameIndex()), VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT});
-        queue.signalSemaphores.Push(gBackendVk.swapchain.GetSwapchainRenderFinishedSemaphore());
+        // Notify the queue that the next Submit is gonna depend on the swapchains it renders into
+        for (uint32 i = 0; i < req.numSwapchainTargets; i++) {
+            GfxBackendSwapchain& swapchain = gBackendVk.swapchains.Data(req.swapchainTargets[i]);
+            queue.waitSemaphores.Push({swapchain.GetSwapchainReadySemaphore(gBackendVk.queueMan.GetFrameIndex()),
+                                       VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT});
+            queue.signalSemaphores.Push(swapchain.GetSwapchainRenderFinishedSemaphore());
+        }
     }
 
     if (IsBitsSet<GfxQueueType>(req.dependents, GfxQueueType::Graphics)) {
@@ -6138,10 +6347,16 @@ void GfxCommandBuffer::BeginRenderPass(const GfxBackendRenderPass& pass)
 
     VkCommandBuffer cmdVk = GfxBackend::_GetCommandBufferHandle(*this);
 
+    // Must happen before anything reads imageIndex: the attachment image view, the image handle and the
+    // per-image layout state are all indexed by it. The main swapchain is already acquired by Begin(),
+    // so this only really fires for secondary (ImGui viewport) swapchains
+    if (pass.swapchain.IsValid())
+        _AcquireSwapchainOnce(pass.swapchain);
+
     // _TransitionAndMakeAttachment also accesses backend pool data
     ReadWriteMutexWriteScope objPoolLock(gBackendVk.objectPoolsMutex);
 
-    uint32 numColorAttachments = !pass.swapchain ? pass.numAttachments : 1;
+    uint32 numColorAttachments = !pass.swapchain.IsValid() ? pass.numAttachments : 1;
     ASSERT(numColorAttachments < GFXBACKEND_MAX_RENDERPASS_COLOR_ATTACHMENTS);
     VkRenderingAttachmentInfo colorAttachments[GFXBACKEND_MAX_RENDERPASS_COLOR_ATTACHMENTS];
 
@@ -6151,9 +6366,10 @@ void GfxCommandBuffer::BeginRenderPass(const GfxBackendRenderPass& pass)
     for (uint32 i = 0; i < numColorAttachments; i++) {
         const GfxRenderPassAttachment& srcAttachment = pass.colorAttachments[i];
         if (width == 0 && height == 0) {
-            if (pass.swapchain) {
-                width = uint16(gBackendVk.swapchain.extent.width);
-                height = uint16(gBackendVk.swapchain.extent.height);
+            if (pass.swapchain.IsValid()) {
+                const GfxBackendSwapchain& target = gBackendVk.swapchains.Data(pass.swapchain);
+                width = uint16(target.extent.width);
+                height = uint16(target.extent.height);
             }
             else {
                 GfxBackendImage& image = gBackendVk.images.Data(srcAttachment.image);
@@ -6197,12 +6413,16 @@ void GfxCommandBuffer::BeginRenderPass(const GfxBackendRenderPass& pass)
 
     VkRenderingAttachmentInfo depthAttachment;
     if (pass.hasDepth) {
-        depthAttachment = GfxBackend::_TransitionAndMakeAttachment(pass.depthAttachment, cmdVk, false);
+        depthAttachment = GfxBackend::_TransitionAndMakeAttachment(pass.depthAttachment, cmdVk, GfxSwapchainHandle());
     }
 
     // If we are drawing or resolving to Swapchain, we have to wait for drawing to finish and also transition the layout to COLOR_ATTACHMENT_OUTPUT
-    if (pass.swapchain || resolvedToSwapchain) {
-        GfxBackendSwapchain::ImageState& state = gBackendVk.swapchain.GetImageState();
+    if (pass.swapchain.IsValid() || resolvedToSwapchain) {
+        // With MSAA the pass renders into an offscreen image and only *resolves* into the swapchain,
+        // so pass.swapchain is invalid there and the target is always the main one
+        GfxSwapchainHandle targetHandle = pass.swapchain.IsValid() ? pass.swapchain : gBackendVk.mainSwapchain;
+        GfxBackendSwapchain& target = gBackendVk.swapchains.Data(targetHandle);
+        GfxBackendSwapchain::ImageState& state = target.GetImageState();
         VkImageMemoryBarrier2 imageBarrier {
             .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
             .srcStageMask = state.lastStage,
@@ -6211,7 +6431,7 @@ void GfxCommandBuffer::BeginRenderPass(const GfxBackendRenderPass& pass)
             .dstAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT|VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
             .oldLayout = state.lastLayout,
             .newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-            .image = gBackendVk.swapchain.GetImage(),
+            .image = target.GetImage(),
             .subresourceRange = {
                 .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
                 .levelCount = VK_REMAINING_MIP_LEVELS,
@@ -6231,8 +6451,18 @@ void GfxCommandBuffer::BeginRenderPass(const GfxBackendRenderPass& pass)
         state.lastAccessFlags = VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT|VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
         state.lastLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
-        gBackendVk.queueMan.GetQueue(mQueueIndex).internalDependents |= GfxQueueType::Present;
-        mDrawsToSwapchain = true;
+        // Only wire up present synchronization if an image was actually acquired. On a failed acquire
+        // the ready semaphore is unsignalled, so waiting on it would deadlock the submission
+        if (_IsSwapchainAcquired(targetHandle)) {
+            GfxBackendQueue& passQueue = gBackendVk.queueMan.GetQueue(mQueueIndex);
+            passQueue.internalDependents |= GfxQueueType::Present;
+            _AddQueueSwapchainTarget(passQueue, targetHandle);
+
+            // Records the resolved target, so EndCommandBuffer transitions the right image to PRESENT
+            ASSERT_MSG(!mSwapchainTarget.IsValid() || mSwapchainTarget == targetHandle,
+                       "A CommandBuffer can only present to a single swapchain");
+            mSwapchainTarget = targetHandle;
+        }
     }
 
     VkRenderingInfo renderInfo {
@@ -6278,14 +6508,74 @@ void GfxCommandBuffer::DrawIndexed(uint32 indexCount, uint32 instanceCount, uint
     vkCmdDrawIndexed(cmdVk, indexCount, instanceCount, firstIndex, vertexOffset, firstInstance);
 }
 
-GfxFormat GfxBackend::GetSwapchainFormat()
+GfxFormat GfxBackend::GetSwapchainFormat(GfxSwapchainHandle handle)
 {
-    return GfxFormat(gBackendVk.swapchain.format.format);
+    return GfxFormat(_GetSwapchain(handle).format.format);
 }
 
-Int2 GfxBackend::GetSwapchainExtent()
+Int2 GfxBackend::GetSwapchainExtent(GfxSwapchainHandle handle)
 {
-    return Int2(int(gBackendVk.swapchain.extent.width), int(gBackendVk.swapchain.extent.height));
+    const GfxBackendSwapchain& swapchain = _GetSwapchain(handle);
+    return Int2(int(swapchain.extent.width), int(swapchain.extent.height));
+}
+
+GfxSwapchainHandle GfxBackend::GetMainSwapchain()
+{
+    return gBackendVk.mainSwapchain;
+}
+
+// Secondary swapchains exist only to present ImGui viewports: no MSAA, no depth, no resolve
+GfxSwapchainHandle GfxBackend::CreateSwapchain(void* windowHandle, Int2 size)
+{
+    ASSERT(windowHandle);
+    ASSERT_MSG(!SettingsJunkyard::Get().graphics.headless, "Cannot create a swapchain in headless mode");
+
+    // HandlePool reserves 32 entries up front and only reallocates past that. Staying under the limit is
+    // what keeps GfxBackendSwapchain& references (notably _MainSwapchain()) stable
+    ASSERT_MSG(gBackendVk.swapchains.Count() < 32, "Exceeded the maximum number of swapchains");
+
+    GfxBackendSwapchain swapchain {};
+    swapchain.surface = GfxBackend::_CreateWindowSurface(windowHandle);
+    if (!swapchain.surface) {
+        LOG_ERROR("Gfx: Creating window surface for secondary swapchain failed");
+        return GfxSwapchainHandle();
+    }
+
+    GfxSwapchainHandle handle = gBackendVk.swapchains.Add(swapchain);
+    GfxBackendSwapchain& sc = gBackendVk.swapchains.Data(handle);
+
+    GfxBackend::_QuerySwapchainInfo(&sc);
+    if (!GfxBackend::_InitializeSwapchain(&sc, size)) {
+        LOG_ERROR("Gfx: Creating secondary swapchain failed");
+        GfxBackend::_ReleaseSwapchain(&sc);
+        gBackendVk.swapchains.Remove(handle);
+        return GfxSwapchainHandle();
+    }
+
+    return handle;
+}
+
+void GfxBackend::DestroySwapchain(GfxSwapchainHandle& handle)
+{
+    if (!handle.IsValid())
+        return;
+    ASSERT_MSG(handle != gBackendVk.mainSwapchain, "Main swapchain is owned by the backend and cannot be destroyed");
+
+    // Flag only. It may still be presenting this frame, and tearing it down here would race the
+    // submission thread. End() does the actual destroy once submissions are drained
+    gBackendVk.swapchains.Data(handle).wantDestroy = true;
+    handle = GfxSwapchainHandle();
+}
+
+void GfxBackend::ResizeSwapchain(GfxSwapchainHandle handle, Int2 size)
+{
+    ASSERT_MSG(handle.IsValid() && handle != gBackendVk.mainSwapchain,
+               "Main swapchain is resized by the backend from the window size");
+
+    // Deferred for the same reason as DestroySwapchain
+    GfxBackendSwapchain& swapchain = gBackendVk.swapchains.Data(handle);
+    swapchain.requestedSize = size;
+    swapchain.resize = true;
 }
 
 void GfxCommandBuffer::SetScissors(uint32 firstScissor, uint32 numScissors, const RectInt* scissors)
@@ -6303,7 +6593,7 @@ void GfxCommandBuffer::SetScissors(uint32 firstScissor, uint32 numScissors, cons
         const RectInt& scissor = scissors[i];
         Pair<Int2, Int2> transformed = GfxBackend::_TransformRectangleBasedOnOrientation(scissor.xmin, scissor.ymin, 
                                                                                          scissor.Width(), scissor.Height(), 
-                                                                                         mDrawsToSwapchain);
+                                                                                         DrawsToSwapchain());
         scissorsVk[i].offset.x = transformed.first.x;
         scissorsVk[i].offset.y = transformed.first.y;
         scissorsVk[i].extent.width = transformed.second.x;
@@ -6328,7 +6618,7 @@ void GfxCommandBuffer::SetViewports(uint32 firstViewport, uint32 numViewports, c
         Pair<Int2, Int2> transformed = GfxBackend::_TransformRectangleBasedOnOrientation(
             int(viewports[i].x), int(viewports[i].y), 
             int(viewports[i].width), int(viewports[i].height), 
-            mDrawsToSwapchain);
+            DrawsToSwapchain());
 
         viewportsVk[i].x = float(transformed.first.x);
         viewportsVk[i].y = float(transformed.first.y);

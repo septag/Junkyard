@@ -469,7 +469,7 @@ struct TestAssetApp : AppCallbacks
                     .depth = 1.0f
                 }
             },
-            .swapchain = true,
+            .swapchain = GfxBackend::GetMainSwapchain(),
             .hasDepth = true
         };
 

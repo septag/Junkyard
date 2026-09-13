@@ -131,7 +131,8 @@ namespace GUI
                 break;
 
             case AppEventType::Resized:
-                gGUI.mainViewport = RectFloat(0, 0, App::GetFramebufferWidth(), App::GetFramebufferHeight());
+                if (ev.window == App::GetMainWindow())
+                    gGUI.mainViewport = RectFloat(0, 0, App::GetFramebufferWidth(), App::GetFramebufferHeight());
                 break;
             default:
                 break;
@@ -641,7 +642,7 @@ void GUI::End(GfxCommandBuffer cmd)
 
     GfxBackendRenderPass pass {
         .colorAttachments = {{ .load = true }},
-        .swapchain = true,
+        .swapchain = GfxBackend::GetMainSwapchain(),
         .hasDepth = false
     };
     cmd.BeginRenderPass(pass);

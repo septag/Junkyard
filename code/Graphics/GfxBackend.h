@@ -9,10 +9,13 @@ struct GfxCommandBuffer
     uint32 mGeneration;
     uint16 mCmdBufferIndex;
     uint8 mQueueIndex;
-    uint8 mDrawsToSwapchain : 1;
     uint8 mIsRecording : 1;
     uint8 mIsInRenderPass : 1;
     uint8 mShouldSubmit : 1;
+    // A command buffer presents to at most one swapchain. Invalid when it renders to offscreen images only
+    GfxSwapchainHandle mSwapchainTarget;
+
+    bool DrawsToSwapchain() const { return mSwapchainTarget.IsValid(); }
 
     void BeginRenderPass(const GfxBackendRenderPass& pass);
     void EndRenderPass();
@@ -112,9 +115,16 @@ namespace GfxBackend
     void DestroySampler(GfxSamplerHandle& handle);
     void SetupImmutableSamplers(const GfxImmutableSamplersDesc& desc);
 
-    GfxFormat GetSwapchainFormat();
+    // Swapchains. An invalid handle always means the main window's swapchain.
+    // Secondary swapchains currently exist only to present ImGui viewports: no MSAA, no depth, no resolve
+    GfxSwapchainHandle GetMainSwapchain();
+    GfxSwapchainHandle CreateSwapchain(void* windowHandle, Int2 size);
+    void DestroySwapchain(GfxSwapchainHandle& handle);
+    void ResizeSwapchain(GfxSwapchainHandle handle, Int2 size);
+
+    GfxFormat GetSwapchainFormat(GfxSwapchainHandle handle = GfxSwapchainHandle());
     Mat4 GetSwapchainTransformMat();
-    Int2 GetSwapchainExtent();
+    Int2 GetSwapchainExtent(GfxSwapchainHandle handle = GfxSwapchainHandle());
     GfxFormat GetValidDepthStencilFormat();
     GfxFormat GetValidDepthFormat();
 

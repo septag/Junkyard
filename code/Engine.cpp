@@ -678,8 +678,12 @@ void Engine::EndFrame()
     gEng.rawFrameTime = Timer::Diff(Timer::GetTicks(), gEng.rawFrameStartTime);
 
     // Graphics
-    if (SettingsJunkyard::Get().graphics.IsGraphicsEnabled())
+    if (SettingsJunkyard::Get().graphics.IsGraphicsEnabled()) {
+        // Must run before End(): it records and submits the viewport draws that End() then presents
+        ImGui::UpdateViewports();
+
         GfxBackend::End();
+    }
 
     MemTempAllocator::Reset();
 

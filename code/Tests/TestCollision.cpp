@@ -551,7 +551,8 @@ struct TestCollisionApp final : AppCallbacks
 
             if (mTestMode == TestMode::Rayhit) {
                 ImDrawList* drawList = ImGui::BeginFullscreenView("Crossair");
-                ImVec2 center = ImVec2(ImGui::GetIO().DisplaySize.x*0.5f, ImGui::GetIO().DisplaySize.y*0.5f);
+                RectFloat viewRect = ImGui::GetMainViewportRect();
+                ImVec2 center = ImVec2((viewRect.xmin + viewRect.xmax)*0.5f, (viewRect.ymin + viewRect.ymax)*0.5f);
                 drawList->AddCircle(center, 5, COLOR4U_YELLOW.n, 12, 4);
             }
             else if (mTestMode == TestMode::Intersection) {
@@ -583,7 +584,7 @@ struct TestCollisionApp final : AppCallbacks
         if (!ImGui::IsAnyItemHovered() && !ImGui::GetIO().WantCaptureMouse)
             mCamera.HandleRotationMouse(ev, 0.2f, 0.1f);
 
-        if (ev.type == AppEventType::Resized) {
+        if (ev.type == AppEventType::Resized && ev.window == App::GetMainWindow()) {
             InitializeFramebufferResources(ev.framebufferWidth, ev.framebufferHeight);
         }
     }

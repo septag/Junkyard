@@ -273,7 +273,7 @@ void DebugDraw::BeginDraw(GfxCommandBuffer cmd, const Camera& cam, uint16 viewWi
 
     gDebugDraw.viewExtents = Int2(viewWidth, viewHeight);
     gDebugDraw.worldToClipMat = cam.GetPerspectiveMat(float(viewWidth), float(viewHeight)) * cam.GetViewMat();
-    if (cmd.mDrawsToSwapchain) 
+    if (cmd.DrawsToSwapchain()) 
         gDebugDraw.worldToClipMat = GfxBackend::GetSwapchainTransformMat()*gDebugDraw.worldToClipMat;
 
     size_t vertexBufferSize = sizeof(DebugDrawVertex)*DEBUGDRAW_MAX_VERTICES;
@@ -378,7 +378,7 @@ void DebugDraw::EndDraw(GfxCommandBuffer cmd, GfxImageHandle depthImage, GfxImag
                 .image = depthImage,
                 .load = true
             },
-            .swapchain = !colorImage.IsValid(),
+            .swapchain = colorImage.IsValid() ? GfxSwapchainHandle() : GfxBackend::GetMainSwapchain(),
             .hasDepth = true
         };
         cmd.BeginRenderPass(pass);

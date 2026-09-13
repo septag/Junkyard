@@ -1125,7 +1125,9 @@ struct GfxBackendRenderPass
     GfxRenderPassAttachment colorAttachments[GFXBACKEND_MAX_RENDERPASS_COLOR_ATTACHMENTS];
     GfxRenderPassAttachment depthAttachment;
     GfxRenderPassAttachment stencilAttachment;
-    bool swapchain;
+    // Swapchain this pass renders into. Invalid means it renders into `colorAttachments` images instead.
+    // Use GfxBackend::GetMainSwapchain() for the main window
+    GfxSwapchainHandle swapchain;
     bool hasDepth;
     bool hasStencil;
 };

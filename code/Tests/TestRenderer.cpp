@@ -543,7 +543,7 @@ struct TestRendererApp final : AppCallbacks
             mMinimized = true;            
         else if (ev.type == AppEventType::Restored)
             mMinimized = false;
-        else if (ev.type == AppEventType::Resized) 
+        else if (ev.type == AppEventType::Resized && ev.window == App::GetMainWindow()) 
             InitializeFramebufferResources(ev.framebufferWidth, ev.framebufferHeight);
     }
 };

@@ -868,7 +868,8 @@ bool R::Initialize()
 
     App::RegisterEventsCallback([](const AppEvent& ev, void*)
                                 {
-                                    if (ev.type == AppEventType::Resized)
+                                    // Secondary windows are ImGui viewports and do not own these resources
+                                    if (ev.type == AppEventType::Resized && ev.window == App::GetMainWindow())
                                         _CreateFramebufferDependentResources(ev.framebufferWidth, ev.framebufferHeight);
                                 });
 
@@ -1049,7 +1050,7 @@ void R::FwdLight::Update(RView& view, GfxCommandBuffer& cmd)
     RViewData& viewData = gFwd.viewPool.Data(view.mHandle);
 
     Mat4 worldToClipMat = viewData.worldToClipMat;
-    if (cmd.mDrawsToSwapchain) // TODO: this is not gonna detect swapchain properly
+    if (cmd.DrawsToSwapchain()) // TODO: this is not gonna detect swapchain properly
         worldToClipMat = GfxBackend::GetSwapchainTransformMat() * worldToClipMat;
     uint32 tilesCountX = M::CeilDiv((uint32)App::GetFramebufferWidth(), R_LIGHT_CULL_TILE_SIZE);
     uint32 tilesCountY = M::CeilDiv((uint32)App::GetFramebufferHeight(), R_LIGHT_CULL_TILE_SIZE);
@@ -1225,7 +1226,7 @@ void R::FwdLight::Render(RView& view, GfxCommandBuffer& cmd, GfxImageHandle fina
                     .color = Color4u::ToFloat4(COLOR4U_BLACK)
                 }
             }},
-            .swapchain = true,
+            .swapchain = GfxBackend::GetMainSwapchain(),
             .hasDepth = false
         };
 
@@ -1433,7 +1434,7 @@ void R::FwdLight::Render(RView& view, GfxCommandBuffer& cmd, GfxImageHandle fina
                 .load = true,
                 .clear = false,
             },
-            .swapchain = !renderColorImage.IsValid(), 
+            .swapchain = renderColorImage.IsValid() ? GfxSwapchainHandle() : GfxBackend::GetMainSwapchain(), 
             .hasDepth = true
         };
 
@@ -1491,7 +1492,7 @@ void R::FwdLight::Render(RView& view, GfxCommandBuffer& cmd, GfxImageHandle fina
     }
     else if (debugMode == RDebugMode::LightCull) {
         GfxBackendRenderPass pass { 
-            .swapchain = true,
+            .swapchain = GfxBackend::GetMainSwapchain(),
         };
 
         cmd.BeginRenderPass(pass);
@@ -1527,7 +1528,7 @@ void R::FwdLight::Render(RView& view, GfxCommandBuffer& cmd, GfxImageHandle fina
                     .color = FLOAT4_UNITZ
                 }
             }},
-            .swapchain = true,
+            .swapchain = GfxBackend::GetMainSwapchain(),
         };
 
         cmd.BeginRenderPass(pass);

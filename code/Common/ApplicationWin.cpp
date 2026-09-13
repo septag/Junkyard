@@ -17,6 +17,7 @@
 #include "../Core/Debug.h"
 #include "../Core/Arrays.h"
 #include "../Core/Allocators.h"
+#include "../Core/Pools.h"
 
 #include "../Core/External/mgustavsson/ini.h"
 
@@ -34,6 +35,9 @@
 #endif
 
 #define APP_MAX_KEY_CODES 512
+
+// Matches HandlePool's initial reserve, see AppWindowsState::windows
+#define APP_MAX_WINDOWS 32
 
 #ifndef WM_MOUSEHWHEEL
     #define WM_MOUSEHWHEEL (0x020E)
@@ -61,19 +65,42 @@ struct AppEventCallbackPair
     void*            userData;
 };
 
-struct AppWindowsState
+using GetDpiForMonitorFn = HRESULT(WINAPI*)(HMONITOR, MONITOR_DPI_TYPE, UINT*, UINT*);
+
+DEFINE_HANDLE(AppWindowInternalHandle);
+
+// Per-window state. The main window is registered by Run() before it actually gets created,
+// so `hwnd` stays null until _CreateMainWindow fills it in.
+struct AppWindow
 {
-    bool valid;
-    char name[32];
+    AppWindowHandle handle;
+    AppWindowFlags flags;
+    HWND hwnd;
     // Window dimensions are logical and does not include DPI scaling. They also present Client area, excluding the border
     uint16 windowWidth;
     uint16 windowHeight;
     // Framebuffer dimensions equals window dimensions on HighDPI, but scaled down on non-HighDPI
     uint16 framebufferWidth;
     uint16 framebufferHeight;
-    char windowTitle[128];
+    char title[128];
     fl32 mouseX;
     fl32 mouseY;
+    fl32 mouseDesktopX;
+    fl32 mouseDesktopY;
+    HMONITOR monitor;
+    float windowScale;
+    float contentScale;
+    float mouseScale;
+    float dpiScale;
+    bool iconified;
+    bool mouseTracked;
+    bool isMain;
+};
+
+struct AppWindowsState
+{
+    bool valid;
+    char name[32];
     AppDesc desc;
     InputKeycode keycodes[APP_MAX_KEY_CODES];
     char* clipboard;
@@ -82,32 +109,105 @@ struct AppWindowsState
     AppFramebufferSizeQueryFunc queryFramebufferFunc;
     AppMouseCursor mouseCursor;
 
-    HWND hwnd;
+    // HandlePool reserves APP_MAX_WINDOWS entries on the first Add and only reallocates beyond that.
+    // Staying under the limit is what keeps AppWindow& references alive across _CallEvent inside the WndProc
+    HandlePool<AppWindowInternalHandle, AppWindow> windows;
+    AppWindowHandle mainWindow;
     uint16 displayWidth;
     uint16 displayHeight;
     uint16 displayRefreshRate;
-    HMONITOR wndMonitor;
     RECT mainRect;          // Actual window dimensions that is serialized. Different than windowWidth/windowHeight above
     RECT consoleRect;       // Actual console window dimensions
 
     HANDLE hStdin;
     HANDLE hStdOut;
 
-    float dpiScale;
-    float windowScale;
-    float contentScale;
-    float mouseScale;
+    // Resolved once in _InitDPI and kept for the process lifetime, monitor enumeration needs it per-monitor
+    HINSTANCE shcoreDll;
+    GetDpiForMonitorFn getDpiForMonitorFn;
 
     bool quitFromConsole;
     bool windowModified;
-    bool mouseTracked;
+    // Windows sends WM_MOVE/WM_SIZE synchronously from CreateWindowExW and the first ShowWindow, before any
+    // subsystem exists. Event dispatch stays off until the main window is up and back off before it is torn down
+    bool eventsEnabled;
     bool dpiAware;
     bool clipboardEnabled;
-    bool iconified;
     bool keysPressed[APP_MAX_KEY_CODES];
 };
 
 static AppWindowsState gApp;
+
+namespace App
+{
+    static inline AppWindowInternalHandle _ToInternal(AppWindowHandle handle)
+    {
+        return AppWindowInternalHandle(handle.mId);
+    }
+
+    static inline AppWindowHandle _ToPublic(AppWindowInternalHandle handle)
+    {
+        return AppWindowHandle { uint32(handle) };
+    }
+
+    static AppWindow& _GetWindow(AppWindowHandle handle)
+    {
+        ASSERT(handle.IsValid());
+        return gApp.windows.Data(_ToInternal(handle));
+    }
+
+    // Every call site that predates multi-window support resolves to the main window
+    static AppWindow& _MainWindow()
+    {
+        return _GetWindow(gApp.mainWindow);
+    }
+
+    static AppWindowHandle _RegisterWindow(bool isMain)
+    {
+        AppWindow wnd {};
+        wnd.isMain = isMain;
+        wnd.windowScale = 1.0f;
+        wnd.contentScale = 1.0f;
+        wnd.mouseScale = 1.0f;
+        wnd.dpiScale = 1.0f;
+
+        AppWindowHandle handle = _ToPublic(gApp.windows.Add(wnd));
+        gApp.windows.Data(_ToInternal(handle)).handle = handle;
+        return handle;
+    }
+
+    // Resolves the owning window of an incoming message. Returns null for messages that arrive during
+    // CreateWindowExW, before we get a chance to store the handle on the window
+    static AppWindow* _FindWindow(HWND hwnd)
+    {
+        // Registry is down: either before Run() registered the main window, or after shutdown freed the pool
+        if (!gApp.mainWindow.IsValid())
+            return nullptr;
+
+        AppWindowHandle handle { uint32(uintptr(GetWindowLongPtrW(hwnd, GWLP_USERDATA))) };
+        if (!handle.IsValid() || !gApp.windows.IsValid(_ToInternal(handle)))
+            return nullptr;
+        return &gApp.windows.Data(_ToInternal(handle));
+    }
+
+    static bool _UpdateWindowDimensions(AppWindow& wnd);
+
+    static void _WindowStylesFromFlags(AppWindowFlags flags, DWORD* outStyle, DWORD* outExStyle)
+    {
+        DWORD style = IsBitsSet(flags, AppWindowFlags::NoDecoration) ?
+            (WS_POPUP) :
+            (WS_OVERLAPPEDWINDOW);
+        DWORD exStyle = IsBitsSet(flags, AppWindowFlags::NoTaskBarIcon) ? WS_EX_TOOLWINDOW : WS_EX_APPWINDOW;
+
+        if (IsBitsSet(flags, AppWindowFlags::TopMost))
+            exStyle |= WS_EX_TOPMOST;
+        if (IsBitsSet(flags, AppWindowFlags::NoFocusOnAppearing) || IsBitsSet(flags, AppWindowFlags::NoFocusOnClick))
+            exStyle |= WS_EX_NOACTIVATE;
+
+        *outStyle = style;
+        *outExStyle = exStyle;
+    }
+} // App
 
 // MSVC D0 extension work around for LivePPte
 #if CONFIG_ENABLE_LIVEPP
@@ -311,13 +411,13 @@ namespace App
             ini_property_add(ini, id, "right", 0, value, Str::Len(value));
         };
 
-        if (gApp.windowModified && gApp.hwnd) {
+        if (gApp.windowModified && _MainWindow().hwnd) {
             ini_t* windowsIni = ini_create(Mem::GetDefaultAlloc());
             char iniFilename[64];
             Str::PrintFmt(iniFilename, sizeof(iniFilename), "%s_windows.ini", GetName());
 
             RECT mainRect, consoleRect;
-            if (GetWindowRect(gApp.hwnd, &mainRect))
+            if (GetWindowRect(_MainWindow().hwnd, &mainRect))
                 PutWindowData(windowsIni, "Main", mainRect);
             if (GetWindowRect(GetConsoleWindow(), &consoleRect))
                 PutWindowData(windowsIni, "Console", consoleRect);
@@ -339,56 +439,54 @@ namespace App
         }
     }
 
-    // Returns true if window monitor has changed
-    static bool _UpdateDisplayInfo()
+    static float _GetMonitorDPIScale(HMONITOR monitor)
     {
-        HMONITOR hm = gApp.hwnd ? 
-            MonitorFromWindow(gApp.hwnd, MONITOR_DEFAULTTONEAREST) : 
+        if (gApp.getDpiForMonitorFn) {
+            UINT dpix, dpiy;
+            if (SUCCEEDED(gApp.getDpiForMonitorFn(monitor, MDT_EFFECTIVE_DPI, &dpix, &dpiy)))
+                return static_cast<float>(dpix) / 96.0f;
+        }
+        return 1.0f;
+    }
+
+    static AppRect _RectFromWin32(const RECT& rc)
+    {
+        return AppRect { int(rc.left), int(rc.top), int(rc.right - rc.left), int(rc.bottom - rc.top) };
+    }
+
+    // Returns true if window monitor has changed
+    static bool _UpdateDisplayInfo(AppWindow& wnd)
+    {
+        HMONITOR hm = wnd.hwnd ?
+            MonitorFromWindow(wnd.hwnd, MONITOR_DEFAULTTONEAREST) :
             MonitorFromPoint({ 1, 1 }, MONITOR_DEFAULTTONEAREST);
-        if (hm == gApp.wndMonitor)
+        if (hm == wnd.monitor)
             return false;
 
-        gApp.wndMonitor = hm;
+        wnd.monitor = hm;
+        wnd.windowScale = _GetMonitorDPIScale(hm);
 
-        using GetDpiForMonitorFn = HRESULT(WINAPI*)(HMONITOR, MONITOR_DPI_TYPE, UINT*, UINT*);
-        GetDpiForMonitorFn GetDpiForMonitor = nullptr;
-        HINSTANCE shcore = LoadLibraryA("shcore.dll");
-        if (shcore)
-            GetDpiForMonitor = (GetDpiForMonitorFn)GetProcAddress(shcore, "GetDpiForMonitor");
-
-        // Dpi settings
-        if (GetDpiForMonitor) {
-            UINT dpix, dpiy;
-            [[maybe_unused]] HRESULT hr = GetDpiForMonitor(hm, MDT_EFFECTIVE_DPI, &dpix, &dpiy);
-            ASSERT(SUCCEEDED(hr));
-            gApp.windowScale = static_cast<float>(dpix) / 96.0f;
-        }
-        else {
-            gApp.windowScale = 1.0f;
-        }
-    
         if (gApp.desc.highDPI) {
-            gApp.contentScale = gApp.windowScale;
-            gApp.mouseScale = 1.0f / gApp.windowScale;
+            wnd.contentScale = wnd.windowScale;
+            wnd.mouseScale = 1.0f / wnd.windowScale;
         }
         else {
-            gApp.contentScale = 1.0f;
-            gApp.mouseScale = 1.0f / gApp.windowScale;
+            wnd.contentScale = 1.0f;
+            wnd.mouseScale = 1.0f / wnd.windowScale;
         }
-    
-        gApp.dpiScale = gApp.contentScale;
 
-        // Display settings
-        MONITORINFOEX monitorInfo { sizeof(MONITORINFOEX) };
-        GetMonitorInfoA(hm, &monitorInfo);
-        DEVMODEA mode { sizeof(DEVMODEA) };
-        EnumDisplaySettingsA(monitorInfo.szDevice, ENUM_CURRENT_SETTINGS, &mode);
-        gApp.displayWidth = static_cast<uint16>(mode.dmPelsWidth);
-        gApp.displayHeight = static_cast<uint16>(mode.dmPelsHeight);
-        gApp.displayRefreshRate = static_cast<uint16>(mode.dmDisplayFrequency);
-    
-        if (shcore)
-            FreeLibrary(shcore);
+        wnd.dpiScale = wnd.contentScale;
+
+        // Display settings. App::GetDisplayInfo reports the main window's monitor
+        if (wnd.isMain) {
+            MONITORINFOEX monitorInfo { sizeof(MONITORINFOEX) };
+            GetMonitorInfoA(hm, &monitorInfo);
+            DEVMODEA mode { sizeof(DEVMODEA) };
+            EnumDisplaySettingsA(monitorInfo.szDevice, ENUM_CURRENT_SETTINGS, &mode);
+            gApp.displayWidth = static_cast<uint16>(mode.dmPelsWidth);
+            gApp.displayHeight = static_cast<uint16>(mode.dmPelsHeight);
+            gApp.displayRefreshRate = static_cast<uint16>(mode.dmDisplayFrequency);
+        }
 
         return true;
     }
@@ -405,9 +503,12 @@ namespace App
         if (user32)
             SetProcessDpiAware = (SetProcessDpiAwareFn)GetProcAddress(user32, "SetProcessDPIAware");
     
-        HINSTANCE shcore = LoadLibraryA("shcore.dll");
-        if (shcore)
-            SetProcessDpiAwareness = (SetProcessDpiAwarenessFn)GetProcAddress(shcore, "SetProcessDpiAwareness");
+        // Kept loaded for the process lifetime, _GetMonitorDPIScale uses it on every monitor query
+        gApp.shcoreDll = LoadLibraryA("shcore.dll");
+        if (gApp.shcoreDll) {
+            SetProcessDpiAwareness = (SetProcessDpiAwarenessFn)GetProcAddress(gApp.shcoreDll, "SetProcessDpiAwareness");
+            gApp.getDpiForMonitorFn = (GetDpiForMonitorFn)GetProcAddress(gApp.shcoreDll, "GetDpiForMonitor");
+        }
     
         // if the app didn't request HighDPI rendering, let Windows do the upscaling
         if (SetProcessDpiAwareness) {
@@ -423,13 +524,10 @@ namespace App
             gApp.dpiAware = true;
         }
 
-        _UpdateDisplayInfo();
+        _UpdateDisplayInfo(_MainWindow());
 
         if (user32)
             FreeLibrary(user32);
-    
-        if (shcore)
-            FreeLibrary(shcore);
     }
 
     bool SetClipboardString(const char* str)
@@ -438,7 +536,7 @@ namespace App
             return false;
 
         ASSERT(str);
-        ASSERT(gApp.hwnd);
+        ASSERT(_MainWindow().hwnd);
         ASSERT(gApp.desc.clipboardSizeBytes > 0);
     
         wchar_t* wcharBuff = 0;
@@ -455,7 +553,7 @@ namespace App
 
         GlobalUnlock(wcharBuff);
         wcharBuff = 0;
-        if (!OpenClipboard(gApp.hwnd)) {
+        if (!OpenClipboard(_MainWindow().hwnd)) {
             goto error;
         }
         EmptyClipboard();
@@ -475,6 +573,9 @@ namespace App
 
     static void _CallEvent(const AppEvent& ev)
     {
+        if (!gApp.eventsEnabled)
+            return;
+
         gApp.desc.callbacks->OnEvent(ev);
 
         // Call extra registered event callbacks
@@ -482,15 +583,16 @@ namespace App
             c.callback(ev, c.userData);
     }
 
-    static AppEvent _NewEvent(AppEventType type)
+    static AppEvent _NewEvent(AppEventType type, const AppWindow& wnd)
     {
         return AppEvent {
             .type = type,
+            .window = wnd.handle,
             .mouseButton = InputMouseButton::Invalid,
-            .windowWidth = gApp.windowWidth,
-            .windowHeight = gApp.windowHeight,
-            .framebufferWidth = gApp.framebufferWidth,
-            .framebufferHeight = gApp.framebufferHeight
+            .windowWidth = wnd.windowWidth,
+            .windowHeight = wnd.windowHeight,
+            .framebufferWidth = wnd.framebufferWidth,
+            .framebufferHeight = wnd.framebufferHeight
         };
     }
     
@@ -508,29 +610,35 @@ namespace App
         return mods;
     }
 
-    static void _DispatchMouseButtonEvent(AppEventType type, InputMouseButton btn)
+    static void _DispatchMouseButtonEvent(AppEventType type, InputMouseButton btn, const AppWindow& wnd)
     {
-        AppEvent e = _NewEvent(type);
+        AppEvent e = _NewEvent(type, wnd);
         e.keyMods = GetKeyMods();
         e.mouseButton = btn;
-        e.mouseX = gApp.mouseX;
-        e.mouseY = gApp.mouseY;
+        e.mouseX = wnd.mouseX;
+        e.mouseY = wnd.mouseY;
+        e.mouseDesktopX = wnd.mouseDesktopX;
+        e.mouseDesktopY = wnd.mouseDesktopY;
         _CallEvent(e);
     }    
     
-    static void _DispatchMouseScrollEvent(float x, float y)
+    static void _DispatchMouseScrollEvent(float x, float y, const AppWindow& wnd)
     {
-        AppEvent e = _NewEvent(AppEventType::MouseScroll);
+        AppEvent e = _NewEvent(AppEventType::MouseScroll, wnd);
         e.keyMods = GetKeyMods();
+        e.mouseX = wnd.mouseX;
+        e.mouseY = wnd.mouseY;
+        e.mouseDesktopX = wnd.mouseDesktopX;
+        e.mouseDesktopY = wnd.mouseDesktopY;
         e.scrollX = -x / 30.0f;
         e.scrollY = y / 30.0f;
         _CallEvent(e);
     }
 
-    static void _DispatchKeyboardEvent(AppEventType type, int vk, bool repeat)
+    static void _DispatchKeyboardEvent(AppEventType type, int vk, bool repeat, const AppWindow& wnd)
     {
         if (vk < APP_MAX_KEY_CODES) {
-            AppEvent e = _NewEvent(type);
+            AppEvent e = _NewEvent(type, wnd);
             e.keyMods = GetKeyMods();
             e.keycode = gApp.keycodes[vk];
             e.keyRepeat = repeat;
@@ -540,15 +648,15 @@ namespace App
 
             // check if a CLIPBOARDPASTED event must be sent too
             if (gApp.clipboardEnabled && (type == AppEventType::KeyDown) && (e.keyMods == InputKeyModifiers::Ctrl) && (e.keycode == InputKeycode::V)) {
-                _CallEvent(_NewEvent(AppEventType::ClipboardPasted));
+                _CallEvent(_NewEvent(AppEventType::ClipboardPasted, wnd));
             }
         }
     }
 
-    static void _DispatchCharEvent(uint32 c, bool repeat)
+    static void _DispatchCharEvent(uint32 c, bool repeat, const AppWindow& wnd)
     {
         if (c >= 32) {
-            AppEvent e = _NewEvent(AppEventType::Char);
+            AppEvent e = _NewEvent(AppEventType::Char, wnd);
             e.keyMods = GetKeyMods();
             e.charcode = c;
             e.keyRepeat = repeat;
@@ -558,13 +666,19 @@ namespace App
 
     static LRESULT CALLBACK _MessageHandlerCallback(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
     {
-        if (!gApp.hwnd)
+        AppWindow* wndPtr = _FindWindow(hWnd);
+        if (wndPtr == nullptr)
             return DefWindowProcW(hWnd, uMsg, wParam, lParam);
+        AppWindow& wnd = *wndPtr;
 
         // TODO: refresh rendering during resize with a WM_TIMER event
         switch (uMsg) {
             case WM_CLOSE:
-                PostQuitMessage(0);
+                // Closing a secondary window is the owner's decision, only the main window quits the app
+                if (wnd.isMain)
+                    PostQuitMessage(0);
+                else
+                    _CallEvent(_NewEvent(AppEventType::WindowClose, wnd));
                 return 0;
             case WM_SYSCOMMAND:
                 switch (wParam & 0xFFF0) {
@@ -585,91 +699,105 @@ namespace App
             case WM_SIZE:
             {
                 const bool iconified = wParam == SIZE_MINIMIZED;
-                if (iconified != gApp.iconified) {
-                    gApp.iconified = iconified;
+                if (iconified != wnd.iconified) {
+                    wnd.iconified = iconified;
                     if (iconified)
-                        _CallEvent(_NewEvent(AppEventType::Iconified));
-                    else 
-                        _CallEvent(_NewEvent(AppEventType::Restored));
+                        _CallEvent(_NewEvent(AppEventType::Iconified, wnd));
+                    else
+                        _CallEvent(_NewEvent(AppEventType::Restored, wnd));
+                }
+
+                // The main window is polled from the message loop instead, because its framebuffer size
+                // has to be reconciled with the graphics backend surface
+                if (!wnd.isMain && _UpdateWindowDimensions(wnd)) {
+                    AppEvent resizeEvent = _NewEvent(AppEventType::Resized, wnd);
+                    _CallEvent(resizeEvent);
                 }
             }
             break;
             case WM_MOVE:
-                if (_UpdateDisplayInfo())
-                    _CallEvent(_NewEvent(AppEventType::DisplayUpdated));
-                _CallEvent(_NewEvent(AppEventType::Moved));
+                if (_UpdateDisplayInfo(wnd))
+                    _CallEvent(_NewEvent(AppEventType::DisplayUpdated, wnd));
+                _CallEvent(_NewEvent(AppEventType::Moved, wnd));
                 gApp.windowModified = true;
                 break;
             case WM_SETCURSOR:
                 if (gApp.desc.userCursor) {
                     if (LOWORD(lParam) == HTCLIENT) {
-                        _CallEvent(_NewEvent(AppEventType::UpdateCursor));
+                        _CallEvent(_NewEvent(AppEventType::UpdateCursor, wnd));
                         return 1;
                     }
                 }
                 break;
             case WM_LBUTTONDOWN:
-                _DispatchMouseButtonEvent(AppEventType::MouseDown, InputMouseButton::Left);
+                _DispatchMouseButtonEvent(AppEventType::MouseDown, InputMouseButton::Left, wnd);
                 break;
             case WM_RBUTTONDOWN:
-                _DispatchMouseButtonEvent(AppEventType::MouseDown, InputMouseButton::Right);
+                _DispatchMouseButtonEvent(AppEventType::MouseDown, InputMouseButton::Right, wnd);
                 break;
             case WM_MBUTTONDOWN:
-                _DispatchMouseButtonEvent(AppEventType::MouseDown, InputMouseButton::Middle);
+                _DispatchMouseButtonEvent(AppEventType::MouseDown, InputMouseButton::Middle, wnd);
                 break;
             case WM_LBUTTONUP:
-                _DispatchMouseButtonEvent(AppEventType::MouseUp, InputMouseButton::Left);
+                _DispatchMouseButtonEvent(AppEventType::MouseUp, InputMouseButton::Left, wnd);
                 break;
             case WM_RBUTTONUP:
-                _DispatchMouseButtonEvent(AppEventType::MouseUp, InputMouseButton::Right);
+                _DispatchMouseButtonEvent(AppEventType::MouseUp, InputMouseButton::Right, wnd);
                 break;
             case WM_MBUTTONUP:
-                _DispatchMouseButtonEvent(AppEventType::MouseUp, InputMouseButton::Middle);
+                _DispatchMouseButtonEvent(AppEventType::MouseUp, InputMouseButton::Middle, wnd);
                 break;
             case WM_MOUSEMOVE:
-                gApp.mouseX = (fl32)GET_X_LPARAM(lParam) * gApp.mouseScale;
-                gApp.mouseY = (fl32)GET_Y_LPARAM(lParam) * gApp.mouseScale;
-                if (!gApp.mouseTracked) {
-                    gApp.mouseTracked = true;
+            {
+                POINT mousePt {GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)};
+                wnd.mouseX = (fl32)mousePt.x * wnd.mouseScale;
+                wnd.mouseY = (fl32)mousePt.y * wnd.mouseScale;
+                ClientToScreen(wnd.hwnd, &mousePt);
+                wnd.mouseDesktopX = (fl32)mousePt.x;
+                wnd.mouseDesktopY = (fl32)mousePt.y;
+
+                if (!wnd.mouseTracked) {
+                    wnd.mouseTracked = true;
                     TRACKMOUSEEVENT tme;
                     memset(&tme, 0, sizeof(tme));
                     tme.cbSize = sizeof(tme);
                     tme.dwFlags = TME_LEAVE;
-                    tme.hwndTrack = gApp.hwnd;
+                    tme.hwndTrack = wnd.hwnd;
                     TrackMouseEvent(&tme);
-                    _DispatchMouseButtonEvent(AppEventType::MouseEnter, InputMouseButton::Invalid);
+                    _DispatchMouseButtonEvent(AppEventType::MouseEnter, InputMouseButton::Invalid, wnd);
                 }
-                _DispatchMouseButtonEvent(AppEventType::MouseMove, InputMouseButton::Invalid);
-                break;
+                _DispatchMouseButtonEvent(AppEventType::MouseMove, InputMouseButton::Invalid, wnd);
+            }
+            break;
             case WM_MOUSEHOVER:
                 if (gApp.mouseCursor == AppMouseCursor::None)
                     SetCursor(AppMouseCursor::Arrow);
                 break;
             case WM_MOUSELEAVE:
-                gApp.mouseTracked = false;
+                wnd.mouseTracked = false;
                 gApp.mouseCursor = AppMouseCursor::None;
-                _DispatchMouseButtonEvent(AppEventType::MouseLeave, InputMouseButton::Invalid);
+                _DispatchMouseButtonEvent(AppEventType::MouseLeave, InputMouseButton::Invalid, wnd);
                 break;
             case WM_MOUSEWHEEL:
-                _DispatchMouseScrollEvent(0.0f, float((SHORT)HIWORD(wParam)));
+                _DispatchMouseScrollEvent(0.0f, float((SHORT)HIWORD(wParam)), wnd);
                 break;
             case WM_MOUSEHWHEEL:
-                _DispatchMouseScrollEvent(float((SHORT)HIWORD(wParam)), 0.0f);
+                _DispatchMouseScrollEvent(float((SHORT)HIWORD(wParam)), 0.0f, wnd);
                 break;
             case WM_CHAR:
-                _DispatchCharEvent((uint32)wParam, !!(lParam & 0x40000000));
+                _DispatchCharEvent((uint32)wParam, !!(lParam & 0x40000000), wnd);
                 break;
             case WM_KEYDOWN:
             case WM_SYSKEYDOWN:
-                _DispatchKeyboardEvent(AppEventType::KeyDown, (int)(HIWORD(lParam) & 0x1FF), !!(lParam & 0x40000000));
+                _DispatchKeyboardEvent(AppEventType::KeyDown, (int)(HIWORD(lParam) & 0x1FF), !!(lParam & 0x40000000), wnd);
                 break;
             case WM_KEYUP:
             case WM_SYSKEYUP:
-                _DispatchKeyboardEvent(AppEventType::KeyUp, (int)(HIWORD(lParam) & 0x1FF), false);
+                _DispatchKeyboardEvent(AppEventType::KeyUp, (int)(HIWORD(lParam) & 0x1FF), false, wnd);
                 break;
             case WM_DISPLAYCHANGE:
-                _UpdateDisplayInfo();
-                _CallEvent(_NewEvent(AppEventType::DisplayUpdated));
+                _UpdateDisplayInfo(wnd);
+                _CallEvent(_NewEvent(AppEventType::DisplayUpdated, wnd));
                 break;
 
             default:
@@ -678,28 +806,29 @@ namespace App
         return DefWindowProcW(hWnd, uMsg, wParam, lParam);
     }
 
-    static bool _UpdateWindowDimensions(HWND hwnd)
+    static bool _UpdateWindowDimensions(AppWindow& wnd)
     {
         RECT rect;
-        if (GetClientRect(hwnd, &rect)) {
-            gApp.windowWidth = uint16(float(rect.right - rect.left) / gApp.windowScale);
-            gApp.windowHeight = uint16(float(rect.bottom - rect.top) / gApp.windowScale);
-            uint16 fbWidth = uint16(float(gApp.windowWidth) * gApp.contentScale);
-            uint16 fbHeight = uint16(float(gApp.windowHeight) * gApp.contentScale);
+        if (GetClientRect(wnd.hwnd, &rect)) {
+            wnd.windowWidth = uint16(float(rect.right - rect.left) / wnd.windowScale);
+            wnd.windowHeight = uint16(float(rect.bottom - rect.top) / wnd.windowScale);
+            uint16 fbWidth = uint16(float(wnd.windowWidth) * wnd.contentScale);
+            uint16 fbHeight = uint16(float(wnd.windowHeight) * wnd.contentScale);
 
-            // Fix framebuffer dimensions by getting the values straight from the graphics backend surface
-            if (gApp.queryFramebufferFunc)
+            // Fix framebuffer dimensions by getting the values straight from the graphics backend surface.
+            // The backend only owns a surface for the main window
+            if (wnd.isMain && gApp.queryFramebufferFunc)
                 gApp.queryFramebufferFunc(&fbWidth, &fbHeight);
 
-            if ((fbWidth != gApp.framebufferWidth) || (fbHeight != gApp.framebufferHeight)) {
-                gApp.framebufferWidth = Max<uint16>(fbWidth, 1u);
-                gApp.framebufferHeight = Max<uint16>(fbHeight, 1u);
+            if ((fbWidth != wnd.framebufferWidth) || (fbHeight != wnd.framebufferHeight)) {
+                wnd.framebufferWidth = Max<uint16>(fbWidth, 1u);
+                wnd.framebufferHeight = Max<uint16>(fbHeight, 1u);
                 return true;
             }
         }
         else {
-            gApp.windowWidth = gApp.windowHeight = 1;
-            gApp.framebufferWidth = gApp.framebufferHeight = 1;
+            wnd.windowWidth = wnd.windowHeight = 1;
+            wnd.framebufferWidth = wnd.framebufferHeight = 1;
         }
         return false;
     }
@@ -716,10 +845,10 @@ namespace App
                 if (inputBuff[inIdx].EventType == KEY_EVENT) {
                     const KEY_EVENT_RECORD& keyEvent = inputBuff[inIdx].Event.KeyEvent;
                     if (keyEvent.uChar.AsciiChar >= 32 && keyEvent.uChar.AsciiChar < 128) 
-                        _DispatchCharEvent((char)keyEvent.uChar.AsciiChar, keyEvent.wRepeatCount > 1);
+                        _DispatchCharEvent((char)keyEvent.uChar.AsciiChar, keyEvent.wRepeatCount > 1, _MainWindow());
 
                     AppEventType eventType = keyEvent.bKeyDown ? AppEventType::KeyDown : AppEventType::KeyUp;
-                    _DispatchKeyboardEvent(eventType, keyEvent.wVirtualScanCode, keyEvent.wRepeatCount > 1);
+                    _DispatchKeyboardEvent(eventType, keyEvent.wVirtualScanCode, keyEvent.wRepeatCount > 1, _MainWindow());
                 }
             }
         }
@@ -727,6 +856,7 @@ namespace App
 
     static bool _CreateMainWindow()
     {
+        AppWindow& mainWnd = _MainWindow();
         const SettingsApp& settings = SettingsJunkyard::Get().app;
         ASSERT(settings.appName && settings.appName[0]);
 
@@ -755,7 +885,7 @@ namespace App
         }
 
         if (rect.right == -1 || rect.bottom == -1) {
-            rect = {0, 0, uint16(float(gApp.windowWidth)*gApp.windowScale) , uint16(float(gApp.windowHeight)*gApp.windowScale) };
+            rect = {0, 0, uint16(float(mainWnd.windowWidth)*mainWnd.windowScale) , uint16(float(mainWnd.windowHeight)*mainWnd.windowScale) };
             AdjustWindowRectEx(&rect, winStyle, FALSE, winExStyle);
             gApp.windowModified = true;
         }
@@ -764,7 +894,7 @@ namespace App
         const int winHeight = uint16(rect.bottom - rect.top);
     
         wchar_t winTitleWide[128];
-        Str::Utf8ToWide(gApp.windowTitle, winTitleWide, sizeof(winTitleWide));
+        Str::Utf8ToWide(mainWnd.title, winTitleWide, sizeof(winTitleWide));
 
         HWND hwnd = CreateWindowExW(
             winExStyle,               	/* dwExStyle */
@@ -781,9 +911,12 @@ namespace App
             NULL);                      /* lParam */
         if (!hwnd)
             return false;
-        ShowWindow(hwnd, settings.launchMinimized ? SW_MINIMIZE : SW_SHOW);
-        _UpdateWindowDimensions(hwnd);
-        gApp.hwnd = hwnd;
+        mainWnd.hwnd = hwnd;
+        SetWindowLongPtrW(hwnd, GWLP_USERDATA, LONG_PTR(uintptr(mainWnd.handle.mId)));
+        ::ShowWindow(hwnd, settings.launchMinimized ? SW_MINIMIZE : SW_SHOW);
+        _UpdateWindowDimensions(mainWnd);
+
+        gApp.eventsEnabled = true;
 
         // Adjust console window
         RECT conRc = gApp.consoleRect;
@@ -817,11 +950,12 @@ namespace App
 
         gApp.desc = desc;
 
-        gApp.windowWidth = gApp.desc.initWidth;
-        gApp.windowHeight = gApp.desc.initHeight;
-        gApp.framebufferWidth = gApp.desc.initWidth;
-        gApp.framebufferHeight = gApp.desc.initHeight;
-        gApp.dpiScale = 1.0f;
+        gApp.mainWindow = _RegisterWindow(true);
+        AppWindow& mainWnd = _MainWindow();
+        mainWnd.windowWidth = gApp.desc.initWidth;
+        mainWnd.windowHeight = gApp.desc.initHeight;
+        mainWnd.framebufferWidth = gApp.desc.initWidth;
+        mainWnd.framebufferHeight = gApp.desc.initHeight;
         gApp.clipboardEnabled = desc.enableClipboard;
         gApp.mouseCursor = AppMouseCursor::None;
         if (desc.enableClipboard)
@@ -862,9 +996,9 @@ namespace App
         Log::SetSettings(static_cast<LogLevel>(settings.engine.logLevel), SettingsJunkyard::Get().engine.breakOnErrors, SettingsJunkyard::Get().engine.treatWarningsAsErrors);
 
         if (desc.windowTitle)
-            Str::Copy(gApp.windowTitle, sizeof(gApp.windowTitle), desc.windowTitle);
+            Str::Copy(mainWnd.title, sizeof(mainWnd.title), desc.windowTitle);
         else
-            Str::Copy(gApp.windowTitle, sizeof(gApp.windowTitle), settings.app.appName);
+            Str::Copy(mainWnd.title, sizeof(mainWnd.title), settings.app.appName);
 
 
         // RemoteServices
@@ -888,7 +1022,7 @@ namespace App
                 ASSERT_MSG(0, "Creating win32 window failed");
                 return false;
             }
-            _UpdateDisplayInfo();
+            _UpdateDisplayInfo(_MainWindow());
         }
         gApp.valid = true;
 
@@ -915,7 +1049,7 @@ namespace App
                 MSG msg;
 
                 // Block when window is minimized
-                if (gApp.iconified) {
+                if (_MainWindow().iconified) {
                     GetMessageW(&msg, nullptr, 0, 0);
                     if (WM_QUIT == msg.message) {
                         break;
@@ -937,8 +1071,8 @@ namespace App
                     }
                 }
 
-                if (_UpdateWindowDimensions(gApp.hwnd)) {
-                    _CallEvent(_NewEvent(AppEventType::Resized));
+                if (_UpdateWindowDimensions(_MainWindow())) {
+                    _CallEvent(_NewEvent(AppEventType::Resized, _MainWindow()));
                     gApp.windowModified = true;
                 }
             }
@@ -955,7 +1089,7 @@ namespace App
 
             tmNow = Timer::GetTicks();
             float dt = float(Timer::ToSec(tmNow - tmPrev));
-            if (!gApp.iconified || (gApp.iconified && gApp.desc.updateWhenMinimized)) {
+            if (!_MainWindow().iconified || (_MainWindow().iconified && gApp.desc.updateWhenMinimized)) {
                 if (!gApp.overrideUpdateCallback.first) 
                     desc.callbacks->Update(dt);
                 else
@@ -972,15 +1106,25 @@ namespace App
         Remote::Release();
         Vfs::Release();
     
+        // Cleanup() has already released the subsystems that OnEvent handlers talk to
+        gApp.eventsEnabled = false;
+
         if (settings.graphics.IsGraphicsEnabled()) {
-            DestroyWindow(gApp.hwnd);
+            DestroyWindow(_MainWindow().hwnd);
 
             wchar_t className[128];
             Str::Utf8ToWide(SettingsJunkyard::Get().app.appName, className, sizeof(className));
 
             UnregisterClassW(className, GetModuleHandleW(NULL));
         }
-        gApp.hwnd = nullptr;
+        gApp.mainWindow = AppWindowHandle {};
+        gApp.windows.Free();
+
+        if (gApp.shcoreDll) {
+            FreeLibrary(gApp.shcoreDll);
+            gApp.shcoreDll = nullptr;
+            gApp.getDpiForMonitorFn = nullptr;
+        }
     
         if (gApp.clipboardEnabled) {
             ASSERT(gApp.clipboard);
@@ -1014,9 +1158,9 @@ namespace App
     const char* GetClipboardString()
     {
         ASSERT(gApp.clipboardEnabled && gApp.clipboard);
-        ASSERT(gApp.hwnd);
+        ASSERT(_MainWindow().hwnd);
     
-        if (!OpenClipboard(gApp.hwnd)) {
+        if (!OpenClipboard(_MainWindow().hwnd)) {
             // silently ignore any errors and just return the current content of the local clipboard buffer
             return gApp.clipboard;
         }
@@ -1040,9 +1184,230 @@ namespace App
         return gApp.clipboard;
     }
 
+    AppWindowHandle GetMainWindow()
+    {
+        return gApp.mainWindow;
+    }
+
+    bool IsMultiWindowSupported()
+    {
+        return true;
+    }
+
+    AppWindowHandle CreateWindowHandle(const AppWindowDesc& desc)
+    {
+        ASSERT_MSG(gApp.mainWindow.IsValid(), "App is not initialized");
+        ASSERT_MSG(gApp.windows.Count() < APP_MAX_WINDOWS, "Exceeded APP_MAX_WINDOWS (%u)", APP_MAX_WINDOWS);
+
+        DWORD style;
+        DWORD exStyle;
+        _WindowStylesFromFlags(desc.flags, &style, &exStyle);
+
+        // Requested geometry describes the client area, grow it to include decorations
+        RECT rect {
+            desc.geometry.x,
+            desc.geometry.y,
+            desc.geometry.x + desc.geometry.width,
+            desc.geometry.y + desc.geometry.height
+        };
+        AdjustWindowRectEx(&rect, style, FALSE, exStyle);
+
+        wchar_t className[128];
+        Str::Utf8ToWide(SettingsJunkyard::Get().app.appName, className, sizeof(className));
+
+        wchar_t titleWide[128];
+        Str::Utf8ToWide(desc.title ? desc.title : "", titleWide, sizeof(titleWide));
+
+        HWND parentHwnd = desc.parent.IsValid() ? _GetWindow(desc.parent).hwnd : nullptr;
+
+        AppWindowHandle handle = _RegisterWindow(false);
+        AppWindow& wnd = _GetWindow(handle);
+        wnd.flags = desc.flags;
+        Str::Copy(wnd.title, sizeof(wnd.title), desc.title ? desc.title : "");
+
+        // Deliberately created hidden. The owner calls ShowWindow after positioning it
+        HWND hwnd = CreateWindowExW(exStyle, className, titleWide, style,
+                                    rect.left, rect.top, rect.right - rect.left, rect.bottom - rect.top,
+                                    parentHwnd, nullptr, GetModuleHandleW(nullptr), nullptr);
+        if (!hwnd) {
+            LOG_ERROR("Creating window '%s' failed", desc.title ? desc.title : "");
+            gApp.windows.Remove(_ToInternal(handle));
+            return AppWindowHandle {};
+        }
+
+        wnd.hwnd = hwnd;
+        SetWindowLongPtrW(hwnd, GWLP_USERDATA, LONG_PTR(uintptr(handle.mId)));
+        _UpdateDisplayInfo(wnd);
+        _UpdateWindowDimensions(wnd);
+        return handle;
+    }
+
+    void DestroyWindowHandle(AppWindowHandle handle)
+    {
+        if (!handle.IsValid() || !gApp.windows.IsValid(_ToInternal(handle)))
+            return;
+        ASSERT_MSG(handle != gApp.mainWindow, "Main window is owned by App::Run and cannot be destroyed");
+
+        AppWindow& wnd = _GetWindow(handle);
+        if (wnd.hwnd) {
+            // Stop routing before teardown, so WM_DESTROY does not resolve to a window we are removing
+            SetWindowLongPtrW(wnd.hwnd, GWLP_USERDATA, 0);
+            DestroyWindow(wnd.hwnd);
+        }
+        gApp.windows.Remove(_ToInternal(handle));
+    }
+
+    void ShowWindow(AppWindowHandle handle)
+    {
+        const AppWindow& wnd = _GetWindow(handle);
+        ::ShowWindow(wnd.hwnd, IsBitsSet(wnd.flags, AppWindowFlags::NoFocusOnAppearing) ? SW_SHOWNA : SW_SHOW);
+    }
+
+    AppRect GetWindowGeometry(AppWindowHandle handle)
+    {
+        const AppWindow& wnd = _GetWindow(handle);
+        POINT pos {0, 0};
+        ClientToScreen(wnd.hwnd, &pos);
+        RECT rect {};
+        GetClientRect(wnd.hwnd, &rect);
+        return AppRect { pos.x, pos.y, int(rect.right - rect.left), int(rect.bottom - rect.top) };
+    }
+
+    void SetWindowPos(AppWindowHandle handle, int x, int y)
+    {
+        const AppWindow& wnd = _GetWindow(handle);
+        RECT rect {x, y, x, y};
+        AdjustWindowRectEx(&rect, DWORD(GetWindowLongW(wnd.hwnd, GWL_STYLE)), FALSE,
+                           DWORD(GetWindowLongW(wnd.hwnd, GWL_EXSTYLE)));
+        ::SetWindowPos(wnd.hwnd, nullptr, rect.left, rect.top, 0, 0, SWP_NOZORDER|SWP_NOSIZE|SWP_NOACTIVATE);
+    }
+
+    void SetWindowSize(AppWindowHandle handle, int width, int height)
+    {
+        const AppWindow& wnd = _GetWindow(handle);
+        RECT rect {0, 0, width, height};
+        AdjustWindowRectEx(&rect, DWORD(GetWindowLongW(wnd.hwnd, GWL_STYLE)), FALSE,
+                           DWORD(GetWindowLongW(wnd.hwnd, GWL_EXSTYLE)));
+        ::SetWindowPos(wnd.hwnd, nullptr, 0, 0, rect.right - rect.left, rect.bottom - rect.top,
+                       SWP_NOZORDER|SWP_NOMOVE|SWP_NOACTIVATE);
+    }
+
+    void SetWindowTitle(AppWindowHandle handle, const char* title)
+    {
+        AppWindow& wnd = _GetWindow(handle);
+        Str::Copy(wnd.title, sizeof(wnd.title), title ? title : "");
+
+        wchar_t titleWide[128];
+        Str::Utf8ToWide(wnd.title, titleWide, sizeof(titleWide));
+        SetWindowTextW(wnd.hwnd, titleWide);
+    }
+
+    void SetWindowAlpha(AppWindowHandle handle, float alpha)
+    {
+        const AppWindow& wnd = _GetWindow(handle);
+        LONG exStyle = GetWindowLongW(wnd.hwnd, GWL_EXSTYLE);
+
+        if (alpha < 1.0f) {
+            alpha = alpha > 0 ? alpha : 0;
+            SetWindowLongW(wnd.hwnd, GWL_EXSTYLE, exStyle|WS_EX_LAYERED);
+            SetLayeredWindowAttributes(wnd.hwnd, 0, BYTE(alpha * 255.0f), LWA_ALPHA);
+        }
+        else {
+            SetWindowLongW(wnd.hwnd, GWL_EXSTYLE, exStyle & ~WS_EX_LAYERED);
+        }
+    }
+
+    void FocusWindow(AppWindowHandle handle)
+    {
+        const AppWindow& wnd = _GetWindow(handle);
+        BringWindowToTop(wnd.hwnd);
+        SetForegroundWindow(wnd.hwnd);
+        SetFocus(wnd.hwnd);
+    }
+
+    bool IsWindowFocused(AppWindowHandle handle)
+    {
+        return GetForegroundWindow() == _GetWindow(handle).hwnd;
+    }
+
+    bool IsWindowMinimized(AppWindowHandle handle)
+    {
+        return IsIconic(_GetWindow(handle).hwnd) != 0;
+    }
+
+    float GetWindowDPIScale(AppWindowHandle handle)
+    {
+        return _GetWindow(handle).dpiScale;
+    }
+
+    void* GetNativeWindowHandle(AppWindowHandle handle)
+    {
+        return _GetWindow(handle).hwnd;
+    }
+
+    struct AppMonitorEnumContext
+    {
+        AppMonitorInfo* monitors;
+        uint32 maxMonitors;
+        uint32 numWritten;
+        uint32 numTotal;
+    };
+
+    static BOOL CALLBACK _MonitorEnumCallback(HMONITOR monitor, HDC, LPRECT, LPARAM lparam)
+    {
+        AppMonitorEnumContext* ctx = reinterpret_cast<AppMonitorEnumContext*>(lparam);
+        ctx->numTotal++;
+
+        if (ctx->monitors == nullptr || ctx->numWritten >= ctx->maxMonitors)
+            return TRUE;
+
+        MONITORINFO monitorInfo { sizeof(MONITORINFO) };
+        if (!GetMonitorInfoA(monitor, &monitorInfo))
+            return TRUE;
+
+        AppMonitorInfo info {
+            .mainRect = _RectFromWin32(monitorInfo.rcMonitor),
+            .workRect = _RectFromWin32(monitorInfo.rcWork),
+            .dpiScale = _GetMonitorDPIScale(monitor),
+            .isPrimary = (monitorInfo.dwFlags & MONITORINFOF_PRIMARY) != 0
+        };
+
+        // Callers expect the primary monitor at index 0, swap it into place
+        if (info.isPrimary && ctx->numWritten > 0) {
+            ctx->monitors[ctx->numWritten] = ctx->monitors[0];
+            ctx->monitors[0] = info;
+        }
+        else {
+            ctx->monitors[ctx->numWritten] = info;
+        }
+        ctx->numWritten++;
+        return TRUE;
+    }
+
+    AppWindowHandle GetWindowFromPoint(int x, int y)
+    {
+        POINT pt {x, y};
+        HWND hwnd = WindowFromPoint(pt);
+        if (hwnd == nullptr)
+            return AppWindowHandle {};
+
+        AppWindow* wnd = _FindWindow(hwnd);
+        return wnd ? wnd->handle : AppWindowHandle {};
+    }
+
+    uint32 GetMonitors(AppMonitorInfo* outMonitors, uint32 maxMonitors)
+    {
+        AppMonitorEnumContext ctx {
+            .monitors = outMonitors,
+            .maxMonitors = maxMonitors
+        };
+        EnumDisplayMonitors(nullptr, nullptr, _MonitorEnumCallback, reinterpret_cast<LPARAM>(&ctx));
+        return outMonitors ? ctx.numWritten : ctx.numTotal;
+    }
+
     void* GetNativeWindowHandle()
     {
-        return gApp.hwnd;
+        return _MainWindow().hwnd;
     }
 
     void Quit()
@@ -1053,27 +1418,27 @@ namespace App
 
     uint16 GetWindowWidth()
     {
-        return gApp.windowWidth;
+        return _MainWindow().windowWidth;
     }
 
     uint16 GetWindowHeight()
     {
-        return gApp.windowHeight;
+        return _MainWindow().windowHeight;
     }
 
     uint16 GetFramebufferWidth()
     {
-        return gApp.framebufferWidth;
+        return _MainWindow().framebufferWidth;
     }
 
     uint16 GetFramebufferHeight()
     {
-        return gApp.framebufferHeight;
+        return _MainWindow().framebufferHeight;
     }
 
     float GetWindowDPIScale()
     {
-        return gApp.dpiScale;
+        return _MainWindow().dpiScale;
     }
 
     AppDisplayInfo GetDisplayInfo()
@@ -1082,7 +1447,7 @@ namespace App
             .width = gApp.displayWidth,
             .height = gApp.displayHeight,
             .refreshRate = gApp.displayRefreshRate,
-            .dpiScale = gApp.dpiScale
+            .dpiScale = _MainWindow().dpiScale
         };
     }
 
@@ -1166,7 +1531,7 @@ namespace App
     void CaptureMouse()
     {
         SetCursor(AppMouseCursor::None);
-        SetCapture(gApp.hwnd);
+        SetCapture(_MainWindow().hwnd);
     }
 
     void ReleaseMouse()

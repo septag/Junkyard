@@ -68,8 +68,15 @@ namespace ImGui
     API void BeginFrame(float dt);
     API bool DrawFrame(GfxCommandBuffer cmd, GfxImageHandle colorImage = GfxImageHandle());
 
+    // Creates/updates/destroys the OS windows backing secondary viewports. Call once per frame after DrawFrame
+    API void UpdateViewports();
+
     API void SetMSAA(GfxMultiSampleCount sampleCount);  // Should be set before initialization
     
+    // Main window's client area in ImGui coordinate space. That is (0,0)..DisplaySize while viewports are off,
+    // but the window's desktop rect once they are on. Prefer this over assuming an origin of (0,0)
+    API RectFloat GetMainViewportRect();
+
     API ImDrawList* BeginFullscreenView(const char* name = "fullscreen_view");
     API ImVec2 ProjectToScreen(Float3 point, const Mat4& worldToClipMat, const RectFloat& viewport);
     

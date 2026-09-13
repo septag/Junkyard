@@ -260,7 +260,7 @@ struct TestUIApp final : AppCallbacks
                     .color = Color4u::ToFloat4(COLOR4U_BLACK)
                 }
             }},
-            .swapchain = true,
+            .swapchain = GfxBackend::GetMainSwapchain(),
             .hasDepth = false
         };
         cmd.BeginRenderPass(pass);

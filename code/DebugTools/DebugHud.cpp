@@ -167,6 +167,7 @@ namespace DebugHud
                 values[i] = 33.0f - Min(values[i], 33.0f);
         }
 
+        ImGui::PushID((int)type);
         ImGui::PushStyleVar(ImGuiStyleVar_Alpha, 0.8f);
         ImVec4 textColor = ImGui::GetStyleColorVec4(ImGuiCol_Text);
          if (isFrameTime) {
@@ -193,6 +194,7 @@ namespace DebugHud
 
         ImGui::PopStyleColor();
         ImGui::PopStyleVar();
+        ImGui::PopID();
 
     }
 
@@ -240,9 +242,12 @@ namespace DebugHud
 
 void DebugHud::DrawDebugHud(float dt, float yOffset)
 {
-    const ImVec2 kDisplaySize = ImGui::GetIO().DisplaySize;
-    ImGui::SetNextWindowPos(ImVec2(0, yOffset), ImGuiCond_Always);
-    ImGui::SetNextWindowSize(ImVec2(kDisplaySize.x*0.33f, 0), ImGuiCond_Always);
+    // Anchored to the main window. With multi-viewport enabled (0,0) is the desktop origin, not the
+    // top-left of the main window, and SetNextWindowViewport keeps the HUD from detaching into its own window
+    const ImGuiViewport* kMainViewport = ImGui::GetMainViewport();
+    ImGui::SetNextWindowPos(ImVec2(kMainViewport->Pos.x, kMainViewport->Pos.y + yOffset), ImGuiCond_Always);
+    ImGui::SetNextWindowSize(ImVec2(kMainViewport->Size.x*0.33f, 0), ImGuiCond_Always);
+    ImGui::SetNextWindowViewport(kMainViewport->ID);
     const uint32 kWndFlags = ImGuiWindowFlags_NoBackground|ImGuiWindowFlags_NoTitleBar|ImGuiWindowFlags_NoScrollbar|
                              ImGuiWindowFlags_NoMove|ImGuiWindowFlags_NoResize;
     if (ImGui::Begin("Frame", nullptr, kWndFlags)) {
@@ -267,18 +272,19 @@ void DebugHud::DrawDebugHud(float dt, float yOffset)
 void DebugHud::DrawStatusBar(float dt)
 {
     ImGuiStyle& kStyle = ImGui::GetStyle();
-    const ImVec2 kDisplaySize = ImGui::GetIO().DisplaySize;
+    ImGuiViewport* kMainViewport = ImGui::GetMainViewport();
     const float kLineSize = ImGui::GetFrameHeightWithSpacing();
 
     SpinLockMutexScope lock(gDebugHud.statusLock);
-    ImDrawList* fgDrawList = ImGui::GetForegroundDrawList();
-    float y = kDisplaySize.y - kLineSize;
+    // Foreground list of the main viewport specifically, otherwise the bar can land on another window
+    ImDrawList* fgDrawList = ImGui::GetForegroundDrawList(kMainViewport);
+    float y = kMainViewport->Pos.y + kMainViewport->Size.y - kLineSize;
     gDebugHud.statusShowTime += dt;
     float alpha = M::LinearStep(gDebugHud.statusShowTime, 0, 5.0f);
     alpha = 1.0f - M::Gain(alpha, 0.05f);
     gDebugHud.statusColor.a = uint8(alpha * 255.0f);
 
-    fgDrawList->AddText(ImVec2(kStyle.WindowPadding.x, y), gDebugHud.statusColor.n, gDebugHud.statusText.CStr());
+    fgDrawList->AddText(ImVec2(kMainViewport->Pos.x + kStyle.WindowPadding.x, y), gDebugHud.statusColor.n, gDebugHud.statusText.CStr());
 }
 
 void DebugHud::Initialize()

@@ -43,6 +43,17 @@ struct ImGuiShaderTransform
     Mat4 projMat;
 };
 
+// Renderer side of a secondary viewport. Each one owns a swapchain and its own geometry buffers,
+// because viewports are rendered in separate command buffers
+struct ImGuiViewportRenderData
+{
+    GfxSwapchainHandle swapchain;
+    GfxBufferHandle vertexBuffer;
+    GfxBufferHandle indexBuffer;
+    uint32 maxVertices;
+    uint32 maxIndices;
+};
+
 struct ImGuiState
 {
     MemProxyAllocator alloc;
@@ -55,6 +66,8 @@ struct ImGuiState
     float mouseWheelH;
     float mouseWheel;
     ImGuiMouseCursor lastCursor;
+    bool viewportsEnabled;
+    bool frameRendered;     // Render() ran this frame, so the platform windows can be updated
     
     uint32 maxVertices;
     uint32 maxIndices;
@@ -391,28 +404,295 @@ namespace ImGui
             App::SetCursor(static_cast<AppMouseCursor>(imCursor));
     }
 
+    //------------------------------------------------------------------------------------------------------------
+    // Multi-viewport platform backend
+    // Maps ImGui's platform window requests onto the App window API. The renderer side is not implemented yet,
+    // so secondary viewports get a real OS window but nothing draws into them
+    static AppWindowHandle _ViewportWindow(ImGuiViewport* viewport)
+    {
+        return AppWindowHandle { PtrToInt<uint32>(viewport->PlatformUserData) };
+    }
+
+    static ImGuiViewport* _FindViewportForWindow(AppWindowHandle window)
+    {
+        if (!window.IsValid())
+            return nullptr;
+        return FindViewportByPlatformHandle(IntToPtr<uint32>(window.mId));
+    }
+
+
+    static void _PlatformCreateWindow(ImGuiViewport* viewport)
+    {
+        AppWindowFlags flags = AppWindowFlags::None;
+        if (viewport->Flags & ImGuiViewportFlags_NoDecoration)          flags |= AppWindowFlags::NoDecoration;
+        if (viewport->Flags & ImGuiViewportFlags_NoTaskBarIcon)         flags |= AppWindowFlags::NoTaskBarIcon;
+        if (viewport->Flags & ImGuiViewportFlags_TopMost)               flags |= AppWindowFlags::TopMost;
+        if (viewport->Flags & ImGuiViewportFlags_NoFocusOnAppearing)    flags |= AppWindowFlags::NoFocusOnAppearing;
+        if (viewport->Flags & ImGuiViewportFlags_NoFocusOnClick)        flags |= AppWindowFlags::NoFocusOnClick;
+
+        AppWindowHandle parent {};
+        if (viewport->ParentViewportId != 0) {
+            if (ImGuiViewport* parentViewport = FindViewportByID(viewport->ParentViewportId))
+                parent = _ViewportWindow(parentViewport);
+        }
+
+        AppWindowDesc desc {
+            .title = "Untitled",
+            .geometry = {int(viewport->Pos.x), int(viewport->Pos.y), int(viewport->Size.x), int(viewport->Size.y)},
+            .flags = flags,
+            .parent = parent
+        };
+
+        AppWindowHandle window = App::CreateWindowHandle(desc);
+        viewport->PlatformUserData = IntToPtr<uint32>(window.mId);
+        viewport->PlatformHandle = IntToPtr<uint32>(window.mId);
+        viewport->PlatformHandleRaw = window.IsValid() ? App::GetNativeWindowHandle(window) : nullptr;
+    }
+
+    static void _PlatformDestroyWindow(ImGuiViewport* viewport)
+    {
+        AppWindowHandle window = _ViewportWindow(viewport);
+
+        // The main viewport borrows the main window, which is owned by App::Run
+        if (window.IsValid() && window != App::GetMainWindow())
+            App::DestroyWindowHandle(window);
+
+        viewport->PlatformUserData = nullptr;
+        viewport->PlatformHandle = nullptr;
+        viewport->PlatformHandleRaw = nullptr;
+    }
+
+    static void _PlatformShowWindow(ImGuiViewport* viewport)
+    {
+        App::ShowWindow(_ViewportWindow(viewport));
+    }
+
+    static ImVec2 _PlatformGetWindowPos(ImGuiViewport* viewport)
+    {
+        AppRect rect = App::GetWindowGeometry(_ViewportWindow(viewport));
+        return ImVec2(float(rect.x), float(rect.y));
+    }
+
+    static void _PlatformSetWindowPos(ImGuiViewport* viewport, ImVec2 pos)
+    {
+        App::SetWindowPos(_ViewportWindow(viewport), int(pos.x), int(pos.y));
+    }
+
+    static ImVec2 _PlatformGetWindowSize(ImGuiViewport* viewport)
+    {
+        AppRect rect = App::GetWindowGeometry(_ViewportWindow(viewport));
+        return ImVec2(float(rect.width), float(rect.height));
+    }
+
+    static void _PlatformSetWindowSize(ImGuiViewport* viewport, ImVec2 size)
+    {
+        App::SetWindowSize(_ViewportWindow(viewport), int(size.x), int(size.y));
+    }
+
+    static ImVec2 _PlatformGetWindowFramebufferScale(ImGuiViewport*)
+    {
+        // Our window geometry is already in physical pixels, DPI is reported separately
+        return ImVec2(1.0f, 1.0f);
+    }
+
+    static void _PlatformSetWindowFocus(ImGuiViewport* viewport)
+    {
+        App::FocusWindow(_ViewportWindow(viewport));
+    }
+
+    static bool _PlatformGetWindowFocus(ImGuiViewport* viewport)
+    {
+        return App::IsWindowFocused(_ViewportWindow(viewport));
+    }
+
+    static bool _PlatformGetWindowMinimized(ImGuiViewport* viewport)
+    {
+        return App::IsWindowMinimized(_ViewportWindow(viewport));
+    }
+
+    static void _PlatformSetWindowTitle(ImGuiViewport* viewport, const char* title)
+    {
+        App::SetWindowTitle(_ViewportWindow(viewport), title);
+    }
+
+    static void _PlatformSetWindowAlpha(ImGuiViewport* viewport, float alpha)
+    {
+        App::SetWindowAlpha(_ViewportWindow(viewport), alpha);
+    }
+
+    static float _PlatformGetWindowDpiScale(ImGuiViewport* viewport)
+    {
+        return App::GetWindowDPIScale(_ViewportWindow(viewport));
+    }
+
+    // Defined further down, next to the rest of the geometry handling
+    static void _UploadDrawData(GfxCommandBuffer cmd, ImDrawData* drawData, 
+                                GfxBufferHandle* vertexBuffer, uint32* maxVertices,
+                                GfxBufferHandle* indexBuffer, uint32* maxIndices);
+    static void _RecordDrawCommands(GfxCommandBuffer cmd, ImDrawData* drawData, 
+                                    GfxBufferHandle vertexBuffer, GfxBufferHandle indexBuffer);
+
+    static ImGuiViewportRenderData* _ViewportRenderData(ImGuiViewport* viewport)
+    {
+        return reinterpret_cast<ImGuiViewportRenderData*>(viewport->RendererUserData);
+    }
+
+    static void _RendererCreateWindow(ImGuiViewport* viewport)
+    {
+        void* nativeWindow = viewport->PlatformHandleRaw;
+        if (nativeWindow == nullptr)
+            return;
+
+        Int2 size(int(viewport->Size.x), int(viewport->Size.y));
+        GfxSwapchainHandle swapchain = GfxBackend::CreateSwapchain(nativeWindow, size);
+        if (!swapchain.IsValid())
+            return;
+
+        ImGuiViewportRenderData* data = Mem::AllocZeroTyped<ImGuiViewportRenderData>(1, &gImGui.runtimeAlloc);
+        data->swapchain = swapchain;
+        viewport->RendererUserData = data;
+    }
+
+    static void _RendererDestroyWindow(ImGuiViewport* viewport)
+    {
+        ImGuiViewportRenderData* data = _ViewportRenderData(viewport);
+        if (data == nullptr)
+            return;
+
+        GfxBackend::DestroySwapchain(data->swapchain);
+        GfxBackend::DestroyBuffer(data->vertexBuffer);
+        GfxBackend::DestroyBuffer(data->indexBuffer);
+
+        Mem::Free(data, &gImGui.runtimeAlloc);
+        viewport->RendererUserData = nullptr;
+    }
+
+    static void _RendererSetWindowSize(ImGuiViewport* viewport, ImVec2 size)
+    {
+        if (ImGuiViewportRenderData* data = _ViewportRenderData(viewport))
+            GfxBackend::ResizeSwapchain(data->swapchain, Int2(int(size.x), int(size.y)));
+    }
+
+    static void _RendererRenderWindow(ImGuiViewport* viewport, void*)
+    {
+        ImGuiViewportRenderData* data = _ViewportRenderData(viewport);
+        ImDrawData* drawData = viewport->DrawData;
+        if (data == nullptr || drawData == nullptr || drawData->CmdLists.Size == 0)
+            return;
+
+        GfxCommandBuffer cmd = GfxBackend::BeginCommandBuffer(GfxQueueType::Graphics);
+
+        // GpuProfilerScope holds a GfxCommandBuffer& and asserts on destruction that it is still
+        // recording, so the zone has to close before EndCommandBuffer
+        {
+            GPU_PROFILE_ZONE(cmd, "ImGuiViewport");
+
+            _UploadDrawData(cmd, drawData, &data->vertexBuffer, &data->maxVertices,
+                            &data->indexBuffer, &data->maxIndices);
+
+            // Viewport swapchains are plain color targets: no MSAA, no depth, no resolve
+            GfxBackendRenderPass pass {
+                .colorAttachments = {{ .clear = !(viewport->Flags & ImGuiViewportFlags_NoRendererClear) }},
+                .swapchain = data->swapchain
+            };
+            cmd.BeginRenderPass(pass);
+            _RecordDrawCommands(cmd, drawData, data->vertexBuffer, data->indexBuffer);
+            cmd.EndRenderPass();
+        }
+
+        GfxBackend::EndCommandBuffer(cmd);
+    }
+
+    static void _UpdateMonitors()
+    {
+        AppMonitorInfo monitors[16];
+        uint32 numMonitors = App::GetMonitors(monitors, CountOf(monitors));
+
+        ImGuiPlatformIO& platformIO = GetPlatformIO();
+        platformIO.Monitors.resize(0);
+        for (uint32 i = 0; i < numMonitors; i++) {
+            const AppMonitorInfo& src = monitors[i];
+            ImGuiPlatformMonitor mon;
+            mon.MainPos = ImVec2(float(src.mainRect.x), float(src.mainRect.y));
+            mon.MainSize = ImVec2(float(src.mainRect.width), float(src.mainRect.height));
+            mon.WorkPos = ImVec2(float(src.workRect.x), float(src.workRect.y));
+            mon.WorkSize = ImVec2(float(src.workRect.width), float(src.workRect.height));
+            mon.DpiScale = src.dpiScale;
+            platformIO.Monitors.push_back(mon);
+        }
+    }
+
+    static void _InitializeViewports()
+    {
+        // The ImGui pipeline is built once with gImGui.msaa. Viewport swapchains are plain non-MSAA
+        // color targets, so an MSAA pipeline would not match their render pass
+        ASSERT_MSG(gImGui.msaa == GfxMultiSampleCount::SampleCount1,
+                   "ImGui multi-viewport requires MSAA to be off, or a second non-MSAA pipeline for viewports");
+
+        ImGuiPlatformIO& platformIO = GetPlatformIO();
+        platformIO.Platform_CreateWindow = _PlatformCreateWindow;
+        platformIO.Platform_DestroyWindow = _PlatformDestroyWindow;
+        platformIO.Platform_ShowWindow = _PlatformShowWindow;
+        platformIO.Platform_GetWindowPos = _PlatformGetWindowPos;
+        platformIO.Platform_SetWindowPos = _PlatformSetWindowPos;
+        platformIO.Platform_GetWindowSize = _PlatformGetWindowSize;
+        platformIO.Platform_SetWindowSize = _PlatformSetWindowSize;
+        platformIO.Platform_GetWindowFramebufferScale = _PlatformGetWindowFramebufferScale;
+        platformIO.Platform_SetWindowFocus = _PlatformSetWindowFocus;
+        platformIO.Platform_GetWindowFocus = _PlatformGetWindowFocus;
+        platformIO.Platform_GetWindowMinimized = _PlatformGetWindowMinimized;
+        platformIO.Platform_SetWindowTitle = _PlatformSetWindowTitle;
+        platformIO.Platform_SetWindowAlpha = _PlatformSetWindowAlpha;
+        platformIO.Platform_GetWindowDpiScale = _PlatformGetWindowDpiScale;
+
+        platformIO.Renderer_CreateWindow = _RendererCreateWindow;
+        platformIO.Renderer_DestroyWindow = _RendererDestroyWindow;
+        platformIO.Renderer_SetWindowSize = _RendererSetWindowSize;
+        platformIO.Renderer_RenderWindow = _RendererRenderWindow;
+
+        _UpdateMonitors();
+
+        // Main viewport borrows the window that App::Run already created
+        AppWindowHandle mainWindow = App::GetMainWindow();
+        ImGuiViewport* mainViewport = GetMainViewport();
+        mainViewport->PlatformUserData = IntToPtr<uint32>(mainWindow.mId);
+        mainViewport->PlatformHandle = IntToPtr<uint32>(mainWindow.mId);
+        mainViewport->PlatformHandleRaw = App::GetNativeWindowHandle(mainWindow);
+    }
+
+    // With viewports enabled ImGui works in desktop space, so viewport positions, monitor bounds and
+    // the mouse all share one coordinate system. Otherwise we stay in main-window client space
+    static void _UpdateMousePos(const AppEvent& ev)
+    {
+        ImGuiIO& io = GetIO();
+
+        if (gImGui.viewportsEnabled) {
+            io.AddMousePosEvent(ev.mouseDesktopX, ev.mouseDesktopY);
+        }
+        else {
+            Float2 scale(io.DisplayFramebufferScale.x, io.DisplayFramebufferScale.y);
+            io.AddMousePosEvent(ev.mouseX * scale.x, ev.mouseY * scale.y);
+        }
+    }
+
     static void _OnEventCallback(const AppEvent& ev, [[maybe_unused]] void* userData)
     {
         ImGuiIO& io = GetIO();
-    
+
         switch (ev.type) {
         case AppEventType::MouseDown: {
-                Float2 scale(io.DisplayFramebufferScale.x, io.DisplayFramebufferScale.y);
-                io.MousePos = ImVec2(ev.mouseX * scale.x, ev.mouseY * scale.y);
+                _UpdateMousePos(ev);
                 gImGui.mouseButtonDown[uint32(ev.mouseButton)] = true;
             }
             break;
         case AppEventType::MouseUp: {
-                Float2 scale(io.DisplayFramebufferScale.x, io.DisplayFramebufferScale.y);
-                io.MousePos = ImVec2(ev.mouseX * scale.x, ev.mouseY * scale.y);
+                _UpdateMousePos(ev);
                 gImGui.mouseButtonUp[uint32(ev.mouseButton)] = true;
             }
             break;
-        
-        case AppEventType::MouseMove: {
-                Float2 scale(io.DisplayFramebufferScale.x, io.DisplayFramebufferScale.y);
-                io.MousePos = ImVec2(ev.mouseX * scale.x, ev.mouseY * scale.y);
-            }
+
+        case AppEventType::MouseMove:
+            _UpdateMousePos(ev);
             break;
         
         case AppEventType::MouseEnter:
@@ -449,12 +729,27 @@ namespace ImGui
             break;
         
         case AppEventType::Resized: {
-                io.DisplaySize = ImVec2(ev.framebufferWidth, ev.framebufferHeight);
-                float frameBufferScale = App::GetWindowDPIScale();
-                io.DisplayFramebufferScale = ImVec2(frameBufferScale, frameBufferScale);
+                if (ev.window == App::GetMainWindow()) {
+                    io.DisplaySize = ImVec2(ev.framebufferWidth, ev.framebufferHeight);
+                    float frameBufferScale = App::GetWindowDPIScale();
+                    io.DisplayFramebufferScale = ImVec2(frameBufferScale, frameBufferScale);
+                }
+                else if (ImGuiViewport* viewport = _FindViewportForWindow(ev.window)) {
+                    viewport->PlatformRequestResize = true;
+                }
             }
             break;
-    
+
+        case AppEventType::Moved:
+            if (ImGuiViewport* viewport = _FindViewportForWindow(ev.window))
+                viewport->PlatformRequestMove = true;
+            break;
+
+        case AppEventType::WindowClose:
+            if (ImGuiViewport* viewport = _FindViewportForWindow(ev.window))
+                viewport->PlatformRequestClose = true;
+            break;
+
         default:
             break;
         }
@@ -672,33 +967,145 @@ namespace ImGui
         gImGui.settingsCacheTable.AddUnique(hash, property.GetValue());
     }
 
-    static void _GrowGeometryBuffers(uint32 numVertices, uint32 numIndices)
+    static void _GrowGeometryBuffers(GfxBufferHandle* vertexBuffer, uint32* maxVertices,
+                                     GfxBufferHandle* indexBuffer, uint32* maxIndices,
+                                     uint32 numVertices, uint32 numIndices)
     {
-        if (numVertices > gImGui.maxVertices) {
-            gImGui.maxVertices = AlignValue(numVertices, IMGUI_VERTICES_POOL_SIZE);
-            GfxBackend::DestroyBuffer(gImGui.vertexBuffer);
+        if (numVertices > *maxVertices) {
+            *maxVertices = AlignValue(numVertices, IMGUI_VERTICES_POOL_SIZE);
+            GfxBackend::DestroyBuffer(*vertexBuffer);
             GfxBufferDesc vertexBufferDesc {
-                .sizeBytes = gImGui.maxVertices*sizeof(ImDrawVert),
+                .sizeBytes = (*maxVertices)*sizeof(ImDrawVert),
                 .usageFlags = GfxBufferUsageFlags::TransferDst|GfxBufferUsageFlags::Vertex,
                 .perFrameUpdates = true
             };
-            gImGui.vertexBuffer = GfxBackend::CreateBuffer(vertexBufferDesc);
+            *vertexBuffer = GfxBackend::CreateBuffer(vertexBufferDesc);
 
-            LOG_VERBOSE("ImGui vertex capacity increased to maximum %u vertices", gImGui.maxVertices);
+            LOG_VERBOSE("ImGui vertex capacity increased to maximum %u vertices", *maxVertices);
         }
 
-        if (numIndices > gImGui.maxIndices) {
-            gImGui.maxIndices = AlignValue(numIndices, IMGUI_INDICES_POOL_SIZE);
-            GfxBackend::DestroyBuffer(gImGui.indexBuffer);            
+        if (numIndices > *maxIndices) {
+            *maxIndices = AlignValue(numIndices, IMGUI_INDICES_POOL_SIZE);
+            GfxBackend::DestroyBuffer(*indexBuffer);
             GfxBufferDesc indexBufferDesc {
-                .sizeBytes = gImGui.maxIndices*sizeof(ImDrawIdx),
+                .sizeBytes = (*maxIndices)*sizeof(ImDrawIdx),
                 .usageFlags = GfxBufferUsageFlags::TransferDst|GfxBufferUsageFlags::Index,
                 .perFrameUpdates = true
             };
-            gImGui.indexBuffer = GfxBackend::CreateBuffer(indexBufferDesc);
+            *indexBuffer = GfxBackend::CreateBuffer(indexBufferDesc);
 
-            LOG_VERBOSE("ImGui index capacity increased to maximum %u indices", gImGui.maxIndices);
+            LOG_VERBOSE("ImGui index capacity increased to maximum %u indices", *maxIndices);
         }
+    }
+
+    // Grows and fills the geometry buffers. Must run outside of a RenderPass
+    static void _UploadDrawData(GfxCommandBuffer cmd, ImDrawData* drawData,
+                                GfxBufferHandle* vertexBuffer, uint32* maxVertices,
+                                GfxBufferHandle* indexBuffer, uint32* maxIndices)
+    {
+        if (drawData->TotalVtxCount == 0)
+            return;
+
+        _GrowGeometryBuffers(vertexBuffer, maxVertices, indexBuffer, maxIndices,
+                             drawData->TotalVtxCount, drawData->TotalIdxCount);
+
+        uint32 indexSize = drawData->TotalIdxCount * sizeof(ImDrawIdx);
+        uint32 vertexSize = drawData->TotalVtxCount * sizeof(ImDrawVert);
+
+        GfxHelperBufferUpdateScope vertexBufferUpdate(cmd, *vertexBuffer, vertexSize, GfxShaderStage::Vertex);
+        GfxHelperBufferUpdateScope indexBufferUpdate(cmd, *indexBuffer, indexSize, GfxShaderStage::Vertex);
+
+        ImDrawVert* vertices = (ImDrawVert*)vertexBufferUpdate.mData;
+        ImDrawIdx* indices = (ImDrawIdx*)indexBufferUpdate.mData;
+
+        for (int i = 0; i < drawData->CmdLists.Size; i++) {
+            const ImDrawList* cmdList = drawData->CmdLists[i];
+            memcpy(vertices, cmdList->VtxBuffer.Data, cmdList->VtxBuffer.Size * sizeof(ImDrawVert));
+            memcpy(indices, cmdList->IdxBuffer.Data, cmdList->IdxBuffer.Size * sizeof(ImDrawIdx));
+
+            vertices += cmdList->VtxBuffer.Size;
+            indices += cmdList->IdxBuffer.Size;
+        }
+    }
+
+    // Records the actual draw calls. Must run inside a RenderPass targeting `drawData`'s viewport
+    static void _RecordDrawCommands(GfxCommandBuffer cmd, ImDrawData* drawData,
+                                    GfxBufferHandle vertexBuffer, GfxBufferHandle indexBuffer)
+    {
+        Float2 displayPos = Float2(drawData->DisplayPos.x, drawData->DisplayPos.y);
+        Float2 displaySize = Float2(drawData->DisplaySize.x, drawData->DisplaySize.y);
+
+        // Origin stays at 0: the projection below already folds displayPos in, and with viewports enabled
+        // displayPos is the window's desktop position, which must not offset the render target viewport
+        GfxViewport viewport {
+            .x = 0,
+            .y = 0,
+            .width = displaySize.x,
+            .height = displaySize.y
+        };
+
+        uint64 offsets[] = {0};
+        cmd.BindPipeline(gImGui.pipeline);
+        cmd.SetViewports(0, 1, &viewport);
+        cmd.BindVertexBuffers(0, 1, &vertexBuffer, offsets);
+        cmd.BindIndexBuffer(indexBuffer, 0, GfxIndexType::Uint16);
+
+        ImGuiShaderTransform transform {
+            .projMat = GfxBackend::GetSwapchainTransformMat() * Mat4::OrthoOffCenter(displayPos.x, displayPos.y + displaySize.y,
+                                                                                     displayPos.x + displaySize.x, displayPos.y,
+                                                                                     -1.0f, 1.0f)
+        };
+        cmd.PushConstants<ImGuiShaderTransform>(gImGui.pipelineLayout, "Transform", transform);
+
+        GfxImageHandle boundImage;
+        uint32 globalVertexOffset = 0;
+        uint32 globalIndexOffset = 0;
+        for (int i = 0; i < drawData->CmdLists.Size; i++) {
+            const ImDrawList* cmdList = drawData->CmdLists[i];
+
+            for (int k = 0; k < cmdList->CmdBuffer.Size; k++) {
+                const ImDrawCmd* drawCmd = &cmdList->CmdBuffer[k];
+
+                if (drawCmd->UserCallback) {
+                    drawCmd->UserCallback(cmdList, drawCmd);
+                }
+                else {
+                    Float4 clipRect((drawCmd->ClipRect.x - displayPos.x), (drawCmd->ClipRect.y - displayPos.y),
+                                    (drawCmd->ClipRect.z - displayPos.x), (drawCmd->ClipRect.w - displayPos.y));
+
+                    if (clipRect.x < 0.0f) { clipRect.x = 0.0f; }
+                    if (clipRect.y < 0.0f) { clipRect.y = 0.0f; }
+                    if (clipRect.z > displaySize.x) { clipRect.z = displaySize.x; }
+                    if (clipRect.w > displaySize.y) { clipRect.w = displaySize.y; }
+                    if (clipRect.z <= clipRect.x || clipRect.w <= clipRect.y)
+                        continue;
+
+                    RectInt scissor(int(clipRect.x), int(clipRect.y), int(clipRect.z), int(clipRect.w));
+
+                    GfxImageHandle img(uint32(drawCmd->GetTexID()));
+                    if (img != boundImage) {
+                        GfxBindingDesc bindings[] = {
+                            {
+                                .name = "MainTexture",
+                                .image = img,
+                                .sampler = gImGui.sampler
+                            }
+                        };
+                        cmd.PushBindings(gImGui.pipelineLayout, CountOf(bindings), bindings);
+                        boundImage = img;
+                    }
+
+                    cmd.SetScissors(0, 1, &scissor);
+                    cmd.DrawIndexed(drawCmd->ElemCount, 1, drawCmd->IdxOffset + globalIndexOffset, drawCmd->VtxOffset + globalVertexOffset, 0);
+                }
+            }
+
+            globalIndexOffset += cmdList->IdxBuffer.Size;
+            globalVertexOffset += cmdList->VtxBuffer.Size;
+        }
+
+        RectInt rc(0, 0, int(displaySize.x), int(displaySize.y));
+        cmd.SetScissors(0, 1, &rc);
     }
 } // ImGui
 
@@ -734,14 +1141,34 @@ bool ImGui::InitializeSubsystem()
     // re-rasterize fonts whenever the scale changes instead of stretching a fixed atlas.
     conf.BackendFlags |= ImGuiBackendFlags_RendererHasTextures;
 
+    // Multi-viewport is only wired up for platforms that can actually make secondary windows
+    gImGui.viewportsEnabled = App::IsMultiWindowSupported();
+    if (gImGui.viewportsEnabled) {
+        conf.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;
+        // Deliberately not claiming ImGuiBackendFlags_HasMouseHoveredViewport: it requires honoring
+        // ImGuiViewportFlags_NoInputs (click-through windows), which the App layer cannot do yet.
+        // Without that flag ImGui works the hovered viewport out from its own window stack instead
+        conf.BackendFlags |= ImGuiBackendFlags_PlatformHasViewports | ImGuiBackendFlags_RendererHasViewports;
+    }
+
     gImGui.maxVertices = IMGUI_VERTICES_POOL_SIZE;
     gImGui.maxIndices = IMGUI_INDICES_POOL_SIZE;
 
     // Application events
     App::RegisterEventsCallback(_OnEventCallback);
-    
+
     _SetColorTheme();
     _InitializeSettings();
+
+    if (gImGui.viewportsEnabled) {
+        // Secondary viewports are real OS windows: rounded corners and a translucent background
+        // would show the desktop through them
+        ImGuiStyle& style = GetStyle();
+        style.WindowRounding = 0;
+        style.Colors[ImGuiCol_WindowBg].w = 1.0f;
+
+        _InitializeViewports();
+    }
 
     // Register graphics resources callback so we can continue when the resources are loaded
     ShaderLoadParams shaderParams {
@@ -794,9 +1221,15 @@ void ImGui::BeginFrame(float dt)
         _UpdateCursor();
     }
     
+    // Monitor layout can change at any time (hotplug, DPI change), ImGui expects it fresh every frame
+    if (gImGui.viewportsEnabled)
+        _UpdateMonitors();
+
+    gImGui.frameRendered = false;
     NewFrame();
     ImGuizmo::BeginFrame();
-    ImGuizmo::SetRect(0, 0, io.DisplaySize.x, io.DisplaySize.y);
+    const ImGuiViewport* mainViewport = GetMainViewport();
+    ImGuizmo::SetRect(mainViewport->Pos.x, mainViewport->Pos.y, mainViewport->Size.x, mainViewport->Size.y);
 }
 
 bool ImGui::DrawFrame(GfxCommandBuffer cmd, GfxImageHandle colorImage)
@@ -807,6 +1240,7 @@ bool ImGui::DrawFrame(GfxCommandBuffer cmd, GfxImageHandle colorImage)
     ASSERT_MSG(cmd.mIsRecording && !cmd.mIsInRenderPass, "%s must be called while CommandBuffer is recording and not in the RenderPass", __FUNCTION__);
 
     ImGui::Render();
+    gImGui.frameRendered = true;
 
     ImDrawData* drawData = GetDrawData();
 
@@ -817,28 +1251,8 @@ bool ImGui::DrawFrame(GfxCommandBuffer cmd, GfxImageHandle colorImage)
     if (drawData->CmdLists.Size == 0)
         return false;
 
-    // Fill the buffers
-    if (drawData->TotalVtxCount) {
-        _GrowGeometryBuffers(drawData->TotalVtxCount, drawData->TotalIdxCount);
-
-        uint32 indexSize = drawData->TotalIdxCount * sizeof(ImDrawIdx);
-        uint32 vertexSize = drawData->TotalVtxCount * sizeof(ImDrawVert);
-
-        GfxHelperBufferUpdateScope vertexBufferUpdate(cmd, gImGui.vertexBuffer, vertexSize, GfxShaderStage::Vertex);
-        GfxHelperBufferUpdateScope indexBufferUpdate(cmd, gImGui.indexBuffer, indexSize, GfxShaderStage::Vertex);
-
-        ImDrawVert* vertices = (ImDrawVert*)vertexBufferUpdate.mData;
-        ImDrawIdx* indices = (ImDrawIdx*)indexBufferUpdate.mData;
-
-        for (int i = 0; i < drawData->CmdLists.Size; i++) {
-            const ImDrawList* cmdList = drawData->CmdLists[i];
-            memcpy(vertices, cmdList->VtxBuffer.Data, cmdList->VtxBuffer.Size * sizeof(ImDrawVert));
-            memcpy(indices, cmdList->IdxBuffer.Data, cmdList->IdxBuffer.Size * sizeof(ImDrawIdx));
-
-            vertices += cmdList->VtxBuffer.Size;
-            indices += cmdList->IdxBuffer.Size;
-        }
-    }
+    _UploadDrawData(cmd, drawData, &gImGui.vertexBuffer, &gImGui.maxVertices,
+                    &gImGui.indexBuffer, &gImGui.maxIndices);
 
     GPU_PROFILE_ZONE(cmd, "ImGui");
 
@@ -860,87 +1274,28 @@ bool ImGui::DrawFrame(GfxCommandBuffer cmd, GfxImageHandle colorImage)
             .load = true,
             .resolveToSwapchain = isMSAA,
         }},
-        .swapchain = !colorImage.IsValid()
+        .swapchain = colorImage.IsValid() ? GfxSwapchainHandle() : GfxBackend::GetMainSwapchain()
     };
     cmd.BeginRenderPass(pass);
-
-    // Draw
-    Float2 displayPos = Float2(drawData->DisplayPos.x, drawData->DisplayPos.y);
-    Float2 displaySize = Float2(drawData->DisplaySize.x, drawData->DisplaySize.y);
-    GfxViewport viewport {
-        .x = displayPos.x,
-        .y = displayPos.y,
-        .width = displaySize.x,
-        .height = displaySize.y
-    };
-
-
-
-    uint64 offsets[] = {0};
-    cmd.BindPipeline(gImGui.pipeline);
-    cmd.SetViewports(0, 1, &viewport);
-    cmd.BindVertexBuffers(0, 1, &gImGui.vertexBuffer, offsets);
-    cmd.BindIndexBuffer(gImGui.indexBuffer, 0, GfxIndexType::Uint16);
-
-    ImGuiShaderTransform transform {
-        .projMat = GfxBackend::GetSwapchainTransformMat() * Mat4::OrthoOffCenter(displayPos.x, displayPos.y + displaySize.y, 
-                                                                                 displayPos.x + displaySize.x, displayPos.y, 
-                                                                                 -1.0f, 1.0f)
-    };
-    cmd.PushConstants<ImGuiShaderTransform>(gImGui.pipelineLayout, "Transform", transform);
-
-    GfxImageHandle boundImage;
-    uint32 globalVertexOffset = 0;
-    uint32 globalIndexOffset = 0;
-    for (int i = 0; i < drawData->CmdLists.Size; i++) {
-        const ImDrawList* cmdList = drawData->CmdLists[i];
-
-        for (int k = 0; k < cmdList->CmdBuffer.Size; k++) {
-            const ImDrawCmd* drawCmd = &cmdList->CmdBuffer[k];
-
-            if (drawCmd->UserCallback) {
-                drawCmd->UserCallback(cmdList, drawCmd);
-            }
-            else {
-                Float4 clipRect((drawCmd->ClipRect.x - displayPos.x), (drawCmd->ClipRect.y - displayPos.y),
-                                (drawCmd->ClipRect.z - displayPos.x), (drawCmd->ClipRect.w - displayPos.y));
-
-                if (clipRect.x < 0.0f) { clipRect.x = 0.0f; }
-                if (clipRect.y < 0.0f) { clipRect.y = 0.0f; }
-                if (clipRect.z > displaySize.x) { clipRect.z = displaySize.x; }
-                if (clipRect.w > displaySize.y) { clipRect.w = displaySize.y; }
-                if (clipRect.z <= clipRect.x || clipRect.w <= clipRect.y)
-                    continue;
-
-                RectInt scissor(int(clipRect.x), int(clipRect.y), int(clipRect.z), int(clipRect.w));
-
-                GfxImageHandle img(uint32(drawCmd->GetTexID()));
-                if (img != boundImage) {
-                    GfxBindingDesc bindings[] = {
-                        {
-                            .name = "MainTexture",
-                            .image = img,
-                            .sampler = gImGui.sampler
-                        }
-                    };
-                    cmd.PushBindings(gImGui.pipelineLayout, CountOf(bindings), bindings);
-                    boundImage = img;
-                }
-
-                cmd.SetScissors(0, 1, &scissor);
-                cmd.DrawIndexed(drawCmd->ElemCount, 1, drawCmd->IdxOffset + globalIndexOffset, drawCmd->VtxOffset + globalVertexOffset, 0);
-            }
-        }
-
-        globalIndexOffset += cmdList->IdxBuffer.Size;
-        globalVertexOffset += cmdList->VtxBuffer.Size;
-    }
-
-    RectInt rc(0, 0, int(displaySize.x), int(displaySize.y));
-    cmd.SetScissors(0, 1, &rc);
-
+    _RecordDrawCommands(cmd, drawData, gImGui.vertexBuffer, gImGui.indexBuffer);
     cmd.EndRenderPass();
     return true;
+}
+
+void ImGui::UpdateViewports()
+{
+    // Requires Render() to have run this frame, otherwise ImGui asserts on the frame counter
+    if (gImGui.ctx == nullptr || !gImGui.viewportsEnabled || !gImGui.frameRendered)
+        return;
+
+    UpdatePlatformWindows();
+
+    // Records a command buffer per viewport. The app already submitted its own work by now,
+    // so these need a submit of their own before GfxBackend::End() presents everything
+    RenderPlatformWindowsDefault();
+
+    if (GetPlatformIO().Viewports.Size > 1)
+        GfxBackend::SubmitQueue(GfxQueueType::Graphics);
 }
 
 void ImGui::ReleaseSubsystem()
@@ -948,6 +1303,9 @@ void ImGui::ReleaseSubsystem()
     ImGuizmo::Destruct();
 
     if (gImGui.ctx) {
+        if (gImGui.viewportsEnabled)
+            DestroyPlatformWindows();
+
         // Textures are owned by ImGui, we only own the GPU side of them
         for (ImTextureData* tex : GetPlatformIO().Textures) {
             if (tex->TexID != ImTextureID_Invalid) {
@@ -1010,15 +1368,26 @@ void ImGui::SetMSAA(GfxMultiSampleCount sampleCount)
     gImGui.msaa = sampleCount;
 }
 
+RectFloat ImGui::GetMainViewportRect()
+{
+    const ImGuiViewport* viewport = GetMainViewport();
+    return RectFloat(viewport->Pos.x, viewport->Pos.y,
+                     viewport->Pos.x + viewport->Size.x, viewport->Pos.y + viewport->Size.y);
+}
+
 ImDrawList* ImGui::BeginFullscreenView(const char* name)
 {
-    ImGuiIO& io = GetIO();
     const uint32 flags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
                          ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoInputs |
                          ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoFocusOnAppearing |
                          ImGuiWindowFlags_NoBringToFrontOnFocus;
-    ImGui::SetNextWindowSize(io.DisplaySize, 0);
-    ImGui::SetNextWindowPos(ImVec2(0, 0));
+
+    // Pinned to the main window. SetNextWindowViewport stops it from being pulled out into its own
+    // platform window just because it covers the whole client area
+    const ImGuiViewport* mainViewport = GetMainViewport();
+    ImGui::SetNextWindowSize(mainViewport->Size, 0);
+    ImGui::SetNextWindowPos(mainViewport->Pos);
+    ImGui::SetNextWindowViewport(mainViewport->ID);
     ImGui::PushStyleColor(ImGuiCol_WindowBg, 0);
     ImGui::PushStyleColor(ImGuiCol_Border, 0);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0);
