@@ -493,7 +493,7 @@ bool Engine::Initialize()
 
     // Debugging and editor tools
     if (gfxSettings.IsGraphicsEnabled()) {
-        if (gfxSettings.enableImGui && !ImGui::Initialize()) {
+        if (gfxSettings.enableImGui && !ImGui::InitializeSubsystem()) {
             LOG_ERROR("Initializing ImGui failed");
             return false;
         }
@@ -580,7 +580,7 @@ void Engine::Release()
 
         if (ImGui::IsEnabled()) {
             DebugHud::Release();
-            ImGui::Release();
+            ImGui::ReleaseSubsystem();
         }
 
         if (DebugDraw::IsEnabled())

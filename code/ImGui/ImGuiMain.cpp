@@ -54,8 +54,6 @@ struct ImGuiState
     bool mouseButtonUp[(uint32)InputMouseButton::_Count];
     float mouseWheelH;
     float mouseWheel;
-    bool keysDown[(uint32)InputKeycode::_Count];
-    StaticArray<ImWchar, 128> charInput;
     ImGuiMouseCursor lastCursor;
     
     uint32 maxVertices;
@@ -65,7 +63,6 @@ struct ImGuiState
     GfxBufferHandle indexBuffer;
     GfxPipelineLayoutHandle pipelineLayout;
     GfxPipelineHandle pipeline;
-    GfxImageHandle fontImage;
     GfxSamplerHandle sampler;
     AssetHandleShader shader;
     GfxMultiSampleCount msaa = GfxMultiSampleCount::SampleCount1;
@@ -204,19 +201,167 @@ namespace ImGui
         style.Colors[ImGuiCol_ResizeGripActive]       = ImVec4(0.80f, 0.47f, 0.00f, 0.86f);
         style.Colors[ImGuiCol_Tab]                    = ImVec4(0.14f, 0.14f, 0.14f, 1.00f);
         style.Colors[ImGuiCol_TabHovered]             = ImVec4(0.80f, 0.47f, 0.00f, 0.25f);
-        style.Colors[ImGuiCol_TabActive]              = ImVec4(0.80f, 0.47f, 0.00f, 0.59f);
-        style.Colors[ImGuiCol_TabUnfocused]           = ImVec4(0.24f, 0.24f, 0.24f, 1.00f);
-        style.Colors[ImGuiCol_TabUnfocusedActive]     = ImVec4(0.10f, 0.10f, 0.10f, 1.00f);
+        style.Colors[ImGuiCol_TabSelected]            = ImVec4(0.80f, 0.47f, 0.00f, 0.59f);
+        style.Colors[ImGuiCol_TabDimmed]              = ImVec4(0.24f, 0.24f, 0.24f, 1.00f);
+        style.Colors[ImGuiCol_TabDimmedSelected]      = ImVec4(0.10f, 0.10f, 0.10f, 1.00f);
         style.Colors[ImGuiCol_PlotLines]              = ImVec4(0.86f, 0.86f, 0.86f, 1.00f);
         style.Colors[ImGuiCol_PlotLinesHovered]       = ImVec4(0.80f, 0.47f, 0.00f, 1.00f);
         style.Colors[ImGuiCol_PlotHistogram]          = ImVec4(0.80f, 0.47f, 0.00f, 1.00f);
         style.Colors[ImGuiCol_PlotHistogramHovered]   = ImVec4(1.00f, 0.89f, 0.62f, 1.00f);
         style.Colors[ImGuiCol_TextSelectedBg]         = ImVec4(0.80f, 0.47f, 0.00f, 0.25f);
         style.Colors[ImGuiCol_DragDropTarget]         = ImVec4(1.00f, 0.86f, 0.00f, 0.86f);
-        style.Colors[ImGuiCol_NavHighlight]           = ImVec4(0.80f, 0.47f, 0.00f, 1.00f);
+        style.Colors[ImGuiCol_NavCursor]              = ImVec4(0.80f, 0.47f, 0.00f, 1.00f);
         style.Colors[ImGuiCol_NavWindowingHighlight]  = ImVec4(1.00f, 1.00f, 1.00f, 0.71f);
         style.Colors[ImGuiCol_NavWindowingDimBg]      = ImVec4(0.80f, 0.80f, 0.80f, 0.20f);
         style.Colors[ImGuiCol_ModalWindowDimBg]       = ImVec4(0.80f, 0.80f, 0.80f, 0.35f);
+    }
+
+    static ImGuiKey _MapKeycode(InputKeycode keycode)
+    {
+        switch (keycode) {
+        case InputKeycode::Space:           return ImGuiKey_Space;
+        case InputKeycode::Apostrophe:      return ImGuiKey_Apostrophe;
+        case InputKeycode::Comma:           return ImGuiKey_Comma;
+        case InputKeycode::Minus:           return ImGuiKey_Minus;
+        case InputKeycode::Period:          return ImGuiKey_Period;
+        case InputKeycode::Slash:           return ImGuiKey_Slash;
+        case InputKeycode::NUM0:            return ImGuiKey_0;
+        case InputKeycode::NUM1:            return ImGuiKey_1;
+        case InputKeycode::NUM2:            return ImGuiKey_2;
+        case InputKeycode::NUM3:            return ImGuiKey_3;
+        case InputKeycode::NUM4:            return ImGuiKey_4;
+        case InputKeycode::NUM5:            return ImGuiKey_5;
+        case InputKeycode::NUM6:            return ImGuiKey_6;
+        case InputKeycode::NUM7:            return ImGuiKey_7;
+        case InputKeycode::NUM8:            return ImGuiKey_8;
+        case InputKeycode::NUM9:            return ImGuiKey_9;
+        case InputKeycode::Semicolon:       return ImGuiKey_Semicolon;
+        case InputKeycode::Equal:           return ImGuiKey_Equal;
+        case InputKeycode::A:               return ImGuiKey_A;
+        case InputKeycode::B:               return ImGuiKey_B;
+        case InputKeycode::C:               return ImGuiKey_C;
+        case InputKeycode::D:               return ImGuiKey_D;
+        case InputKeycode::E:               return ImGuiKey_E;
+        case InputKeycode::F:               return ImGuiKey_F;
+        case InputKeycode::G:               return ImGuiKey_G;
+        case InputKeycode::H:               return ImGuiKey_H;
+        case InputKeycode::I:               return ImGuiKey_I;
+        case InputKeycode::J:               return ImGuiKey_J;
+        case InputKeycode::K:               return ImGuiKey_K;
+        case InputKeycode::L:               return ImGuiKey_L;
+        case InputKeycode::M:               return ImGuiKey_M;
+        case InputKeycode::N:               return ImGuiKey_N;
+        case InputKeycode::O:               return ImGuiKey_O;
+        case InputKeycode::P:               return ImGuiKey_P;
+        case InputKeycode::Q:               return ImGuiKey_Q;
+        case InputKeycode::R:               return ImGuiKey_R;
+        case InputKeycode::S:               return ImGuiKey_S;
+        case InputKeycode::T:               return ImGuiKey_T;
+        case InputKeycode::U:               return ImGuiKey_U;
+        case InputKeycode::V:               return ImGuiKey_V;
+        case InputKeycode::W:               return ImGuiKey_W;
+        case InputKeycode::X:               return ImGuiKey_X;
+        case InputKeycode::Y:               return ImGuiKey_Y;
+        case InputKeycode::Z:               return ImGuiKey_Z;
+        case InputKeycode::LeftBracket:     return ImGuiKey_LeftBracket;
+        case InputKeycode::Backslash:       return ImGuiKey_Backslash;
+        case InputKeycode::RightBracket:    return ImGuiKey_RightBracket;
+        case InputKeycode::GraveAccent:     return ImGuiKey_GraveAccent;
+        case InputKeycode::World1:          return ImGuiKey_Oem102;
+        case InputKeycode::Escape:          return ImGuiKey_Escape;
+        case InputKeycode::Enter:           return ImGuiKey_Enter;
+        case InputKeycode::Tab:             return ImGuiKey_Tab;
+        case InputKeycode::Backspace:       return ImGuiKey_Backspace;
+        case InputKeycode::Insert:          return ImGuiKey_Insert;
+        case InputKeycode::Delete:          return ImGuiKey_Delete;
+        case InputKeycode::Right:           return ImGuiKey_RightArrow;
+        case InputKeycode::Left:            return ImGuiKey_LeftArrow;
+        case InputKeycode::Down:            return ImGuiKey_DownArrow;
+        case InputKeycode::Up:              return ImGuiKey_UpArrow;
+        case InputKeycode::PageUp:          return ImGuiKey_PageUp;
+        case InputKeycode::PageDown:        return ImGuiKey_PageDown;
+        case InputKeycode::Home:            return ImGuiKey_Home;
+        case InputKeycode::End:             return ImGuiKey_End;
+        case InputKeycode::CapsLock:        return ImGuiKey_CapsLock;
+        case InputKeycode::ScrollLock:      return ImGuiKey_ScrollLock;
+        case InputKeycode::NumLock:         return ImGuiKey_NumLock;
+        case InputKeycode::PrintScreen:     return ImGuiKey_PrintScreen;
+        case InputKeycode::Pause:           return ImGuiKey_Pause;
+        case InputKeycode::F1:              return ImGuiKey_F1;
+        case InputKeycode::F2:              return ImGuiKey_F2;
+        case InputKeycode::F3:              return ImGuiKey_F3;
+        case InputKeycode::F4:              return ImGuiKey_F4;
+        case InputKeycode::F5:              return ImGuiKey_F5;
+        case InputKeycode::F6:              return ImGuiKey_F6;
+        case InputKeycode::F7:              return ImGuiKey_F7;
+        case InputKeycode::F8:              return ImGuiKey_F8;
+        case InputKeycode::F9:              return ImGuiKey_F9;
+        case InputKeycode::F10:             return ImGuiKey_F10;
+        case InputKeycode::F11:             return ImGuiKey_F11;
+        case InputKeycode::F12:             return ImGuiKey_F12;
+        case InputKeycode::F13:             return ImGuiKey_F13;
+        case InputKeycode::F14:             return ImGuiKey_F14;
+        case InputKeycode::F15:             return ImGuiKey_F15;
+        case InputKeycode::F16:             return ImGuiKey_F16;
+        case InputKeycode::F17:             return ImGuiKey_F17;
+        case InputKeycode::F18:             return ImGuiKey_F18;
+        case InputKeycode::F19:             return ImGuiKey_F19;
+        case InputKeycode::F20:             return ImGuiKey_F20;
+        case InputKeycode::F21:             return ImGuiKey_F21;
+        case InputKeycode::F22:             return ImGuiKey_F22;
+        case InputKeycode::F23:             return ImGuiKey_F23;
+        case InputKeycode::F24:             return ImGuiKey_F24;
+        case InputKeycode::KP0:             return ImGuiKey_Keypad0;
+        case InputKeycode::KP1:             return ImGuiKey_Keypad1;
+        case InputKeycode::KP2:             return ImGuiKey_Keypad2;
+        case InputKeycode::KP3:             return ImGuiKey_Keypad3;
+        case InputKeycode::KP4:             return ImGuiKey_Keypad4;
+        case InputKeycode::KP5:             return ImGuiKey_Keypad5;
+        case InputKeycode::KP6:             return ImGuiKey_Keypad6;
+        case InputKeycode::KP7:             return ImGuiKey_Keypad7;
+        case InputKeycode::KP8:             return ImGuiKey_Keypad8;
+        case InputKeycode::KP9:             return ImGuiKey_Keypad9;
+        case InputKeycode::KPDecimal:       return ImGuiKey_KeypadDecimal;
+        case InputKeycode::KPDivide:        return ImGuiKey_KeypadDivide;
+        case InputKeycode::KPMultiply:      return ImGuiKey_KeypadMultiply;
+        case InputKeycode::KPSubtract:      return ImGuiKey_KeypadSubtract;
+        case InputKeycode::KPAdd:           return ImGuiKey_KeypadAdd;
+        case InputKeycode::KPEnter:         return ImGuiKey_KeypadEnter;
+        case InputKeycode::KPEqual:         return ImGuiKey_KeypadEqual;
+        case InputKeycode::LeftShift:       return ImGuiKey_LeftShift;
+        case InputKeycode::LeftControl:     return ImGuiKey_LeftCtrl;
+        case InputKeycode::LeftAlt:         return ImGuiKey_LeftAlt;
+        case InputKeycode::LeftSuper:       return ImGuiKey_LeftSuper;
+        case InputKeycode::RightShift:      return ImGuiKey_RightShift;
+        case InputKeycode::RightControl:    return ImGuiKey_RightCtrl;
+        case InputKeycode::RightAlt:        return ImGuiKey_RightAlt;
+        case InputKeycode::RightSuper:      return ImGuiKey_RightSuper;
+        case InputKeycode::Menu:            return ImGuiKey_Menu;
+        default:                            return ImGuiKey_None;
+        }
+    }
+
+    // Feeds a key press/release plus the matching modifier state into the ImGui event queue.
+    // Events are pushed as they arrive, so press/release ordering within a frame is preserved.
+    static void _DispatchKeyEvent(InputKeycode keycode, bool down)
+    {
+        ImGuiIO& io = GetIO();
+
+        switch (keycode) {
+        case InputKeycode::LeftShift:
+        case InputKeycode::RightShift:      io.AddKeyEvent(ImGuiMod_Shift, down);   break;
+        case InputKeycode::LeftControl:
+        case InputKeycode::RightControl:    io.AddKeyEvent(ImGuiMod_Ctrl, down);    break;
+        case InputKeycode::LeftAlt:
+        case InputKeycode::RightAlt:        io.AddKeyEvent(ImGuiMod_Alt, down);     break;
+        case InputKeycode::LeftSuper:
+        case InputKeycode::RightSuper:      io.AddKeyEvent(ImGuiMod_Super, down);   break;
+        default: break;
+        }
+
+        ImGuiKey key = _MapKeycode(keycode);
+        if (key != ImGuiKey_None)
+            io.AddKeyEvent(key, down);
     }
 
     static void _UpdateCursor()
@@ -230,7 +375,10 @@ namespace ImGui
         static_assert(ImGuiMouseCursor_ResizeNESW == static_cast<ImGuiMouseCursor>(AppMouseCursor::ResizeNESW));
         static_assert(ImGuiMouseCursor_ResizeNWSE == static_cast<ImGuiMouseCursor>(AppMouseCursor::ResizeNWSE));
         static_assert(ImGuiMouseCursor_Hand == static_cast<ImGuiMouseCursor>(AppMouseCursor::Hand));
+        static_assert(ImGuiMouseCursor_Wait == static_cast<ImGuiMouseCursor>(AppMouseCursor::Wait));
+        static_assert(ImGuiMouseCursor_Progress == static_cast<ImGuiMouseCursor>(AppMouseCursor::Progress));
         static_assert(ImGuiMouseCursor_NotAllowed == static_cast<ImGuiMouseCursor>(AppMouseCursor::NotAllowed));
+        static_assert(ImGuiMouseCursor_COUNT == static_cast<ImGuiMouseCursor>(AppMouseCursor::_Count));
     
         ImGuiIO& io = GetIO();
         if (io.ConfigFlags & ImGuiConfigFlags_NoMouseCursorChange)
@@ -285,31 +433,15 @@ namespace ImGui
             break;
         
         case AppEventType::KeyDown:
-            gImGui.keysDown[(uint32)ev.keycode] = true;
-            if (ev.keycode == InputKeycode::RightShift || ev.keycode == InputKeycode::LeftShift)
-                io.KeyShift = true;
-            if (ev.keycode == InputKeycode::RightControl || ev.keycode == InputKeycode::LeftControl)
-                io.KeyCtrl = true;
-            if (ev.keycode == InputKeycode::RightAlt || ev.keycode == InputKeycode::LeftAlt)
-                io.KeyAlt = true;
-            if (ev.keycode == InputKeycode::RightSuper || ev.keycode == InputKeycode::LeftSuper)
-                io.KeySuper = true;
+            _DispatchKeyEvent(ev.keycode, true);
             break;
         
         case AppEventType::KeyUp:
-            gImGui.keysDown[(uint32)ev.keycode] = false;
-            if (ev.keycode == InputKeycode::RightShift || ev.keycode == InputKeycode::LeftShift)
-                io.KeyShift = false;
-            if (ev.keycode == InputKeycode::RightControl || ev.keycode == InputKeycode::LeftControl)
-                io.KeyCtrl = false;
-            if (ev.keycode == InputKeycode::RightAlt || ev.keycode == InputKeycode::LeftAlt)
-                io.KeyAlt = false;
-            if (ev.keycode == InputKeycode::RightSuper || ev.keycode == InputKeycode::LeftSuper)
-                io.KeySuper = false;
+            _DispatchKeyEvent(ev.keycode, false);
             break;
         
         case AppEventType::Char:
-            gImGui.charInput.Push((ImWchar)ev.charcode);
+            io.AddInputCharacter(ev.charcode);
             break;
         
         case AppEventType::UpdateCursor:
@@ -325,6 +457,79 @@ namespace ImGui
     
         default:
             break;
+        }
+    }
+
+    // Uploads the whole pixel buffer of `tex` into `image`. GfxBackend has no sub-rectangle copy,
+    // so partial (ImTextureStatus_WantUpdates) requests re-upload the full texture. Atlases are
+    // small and updates are rare, so this stays cheap.
+    static void _UploadTexture(GfxCommandBuffer cmd, ImTextureData* tex, GfxImageHandle image)
+    {
+        GfxBufferDesc stagingBufferDesc {
+            .sizeBytes = size_t(tex->GetSizeInBytes()),
+            .usageFlags = GfxBufferUsageFlags::TransferSrc,
+            .arena = GfxMemoryArena::TransientCPU
+        };
+        GfxBufferHandle stagingBuffer = GfxBackend::CreateBuffer(stagingBufferDesc);
+
+        void* stagingData;
+        size_t stagingDataSize;
+        cmd.MapBuffer(stagingBuffer, &stagingData, &stagingDataSize);
+        memcpy(stagingData, tex->GetPixels(), stagingBufferDesc.sizeBytes);
+        cmd.FlushBuffer(stagingBuffer);
+        cmd.CopyBufferToImage(stagingBuffer, image, GfxShaderStage::Fragment);
+
+        GfxBackend::DestroyBuffer(stagingBuffer);
+    }
+
+    // Services the create/update/destroy requests that ImGui queues on ImDrawData::Textures.
+    // Must run outside of a RenderPass, because it records buffer->image copies.
+    static void _UpdateTextures(GfxCommandBuffer cmd, ImDrawData* drawData)
+    {
+        if (drawData->Textures == nullptr)
+            return;
+
+        bool hasSRGBTarget = SettingsJunkyard::Get().graphics.surfaceSRGB;
+
+        for (ImTextureData* tex : *drawData->Textures) {
+            if (tex->Status == ImTextureStatus_OK)
+                continue;
+
+            switch (tex->Status) {
+            case ImTextureStatus_WantCreate: {
+                    ASSERT(tex->Format == ImTextureFormat_RGBA32);
+                    ASSERT(tex->TexID == ImTextureID_Invalid);
+
+                    GfxImageDesc imageDesc {
+                        .width = uint16(tex->Width),
+                        .height = uint16(tex->Height),
+                        .format = hasSRGBTarget ? GfxFormat::R8G8B8A8_SRGB : GfxFormat::R8G8B8A8_UNORM,
+                        .usageFlags = GfxImageUsageFlags::TransferDst|GfxImageUsageFlags::Sampled
+                    };
+                    GfxImageHandle image = GfxBackend::CreateImage(imageDesc);
+                    _UploadTexture(cmd, tex, image);
+
+                    tex->SetTexID(ImTextureID(uint32(image)));
+                    tex->SetStatus(ImTextureStatus_OK);
+                }
+                break;
+
+            case ImTextureStatus_WantUpdates:
+                _UploadTexture(cmd, tex, GfxImageHandle(uint32(tex->TexID)));
+                tex->SetStatus(ImTextureStatus_OK);
+                break;
+
+            case ImTextureStatus_WantDestroy: {
+                    GfxImageHandle image(uint32(tex->TexID));
+                    GfxBackend::DestroyImage(image);
+                    tex->SetTexID(ImTextureID_Invalid);
+                    tex->SetStatus(ImTextureStatus_Destroyed);
+                }
+                break;
+
+            default:
+                break;
+            }
         }
     }
 
@@ -424,48 +629,14 @@ namespace ImGui
         }
 
         // Default Font
+        // Since 1.92 the atlas is dynamic: ImGui rasterizes on demand and asks us to create/update
+        // the texture through ImTextureData. See _UpdateTextures().
         {
-            bool hasSRGBTarget = SettingsJunkyard::Get().graphics.surfaceSRGB;
-            ImGuiIO& conf = GetIO();
-
             ImFontConfig fontConfig;
             fontConfig.OversampleH = 3;
             fontConfig.RasterizerMultiply = 1.5f;
-            conf.Fonts->AddFontFromMemoryCompressedTTF(SEGOE_CUSTOM_compressed_data, SEGOE_CUSTOM_compressed_size, 16.0f, &fontConfig, nullptr);
-
-            uint8* fontPixels;
-            int fontWidth, fontHeight, fontBpp;
-            conf.Fonts->GetTexDataAsRGBA32(&fontPixels, &fontWidth, &fontHeight, &fontBpp);
-
-            GfxImageDesc imageDesc {
-                .width = uint16(fontWidth),
-                .height = uint16(fontHeight),
-                .format = hasSRGBTarget ? GfxFormat::R8G8B8A8_SRGB : GfxFormat::R8G8B8A8_UNORM,
-                .usageFlags = GfxImageUsageFlags::TransferDst|GfxImageUsageFlags::Sampled
-            };
-    
-            gImGui.fontImage = GfxBackend::CreateImage(imageDesc);
-
-            GfxBufferDesc stagingBufferDesc {
-                .sizeBytes = size_t(fontWidth * fontHeight * 4),
-                .usageFlags = GfxBufferUsageFlags::TransferSrc,
-                .arena = GfxMemoryArena::TransientCPU
-            };
-            GfxBufferHandle stagingBuffer = GfxBackend::CreateBuffer(stagingBufferDesc);
-            
-            GfxCommandBuffer cmd = GfxBackend::BeginCommandBuffer(GfxQueueType::Transfer);
-            void* stagingData;
-            size_t stagingDataSize;
-            cmd.MapBuffer(stagingBuffer, &stagingData, &stagingDataSize);
-            memcpy(stagingData, fontPixels, stagingBufferDesc.sizeBytes);
-            cmd.FlushBuffer(stagingBuffer);
-            cmd.CopyBufferToImage(stagingBuffer, gImGui.fontImage, GfxShaderStage::Fragment);
-            GfxBackend::EndCommandBuffer(cmd);
-            GfxBackend::SubmitQueue(GfxQueueType::Transfer);
-
-            GfxBackend::DestroyBuffer(stagingBuffer);
-
-            conf.Fonts->SetTexID( reinterpret_cast<ImTextureID>((uintptr_t)uint32(gImGui.fontImage)));
+            GetIO().Fonts->AddFontFromMemoryCompressedTTF(SEGOE_CUSTOM_compressed_data, SEGOE_CUSTOM_compressed_size,
+                                                          16.0f, &fontConfig, nullptr);
         }
 
         // Sampler
@@ -531,7 +702,7 @@ namespace ImGui
     }
 } // ImGui
 
-bool ImGui::Initialize()
+bool ImGui::InitializeSubsystem()
 {
     const SettingsJunkyard& settings = SettingsJunkyard::Get();
     Engine::HelperInitializeProxyAllocator(&gImGui.alloc, "ImGui");
@@ -559,28 +730,9 @@ bool ImGui::Initialize()
     float frameBufferScale = App::GetWindowDPIScale();
     conf.DisplayFramebufferScale = ImVec2(frameBufferScale, frameBufferScale);
 
-    conf.KeyMap[ImGuiKey_Tab]           = static_cast<int>(InputKeycode::Tab);
-    conf.KeyMap[ImGuiKey_LeftArrow]     = static_cast<int>(InputKeycode::Left);
-    conf.KeyMap[ImGuiKey_RightArrow]    = static_cast<int>(InputKeycode::Right);
-    conf.KeyMap[ImGuiKey_UpArrow]       = static_cast<int>(InputKeycode::Up);
-    conf.KeyMap[ImGuiKey_DownArrow]     = static_cast<int>(InputKeycode::Down);
-    conf.KeyMap[ImGuiKey_PageUp]        = static_cast<int>(InputKeycode::PageUp);
-    conf.KeyMap[ImGuiKey_PageDown]      = static_cast<int>(InputKeycode::PageDown);
-    conf.KeyMap[ImGuiKey_Home]          = static_cast<int>(InputKeycode::Home);
-    conf.KeyMap[ImGuiKey_End]           = static_cast<int>(InputKeycode::End);
-    conf.KeyMap[ImGuiKey_Insert]        = static_cast<int>(InputKeycode::Insert);
-    conf.KeyMap[ImGuiKey_Delete]        = static_cast<int>(InputKeycode::Delete);
-    conf.KeyMap[ImGuiKey_Backspace]     = static_cast<int>(InputKeycode::Backspace);
-    conf.KeyMap[ImGuiKey_Space]         = static_cast<int>(InputKeycode::Space);
-    conf.KeyMap[ImGuiKey_Enter]         = static_cast<int>(InputKeycode::Enter);
-    conf.KeyMap[ImGuiKey_KeyPadEnter]   = static_cast<int>(InputKeycode::KPEnter);
-    conf.KeyMap[ImGuiKey_Escape]        = static_cast<int>(InputKeycode::Escape);
-    conf.KeyMap[ImGuiKey_A]             = static_cast<int>(InputKeycode::A);
-    conf.KeyMap[ImGuiKey_C]             = static_cast<int>(InputKeycode::C);
-    conf.KeyMap[ImGuiKey_V]             = static_cast<int>(InputKeycode::V);
-    conf.KeyMap[ImGuiKey_X]             = static_cast<int>(InputKeycode::X);
-    conf.KeyMap[ImGuiKey_Y]             = static_cast<int>(InputKeycode::Y);
-    conf.KeyMap[ImGuiKey_Z]             = static_cast<int>(InputKeycode::Z);
+    // We service ImTextureData create/update/destroy requests in DrawFrame, which lets ImGui
+    // re-rasterize fonts whenever the scale changes instead of stretching a fixed atlas.
+    conf.BackendFlags |= ImGuiBackendFlags_RendererHasTextures;
 
     gImGui.maxVertices = IMGUI_VERTICES_POOL_SIZE;
     gImGui.maxIndices = IMGUI_INDICES_POOL_SIZE;
@@ -615,7 +767,7 @@ void ImGui::BeginFrame(float dt)
 
     ImGuiIO& io = GetIO();
     io.DisplaySize = ImVec2(float(App::GetFramebufferWidth()), float(App::GetFramebufferHeight()));
-    io.FontGlobalScale = App::GetWindowDPIScale();
+    GetStyle().FontScaleDpi = App::GetWindowDPIScale();
     io.DeltaTime = dt;
     if (io.DeltaTime == 0) 
         io.DeltaTime = 0.033f;
@@ -634,14 +786,6 @@ void ImGui::BeginFrame(float dt)
     io.MouseWheel = gImGui.mouseWheel;
     io.MouseWheelH = gImGui.mouseWheelH;
     gImGui.mouseWheelH = gImGui.mouseWheel = 0;
-
-    memcpy(io.KeysDown, gImGui.keysDown, sizeof(io.KeysDown));
-    memset(gImGui.keysDown, 0x0, sizeof(gImGui.keysDown));
-
-    for (uint32 i = 0; i < gImGui.charInput.Count(); i++)
-        io.AddInputCharacter(gImGui.charInput[i]);
-    gImGui.charInput.Clear();
-
 
     // Update OS mouse cursor with the cursor requested by imgui
     ImGuiMouseCursor mouseCursor =  io.MouseDrawCursor ? ImGuiMouseCursor_None : GetMouseCursor();
@@ -665,7 +809,12 @@ bool ImGui::DrawFrame(GfxCommandBuffer cmd, GfxImageHandle colorImage)
     ImGui::Render();
 
     ImDrawData* drawData = GetDrawData();
-    if (drawData->CmdListsCount == 0)
+
+    // Honor pending texture requests before we open the RenderPass.
+    // Done before the early-out below, because destroy requests can arrive on frames that draw nothing.
+    _UpdateTextures(cmd, drawData);
+
+    if (drawData->CmdLists.Size == 0)
         return false;
 
     // Fill the buffers
@@ -681,7 +830,7 @@ bool ImGui::DrawFrame(GfxCommandBuffer cmd, GfxImageHandle colorImage)
         ImDrawVert* vertices = (ImDrawVert*)vertexBufferUpdate.mData;
         ImDrawIdx* indices = (ImDrawIdx*)indexBufferUpdate.mData;
 
-        for (int i = 0; i < drawData->CmdListsCount; i++) {
+        for (int i = 0; i < drawData->CmdLists.Size; i++) {
             const ImDrawList* cmdList = drawData->CmdLists[i];
             memcpy(vertices, cmdList->VtxBuffer.Data, cmdList->VtxBuffer.Size * sizeof(ImDrawVert));
             memcpy(indices, cmdList->IdxBuffer.Data, cmdList->IdxBuffer.Size * sizeof(ImDrawIdx));
@@ -740,18 +889,10 @@ bool ImGui::DrawFrame(GfxCommandBuffer cmd, GfxImageHandle colorImage)
     };
     cmd.PushConstants<ImGuiShaderTransform>(gImGui.pipelineLayout, "Transform", transform);
 
-    GfxBindingDesc bindings[] = {
-        {
-            .name = "MainTexture",
-            .image = gImGui.fontImage,
-            .sampler = gImGui.sampler
-        }
-    };
-    cmd.PushBindings(gImGui.pipelineLayout, CountOf(bindings), bindings);
-
+    GfxImageHandle boundImage;
     uint32 globalVertexOffset = 0;
     uint32 globalIndexOffset = 0;
-    for (int i = 0; i < drawData->CmdListsCount; i++) {
+    for (int i = 0; i < drawData->CmdLists.Size; i++) {
         const ImDrawList* cmdList = drawData->CmdLists[i];
 
         for (int k = 0; k < cmdList->CmdBuffer.Size; k++) {
@@ -761,7 +902,6 @@ bool ImGui::DrawFrame(GfxCommandBuffer cmd, GfxImageHandle colorImage)
                 drawCmd->UserCallback(cmdList, drawCmd);
             }
             else {
-                ASSERT_MSG(drawCmd->UserCallback != ImDrawCallback_ResetRenderState, "Not implemented");
                 Float4 clipRect((drawCmd->ClipRect.x - displayPos.x), (drawCmd->ClipRect.y - displayPos.y),
                                 (drawCmd->ClipRect.z - displayPos.x), (drawCmd->ClipRect.w - displayPos.y));
 
@@ -773,10 +913,21 @@ bool ImGui::DrawFrame(GfxCommandBuffer cmd, GfxImageHandle colorImage)
                     continue;
 
                 RectInt scissor(int(clipRect.x), int(clipRect.y), int(clipRect.z), int(clipRect.w));
-                GfxImageHandle img(PtrToInt<uint32>(drawCmd->TextureId));
-                ASSERT_MSG(img == gImGui.fontImage, "Several images are not supported yet");
 
-                cmd.SetScissors(0, 1, &scissor);                
+                GfxImageHandle img(uint32(drawCmd->GetTexID()));
+                if (img != boundImage) {
+                    GfxBindingDesc bindings[] = {
+                        {
+                            .name = "MainTexture",
+                            .image = img,
+                            .sampler = gImGui.sampler
+                        }
+                    };
+                    cmd.PushBindings(gImGui.pipelineLayout, CountOf(bindings), bindings);
+                    boundImage = img;
+                }
+
+                cmd.SetScissors(0, 1, &scissor);
                 cmd.DrawIndexed(drawCmd->ElemCount, 1, drawCmd->IdxOffset + globalIndexOffset, drawCmd->VtxOffset + globalVertexOffset, 0);
             }
         }
@@ -792,16 +943,25 @@ bool ImGui::DrawFrame(GfxCommandBuffer cmd, GfxImageHandle colorImage)
     return true;
 }
 
-void ImGui::Release()
+void ImGui::ReleaseSubsystem()
 {
     ImGuizmo::Destruct();
 
     if (gImGui.ctx) {
+        // Textures are owned by ImGui, we only own the GPU side of them
+        for (ImTextureData* tex : GetPlatformIO().Textures) {
+            if (tex->TexID != ImTextureID_Invalid) {
+                GfxImageHandle image(uint32(tex->TexID));
+                GfxBackend::DestroyImage(image);
+                tex->SetTexID(ImTextureID_Invalid);
+                tex->SetStatus(ImTextureStatus_Destroyed);
+            }
+        }
+
         GfxBackend::DestroyBuffer(gImGui.vertexBuffer);
         GfxBackend::DestroyBuffer(gImGui.indexBuffer);
         GfxBackend::DestroyPipeline(gImGui.pipeline);
         GfxBackend::DestroyPipelineLayout(gImGui.pipelineLayout);
-        GfxBackend::DestroyImage(gImGui.fontImage);
         GfxBackend::DestroySampler(gImGui.sampler);
         App::UnregisterEventsCallback(_OnEventCallback);
         DestroyContext(gImGui.ctx);

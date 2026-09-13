@@ -1088,7 +1088,7 @@ void CollisionIsland::DebugCollisionsGUI(float opacity, CollisionDebugMode mode,
     // World bounds
     drawList->AddRect(ImGui::ProjectToScreen(Float3(mapRect.xmin, mapRect.ymin, 0), worldToClipMat, screenViewport),
                       ImGui::ProjectToScreen(Float3(mapRect.xmax, mapRect.ymax, 0), worldToClipMat, screenViewport),
-                      COLOR4U_YELLOW.n, 0, 0, 2);
+                      COLOR4U_YELLOW.n, 0.0f, 2.0f);
 
     for (uint32 i = 0; i < data->numCells; i++)
         data->cells[i].numCollisions = 0;
@@ -1175,7 +1175,7 @@ void CollisionIsland::DebugRaycastGUI(float opacity, CollisionDebugRaycastMode m
             heatValue = Min<float>(1, heatValue);
             Float3 color = Color4u::HSVtoRGB(Float3(M::Lerp(hsvBase.x, 0, heatValue), hsvBase.y, hsvBase.z));
 
-            drawList->AddRect(v1, v2, COLOR4U_GREEN.n, 0, ImDrawFlags_None, 1.0f);
+            drawList->AddRect(v1, v2, COLOR4U_GREEN.n, 0, 1.0f, ImDrawFlags_None);
             drawList->AddRectFilled(v1, v2, Color4u::FromFloat4(color.x, color.y, color.z, 0.3f).n, 0, 0);
         }
 
@@ -1186,7 +1186,7 @@ void CollisionIsland::DebugRaycastGUI(float opacity, CollisionDebugRaycastMode m
     // world bounds
     drawList->AddRect(ImGui::ProjectToScreen(Float3(mapRect.xmin, mapRect.ymin, 0), worldToClipMat, screenViewport),
                       ImGui::ProjectToScreen(Float3(mapRect.xmax, mapRect.ymax, 0), worldToClipMat, screenViewport),
-                      COLOR4U_YELLOW.n, 0, 0, 2);
+                      COLOR4U_YELLOW.n, 0.0f, 2.0f);
 
     // Rays
     for (uint32 i = 0; i < numRays; i++) {

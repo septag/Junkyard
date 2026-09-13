@@ -29,6 +29,10 @@
 
 //---- Don't define obsolete functions/enums/behaviors. Consider enabling from time to time after updating to avoid using soon-to-be obsolete function/names.
 #define IMGUI_DISABLE_OBSOLETE_FUNCTIONS
+#define IMGUI_DEFINE_MATH_OPERATORS
+// Junkyard: we never set viewport->PlatformHandleRaw, so ImGui's default Win32 IME handler is dead code.
+// Disabling it also drops the implicit imm32 link, which Release configs discard (IgnoreAllDefaultLibraries).
+#define IMGUI_DISABLE_WIN32_DEFAULT_IME_FUNCTIONS
 
 //---- Disable all of Dear ImGui or don't implement standard windows.
 // It is very strongly recommended to NOT disable the demo windows during development. Please read comments in imgui_demo.cpp.
@@ -67,7 +71,10 @@
 
 //---- Use stb_printf's faster implementation of vsnprintf instead of the one from libc (unless IMGUI_DISABLE_DEFAULT_FORMAT_FUNCTIONS is defined)
 // Requires 'stb_sprintf.h' to be available in the include path. Compatibility checks of arguments and formats done by clang and GCC will be disabled in order to support the extra formats provided by STB sprintf.
+// Junkyard: point ImGui at our own copy of stb_sprintf and let Core/StringUtil.cpp own the single implementation.
 #define IMGUI_USE_STB_SPRINTF
+#define IMGUI_STB_SPRINTF_FILENAME "../../Core/External/stb/stb_sprintf.h"
+#define IMGUI_DISABLE_STB_SPRINTF_IMPLEMENTATION
 
 //---- Use FreeType to build and rasterize the font atlas (instead of stb_truetype which is embedded by default in Dear ImGui)
 // Requires FreeType headers to be available in the include path. Requires program to be compiled with 'misc/freetype/imgui_freetype.cpp' (in this repository) + the FreeType library (not provided).

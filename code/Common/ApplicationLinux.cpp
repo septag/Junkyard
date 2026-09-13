@@ -545,6 +545,8 @@ bool App::Run(const AppDesc &desc)
         gApp.cursors[uint32(AppMouseCursor::ResizeNESW)] = arrowCursor;
         gApp.cursors[uint32(AppMouseCursor::ResizeNWSE)] = arrowCursor;
         gApp.cursors[uint32(AppMouseCursor::Hand)] = glfwCreateStandardCursor(GLFW_HAND_CURSOR);
+        gApp.cursors[uint32(AppMouseCursor::Wait)] = arrowCursor;
+        gApp.cursors[uint32(AppMouseCursor::Progress)] = arrowCursor;
         gApp.cursors[uint32(AppMouseCursor::NotAllowed)] = arrowCursor;
     }
 

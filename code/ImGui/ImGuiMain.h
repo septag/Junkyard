@@ -73,7 +73,7 @@ namespace ImGui
     API ImDrawList* BeginFullscreenView(const char* name = "fullscreen_view");
     API ImVec2 ProjectToScreen(Float3 point, const Mat4& worldToClipMat, const RectFloat& viewport);
     
-    bool Initialize();
-    void Release();
+    bool InitializeSubsystem();
+    void ReleaseSubsystem();
 }
 

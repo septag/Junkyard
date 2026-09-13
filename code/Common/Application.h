@@ -20,6 +20,8 @@ enum class AppMouseCursor
     ResizeNESW,
     ResizeNWSE,
     Hand,
+    Wait,
+    Progress,
     NotAllowed,
     _Count
 };

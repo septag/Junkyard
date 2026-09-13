@@ -376,7 +376,7 @@ struct TestAssetApp : AppCallbacks
                             Cell& cell = mGrid.cells[index];
                             AssetGroupState state = cell.assetGroup.GetState();
                             ImGui::PushStyleColor(ImGuiCol_Button, GetCellStateColor(state));
-                            ImGui::SetItemAllowOverlap();
+                            ImGui::SetNextItemAllowOverlap();
                             if (ImGui::Selectable(String32::Format("##%s", cell.name.CStr()).CStr(), mGrid.selectedCell == index, ImGuiSelectableFlags_None)) 
                                 mGrid.selectedCell = index;
 

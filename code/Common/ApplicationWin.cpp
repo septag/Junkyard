@@ -1132,6 +1132,8 @@ namespace App
         case AppMouseCursor::ResizeNESW:    ::SetCursor(LoadCursor(NULL, IDC_SIZENESW));    break;
         case AppMouseCursor::ResizeNWSE:    ::SetCursor(LoadCursor(NULL, IDC_SIZENWSE));    break;
         case AppMouseCursor::Hand:          ::SetCursor(LoadCursor(NULL, IDC_HAND));        break;
+        case AppMouseCursor::Wait:          ::SetCursor(LoadCursor(NULL, IDC_WAIT));        break;
+        case AppMouseCursor::Progress:      ::SetCursor(LoadCursor(NULL, IDC_APPSTARTING)); break;
         case AppMouseCursor::NotAllowed:    ::SetCursor(LoadCursor(NULL, IDC_NO));          break;
         }
 
