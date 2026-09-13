@@ -167,6 +167,7 @@ namespace DebugHud
                 values[i] = 33.0f - Min(values[i], 33.0f);
         }
 
+        ImGui::PushID((int)type);
         ImGui::PushStyleVar(ImGuiStyleVar_Alpha, 0.8f);
         ImVec4 textColor = ImGui::GetStyleColorVec4(ImGuiCol_Text);
          if (isFrameTime) {
@@ -193,6 +194,7 @@ namespace DebugHud
 
         ImGui::PopStyleColor();
         ImGui::PopStyleVar();
+        ImGui::PopID();
 
     }
 
