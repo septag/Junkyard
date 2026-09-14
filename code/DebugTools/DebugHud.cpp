@@ -138,6 +138,8 @@ namespace DebugHud
         float avg = 0;
         float minVal = FLT_MAX;
         float maxVal = -FLT_MAX;
+
+        // Calculate minimum and maximum
         for (uint32 i = 0; i < numValues; i++) {
             avg += values[i];
             if (values[i] < minVal)
@@ -145,7 +147,26 @@ namespace DebugHud
             if (values[i] > maxVal)
                 maxVal = values[i];
         }
-        avg /= float(numValues);
+
+        // Fps is a rate, so it should be averaged as harmonic mean instead. Arithmetic mean of (1/dt) samples is biased
+        // upwards by frame-time jitter and can show values way above the monitor refresh rate even when we are
+        // presenting exactly once per vblank. numValues/Sum(dt) is the actual frame rate over the sampling window
+        if (type == DebugHudGraphType::Fps) {
+            float sumFrameTimes = 0;
+            uint32 numValidValues = 0;
+            for (uint32 i = 0; i < numValues; i++) {
+                if (values[i] > 0) {
+                    sumFrameTimes += 1.0f/values[i];
+                    numValidValues++;
+                }
+            }
+            avg = sumFrameTimes > 0 ? float(numValidValues)/sumFrameTimes : 0;
+        }
+        else {
+            for (uint32 i = 0; i < numValues; i++)
+                avg += values[i];
+            avg /= float(numValues);
+        }
 
         graph.minValue = minVal;
         graph.maxValue = maxVal;
@@ -249,7 +270,7 @@ void DebugHud::DrawDebugHud(float dt, float yOffset)
                              ImGuiWindowFlags_NoMove|ImGuiWindowFlags_NoResize;
     if (ImGui::Begin("Frame", nullptr, kWndFlags)) {
         _UpdateGraph(dt*1000.0f, DebugHudGraphType::FrameTime);
-        _UpdateGraph(1.0f/dt, DebugHudGraphType::Fps);
+        _UpdateGraph(dt > 0 ? 1.0f/dt : 0, DebugHudGraphType::Fps);   // Zero values are skipped in Fps averaging
         _UpdateGraph(Engine::GetEngineTimeMS(), DebugHudGraphType::CpuTime);
         _UpdateGraph(GfxBackend::GetRenderTimeMS(), DebugHudGraphType::GpuTime);
 
