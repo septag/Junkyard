@@ -27,6 +27,7 @@
 
 #include "../Collision/Collision.h"
 #include "../Renderer/Render.h"
+#include "../Renderer/RenderViewport.h"
 #include "../Engine.h"
 
 inline constexpr uint32 SHAPE_COUNT = 1000;
@@ -60,7 +61,7 @@ enum class IntersectionShape
 
 struct TestCollisionApp final : AppCallbacks
 {
-    GfxImageHandle mRenderTargetDepth;
+    RenderViewportContext mViewport;
     GfxImageHandle mShadowMapDepth;
 
     RView mFwdRenderView;
@@ -93,6 +94,9 @@ struct TestCollisionApp final : AppCallbacks
     float mDebugRaycastHeatLimit = 1;
 
     GfxImageHandle mCheckerImage;
+    uint16 mRendererResourceWidth = 0;
+    uint16 mRendererResourceHeight = 0;
+    bool mRendererResourcesDirty = true;
 
     void GatherGeometries(const GeometryData& geo, RView& view, const Mat4& localToWorldMat, bool highlight = false, 
                           bool checkerTexture = false)
@@ -174,35 +178,18 @@ struct TestCollisionApp final : AppCallbacks
         }
     }
 
-    void InitializeFramebufferResources(uint16 width, uint16 height)
-    {
-        GfxBackend::DestroyImage(mRenderTargetDepth);
-
-        {
-            GfxImageDesc desc {
-                .width = uint16(width),
-                .height = uint16(height),
-                .format = GfxBackend::GetValidDepthStencilFormat(),
-                .usageFlags = GfxImageUsageFlags::DepthStencilAttachment | GfxImageUsageFlags::Sampled,
-                .arena = GfxMemoryArena::DynamicImageGPU
-            };
-
-            // Note: this won't probably work with tiled GPUs because it's incompatible with Sampled flag
-            //       So we probably need to copy the contents of the zbuffer to another one
-    #if PLATFORM_MOBILE
-            desc.usageFlags |= GfxImageUsageFlags::TransientAttachment;
-    #endif
-
-            mRenderTargetDepth = GfxBackend::CreateImage(desc);
-        }
-    }
-
     bool Initialize() override
     {
         if (!Engine::Initialize())
             return false;
 
-        InitializeFramebufferResources(App::GetFramebufferWidth(), App::GetFramebufferHeight());
+        RenderViewport::Initialize(&mViewport, RenderViewportDesc {
+            .name = "Viewport",
+            .useImGuiViewport = true,
+            .colorFormat = GfxBackend::GetSwapchainFormat(),
+            .depthFormat = GfxBackend::GetValidDepthStencilFormat(),
+            .sampleDepth = true
+        });
 
         {
             GfxImageDesc desc {
@@ -269,7 +256,7 @@ struct TestCollisionApp final : AppCallbacks
         R::DestroyView(mShadowMapView);
 
         GfxBackend::DestroyImage(mShadowMapDepth);
-        GfxBackend::DestroyImage(mRenderTargetDepth);
+        RenderViewport::Release(&mViewport);
 
         Engine::Release();
     }
@@ -380,6 +367,13 @@ struct TestCollisionApp final : AppCallbacks
     {
         mCamera.HandleMovementKeyboard(dt, 20, 5);
         Engine::BeginFrame(dt);
+        RenderViewport::PrepareRenderTargets(&mViewport);
+        if (mRendererResourcesDirty || mRendererResourceWidth != mViewport.width || mRendererResourceHeight != mViewport.height) {
+            R::ResizeFramebufferResources(mViewport.width, mViewport.height);
+            mRendererResourceWidth = mViewport.width;
+            mRendererResourceHeight = mViewport.height;
+            mRendererResourcesDirty = false;
+        }
         uint64 frameIdx = Engine::GetFrameIndex();
 
         UpdateShapes(dt*mSimulationSpeed);
@@ -478,7 +472,7 @@ struct TestCollisionApp final : AppCallbacks
                                            Color4u::ToFloat4(Color4u(216,199,172,8)));
             mFwdRenderView.SetSunLight(sunlightDir, Color4u::ToFloat4(Color4u(251,250,204,50)),
                                        mShadowMapDepth, mShadowMapView.GetWorldToClipMat());
-            mFwdRenderView.SetCamera(mCamera, Float2(float(App::GetWindowWidth()), float(App::GetWindowHeight())));
+            mFwdRenderView.SetCamera(mCamera, Float2(float(mViewport.width), float(mViewport.height)));
 
             GatherGeometries(mPlane, mFwdRenderView, Mat4::Translate(0, 0, -0.05f));
 
@@ -492,14 +486,14 @@ struct TestCollisionApp final : AppCallbacks
             }
 
             R::FwdLight::Update(mFwdRenderView, cmd);
-            R::FwdLight::Render(mFwdRenderView, cmd, GfxImageHandle(), mRenderTargetDepth, RDebugMode::None);
+            R::FwdLight::Render(mFwdRenderView, cmd, mViewport.colorImage, mViewport.depthImage, RDebugMode::None);
         }
 
-        cmd.TransitionImage(mRenderTargetDepth, GfxImageTransition::RenderTarget, GfxImageTransitionFlags::DepthRead);
+        cmd.TransitionImage(mViewport.depthImage, GfxImageTransition::RenderTarget, GfxImageTransitionFlags::DepthRead);
 
         // DebugDraw
         {
-            DebugDraw::BeginDraw(cmd, mCamera, App::GetFramebufferWidth(), App::GetFramebufferHeight());
+            DebugDraw::BeginDraw(cmd, mCamera, mViewport.width, mViewport.height);
             if (mShowGrid) {
                 DebugDrawGridProperties gridProps {
                     .distance = 200,
@@ -524,13 +518,19 @@ struct TestCollisionApp final : AppCallbacks
                 }
             }
 
-            DebugDraw::EndDraw(cmd, mRenderTargetDepth);
+            DebugDraw::EndDraw(cmd, mViewport.depthImage, RenderViewport::IsImGuiPanel(mViewport) ? mViewport.colorImage : GfxImageHandle());
         }
+
+        RenderViewport::TransitionToShaderRead(cmd, mViewport);
 
         // ImGui
         if (ImGui::IsEnabled()) {
             DebugHud::DrawDebugHud(dt, 20);
             DebugHud::DrawStatusBar(dt);
+
+            ImGui::DockSpaceOverMainViewport();
+
+            RenderViewport::DrawImGui(&mViewport);
 
             UpdateGUI();
 
@@ -557,7 +557,8 @@ struct TestCollisionApp final : AppCallbacks
             else if (mTestMode == TestMode::Intersection) {
                 ImGuizmo::SetOrthographic(false);
                 ImGuizmo::AllowAxisFlip(false);
-                Mat4 proj = mCamera.GetPerspectiveMat(float(App::GetWindowWidth()), float(App::GetWindowHeight()));
+                ImGuizmo::SetRect(mViewport.imguiPos.x, mViewport.imguiPos.y, mViewport.imguiSize.x, mViewport.imguiSize.y);
+                Mat4 proj = mCamera.GetPerspectiveMat(float(mViewport.width), float(mViewport.height));
                 proj.m22 *= -1.0f;      // YIKES!
 
                 ImGuizmo::Manipulate(mCamera.GetViewMat().f, 
@@ -580,11 +581,12 @@ struct TestCollisionApp final : AppCallbacks
 
     void OnEvent(const AppEvent& ev) override
     {
-        if (!ImGui::IsAnyItemHovered() && !ImGui::GetIO().WantCaptureMouse)
+        if (RenderViewport::CanReceiveMouseInput(&mViewport, ev))
             mCamera.HandleRotationMouse(ev, 0.2f, 0.1f);
 
         if (ev.type == AppEventType::Resized) {
-            InitializeFramebufferResources(ev.framebufferWidth, ev.framebufferHeight);
+            RenderViewport::OnFramebufferResized(&mViewport, ev.framebufferWidth, ev.framebufferHeight);
+            mRendererResourcesDirty = true;
         }
     }
 };

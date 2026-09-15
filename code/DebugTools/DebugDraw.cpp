@@ -259,7 +259,7 @@ namespace DebugDraw
     }
 } // DebugDraw
 
-void DebugDraw::BeginDraw(GfxCommandBuffer cmd, const Camera& cam, uint16 viewWidth, uint16 viewHeight)
+void DebugDraw::BeginDraw(GfxCommandBuffer& cmd, const Camera& cam, uint16 viewWidth, uint16 viewHeight)
 {
     ASSERT(gDebugDraw.initialized);
     ASSERT(viewWidth > 0);
@@ -318,7 +318,7 @@ void DebugDraw::BeginDraw(GfxCommandBuffer cmd, const Camera& cam, uint16 viewWi
     }
 }
 
-void DebugDraw::EndDraw(GfxCommandBuffer cmd, GfxImageHandle depthImage, GfxImageHandle colorImage)
+void DebugDraw::EndDraw(GfxCommandBuffer& cmd, GfxImageHandle depthImage, GfxImageHandle colorImage)
 {
     ASSERT_MSG(cmd.mIsRecording && !cmd.mIsInRenderPass, "%s must be called while CommandBuffer is recording and not in the RenderPass", __FUNCTION__);
     ASSERT(gDebugDraw.isDrawing);

@@ -293,7 +293,7 @@ namespace GUI
     }
 
     // RECTANGLE and IMAGE commands share the same pipeline, so consecutive batches often don't need a re-bind
-    static void _SwitchPipeline(GfxCommandBuffer cmd, GfxPipelineHandle pipeline, GfxPipelineHandle& inoutCurrentPipeline)
+    static void _SwitchPipeline(GfxCommandBuffer& cmd, GfxPipelineHandle pipeline, GfxPipelineHandle& inoutCurrentPipeline)
     {
         if (pipeline != inoutCurrentPipeline) {
             cmd.BindPipeline(pipeline);
@@ -445,7 +445,7 @@ void GUI::Begin()
     gGUI.inFlight = true;
 }
 
-void GUI::End(GfxCommandBuffer cmd)
+void GUI::End(GfxCommandBuffer& cmd)
 {
     PROFILE_ZONE("GUI.End");
     ASSERT_MSG(gGUI.inFlight, "Begin() is not called");

@@ -24,8 +24,8 @@ namespace DebugDraw
     void Release();
     bool IsEnabled();
 
-    API void BeginDraw(GfxCommandBuffer cmd, const Camera& cam, uint16 viewWidth, uint16 viewHeight);
-    API void EndDraw(GfxCommandBuffer cmd, GfxImageHandle depthImage, GfxImageHandle colorImage = GfxImageHandle());
+    API void BeginDraw(GfxCommandBuffer& cmd, const Camera& cam, uint16 viewWidth, uint16 viewHeight);
+    API void EndDraw(GfxCommandBuffer& cmd, GfxImageHandle depthImage, GfxImageHandle colorImage = GfxImageHandle());
 
     API void DrawGroundGrid(const Camera& cam, const DebugDrawGridProperties& props);
     API void DrawBoundingSphere(Float4 sphere, Color4u color, uint32 numRings = 8, uint32 numSectors= 12);

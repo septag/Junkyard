@@ -30,6 +30,7 @@
 #include "../Engine.h"
 
 #include "../Graphics/GfxBackend.h"
+#include "../Renderer/RenderViewport.h"
 
 #include <stdio.h>
 
@@ -59,6 +60,7 @@ struct ModelScene
 
     float mLightAngle = M_HALFPI;
     bool mEnableLight = false;
+    Mat4 mClipTransform = MAT4_IDENT;
 
     struct FrameInfo 
     {
@@ -242,15 +244,16 @@ struct ModelScene
         GfxBackend::DestroyPipelineLayout(mPipelineLayout);
     }
 
-    void Update(GfxCommandBuffer cmd)
+    void Update(GfxCommandBuffer cmd, const RenderViewportContext& viewport)
     {
         if (!mAssetGroup.IsValid() || !mAssetGroup.IsLoadFinished())
             return;
 
-        float vwidth = (float)App::GetFramebufferWidth();
-        float vheight = (float)App::GetFramebufferHeight();
+        mClipTransform = RenderViewport::GetClipTransform(viewport);
+        float vwidth = (float)viewport.width;
+        float vheight = (float)viewport.height;
         FrameInfo ubo {
-            .worldToClipMat = GfxBackend::GetSwapchainTransformMat() * mCam.GetPerspectiveMat(vwidth, vheight) * mCam.GetViewMat(),
+            .worldToClipMat = mClipTransform * mCam.GetPerspectiveMat(vwidth, vheight) * mCam.GetViewMat(),
             .lightDir = Float3(-0.2f, M::Cos(mLightAngle), -M::Sin(mLightAngle)),
             .lightFactor = mEnableLight ? 0 : 1.0f
         };
@@ -279,14 +282,14 @@ struct ModelScene
         ImGui::SliderFloat("LightAngle", &mLightAngle, 0, M_PI, "%0.1f");
     }
 
-    void Render(GfxCommandBuffer cmd)
+    void Render(GfxCommandBuffer cmd, const RenderViewportContext& viewport)
     {
         if (!mAssetGroup.IsValid() || !mAssetGroup.IsLoadFinished())
             return;
 
         cmd.BindPipeline(mPipeline);
-        
-        cmd.HelperSetFullscreenViewportAndScissor();
+
+        RenderViewport::SetViewportAndScissor(cmd, viewport);
 
         AssetObjPtrScope<ModelData> model(mModel);
 
@@ -341,33 +344,21 @@ struct TestBasicGfxApp final : AppCallbacks
 {
     Camera* mCam = nullptr;
     ModelScene mModelScenes[CountOf(TESTBASICGFX_MODELS)];
-    GfxImageHandle mRenderTargetDepth;
+    RenderViewportContext mViewport;
     uint32 mSelectedSceneIdx;
     bool mFirstTime = true;
     bool mMinimized = false;
     bool mDrawGrid = true;
 
-    void RecreateRenderTargetDepth(uint16 width, uint16 height)
-    {
-        if (mRenderTargetDepth.IsValid())
-            GfxBackend::DestroyImage(mRenderTargetDepth);
-
-        GfxImageDesc desc {
-            .width = width,
-            .height = height,
-            .multisampleFlags = GfxMultiSampleCount::SampleCount1,
-            .format = GfxBackend::GetValidDepthStencilFormat(),
-            .usageFlags = GfxImageUsageFlags::DepthStencilAttachment|GfxImageUsageFlags::TransientAttachment,
-            .arena = GfxMemoryArena::DynamicImageGPU
-        };
-
-        mRenderTargetDepth = GfxBackend::CreateImage(desc);
-    }
-
     static void InitializeResources(void* userData)
     {
         TestBasicGfxApp* self = (TestBasicGfxApp*)userData;
-        self->RecreateRenderTargetDepth(App::GetFramebufferWidth(), App::GetFramebufferHeight());
+        RenderViewport::Initialize(&self->mViewport, RenderViewportDesc {
+            .name = "Viewport",
+            .useImGuiViewport = true,
+            .colorFormat = GfxBackend::GetSwapchainFormat(),
+            .depthFormat = GfxBackend::GetValidDepthStencilFormat()
+        });
     }
 
     bool Initialize() override
@@ -403,7 +394,7 @@ struct TestBasicGfxApp final : AppCallbacks
         for (uint32 i = 0; i < CountOf(TESTBASICGFX_MODELS); i++)
             mModelScenes[i].Release();
 
-        GfxBackend::DestroyImage(mRenderTargetDepth);
+        RenderViewport::Release(&mViewport);
 
         Engine::Release();
     };
@@ -425,42 +416,28 @@ struct TestBasicGfxApp final : AppCallbacks
 
         Engine::BeginFrame(dt);
 
+        RenderViewport::PrepareRenderTargets(&mViewport);
+
         GfxCommandBuffer cmd = GfxBackend::BeginCommandBuffer(GfxQueueType::Graphics);
 
         // Update
-        mModelScenes[mSelectedSceneIdx].Update(cmd);
+        mModelScenes[mSelectedSceneIdx].Update(cmd, mViewport);
 
         // Render
-        GfxBackendRenderPass pass { 
-            .colorAttachments = {{ 
-                .clear = true,
-                .clearValue = {
-                    .color = Color4u::ToFloat4(COLOR4U_BLACK)
-                }
-            }},
-            .depthAttachment = {
-                .image = mRenderTargetDepth,
-                .clear = true,
-                .clearValue = {
-                    .depth = 1.0f
-                }
-            },
-            .swapchain = true,
-            .hasDepth = true
-        };
+        GfxBackendRenderPass pass = RenderViewport::MakeRenderPass(mViewport, COLOR4U_BLACK, 1.0f);
 
-        cmd.TransitionImage(mRenderTargetDepth, GfxImageTransition::RenderTarget, GfxImageTransitionFlags::DepthRead);
+        RenderViewport::TransitionToRenderTarget(cmd, mViewport, GfxImageTransitionFlags::DepthWrite);
 
         {
             GPU_PROFILE_ZONE(cmd, "ModelRender");
 
             cmd.BeginRenderPass(pass);
-            mModelScenes[mSelectedSceneIdx].Render(cmd);
+            mModelScenes[mSelectedSceneIdx].Render(cmd, mViewport);
             cmd.EndRenderPass();
         }
 
         if (mDrawGrid) {
-            DebugDraw::BeginDraw(cmd, *mCam, App::GetFramebufferWidth(), App::GetFramebufferHeight());
+            DebugDraw::BeginDraw(cmd, *mCam, mViewport.width, mViewport.height);
             DebugDrawGridProperties gridProps {
                 .distance = 200,
                 .lineColor = Color4u(0x565656),
@@ -468,8 +445,10 @@ struct TestBasicGfxApp final : AppCallbacks
             };
 
             DebugDraw::DrawGroundGrid(*mCam, gridProps);
-            DebugDraw::EndDraw(cmd, mRenderTargetDepth);
+            DebugDraw::EndDraw(cmd, mViewport.depthImage, RenderViewport::IsImGuiPanel(mViewport) ? mViewport.colorImage : GfxImageHandle());
         }
+
+        RenderViewport::TransitionToShaderRead(cmd, mViewport);
 
         if (ImGui::IsEnabled()) {
             DebugHud::DrawDebugHud(dt, 20);
@@ -496,6 +475,10 @@ struct TestBasicGfxApp final : AppCallbacks
             }        
             ImGui::EndMainMenuBar();
 
+            ImGui::DockSpaceOverMainViewport();
+
+            RenderViewport::DrawImGui(&mViewport);
+
             ImGui::SetNextWindowSize(ImVec2(300, 200), ImGuiCond_FirstUseEver);
             if (ImGui::Begin("Scene")) {
                 mModelScenes[mSelectedSceneIdx].UpdateImGui();
@@ -513,7 +496,7 @@ struct TestBasicGfxApp final : AppCallbacks
     
     void OnEvent(const AppEvent& ev) override
     {
-        if (mCam && !ImGui::IsAnyItemHovered() && !ImGui::GetIO().WantCaptureMouse && !ImGuizmo::IsOver())
+        if (mCam && RenderViewport::CanReceiveMouseInput(&mViewport, ev))
             mCam->HandleRotationMouse(ev, 0.2f, 0.1f);
 
         if (ev.type  == AppEventType::Iconified) 
@@ -521,7 +504,7 @@ struct TestBasicGfxApp final : AppCallbacks
         else if (ev.type == AppEventType::Restored)
             mMinimized = false;
         else if (ev.type == AppEventType::Resized)
-            RecreateRenderTargetDepth(ev.framebufferWidth, ev.framebufferHeight);
+            RenderViewport::OnFramebufferResized(&mViewport, ev.framebufferWidth, ev.framebufferHeight);
     }
 };
 

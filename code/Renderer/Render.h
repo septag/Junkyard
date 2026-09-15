@@ -90,6 +90,7 @@ namespace R
     void Release();
 
     void GetCompatibleLayout(GeometryVertexLayout& outLayout);
+    void ResizeFramebufferResources(uint16 width, uint16 height);
 
     RView CreateView(RViewType viewType);
     void DestroyView(RView& view);

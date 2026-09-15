@@ -31,6 +31,7 @@
 
 #include "../Graphics/GfxBackend.h"
 #include "../Renderer/Render.h"
+#include "../Renderer/RenderViewport.h"
 
 static const char* TESTRENDERER_MODELS[] = {
     "/data/Duck/Duck.gltf",
@@ -234,35 +235,15 @@ struct TestRendererApp final : AppCallbacks
     ModelScene mModelScenes[CountOf(TESTRENDERER_MODELS)];
     RView mFwdRenderView;
     RView mShadowMapView;
-    GfxImageHandle mRenderTargetDepth;
+    RenderViewportContext mViewport;
     GfxImageHandle mShadowMapDepth;
+    uint16 mRendererResourceWidth = 0;
+    uint16 mRendererResourceHeight = 0;
+    bool mRendererResourcesDirty = true;
     uint32 mSelectedSceneIdx;
     bool mFirstTime = true;
     bool mMinimized = false;
     bool mDrawGrid = false;
-
-    void InitializeFramebufferResources(uint16 width, uint16 height)
-    {
-        GfxBackend::DestroyImage(mRenderTargetDepth);
-
-        {
-            GfxImageDesc desc {
-                .width = uint16(width),
-                .height = uint16(height),
-                .format = GfxBackend::GetValidDepthStencilFormat(),
-                .usageFlags = GfxImageUsageFlags::DepthStencilAttachment | GfxImageUsageFlags::Sampled,
-                .arena = GfxMemoryArena::DynamicAddressGPU
-            };
-
-            // Note: this won't probably work with tiled GPUs because it's incompatible with Sampled flag
-            //       So we probably need to copy the contents of the zbuffer to another one
-            #if PLATFORM_MOBILE
-            desc.usageFlags |= GfxImageUsageFlags::TransientAttachment;
-            #endif
-
-            mRenderTargetDepth = GfxBackend::CreateImage(desc);
-        }
-    }
 
     bool Initialize() override
     {
@@ -273,7 +254,13 @@ struct TestRendererApp final : AppCallbacks
         if (!Engine::Initialize())
             return false;
 
-        InitializeFramebufferResources(App::GetFramebufferWidth(), App::GetFramebufferHeight());
+        RenderViewport::Initialize(&mViewport, RenderViewportDesc {
+            .name = "Viewport",
+            .useImGuiViewport = true,
+            .colorFormat = GfxBackend::GetSwapchainFormat(),
+            .depthFormat = GfxBackend::GetValidDepthStencilFormat(),
+            .sampleDepth = true
+        });
 
         {
             GfxImageDesc desc {
@@ -320,7 +307,7 @@ struct TestRendererApp final : AppCallbacks
         R::DestroyView(mFwdRenderView);
         R::DestroyView(mShadowMapView);
 
-        GfxBackend::DestroyImage(mRenderTargetDepth);
+        RenderViewport::Release(&mViewport);
         GfxBackend::DestroyImage(mShadowMapDepth);
 
         Engine::Release();
@@ -407,6 +394,14 @@ struct TestRendererApp final : AppCallbacks
 
         Engine::BeginFrame(dt);
 
+        RenderViewport::PrepareRenderTargets(&mViewport);
+        if (mRendererResourcesDirty || mRendererResourceWidth != mViewport.width || mRendererResourceHeight != mViewport.height) {
+            R::ResizeFramebufferResources(mViewport.width, mViewport.height);
+            mRendererResourceWidth = mViewport.width;
+            mRendererResourceHeight = mViewport.height;
+            mRendererResourcesDirty = false;
+        }
+
         GfxCommandBuffer cmd = GfxBackend::BeginCommandBuffer(GfxQueueType::Graphics);
 
         // Update
@@ -455,7 +450,7 @@ struct TestRendererApp final : AppCallbacks
             scene.SetLocalLights(mFwdRenderView);
             mFwdRenderView.SetAmbientLight(scene.mSkyAmbient, scene.mGroundAmbient);
             mFwdRenderView.SetSunLight(sunlightDir, scene.mSunlightColor, mShadowMapDepth, mShadowMapView.GetWorldToClipMat());
-            mFwdRenderView.SetCamera(*mCam, Float2(float(App::GetWindowWidth()), float(App::GetWindowHeight())));
+            mFwdRenderView.SetCamera(*mCam, Float2(float(mViewport.width), float(mViewport.height)));
             GatherModelRenderGeometries(scene.mModel, mFwdRenderView);
             R::FwdLight::Update(mFwdRenderView, cmd);
 
@@ -464,16 +459,16 @@ struct TestRendererApp final : AppCallbacks
                 debugMode = RDebugMode::LightCull;
             else if (scene.mDebugShadowMap)
                 debugMode = RDebugMode::SunShadowMap;
-            R::FwdLight::Render(mFwdRenderView, cmd, GfxImageHandle(), mRenderTargetDepth, debugMode);
+            R::FwdLight::Render(mFwdRenderView, cmd, mViewport.colorImage, mViewport.depthImage, debugMode);
         }
 
-        cmd.TransitionImage(mRenderTargetDepth, GfxImageTransition::RenderTarget, GfxImageTransitionFlags::DepthRead);
+        cmd.TransitionImage(mViewport.depthImage, GfxImageTransition::RenderTarget, GfxImageTransitionFlags::DepthRead);
 
         // DebugDraw
         bool debugInternals = scene.mDebugLightCull | scene.mDebugShadowMap;
         if (!debugInternals) {
             PROFILE_ZONE("DebugDraw");
-            DebugDraw::BeginDraw(cmd, *mCam, App::GetFramebufferWidth(), App::GetFramebufferHeight());
+            DebugDraw::BeginDraw(cmd, *mCam, mViewport.width, mViewport.height);
             if (mDrawGrid) {
                 DebugDrawGridProperties gridProps {
                     .distance = 200,
@@ -489,8 +484,10 @@ struct TestRendererApp final : AppCallbacks
                     DebugDraw::DrawBoundingSphere(l.boundingSphere, COLOR4U_WHITE);
                 }
             }
-            DebugDraw::EndDraw(cmd, mRenderTargetDepth);
+            DebugDraw::EndDraw(cmd, mViewport.depthImage, RenderViewport::IsImGuiPanel(mViewport) ? mViewport.colorImage : GfxImageHandle());
         }
+
+        RenderViewport::TransitionToShaderRead(cmd, mViewport);
 
         // ImGui
         if (ImGui::IsEnabled()) {
@@ -519,6 +516,10 @@ struct TestRendererApp final : AppCallbacks
             }        
             ImGui::EndMainMenuBar();
 
+            ImGui::DockSpaceOverMainViewport();
+
+            RenderViewport::DrawImGui(&mViewport);
+
             ImGui::SetNextWindowSize(ImVec2(300, 200), ImGuiCond_FirstUseEver);
             if (ImGui::Begin("Scene")) {
                 scene.UpdateImGui();
@@ -536,15 +537,17 @@ struct TestRendererApp final : AppCallbacks
     
     void OnEvent(const AppEvent& ev) override
     {
-        if (mCam && !ImGui::IsAnyItemHovered() && !ImGui::GetIO().WantCaptureMouse && !ImGuizmo::IsOver())
+        if (mCam && RenderViewport::CanReceiveMouseInput(&mViewport, ev))
             mCam->HandleRotationMouse(ev, 0.2f, 0.1f);
 
         if (ev.type  == AppEventType::Iconified) 
             mMinimized = true;            
         else if (ev.type == AppEventType::Restored)
             mMinimized = false;
-        else if (ev.type == AppEventType::Resized) 
-            InitializeFramebufferResources(ev.framebufferWidth, ev.framebufferHeight);
+        else if (ev.type == AppEventType::Resized) {
+            RenderViewport::OnFramebufferResized(&mViewport, ev.framebufferWidth, ev.framebufferHeight);
+            mRendererResourcesDirty = true;
+        }
     }
 };
 

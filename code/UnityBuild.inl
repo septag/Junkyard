@@ -56,6 +56,7 @@
 
 // Renderer/UI
 #include "Renderer/Render.cpp"
+#include "Renderer/RenderViewport.cpp"
 #include "GUI/GUI.cpp"
 
 // Collision

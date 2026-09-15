@@ -50,10 +50,6 @@ struct ImGuiState
 
     ImGuiContext* ctx;
 
-    bool mouseButtonDown[(uint32)InputMouseButton::_Count];
-    bool mouseButtonUp[(uint32)InputMouseButton::_Count];
-    float mouseWheelH;
-    float mouseWheel;
     ImGuiMouseCursor lastCursor;
     
     uint32 maxVertices;
@@ -398,35 +394,32 @@ namespace ImGui
         switch (ev.type) {
         case AppEventType::MouseDown: {
                 Float2 scale(io.DisplayFramebufferScale.x, io.DisplayFramebufferScale.y);
-                io.MousePos = ImVec2(ev.mouseX * scale.x, ev.mouseY * scale.y);
-                gImGui.mouseButtonDown[uint32(ev.mouseButton)] = true;
+                io.AddMousePosEvent(ev.mouseX * scale.x, ev.mouseY * scale.y);
+                io.AddMouseButtonEvent(int(ev.mouseButton), true);
             }
             break;
         case AppEventType::MouseUp: {
                 Float2 scale(io.DisplayFramebufferScale.x, io.DisplayFramebufferScale.y);
-                io.MousePos = ImVec2(ev.mouseX * scale.x, ev.mouseY * scale.y);
-                gImGui.mouseButtonUp[uint32(ev.mouseButton)] = true;
+                io.AddMousePosEvent(ev.mouseX * scale.x, ev.mouseY * scale.y);
+                io.AddMouseButtonEvent(int(ev.mouseButton), false);
             }
             break;
         
         case AppEventType::MouseMove: {
                 Float2 scale(io.DisplayFramebufferScale.x, io.DisplayFramebufferScale.y);
-                io.MousePos = ImVec2(ev.mouseX * scale.x, ev.mouseY * scale.y);
+                io.AddMousePosEvent(ev.mouseX * scale.x, ev.mouseY * scale.y);
             }
             break;
         
         case AppEventType::MouseEnter:
+            break;
+
         case AppEventType::MouseLeave:
-            for (int i = 0; i < 3; i++) {
-                gImGui.mouseButtonDown[i] = false;
-                gImGui.mouseButtonUp[i] = false;
-                io.MouseDown[i] = false;
-            }
+            io.AddMousePosEvent(-M_FLOAT32_MAX, -M_FLOAT32_MAX);
             break;
 
         case AppEventType::MouseScroll:
-            gImGui.mouseWheelH = ev.scrollX;
-            gImGui.mouseWheel += ev.scrollY;
+            io.AddMouseWheelEvent(ev.scrollX, ev.scrollY);
             if (gImGui.alphaControl && App::GetKeyMods() == InputKeyModifiers::Ctrl)
                 *gImGui.alphaControl = Clamp(*gImGui.alphaControl + M::Sign(ev.scrollY)*0.2f, 0.1f, 1.0f);
             
@@ -463,7 +456,7 @@ namespace ImGui
     // Uploads the whole pixel buffer of `tex` into `image`. GfxBackend has no sub-rectangle copy,
     // so partial (ImTextureStatus_WantUpdates) requests re-upload the full texture. Atlases are
     // small and updates are rare, so this stays cheap.
-    static void _UploadTexture(GfxCommandBuffer cmd, ImTextureData* tex, GfxImageHandle image)
+    static void _UploadTexture(GfxCommandBuffer& cmd, ImTextureData* tex, GfxImageHandle image)
     {
         GfxBufferDesc stagingBufferDesc {
             .sizeBytes = size_t(tex->GetSizeInBytes()),
@@ -484,7 +477,7 @@ namespace ImGui
 
     // Services the create/update/destroy requests that ImGui queues on ImDrawData::Textures.
     // Must run outside of a RenderPass, because it records buffer->image copies.
-    static void _UpdateTextures(GfxCommandBuffer cmd, ImDrawData* drawData)
+    static void _UpdateTextures(GfxCommandBuffer& cmd, ImDrawData* drawData)
     {
         if (drawData->Textures == nullptr)
             return;
@@ -722,6 +715,7 @@ bool ImGui::InitializeSubsystem()
     }
 
     ImGuiIO& conf = GetIO();
+    conf.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
 
     static char iniFilename[64];
     Str::PrintFmt(iniFilename, sizeof(iniFilename), "%s_imgui.ini", App::GetName());
@@ -772,21 +766,6 @@ void ImGui::BeginFrame(float dt)
     if (io.DeltaTime == 0) 
         io.DeltaTime = 0.033f;
 
-    for (uint32 i = 0; i < (uint32)InputMouseButton::_Count; i++) {
-        if (gImGui.mouseButtonDown[i]) {
-            gImGui.mouseButtonDown[i] = false;
-            io.MouseDown[i] = true;
-        }
-        else if (gImGui.mouseButtonUp[i]) {
-            gImGui.mouseButtonUp[i] = false;
-            io.MouseDown[i] = false;
-        }
-    }
-
-    io.MouseWheel = gImGui.mouseWheel;
-    io.MouseWheelH = gImGui.mouseWheelH;
-    gImGui.mouseWheelH = gImGui.mouseWheel = 0;
-
     // Update OS mouse cursor with the cursor requested by imgui
     ImGuiMouseCursor mouseCursor =  io.MouseDrawCursor ? ImGuiMouseCursor_None : GetMouseCursor();
     if (gImGui.lastCursor != mouseCursor) {
@@ -799,7 +778,15 @@ void ImGui::BeginFrame(float dt)
     ImGuizmo::SetRect(0, 0, io.DisplaySize.x, io.DisplaySize.y);
 }
 
-bool ImGui::DrawFrame(GfxCommandBuffer cmd, GfxImageHandle colorImage)
+void ImGui::DockSpaceOverMainViewport(ImGuiDockNodeFlags dockspaceFlags)
+{
+    if (gImGui.ctx == nullptr)
+        return;
+
+    ImGui::DockSpaceOverViewport(ImGui::GetID("MainDockSpace"), ImGui::GetMainViewport(), dockspaceFlags);
+}
+
+bool ImGui::DrawFrame(GfxCommandBuffer& cmd, GfxImageHandle colorImage)
 {
     if (gImGui.ctx == nullptr) 
         return false;

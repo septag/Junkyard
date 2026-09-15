@@ -271,6 +271,8 @@ struct TestUIApp final : AppCallbacks
         GUI::End(cmd);
 
         if (ImGui::IsEnabled()) {
+            ImGui::DockSpaceOverMainViewport();
+
             DebugHud::DrawDebugHud(dt, 20);
 
             ImGui::SetNextWindowSize(ImVec2(300, 200), ImGuiCond_FirstUseEver);

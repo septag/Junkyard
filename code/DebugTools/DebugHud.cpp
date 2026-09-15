@@ -267,20 +267,28 @@ void DebugHud::DrawDebugHud(float dt, float yOffset)
     ImGui::SetNextWindowPos(ImVec2(0, yOffset), ImGuiCond_Always);
     ImGui::SetNextWindowSize(ImVec2(kDisplaySize.x*0.33f, 0), ImGuiCond_Always);
     const uint32 kWndFlags = ImGuiWindowFlags_NoBackground|ImGuiWindowFlags_NoTitleBar|ImGuiWindowFlags_NoScrollbar|
-                             ImGuiWindowFlags_NoMove|ImGuiWindowFlags_NoResize;
+                             ImGuiWindowFlags_NoMove|ImGuiWindowFlags_NoResize|ImGuiWindowFlags_NoInputs|
+                             ImGuiWindowFlags_NoDocking|ImGuiWindowFlags_NoSavedSettings;
     if (ImGui::Begin("Frame", nullptr, kWndFlags)) {
         _UpdateGraph(dt*1000.0f, DebugHudGraphType::FrameTime);
         _UpdateGraph(dt > 0 ? 1.0f/dt : 0, DebugHudGraphType::Fps);   // Zero values are skipped in Fps averaging
         _UpdateGraph(Engine::GetEngineTimeMS(), DebugHudGraphType::CpuTime);
         _UpdateGraph(GfxBackend::GetRenderTimeMS(), DebugHudGraphType::GpuTime);
 
-        _DrawHudMenu();
-
+        ImGui::Dummy(ImVec2(ImGui::GetFrameHeight(), 0));
         for (uint32 i = 0; i < uint32(DebugHudGraphType::_Count); i++) {
             if (gDebugHud.enabledGraphs[i])
                 _DrawGraph(DebugHudGraphType(i));
         }
     }
+    ImGui::End();
+
+    ImGui::SetNextWindowPos(ImVec2(0, yOffset), ImGuiCond_Always);
+    const uint32 kMenuWndFlags = ImGuiWindowFlags_NoBackground|ImGuiWindowFlags_NoTitleBar|ImGuiWindowFlags_NoScrollbar|
+                                 ImGuiWindowFlags_NoMove|ImGuiWindowFlags_NoResize|ImGuiWindowFlags_AlwaysAutoResize|
+                                 ImGuiWindowFlags_NoDocking|ImGuiWindowFlags_NoSavedSettings;
+    if (ImGui::Begin("FrameMenu", nullptr, kMenuWndFlags))
+        _DrawHudMenu();
     ImGui::End();
 
     if (gDebugHud.showMemStats)

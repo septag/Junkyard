@@ -162,6 +162,8 @@ struct RViewData
     Mat4 worldToClipMat;
     float nearDist;
     float farDist;
+    uint32 viewWidth;
+    uint32 viewHeight;
 
     Mat4 sunLightWorldToClipMat;
     Float3 sunLightDir;
@@ -243,6 +245,19 @@ RFwdContext gFwd;
 
 namespace R
 {
+    static void _SetViewportAndScissor(GfxCommandBuffer& cmd, uint32 width, uint32 height)
+    {
+        GfxViewport viewport {
+            .x = 0,
+            .y = 0,
+            .width = float(width),
+            .height = float(height)
+        };
+        RectInt scissor(0, 0, int(width), int(height));
+        cmd.SetViewports(0, 1, &viewport);
+        cmd.SetScissors(0, 1, &scissor);
+    }
+
     static void _CreateFramebufferDependentResources(uint16 width, uint16 height)
     {
         // TODO: This leaks now. cuz it's allocating from the Persistant buffer
@@ -848,6 +863,12 @@ void R::GetCompatibleLayout(GeometryVertexLayout& outLayout)
     memcpy(outLayout.vertexBufferStrides, R_VERTEXBUFFER_STRIDES, sizeof(uint32)*CountOf(R_VERTEXBUFFER_STRIDES));
 }
 
+void R::ResizeFramebufferResources(uint16 width, uint16 height)
+{
+    _CreateFramebufferDependentResources(width, height);
+    LOG_INFO("Renderer framebuffer resized to %ux%u", width, height);
+}
+
 bool R::Initialize()
 {
     const SettingsJunkyard& settings = SettingsJunkyard::Get();
@@ -1051,8 +1072,8 @@ void R::FwdLight::Update(RView& view, GfxCommandBuffer& cmd)
     Mat4 worldToClipMat = viewData.worldToClipMat;
     if (cmd.mDrawsToSwapchain) // TODO: this is not gonna detect swapchain properly
         worldToClipMat = GfxBackend::GetSwapchainTransformMat() * worldToClipMat;
-    uint32 tilesCountX = M::CeilDiv((uint32)App::GetFramebufferWidth(), R_LIGHT_CULL_TILE_SIZE);
-    uint32 tilesCountY = M::CeilDiv((uint32)App::GetFramebufferHeight(), R_LIGHT_CULL_TILE_SIZE);
+    uint32 tilesCountX = M::CeilDiv(viewData.viewWidth, R_LIGHT_CULL_TILE_SIZE);
+    uint32 tilesCountY = M::CeilDiv(viewData.viewHeight, R_LIGHT_CULL_TILE_SIZE);
     uint32 numTiles = tilesCountX * tilesCountY;
     gFwd.tilesCountX = tilesCountX;
     gFwd.tilesCountY = tilesCountY;
@@ -1071,8 +1092,8 @@ void R::FwdLight::Update(RView& view, GfxCommandBuffer& cmd)
         buffer->cameraNear = viewData.nearDist;
         buffer->cameraFar = viewData.farDist;
         buffer->numLights = viewData.numLights;
-        buffer->windowWidth = App::GetFramebufferWidth();
-        buffer->windowHeight = App::GetFramebufferHeight();
+        buffer->windowWidth = viewData.viewWidth;
+        buffer->windowHeight = viewData.viewHeight;
     }
 
     // Per-frame lighting data
@@ -1219,15 +1240,20 @@ void R::FwdLight::Render(RView& view, GfxCommandBuffer& cmd, GfxImageHandle fina
     // Render blank screen if we have nothing to render
     if (viewData.numGeometryChunks == 0) {
         GfxBackendRenderPass pass { 
+            .numAttachments = finalColorImage.IsValid() ? 1u : 0u,
             .colorAttachments = {{ 
+                .image = finalColorImage,
                 .clear = true,
                 .clearValue = {
                     .color = Color4u::ToFloat4(COLOR4U_BLACK)
                 }
             }},
-            .swapchain = true,
+            .swapchain = !finalColorImage.IsValid(),
             .hasDepth = false
         };
+
+        if (finalColorImage.IsValid())
+            cmd.TransitionImage(finalColorImage, GfxImageTransition::RenderTarget);
 
         cmd.BeginRenderPass(pass);
         cmd.EndRenderPass();
@@ -1262,7 +1288,7 @@ void R::FwdLight::Render(RView& view, GfxCommandBuffer& cmd, GfxImageHandle fina
 
         {
             cmd.BindPipeline(gFwd.pZPrepass);
-            cmd.HelperSetFullscreenViewportAndScissor();
+            R::_SetViewportAndScissor(cmd, viewData.viewWidth, viewData.viewHeight);
 
             RGeometryChunk* chunk = viewData.chunkList;
             while (chunk) {
@@ -1328,7 +1354,7 @@ void R::FwdLight::Render(RView& view, GfxCommandBuffer& cmd, GfxImageHandle fina
             cmd.BeginRenderPass(zprepassExtra);
 
             cmd.BindPipeline(gFwd.pZPrepassAlphaMask);
-            cmd.HelperSetFullscreenViewportAndScissor();
+            R::_SetViewportAndScissor(cmd, viewData.viewWidth, viewData.viewHeight);
 
             for (const AlphaMaskChunkRef& ref : alphaMaskedRefs) {
                 RGeometryChunk* chunk = ref.chunk;
@@ -1416,11 +1442,16 @@ void R::FwdLight::Render(RView& view, GfxCommandBuffer& cmd, GfxImageHandle fina
         GfxImageHandle renderColorImage = msaa > 1 ? gFwd.msaaColorRenderImage : finalColorImage;
 
         // Render to swapchain if we don't have MSAA, otherwise, resolve to Swapchain and provided depth buffer
+        if (renderColorImage.IsValid())
+            cmd.TransitionImage(renderColorImage, GfxImageTransition::RenderTarget);
+        if (msaa > 1 && finalColorImage.IsValid())
+            cmd.TransitionImage(finalColorImage, GfxImageTransition::RenderTarget);
+
         GfxBackendRenderPass pass { 
             .numAttachments = 1,
             .colorAttachments = {{ 
                 .image = renderColorImage,
-                .resolveImage = finalColorImage,
+                .resolveImage = msaa > 1 ? finalColorImage : GfxImageHandle(),
                 .clear = true,
                 .resolveToSwapchain = msaa > 1 && !finalColorImage.IsValid(),
                 .clearValue = {
@@ -1439,7 +1470,7 @@ void R::FwdLight::Render(RView& view, GfxCommandBuffer& cmd, GfxImageHandle fina
 
         cmd.BeginRenderPass(pass);
         cmd.BindPipeline(gFwd.pLight);        
-        cmd.HelperSetFullscreenViewportAndScissor();
+        R::_SetViewportAndScissor(cmd, viewData.viewWidth, viewData.viewHeight);
 
         GfxBufferHandle descriptorBuffers[] = {
             gFwd.dbLightPerFrameResources,
@@ -1539,8 +1570,8 @@ void R::FwdLight::Render(RView& view, GfxCommandBuffer& cmd, GfxImageHandle fina
             GfxImageDesc imageDesc = GfxBackend::GetImageDesc(viewData.sunShadowMapImage);
             GfxViewport vp {};
 
-            float fbWidth = float(App::GetFramebufferWidth());
-            float fbHeight = float(App::GetFramebufferHeight());
+            float fbWidth = float(viewData.viewWidth);
+            float fbHeight = float(viewData.viewHeight);
             float imageWidth = float(imageDesc.width);
             float imageHeight = float(imageDesc.height);
             float scaleX = fbWidth /  imageWidth;
@@ -1593,6 +1624,8 @@ void RView::SetCamera(const Camera& cam, Float2 viewSize)
 
     viewData.nearDist = cam.Near();
     viewData.farDist = cam.Far();
+    viewData.viewWidth = Max<uint32>(uint32(viewSize.x), 1);
+    viewData.viewHeight = Max<uint32>(uint32(viewSize.y), 1);
 }
 
 void RView::SetLocalLights(uint32 numLights, const RLightBounds* bounds, const RLightProps* props)

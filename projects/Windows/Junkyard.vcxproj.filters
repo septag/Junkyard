@@ -274,6 +274,9 @@
     <ClCompile Include="..\..\code\GUI\GUI.cpp">
       <Filter>GUI</Filter>
     </ClCompile>
+    <ClCompile Include="..\..\code\Renderer\RenderViewport.cpp">
+      <Filter>Renderer</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\..\code\External\slang\slang.h">
@@ -538,6 +541,9 @@
     </ClInclude>
     <ClInclude Include="..\..\code\GUI\GUI.h">
       <Filter>GUI</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\code\Renderer\RenderViewport.h">
+      <Filter>Renderer</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

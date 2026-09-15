@@ -1499,16 +1499,13 @@ namespace GfxBackend
         if (!settings.graphics.headless && !CheckAddExtension("VK_KHR_swapchain", true))
             return false;
 
-        if (!CheckAddExtension("VK_KHR_push_descriptor", true))
-            return false;
+        // VK_KHR_push_descriptor has already promoted to 1.4
+        // VK_KHR_buffer_device_address has been promoted to 1.2
         
         if (!CheckAddExtension("VK_EXT_extended_dynamic_state3", true))
             return false;
 
         if (!CheckAddExtension("VK_EXT_descriptor_buffer", true))
-            return false;
-
-        if (!CheckAddExtension("VK_KHR_buffer_device_address", true))
             return false;
 
         if constexpr (PLATFORM_APPLE) {

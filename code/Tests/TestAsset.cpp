@@ -27,6 +27,7 @@
 #include "../Engine.h"
 
 #include "../Graphics/GfxBackend.h"
+#include "../Renderer/RenderViewport.h"
 
 inline constexpr uint32 NUM_CUBES = 10;
 inline constexpr uint32 CELL_SIZE_BYTES = 45*SIZE_MB;
@@ -65,7 +66,7 @@ struct TestAssetApp : AppCallbacks
     GfxPipelineHandle mPipeline;
     GfxPipelineLayoutHandle mPipelineLayout;
     GfxBufferHandle mUniformBuffer;
-    GfxImageHandle mRenderTargetDepth;
+    RenderViewportContext mViewport;
     GfxSamplerHandle mSampler;
 
     AssetHandleShader mUnlitShader;
@@ -441,43 +442,27 @@ struct TestAssetApp : AppCallbacks
         Engine::BeginFrame(dt);
         GfxCommandBuffer cmd = GfxBackend::BeginCommandBuffer(GfxQueueType::Graphics);
         
-        uint16 width = App::GetFramebufferWidth();
-        uint16 height = App::GetFramebufferHeight();
+        RenderViewport::PrepareRenderTargets(&mViewport);
+        uint16 width = mViewport.width;
+        uint16 height = mViewport.height;
 
         {
             FrameTransform ubo {
                 .viewMat = mCam->GetViewMat(),
-                .projMat = GfxBackend::GetSwapchainTransformMat() * mCam->GetPerspectiveMat(width, height)
+                .projMat = RenderViewport::GetClipTransform(mViewport) * mCam->GetPerspectiveMat(width, height)
             };
 
             GfxHelperBufferUpdateScope updater(cmd, mUniformBuffer, sizeof(FrameTransform), GfxShaderStage::Vertex);
             memcpy(updater.mData, &ubo, sizeof(ubo));
         }
 
-        GfxBackendRenderPass pass { 
-            .numAttachments = 1,
-            .colorAttachments = {{ 
-                .clear = true,
-                .clearValue = {
-                    .color = Float4(0.35f, 0.35f, 0.35f, 1.0f)
-                }
-            }},
-            .depthAttachment = {
-                .image = mRenderTargetDepth,
-                .clear = true,
-                .clearValue = {
-                    .depth = 1.0f
-                }
-            },
-            .swapchain = true,
-            .hasDepth = true
-        };
+        GfxBackendRenderPass pass = RenderViewport::MakeRenderPass(mViewport, Color4u(89, 89, 89), 1.0f);
 
-        cmd.TransitionImage(mRenderTargetDepth, GfxImageTransition::RenderTarget, GfxImageTransitionFlags::DepthWrite);
+        RenderViewport::TransitionToRenderTarget(cmd, mViewport, GfxImageTransitionFlags::DepthWrite);
         cmd.BeginRenderPass(pass);
 
         cmd.BindPipeline(mPipeline);
-        cmd.HelperSetFullscreenViewportAndScissor();
+        RenderViewport::SetViewportAndScissor(cmd, mViewport);
 
         for (uint32 i = 0; i < mGrid.numCells; i++) {
             if (mGrid.cells[i].loaded) 
@@ -488,11 +473,17 @@ struct TestAssetApp : AppCallbacks
 
         DebugDraw::BeginDraw(cmd, *mCam, width, height);
         DebugDraw::DrawGroundGrid(*mCam, { .distance = 50.0f, .lineColor = Color4u(0x565656), .boldLineColor = Color4u(0xd6d6d6) });
-        DebugDraw::EndDraw(cmd, mRenderTargetDepth);
+        DebugDraw::EndDraw(cmd, mViewport.depthImage, RenderViewport::IsImGuiPanel(mViewport) ? mViewport.colorImage : GfxImageHandle());
+
+        RenderViewport::TransitionToShaderRead(cmd, mViewport);
 
         if (ImGui::IsEnabled()) { // imgui test
             GPU_PROFILE_ZONE(cmd, "ImGuiRender");
             DebugHud::DrawDebugHud(dt);
+
+            ImGui::DockSpaceOverMainViewport();
+
+            RenderViewport::DrawImGui(&mViewport);
 
             ShowGridGUI();
             ImGui::DrawFrame(cmd);
@@ -505,12 +496,14 @@ struct TestAssetApp : AppCallbacks
     
     void OnEvent(const AppEvent& ev) override
     {
-        if (!ImGui::IsAnyItemHovered() && !ImGui::GetIO().WantCaptureMouse && !ImGuizmo::IsOver())
+        if (RenderViewport::CanReceiveMouseInput(&mViewport, ev))
             mCam->HandleRotationMouse(ev, 0.2f, 0.1f);
         if (ev.type  == AppEventType::Iconified) 
             mMinimized = true;            
         else if (ev.type == AppEventType::Restored)
             mMinimized = false;
+        else if (ev.type == AppEventType::Resized)
+            RenderViewport::OnFramebufferResized(&mViewport, ev.framebufferWidth, ev.framebufferHeight);
     }
 
     static void CreateGraphicsResources(void* userData)
@@ -604,16 +597,12 @@ struct TestAssetApp : AppCallbacks
 
         self->mPipeline = GfxBackend::CreateGraphicsPipeline(*shader, self->mPipelineLayout, pipelineDesc);
 
-        GfxImageDesc renderTargetDesc {
-            .width = App::GetFramebufferWidth(),
-            .height = App::GetFramebufferHeight(),
-            .multisampleFlags = GfxMultiSampleCount::SampleCount1,
-            .format = GfxBackend::GetValidDepthStencilFormat(),
-            .usageFlags = GfxImageUsageFlags::DepthStencilAttachment,
-            .arena = GfxMemoryArena::PersistentGPU
-        };
-
-        self->mRenderTargetDepth = GfxBackend::CreateImage(renderTargetDesc);
+        RenderViewport::Initialize(&self->mViewport, RenderViewportDesc {
+            .name = "Viewport",
+            .useImGuiViewport = true,
+            .colorFormat = GfxBackend::GetSwapchainFormat(),
+            .depthFormat = GfxBackend::GetValidDepthStencilFormat()
+        });
 
         GfxSamplerDesc samplerDesc {
             .samplerFilter = GfxSamplerFilterMode::LinearMipmapLinear,
@@ -628,7 +617,7 @@ struct TestAssetApp : AppCallbacks
         GfxBackend::DestroyPipeline(mPipeline);
         GfxBackend::DestroyPipelineLayout(mPipelineLayout);
         GfxBackend::DestroyBuffer(mUniformBuffer);
-        GfxBackend::DestroyImage(mRenderTargetDepth);
+        RenderViewport::Release(&mViewport);
         GfxBackend::DestroySampler(mSampler);
     }
 };
