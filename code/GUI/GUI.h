@@ -8,8 +8,9 @@ namespace GUI
     bool Initialize();
     void Release();
 
-    void Begin();
+    void Begin(RectInt viewRect, bool processInput);
     void End(GfxCommandBuffer& cmd);
+    void Draw(GfxCommandBuffer& cmd);
 
     bool IsEnabled();
 } // namespace GUI

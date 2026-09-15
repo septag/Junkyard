@@ -18,6 +18,7 @@
 
 #include "../Graphics/GfxBackend.h"
 #include "../Graphics/Geometry.h"
+#include "../Graphics/RenderViewport.h"
 
 #include "../ImGui/ImGuiMain.h"
 #include "../ImGui/ImGuizmo.h"
@@ -27,7 +28,6 @@
 
 #include "../Collision/Collision.h"
 #include "../Renderer/Render.h"
-#include "../Renderer/RenderViewport.h"
 #include "../Engine.h"
 
 inline constexpr uint32 SHAPE_COUNT = 1000;
@@ -185,7 +185,7 @@ struct TestCollisionApp final : AppCallbacks
 
         RenderViewport::Initialize(&mViewport, RenderViewportDesc {
             .name = "Viewport",
-            .useImGuiViewport = true,
+            .useImGuiViewport = ImGui::IsEnabled(),
             .colorFormat = GfxBackend::GetSwapchainFormat(),
             .depthFormat = GfxBackend::GetValidDepthStencilFormat(),
             .sampleDepth = true
@@ -530,7 +530,7 @@ struct TestCollisionApp final : AppCallbacks
 
             ImGui::DockSpaceOverMainViewport();
 
-            RenderViewport::DrawImGui(&mViewport);
+            ImGui::RenderViewport(&mViewport);
 
             UpdateGUI();
 
@@ -581,7 +581,7 @@ struct TestCollisionApp final : AppCallbacks
 
     void OnEvent(const AppEvent& ev) override
     {
-        if (RenderViewport::CanReceiveMouseInput(&mViewport, ev))
+        if (ImGui::CanReceiveMouseInput(&mViewport, ev))
             mCamera.HandleRotationMouse(ev, 0.2f, 0.1f);
 
         if (ev.type == AppEventType::Resized) {

@@ -265,17 +265,17 @@
     <ClCompile Include="..\..\code\Graphics\Geometry.cpp">
       <Filter>Graphics</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\code\Graphics\TextBuilder.cpp">
-      <Filter>Graphics</Filter>
-    </ClCompile>
     <ClCompile Include="..\..\code\Assets\Font.cpp">
       <Filter>Assets</Filter>
     </ClCompile>
     <ClCompile Include="..\..\code\GUI\GUI.cpp">
       <Filter>GUI</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\code\Renderer\RenderViewport.cpp">
-      <Filter>Renderer</Filter>
+    <ClCompile Include="..\..\code\Graphics\RenderViewport.cpp">
+      <Filter>Graphics</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\code\GUI\TextBuilder.cpp">
+      <Filter>GUI</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -527,9 +527,6 @@
     <ClInclude Include="..\..\code\Graphics\Geometry.h">
       <Filter>Graphics</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\code\Graphics\TextBuilder.h">
-      <Filter>Graphics</Filter>
-    </ClInclude>
     <ClInclude Include="..\..\code\Assets\Font.h">
       <Filter>Assets</Filter>
     </ClInclude>
@@ -542,8 +539,11 @@
     <ClInclude Include="..\..\code\GUI\GUI.h">
       <Filter>GUI</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\code\Renderer\RenderViewport.h">
-      <Filter>Renderer</Filter>
+    <ClInclude Include="..\..\code\Graphics\RenderViewport.h">
+      <Filter>Graphics</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\code\GUI\TextBuilder.h">
+      <Filter>GUI</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

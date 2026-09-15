@@ -31,7 +31,7 @@
 
 #include "../Graphics/GfxBackend.h"
 #include "../Renderer/Render.h"
-#include "../Renderer/RenderViewport.h"
+#include "../Graphics/RenderViewport.h"
 
 static const char* TESTRENDERER_MODELS[] = {
     "/data/Duck/Duck.gltf",
@@ -256,7 +256,7 @@ struct TestRendererApp final : AppCallbacks
 
         RenderViewport::Initialize(&mViewport, RenderViewportDesc {
             .name = "Viewport",
-            .useImGuiViewport = true,
+            .useImGuiViewport = ImGui::IsEnabled(),
             .colorFormat = GfxBackend::GetSwapchainFormat(),
             .depthFormat = GfxBackend::GetValidDepthStencilFormat(),
             .sampleDepth = true
@@ -518,7 +518,7 @@ struct TestRendererApp final : AppCallbacks
 
             ImGui::DockSpaceOverMainViewport();
 
-            RenderViewport::DrawImGui(&mViewport);
+            ImGui::RenderViewport(&mViewport);
 
             ImGui::SetNextWindowSize(ImVec2(300, 200), ImGuiCond_FirstUseEver);
             if (ImGui::Begin("Scene")) {
@@ -537,7 +537,7 @@ struct TestRendererApp final : AppCallbacks
     
     void OnEvent(const AppEvent& ev) override
     {
-        if (mCam && RenderViewport::CanReceiveMouseInput(&mViewport, ev))
+        if (mCam && ImGui::CanReceiveMouseInput(&mViewport, ev))
             mCam->HandleRotationMouse(ev, 0.2f, 0.1f);
 
         if (ev.type  == AppEventType::Iconified) 

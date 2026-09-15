@@ -2,7 +2,7 @@
 
 #include "../Core/MathTypes.h"
 #include "../Common/CommonTypes.h"
-#include "GfxBackendTypes.h"
+#include "../Graphics/GfxBackendTypes.h"
 
 struct FontData;    // Font.h
 

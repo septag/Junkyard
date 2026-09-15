@@ -16,6 +16,8 @@
     ImGui::ControlAlphaWithScroll(ImGui::IsWindowHovered() ? &CONCAT(_id, _alpha) : nullptr)
 
 struct MemTlsfAllocator;
+struct RenderViewportContext;
+struct AppEvent;
 
 namespace ImGui
 {
@@ -66,7 +68,12 @@ namespace ImGui
 
     API bool IsEnabled();
     API void BeginFrame(float dt);
+
     API void DockSpaceOverMainViewport(ImGuiDockNodeFlags dockspaceFlags = ImGuiDockNodeFlags_None);
+    API void RenderViewport(RenderViewportContext* viewport);
+    API bool CanReceiveMouseInput(const RenderViewportContext& viewport);
+    API bool CanReceiveMouseInput(RenderViewportContext* viewport, const AppEvent& ev);
+
     API bool DrawFrame(GfxCommandBuffer& cmd, GfxImageHandle colorImage = GfxImageHandle());
 
     API void SetMSAA(GfxMultiSampleCount sampleCount);  // Should be set before initialization

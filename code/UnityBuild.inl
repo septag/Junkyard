@@ -38,7 +38,7 @@
 // Graphics
 #include "Graphics/GfxBackend.cpp"
 #include "Graphics/Geometry.cpp"
-#include "Graphics/TextBuilder.cpp"
+#include "Graphics/RenderViewport.cpp"
 
 // Tool
 #include "Tool/ShaderCompiler.cpp"
@@ -46,7 +46,7 @@
 #include "Tool/MeshOptimizer.cpp"
 #include "Tool/Console.cpp"
 
-// Graphics/ImGui
+// ImGui
 #include "External/imgui/imgui.cpp"
 #include "External/imgui/imgui_draw.cpp"
 #include "External/imgui/imgui_tables.cpp"
@@ -54,10 +54,12 @@
 #include "ImGui/ImGuiMain.cpp"
 #include "ImGui/ImGuizmo.cpp"
 
-// Renderer/UI
-#include "Renderer/Render.cpp"
-#include "Renderer/RenderViewport.cpp"
+// GUI
 #include "GUI/GUI.cpp"
+#include "GUI/TextBuilder.cpp"
+
+// Renderer
+#include "Renderer/Render.cpp"
 
 // Collision
 #include "Collision/Collision.cpp"

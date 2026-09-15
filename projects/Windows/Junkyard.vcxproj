@@ -250,11 +250,11 @@
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\..\code\Graphics\GfxBackend.cpp" />
-    <ClCompile Include="..\..\code\Graphics\TextBuilder.cpp" />
+    <ClCompile Include="..\..\code\Graphics\RenderViewport.cpp" />
+    <ClCompile Include="..\..\code\GUI\TextBuilder.cpp" />
     <ClCompile Include="..\..\code\ImGui\ImGuiMain.cpp" />
     <ClCompile Include="..\..\code\ImGui\ImGuizmo.cpp" />
     <ClCompile Include="..\..\code\Renderer\Render.cpp" />
-    <ClCompile Include="..\..\code\Renderer\RenderViewport.cpp" />
     <ClCompile Include="..\..\code\Tool\Console.cpp" />
     <ClCompile Include="..\..\code\Tool\ImageEncoder.cpp" />
     <ClCompile Include="..\..\code\Tool\MeshOptimizer.cpp" />
@@ -341,11 +341,11 @@
     <ClInclude Include="..\..\code\External\volk\volk.h" />
     <ClInclude Include="..\..\code\Graphics\GfxBackend.h" />
     <ClInclude Include="..\..\code\Graphics\GfxBackendTypes.h" />
-    <ClInclude Include="..\..\code\Graphics\TextBuilder.h" />
+    <ClInclude Include="..\..\code\Graphics\RenderViewport.h" />
+    <ClInclude Include="..\..\code\GUI\TextBuilder.h" />
     <ClInclude Include="..\..\code\ImGui\ImGuiMain.h" />
     <ClInclude Include="..\..\code\ImGui\ImGuizmo.h" />
     <ClInclude Include="..\..\code\Renderer\Render.h" />
-    <ClInclude Include="..\..\code\Renderer\RenderViewport.h" />
     <ClInclude Include="..\..\code\Tool\Console.h" />
     <ClInclude Include="..\..\code\Tool\ImageEncoder.h" />
     <ClInclude Include="..\..\code\Tool\MeshOptimizer.h" />

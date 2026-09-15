@@ -21,6 +21,7 @@
 #include "../Common/JunkyardSettings.h"
 
 #include "../Graphics/GfxBackend.h"
+#include "../Graphics/RenderViewport.h"
 
 #include "../Engine.h"
 
@@ -785,6 +786,85 @@ void ImGui::DockSpaceOverMainViewport(ImGuiDockNodeFlags dockspaceFlags)
 
     ImGui::DockSpaceOverViewport(ImGui::GetID("MainDockSpace"), ImGui::GetMainViewport(), dockspaceFlags);
 }
+
+void ImGui::RenderViewport(RenderViewportContext* viewport)
+{
+    ASSERT(viewport);
+    if (!viewport->useImGuiViewport)
+        return;
+
+    ImGui::SetNextWindowDockID(ImGui::GetID("MainDockSpace"), ImGuiCond_FirstUseEver);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+    ImGui::Begin(viewport->name);
+
+    ImVec2 pos = ImGui::GetCursorScreenPos();
+    ImVec2 avail = ImGui::GetContentRegionAvail();
+    viewport->requestedWidth = Max<uint16>(uint16(avail.x), 1);
+    viewport->requestedHeight = Max<uint16>(uint16(avail.y), 1);
+    viewport->focused = ImGui::IsWindowFocused();
+    viewport->visible = !ImGui::IsWindowCollapsed();
+    viewport->imguiPos = Float2(pos.x, pos.y);
+    viewport->imguiSize = Float2(avail.x, avail.y);
+
+    ImGui::Image(ImTextureID(uint64(viewport->colorImage.mId)), avail);
+    viewport->hovered = ImGui::IsItemHovered();
+
+    ImGui::End();
+    ImGui::PopStyleVar();
+}
+
+bool ImGui::CanReceiveMouseInput(const RenderViewportContext& viewport)
+{
+    if (!viewport.useImGuiViewport)
+        return true;
+
+    bool isInMainDockSpace = GImGui->ActiveIdWindow && Str::Compare(GImGui->ActiveIdWindow->Name, "MainDockSpace");
+    return viewport.hovered && !ImGuizmo::IsOver() && (!ImGui::IsAnyItemActive() || isInMainDockSpace);
+}
+
+bool ImGui::CanReceiveMouseInput(RenderViewportContext* viewport, const AppEvent& ev)
+{
+    ASSERT(viewport);
+    if (!viewport->useImGuiViewport)
+        return true;
+
+    InputMouseButton activeButton = InputMouseButton::Right;
+    if constexpr (PLATFORM_ANDROID)
+        activeButton = InputMouseButton::Left;
+
+    const bool canStartInput = viewport->hovered && !ImGuizmo::IsOver() && !ImGui::IsAnyItemActive();
+
+    switch (ev.type) {
+    case AppEventType::MouseDown:
+        if (ev.mouseButton != activeButton)
+            return false;
+        if (canStartInput)
+            viewport->inputCaptured = true;
+        return canStartInput;
+
+    case AppEventType::MouseMove:
+        return viewport->inputCaptured || canStartInput;
+
+    case AppEventType::MouseScroll:
+        return canStartInput;
+
+    case AppEventType::MouseUp: {
+        if (ev.mouseButton != activeButton)
+            return false;
+        bool wasCaptured = viewport->inputCaptured;
+        viewport->inputCaptured = false;
+        return wasCaptured || canStartInput;
+    }
+
+    case AppEventType::MouseLeave:
+        viewport->inputCaptured = false;
+        return false;
+
+    default:
+        return canStartInput;
+    }
+}
+
 
 bool ImGui::DrawFrame(GfxCommandBuffer& cmd, GfxImageHandle colorImage)
 {

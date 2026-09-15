@@ -27,7 +27,7 @@
 #include "../Engine.h"
 
 #include "../Graphics/GfxBackend.h"
-#include "../Renderer/RenderViewport.h"
+#include "../Graphics/RenderViewport.h"
 
 inline constexpr uint32 NUM_CUBES = 10;
 inline constexpr uint32 CELL_SIZE_BYTES = 45*SIZE_MB;
@@ -380,7 +380,9 @@ struct TestAssetApp : AppCallbacks
                             ImGui::SetNextItemAllowOverlap();
                             if (ImGui::Selectable(String32::Format("##%s", cell.name.CStr()).CStr(), mGrid.selectedCell == index, ImGuiSelectableFlags_None)) 
                                 mGrid.selectedCell = index;
-
+                            ImGui::SameLine();
+                            ImGui::SmallButton(cell.name.CStr());
+                            
                             if (ImGui::IsItemClicked(ImGuiMouseButton_Left)) {
                                 if (state == AssetGroupState::Idle) {
                                     LoadCell(index);
@@ -390,9 +392,6 @@ struct TestAssetApp : AppCallbacks
                                 cell.loaded = false;
                                 cell.assetGroup.Unload();
                             }
-
-                            ImGui::SameLine();
-                            ImGui::SmallButton(cell.name.CStr());
                             ImGui::PopStyleColor();
                         }
                     }
@@ -483,7 +482,7 @@ struct TestAssetApp : AppCallbacks
 
             ImGui::DockSpaceOverMainViewport();
 
-            RenderViewport::DrawImGui(&mViewport);
+            ImGui::RenderViewport(&mViewport);
 
             ShowGridGUI();
             ImGui::DrawFrame(cmd);
@@ -496,7 +495,7 @@ struct TestAssetApp : AppCallbacks
     
     void OnEvent(const AppEvent& ev) override
     {
-        if (RenderViewport::CanReceiveMouseInput(&mViewport, ev))
+        if (ImGui::CanReceiveMouseInput(&mViewport, ev))
             mCam->HandleRotationMouse(ev, 0.2f, 0.1f);
         if (ev.type  == AppEventType::Iconified) 
             mMinimized = true;            
@@ -599,7 +598,7 @@ struct TestAssetApp : AppCallbacks
 
         RenderViewport::Initialize(&self->mViewport, RenderViewportDesc {
             .name = "Viewport",
-            .useImGuiViewport = true,
+            .useImGuiViewport = ImGui::IsEnabled(),
             .colorFormat = GfxBackend::GetSwapchainFormat(),
             .depthFormat = GfxBackend::GetValidDepthStencilFormat()
         });

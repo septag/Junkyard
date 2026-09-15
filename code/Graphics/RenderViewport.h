@@ -8,7 +8,7 @@
 struct RenderViewportDesc
 {
     const char* name = "Viewport";
-    bool useImGuiViewport = true;
+    bool useImGuiViewport = false;
     GfxFormat colorFormat = GfxFormat::Undefined;
     GfxFormat depthFormat = GfxFormat::Undefined;
     GfxMultiSampleCount msaa = GfxMultiSampleCount::SampleCount1;
@@ -49,7 +49,7 @@ namespace RenderViewport
 
     void OnFramebufferResized(RenderViewportContext* viewport, uint16 width, uint16 height);
     void PrepareRenderTargets(RenderViewportContext* viewport);
-    void DrawImGui(RenderViewportContext* viewport);
+    RectInt GetViewportRect(const RenderViewportContext& viewport);
 
     GfxBackendRenderPass MakeRenderPass(const RenderViewportContext& viewport, Color4u clearColor, float clearDepth = 1.0f);
     void SetViewportAndScissor(GfxCommandBuffer& cmd, const RenderViewportContext& viewport);
@@ -58,8 +58,6 @@ namespace RenderViewport
     void TransitionToShaderRead(GfxCommandBuffer& cmd, const RenderViewportContext& viewport);
 
     Mat4 GetClipTransform(const RenderViewportContext& viewport);
-    bool CanReceiveMouseInput(const RenderViewportContext& viewport);
-    bool CanReceiveMouseInput(RenderViewportContext* viewport, const AppEvent& ev);
     bool IsFullscreen(const RenderViewportContext& viewport);
     bool IsImGuiPanel(const RenderViewportContext& viewport);
 }

@@ -22,6 +22,8 @@
 #include "../Assets/AssetManager.h"
 #include "../Assets/Image.h"
 
+#include "../Graphics/RenderViewport.h"
+
 static constexpr uint32 IMAGE_COUNT = 2048;
 static constexpr uint32 IMAGE_GROUP_COUNT = 20;
 static constexpr float THUMBNAIL_SIZE = 128.0f;
@@ -35,11 +37,17 @@ struct TestUIApp final : AppCallbacks
     float mSideBarPercent = 0.2f;
     AssetHandleImage mImages[IMAGE_COUNT];
     GfxImageHandle mImageHandles[IMAGE_COUNT];  // mImages resolved for the current frame
+    RenderViewportContext mViewport;
 
     bool Initialize() override
     {
         if (!Engine::Initialize())
             return false;
+
+        RenderViewportDesc viewportDesc {
+            .useImGuiViewport = ImGui::IsEnabled()
+        };
+        RenderViewport::Initialize(&mViewport, viewportDesc);
 
         mProfileImage = Image::CreateCheckerTexture(32, 8, COLOR4U_WHITE, COLOR4U_BLACK);
 
@@ -74,6 +82,7 @@ struct TestUIApp final : AppCallbacks
         }
 
         GfxBackend::DestroyImage(mProfileImage);
+        RenderViewport::Release(&mViewport);
 
         Engine::Release();
     }
@@ -253,25 +262,22 @@ struct TestUIApp final : AppCallbacks
         Engine::BeginFrame(dt);
         GfxCommandBuffer cmd = GfxBackend::BeginCommandBuffer(GfxQueueType::Graphics);
 
-        GfxBackendRenderPass pass { 
-            .colorAttachments = {{ 
-                .clear = true,
-                .clearValue = {
-                    .color = Color4u::ToFloat4(COLOR4U_BLACK)
-                }
-            }},
-            .swapchain = true,
-            .hasDepth = false
-        };
-        cmd.BeginRenderPass(pass);
-        cmd.EndRenderPass();
+        RenderViewport::PrepareRenderTargets(&mViewport);
 
-        GUI::Begin();
+        GUI::Begin(RenderViewport::GetViewportRect(mViewport), ImGui::CanReceiveMouseInput(mViewport));
         DrawUI();
         GUI::End(cmd);
 
+        RenderViewport::TransitionToRenderTarget(cmd, mViewport);
+        GfxBackendRenderPass pass = RenderViewport::MakeRenderPass(mViewport, COLOR4U_BLACK, false);
+        cmd.BeginRenderPass(pass);
+        GUI::Draw(cmd);
+        cmd.EndRenderPass();
+
+        RenderViewport::TransitionToShaderRead(cmd, mViewport);
         if (ImGui::IsEnabled()) {
             ImGui::DockSpaceOverMainViewport();
+            ImGui::RenderViewport(&mViewport);
 
             DebugHud::DrawDebugHud(dt, 20);
 
@@ -292,7 +298,9 @@ struct TestUIApp final : AppCallbacks
 
     void OnEvent(const AppEvent& ev) override
     {
-        UNUSED(ev);
+        if (ev.type == AppEventType::Resized) {
+            RenderViewport::OnFramebufferResized(&mViewport, ev.framebufferWidth, ev.framebufferHeight);
+        }
     }
 };
 

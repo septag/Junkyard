@@ -10,7 +10,7 @@
 
 #include "../Common/Camera.h"
 
-#include "../Graphics/TextBuilder.h"
+#include "../GUI/TextBuilder.h"
 
 static constexpr uint32 DEBUGDRAW_MAX_VERTICES = 32*1000;
 static constexpr uint32 DEBUGDRAW_MAX_TEXT_CHARACTERS = 1000;

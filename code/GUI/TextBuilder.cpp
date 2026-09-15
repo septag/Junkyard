@@ -6,7 +6,7 @@
 #include "../Core/MathAll.h"
 #include "../Core/Log.h"
 
-#include "GfxBackend.h"
+#include "../Graphics/GfxBackend.h"
 
 #define KB_TEXT_SHAPE_IMPLEMENTATION
 #define KB_TEXT_SHAPE_NO_CRT

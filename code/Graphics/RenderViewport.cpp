@@ -1,8 +1,6 @@
 #include "RenderViewport.h"
 
 #include "../Common/Application.h"
-#include "../ImGui/ImGuiMain.h"
-#include "../ImGui/ImGuizmo.h"
 
 namespace RenderViewport
 {
@@ -30,16 +28,18 @@ namespace RenderViewport
             viewport->colorImage = GfxBackend::CreateImage(colorDesc);
         }
 
-        GfxImageDesc depthDesc {
-            .width = viewport->width,
-            .height = viewport->height,
-            .multisampleFlags = viewport->msaa,
-            .format = viewport->depthFormat != GfxFormat::Undefined ? viewport->depthFormat : GfxBackend::GetValidDepthStencilFormat(),
-            .usageFlags = GfxImageUsageFlags::DepthStencilAttachment | 
-                          (viewport->sampleDepth ? GfxImageUsageFlags::Sampled : GfxImageUsageFlags::TransientAttachment),
-            .arena = GfxMemoryArena::DynamicImageGPU
-        };
-        viewport->depthImage = GfxBackend::CreateImage(depthDesc);
+        if (viewport->depthFormat != GfxFormat::Undefined) {
+            GfxImageDesc depthDesc {
+                .width = viewport->width,
+                .height = viewport->height,
+                .multisampleFlags = viewport->msaa,
+                .format = viewport->depthFormat,
+                .usageFlags = GfxImageUsageFlags::DepthStencilAttachment | 
+                              (viewport->sampleDepth ? GfxImageUsageFlags::Sampled : GfxImageUsageFlags::TransientAttachment),
+                .arena = GfxMemoryArena::DynamicImageGPU
+            };
+            viewport->depthImage = GfxBackend::CreateImage(depthDesc);
+        }
     }
 
     void Initialize(RenderViewportContext* viewport, const RenderViewportDesc& desc)
@@ -47,7 +47,7 @@ namespace RenderViewport
         ASSERT(viewport);
         *viewport = {};
         viewport->name = desc.name ? desc.name : "Viewport";
-        viewport->useImGuiViewport = desc.useImGuiViewport && ImGui::IsEnabled();
+        viewport->useImGuiViewport = desc.useImGuiViewport;
         viewport->colorFormat = desc.colorFormat;
         viewport->depthFormat = desc.depthFormat;
         viewport->msaa = desc.msaa;
@@ -78,30 +78,15 @@ namespace RenderViewport
             _RecreateImages(viewport, viewport->requestedWidth, viewport->requestedHeight);
     }
 
-    void DrawImGui(RenderViewportContext* viewport)
+    RectInt GetViewportRect(const RenderViewportContext& viewport)
     {
-        ASSERT(viewport);
-        if (!viewport->useImGuiViewport)
-            return;
-
-        ImGui::SetNextWindowDockID(ImGui::GetID("MainDockSpace"), ImGuiCond_FirstUseEver);
-        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
-        ImGui::Begin(viewport->name);
-
-        ImVec2 pos = ImGui::GetCursorScreenPos();
-        ImVec2 avail = ImGui::GetContentRegionAvail();
-        viewport->requestedWidth = Max<uint16>(uint16(avail.x), 1);
-        viewport->requestedHeight = Max<uint16>(uint16(avail.y), 1);
-        viewport->focused = ImGui::IsWindowFocused();
-        viewport->visible = !ImGui::IsWindowCollapsed();
-        viewport->imguiPos = Float2(pos.x, pos.y);
-        viewport->imguiSize = Float2(avail.x, avail.y);
-
-        ImGui::Image(ImTextureID(uint64(viewport->colorImage.mId)), avail);
-        viewport->hovered = ImGui::IsItemHovered();
-
-        ImGui::End();
-        ImGui::PopStyleVar();
+        if (viewport.useImGuiViewport) {
+            return RectInt(int(viewport.imguiPos.x), int(viewport.imguiPos.y), 
+                           int(viewport.imguiPos.x + viewport.width), int(viewport.imguiPos.y + viewport.height));
+        }
+        else {
+            return RectInt(0, 0, viewport.width, viewport.height);
+        }
     }
 
     GfxBackendRenderPass MakeRenderPass(const RenderViewportContext& viewport, Color4u clearColor, float clearDepth)
@@ -123,7 +108,7 @@ namespace RenderViewport
                 }
             },
             .swapchain = !viewport.useImGuiViewport,
-            .hasDepth = true
+            .hasDepth = viewport.depthImage.IsValid()
         };
         return pass;
     }
@@ -145,7 +130,8 @@ namespace RenderViewport
     {
         if (viewport.useImGuiViewport)
             cmd.TransitionImage(viewport.colorImage, GfxImageTransition::RenderTarget);
-        cmd.TransitionImage(viewport.depthImage, GfxImageTransition::RenderTarget, depthFlags);
+        if (viewport.depthImage.IsValid())
+            cmd.TransitionImage(viewport.depthImage, GfxImageTransition::RenderTarget, depthFlags);
     }
 
     void TransitionToShaderRead(GfxCommandBuffer& cmd, const RenderViewportContext& viewport)
@@ -157,57 +143,6 @@ namespace RenderViewport
     Mat4 GetClipTransform(const RenderViewportContext& viewport)
     {
         return viewport.useImGuiViewport ? MAT4_IDENT : GfxBackend::GetSwapchainTransformMat();
-    }
-
-    bool CanReceiveMouseInput(const RenderViewportContext& viewport)
-    {
-        if (!viewport.useImGuiViewport)
-            return true;
-
-        return viewport.hovered && !ImGuizmo::IsOver() && !ImGui::IsAnyItemActive();
-    }
-
-    bool CanReceiveMouseInput(RenderViewportContext* viewport, const AppEvent& ev)
-    {
-        ASSERT(viewport);
-        if (!viewport->useImGuiViewport)
-            return true;
-
-        InputMouseButton activeButton = InputMouseButton::Right;
-        if constexpr (PLATFORM_ANDROID)
-            activeButton = InputMouseButton::Left;
-
-        const bool canStartInput = viewport->hovered && !ImGuizmo::IsOver() && !ImGui::IsAnyItemActive();
-
-        switch (ev.type) {
-        case AppEventType::MouseDown:
-            if (ev.mouseButton != activeButton)
-                return false;
-            if (canStartInput)
-                viewport->inputCaptured = true;
-            return canStartInput;
-
-        case AppEventType::MouseMove:
-            return viewport->inputCaptured || canStartInput;
-
-        case AppEventType::MouseScroll:
-            return canStartInput;
-
-        case AppEventType::MouseUp: {
-                if (ev.mouseButton != activeButton)
-                    return false;
-                bool wasCaptured = viewport->inputCaptured;
-                viewport->inputCaptured = false;
-                return wasCaptured || canStartInput;
-            }
-
-        case AppEventType::MouseLeave:
-            viewport->inputCaptured = false;
-            return false;
-
-        default:
-            return canStartInput;
-        }
     }
 
     bool IsFullscreen(const RenderViewportContext& viewport)

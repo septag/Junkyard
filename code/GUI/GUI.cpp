@@ -21,7 +21,8 @@ PRAGMA_DIAGNOSTIC_POP()
 #include "../Assets/Shader.h"
 #include "../Assets/Image.h"
 #include "../Assets/Font.h"
-#include "../Graphics/TextBuilder.h"
+
+#include "TextBuilder.h"
 
 #include "../Engine.h"
 
@@ -66,7 +67,8 @@ struct GUIContext
     uint32 maxVertices;
     uint32 maxIndices;
 
-    RectFloat mainViewport;
+    Array<GUIDrawCommand> drawCommands;
+    RectInt viewRect;
     Clay_Vector2 mousePos;
     Clay_Vector2 mouseScroll;
     float frameBufferScale;
@@ -127,12 +129,9 @@ namespace GUI
                 break;
 
             case AppEventType::MouseMove:
-                gGUI.mousePos = { ev.mouseX * gGUI.frameBufferScale, ev.mouseY * gGUI.frameBufferScale };
+                gGUI.mousePos = { ev.mouseX*gGUI.frameBufferScale - gGUI.viewRect.xmin, ev.mouseY*gGUI.frameBufferScale - gGUI.viewRect.ymin };
                 break;
 
-            case AppEventType::Resized:
-                gGUI.mainViewport = RectFloat(0, 0, App::GetFramebufferWidth(), App::GetFramebufferHeight());
-                break;
             default:
                 break;
         }
@@ -397,15 +396,15 @@ bool GUI::Initialize()
 
     App::RegisterEventsCallback(_OnEventCallback);
 
-    // Resized event only fires on actual resizes, so seed the viewport with the current framebuffer size
-    gGUI.mainViewport = RectFloat(0, 0, App::GetFramebufferWidth(), App::GetFramebufferHeight());
-
     size_t memSize = Clay_MinMemorySize();
     gGUI.clayMemory = Mem::Alloc(memSize, &gGUI.alloc);
     Clay_Arena arena = Clay_CreateArenaWithCapacityAndMemory(memSize, gGUI.clayMemory);
 
-    Clay_Initialize(arena, {gGUI.mainViewport.Width(), gGUI.mainViewport.Height()}, {_ClayHandleErrors, nullptr});
+    Clay_Initialize(arena, {float(App::GetFramebufferWidth()), float(App::GetFramebufferHeight())}, {_ClayHandleErrors, nullptr});
     Clay_SetMeasureTextFunction(_MeasureText, nullptr);
+
+    gGUI.drawCommands.SetAllocator(&gGUI.alloc);
+    gGUI.drawCommands.Reserve(1000);
 
     gGUI.frameBufferScale = App::GetWindowDPIScale();
     gGUI.initialized = true;
@@ -416,6 +415,8 @@ bool GUI::Initialize()
 
 void GUI::Release()
 {
+    gGUI.drawCommands.Free();
+
     GfxBackend::DestroyBuffer(gGUI.vertexBuffer);
     GfxBackend::DestroyBuffer(gGUI.indexBuffer);
     GfxBackend::DestroySampler(gGUI.sampler);
@@ -428,29 +429,33 @@ void GUI::Release()
     gGUI.initialized = false;
 }
 
-void GUI::Begin()
+void GUI::Begin(RectInt viewRect, bool processInput)
 {
     ASSERT(gGUI.initialized);
     PROFILE_ZONE("GUI.Begin");
 
     ASSERT_MSG(!gGUI.inFlight, "End() should be called before Begin()");
-    Clay_SetLayoutDimensions({ gGUI.mainViewport.Width(), gGUI.mainViewport.Height() });
-    Clay_SetPointerState(gGUI.mousePos, gGUI.mouseDown);
+
+    Clay_SetLayoutDimensions({ float(viewRect.Width()), float(viewRect.Height()) });
+
+    if (processInput)
+        Clay_SetPointerState(gGUI.mousePos, gGUI.mouseDown);
     Clay_UpdateScrollContainers(true, gGUI.mouseScroll, Engine::GetFrameTime());
 
     // Clay treats the scroll as a per-frame delta, so it has to be consumed here
     gGUI.mouseScroll = {};
 
     Clay_BeginLayout();
+
+    gGUI.drawCommands.Clear();
     gGUI.inFlight = true;
+    gGUI.viewRect = viewRect;
 }
 
 void GUI::End(GfxCommandBuffer& cmd)
 {
     PROFILE_ZONE("GUI.End");
     ASSERT_MSG(gGUI.inFlight, "Begin() is not called");
-    ASSERT_MSG(cmd.mIsRecording && !cmd.mIsInRenderPass,
-               "%s must be called while CommandBuffer is recording and not in the RenderPass", __FUNCTION__);
 
     Clay_RenderCommandArray renderCommands = Clay_EndLayout(Engine::GetFrameTime());
     gGUI.inFlight = false;
@@ -471,8 +476,8 @@ void GUI::End(GfxCommandBuffer& cmd)
     MemTempAllocator tempAlloc;
     Array<GUIVertex> vertices(&tempAlloc);
     Array<uint32> indices(&tempAlloc);
-    Array<GUIDrawCommand> drawCommands(&tempAlloc);
-    drawCommands.Reserve(128);
+    vertices.Reserve(1000);
+    indices.Reserve(1000);
 
     const GfxImageHandle whiteImage = Image::GetWhite1x1();
     Clay_RenderCommandType prevCommandType = CLAY_RENDER_COMMAND_TYPE_NONE;
@@ -480,8 +485,7 @@ void GUI::End(GfxCommandBuffer& cmd)
 
     // Clay emits SCISSOR_START/END pairs around clipped elements. They can nest, so keep a stack of
     // intersected rects instead of just resetting back to the full viewport on SCISSOR_END
-    const RectInt viewportScissor(int(gGUI.mainViewport.xmin), int(gGUI.mainViewport.ymin),
-                                  int(gGUI.mainViewport.xmax), int(gGUI.mainViewport.ymax));
+    const RectInt viewportScissor(0, 0, gGUI.viewRect.Width(), gGUI.viewRect.Height());
     StaticArray<RectInt, GUI_MAX_SCISSOR_DEPTH> scissorStack;
     RectInt currentScissor = viewportScissor;
     RectInt prevScissor = viewportScissor;
@@ -604,10 +608,10 @@ void GUI::End(GfxCommandBuffer& cmd)
         if (numIndices == 0)
             continue;
 
-        if (drawCommands.IsEmpty() || renderCommand.commandType != prevCommandType || image != prevImage ||
+        if (gGUI.drawCommands.IsEmpty() || renderCommand.commandType != prevCommandType || image != prevImage ||
             !_IsSameRect(currentScissor, prevScissor))
         {
-            drawCommands.Push(GUIDrawCommand {
+            gGUI.drawCommands.Push(GUIDrawCommand {
                 .startIndex = startIndex,
                 .numIndices = numIndices,
                 .vertexOffset = 0,
@@ -617,7 +621,7 @@ void GUI::End(GfxCommandBuffer& cmd)
             });
         }
         else {
-            drawCommands.Last().numIndices += numIndices;
+            gGUI.drawCommands.Last().numIndices += numIndices;
         }
 
         prevCommandType = renderCommand.commandType;
@@ -625,7 +629,7 @@ void GUI::End(GfxCommandBuffer& cmd)
         prevScissor = currentScissor;
     }
 
-    if (drawCommands.IsEmpty())
+    if (gGUI.drawCommands.IsEmpty())
         return;
 
     // Upload geometry. This cannot happen inside a render pass
@@ -638,19 +642,18 @@ void GUI::End(GfxCommandBuffer& cmd)
         memcpy(vertexBufferUpdate.mData, vertices.Ptr(), vertexSize);
         memcpy(indexBufferUpdate.mData, indices.Ptr(), indexSize);
     }
+}
 
-    GfxBackendRenderPass pass {
-        .colorAttachments = {{ .load = true }},
-        .swapchain = true,
-        .hasDepth = false
-    };
-    cmd.BeginRenderPass(pass);
+void GUI::Draw(GfxCommandBuffer& cmd)
+{
+    ASSERT_MSG(cmd.mIsRecording && cmd.mIsInRenderPass,
+               "%s must be called while CommandBuffer is recording and in the RenderPass", __FUNCTION__);
+    if (gGUI.drawCommands.IsEmpty())
+        return;
 
     GfxViewport viewport {
-        .x = gGUI.mainViewport.xmin,
-        .y = gGUI.mainViewport.ymin,
-        .width = gGUI.mainViewport.Width(),
-        .height = gGUI.mainViewport.Height()
+        .width = float(gGUI.viewRect.Width()),
+        .height = float(gGUI.viewRect.Height())
     };
     cmd.SetViewports(0, 1, &viewport);
 
@@ -662,7 +665,7 @@ void GUI::End(GfxCommandBuffer& cmd)
                           Mat4::OrthoOffCenter(0, viewport.height, viewport.width, 0, -1.0f, 1.0f);
 
     GfxPipelineHandle currentPipeline;
-    for (const GUIDrawCommand& drawCommand : drawCommands) {
+    for (const GUIDrawCommand& drawCommand : gGUI.drawCommands) {
         _SwitchPipeline(cmd, drawCommand.pipeline, currentPipeline);
         cmd.SetScissors(0, 1, &drawCommand.scissor);
 
@@ -700,7 +703,7 @@ void GUI::End(GfxCommandBuffer& cmd)
         cmd.DrawIndexed(drawCommand.numIndices, 1, drawCommand.startIndex, drawCommand.vertexOffset, 0);
     }
 
-    cmd.EndRenderPass();
+    gGUI.drawCommands.Clear();
 }
 
 bool GUI::IsEnabled()

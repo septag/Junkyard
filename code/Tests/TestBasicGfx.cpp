@@ -30,7 +30,7 @@
 #include "../Engine.h"
 
 #include "../Graphics/GfxBackend.h"
-#include "../Renderer/RenderViewport.h"
+#include "../Graphics/RenderViewport.h"
 
 #include <stdio.h>
 
@@ -355,7 +355,7 @@ struct TestBasicGfxApp final : AppCallbacks
         TestBasicGfxApp* self = (TestBasicGfxApp*)userData;
         RenderViewport::Initialize(&self->mViewport, RenderViewportDesc {
             .name = "Viewport",
-            .useImGuiViewport = true,
+            .useImGuiViewport = ImGui::IsEnabled(),
             .colorFormat = GfxBackend::GetSwapchainFormat(),
             .depthFormat = GfxBackend::GetValidDepthStencilFormat()
         });
@@ -477,7 +477,7 @@ struct TestBasicGfxApp final : AppCallbacks
 
             ImGui::DockSpaceOverMainViewport();
 
-            RenderViewport::DrawImGui(&mViewport);
+            ImGui::RenderViewport(&mViewport);
 
             ImGui::SetNextWindowSize(ImVec2(300, 200), ImGuiCond_FirstUseEver);
             if (ImGui::Begin("Scene")) {
@@ -496,7 +496,7 @@ struct TestBasicGfxApp final : AppCallbacks
     
     void OnEvent(const AppEvent& ev) override
     {
-        if (mCam && RenderViewport::CanReceiveMouseInput(&mViewport, ev))
+        if (mCam && ImGui::CanReceiveMouseInput(&mViewport, ev))
             mCam->HandleRotationMouse(ev, 0.2f, 0.1f);
 
         if (ev.type  == AppEventType::Iconified) 
