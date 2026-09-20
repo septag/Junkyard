@@ -56,6 +56,12 @@ static const char* DEBUGHUD_GRAPH_NAMES[uint32(DebugHudGraphType::_Count)] = {
     "GpuTime"
 };
 
+enum class DebugHudSide : uint32
+{
+    Right = 0,      // default
+    Left
+};
+
 struct DebugHudGraph
 {
     RingBlob values;    // entry type = float
@@ -73,12 +79,14 @@ struct DebugHudContext
     DebugHudGraph graphs[uint32(DebugHudGraphType::_Count)];
     bool enabledGraphs[uint32(DebugHudGraphType::_Count)];
     bool showMemStats;
+    DebugHudSide hudSide;
 
     uint32 monitorRefreshRate;
 
     String<256> statusText;
     Color4u statusColor;
     float statusShowTime;
+    float transparency = 0.8f;
 };
 
 static DebugHudContext gDebugHud;
@@ -141,7 +149,6 @@ namespace DebugHud
 
         // Calculate minimum and maximum
         for (uint32 i = 0; i < numValues; i++) {
-            avg += values[i];
             if (values[i] < minVal)
                 minVal = values[i];
             if (values[i] > maxVal)
@@ -183,15 +190,10 @@ namespace DebugHud
         float* values = tmpAlloc.MallocTyped<float>(graph.numSamples);
         uint32 numValues = uint32(graph.values.Peek(values, sizeof(float)*graph.numSamples)/sizeof(float));
 
-        if (isFrameTime) {
-            for (uint32 i = 0; i < numValues; i++)
-                values[i] = 33.0f - Min(values[i], 33.0f);
-        }
-
         ImGui::PushID((int)type);
-        ImGui::PushStyleVar(ImGuiStyleVar_Alpha, 0.8f);
+        ImGui::PushStyleVar(ImGuiStyleVar_Alpha, gDebugHud.transparency);
         ImVec4 textColor = ImGui::GetStyleColorVec4(ImGuiCol_Text);
-         if (isFrameTime) {
+        if (isFrameTime) {
             if (graph.avgValue >= 33.0f)        
                 textColor = ImGui::ColorToImVec4(COLOR4U_RED);
         }
@@ -211,7 +213,8 @@ namespace DebugHud
         else if (isFps && SettingsJunkyard::Get().graphics.enableVsync)
             plotMax = float(gDebugHud.monitorRefreshRate);
 
-        ImGui::PlotLines("##dt", values, (int)numValues, 0, overlay.CStr(), 0, plotMax, ImVec2(0, kLineSize*2));
+        ImGui::PlotLines("##dt", values, (int)numValues, 0, overlay.CStr(), 0, plotMax,
+                          ImVec2(ImGui::GetContentRegionAvail().x, kLineSize*2));
 
         ImGui::PopStyleColor();
         ImGui::PopStyleVar();
@@ -221,9 +224,11 @@ namespace DebugHud
 
     static void _DrawHudMenu()
     {
+        ImGui::PushStyleVar(ImGuiStyleVar_Alpha, gDebugHud.transparency);
         if (ImGui::ArrowButton("OpenContextMenu", ImGuiDir_Down)) {
             ImGui::OpenPopup("ContextMenu");
         }
+        ImGui::PopStyleVar();
 
         if (ImGui::BeginPopupContextItem("ContextMenu")) {
             for (uint32 i = 0; i < uint32(DebugHudGraphType::_Count); i++) {
@@ -234,6 +239,17 @@ namespace DebugHud
             ImGui::Separator();
 
             ImGui::MenuItem("Memory Stats", nullptr, &gDebugHud.showMemStats);
+
+            ImGui::Separator();
+
+            if (ImGui::MenuItem("Show on Right", nullptr, gDebugHud.hudSide == DebugHudSide::Right))
+                gDebugHud.hudSide = DebugHudSide::Right;
+            if (ImGui::MenuItem("Show on Left", nullptr, gDebugHud.hudSide == DebugHudSide::Left))
+                gDebugHud.hudSide = DebugHudSide::Left;
+
+            ImGui::Separator();
+
+            ImGui::SliderFloat("Transparency", &gDebugHud.transparency, 0.1f, 1.0f, "%.1f");
 
             ImGui::EndPopup();
         }
@@ -264,8 +280,12 @@ namespace DebugHud
 void DebugHud::DrawDebugHud(float dt, float yOffset)
 {
     const ImVec2 kDisplaySize = ImGui::GetIO().DisplaySize;
-    ImGui::SetNextWindowPos(ImVec2(0, yOffset), ImGuiCond_Always);
-    ImGui::SetNextWindowSize(ImVec2(kDisplaySize.x*0.33f, 0), ImGuiCond_Always);
+    const bool kHudOnRight = gDebugHud.hudSide == DebugHudSide::Right;
+    const ImVec2 kHudPivot(kHudOnRight ? 1.0f : 0.0f, 0.0f);
+    const float kHudPosX = kHudOnRight ? kDisplaySize.x : 0.0f;
+
+    ImGui::SetNextWindowPos(ImVec2(kHudPosX, yOffset), ImGuiCond_Always, kHudPivot);
+    ImGui::SetNextWindowSize(ImVec2(300, 0), ImGuiCond_Always);
     const uint32 kWndFlags = ImGuiWindowFlags_NoBackground|ImGuiWindowFlags_NoTitleBar|ImGuiWindowFlags_NoScrollbar|
                              ImGuiWindowFlags_NoMove|ImGuiWindowFlags_NoResize|ImGuiWindowFlags_NoInputs|
                              ImGuiWindowFlags_NoDocking|ImGuiWindowFlags_NoSavedSettings;
@@ -283,7 +303,7 @@ void DebugHud::DrawDebugHud(float dt, float yOffset)
     }
     ImGui::End();
 
-    ImGui::SetNextWindowPos(ImVec2(0, yOffset), ImGuiCond_Always);
+    ImGui::SetNextWindowPos(ImVec2(kHudPosX, yOffset), ImGuiCond_Always, kHudPivot);
     const uint32 kMenuWndFlags = ImGuiWindowFlags_NoBackground|ImGuiWindowFlags_NoTitleBar|ImGuiWindowFlags_NoScrollbar|
                                  ImGuiWindowFlags_NoMove|ImGuiWindowFlags_NoResize|ImGuiWindowFlags_AlwaysAutoResize|
                                  ImGuiWindowFlags_NoDocking|ImGuiWindowFlags_NoSavedSettings;
@@ -331,6 +351,8 @@ void DebugHud::Initialize()
     }
 
     gDebugHud.showMemStats = Str::ToBool(ImGui::GetSetting("DebugHud.MemStats"));
+    gDebugHud.hudSide = DebugHudSide(Str::ToInt(ImGui::GetSetting("DebugHud.Side")));
+    gDebugHud.transparency = Clamp(float(Str::ToDouble(ImGui::GetSetting("DebugHud.Transparency"))), 0.1f, 1.0f);
 }
 
 void DebugHud::Release()
@@ -344,6 +366,8 @@ void DebugHud::Release()
     }
 
     ImGui::SetSetting("DebugHud.MemStats", gDebugHud.showMemStats);
+    ImGui::SetSetting("DebugHud.Side", int(gDebugHud.hudSide));
+    ImGui::SetSetting("DebugHud.Transparency", gDebugHud.transparency);
 }
 
 void DebugHud::RegisterMemoryStats(const char* name, DebugHudMemoryStatsCallback callback, void* userData)

@@ -1062,6 +1062,13 @@ void ImGui::SetSetting(const char* key, int i)
     _SetSetting(key, istr);
 }
 
+void ImGui::SetSetting(const char* key, float f)
+{
+    char istr[32];
+    Str::PrintFmt(istr, sizeof(istr), "%.3f", f);
+    _SetSetting(key, istr);
+}
+
 void ImGui::ControlAlphaWithScroll(float* alpha)
 {
     gImGui.alphaControl = alpha;

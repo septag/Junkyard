@@ -65,6 +65,7 @@ namespace ImGui
     API const char* GetSetting(const char* key);
     API void SetSetting(const char* key, bool b);
     API void SetSetting(const char* key, int i);
+    API void SetSetting(const char* key, float f);
 
     API bool IsEnabled();
     API void BeginFrame(float dt);
