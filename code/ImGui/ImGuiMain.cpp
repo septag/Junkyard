@@ -787,7 +787,7 @@ void ImGui::DockSpaceOverMainViewport(ImGuiDockNodeFlags dockspaceFlags)
     ImGui::DockSpaceOverViewport(ImGui::GetID("MainDockSpace"), ImGui::GetMainViewport(), dockspaceFlags);
 }
 
-void ImGui::RenderViewport(RenderViewportContext* viewport)
+void ImGui::RenderViewport(RenderViewportContext* viewport, void(*extraDrawFn)(void* userData), void* userData)
 {
     ASSERT(viewport);
     if (!viewport->useImGuiViewport)
@@ -795,7 +795,13 @@ void ImGui::RenderViewport(RenderViewportContext* viewport)
 
     ImGui::SetNextWindowDockID(ImGui::GetID("MainDockSpace"), ImGuiCond_FirstUseEver);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
-    ImGui::Begin(viewport->name);
+    ImGui::Begin(viewport->name, nullptr, extraDrawFn ? ImGuiWindowFlags_MenuBar : ImGuiWindowFlags_None);
+    ImGui::PopStyleVar();   // Padding is captured by Begin, so don't let it leak into popups/menus
+
+    if (extraDrawFn && ImGui::BeginMenuBar()) {
+        extraDrawFn(userData);
+        ImGui::EndMenuBar();
+    }
 
     ImVec2 pos = ImGui::GetCursorScreenPos();
     ImVec2 avail = ImGui::GetContentRegionAvail();
@@ -810,7 +816,6 @@ void ImGui::RenderViewport(RenderViewportContext* viewport)
     viewport->hovered = ImGui::IsItemHovered();
 
     ImGui::End();
-    ImGui::PopStyleVar();
 }
 
 bool ImGui::CanReceiveMouseInput(const RenderViewportContext& viewport)

@@ -11,6 +11,7 @@ struct DebugDrawGridProperties
     float spacing = 1.0f;
     float boldSpacing = 5.0f;
     float distance = 20.0f;
+    float heightOffset = 0.1f;          // Lifts the grid above the ground (z=0) to avoid z-fighting with ground geometry
     Color4u lineColor = COLOR4U_WHITE;
     Color4u boldLineColor = COLOR4U_WHITE;
 };

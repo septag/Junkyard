@@ -71,7 +71,7 @@ namespace ImGui
     API void BeginFrame(float dt);
 
     API void DockSpaceOverMainViewport(ImGuiDockNodeFlags dockspaceFlags = ImGuiDockNodeFlags_None);
-    API void RenderViewport(RenderViewportContext* viewport);
+    API void RenderViewport(RenderViewportContext* viewport, void(*extraDrawFn)(void* userData) = nullptr, void* userData = nullptr);
     API bool CanReceiveMouseInput(const RenderViewportContext& viewport);
     API bool CanReceiveMouseInput(RenderViewportContext* viewport, const AppEvent& ev);
 

@@ -155,7 +155,7 @@ namespace DebugDraw
             .depthStencil = {
                 .depthTestEnable = true,
                 .depthWriteEnable = false,
-                .depthCompareOp = GfxCompareOp::Less
+                .depthCompareOp = GfxCompareOp::LessOrEqual
             },
             .msaa = {
                 .sampleCount = gDebugDraw.msaa
@@ -496,12 +496,14 @@ void DebugDraw::DrawGroundGrid(const Camera& cam, const DebugDrawGridProperties&
     ASSERT(w > 0);
     ASSERT(h > 0);
 
+    float z = props.heightOffset;
+
     _BeginDrawItem();
     for (float yoffset = snapbox.ymin; yoffset <= snapbox.ymax; yoffset += spacing) {
         DebugDrawVertex* v1 = gDebugDraw.vertices.Push();
         DebugDrawVertex* v2 = gDebugDraw.vertices.Push();
-        v1->pos = Float3(snapbox.xmin, yoffset, 0);
-        v2->pos = Float3(snapbox.xmax, yoffset, 0);
+        v1->pos = Float3(snapbox.xmin, yoffset, z);
+        v2->pos = Float3(snapbox.xmax, yoffset, z);
 
         v1->color = v2->color = (yoffset != 0.0f)
             ? (!M::IsEqual(M::Mod(yoffset, boldSpacing), 0.0f, 0.0001f) ? color : boldColor)
@@ -512,8 +514,8 @@ void DebugDraw::DrawGroundGrid(const Camera& cam, const DebugDrawGridProperties&
         DebugDrawVertex* v1 = gDebugDraw.vertices.Push();
         DebugDrawVertex* v2 = gDebugDraw.vertices.Push();
 
-        v1->pos = Float3(xoffset, snapbox.ymin, 0);
-        v2->pos = Float3(xoffset, snapbox.ymax, 0);
+        v1->pos = Float3(xoffset, snapbox.ymin, z);
+        v2->pos = Float3(xoffset, snapbox.ymax, z);
 
         v1->color = v2->color = (xoffset != 0.0f)
             ? (!M::IsEqual(M::Mod(xoffset, boldSpacing), 0.0f, 0.0001f) ? color : boldColor)

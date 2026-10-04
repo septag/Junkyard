@@ -1,5 +1,9 @@
 #pragma once
 
+// Renderer creates it's own Color and Depth framebuffers based on MSAA setting
+// So for FwdLight::Render function, passing finalColorImage and finalDepthImage means that we want to resolve MSAA to those buffers
+// If finalColorImage is empty, then it renders/resolves to swapchain
+
 #include "../Core/Base.h"
 #include "../Core/MathTypes.h"
 
