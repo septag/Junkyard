@@ -38,7 +38,7 @@ JsonContext* Json::Parse(const char* json5, uint32 json5Len, JsonErrorLocation* 
         .user_data = &tokens
     };
 
-    json5Len = json5Len == 0 ? json5Len : Str::Len(json5);
+    json5Len = json5Len == 0 ? Str::Len(json5) : json5Len;
     cj5_result r = cj5_parse_with_factory(json5, (int)json5Len, factory);
 
     if (r.error == CJ5_ERROR_NONE) {
@@ -50,10 +50,9 @@ JsonContext* Json::Parse(const char* json5, uint32 json5Len, JsonErrorLocation* 
         JsonContext* ctx = mallocator.Malloc(alloc);
 
         ctx->numTokens = tokens.Count();
-        memcpy(ctx->tokens, r.tokens, tokens.Count());
-        ctx->r.tokens = ctx->tokens;
-
+        memcpy(ctx->tokens, r.tokens, tokens.Count()*sizeof(cj5_token));
         ctx->r = r;
+        ctx->r.tokens = ctx->tokens;
         ctx->alloc = alloc;
 
         if (!mainAllocIsTemp)
