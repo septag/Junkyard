@@ -115,7 +115,7 @@ float4 PsMain(PsInput i) : SV_Target
 
     uint startIdx = index * MAX_LIGHTS_PER_TILE;
     uint offsetIdx = 0;
-    while (VisibleLightIndices[startIdx + offsetIdx] != -1) {
+    while (offsetIdx < MAX_LIGHTS_PER_TILE && VisibleLightIndices[startIdx + offsetIdx] != -1) {
         uint lightIdx = VisibleLightIndices[startIdx + offsetIdx];
         float3 lightPos = LocalLightBounds[lightIdx].position;
         float lightRadius = LocalLightBounds[lightIdx].radius;

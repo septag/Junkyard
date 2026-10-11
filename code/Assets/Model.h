@@ -155,10 +155,21 @@ struct ModelData
     GfxBufferHandle indexBuffer;
 };
 
+// Source models (GLTF) are Y-up (+Z forward), this converts them to Z-up
+// Conversion is +90 degrees rotation around X axis: (x, y, z) -> (x, -z, y). So the model's front ends up facing -Y
+enum class ModelUpAxisConversion : uint32
+{
+    None = 0,
+    BakeToVertices,     // Transforms vertex data (position/normal/tangent/binormal) and node transforms. For static meshes
+    RootTransform       // Vertices and nodes are untouched, conversion goes to ModelData::rootTransform. For skinned/animated meshes
+};
+
 // provide this for loading "Model" asset
-struct ModelLoadParams 
+// Note: This struct is hashed as raw bytes for asset caching, so keep it free of padding
+struct ModelLoadParams
 {
     GeometryVertexLayout layout;
+    ModelUpAxisConversion upAxisConversion = ModelUpAxisConversion::None;
 };
 
 namespace Model

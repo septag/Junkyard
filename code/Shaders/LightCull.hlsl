@@ -181,7 +181,8 @@ void CsMain(uint3 globalPos : SV_DispatchThreadID,
         for (uint i = 0; i < NumLightsInTile; i++) 
             VisibleLightIndices[startIdx + i] = LightIndicesInTile[i];
 
-        // TODO: Fix this. this can go out of bounds
-        VisibleLightIndices[startIdx + NumLightsInTile] = -1;
+        // A full tile has no sentinel, readers stop at MAX_LIGHTS_PER_TILE
+        if (NumLightsInTile < MAX_LIGHTS_PER_TILE)
+            VisibleLightIndices[startIdx + NumLightsInTile] = -1;
     }
 }

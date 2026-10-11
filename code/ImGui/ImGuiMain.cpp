@@ -67,6 +67,8 @@ struct ImGuiState
 
     HashTable<const char*> settingsCacheTable;
     INIFileContext settingsIni;
+
+    Blob droppedFiles;        // Paths of the files dropped on to the window, packed as null-terminated strings
 };
 
 ImGuiState gImGui;
@@ -340,7 +342,7 @@ namespace ImGui
 
     // Feeds a key press/release plus the matching modifier state into the ImGui event queue.
     // Events are pushed as they arrive, so press/release ordering within a frame is preserved.
-    static void _DispatchKeyEvent(InputKeycode keycode, bool down)
+    static void _DispatchKeyEvent(InputKeycode keycode, InputKeyModifiers keyMods, bool down)
     {
         ImGuiIO& io = GetIO();
 
@@ -353,7 +355,16 @@ namespace ImGui
         case InputKeycode::RightAlt:        io.AddKeyEvent(ImGuiMod_Alt, down);     break;
         case InputKeycode::LeftSuper:
         case InputKeycode::RightSuper:      io.AddKeyEvent(ImGuiMod_Super, down);   break;
-        default: break;
+        default:
+            // Release of a modifier can be missed (ie. Win key opens the start menu, which takes the focus before the
+            // key up). A stuck modifier breaks all the shortcuts, because they need an exact modifier match. So sync them
+            // with the OS state of the event on every regular key. Modifier keys themselves are handled above, because
+            // some platforms (GLFW/X11) report the modifier state of their own event before the change
+            io.AddKeyEvent(ImGuiMod_Shift, IsBitsSet<InputKeyModifiers>(keyMods, InputKeyModifiers::Shift));
+            io.AddKeyEvent(ImGuiMod_Ctrl, IsBitsSet<InputKeyModifiers>(keyMods, InputKeyModifiers::Ctrl));
+            io.AddKeyEvent(ImGuiMod_Alt, IsBitsSet<InputKeyModifiers>(keyMods, InputKeyModifiers::Alt));
+            io.AddKeyEvent(ImGuiMod_Super, IsBitsSet<InputKeyModifiers>(keyMods, InputKeyModifiers::Super));
+            break;
         }
 
         ImGuiKey key = _MapKeycode(keycode);
@@ -427,11 +438,20 @@ namespace ImGui
             break;
         
         case AppEventType::KeyDown:
-            _DispatchKeyEvent(ev.keycode, true);
+            _DispatchKeyEvent(ev.keycode, ev.keyMods, true);
             break;
-        
+
         case AppEventType::KeyUp:
-            _DispatchKeyEvent(ev.keycode, false);
+            _DispatchKeyEvent(ev.keycode, ev.keyMods, false);
+            break;
+
+        // Losing the focus releases all the keys and buttons in ImGui, since their release events go to other windows
+        case AppEventType::FocusGained:
+            io.AddFocusEvent(true);
+            break;
+
+        case AppEventType::FocusLost:
+            io.AddFocusEvent(false);
             break;
         
         case AppEventType::Char:
@@ -442,6 +462,17 @@ namespace ImGui
             _UpdateCursor();
             break;
         
+        case AppEventType::DropFiles: {
+                // Drop position decides the target item. Files are submitted as a drag and drop source in BeginFrame
+                Float2 scale(io.DisplayFramebufferScale.x, io.DisplayFramebufferScale.y);
+                io.AddMousePosEvent(ev.mouseX * scale.x, ev.mouseY * scale.y);
+
+                gImGui.droppedFiles.Reset();
+                for (uint32 i = 0; i < ev.numDroppedFiles; i++)
+                    gImGui.droppedFiles.Write(ev.droppedFiles[i], Str::Len(ev.droppedFiles[i]) + 1);
+            }
+            break;
+
         case AppEventType::Resized: {
                 io.DisplaySize = ImVec2(ev.framebufferWidth, ev.framebufferHeight);
                 float frameBufferScale = App::GetWindowDPIScale();
@@ -703,7 +734,8 @@ bool ImGui::InitializeSubsystem()
     Engine::RegisterProxyAllocator(&gImGui.alloc);
 
     gImGui.runtimeAlloc.Initialize(&gImGui.alloc, IMGUI_RUNTIME_HEAP_SIZE, settings.engine.debugAllocations);
-    
+    gImGui.droppedFiles.SetAllocator(&gImGui.runtimeAlloc);
+
     SetAllocatorFunctions(
         [](size_t size, void*)->void* { return Mem::Alloc(size, &gImGui.runtimeAlloc); },
         [](void* ptr, void*) { Mem::Free(ptr, &gImGui.runtimeAlloc); });
@@ -775,6 +807,17 @@ void ImGui::BeginFrame(float dt)
     }
     
     NewFrame();
+
+    // Dropped files are submitted as an external drag and drop source for a single frame. Targets accept it in this
+    // frame and it gets delivered in the next one (see AcceptDragDropPayload). Mouse is not down, so it's a drop
+    if (gImGui.droppedFiles.Size()) {
+        if (BeginDragDropSource(ImGuiDragDropFlags_SourceExtern|ImGuiDragDropFlags_SourceNoPreviewTooltip)) {
+            SetDragDropPayload(IMGUI_PAYLOAD_TYPE_DROPPED_FILES, gImGui.droppedFiles.Data(), gImGui.droppedFiles.Size());
+            EndDragDropSource();
+        }
+        gImGui.droppedFiles.Reset();
+    }
+
     ImGuizmo::BeginFrame();
     ImGuizmo::SetRect(0, 0, io.DisplaySize.x, io.DisplaySize.y);
 }
@@ -816,6 +859,41 @@ void ImGui::RenderViewport(RenderViewportContext* viewport, void(*extraDrawFn)(v
     viewport->hovered = ImGui::IsItemHovered();
 
     ImGui::End();
+}
+
+void ImGui::SetGizmoViewport(const RenderViewportContext& viewport)
+{
+    // By default, ImGuizmo draws into its own fullscreen window (see ImGuizmo::BeginFrame) and only takes the mouse
+    // when that window is the hovered one. With ImGui viewport panels, the panel window is hovered instead, so the
+    // gizmo never activates. Drawing into the panel's drawlist makes the panel the gizmo window
+    ImGuiWindow* window = viewport.useImGuiViewport ? ImGui::FindWindowByName(viewport.name) : nullptr;
+    if (window) {
+        ImGuizmo::SetDrawlist(window->DrawList);
+        ImGuizmo::SetRect(viewport.imguiPos.x, viewport.imguiPos.y, viewport.imguiSize.x, viewport.imguiSize.y);
+    }
+    else {
+        ImGuiIO& io = ImGui::GetIO();
+        ImGuizmo::SetRect(0, 0, io.DisplaySize.x, io.DisplaySize.y);
+    }
+}
+
+ImDrawList* ImGui::GetViewportDrawList(const RenderViewportContext& viewport, RectFloat* outScreenRect)
+{
+    ImGuiWindow* window = viewport.useImGuiViewport ? ImGui::FindWindowByName(viewport.name) : nullptr;
+    if (window) {
+        if (outScreenRect) {
+            *outScreenRect = RectFloat(viewport.imguiPos.x, viewport.imguiPos.y,
+                                       viewport.imguiPos.x + viewport.imguiSize.x, viewport.imguiPos.y + viewport.imguiSize.y);
+        }
+        return window->DrawList;
+    }
+    else {
+        if (outScreenRect) {
+            ImGuiIO& io = ImGui::GetIO();
+            *outScreenRect = RectFloat(0, 0, io.DisplaySize.x, io.DisplaySize.y);
+        }
+        return BeginFullscreenView();
+    }
 }
 
 bool ImGui::CanReceiveMouseInput(const RenderViewportContext& viewport)
@@ -1041,6 +1119,7 @@ void ImGui::ReleaseSubsystem()
     }
 
     _ReleaseSettings();
+    gImGui.droppedFiles.Free();
     gImGui.runtimeAlloc.Release();
     gImGui.alloc.Release();
 }
@@ -1077,6 +1156,26 @@ void ImGui::SetSetting(const char* key, float f)
 void ImGui::ControlAlphaWithScroll(float* alpha)
 {
     gImGui.alphaControl = alpha;
+}
+
+uint32 ImGui::AcceptDroppedFiles(Path* outPaths, uint32 maxPaths)
+{
+    ASSERT(outPaths);
+    ASSERT(maxPaths);
+
+    uint32 numPaths = 0;
+    if (BeginDragDropTarget()) {
+        if (const ImGuiPayload* payload = AcceptDragDropPayload(IMGUI_PAYLOAD_TYPE_DROPPED_FILES)) {
+            const char* path = (const char*)payload->Data;
+            const char* end = path + payload->DataSize;
+            while (path < end && numPaths < maxPaths) {
+                outPaths[numPaths++] = path;
+                path += Str::Len(path) + 1;
+            }
+        }
+        EndDragDropTarget();
+    }
+    return numPaths;
 }
 
 void ImGui::SeparatorVertical(float)

@@ -11,7 +11,10 @@
 
 #include "../Engine.h"
 
-inline constexpr float DEBUG_HUD_FRAGMENTATION_INTERVAL = 1.0f;
+inline constexpr uint32 DEBUG_HUD_STATUS_BAR_MAX_LINES = 4;
+inline constexpr uint32 DEBUG_HUD_STATUS_BAR_CAPACITY = DEBUG_HUD_STATUS_BAR_MAX_LINES + 1;  // +1 slot for the line that is scrolling out
+inline constexpr float DEBUG_HUD_STATUS_BAR_FADE_DURATION = 5.0f;
+inline constexpr float DEBUG_HUD_STATUS_BAR_SCROLL_DURATION = 0.1f;
 
 struct DebugHudMemStatsItem
 {
@@ -71,9 +74,27 @@ struct DebugHudGraph
     uint32 numSamples;
 };
 
+// Status lines are kept in a ring buffer (SoA). 'head' is the newest line
+// scrollOffset is in line units and lerps back to zero after each new line is pushed
+struct DebugHudStatusBarContext
+{
+    SpinLockMutex lock;
+
+    String<256> texts[DEBUG_HUD_STATUS_BAR_CAPACITY];
+    Color4u colors[DEBUG_HUD_STATUS_BAR_CAPACITY];
+    float showTimes[DEBUG_HUD_STATUS_BAR_CAPACITY];
+
+    uint32 head;
+    uint32 count;
+
+    float scrollFrom;
+    float scrollOffset;
+    float scrollTime;
+};
+
 struct DebugHudContext
 {
-    SpinLockMutex statusLock;
+    DebugHudStatusBarContext statusBar;
     DebugHudMemStats memStats;
 
     DebugHudGraph graphs[uint32(DebugHudGraphType::_Count)];
@@ -83,9 +104,6 @@ struct DebugHudContext
 
     uint32 monitorRefreshRate;
 
-    String<256> statusText;
-    Color4u statusColor;
-    float statusShowTime;
     float transparency = 0.8f;
 };
 
@@ -95,19 +113,29 @@ namespace DebugHud
 {
     static void _StatusBarLogCallback(const LogEntry& entry, void*)
     {
-        SpinLockMutexScope lock(gDebugHud.statusLock);
+        DebugHudStatusBarContext& sb = gDebugHud.statusBar;
+        SpinLockMutexScope lock(sb.lock);
 
-        gDebugHud.statusText = entry.text;  
-        gDebugHud.statusShowTime = 0;
+        uint32 index = (sb.head + 1) % DEBUG_HUD_STATUS_BAR_CAPACITY;
+        sb.head = index;
+        sb.count = Min(sb.count + 1, DEBUG_HUD_STATUS_BAR_CAPACITY);
+
+        sb.texts[index] = entry.text;
+        sb.showTimes[index] = 0;
 
         switch (entry.type) {
-        case LogLevel::Info:	gDebugHud.statusColor = COLOR4U_WHITE; break;
-        case LogLevel::Debug:	gDebugHud.statusColor = Color4u(0, 200, 200); break;
-        case LogLevel::Verbose:	gDebugHud.statusColor = Color4u(128, 128, 128); break;
-        case LogLevel::Warning:	gDebugHud.statusColor = COLOR4U_YELLOW; break;
-        case LogLevel::Error:	gDebugHud.statusColor = COLOR4U_RED; break;
-        default:			    gDebugHud.statusColor = COLOR4U_WHITE; break;
+        case LogLevel::Info:	sb.colors[index] = COLOR4U_WHITE; break;
+        case LogLevel::Debug:	sb.colors[index] = Color4u(0, 200, 200); break;
+        case LogLevel::Verbose:	sb.colors[index] = Color4u(128, 128, 128); break;
+        case LogLevel::Warning:	sb.colors[index] = COLOR4U_YELLOW; break;
+        case LogLevel::Error:	sb.colors[index] = COLOR4U_RED; break;
+        default:			    sb.colors[index] = COLOR4U_WHITE; break;
         }
+
+        // Restart scroll animation from wherever the lines currently are, pushed down by one more line
+        sb.scrollFrom = Min(sb.scrollOffset + 1.0f, float(DEBUG_HUD_STATUS_BAR_MAX_LINES));
+        sb.scrollOffset = sb.scrollFrom;
+        sb.scrollTime = 0;
     }
 
     static void _EventCallback(const AppEvent& ev, [[maybe_unused]] void* userData)
@@ -319,17 +347,37 @@ void DebugHud::DrawStatusBar(float dt)
 {
     ImGuiStyle& kStyle = ImGui::GetStyle();
     const ImVec2 kDisplaySize = ImGui::GetIO().DisplaySize;
-    const float kLineSize = ImGui::GetFrameHeightWithSpacing();
+    const float kLineSize = ImGui::GetFrameHeight();
 
-    SpinLockMutexScope lock(gDebugHud.statusLock);
+    const float kBaseY = kDisplaySize.y - kLineSize;
+
+    DebugHudStatusBarContext& sb = gDebugHud.statusBar;
+    SpinLockMutexScope lock(sb.lock);
     ImDrawList* fgDrawList = ImGui::GetForegroundDrawList();
-    float y = kDisplaySize.y - kLineSize;
-    gDebugHud.statusShowTime += dt;
-    float alpha = M::LinearStep(gDebugHud.statusShowTime, 0, 5.0f);
-    alpha = 1.0f - M::Gain(alpha, 0.05f);
-    gDebugHud.statusColor.a = uint8(alpha * 255.0f);
 
-    fgDrawList->AddText(ImVec2(kStyle.WindowPadding.x, y), gDebugHud.statusColor.n, gDebugHud.statusText.CStr());
+    sb.scrollTime += dt;
+    float scrollT = M::SmoothStep(sb.scrollTime, 0, DEBUG_HUD_STATUS_BAR_SCROLL_DURATION);
+    sb.scrollOffset = M::Lerp(sb.scrollFrom, 0, scrollT);
+
+    for (uint32 i = 0; i < sb.count; i++) {
+        uint32 index = (sb.head + DEBUG_HUD_STATUS_BAR_CAPACITY - i) % DEBUG_HUD_STATUS_BAR_CAPACITY;
+
+        // Normal time based fade out of each line
+        sb.showTimes[index] = Min(sb.showTimes[index] + dt, DEBUG_HUD_STATUS_BAR_FADE_DURATION);
+        float timeAlpha = 1.0f - M::Gain(M::LinearStep(sb.showTimes[index], 0, DEBUG_HUD_STATUS_BAR_FADE_DURATION), 0.05f);
+
+        // Position based fade: reaches zero when the line scrolls past the last visible slot
+        float linePos = float(i) - sb.scrollOffset;
+        float posAlpha = M::Saturate(1.0f - linePos/float(DEBUG_HUD_STATUS_BAR_MAX_LINES));
+
+        float alpha = timeAlpha*posAlpha;
+        if (alpha <= 0)
+            continue;
+
+        Color4u color = sb.colors[index];
+        color.a = uint8(alpha*255.0f);
+        fgDrawList->AddText(ImVec2(kStyle.WindowPadding.x, kBaseY - linePos*kLineSize), color.n, sb.texts[index].CStr());
+    }
 }
 
 void DebugHud::Initialize()

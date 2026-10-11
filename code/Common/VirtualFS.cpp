@@ -279,6 +279,36 @@ bool Vfs::StripMountPath(char* outPath, uint32 outPathSize, const char* path)
     return found;
 }
 
+bool Vfs::LocalPathToVfsPath(char* outPath, uint32 outPathSize, const char* localPath)
+{
+    // Mount paths are saved as absolute unix paths without the trailing slash (see MountLocal)
+    Path path = Path(localPath).GetAbsolute().ConvertToUnix();
+
+    // Nested mounts are possible, so pick the longest (most specific) match
+    uint32 foundIndex = UINT32_MAX;
+    for (uint32 i = 0; i < gVfs.mounts.Count(); i++) {
+        const VfsMountPoint& mount = gVfs.mounts[i];
+        if (mount.type != VfsMountType::Local || path.Length() <= mount.path.Length() || path[mount.path.Length()] != '/')
+            continue;
+
+        #if PLATFORM_WINDOWS
+        bool match = Str::IsEqualNoCaseCount(path.CStr(), mount.path.CStr(), mount.path.Length());
+        #else
+        bool match = Str::IsEqualCount(path.CStr(), mount.path.CStr(), mount.path.Length());
+        #endif
+
+        if (match && (foundIndex == UINT32_MAX || mount.path.Length() > gVfs.mounts[foundIndex].path.Length()))
+            foundIndex = i;
+    }
+
+    if (foundIndex == UINT32_MAX)
+        return false;
+
+    const VfsMountPoint& mount = gVfs.mounts[foundIndex];
+    Str::PrintFmt(outPath, outPathSize, "/%s%s", mount.alias.CStr(), path.CStr() + mount.path.Length());
+    return true;
+}
+
 #if PLATFORM_MOBILE
 bool Vfs::MountPackageBundle(const char* alias)
 {

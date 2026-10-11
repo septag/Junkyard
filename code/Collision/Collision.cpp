@@ -1013,25 +1013,26 @@ Span<CollisionRayHit> CollisionIsland::IntersectRay(CollisionRay ray, uint32 mas
     }
 }
 
-void CollisionIsland::DebugCollisionsGUI(float opacity, CollisionDebugMode mode, float heatmapLimit)
+void CollisionIsland::DebugCollisionsGUI(ImDrawList* drawList, const RectFloat& screenRect, float opacity,
+                                         CollisionDebugMode mode, float heatmapLimit)
 {
 #if CONFIG_DEBUG_COLLISIONS
+    ASSERT(drawList);
     CollisionIslandData* data = gCollision.islands.Data(mHandle);
-    ImDrawList* drawList = ImGui::BeginFullscreenView("DebugCollisions");
 
-    ImVec2 windowSize = ImGui::GetIO().DisplaySize;
-    drawList->AddRectFilled(ImVec2(0, 0), windowSize, Color4u(0, 0, 0, uint8(opacity*255)).n);
+    drawList->AddRectFilled(ImVec2(screenRect.xmin, screenRect.ymin), ImVec2(screenRect.xmax, screenRect.ymax),
+                            Color4u(0, 0, 0, uint8(opacity*255)).n);
     RectFloat mapRect = data->mapRect;
     RectFloat viewport = RectFloat::Expand(mapRect, Float2(mapRect.Width(), mapRect.Height())*0.05f);
     Mat4 viewToClipMat = Mat4::OrthoOffCenter(viewport.xmin, viewport.ymin, viewport.xmax, viewport.ymax, -10.0f, 10.0f);
     Mat4 worldToViewMat = Mat4::ViewLookAt(Float3(0, 0, 5), FLOAT3_ZERO, FLOAT3_UNITY);
     Mat4 worldToClipMat = viewToClipMat * worldToViewMat;
-    RectFloat screenViewport = RectFloat(0, 0, ImGui::GetIO().DisplaySize.x, ImGui::GetIO().DisplaySize.y);
+    RectFloat screenViewport;
 
     // TODO: This Letterbox code is a useful one, put it in a utility function
     {
-        float fbWidth = windowSize.x;
-        float fbHeight = windowSize.y;
+        float fbWidth = screenRect.Width();
+        float fbHeight = screenRect.Height();
         float imageWidth = mapRect.Width();
         float imageHeight = mapRect.Height();
         float scaleX = fbWidth /  imageWidth;
@@ -1040,8 +1041,8 @@ void CollisionIsland::DebugCollisionsGUI(float opacity, CollisionDebugMode mode,
 
         float vpwidth = imageWidth * scale;
         float vpheight = imageHeight * scale;
-        float x = (fbWidth - vpwidth) * 0.5f;
-        float y = (fbHeight - vpheight) * 0.5f;
+        float x = screenRect.xmin + (fbWidth - vpwidth) * 0.5f;
+        float y = screenRect.ymin + (fbHeight - vpheight) * 0.5f;
 
         screenViewport = RectFloat::CenterExtents(Float2(x + vpwidth*0.5f, y + vpheight*0.5f), Float2(vpwidth*0.5f, vpheight*0.5f));
     }
@@ -1099,26 +1100,28 @@ void CollisionIsland::DebugCollisionsGUI(float opacity, CollisionDebugMode mode,
 #endif  // CONFIG_DEBUG_COLLISIONS
 }
 
-void CollisionIsland::DebugRaycastGUI(float opacity, CollisionDebugRaycastMode mode, float heatmapLimit, const CollisionRay* rays, uint32 numRays)
+void CollisionIsland::DebugRaycastGUI(ImDrawList* drawList, const RectFloat& screenRect, float opacity,
+                                      CollisionDebugRaycastMode mode, float heatmapLimit, const CollisionRay* rays,
+                                      uint32 numRays)
 {
 #if CONFIG_DEBUG_COLLISIONS
+    ASSERT(drawList);
     CollisionIslandData* data = gCollision.islands.Data(mHandle);
-    ImDrawList* drawList = ImGui::BeginFullscreenView("CollisionRaycast");
-    ImVec2 windowSize = ImGui::GetIO().DisplaySize;
-    
-    drawList->AddRectFilled(ImVec2(0, 0), windowSize, Color4u(0, 0, 0, uint8(opacity*255)).n);
+
+    drawList->AddRectFilled(ImVec2(screenRect.xmin, screenRect.ymin), ImVec2(screenRect.xmax, screenRect.ymax),
+                            Color4u(0, 0, 0, uint8(opacity*255)).n);
 
     RectFloat mapRect = data->mapRect;
     RectFloat viewport = RectFloat::Expand(mapRect, Float2(mapRect.Width(), mapRect.Height())*0.05f);
     Mat4 viewToClipMat = Mat4::OrthoOffCenter(viewport.xmin, viewport.ymin, viewport.xmax, viewport.ymax, -10.0f, 10.0f);
     Mat4 worldToViewMat = Mat4::ViewLookAt(Float3(0, 0, 5), FLOAT3_ZERO, FLOAT3_UNITY);
     Mat4 worldToClipMat = viewToClipMat * worldToViewMat;
-    RectFloat screenViewport = RectFloat(0, 0, ImGui::GetIO().DisplaySize.x, ImGui::GetIO().DisplaySize.y);
+    RectFloat screenViewport;
 
     // TODO: This Letterbox code is a useful one, put it in a utility function
     {
-        float fbWidth = windowSize.x;
-        float fbHeight = windowSize.y;
+        float fbWidth = screenRect.Width();
+        float fbHeight = screenRect.Height();
         float imageWidth = mapRect.Width();
         float imageHeight = mapRect.Height();
         float scaleX = fbWidth /  imageWidth;
@@ -1127,8 +1130,8 @@ void CollisionIsland::DebugRaycastGUI(float opacity, CollisionDebugRaycastMode m
 
         float vpwidth = imageWidth * scale;
         float vpheight = imageHeight * scale;
-        float x = (fbWidth - vpwidth) * 0.5f;
-        float y = (fbHeight - vpheight) * 0.5f;
+        float x = screenRect.xmin + (fbWidth - vpwidth) * 0.5f;
+        float y = screenRect.ymin + (fbHeight - vpheight) * 0.5f;
 
         screenViewport = RectFloat::CenterExtents(Float2(x + vpwidth*0.5f, y + vpheight*0.5f), Float2(vpwidth*0.5f, vpheight*0.5f));
     }

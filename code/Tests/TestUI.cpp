@@ -74,12 +74,12 @@ struct TestUIApp final : AppCallbacks
 
     void Cleanup() override
     {
-        for (uint32 i = 0; i < IMAGE_GROUP_COUNT; i++) {
-            if (mImageGroups[i].GetState() != AssetGroupState::Idle)
-                mImageGroups[i].Unload();
-            mImageGroups[i].WaitForIdle();
-            Asset::DestroyGroup(mImageGroups[i]);
-        }
+        // Don't wait for the groups here: Groups that are still loading can't finish without rendering more frames
+        AssetHelperGroupUnloader groupUnloader;
+        groupUnloader.Initialize();
+        for (uint32 i = 0; i < IMAGE_GROUP_COUNT; i++)
+            groupUnloader.UnloadAndDestroy(mImageGroups[i]);
+        groupUnloader.Release();
 
         GfxBackend::DestroyImage(mProfileImage);
         RenderViewport::Release(&mViewport);

@@ -20,6 +20,9 @@
 
 #include "../Core/External/mgustavsson/ini.h"
 
+#include <shellapi.h>   // DragAcceptFiles, DragQueryFileW
+#pragma comment(lib, "shell32.lib")
+
 #if CONFIG_ENABLE_LIVEPP
 #include "../External/LivePP/API/x64/LPP_API_x64_CPP.h"
 #include "../External/LivePP/API/x64/LPP_API_Options.h"
@@ -556,6 +559,41 @@ namespace App
         }
     }
 
+    static void _DispatchDropFilesEvent(HDROP hdrop)
+    {
+        UINT numFiles = DragQueryFileW(hdrop, 0xFFFFFFFF, nullptr, 0);
+        if (numFiles) {
+            MemTempAllocator tempAlloc;
+            char* pathsData = Mem::AllocTyped<char>(numFiles*PATH_CHARS_MAX, &tempAlloc);
+            const char** paths = Mem::AllocTyped<const char*>(numFiles, &tempAlloc);
+
+            for (UINT i = 0; i < numFiles; i++) {
+                wchar_t pathWide[PATH_CHARS_MAX];
+                char* path = pathsData + i*PATH_CHARS_MAX;
+                path[0] = 0;
+                if (DragQueryFileW(hdrop, i, pathWide, CountOf(pathWide)))
+                    Str::WideToUtf8(pathWide, path, PATH_CHARS_MAX);
+                paths[i] = path;
+            }
+
+            // Drop point is in client coordinates. Mouse moves aren't received while dragging from the OS
+            POINT pt;
+            DragQueryPoint(hdrop, &pt);
+            gApp.mouseX = (fl32)pt.x * gApp.mouseScale;
+            gApp.mouseY = (fl32)pt.y * gApp.mouseScale;
+
+            AppEvent e = _NewEvent(AppEventType::DropFiles);
+            e.keyMods = GetKeyMods();
+            e.mouseX = gApp.mouseX;
+            e.mouseY = gApp.mouseY;
+            e.numDroppedFiles = numFiles;
+            e.droppedFiles = paths;
+            _CallEvent(e);
+        }
+
+        DragFinish(hdrop);
+    }
+
     static LRESULT CALLBACK _MessageHandlerCallback(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
     {
         if (!gApp.hwnd)
@@ -671,6 +709,17 @@ namespace App
                 _UpdateDisplayInfo();
                 _CallEvent(_NewEvent(AppEventType::DisplayUpdated));
                 break;
+            case WM_DROPFILES:
+                _DispatchDropFilesEvent((HDROP)wParam);
+                return 0;
+            case WM_SETFOCUS:
+                _CallEvent(_NewEvent(AppEventType::FocusGained));
+                break;
+            case WM_KILLFOCUS:
+                // Key releases after this point go to other windows, so held keys would get stuck
+                memset(gApp.keysPressed, 0x0, sizeof(gApp.keysPressed));
+                _CallEvent(_NewEvent(AppEventType::FocusLost));
+                break;
 
             default:
                 break;
@@ -781,6 +830,8 @@ namespace App
             NULL);                      /* lParam */
         if (!hwnd)
             return false;
+        if (gApp.desc.acceptDropFiles)
+            DragAcceptFiles(hwnd, TRUE);
         ShowWindow(hwnd, settings.launchMinimized ? SW_MINIMIZE : SW_SHOW);
         _UpdateWindowDimensions(hwnd);
         gApp.hwnd = hwnd;

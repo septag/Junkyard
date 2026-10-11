@@ -1,6 +1,8 @@
 #pragma once
 
-// Renderer creates it's own Color and Depth framebuffers based on MSAA setting
+// Every view owns the resources of its render path, so any number of views can be rendered in the same frame
+// FwdLight views create their own Color and Depth framebuffers based on MSAA setting, sized by RView::SetCamera viewSize.
+// They are (re)created in FwdLight::Update when the view size changes
 // So for FwdLight::Render function, passing finalColorImage and finalDepthImage means that we want to resolve MSAA to those buffers
 // If finalColorImage is empty, then it renders/resolves to swapchain
 
@@ -82,10 +84,11 @@ struct RView
     Mat4 GetWorldToClipMat() const;
 };
 
+// Each type is a separate render path with its own resources. Variations of a path should not be new types
 enum class RViewType
 {
-    FwdLight,
-    ShadowMap
+    FwdLight,       // Forward+ lighting. Owns MSAA targets, light culling and per-frame buffers
+    ShadowMap       // Depth only. Depth target is provided in ShadowMap::Render
 };
 
 namespace R 
@@ -94,8 +97,6 @@ namespace R
     void Release();
 
     void GetCompatibleLayout(GeometryVertexLayout& outLayout);
-    void ResizeFramebufferResources(uint16 width, uint16 height);
-
     RView CreateView(RViewType viewType);
     void DestroyView(RView& view);
 

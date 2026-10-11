@@ -359,7 +359,7 @@ void* MemTempAllocator::Realloc(void* ptr, size_t size, uint32 align)
         size_t addOffset = size;
         if (ptr) {
             lastSize = *((size_t*)ptr - 1);
-            ASSERT(size > lastSize);
+            ASSERT(size >= lastSize);
 
             if (memStack.lastAllocatedPtr == ptr) {
                 newPtr = ptr;

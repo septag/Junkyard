@@ -2,6 +2,7 @@
 
 #include "../Core/Base.h"
 #include "../Core/System.h"
+#include "../Core/Arrays.h"
 
 #include "../Common/CommonTypes.h"
 
@@ -112,6 +113,8 @@ struct AssetGroup
     void Unload();
 
     // Waits for assets to load. This is not recommended since it blocks the thread, unless you really have to
+    // Avoid calling it on the thread that records graphics command-buffers (usually main): With a separate transfer queue,
+    // GPU uploads only finish when the next graphics command-buffer begins, so the group may never become Loaded
     void WaitForLoad();    
     void WaitForIdle();
     bool IsValid() const;
@@ -201,6 +204,29 @@ struct AssetObjPtrScope
 private:
     AssetHandle mHandle;
     _T* mObjPtr;
+};
+
+// Unloads and destroys asset groups in any state. Calling AssetGroup::Unload directly is only safe on Loaded groups:
+//  - Before the load has started, Unload has no effect and the queued load still runs afterwards
+//  - While GPU uploads are pending, unloading frees resources that are still being transferred
+// So the groups that are still loading are unloaded once they are Loaded, then destroyed once they are Idle again
+// Groups must have AssetGroup::Load called on them if they have queued items, otherwise they never finish
+// Update should be called once per frame on the main thread
+struct AssetHelperGroupUnloader
+{
+    void Initialize(MemAllocator* alloc = Mem::GetDefaultAlloc());
+
+    // Issues Unload on the Loaded groups and destroys the Idle ones. The rest are left to the asset manager on release
+    void Release();
+
+    void UnloadAndDestroy(AssetGroup& group);     // Takes over the group and invalidates `group`. Create a new group to load again
+    void Update();
+
+    bool IsEmpty() const { return mGroups.IsEmpty(); }
+
+private:
+    Array<AssetGroup> mGroups;
+    Array<bool> mUnloadIssued;          // Same indices as mGroups
 };
 
 

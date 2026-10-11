@@ -51,6 +51,9 @@ enum class AppEventType
     UpdateCursor,
     ClipboardPasted,
     DisplayUpdated,
+    DropFiles,          // Files are dropped on to the window from the OS. See AppDesc::acceptDropFiles
+    FocusGained,        // Window gets the keyboard focus. Windows only
+    FocusLost,          // Window loses the keyboard focus. Keys that are held at this point are released. Windows only
     _Count,
 };
 
@@ -80,6 +83,8 @@ struct AppEvent
     uint16 windowHeight;
     uint16 framebufferWidth;
     uint16 framebufferHeight;
+    uint32 numDroppedFiles;         // DropFiles
+    const char** droppedFiles;      // DropFiles: Absolute paths (UTF-8). Only valid during the event callback
 };
 
 using AppEventCallback = void(*)(const AppEvent& ev, void* userData);
@@ -106,6 +111,7 @@ struct AppDesc
     bool userCursor           = true;
     bool enableClipboard      = true;
     bool updateWhenMinimized  = false;
+    bool acceptDropFiles      = false;  // Window accepts files dropped from the OS (AppEventType::DropFiles). Windows only
 };
 
 struct AppDisplayInfo

@@ -94,9 +94,6 @@ struct TestCollisionApp final : AppCallbacks
     float mDebugRaycastHeatLimit = 1;
 
     GfxImageHandle mCheckerImage;
-    uint16 mRendererResourceWidth = 0;
-    uint16 mRendererResourceHeight = 0;
-    bool mRendererResourcesDirty = true;
 
     void GatherGeometries(const GeometryData& geo, RView& view, const Mat4& localToWorldMat, bool highlight = false, 
                           bool checkerTexture = false)
@@ -368,12 +365,6 @@ struct TestCollisionApp final : AppCallbacks
         mCamera.HandleMovementKeyboard(dt, 20, 5);
         Engine::BeginFrame(dt);
         RenderViewport::PrepareRenderTargets(&mViewport);
-        if (mRendererResourcesDirty || mRendererResourceWidth != mViewport.width || mRendererResourceHeight != mViewport.height) {
-            R::ResizeFramebufferResources(mViewport.width, mViewport.height);
-            mRendererResourceWidth = mViewport.width;
-            mRendererResourceHeight = mViewport.height;
-            mRendererResourcesDirty = false;
-        }
         uint64 frameIdx = Engine::GetFrameIndex();
 
         UpdateShapes(dt*mSimulationSpeed);
@@ -534,9 +525,13 @@ struct TestCollisionApp final : AppCallbacks
 
             UpdateGUI();
 
+            RectFloat viewportRect;
+            ImDrawList* viewportDrawList = ImGui::GetViewportDrawList(mViewport, &viewportRect);
+
             if (mShowDebugGUI) {
                 if (mTestMode == TestMode::Collision) {
-                    mCollisionIsland.DebugCollisionsGUI(0.5f, mDebugCollisionsMode, mDebugCollisionsHeatLimit);
+                    mCollisionIsland.DebugCollisionsGUI(viewportDrawList, viewportRect, 0.5f, mDebugCollisionsMode,
+                                                        mDebugCollisionsHeatLimit);
                 }
                 else if (mTestMode == TestMode::Rayhit) {
                     CollisionRay ray {
@@ -545,19 +540,19 @@ struct TestCollisionApp final : AppCallbacks
                         .length = mRayLength
                     };
 
-                    mCollisionIsland.DebugRaycastGUI(0.5f, mDebugRaycastMode, mDebugRaycastHeatLimit, &ray, 1);
+                    mCollisionIsland.DebugRaycastGUI(viewportDrawList, viewportRect, 0.5f, mDebugRaycastMode,
+                                                     mDebugRaycastHeatLimit, &ray, 1);
                 }
             }
 
             if (mTestMode == TestMode::Rayhit) {
-                ImDrawList* drawList = ImGui::BeginFullscreenView("Crossair");
-                ImVec2 center = ImVec2(ImGui::GetIO().DisplaySize.x*0.5f, ImGui::GetIO().DisplaySize.y*0.5f);
-                drawList->AddCircle(center, 5, COLOR4U_YELLOW.n, 12, 4);
+                Float2 center = RectFloat::Center(viewportRect);
+                viewportDrawList->AddCircle(ImVec2(center.x, center.y), 5, COLOR4U_YELLOW.n, 12, 4);
             }
             else if (mTestMode == TestMode::Intersection) {
                 ImGuizmo::SetOrthographic(false);
                 ImGuizmo::AllowAxisFlip(false);
-                ImGuizmo::SetRect(mViewport.imguiPos.x, mViewport.imguiPos.y, mViewport.imguiSize.x, mViewport.imguiSize.y);
+                ImGui::SetGizmoViewport(mViewport);
                 Mat4 proj = mCamera.GetPerspectiveMat(float(mViewport.width), float(mViewport.height));
                 proj.m22 *= -1.0f;      // YIKES!
 
@@ -586,7 +581,6 @@ struct TestCollisionApp final : AppCallbacks
 
         if (ev.type == AppEventType::Resized) {
             RenderViewport::OnFramebufferResized(&mViewport, ev.framebufferWidth, ev.framebufferHeight);
-            mRendererResourcesDirty = true;
         }
     }
 };

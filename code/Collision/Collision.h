@@ -9,6 +9,8 @@ inline constexpr uint32 COLLISION_MAX_POLYGON_VERTICES = 8; // = C2_MAX_POLYGON_
 
 DEFINE_HANDLE(CollisionIslandHandle);
 
+struct ImDrawList;
+
 using CollisionEntityId = uint32;
 
 // Internally maps to c2Poly in cute_c2.h 
@@ -158,8 +160,12 @@ struct CollisionIsland
     Span<CollisionEntityId> IntersectBox(const CollisionShapeBox& box, uint32 mask, MemAllocator* alloc = Mem::GetDefaultAlloc());
     Span<CollisionRayHit> IntersectRay(CollisionRay ray, uint32 mask, MemAllocator* alloc = Mem::GetDefaultAlloc());
 
-    void DebugCollisionsGUI(float opacity, CollisionDebugMode mode, float heatmapLimit);
-    void DebugRaycastGUI(float opacity, CollisionDebugRaycastMode mode, float heatmapLimit, const CollisionRay* rays, uint32 numRays);
+    // Top-down debug views drawn with ImGui. `screenRect` is the area of the drawlist to draw into (ie. a viewport)
+    // See ImGui::GetViewportDrawList
+    void DebugCollisionsGUI(ImDrawList* drawList, const RectFloat& screenRect, float opacity, CollisionDebugMode mode,
+                            float heatmapLimit);
+    void DebugRaycastGUI(ImDrawList* drawList, const RectFloat& screenRect, float opacity, CollisionDebugRaycastMode mode,
+                         float heatmapLimit, const CollisionRay* rays, uint32 numRays);
     void DebugShapeBounds();
 
     uint32 GetCellCount(uint32* outNumCellsX, uint32* outNumCellsY);

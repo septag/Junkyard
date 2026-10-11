@@ -20,7 +20,7 @@
 #include "../Tool/MeshOptimizer.h"
 
 static constexpr uint32 MODEL_ASSET_TYPE = MakeFourCC('M', 'O', 'D', 'L');
-static constexpr uint32 MODEL_ASSET_CACHE_VERSION = 3;
+static constexpr uint32 MODEL_ASSET_CACHE_VERSION = 5;
 
 struct ModelVertexAttribute
 {
@@ -126,6 +126,43 @@ namespace ModelUtil
 
                 *((Float3*)(bitangentPtr + bitangentStride*i)) = Float3Cross(n, tangent) * -handedness;
             }
+        }
+    }
+
+    // Y-up to Z-up basis change (C): Vertex data gets rotated by C and node local transforms get conjugated (C*T*C^-1)
+    // So the world transforms of the hierarchy are equal to C*T(root)*...*T(node)
+    static void _ConvertYUpToZUp(ModelData* model, GeometryCpuBuffers* cpuBuffers)
+    {
+        auto ConvertDir = [](Float3 v)->Float3 { return Float3(v.x, -v.z, v.y); };
+
+        static const char* VERTEX_SEMANTICS[] = {"POSITION", "NORMAL", "TANGENT", "BINORMAL"};
+        const GeometryVertexLayout& layout = model->layout;
+
+        for (uint32 i = 0; i < model->numMeshes; i++) {
+            ModelMesh& mesh = model->meshes[i];
+
+            for (const char* semantic : VERTEX_SEMANTICS) {
+                const GfxVertexInputAttributeDesc* attr = layout.FindAttribute(semantic, 0);
+                if (!attr)
+                    continue;
+                ASSERT_ALWAYS(attr->format == GfxFormat::R32G32B32_SFLOAT || attr->format == GfxFormat::R32G32B32A32_SFLOAT,
+                              "Vertex attribute %s: Only float3/float4 formats are supported for up-axis conversion", semantic);
+
+                uint32 stride = 0;
+                uint8* ptr = model->layout.GetVertexAttributePointer(mesh.vertexBufferOffsets, *cpuBuffers, semantic, 0, stride);
+                for (uint32 v = 0; v < mesh.numVertices; v++) {
+                    Float3* p = (Float3*)(ptr + stride*v);
+                    *p = ConvertDir(*p);
+                }
+            }
+        }
+
+        // Conjugating TRS with C: rotation axis is transformed by C (angle stays the same) and scale axes get swapped
+        for (uint32 i = 0; i < model->numNodes; i++) {
+            ModelTransform& xform = model->nodes[i].localTransform;
+            xform.position = ConvertDir(xform.position);
+            xform.rotation = Quat(xform.rotation.x, -xform.rotation.z, xform.rotation.y, xform.rotation.w);
+            xform.scale = Float3(xform.scale.x, xform.scale.z, xform.scale.y);
         }
     }
 
@@ -757,6 +794,12 @@ namespace GLTF
 
             _SetupBuffers(dstMesh, cpuBuffers, layout, mesh);
         }
+
+        // Up-axis conversion. Must happen before calculating bounds
+        if (params.upAxisConversion == ModelUpAxisConversion::BakeToVertices)
+            ModelUtil::_ConvertYUpToZUp(model, cpuBuffers);
+        else if (params.upAxisConversion == ModelUpAxisConversion::RootTransform)
+            model->rootTransform.rotation = Quat::RotateX(M_HALFPI);
 
         // Bounds
         for (uint32 i = 0; i < (uint32)data->nodes_count; i++) {

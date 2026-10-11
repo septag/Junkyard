@@ -15,10 +15,6 @@
     #endif
 #endif
 
-#ifndef CONFIG_DEBUG_GFXBACKEND
-    #define CONFIG_DEBUG_GFXBACKEND 0
-#endif
-
 // Graphics
 // Enables this feature (pImmutableSamplers): https://docs.vulkan.org/refpages/latest/refpages/source/VkDescriptorSetLayoutBinding.html
 #ifndef CONFIG_GFX_IMMUTABLE_SAMPLERS

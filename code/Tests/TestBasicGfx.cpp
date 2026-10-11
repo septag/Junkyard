@@ -114,11 +114,9 @@ struct ModelScene
         mSampler = GfxBackend::CreateSampler(samplerDesc);
 
         mShader = Shader::Load("/shaders/Model.hlsl", ShaderLoadParams{}, initAssetGroup);
-
-        mAssetGroup = Asset::CreateGroup();
     }
 
-    void Release()
+    void Release(AssetHelperGroupUnloader& groupUnloader)
     {
         String32 posSetting = String32::Format("%s.CamPos", mName.CStr());
         String32 targetSetting = String32::Format("%s.CamTarget", mName.CStr());
@@ -129,7 +127,7 @@ struct ModelScene
         Float3 target = mCam.Position() + mCam.Forward();
         Settings::SetValue(targetSetting.CStr(), String64::Format("%.2f,%.2f,%.2f", target.x, target.y, target.z).CStr());
 
-        Unload();
+        Unload(groupUnloader);
         GfxBackend::DestroyBuffer(mUniformBuffer);
         GfxBackend::DestroySampler(mSampler);
     }
@@ -232,13 +230,17 @@ struct ModelScene
             }
         };
 
+        // A new group for every load: The previous one can still be in the unloader, waiting for its load to finish
+        ASSERT(!mAssetGroup.IsValid());
+        mAssetGroup = Asset::CreateGroup();
         mModel = Model::Load(mModelFilepath.CStr(), modelParams, mAssetGroup);
         mAssetGroup.Load();
     }
 
-    void Unload()
+    void Unload(AssetHelperGroupUnloader& groupUnloader)
     {
-        mAssetGroup.Unload();
+        groupUnloader.UnloadAndDestroy(mAssetGroup);  // Also invalidates mAssetGroup
+        mModel = {};
 
         GfxBackend::DestroyPipeline(mPipeline);
         GfxBackend::DestroyPipelineLayout(mPipelineLayout);
@@ -349,6 +351,7 @@ struct TestBasicGfxApp final : AppCallbacks
     bool mFirstTime = true;
     bool mMinimized = false;
     bool mDrawGrid = true;
+    AssetHelperGroupUnloader mGroupUnloader;
 
     static void InitializeResources(void* userData)
     {
@@ -384,6 +387,8 @@ struct TestBasicGfxApp final : AppCallbacks
         if constexpr (PLATFORM_APPLE || PLATFORM_ANDROID)
             mDrawGrid = false;
 
+        mGroupUnloader.Initialize();
+
         return true;
     };
 
@@ -392,7 +397,8 @@ struct TestBasicGfxApp final : AppCallbacks
         Settings::SetValue("TestBasicGfx.SelectedScene", String32::Format("%u", mSelectedSceneIdx).CStr());
 
         for (uint32 i = 0; i < CountOf(TESTBASICGFX_MODELS); i++)
-            mModelScenes[i].Release();
+            mModelScenes[i].Release(mGroupUnloader);
+        mGroupUnloader.Release();
 
         RenderViewport::Release(&mViewport);
 
@@ -415,6 +421,7 @@ struct TestBasicGfxApp final : AppCallbacks
         mCam->HandleMovementKeyboard(dt, 20.0f, 5.0f);
 
         Engine::BeginFrame(dt);
+        mGroupUnloader.Update();
 
         RenderViewport::PrepareRenderTargets(&mViewport);
 
@@ -460,7 +467,7 @@ struct TestBasicGfxApp final : AppCallbacks
                     for (uint32 i = 0; i < CountOf(TESTBASICGFX_MODELS); i++) {
                         if (ImGui::MenuItem(mModelScenes[i].mName.CStr(), nullptr, mSelectedSceneIdx == i)) {
                             if (i != mSelectedSceneIdx) {
-                                mModelScenes[mSelectedSceneIdx].Unload();
+                                mModelScenes[mSelectedSceneIdx].Unload(mGroupUnloader);
                                 mSelectedSceneIdx = i;
                                 mModelScenes[i].Load();
                                 mCam = &mModelScenes[i].mCam;

@@ -78,6 +78,9 @@ struct TestAssetApp : AppCallbacks
     Camera*     mCam;
 
     Grid mGrid;
+    AssetHelperGroupUnloader mGroupUnloader;
+    TimerStopWatch mLoadAllTimer;
+    bool mLoadAllPending = false;
     bool mMinimized = false;
 
     struct Vertex 
@@ -135,7 +138,6 @@ struct TestAssetApp : AppCallbacks
             cells[i].col = i % gridDim;    
             cells[i].row = i / gridDim;    
             cells[i].name = String32::Format("%02u,%02u", cells[i].row, cells[i].col);  // row, col
-            cells[i].assetGroup = Asset::CreateGroup();
             if (!cells[i].files.IsEmpty()) {
                 cells[i].items = Mem::AllocZeroTyped<CellItem>(cells[i].files.Count()); 
                 float numCubesPerDim = Ceil(Sqrt(float(cells[i].files.Count())));
@@ -169,14 +171,30 @@ struct TestAssetApp : AppCallbacks
     void DestroyGrid()
     {
         for (uint32 i = 0; i < mGrid.numCells; i++) {
-            mGrid.cells[i].assetGroup.Unload();
+            UnloadCell(i);
             Mem::Free(mGrid.cells[i].items);
         }
+    }
+
+    // Cells get a new group for every load: The previous one can still be in the unloader, waiting for its load to finish
+    AssetGroupState GetCellState(uint32 index) const
+    {
+        const Cell& cell = mGrid.cells[index];
+        return cell.assetGroup.IsValid() ? cell.assetGroup.GetState() : AssetGroupState::Idle;
+    }
+
+    void UnloadCell(uint32 index)
+    {
+        Cell& cell = mGrid.cells[index];
+        cell.loaded = false;
+        mGroupUnloader.UnloadAndDestroy(cell.assetGroup);     // Also invalidates the group
     }
 
     void LoadCell(uint32 index)
     {
         Cell& cell = mGrid.cells[index];
+        ASSERT(!cell.assetGroup.IsValid());
+        cell.assetGroup = Asset::CreateGroup();
 
         MemTempAllocator paramsAlloc;
         ImageLoadParams imageParams {};
@@ -207,30 +225,31 @@ struct TestAssetApp : AppCallbacks
         cell.loaded = true;
     }
 
+    // Doesn't block: Groups only finish loading after their GPU uploads are done, which needs the following frames
+    // to begin graphics command-buffers. See UpdateLoadAll
     void LoadAll()
     {
-        TimerStopWatch timer;
+        mLoadAllTimer.Reset();
+        mLoadAllPending = true;
         for (uint32 i = 0; i < mGrid.numCells; i++) {
-            LoadCell(i);            
+            if (!mGrid.cells[i].assetGroup.IsValid())
+                LoadCell(i);
         }
-        Asset::Update();
+    }
 
-        while (true) {
-            uint32 numLoaded = 0;
-            for (uint32 i = 0; i < mGrid.numCells; i++) {
-                Cell& cell = mGrid.cells[i];
-                if (cell.assetGroup.IsLoadFinished()) 
-                    numLoaded++;
-            }
+    void UpdateLoadAll()
+    {
+        if (!mLoadAllPending)
+            return;
 
-            if (numLoaded == mGrid.numCells)
-                break;
-            else {
-                Asset::Update();
-            }
+        for (uint32 i = 0; i < mGrid.numCells; i++) {
+            const Cell& cell = mGrid.cells[i];
+            if (cell.assetGroup.IsValid() && !cell.assetGroup.IsLoadFinished())
+                return;
         }
 
-        LOG_INFO("Load finished: %0.2f ms", timer.ElapsedMS());
+        LOG_INFO("Load finished: %0.2f ms", mLoadAllTimer.ElapsedMS());
+        mLoadAllPending = false;
     }
 
     void DrawCell(GfxCommandBuffer cmd, uint32 index)
@@ -337,6 +356,7 @@ struct TestAssetApp : AppCallbacks
         LOG_INFO("Ready. Total %u files", mNumFilePaths);
 
         CreateGrid();
+        mGroupUnloader.Initialize();
 
         return true;
     };
@@ -344,6 +364,7 @@ struct TestAssetApp : AppCallbacks
     void Cleanup() override
     {
         DestroyGrid();
+        mGroupUnloader.Release();
 
         ReleaseGraphicsObjects();
         Engine::Release();
@@ -375,7 +396,7 @@ struct TestAssetApp : AppCallbacks
                         uint32 index = col + row*mGrid.dim;
                         if (index < mGrid.numCells) {
                             Cell& cell = mGrid.cells[index];
-                            AssetGroupState state = cell.assetGroup.GetState();
+                            AssetGroupState state = GetCellState(index);
                             ImGui::PushStyleColor(ImGuiCol_Button, GetCellStateColor(state));
                             ImGui::SetNextItemAllowOverlap();
                             if (ImGui::Selectable(String32::Format("##%s", cell.name.CStr()).CStr(), mGrid.selectedCell == index, ImGuiSelectableFlags_None)) 
@@ -384,13 +405,11 @@ struct TestAssetApp : AppCallbacks
                             ImGui::SmallButton(cell.name.CStr());
                             
                             if (ImGui::IsItemClicked(ImGuiMouseButton_Left)) {
-                                if (state == AssetGroupState::Idle) {
+                                if (!cell.assetGroup.IsValid())
                                     LoadCell(index);
-                                }
                             }
                             else if (ImGui::IsItemClicked(ImGuiMouseButton_Right)) {
-                                cell.loaded = false;
-                                cell.assetGroup.Unload();
+                                UnloadCell(index);
                             }
                             ImGui::PopStyleColor();
                         }
@@ -439,6 +458,8 @@ struct TestAssetApp : AppCallbacks
         mCam->HandleMovementKeyboard(dt, 40.0f, 20.0f);
 
         Engine::BeginFrame(dt);
+        mGroupUnloader.Update();
+        UpdateLoadAll();
         GfxCommandBuffer cmd = GfxBackend::BeginCommandBuffer(GfxQueueType::Graphics);
         
         RenderViewport::PrepareRenderTargets(&mViewport);

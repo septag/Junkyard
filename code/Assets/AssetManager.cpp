@@ -127,7 +127,9 @@ struct alignas(CACHE_LINE_SIZE) AssetDataHeader
     AssetParams* params;
     AssetDataInternal* data;
     AssetTypeFlags typeFlags;
-    STRUCT_PADDING_12_BYTES();
+    AtomicUint32 numPendingLoads;       // While loading: GPU objects being uploaded + 1 for the load task itself. See _FinishPendingAssetLoad
+    AssetGroupHandle loadGroupHandle;   // Group that is loading the asset. Invalid for hot-reloads
+    STRUCT_PADDING_4_BYTES();
 };
 
 enum AssetLoadTaskInputType
@@ -182,6 +184,7 @@ struct AssetGroupInternal
     Array<AssetHandle> loadList;
     Array<AssetHandle> handles;
     AtomicUint32 state; // AssetGroupState
+    AtomicUint32 numPendingAssets;  // While loading: Assets that are not fully loaded yet + 1 for the load task itself
     bool hotReloadGroup;    // HotReload group is a special group that behaves differently and destroys itself after done
 };
 
@@ -196,7 +199,6 @@ struct AssetQueuedItem
     const char* filepath;
     Path bakedFilepath;
     bool saveBaked;
-    bool hasPendingGpuResource;
 };
 
 enum class AssetServerBlobType : uint32
@@ -314,6 +316,8 @@ namespace Asset
     [[maybe_unused]] static void _OnFileChanged(const char* filepath);
     static void _UnloadDatasManually(Span<AssetDataPair> datas);
     static void _GpuResourceFinishedCallback(void* userData);
+    static void _FinishPendingAssetLoad(AssetHandle handle);
+    static void _FinishPendingGroupLoad(AssetGroupHandle groupHandle);
 } // Asset
 
 constexpr AssetPlatform::Enum Asset::_GetCurrentPlatform()
@@ -328,17 +332,54 @@ constexpr AssetPlatform::Enum Asset::_GetCurrentPlatform()
     }
 }
 
+// Loading an asset finishes in two places, which can happen in any order and on different threads:
+//  - The load task, after the asset data is assigned to the header (see _LoadGroupTask)
+//  - Upload of each GPU object of the asset. This can be delayed to the next graphics command-buffer for separate
+//    transfer queues, because the ownership transfer barrier is recorded there (see GfxBackend::BeginCommandBuffer)
+// numPendingLoads counts both, and whoever finishes last marks the asset as Loaded. The group does the same with its assets
 static void Asset::_GpuResourceFinishedCallback(void* userData)
 {
     AssetHandle handle = AssetHandle(PtrToInt<uint32>(userData));
     ASSERT(handle.IsValid());
+    _FinishPendingAssetLoad(handle);
+}
 
-    ReadWriteMutexReadScope rdlock(gAssetMan.assetMutex);
-    if (gAssetMan.assetDb.IsValid(handle)) {
+static void Asset::_FinishPendingAssetLoad(AssetHandle handle)
+{
+    AssetGroupHandle groupHandle;
+    {
+        ReadWriteMutexReadScope rdlock(gAssetMan.assetMutex);
+        if (!gAssetMan.assetDb.IsValid(handle))
+            return;     // Unloaded before uploads are finished
+
         AssetDataHeader* header = gAssetMan.assetDb.Data(handle);
+        ASSERT(Atomic::Load(&header->numPendingLoads));
+        if (Atomic::FetchSub(&header->numPendingLoads, 1) != 1)
+            return;
 
         AtomicUint32 expected = uint32(AssetState::Loading);
-        Atomic::CompareExchange_Weak(&header->state, &expected, uint32(AssetState::Loaded));
+        Atomic::CompareExchange_Strong(&header->state, &expected, uint32(AssetState::Loaded));
+        groupHandle = header->loadGroupHandle;
+        header->loadGroupHandle = {};
+    }
+
+    // Separate scope to keep the lock order of the rest of the code (groupsMutex -> assetMutex)
+    if (groupHandle.IsValid())
+        _FinishPendingGroupLoad(groupHandle);
+}
+
+static void Asset::_FinishPendingGroupLoad(AssetGroupHandle groupHandle)
+{
+    ReadWriteMutexReadScope rdlock(gAssetMan.groupsMutex);
+    if (!gAssetMan.groups.IsValid(groupHandle))
+        return;     // Destroyed before uploads are finished
+
+    AssetGroupInternal& group = gAssetMan.groups.Data(groupHandle);
+    ASSERT(Atomic::Load(&group.numPendingAssets));
+    if (Atomic::FetchSub(&group.numPendingAssets, 1) == 1) {
+        // Group can already be unloading if Unload() is called before the uploads are finished
+        AtomicUint32 expected = uint32(AssetGroupState::Loading);
+        Atomic::CompareExchange_Strong(&group.state, &expected, uint32(AssetGroupState::Loaded));
     }
 }
 
@@ -1244,21 +1285,34 @@ static void Asset::_LoadGroupTask(uint32, void* userData)
         Array<AssetImageDescHandlePair> images(tempAlloc);
         Array<AssetBufferDescHandlePair> buffers(tempAlloc);
 
+        // Pending loads must be set before creating GPU objects, because upload callbacks can fire right away
+        // Every queued asset holds one pending load on the group, and the load task holds one on every asset and the group
+        if (!isHotReloadGroup) {
+            ReadWriteMutexReadScope rdlock(gAssetMan.groupsMutex);
+            AssetGroupInternal& group = gAssetMan.groups.Data(groupHandle);
+            Atomic::Store(&group.numPendingAssets, queuedAssets.Count() + 1);
+        }
+
         for (uint32 i = 0; i < queuedAssets.Count(); i++) {
             AssetQueuedItem& qa = queuedAssets[i];
+            uint32 numGpuObjects = 0;
             AssetDataInternal::GpuObject* gpuObj = qa.data->gpuObjects.Get();
             while (gpuObj) {
                 if (gpuObj->type == AssetDataInternal::GpuObjectType::Buffer) {
                     buffers.Push(AssetBufferDescHandlePair(&gpuObj->bufferDesc, loadListHandles[qa.indexInLoadList]));
-                    qa.hasPendingGpuResource = true;
+                    ++numGpuObjects;
                 }
                 else if (gpuObj->type == AssetDataInternal::GpuObjectType::Image) {
                     images.Push(AssetImageDescHandlePair(&gpuObj->imageDesc, loadListHandles[qa.indexInLoadList]));
-                    qa.hasPendingGpuResource = true;
+                    ++numGpuObjects;
                 }
 
                 gpuObj = gpuObj->next.Get();
             }
+
+            AssetDataHeader* header = loadList[qa.indexInLoadList];
+            header->loadGroupHandle = isHotReloadGroup ? AssetGroupHandle() : groupHandle;
+            Atomic::Store(&header->numPendingLoads, numGpuObjects + 1);
         }
 
         JobsSignal gpuObjectsSignal;
@@ -1384,14 +1438,10 @@ static void Asset::_LoadGroupTask(uint32, void* userData)
     }
     tempAlloc->Reset();
 
-    // Set loaded flag to all newly loaded assets, except the assets that has GPU resources
-    // For those we have to wait for GPU data upload to finish submission. See _GpuResourceFinishedCallback
-    for (AssetQueuedItem& qa : queuedAssets) {
-        if (!qa.hasPendingGpuResource) {
-            AssetDataHeader* header = loadList[qa.indexInLoadList];
-            Atomic::StoreExplicit(&header->state, uint32(AssetState::Loaded), AtomicMemoryOrder::Relaxed);
-        }
-    }
+    // Data is assigned, release the load task's pending load on every asset. Assets without GPU objects (or with
+    // already uploaded ones) become Loaded here, the rest when their uploads are finished. See _FinishPendingAssetLoad
+    for (AssetQueuedItem& qa : queuedAssets)
+        _FinishPendingAssetLoad(loadListHandles[qa.indexInLoadList]);
 
     // HOT-RELOAD: now we have the previous data and newly loaded asset. Run the callbacks to do asset post-processing 
     if (isHotReloadGroup && !queuedAssets.IsEmpty()) {
@@ -1425,10 +1475,10 @@ static void Asset::_LoadGroupTask(uint32, void* userData)
     // Reset arena allocators, getting ready for the next group
     gAssetMan.memArena->Reset();
 
+    // Release the load task's pending load on the group. Group becomes Loaded when all of its assets are Loaded, which
+    // can be later than this if there are GPU uploads pending
     if (!isHotReloadGroup) {
-        ReadWriteMutexReadScope rdlock(gAssetMan.groupsMutex);
-        AssetGroupInternal& group = gAssetMan.groups.Data(groupHandle);
-        Atomic::StoreExplicit(&group.state, uint32(AssetGroupState::Loaded), AtomicMemoryOrder::Release);
+        _FinishPendingGroupLoad(groupHandle);
     }
     else {
         {
@@ -1929,6 +1979,14 @@ void Asset::Release()
         gAssetMan.curJob = nullptr;
     }
 
+    // Groups that are still loaded would leak their asset data and GPU objects, so unload them as well
+    // Unload() doesn't add a duplicate job for the groups that already have a pending unload
+    for (uint32 i = 0; i < gAssetMan.groups.Count(); i++) {
+        AssetGroupInternal& group = gAssetMan.groups.Data(i);
+        if (AssetGroupState(Atomic::LoadExplicit(&group.state, AtomicMemoryOrder::Acquire)) == AssetGroupState::Loaded)
+            AssetGroup { .mHandle = gAssetMan.groups.HandleAt(i) }.Unload();
+    }
+
     // Perform all pending unload jobs to clean stuff up
     // We do this by removing all the pending jobs that are not Unloads and run the Update loop until no pending job remains
     uint32 numUnloadJobs = 0;
@@ -1945,10 +2003,13 @@ void Asset::Release()
 
     if (numUnloadJobs) {
         LOG_VERBOSE("Unloading %u AssetGroups ...", numUnloadJobs);
-        while (gAssetMan.curJob) {
+
+        // Update only dispatches the next pending job when there is no current job, which is the case at this point
+        // So it should be called at least once. Loop ends after the last job is finished and nothing is pending
+        do {
             Update();
             Thread::Sleep(1);
-        }
+        } while (gAssetMan.curJob);
     }
 
     if (gAssetMan.isServerEnabled) {
@@ -2031,6 +2092,13 @@ void Asset::DestroyGroup(AssetGroup& group)
         ReadWriteMutexReadScope rdlock(gAssetMan.groupsMutex);
         AssetGroupInternal& gi = gAssetMan.groups.Data(group.mHandle);
         ASSERT_MSG(gi.state == AssetGroupState::Idle, "AssetGroup must be fully unloaded (Idle state) before getting destroyed");
+
+        // Unload clears the handles. If there are still handles, the group was populated but never loaded and unloaded,
+        // so the references it holds on the assets are never released and those assets will never be unloaded
+        if (!gi.handles.IsEmpty() && !gi.hotReloadGroup) {
+            LOG_WARNING("AssetGroup destroyed while still holding %u asset references. Those assets will leak. "
+                        "Load and Unload the group before destroying it", gi.handles.Count());
+        }
 
         gi.loadList.Free();
         gi.handles.Free();
@@ -2376,7 +2444,11 @@ void AssetGroup::Load()
         ReadWriteMutexReadScope groupsLock(gAssetMan.groupsMutex);
         AssetGroupInternal& group = gAssetMan.groups.Data(mHandle);
 
-        if (!group.loadList.IsEmpty()) {
+        // When all the assets of the group already exist (loaded by other groups), loadList is empty but the group holds
+        // references to them. It still needs the load job, which makes it Loaded, so it can be unloaded later and
+        // release those references
+        bool idle = Atomic::LoadExplicit(&group.state, AtomicMemoryOrder::Acquire) == uint32(AssetGroupState::Idle);
+        if (!group.loadList.IsEmpty() || (idle && !group.handles.IsEmpty())) {
             // If we already have an unload group in the queue, remove it from the queue because we are about to load it again
             // Every Load() call should be acompanied later by an Unload() call anyways
             // This basically means that in the pending queue, the most recent command for the group, cancels the previous one
@@ -2479,7 +2551,83 @@ Span<AssetHandle> AssetGroup::GetAssetHandles(MemAllocator* alloc) const
     AssetGroupInternal& group = gAssetMan.groups.Data(mHandle);
 
     AssetHandle* handles = Mem::AllocCopy<AssetHandle>(group.handles.Ptr(), group.handles.Count(), alloc);
-    
+
     return Span<AssetHandle>(handles, group.handles.Count());
+}
+
+//    ██╗  ██╗███████╗██╗     ██████╗ ███████╗██████╗ ███████╗
+//    ██║  ██║██╔════╝██║     ██╔══██╗██╔════╝██╔══██╗██╔════╝
+//    ███████║█████╗  ██║     ██████╔╝█████╗  ██████╔╝███████╗
+//    ██╔══██║██╔══╝  ██║     ██╔═══╝ ██╔══╝  ██╔══██╗╚════██║
+//    ██║  ██║███████╗███████╗██║     ███████╗██║  ██║███████║
+//    ╚═╝  ╚═╝╚══════╝╚══════╝╚═╝     ╚══════╝╚═╝  ╚═╝╚══════╝
+void AssetHelperGroupUnloader::Initialize(MemAllocator* alloc)
+{
+    mGroups.SetAllocator(alloc);
+    mUnloadIssued.SetAllocator(alloc);
+}
+
+void AssetHelperGroupUnloader::Release()
+{
+    for (uint32 i = 0; i < mGroups.Count(); i++) {
+        AssetGroup& group = mGroups[i];
+        AssetGroupState state = group.GetState();
+        if (state == AssetGroupState::Loaded && !mUnloadIssued[i])
+            group.Unload();
+        else if (state == AssetGroupState::Idle && (mUnloadIssued[i] || !group.HasItemsInQueue()))
+            Asset::DestroyGroup(group);
+    }
+
+    mGroups.Free();
+    mUnloadIssued.Free();
+}
+
+void AssetHelperGroupUnloader::UnloadAndDestroy(AssetGroup& group)
+{
+    ASSERT_MSG(Engine::IsMainThread(), "AssetHelperGroupUnloader can only be used in the main thread");
+    if (!group.IsValid())
+        return;
+
+    mGroups.Push(group);
+    mUnloadIssued.Push(false);
+    group = {};
+
+    Update();   // Unload or destroy right away if the group is already in the right state
+}
+
+void AssetHelperGroupUnloader::Update()
+{
+    ASSERT_MSG(Engine::IsMainThread(), "AssetHelperGroupUnloader can only be used in the main thread");
+
+    for (uint32 i = 0; i < mGroups.Count();) {
+        AssetGroup& group = mGroups[i];
+        bool destroy = false;
+
+        if (!mUnloadIssued[i]) {
+            // Check the queue before the state: The load task sets the state to Loading before taking items out of
+            // the queue. So an empty queue with Idle state means the group has nothing to load
+            bool hasItemsInQueue = group.HasItemsInQueue();
+            AssetGroupState state = group.GetState();
+            if (state == AssetGroupState::Loaded) {
+                group.Unload();
+                mUnloadIssued[i] = true;
+            }
+            else if (state == AssetGroupState::Idle && !hasItemsInQueue) {
+                destroy = true;     // Never loaded, or already unloaded by the user
+            }
+        }
+        else {
+            destroy = group.GetState() == AssetGroupState::Idle;
+        }
+
+        if (destroy) {
+            Asset::DestroyGroup(group);
+            mGroups.RemoveAndSwap(i);
+            mUnloadIssued.RemoveAndSwap(i);
+            continue;
+        }
+
+        i++;
+    }
 }
 

@@ -55,6 +55,11 @@ namespace Vfs
     API Path ResolveFilepath(const char* path);
     API bool StripMountPath(char* outPath, uint32 outPathSize, const char* path);
 
+    // Converts an OS path that is inside one of the Local mounts to a VFS path
+    // ie. 'C:\Project\data\Models\A.gltf' -> '/data/Models/A.gltf' (Mounted with MountLocal("data", "data"))
+    // Returns false if the path doesn't belong to any Local mounts
+    API bool LocalPathToVfsPath(char* outPath, uint32 outPathSize, const char* localPath);
+
     API void RegisterFileChangeCallback(VfsFileChangeCallback callback);
 
     API bool Initialize();

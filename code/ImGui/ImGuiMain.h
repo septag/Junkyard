@@ -18,6 +18,11 @@
 struct MemTlsfAllocator;
 struct RenderViewportContext;
 struct AppEvent;
+struct Path;
+
+// Files dropped on to the app window from the OS (AppEventType::DropFiles) are delivered as a drag and drop payload
+// of this type. Data is the absolute paths, packed as null-terminated strings. See ImGui::AcceptDroppedFiles
+inline constexpr const char* IMGUI_PAYLOAD_TYPE_DROPPED_FILES = "JY_DROPPED_FILES";
 
 namespace ImGui
 {
@@ -62,6 +67,10 @@ namespace ImGui
     API bool ToggleButton(const char* label, bool* toggled, const ImVec2& size_arg = ImVec2(0, 0));
     API void ControlAlphaWithScroll(float* alpha);
 
+    // Makes the last item a drop target for files dropped from the OS. Call it right after the item
+    // Returns the number of dropped files (absolute OS paths) written to `outPaths`, 0 if nothing is dropped on the item
+    API uint32 AcceptDroppedFiles(Path* outPaths, uint32 maxPaths);
+
     API const char* GetSetting(const char* key);
     API void SetSetting(const char* key, bool b);
     API void SetSetting(const char* key, int i);
@@ -74,6 +83,15 @@ namespace ImGui
     API void RenderViewport(RenderViewportContext* viewport, void(*extraDrawFn)(void* userData) = nullptr, void* userData = nullptr);
     API bool CanReceiveMouseInput(const RenderViewportContext& viewport);
     API bool CanReceiveMouseInput(RenderViewportContext* viewport, const AppEvent& ev);
+
+    // Makes ImGuizmo draw on top of the viewport and receive the mouse while it's hovered. Call before ImGuizmo::Manipulate
+    // and after ImGui::RenderViewport, which updates the viewport window
+    API void SetGizmoViewport(const RenderViewportContext& viewport);
+
+    // Drawlist for drawing on top of the viewport, clipped to it. `outScreenRect` is the area of the viewport on screen
+    // For ImGui viewport panels, it's the panel window's drawlist, otherwise a fullscreen view (see BeginFullscreenView)
+    // Should be called after ImGui::RenderViewport, which updates the viewport window
+    API ImDrawList* GetViewportDrawList(const RenderViewportContext& viewport, RectFloat* outScreenRect = nullptr);
 
     API bool DrawFrame(GfxCommandBuffer& cmd, GfxImageHandle colorImage = GfxImageHandle());
 

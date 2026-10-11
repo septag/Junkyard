@@ -88,12 +88,10 @@ struct ModelScene
         Str::ScanFmt(targetStr, "%f,%f,%f", &camTarget.x, &camTarget.y, &camTarget.z);
         mCam.SetLookAt(camPos, camTarget);
 
-        mAssetGroup = Asset::CreateGroup();
-
         LoadLights();        
     }
 
-    void Release()
+    void Release(AssetHelperGroupUnloader& groupUnloader)
     {
         String32 posSetting = String32::Format("%s.CamPos", mName.CStr());
         String32 targetSetting = String32::Format("%s.CamTarget", mName.CStr());
@@ -104,20 +102,25 @@ struct ModelScene
         Float3 target = mCam.Position() + mCam.Forward();
         Settings::SetValue(targetSetting.CStr(), String64::Format("%.2f,%.2f,%.2f", target.x, target.y, target.z).CStr());
 
-        Unload();
+        Unload(groupUnloader);
     }
 
     void Load()
     {
+        // A new group for every load: The previous one can still be in the unloader, waiting for its load to finish
+        ASSERT(!mAssetGroup.IsValid());
+        mAssetGroup = Asset::CreateGroup();
+
         ModelLoadParams loadParams {};
         R::GetCompatibleLayout(loadParams.layout);
         mModel = Model::Load(mModelFilepath.CStr(), loadParams, mAssetGroup);
         mAssetGroup.Load();
     }
 
-    void Unload()
+    void Unload(AssetHelperGroupUnloader& groupUnloader)
     {
-        mAssetGroup.Unload();
+        groupUnloader.UnloadAndDestroy(mAssetGroup);  // Also invalidates mAssetGroup
+        mModel = {};
         mLights.Free();
     }
 
@@ -237,13 +240,11 @@ struct TestRendererApp final : AppCallbacks
     RView mShadowMapView;
     RenderViewportContext mViewport;
     GfxImageHandle mShadowMapDepth;
-    uint16 mRendererResourceWidth = 0;
-    uint16 mRendererResourceHeight = 0;
-    bool mRendererResourcesDirty = true;
     uint32 mSelectedSceneIdx;
     bool mFirstTime = true;
     bool mMinimized = false;
     bool mDrawGrid = false;
+    AssetHelperGroupUnloader mGroupUnloader;
 
     bool Initialize() override
     {
@@ -294,6 +295,8 @@ struct TestRendererApp final : AppCallbacks
         mFwdRenderView = R::CreateView(RViewType::FwdLight);
         mShadowMapView = R::CreateView(RViewType::ShadowMap);
 
+        mGroupUnloader.Initialize();
+
         return true;
     };
 
@@ -302,7 +305,8 @@ struct TestRendererApp final : AppCallbacks
         Settings::SetValue("TestRenderer.SelectedScene", String32::Format("%u", mSelectedSceneIdx).CStr());
 
         for (uint32 i = 0; i < CountOf(TESTRENDERER_MODELS); i++)
-            mModelScenes[i].Release();
+            mModelScenes[i].Release(mGroupUnloader);
+        mGroupUnloader.Release();
 
         R::DestroyView(mFwdRenderView);
         R::DestroyView(mShadowMapView);
@@ -393,14 +397,9 @@ struct TestRendererApp final : AppCallbacks
         mCam->HandleMovementKeyboard(dt, 20.0f, 5.0f);
 
         Engine::BeginFrame(dt);
+        mGroupUnloader.Update();
 
         RenderViewport::PrepareRenderTargets(&mViewport);
-        if (mRendererResourcesDirty || mRendererResourceWidth != mViewport.width || mRendererResourceHeight != mViewport.height) {
-            R::ResizeFramebufferResources(mViewport.width, mViewport.height);
-            mRendererResourceWidth = mViewport.width;
-            mRendererResourceHeight = mViewport.height;
-            mRendererResourcesDirty = false;
-        }
 
         GfxCommandBuffer cmd = GfxBackend::BeginCommandBuffer(GfxQueueType::Graphics);
 
@@ -501,7 +500,7 @@ struct TestRendererApp final : AppCallbacks
                     for (uint32 i = 0; i < CountOf(TESTRENDERER_MODELS); i++) {
                         if (ImGui::MenuItem(mModelScenes[i].mName.CStr(), nullptr, mSelectedSceneIdx == i)) {
                             if (i != mSelectedSceneIdx) {
-                                scene.Unload();
+                                scene.Unload(mGroupUnloader);
                                 mSelectedSceneIdx = i;
                                 mModelScenes[i].Load();
                                 mCam = &mModelScenes[i].mCam;
@@ -546,7 +545,6 @@ struct TestRendererApp final : AppCallbacks
             mMinimized = false;
         else if (ev.type == AppEventType::Resized) {
             RenderViewport::OnFramebufferResized(&mViewport, ev.framebufferWidth, ev.framebufferHeight);
-            mRendererResourcesDirty = true;
         }
     }
 };

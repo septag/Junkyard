@@ -5933,6 +5933,80 @@ void GfxCommandBuffer::BatchCopyBufferToImage(uint32 numParams, const GfxCopyBuf
     queue.dependentBarriers.Extend(pendingBarriers);
 }
 
+void GfxCommandBuffer::CopyImageToBuffer(GfxImageHandle srcHandle, GfxBufferHandle dstHandle, uint16 mipIndex)
+{
+    ASSERT(mIsRecording);
+    ASSERT(!mIsInRenderPass);
+    mShouldSubmit = true;
+
+    [[maybe_unused]] GfxBackendQueue& queue = gBackendVk.queueMan.GetQueue(mQueueIndex);
+    ASSERT_MSG(IsBitsSet<GfxQueueType>(queue.type, GfxQueueType::Transfer) || queue.supportsTransfer,
+               "Cannot do image copies on non-Transfer queues");
+
+    gBackendVk.objectPoolsMutex.EnterRead();
+    const GfxBackendImage& image = gBackendVk.images.Data(srcHandle);
+    GfxBackendBuffer& buffer = gBackendVk.buffers.Data(dstHandle);
+    ASSERT_MSG(image.layout == VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, "Image should be already transitioned to CopySource");
+    ASSERT_MSG(!GfxBackend::_FormatIsDepthStencil(image.desc.format), "Only color images are supported");
+    ASSERT_MSG(image.desc.multisampleFlags == GfxMultiSampleCount::SampleCount1, "Cannot copy from multisampled images");
+    ASSERT(mipIndex < image.desc.numMips);
+    ASSERT_MSG(buffer.mem.mappedData, "Destination buffer is not CPU readable");
+
+    VkImage imageVk = image.handle;
+    VkBuffer bufferVk = buffer.handle;
+    uint32 width = Max<uint32>(image.desc.width >> mipIndex, 1);
+    uint32 height = Max<uint32>(image.desc.height >> mipIndex, 1);
+    buffer.transitionedStage = VK_PIPELINE_STAGE_2_HOST_BIT;
+    buffer.transitionedAccess = VK_ACCESS_2_HOST_READ_BIT;
+    gBackendVk.objectPoolsMutex.ExitRead();
+
+    VkCommandBuffer cmdVk = GfxBackend::_GetCommandBufferHandle(*this);
+
+    VkBufferImageCopy2 region {
+        .sType = VK_STRUCTURE_TYPE_BUFFER_IMAGE_COPY_2,
+        .bufferOffset = 0,
+        .bufferRowLength = 0,       // Tightly packed
+        .bufferImageHeight = 0,
+        .imageSubresource = {
+            .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+            .mipLevel = mipIndex,
+            .layerCount = 1
+        },
+        .imageExtent = {width, height, 1}
+    };
+
+    VkCopyImageToBufferInfo2 copyInfo {
+        .sType = VK_STRUCTURE_TYPE_COPY_IMAGE_TO_BUFFER_INFO_2,
+        .srcImage = imageVk,
+        .srcImageLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+        .dstBuffer = bufferVk,
+        .regionCount = 1,
+        .pRegions = &region
+    };
+    vkCmdCopyImageToBuffer2(cmdVk, &copyInfo);
+
+    // Device writes are not automatically visible to the host after waiting on the fence. Needs a dependency to HOST
+    VkBufferMemoryBarrier2 barrier {
+        .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2,
+        .srcStageMask = VK_PIPELINE_STAGE_2_COPY_BIT,
+        .srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT,
+        .dstStageMask = VK_PIPELINE_STAGE_2_HOST_BIT,
+        .dstAccessMask = VK_ACCESS_2_HOST_READ_BIT,
+        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .buffer = bufferVk,
+        .offset = 0,
+        .size = VK_WHOLE_SIZE
+    };
+
+    VkDependencyInfo depInfo {
+        .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
+        .bufferMemoryBarrierCount = 1,
+        .pBufferMemoryBarriers = &barrier
+    };
+    vkCmdPipelineBarrier2(cmdVk, &depInfo);
+}
+
 void GfxCommandBuffer::TransitionBuffer(GfxBufferHandle buffHandle, GfxBufferTransition transition)
 {
     ASSERT(mIsRecording);
@@ -6360,6 +6434,18 @@ void GfxCommandBuffer::EnableColorBlend(uint32 firstAttachment, uint32 numAttach
 {
     VkCommandBuffer cmdVk = GfxBackend::_GetCommandBufferHandle(*this);
     vkCmdSetColorBlendEnableEXT(cmdVk, firstAttachment, numAttachments, enableFlags);
+}
+
+void GfxCommandBuffer::EnableDepthTest(bool enable)
+{
+    VkCommandBuffer cmdVk = GfxBackend::_GetCommandBufferHandle(*this);
+    vkCmdSetDepthTestEnable(cmdVk, (VkBool32)enable);
+}
+
+void GfxCommandBuffer::EnableDepthWrite(bool enable)
+{
+    VkCommandBuffer cmdVk = GfxBackend::_GetCommandBufferHandle(*this);
+    vkCmdSetDepthWriteEnable(cmdVk, (VkBool32)enable);
 }
 
 void GfxCommandBuffer::BindVertexBuffer(GfxBufferHandle vertexBuffer, uint64 offset)

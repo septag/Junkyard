@@ -23,6 +23,11 @@ struct GfxCommandBuffer
     void CopyBufferToImage(GfxBufferHandle srcHandle, GfxImageHandle dstHandle, GfxShaderStage stagesUsed = GfxShaderStage::All,
                            uint16 startMipIndex = 0, uint16 mipCount = UINT16_MAX);
 
+    // GPU->CPU readback of a single mip of a color image. Image must be already transitioned to CopySource
+    // dstHandle should be a CPU arena buffer (ie. PersistentCPU) with at least (mipWidth*mipHeight*bytesPerPixel) bytes
+    // Pixels are tightly packed. The data is only valid after the GPU is done with this command buffer
+    void CopyImageToBuffer(GfxImageHandle srcHandle, GfxBufferHandle dstHandle, uint16 mipIndex = 0);
+
     void BatchCopyBufferToBuffer(uint32 numParams, const GfxCopyBufferToBufferParams* params);
     void BatchCopyBufferToImage(uint32 numParams, const GfxCopyBufferToImageParams* params);
 
@@ -67,6 +72,8 @@ struct GfxCommandBuffer
     void SetFrontFace(GfxFrontFace frontFace);
     void EnableAlphaToCoverage(bool enable);
     void EnableColorBlend(uint32 firstAttachment, uint32 numAttachments, const uint32* enableFlags);
+    void EnableDepthTest(bool enable);
+    void EnableDepthWrite(bool enable);
 
     void HelperSetFullscreenViewportAndScissor();
 };

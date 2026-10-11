@@ -51,11 +51,15 @@ float4 PsMain(PsInput i) : SV_Target
 {
     uint2 loc = uint2(i.pos.xy);
     uint2 tileId = loc / uint2(TILE_SIZE, TILE_SIZE);
+    if (tileId.x >= TilesCountX || tileId.y >= TilesCountY)
+        return float4(0, 0, 0, 1);
     uint index = tileId.y * TilesCountX + tileId.x;
 
+    // Bounded loop: Out of range or uninitialized data must not hang the GPU
+    // Note that a full tile has no sentinel (See LightCull.hlsl)
     uint startIdx = index * MAX_LIGHTS_PER_TILE;
     uint visibleLightCount = 0;
-    while (VisibleLightIndices[startIdx + visibleLightCount] != -1)
+    while (visibleLightCount < MAX_LIGHTS_PER_TILE && VisibleLightIndices[startIdx + visibleLightCount] != -1)
         visibleLightCount++;
 
     // Move from blue (less lights) to red (maximum lights)

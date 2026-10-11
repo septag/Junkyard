@@ -154,9 +154,17 @@ static const uint32 R_VERTEXBUFFER_STRIDES[] = {
     sizeof(RVertexStreamLighting)
 };
 
+DEFINE_HANDLE(RFwdLightViewHandle);
+DEFINE_HANDLE(RShadowMapViewHandle);
+
+// Common data of all view types: "What to draw". Filled by the RView API every frame
+// Render path specific resources live in a separate pool per path (see RFwdLightViewData/RShadowMapViewData)
 struct RViewData
 {
     RViewType type;
+    RFwdLightViewHandle fwdLightHandle;     // Valid only for RViewType::FwdLight
+    RShadowMapViewHandle shadowMapHandle;   // Valid only for RViewType::ShadowMap
+
     Mat4 worldToViewMat;
     Mat4 viewToClipMat;
     Mat4 worldToClipMat;
@@ -181,12 +189,41 @@ struct RViewData
     uint32 numGeometryChunks;
 };
 
+// FwdLight render path resources, owned by each FwdLight view, so multiple views can be rendered in the same frame
+// GPU resources are created lazily in FwdLight::Update: Descriptor buffers are sized by the pipeline layouts, which are
+// not ready until the shaders are loaded. Everything is allocated from Dynamic arenas, because views can be
+// created and destroyed at any time
+struct RFwdLightViewData
+{
+    // Size dependent resources. Recreated when the view size changes
+    uint32 targetWidth;
+    uint32 targetHeight;
+    uint32 tilesCountX;
+    uint32 tilesCountY;
+    GfxImageHandle msaaColorImage;          // Always created. Dummy color attachment of the alpha-masked Z-prepass without MSAA
+    GfxImageHandle msaaDepthImage;          // Only with MSAA, otherwise the final depth image is rendered to directly
+    GfxBufferHandle bVisibleLightIndices;
+
+    // Per-frame data (ring-buffered by the backend for frames in flight)
+    GfxBufferHandle ubZPrepass;
+    GfxBufferHandle ubLightCull;
+    GfxBufferHandle ubLightPerFrameData;
+    GfxBufferHandle ubLightPerObjectData;
+    GfxBufferHandle dbLightPerFrameResources;
+    GfxBufferHandle dbLightPerObjectResources;
+    GfxBufferHandle bLightBounds;
+    GfxBufferHandle bLightProps;
+};
+
+// ShadowMap render path resources. Depth target is provided by the caller (see ShadowMap::Render)
+struct RShadowMapViewData
+{
+    GfxBufferHandle ubShadowMap;            // Created lazily in ShadowMap::Update
+};
+
 struct RFwdContext
 {
     MemBumpAllocatorVM frameAlloc;
-
-    GfxImageHandle msaaColorRenderImage;
-    GfxImageHandle msaaDepthRenderImage;
 
     AssetHandleShader sZPrepass;
     AssetHandleShader sZPrepassAlphaMask;
@@ -194,19 +231,12 @@ struct RFwdContext
     GfxPipelineHandle pZPrepassAlphaMask;
     GfxPipelineLayoutHandle pZPrepassLayout;
     GfxPipelineLayoutHandle pZPrepassLayoutAlphaMask;
-    GfxBufferHandle ubZPrepass;
 
     GfxPipelineHandle pShadowMap;
-    GfxBufferHandle ubShadowMap;
-
-    GfxBufferHandle bVisibleLightIndices;
-    GfxBufferHandle bLightBounds; 
-    GfxBufferHandle bLightProps;
 
     AssetHandleShader sLightCull;
     GfxPipelineHandle pLightCull;
     GfxPipelineLayoutHandle pLightCullLayout;
-    GfxBufferHandle ubLightCull;
 
     AssetHandleShader sLightCullDebug;
     GfxPipelineHandle pLightCullDebug;
@@ -215,10 +245,6 @@ struct RFwdContext
     AssetHandleShader sLight;
     GfxPipelineHandle pLight;
     GfxPipelineLayoutHandle pLightLayout;
-    GfxBufferHandle ubLightPerFrameData;
-    GfxBufferHandle ubLightPerObjectData;
-    GfxBufferHandle dbLightPerFrameResources;
-    GfxBufferHandle dbLightPerObjectResources;
 #if !CONFIG_GFX_IMMUTABLE_SAMPLERS
     GfxBufferHandle dbImmutableSamplers;
     bool immutableSamplersUpdated;
@@ -235,9 +261,9 @@ struct RFwdContext
     GfxSamplerHandle samplers[uint32(RSamplerType::_Count)];
 
     HandlePool<RViewHandle, RViewData> viewPool;
+    HandlePool<RFwdLightViewHandle, RFwdLightViewData> fwdLightViewPool;
+    HandlePool<RShadowMapViewHandle, RShadowMapViewData> shadowMapViewPool;
 
-    uint32 tilesCountX;
-    uint32 tilesCountY;
     bool initialized;
 };
 
@@ -258,21 +284,46 @@ namespace R
         cmd.SetScissors(0, 1, &scissor);
     }
 
-    static void _CreateFramebufferDependentResources(uint16 width, uint16 height)
+    // Debug views render into the final color image of the view (or the swapchain if it's not provided), just like
+    // the light pass. So they show up in the same place, ie. inside an ImGui viewport panel
+    static void _BeginDebugRenderPass(GfxCommandBuffer& cmd, GfxImageHandle finalColorImage, Float4 clearColor)
     {
-        // TODO: This leaks now. cuz it's allocating from the Persistant buffer
+        if (finalColorImage.IsValid())
+            cmd.TransitionImage(finalColorImage, GfxImageTransition::RenderTarget);
+
+        GfxBackendRenderPass pass {
+            .numAttachments = finalColorImage.IsValid() ? 1u : 0u,
+            .colorAttachments = {{
+                .image = finalColorImage,
+                .clear = true,
+                .clearValue = {
+                    .color = clearColor
+                }
+            }},
+            .swapchain = !finalColorImage.IsValid()
+        };
+        cmd.BeginRenderPass(pass);
+    }
+
+    static void _ResizeFwdLightViewTargets(RFwdLightViewData& data, uint32 width, uint32 height)
+    {
         uint32 msaa = SettingsJunkyard::Get().graphics.msaa;
 
-        GfxBackend::DestroyImage(gFwd.msaaDepthRenderImage);
-        GfxBackend::DestroyImage(gFwd.msaaColorRenderImage);
-        GfxBackend::DestroyBuffer(gFwd.bVisibleLightIndices);
+        GfxBackend::DestroyImage(data.msaaDepthImage);
+        GfxBackend::DestroyImage(data.msaaColorImage);
+        GfxBackend::DestroyBuffer(data.bVisibleLightIndices);
+
+        data.targetWidth = width;
+        data.targetHeight = height;
+        data.tilesCountX = M::CeilDiv(width, R_LIGHT_CULL_TILE_SIZE);
+        data.tilesCountY = M::CeilDiv(height, R_LIGHT_CULL_TILE_SIZE);
 
         //--------------------------------------------------------------------------------------------------------------
         // Render Images
         if (msaa > 1) {
             GfxImageDesc desc {
-                .width = width,
-                .height = height,
+                .width = uint16(width),
+                .height = uint16(height),
                 .multisampleFlags = (GfxMultiSampleCount)msaa,
                 .format = GfxBackend::GetValidDepthStencilFormat(), // TODO:
                 .usageFlags = GfxImageUsageFlags::DepthStencilAttachment|GfxImageUsageFlags::Sampled,
@@ -285,15 +336,15 @@ namespace R
             desc.usageFlags |= GfxImageUsageFlags::TransientAttachment;
             #endif
 
-            gFwd.msaaDepthRenderImage = GfxBackend::CreateImage(desc);
+            data.msaaDepthImage = GfxBackend::CreateImage(desc);
         }
 
         {
             GfxImageDesc desc {
-                .width = width,
-                .height = height,
+                .width = uint16(width),
+                .height = uint16(height),
                 .multisampleFlags = (GfxMultiSampleCount)msaa,
-                .format = GfxBackend::GetSwapchainFormat(), // TODO: 
+                .format = GfxBackend::GetSwapchainFormat(), // TODO:
                 .usageFlags = GfxImageUsageFlags::ColorAttachment,
                 .arena = GfxMemoryArena::DynamicImageGPU
             };
@@ -304,21 +355,121 @@ namespace R
             desc.usageFlags |= GfxImageUsageFlags::TransientAttachment;
             #endif
 
-            gFwd.msaaColorRenderImage = GfxBackend::CreateImage(desc);
+            data.msaaColorImage = GfxBackend::CreateImage(desc);
         }
 
         // Buffers
         {
-            uint32 numTilesX = M::CeilDiv(uint32(width), R_LIGHT_CULL_TILE_SIZE);
-            uint32 numTilesY = M::CeilDiv(uint32(height), R_LIGHT_CULL_TILE_SIZE);
             GfxBufferDesc bufferDesc = {
-                .sizeBytes = sizeof(uint32)*numTilesX*numTilesY*R_LIGHT_CULL_MAX_LIGHTS_PER_TILE,
+                .sizeBytes = sizeof(uint32)*data.tilesCountX*data.tilesCountY*R_LIGHT_CULL_MAX_LIGHTS_PER_TILE,
                 .usageFlags = GfxBufferUsageFlags::TransferDst | GfxBufferUsageFlags::Storage | GfxBufferUsageFlags::ShaderDeviceAddress,
                 .arena = GfxMemoryArena::DynamicAddressGPU,
                 .perFrameUpdates = true
             };
-            gFwd.bVisibleLightIndices = GfxBackend::CreateBuffer(bufferDesc);
+            data.bVisibleLightIndices = GfxBackend::CreateBuffer(bufferDesc);
         }
+
+        LOG_VERBOSE("Renderer FwdLight view buffers recreated: %ux%u", width, height);
+    }
+
+    static void _CreateFwdLightViewBuffers(RFwdLightViewData& data)
+    {
+        ASSERT_MSG(gFwd.pLightLayout.IsValid(), "Renderer pipelines are not created yet");
+
+        // Z-Prepass
+        GfxBufferDesc bufferDesc {
+            .sizeBytes = sizeof(Mat4),
+            .usageFlags = GfxBufferUsageFlags::TransferDst | GfxBufferUsageFlags::Uniform,
+            .arena = GfxMemoryArena::DynamicBufferGPU,
+            .perFrameUpdates = true
+        };
+        data.ubZPrepass = GfxBackend::CreateBuffer(bufferDesc);
+
+        // Light culling
+        bufferDesc = {
+            .sizeBytes = sizeof(RLightCullShaderFrameData),
+            .usageFlags = GfxBufferUsageFlags::TransferDst | GfxBufferUsageFlags::Uniform,
+            .arena = GfxMemoryArena::DynamicBufferGPU,
+            .perFrameUpdates = true
+        };
+        data.ubLightCull = GfxBackend::CreateBuffer(bufferDesc);
+
+        bufferDesc = {
+            .sizeBytes = sizeof(RLightBounds)*R_LIGHT_CULL_MAX_LIGHTS_PER_FRAME,
+            .usageFlags = GfxBufferUsageFlags::TransferDst | GfxBufferUsageFlags::Storage | GfxBufferUsageFlags::ShaderDeviceAddress,
+            .arena = GfxMemoryArena::DynamicAddressGPU,
+            .perFrameUpdates = true
+        };
+        data.bLightBounds = GfxBackend::CreateBuffer(bufferDesc);
+
+        bufferDesc = {
+            .sizeBytes = sizeof(RLightProps)*R_LIGHT_CULL_MAX_LIGHTS_PER_FRAME,
+            .usageFlags = GfxBufferUsageFlags::TransferDst | GfxBufferUsageFlags::Storage | GfxBufferUsageFlags::ShaderDeviceAddress,
+            .arena = GfxMemoryArena::DynamicAddressGPU,
+            .perFrameUpdates = true
+        };
+        data.bLightProps = GfxBackend::CreateBuffer(bufferDesc);
+
+        // Light: Uniform Buffers
+        bufferDesc = {
+            .sizeBytes = sizeof(RLightShaderFrameData),
+            .usageFlags = GfxBufferUsageFlags::TransferDst | GfxBufferUsageFlags::Uniform | GfxBufferUsageFlags::ShaderDeviceAddress,
+            .arena = GfxMemoryArena::DynamicAddressGPU,
+            .perFrameUpdates = true
+        };
+        data.ubLightPerFrameData = GfxBackend::CreateBuffer(bufferDesc);
+
+        bufferDesc = {
+            .sizeBytes = GfxHelperUniformBuffer::GetMemoryRequirement(sizeof(RLightShaderObjectData), R_MAX_DRAW_OBJECTS),
+            .usageFlags = GfxBufferUsageFlags::TransferDst | GfxBufferUsageFlags::Uniform | GfxBufferUsageFlags::ShaderDeviceAddress,
+            .arena = GfxMemoryArena::DynamicAddressGPU,
+            .perFrameUpdates = true
+        };
+        data.ubLightPerObjectData = GfxBackend::CreateBuffer(bufferDesc);
+
+        // Light: Descriptor Buffers
+        bufferDesc = {
+            .sizeBytes = GfxHelperDescriptorBuffer::GetMemoryRequirement(gFwd.pLightLayout,
+                                                                         (uint32)RDescriptorSetIndex::PerFrame, 1),
+            .usageFlags = GfxBufferUsageFlags::TransferDst | GfxBufferUsageFlags::ResourceDescriptorBuffer | GfxBufferUsageFlags::ShaderDeviceAddress,
+            .arena = GfxMemoryArena::DynamicAddressGPU,
+            .perFrameUpdates = true
+        };
+        data.dbLightPerFrameResources = GfxBackend::CreateBuffer(bufferDesc);
+
+        bufferDesc = {
+            .sizeBytes = GfxHelperDescriptorBuffer::GetMemoryRequirement(gFwd.pLightLayout,
+                                                                         (uint32)RDescriptorSetIndex::PerObject,
+                                                                         R_MAX_DRAW_OBJECTS),
+            .usageFlags = GfxBufferUsageFlags::TransferDst | GfxBufferUsageFlags::ResourceDescriptorBuffer | GfxBufferUsageFlags::ShaderDeviceAddress,
+            .arena = GfxMemoryArena::DynamicAddressGPU,
+            .perFrameUpdates = true
+        };
+        data.dbLightPerObjectResources = GfxBackend::CreateBuffer(bufferDesc);
+    }
+
+    static void _DestroyFwdLightViewResources(RFwdLightViewData& data)
+    {
+        GfxBackend::DestroyImage(data.msaaColorImage);
+        GfxBackend::DestroyImage(data.msaaDepthImage);
+        GfxBackend::DestroyBuffer(data.bVisibleLightIndices);
+
+        GfxBackend::DestroyBuffer(data.ubZPrepass);
+        GfxBackend::DestroyBuffer(data.ubLightCull);
+        GfxBackend::DestroyBuffer(data.ubLightPerFrameData);
+        GfxBackend::DestroyBuffer(data.ubLightPerObjectData);
+        GfxBackend::DestroyBuffer(data.dbLightPerFrameResources);
+        GfxBackend::DestroyBuffer(data.dbLightPerObjectResources);
+        GfxBackend::DestroyBuffer(data.bLightBounds);
+        GfxBackend::DestroyBuffer(data.bLightProps);
+
+        data = {};
+    }
+
+    static void _DestroyShadowMapViewResources(RShadowMapViewData& data)
+    {
+        GfxBackend::DestroyBuffer(data.ubShadowMap);
+        data = {};
     }
 
     static void _CreatePipelines()
@@ -424,16 +575,6 @@ namespace R
                 .depthAttachmentFormat = GfxFormat::D16_UNORM,
             };
             gFwd.pShadowMap = GfxBackend::CreateGraphicsPipeline(*shader, gFwd.pZPrepassLayout, pShadowMapDesc);
-
-            // Buffers
-            GfxBufferDesc bufferDesc {
-                .sizeBytes = sizeof(Mat4),
-                .usageFlags = GfxBufferUsageFlags::TransferDst | GfxBufferUsageFlags::Uniform,
-                .arena = GfxMemoryArena::PersistentGPU,
-                .perFrameUpdates = true
-            };
-            gFwd.ubZPrepass = GfxBackend::CreateBuffer(bufferDesc);
-            gFwd.ubShadowMap = GfxBackend::CreateBuffer(bufferDesc);
         }
 
         //--------------------------------------------------------------------------------------------------------------
@@ -568,14 +709,6 @@ namespace R
 
             // Pipeline
             gFwd.pLightCull = GfxBackend::CreateComputePipeline(*shader, gFwd.pLightCullLayout);
-
-            // Buffers
-            GfxBufferDesc bufferDesc {
-                .sizeBytes = sizeof(RLightCullShaderFrameData),
-                .usageFlags = GfxBufferUsageFlags::TransferDst | GfxBufferUsageFlags::Uniform,
-                .perFrameUpdates = true
-            };
-            gFwd.ubLightCull = GfxBackend::CreateBuffer(bufferDesc);
         }
 
         //--------------------------------------------------------------------------------------------------------------
@@ -701,45 +834,8 @@ namespace R
 
             gFwd.pLight = GfxBackend::CreateGraphicsPipeline(*shader, gFwd.pLightLayout, pDesc);
 
-            // Uniform Buffers
-            GfxBufferDesc ubDesc {
-                .sizeBytes = sizeof(RLightShaderFrameData),
-                .usageFlags = GfxBufferUsageFlags::TransferDst | GfxBufferUsageFlags::Uniform | GfxBufferUsageFlags::ShaderDeviceAddress,
-                .arena = GfxMemoryArena::PersistentAddressGPU,
-                .perFrameUpdates = true
-            };
-
-            gFwd.ubLightPerFrameData = GfxBackend::CreateBuffer(ubDesc);
-
-            ubDesc = {
-                .sizeBytes = GfxHelperUniformBuffer::GetMemoryRequirement(sizeof(RLightShaderObjectData), R_MAX_DRAW_OBJECTS),
-                .usageFlags = GfxBufferUsageFlags::TransferDst | GfxBufferUsageFlags::Uniform | GfxBufferUsageFlags::ShaderDeviceAddress,
-                .arena = GfxMemoryArena::PersistentAddressGPU,
-                .perFrameUpdates = true
-            };
-            gFwd.ubLightPerObjectData = GfxBackend::CreateBuffer(ubDesc);
-
-            // Descriptor Buffers
-            GfxBufferDesc dbDesc {
-                .sizeBytes = GfxHelperDescriptorBuffer::GetMemoryRequirement(gFwd.pLightLayout, 
-                                                                             (uint32)RDescriptorSetIndex::PerFrame, 1),
-                .usageFlags = GfxBufferUsageFlags::TransferDst | GfxBufferUsageFlags::ResourceDescriptorBuffer | GfxBufferUsageFlags::ShaderDeviceAddress,
-                .arena = GfxMemoryArena::PersistentAddressGPU,
-                .perFrameUpdates = true
-            };
-            gFwd.dbLightPerFrameResources = GfxBackend::CreateBuffer(dbDesc);
-
-            dbDesc = {
-                .sizeBytes = GfxHelperDescriptorBuffer::GetMemoryRequirement(gFwd.pLightLayout, 
-                                                                             (uint32)RDescriptorSetIndex::PerObject,
-                                                                             R_MAX_DRAW_OBJECTS),
-                .usageFlags = GfxBufferUsageFlags::TransferDst | GfxBufferUsageFlags::ResourceDescriptorBuffer | GfxBufferUsageFlags::ShaderDeviceAddress,
-                .arena = GfxMemoryArena::PersistentAddressGPU,
-                .perFrameUpdates = true
-            };
-            gFwd.dbLightPerObjectResources = GfxBackend::CreateBuffer(dbDesc);
     #if !CONFIG_GFX_IMMUTABLE_SAMPLERS
-            dbDesc = {
+            GfxBufferDesc dbDesc {
                 .sizeBytes = GfxHelperDescriptorBuffer::GetMemoryRequirement(gFwd.pLightLayout,
                                                                              (uint32)RDescriptorSetIndex::Samplers,
                                                                              CountOf(R_SAMPLER_DESCS)),
@@ -791,9 +887,7 @@ namespace R
                     .attachments = GfxBlendAttachmentDesc::GetDefault()
                 },
                 .numColorAttachments = 1,
-                .colorAttachmentFormats = {GfxBackend::GetSwapchainFormat()},
-                .depthAttachmentFormat = GfxBackend::GetValidDepthStencilFormat(),
-                .stencilAttachmentFormat = GfxBackend::GetValidDepthStencilFormat()
+                .colorAttachmentFormats = {GfxBackend::GetSwapchainFormat()}
             };
 
             gFwd.pLightCullDebug = GfxBackend::CreateGraphicsPipeline(*shader, gFwd.pLightCullDebugLayout, pDesc);
@@ -847,8 +941,9 @@ namespace R
             };
 
             {
+                // Only used for debugging the sun shadow map, which has an ortho projection, so depth is already linear
                 GfxShaderPermutationVar permuts[] = {
-                    GfxShaderPermutationVar("LinearizeDepthTexture", true)
+                    GfxShaderPermutationVar("LinearizeDepthTexture", false)
                 };
                 gFwd.pTextureDebugDepth = GfxBackend::CreateGraphicsPipeline(*shader, gFwd.pTextureDebugDepthLayout, pDesc, CountOf(permuts), permuts);
             }
@@ -861,12 +956,6 @@ void R::GetCompatibleLayout(GeometryVertexLayout& outLayout)
     memset(&outLayout, 0x0, sizeof(outLayout));
     memcpy(outLayout.vertexAttributes, R_VERTEX_ATTRIBUTES, sizeof(GfxVertexInputAttributeDesc)*CountOf(R_VERTEX_ATTRIBUTES));
     memcpy(outLayout.vertexBufferStrides, R_VERTEXBUFFER_STRIDES, sizeof(uint32)*CountOf(R_VERTEXBUFFER_STRIDES));
-}
-
-void R::ResizeFramebufferResources(uint16 width, uint16 height)
-{
-    _CreateFramebufferDependentResources(width, height);
-    LOG_INFO("Renderer framebuffer resized to %ux%u", width, height);
 }
 
 bool R::Initialize()
@@ -886,34 +975,6 @@ bool R::Initialize()
     bool debugAllocs = settings.engine.debugAllocations;
     gFwd.frameAlloc.Initialize(SIZE_MB, SIZE_KB*128, debugAllocs);
     Engine::RegisterVMAllocator(&gFwd.frameAlloc, "Render");
-
-    App::RegisterEventsCallback([](const AppEvent& ev, void*)
-                                {
-                                    if (ev.type == AppEventType::Resized)
-                                        _CreateFramebufferDependentResources(ev.framebufferWidth, ev.framebufferHeight);
-                                });
-
-    _CreateFramebufferDependentResources(App::GetFramebufferWidth(), App::GetFramebufferHeight());
-
-    //--------------------------------------------------------------------------------------------------------------
-    // Common buffers
-    {
-        GfxBufferDesc bufferDesc = {
-            .sizeBytes = sizeof(RLightBounds)*R_LIGHT_CULL_MAX_LIGHTS_PER_FRAME,
-            .usageFlags = GfxBufferUsageFlags::TransferDst | GfxBufferUsageFlags::Storage | GfxBufferUsageFlags::ShaderDeviceAddress,
-            .arena = GfxMemoryArena::PersistentAddressGPU,
-            .perFrameUpdates = true
-        };
-        gFwd.bLightBounds = GfxBackend::CreateBuffer(bufferDesc);
-
-        bufferDesc = {
-            .sizeBytes = sizeof(RLightProps)*R_LIGHT_CULL_MAX_LIGHTS_PER_FRAME,
-            .usageFlags = GfxBufferUsageFlags::TransferDst | GfxBufferUsageFlags::Storage | GfxBufferUsageFlags::ShaderDeviceAddress,
-            .arena = GfxMemoryArena::PersistentAddressGPU,
-            .perFrameUpdates = true
-        };
-        gFwd.bLightProps = GfxBackend::CreateBuffer(bufferDesc);
-    }
 
     //------------------------------------------------------------------------------------------------------------------
     // Samplers 
@@ -1017,29 +1078,31 @@ void R::Release()
 {
     Engine::UnregisterVMAllocator(&gFwd.frameAlloc);
 
+    // Views that are not destroyed by the user
+    for (RFwdLightViewData& data : gFwd.fwdLightViewPool)
+        _DestroyFwdLightViewResources(data);
+    for (RShadowMapViewData& data : gFwd.shadowMapViewPool)
+        _DestroyShadowMapViewResources(data);
+    gFwd.fwdLightViewPool.Free();
+    gFwd.shadowMapViewPool.Free();
+    gFwd.viewPool.Free();
+
     GfxBackend::DestroyPipeline(gFwd.pShadowMap);
 
     GfxBackend::DestroyPipeline(gFwd.pZPrepass);
     GfxBackend::DestroyPipelineLayout(gFwd.pZPrepassLayout);
-    GfxBackend::DestroyBuffer(gFwd.ubZPrepass);
-    GfxBackend::DestroyBuffer(gFwd.ubShadowMap);
 
     GfxBackend::DestroyPipeline(gFwd.pZPrepassAlphaMask);
     GfxBackend::DestroyPipelineLayout(gFwd.pZPrepassLayoutAlphaMask);
 
     GfxBackend::DestroyPipeline(gFwd.pLightCull);
     GfxBackend::DestroyPipelineLayout(gFwd.pLightCullLayout);
-    GfxBackend::DestroyBuffer(gFwd.ubLightCull);
 
     GfxBackend::DestroyPipeline(gFwd.pLightCullDebug);
     GfxBackend::DestroyPipelineLayout(gFwd.pLightCullDebugLayout);
 
     GfxBackend::DestroyPipeline(gFwd.pLight);
     GfxBackend::DestroyPipelineLayout(gFwd.pLightLayout);
-    GfxBackend::DestroyBuffer(gFwd.ubLightPerFrameData);
-    GfxBackend::DestroyBuffer(gFwd.ubLightPerObjectData);
-    GfxBackend::DestroyBuffer(gFwd.dbLightPerObjectResources);
-    GfxBackend::DestroyBuffer(gFwd.dbLightPerFrameResources);
 
     GfxBackend::DestroyPipeline(gFwd.pTextureDebugDepth);
     GfxBackend::DestroyPipelineLayout(gFwd.pTextureDebugDepthLayout);
@@ -1047,18 +1110,11 @@ void R::Release()
     GfxBackend::DestroyPipeline(gFwd.pTextureDebugColor);
     GfxBackend::DestroyPipelineLayout(gFwd.pTextureDebugColorLayout);
 
-    GfxBackend::DestroyBuffer(gFwd.bLightBounds);
-    GfxBackend::DestroyBuffer(gFwd.bVisibleLightIndices);
-    GfxBackend::DestroyBuffer(gFwd.bLightProps);
-
     for (uint32 i = 0; i < uint32(RSamplerType::_Count); i++)
         GfxBackend::DestroySampler(gFwd.samplers[i]);    
 #if !CONFIG_GFX_IMMUTABLE_SAMPLERS
     GfxBackend::DestroyBuffer(gFwd.dbImmutableSamplers);
 #endif
-
-    GfxBackend::DestroyImage(gFwd.msaaColorRenderImage);
-    GfxBackend::DestroyImage(gFwd.msaaDepthRenderImage);
 
     gFwd.frameAlloc.Release();
     gFwd.initialized = false;
@@ -1068,24 +1124,28 @@ void R::FwdLight::Update(RView& view, GfxCommandBuffer& cmd)
 {
     PROFILE_ZONE("R_FwdLightUpdate");
     RViewData& viewData = gFwd.viewPool.Data(view.mHandle);
+    ASSERT_MSG(viewData.type == RViewType::FwdLight, "View is not FwdLight type");
+    RFwdLightViewData& fwdData = gFwd.fwdLightViewPool.Data(viewData.fwdLightHandle);
+
+    // We need to do Buffer creation here because at init time shaders are still loading and the program might call CreateView before pipelines are created
+    if (!fwdData.ubZPrepass.IsValid())
+        _CreateFwdLightViewBuffers(fwdData);
+    if (fwdData.targetWidth != viewData.viewWidth || fwdData.targetHeight != viewData.viewHeight)
+        _ResizeFwdLightViewTargets(fwdData, viewData.viewWidth, viewData.viewHeight);
 
     Mat4 worldToClipMat = viewData.worldToClipMat;
     if (cmd.mDrawsToSwapchain) // TODO: this is not gonna detect swapchain properly
         worldToClipMat = GfxBackend::GetSwapchainTransformMat() * worldToClipMat;
-    uint32 tilesCountX = M::CeilDiv(viewData.viewWidth, R_LIGHT_CULL_TILE_SIZE);
-    uint32 tilesCountY = M::CeilDiv(viewData.viewHeight, R_LIGHT_CULL_TILE_SIZE);
-    uint32 numTiles = tilesCountX * tilesCountY;
-    gFwd.tilesCountX = tilesCountX;
-    gFwd.tilesCountY = tilesCountY;
+    uint32 numTiles = fwdData.tilesCountX * fwdData.tilesCountY;
 
     {
-        GfxHelperBufferUpdateScope updater(cmd, gFwd.ubZPrepass, uint32(-1), GfxShaderStage::Vertex|GfxShaderStage::Fragment);
+        GfxHelperBufferUpdateScope updater(cmd, fwdData.ubZPrepass, uint32(-1), GfxShaderStage::Vertex|GfxShaderStage::Fragment);
         memcpy(updater.mData, &worldToClipMat, sizeof(Mat4));
     }
 
     // Per-frame light culling data
     {
-        GfxHelperBufferUpdateScope updater(cmd, gFwd.ubLightCull, uint32(-1), GfxShaderStage::Compute);
+        GfxHelperBufferUpdateScope updater(cmd, fwdData.ubLightCull, uint32(-1), GfxShaderStage::Compute);
         RLightCullShaderFrameData* buffer = (RLightCullShaderFrameData*)updater.mData;
         buffer->worldToViewMat = viewData.worldToViewMat;
         buffer->clipToViewMat = Mat4::Inverse(viewData.viewToClipMat);
@@ -1098,7 +1158,7 @@ void R::FwdLight::Update(RView& view, GfxCommandBuffer& cmd)
 
     // Per-frame lighting data
     {
-        GfxHelperBufferUpdateScope uniformBufferUpdater(cmd, gFwd.ubLightPerFrameData, uint32(-1), GfxShaderStage::Vertex);
+        GfxHelperBufferUpdateScope uniformBufferUpdater(cmd, fwdData.ubLightPerFrameData, uint32(-1), GfxShaderStage::Vertex);
         RLightShaderFrameData* frameData = (RLightShaderFrameData*)uniformBufferUpdater.mData;
         frameData->worldToClipMat = worldToClipMat;
         frameData->worldToSunLightClipMat = viewData.sunLightWorldToClipMat;
@@ -1106,27 +1166,27 @@ void R::FwdLight::Update(RView& view, GfxCommandBuffer& cmd)
         frameData->sunLightColor = viewData.sunLightColor;
         frameData->skyAmbientColor = viewData.skyAmbientColor;
         frameData->groundAmbientColor = viewData.groundAmbientColor;
-        frameData->tilesCountX = tilesCountX;
+        frameData->tilesCountX = fwdData.tilesCountX;
 
-        GfxHelperBufferUpdateScope descriptorBufferUpdater(cmd, gFwd.dbLightPerFrameResources, uint32(-1), GfxShaderStage::Vertex);
+        GfxHelperBufferUpdateScope descriptorBufferUpdater(cmd, fwdData.dbLightPerFrameResources, uint32(-1), GfxShaderStage::Vertex);
         GfxHelperDescriptorBuffer descriptorBuffer(descriptorBufferUpdater.mData, gFwd.pLightLayout, (uint32)RDescriptorSetIndex::PerFrame);
 
         GfxBindingDesc perFrameBindings[] = {
             {
                 .name = "PerFrameData",
-                .buffer = gFwd.ubLightPerFrameData,
+                .buffer = fwdData.ubLightPerFrameData,
             },
             {
                 .name = "VisibleLightIndices",
-                .buffer = gFwd.bVisibleLightIndices,
+                .buffer = fwdData.bVisibleLightIndices,
             },
             {
                 .name = "LocalLights",
-                .buffer = gFwd.bLightProps
+                .buffer = fwdData.bLightProps
             },
             {
                 .name = "LocalLightBounds",
-                .buffer = gFwd.bLightBounds
+                .buffer = fwdData.bLightBounds
             },
             {
                 .name = "ShadowMap",
@@ -1136,14 +1196,14 @@ void R::FwdLight::Update(RView& view, GfxCommandBuffer& cmd)
 
         descriptorBuffer.WriteBindings(0, CountOf(perFrameBindings), perFrameBindings);
     }
-    cmd.TransitionBuffer(gFwd.dbLightPerFrameResources, GfxBufferTransition::DescriptorBufferRead);
+    cmd.TransitionBuffer(fwdData.dbLightPerFrameResources, GfxBufferTransition::DescriptorBufferRead);
 
     // Per-Object lighting data
     {
-        GfxHelperBufferUpdateScope uniformBufferUpdater(cmd, gFwd.ubLightPerObjectData, uint32(-1), GfxShaderStage::Vertex);
+        GfxHelperBufferUpdateScope uniformBufferUpdater(cmd, fwdData.ubLightPerObjectData, uint32(-1), GfxShaderStage::Vertex);
         GfxHelperUniformBuffer uniformBuffer(uniformBufferUpdater.mData, sizeof(RLightShaderObjectData), R_MAX_DRAW_OBJECTS);
 
-        GfxHelperBufferUpdateScope descriptorBufferUpdater(cmd, gFwd.dbLightPerObjectResources, uint32(-1), GfxShaderStage::Vertex);
+        GfxHelperBufferUpdateScope descriptorBufferUpdater(cmd, fwdData.dbLightPerObjectResources, uint32(-1), GfxShaderStage::Vertex);
         GfxHelperDescriptorBuffer descriptorBuffer(descriptorBufferUpdater.mData, gFwd.pLightLayout, (uint32)RDescriptorSetIndex::PerObject);
 
         uint32 index = 0;
@@ -1162,7 +1222,7 @@ void R::FwdLight::Update(RView& view, GfxCommandBuffer& cmd)
                 GfxBindingDesc bindings[] = {
                     {
                         .name = "PerObjectData",
-                        .buffer = gFwd.ubLightPerObjectData,
+                        .buffer = fwdData.ubLightPerObjectData,
                         .bufferRange = {
                             .offset = uniformBuffer.Write<RLightShaderObjectData>(index, objectData),
                             .size = sizeof(RLightShaderObjectData)
@@ -1181,22 +1241,22 @@ void R::FwdLight::Update(RView& view, GfxCommandBuffer& cmd)
             chunk = chunk->nextChunk;
         }
     }
-    cmd.TransitionBuffer(gFwd.dbLightPerObjectResources, GfxBufferTransition::DescriptorBufferRead);
+    cmd.TransitionBuffer(fwdData.dbLightPerObjectResources, GfxBufferTransition::DescriptorBufferRead);
 
     if (viewData.numLights) {
-        GfxHelperBufferUpdateScope lightBoundsUpdater(cmd, gFwd.bLightBounds, sizeof(RLightBounds)*viewData.numLights,
+        GfxHelperBufferUpdateScope lightBoundsUpdater(cmd, fwdData.bLightBounds, sizeof(RLightBounds)*viewData.numLights,
                                                       GfxShaderStage::Compute);
         RLightBounds* bounds = (RLightBounds*)lightBoundsUpdater.mData;
         memcpy(bounds, viewData.lightBounds, sizeof(RLightBounds)*viewData.numLights);
 
-        GfxHelperBufferUpdateScope lightPropsUpdater(cmd, gFwd.bLightProps, sizeof(RLightProps)*viewData.numLights,
+        GfxHelperBufferUpdateScope lightPropsUpdater(cmd, fwdData.bLightProps, sizeof(RLightProps)*viewData.numLights,
                                                      GfxShaderStage::Fragment);
         RLightProps* props = (RLightProps*)lightPropsUpdater.mData;
         memcpy(props, viewData.lightProps, sizeof(RLightProps)*viewData.numLights);
     }
     else {
         // Fill visible light indices buffer with sentinels (empty state)
-        GfxHelperBufferUpdateScope updater(cmd, gFwd.bVisibleLightIndices, uint32(-1), GfxShaderStage::Fragment);
+        GfxHelperBufferUpdateScope updater(cmd, fwdData.bVisibleLightIndices, uint32(-1), GfxShaderStage::Fragment);
         uint32* indices = (uint32*)updater.mData;
         for (uint32 i = 0; i < numTiles; i++)
             indices[i*R_LIGHT_CULL_MAX_LIGHTS_PER_TILE] = 0xffffffff;
@@ -1233,8 +1293,12 @@ void R::FwdLight::Render(RView& view, GfxCommandBuffer& cmd, GfxImageHandle fina
 
     uint32 msaa = SettingsJunkyard::Get().graphics.msaa;
     RViewData& viewData = gFwd.viewPool.Data(view.mHandle);
+    ASSERT_MSG(viewData.type == RViewType::FwdLight, "View is not FwdLight type");
+    RFwdLightViewData& fwdData = gFwd.fwdLightViewPool.Data(viewData.fwdLightHandle);
+    ASSERT_MSG(fwdData.targetWidth == viewData.viewWidth && fwdData.targetHeight == viewData.viewHeight,
+               "View size has changed after FwdLight::Update");
 
-    GfxImageHandle renderDepthImage = msaa > 1 ? gFwd.msaaDepthRenderImage : finalDepthImage;
+    GfxImageHandle renderDepthImage = msaa > 1 ? fwdData.msaaDepthImage : finalDepthImage;
     ASSERT(renderDepthImage.IsValid());
 
     // Render blank screen if we have nothing to render
@@ -1299,7 +1363,7 @@ void R::FwdLight::Render(RView& view, GfxCommandBuffer& cmd, GfxImageHandle fina
                 GfxBindingDesc bindings[] = {
                     {
                         .name = "PerFrameData",
-                        .buffer = gFwd.ubZPrepass
+                        .buffer = fwdData.ubZPrepass
                     }
                 };
                 cmd.PushBindings(gFwd.pZPrepassLayout, CountOf(bindings), bindings);
@@ -1341,7 +1405,7 @@ void R::FwdLight::Render(RView& view, GfxCommandBuffer& cmd, GfxImageHandle fina
             GfxBackendRenderPass zprepassExtra {
                 .numAttachments = 1,
                 .colorAttachments = {{
-                    .image = gFwd.msaaColorRenderImage,
+                    .image = fwdData.msaaColorImage,
                     .ignoreStore = true
                 }},
                 .depthAttachment = {
@@ -1376,7 +1440,7 @@ void R::FwdLight::Render(RView& view, GfxCommandBuffer& cmd, GfxImageHandle fina
                 GfxBindingDesc bindings[] = {
                     {
                         .name = "PerFrameData",
-                        .buffer = gFwd.ubZPrepass
+                        .buffer = fwdData.ubZPrepass
                     },
                     {
                         .name = "ColorTexture",
@@ -1397,20 +1461,20 @@ void R::FwdLight::Render(RView& view, GfxCommandBuffer& cmd, GfxImageHandle fina
     if (viewData.numLights) {
         GPU_PROFILE_ZONE(cmd, "LightCull");
         cmd.TransitionImage(renderDepthImage, GfxImageTransition::ShaderRead);
-        cmd.TransitionBuffer(gFwd.bVisibleLightIndices, GfxBufferTransition::ComputeWrite);
+        cmd.TransitionBuffer(fwdData.bVisibleLightIndices, GfxBufferTransition::ComputeWrite);
 
         GfxBindingDesc bindings[] = {
             {
                 .name = "PerFrameData", 
-                .buffer = gFwd.ubLightCull
+                .buffer = fwdData.ubLightCull
             },
             {
                 .name = "Lights",
-                .buffer = gFwd.bLightBounds
+                .buffer = fwdData.bLightBounds
             },
             {
                 .name = "VisibleLightIndices",
-                .buffer = gFwd.bVisibleLightIndices
+                .buffer = fwdData.bVisibleLightIndices
             },
             {
                 .name = "DepthTexture",
@@ -1420,9 +1484,9 @@ void R::FwdLight::Render(RView& view, GfxCommandBuffer& cmd, GfxImageHandle fina
 
         cmd.BindPipeline(gFwd.pLightCull);
         cmd.PushBindings(gFwd.pLightCullLayout, CountOf(bindings), bindings);
-        cmd.Dispatch(gFwd.tilesCountX, gFwd.tilesCountY, 1);
+        cmd.Dispatch(fwdData.tilesCountX, fwdData.tilesCountY, 1);
 
-        cmd.TransitionBuffer(gFwd.bVisibleLightIndices, GfxBufferTransition::FragmentRead);
+        cmd.TransitionBuffer(fwdData.bVisibleLightIndices, GfxBufferTransition::FragmentRead);
     }
 
     cmd.TransitionImage(renderDepthImage, GfxImageTransition::RenderTarget, GfxImageTransitionFlags::DepthRead);
@@ -1439,7 +1503,7 @@ void R::FwdLight::Render(RView& view, GfxCommandBuffer& cmd, GfxImageHandle fina
             cmd.TransitionImage(viewData.sunShadowMapImage, GfxImageTransition::ShaderRead);
 
         // If finalColorImage is not provided, we render to Swapchain
-        GfxImageHandle renderColorImage = msaa > 1 ? gFwd.msaaColorRenderImage : finalColorImage;
+        GfxImageHandle renderColorImage = msaa > 1 ? fwdData.msaaColorImage : finalColorImage;
 
         // Render to swapchain if we don't have MSAA, otherwise, resolve to Swapchain and provided depth buffer
         if (renderColorImage.IsValid())
@@ -1473,8 +1537,8 @@ void R::FwdLight::Render(RView& view, GfxCommandBuffer& cmd, GfxImageHandle fina
         R::_SetViewportAndScissor(cmd, viewData.viewWidth, viewData.viewHeight);
 
         GfxBufferHandle descriptorBuffers[] = {
-            gFwd.dbLightPerFrameResources,
-            gFwd.dbLightPerObjectResources,
+            fwdData.dbLightPerFrameResources,
+            fwdData.dbLightPerObjectResources,
 #if !CONFIG_GFX_IMMUTABLE_SAMPLERS
             gFwd.dbImmutableSamplers
 #endif
@@ -1521,26 +1585,22 @@ void R::FwdLight::Render(RView& view, GfxCommandBuffer& cmd, GfxImageHandle fina
         cmd.EndRenderPass();
     }
     else if (debugMode == RDebugMode::LightCull) {
-        GfxBackendRenderPass pass { 
-            .swapchain = true,
-        };
-
-        cmd.BeginRenderPass(pass);
+        _BeginDebugRenderPass(cmd, finalColorImage, FLOAT4_ZERO);
         cmd.BindPipeline(gFwd.pLightCullDebug);
-        cmd.HelperSetFullscreenViewportAndScissor();
+        R::_SetViewportAndScissor(cmd, viewData.viewWidth, viewData.viewHeight);
 
         GfxBindingDesc bindings[] = {
             {
                 .name = "VisibleLightIndices",
-                .buffer = gFwd.bVisibleLightIndices
+                .buffer = fwdData.bVisibleLightIndices
             }
         };
 
         cmd.PushBindings(gFwd.pLightCullDebugLayout, CountOf(bindings), bindings);
 
         RLightCullDebugShaderFrameData perFrameData {
-            .tilesCountX = gFwd.tilesCountX,
-            .tilesCountY = gFwd.tilesCountY
+            .tilesCountX = fwdData.tilesCountX,
+            .tilesCountY = fwdData.tilesCountY
         };
         cmd.PushConstants<RLightCullDebugShaderFrameData>(gFwd.pLightCullDebugLayout, "PerFrameData", perFrameData);
 
@@ -1551,19 +1611,9 @@ void R::FwdLight::Render(RView& view, GfxCommandBuffer& cmd, GfxImageHandle fina
     else if (debugMode == RDebugMode::SunShadowMap) {
         cmd.TransitionImage(viewData.sunShadowMapImage, GfxImageTransition::ShaderRead);
 
-        GfxBackendRenderPass pass { 
-            .colorAttachments = {{
-                .clear = true,
-                .clearValue = {
-                    .color = FLOAT4_UNITZ
-                }
-            }},
-            .swapchain = true,
-        };
-
-        cmd.BeginRenderPass(pass);
+        _BeginDebugRenderPass(cmd, finalColorImage, FLOAT4_UNITZ);
         cmd.BindPipeline(gFwd.pTextureDebugDepth);
-        cmd.HelperSetFullscreenViewportAndScissor();
+        R::_SetViewportAndScissor(cmd, viewData.viewWidth, viewData.viewHeight);   // Viewport gets letterboxed below
 
         // Letterboxing (TODO: decouple this code into a function)
         {
@@ -1703,6 +1753,18 @@ RView R::CreateView(RViewType viewType)
         .type = viewType,
     };
 
+    switch (viewType) {
+    case RViewType::FwdLight:
+        data.fwdLightHandle = gFwd.fwdLightViewPool.Add(RFwdLightViewData {});
+        break;
+    case RViewType::ShadowMap:
+        data.shadowMapHandle = gFwd.shadowMapViewPool.Add(RShadowMapViewData {});
+        break;
+    default:
+        ASSERT(0);
+        break;
+    }
+
     RViewHandle handle = gFwd.viewPool.Add(data);
     RView view {
         .mHandle = handle,
@@ -1714,17 +1776,48 @@ RView R::CreateView(RViewType viewType)
 
 void R::DestroyView(RView& view)
 {
+    if (!view.mHandle.IsValid())
+        return;
+
+    RViewData& viewData = gFwd.viewPool.Data(view.mHandle);
+    switch (viewData.type) {
+    case RViewType::FwdLight:
+        _DestroyFwdLightViewResources(gFwd.fwdLightViewPool.Data(viewData.fwdLightHandle));
+        gFwd.fwdLightViewPool.Remove(viewData.fwdLightHandle);
+        break;
+    case RViewType::ShadowMap:
+        _DestroyShadowMapViewResources(gFwd.shadowMapViewPool.Data(viewData.shadowMapHandle));
+        gFwd.shadowMapViewPool.Remove(viewData.shadowMapHandle);
+        break;
+    default:
+        ASSERT(0);
+        break;
+    }
+
     gFwd.viewPool.Remove(view.mHandle);
+    view = {};
 }
 
 void R::ShadowMap::Update(RView& view, GfxCommandBuffer& cmd)
 {
     PROFILE_ZONE("R_ShadowMapUpdate");
     RViewData& viewData = gFwd.viewPool.Data(view.mHandle);
+    ASSERT_MSG(viewData.type == RViewType::ShadowMap, "View is not ShadowMap type");
+    RShadowMapViewData& shadowData = gFwd.shadowMapViewPool.Data(viewData.shadowMapHandle);
     Mat4 worldToClipMat = viewData.worldToClipMat;
 
+    if (!shadowData.ubShadowMap.IsValid()) {
+        GfxBufferDesc bufferDesc {
+            .sizeBytes = sizeof(Mat4),
+            .usageFlags = GfxBufferUsageFlags::TransferDst | GfxBufferUsageFlags::Uniform,
+            .arena = GfxMemoryArena::DynamicBufferGPU,
+            .perFrameUpdates = true
+        };
+        shadowData.ubShadowMap = GfxBackend::CreateBuffer(bufferDesc);
+    }
+
     {
-        GfxHelperBufferUpdateScope updater(cmd, gFwd.ubShadowMap, uint32(-1), GfxShaderStage::Vertex);
+        GfxHelperBufferUpdateScope updater(cmd, shadowData.ubShadowMap, uint32(-1), GfxShaderStage::Vertex);
         memcpy(updater.mData, &worldToClipMat, sizeof(Mat4));
     }
 }
@@ -1734,6 +1827,9 @@ void R::ShadowMap::Render(RView& view, GfxCommandBuffer& cmd, GfxImageHandle sha
     ASSERT(shadowMapDepthImage.IsValid());
 
     RViewData& viewData = gFwd.viewPool.Data(view.mHandle);
+    ASSERT_MSG(viewData.type == RViewType::ShadowMap, "View is not ShadowMap type");
+    const RShadowMapViewData& shadowData = gFwd.shadowMapViewPool.Data(viewData.shadowMapHandle);
+    ASSERT_MSG(shadowData.ubShadowMap.IsValid(), "ShadowMap::Update must be called before Render");
     
     // ShadowMap
     {
@@ -1776,7 +1872,7 @@ void R::ShadowMap::Render(RView& view, GfxCommandBuffer& cmd, GfxImageHandle sha
             GfxBindingDesc bindings[] = {
                 {
                     .name = "PerFrameData",
-                    .buffer = gFwd.ubShadowMap
+                    .buffer = shadowData.ubShadowMap
                 }
             };
             cmd.PushBindings(gFwd.pZPrepassLayout, CountOf(bindings), bindings);
