@@ -8,6 +8,7 @@
 #include "Core/Log.h"
 #include "Core/TracyHelper.h"
 #include "Core/BlitSort.h"
+#include "Core/MathScalar.h"
 
 #include "Common/RemoteServices.h"
 #include "Common/Application.h"
@@ -31,6 +32,9 @@
 static constexpr float  ENGINE_REMOTE_RECONNECT_INTERVAL = 5.0f;
 static constexpr uint32 ENGINE_REMOTE_CONNECT_RETRIES = 3;
 static constexpr size_t ENGINE_MAX_MEMORY_SIZE = 2*SIZE_GB;
+static constexpr uint32 ENGINE_FRAME_TIME_HISTORY = 60;    // Number of frames used for average FPS/frame-time
+static constexpr float  ENGINE_MAX_SNAPPED_FRAME_TIME = 0.1f;   // Cap for snapped frame-time (hitches, breakpoints, window drags)
+static constexpr float  ENGINE_FRAME_SNAP_TOLERANCE = 0.25f;    // Max distance to a vsync multiple to snap, in fractions of vsync period
 
 using EngineInitializeResourcesPair = Pair<EngineInitializeResourcesCallback, void*>;
 
@@ -84,6 +88,12 @@ struct EngineContext
     
     float frameTime;
     double elapsedTime;
+    float frameTimeHistory[ENGINE_FRAME_TIME_HISTORY];  // Ring buffer of the last N frame times
+    double frameTimeHistorySum;
+    uint32 frameTimeHistoryIndex;
+    uint32 frameTimeHistoryCount;
+    float snappedFrameTime;
+    float snappedFrameTimeResidual;     // Time that snapping took from/added to the real clock, paid back next frame
     AtomicUint64 frameIndex;
     uint64 rawFrameStartTime;
     uint64 rawFrameTime;
@@ -724,7 +734,57 @@ void Engine::BeginFrame(float dt)
     gEng.frameTime = dt;
     gEng.elapsedTime += dt;
 
+    // Running sum over the ring buffer: Remove the sample we are about to overwrite, then add the new one
+    gEng.frameTimeHistorySum -= gEng.frameTimeHistory[gEng.frameTimeHistoryIndex];
+    gEng.frameTimeHistorySum += dt;
+    gEng.frameTimeHistory[gEng.frameTimeHistoryIndex] = dt;
+    gEng.frameTimeHistoryIndex = (gEng.frameTimeHistoryIndex + 1) % ENGINE_FRAME_TIME_HISTORY;
+    gEng.frameTimeHistoryCount = Min(gEng.frameTimeHistoryCount + 1, ENGINE_FRAME_TIME_HISTORY);
+
     const SettingsJunkyard& settings = SettingsJunkyard::Get();
+
+    // Snapped frame-time, for animation and visual effects
+    // Ref: "The Elusive Frame Timing: A Case for Smoothness Over Speed", Alen Ladavac (Croteam), GDC 2019
+    //   With vsync, frames are displayed at exact multiples of the refresh period, but the CPU measured dt is the time
+    //   between the CPU waking up from fence/acquire/present waits, which jitters by a millisecond or two. Advancing
+    //   animation with that dt makes objects move by uneven amounts while being displayed at even intervals, which
+    //   shows up as "micro-stutter" even though the frame-rate is perfectly stable.
+    //   The fix is to treat the displayed interval as the true frame-time: when the measured dt is close to a whole
+    //   number of refresh periods, use exactly that. A missed vsync then becomes exactly 2 periods, which is also
+    //   correct because that frame stayed on screen twice as long.
+    //   The error that snapping introduces is carried over in a residual, so the sum of snapped times keeps tracking
+    //   the real clock and doesn't drift. If dt is too far from any vsync multiple (vsync off, heavy hitch), we fall
+    //   back to the raw value and drop the residual.
+    //   The proper solution mentioned in the talk is to use actual display timestamps from the presentation API
+    //   (VK_KHR_present_wait/present_id or VK_EXT_present_timing) instead of CPU timing.
+    {
+        float snapped = dt;
+        const uint16 refreshRate = App::GetDisplayInfo().refreshRate;
+        if (settings.graphics.enableVsync && refreshRate > 0) {
+            const float vsyncPeriod = 1.0f / float(refreshRate);
+            const float raw = dt + gEng.snappedFrameTimeResidual;
+            const float numPeriods = Max(1.0f, M::Round(raw / vsyncPeriod));
+            const float snappedToVsync = numPeriods * vsyncPeriod;
+            if (M::Abs(raw - snappedToVsync) < vsyncPeriod*ENGINE_FRAME_SNAP_TOLERANCE) {
+                snapped = snappedToVsync;
+                gEng.snappedFrameTimeResidual = raw - snappedToVsync;
+            }
+            else {
+                gEng.snappedFrameTimeResidual = 0;
+            }
+        }
+        else {
+            gEng.snappedFrameTimeResidual = 0;
+        }
+
+        // Cap: Long stalls (window drag modal loop, debugger breaks, loading) would otherwise produce one giant step
+        // that makes animations/effects jump. That time is dropped and not paid back
+        if (snapped > ENGINE_MAX_SNAPPED_FRAME_TIME) {
+            snapped = ENGINE_MAX_SNAPPED_FRAME_TIME;
+            gEng.snappedFrameTimeResidual = 0;
+        }
+        gEng.snappedFrameTime = snapped;
+    }
 
     // Reconnect to remote server if it's disconnected
     if (settings.engine.connectToServer && gEng.remoteReconnect) {
@@ -752,9 +812,8 @@ void Engine::BeginFrame(float dt)
         GfxBackend::Begin();
     }
 
-    Asset::Update();
-
     gEng.rawFrameStartTime = Timer::GetTicks();
+    Asset::Update();
 }
 
 void Engine::EndFrame()
@@ -788,6 +847,27 @@ uint64 Engine::GetFrameIndex()
 float Engine::GetFrameTime()
 {
     return gEng.frameTime;
+}
+
+float Engine::GetSnappedFrameTime()
+{
+    return gEng.snappedFrameTime;
+}
+
+float Engine::GetFPS()
+{
+    return gEng.frameTime > 0 ? 1.0f/gEng.frameTime : 0;
+}
+
+float Engine::GetAverageFrameTime()
+{
+    return gEng.frameTimeHistoryCount ? float(gEng.frameTimeHistorySum / double(gEng.frameTimeHistoryCount)) : 0;
+}
+
+float Engine::GetAverageFPS()
+{
+    // Frames over total time (harmonic mean). Averaging the per-frame 1/dt values would be biased by short frames
+    return gEng.frameTimeHistorySum > 0 ? float(double(gEng.frameTimeHistoryCount) / gEng.frameTimeHistorySum) : 0;
 }
 
 const SysInfo& Engine::GetSysInfo()

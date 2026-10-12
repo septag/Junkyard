@@ -455,9 +455,10 @@ struct TestAssetApp : AppCallbacks
 
         PROFILE_ZONE("Update");
 
-        mCam->HandleMovementKeyboard(dt, 40.0f, 20.0f);
-
         Engine::BeginFrame(dt);
+
+        mCam->HandleMovementKeyboard(Engine::GetSnappedFrameTime(), 40.0f, 20.0f);
+
         mGroupUnloader.Update();
         UpdateLoadAll();
         GfxCommandBuffer cmd = GfxBackend::BeginCommandBuffer(GfxQueueType::Graphics);

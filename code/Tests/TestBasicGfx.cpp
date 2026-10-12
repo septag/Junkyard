@@ -418,9 +418,10 @@ struct TestBasicGfxApp final : AppCallbacks
             mFirstTime = false;
         }
 
-        mCam->HandleMovementKeyboard(dt, 20.0f, 5.0f);
-
         Engine::BeginFrame(dt);
+
+        mCam->HandleMovementKeyboard(Engine::GetSnappedFrameTime(), 20.0f, 5.0f);
+
         mGroupUnloader.Update();
 
         RenderViewport::PrepareRenderTargets(&mViewport);

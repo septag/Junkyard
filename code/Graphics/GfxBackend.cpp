@@ -75,6 +75,7 @@ PRAGMA_DIAGNOSTIC_POP()
 static constexpr uint32 GFXBACKEND_MAX_GARBAGE_COLLECT_PER_FRAME = 32;
 static constexpr uint32 GFXBACKEND_BACKBUFFER_COUNT = 3;
 static constexpr uint32 GFXBACKEND_FRAMES_IN_FLIGHT = 2;
+static constexpr uint64 GFXBACKEND_PRESENT_WAIT_TIMEOUT = 100*1000*1000;   // Nanoseconds
 static constexpr uint32 GFXBACKEND_MAX_ENTRIES_IN_OFFSET_ALLOCATOR = 64*1024;
 static constexpr uint32 GFXBACKEND_MAX_QUEUES = 4;
 static constexpr uint32 GFXBACKEND_MAX_SETS_PER_PIPELINE = 4;
@@ -156,6 +157,7 @@ struct GfxBackendSwapchain
     VkSemaphore renderFinishedSemaphores[GFXBACKEND_BACKBUFFER_COUNT];     // Signals after all rendering is finished (Ready for present)
     ImageState imageStates[GFXBACKEND_BACKBUFFER_COUNT];
     VkExtent2D extent;
+    uint64 presentId;   // Last present id that is successfully queued to this swapchain (VK_KHR_present_id). 0 = None
     bool resize;
 
     VkSemaphore GetSwapchainReadySemaphore(uint32 frameIdx) { return imageReadySemaphores[frameIdx]; }
@@ -384,6 +386,7 @@ struct GfxBackendVkExtensions
     bool hasAstcDecodeMode;
     bool hasPipelineExecutableProperties;
     bool hasNvidiaAftermath;
+    bool hasPresentWait;    // VK_KHR_present_id + VK_KHR_present_wait (Both extensions and their features)
 };
 
 struct GfxBackendGpu
@@ -1526,9 +1529,36 @@ namespace GfxBackend
             gBackendVk.extApi.hasAstcDecodeMode = CheckAddExtension("VK_EXT_astc_decode_mode");
         gBackendVk.extApi.hasPipelineExecutableProperties = settings.graphics.shaderDumpProperties ? CheckAddExtension("VK_KHR_pipeline_executable_properties") : false;
         if (settings.graphics.enableGpuCrashDumps) {
-            gBackendVk.extApi.hasNvidiaAftermath = CheckAddExtension("VK_NV_device_diagnostic_checkpoints") && 
+            gBackendVk.extApi.hasNvidiaAftermath = CheckAddExtension("VK_NV_device_diagnostic_checkpoints") &&
                 CheckAddExtension("VK_NV_device_diagnostics_config");
         }
+
+        // Present wait: Used for frame pacing. See GfxBackend::End()
+        // Having the extensions is not enough, the features must also be supported, so query them first
+        VkPhysicalDevicePresentIdFeaturesKHR presentIdFeatures {
+            .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRESENT_ID_FEATURES_KHR
+        };
+        VkPhysicalDevicePresentWaitFeaturesKHR presentWaitFeatures {
+            .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRESENT_WAIT_FEATURES_KHR,
+            .pNext = &presentIdFeatures
+        };
+        if (!settings.graphics.headless &&
+            _HasExtension(gpu.extensions, gpu.numExtensions, "VK_KHR_present_id") &&
+            _HasExtension(gpu.extensions, gpu.numExtensions, "VK_KHR_present_wait"))
+        {
+            VkPhysicalDeviceFeatures2 features {
+                .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
+                .pNext = &presentWaitFeatures
+            };
+            vkGetPhysicalDeviceFeatures2(gpu.handle, &features);
+            if (presentIdFeatures.presentId && presentWaitFeatures.presentWait) {
+                CheckAddExtension("VK_KHR_present_id");
+                CheckAddExtension("VK_KHR_present_wait");
+                gBackendVk.extApi.hasPresentWait = true;
+            }
+        }
+        if (!settings.graphics.headless && !gBackendVk.extApi.hasPresentWait)
+            LOG_WARNING("Gfx: VK_KHR_present_wait is not supported on the device. Frame pacing will be less accurate");
 
         if (enabledExtensions.Count()) {
             LOG_VERBOSE("Enabled device extensions (%u):", enabledExtensions.Count());
@@ -1623,7 +1653,14 @@ namespace GfxBackend
         };
         *deviceNext = &extDyn3Features;
         deviceNext = &extDyn3Features.pNext;
-        
+
+        // Present wait features. presentWaitFeatures already chains presentIdFeatures (filled by the query above)
+        if (gBackendVk.extApi.hasPresentWait) {
+            presentIdFeatures.pNext = nullptr;
+            *deviceNext = &presentWaitFeatures;
+            deviceNext = &presentIdFeatures.pNext;
+        }
+
         if (vkCreateDevice(gpu.handle, &devCreateInfo, gBackendVk.vkAlloc, &gBackendVk.device) != VK_SUCCESS) {
             LOG_ERROR("Gfx: CreateDevice failed");
             return false;
@@ -1753,7 +1790,8 @@ namespace GfxBackend
             LOG_ERROR("Gfx: CreateSwapchain failed");
             return false;
         }
-        
+        swapchain->presentId = 0;   // Present ids are per swapchain, start over
+
         uint32 numActualImages = 0;
         vkGetSwapchainImagesKHR(gBackendVk.device, swapchain->handle, &numActualImages, nullptr);
         ASSERT(numActualImages == numImages);
@@ -2513,6 +2551,10 @@ void GfxBackend::End()
         vkDeviceWaitIdle(gBackendVk.device);
     }
 
+    // Present wait is only useful with vsync (FIFO). With MAILBOX, the previous frame may get replaced and never be
+    // displayed, so waiting for it would throttle us to the refresh rate, which defeats the purpose of disabling vsync
+    const bool usePresentWait = gBackendVk.extApi.hasPresentWait && SettingsJunkyard::Get().graphics.enableVsync;
+
     // Present
     {
         VkSemaphore waitSemaphore = gBackendVk.swapchain.GetSwapchainRenderFinishedSemaphore();
@@ -2529,7 +2571,20 @@ void GfxBackend::End()
             .pImageIndices = &gBackendVk.swapchain.imageIndex
         };
 
+        // Tag the present with an id, so we can wait for it to be displayed (See present wait below)
+        const uint64 presentId = gBackendVk.swapchain.presentId + 1;
+        VkPresentIdKHR presentIdInfo {
+            .sType = VK_STRUCTURE_TYPE_PRESENT_ID_KHR,
+            .swapchainCount = 1,
+            .pPresentIds = &presentId
+        };
+        if (usePresentWait)
+            presentInfo.pNext = &presentIdInfo;
+
         VkResult r = vkQueuePresentKHR(queue.handle, &presentInfo);
+        if (usePresentWait && (r == VK_SUCCESS || r == VK_SUBOPTIMAL_KHR))
+            gBackendVk.swapchain.presentId = presentId;
+
         if (r == VK_ERROR_OUT_OF_DATE_KHR) {
             gBackendVk.swapchain.resize = true;
         }
@@ -2540,7 +2595,22 @@ void GfxBackend::End()
         }
     }
 
+    // Can add more book-keeping code here. Since the wait time in vkWaitForPresent will put the cpu to idle, so the code here could be essentially free
     _CollectGarbage(false);
+
+    // Frame pacing (VK_KHR_present_wait): Block until the previous frame (N-1) is actually displayed
+    // - The CPU can't run more than one frame ahead of the display, which lowers input latency
+    // - The CPU now always wakes up from this single wait, which is locked to vsync, instead of randomly blocking in
+    //   fence waits, acquire or present. This is the last blocking call of the frame, so the frame-time that the app
+    //   measures at the start of its loop becomes much more regular (See Engine::BeginFrame, snapped frame-time)
+    if (usePresentWait && !gBackendVk.swapchain.resize && gBackendVk.swapchain.presentId > 1) {
+        PROFILE_ZONE("WaitForPresent");
+        VkResult r = vkWaitForPresentKHR(gBackendVk.device, gBackendVk.swapchain.handle, gBackendVk.swapchain.presentId - 1,
+                                         GFXBACKEND_PRESENT_WAIT_TIMEOUT);
+        if (r == VK_ERROR_OUT_OF_DATE_KHR)
+            gBackendVk.swapchain.resize = true;
+        // VK_TIMEOUT: Frame wasn't displayed in time (occluded window, etc.). Just carry on
+    }
 
     if (gBackendVk.swapchain.resize) {
         vkDeviceWaitIdle(gBackendVk.device);

@@ -962,6 +962,12 @@ namespace App
         uint64 tmPrev = tmNow;
         bool quit = false;
         while (!quit && !gApp.quitFromConsole) {
+            // Measure the frame-time at the top of the loop, right after the last blocking call of the previous frame
+            // (present wait in GfxBackend::End). So message processing time doesn't add jitter to the frame-time
+            tmNow = Timer::GetTicks();
+            float dt = float(Timer::ToSec(tmNow - tmPrev));
+            tmPrev = tmNow;
+
             if (settings.graphics.IsGraphicsEnabled()) {
                 MSG msg;
 
@@ -1004,16 +1010,12 @@ namespace App
                 lppAgent.Restart(lpp::LPP_RESTART_BEHAVIOUR_INSTANT_TERMINATION, 0u, nullptr);
             #endif // CONFIG_ENABLE_LIVEPP
 
-            tmNow = Timer::GetTicks();
-            float dt = float(Timer::ToSec(tmNow - tmPrev));
             if (!gApp.iconified || (gApp.iconified && gApp.desc.updateWhenMinimized)) {
-                if (!gApp.overrideUpdateCallback.first) 
+                if (!gApp.overrideUpdateCallback.first)
                     desc.callbacks->Update(dt);
                 else
                     gApp.overrideUpdateCallback.first(dt, gApp.overrideUpdateCallback.second);
             }
-
-            tmPrev = tmNow;
         }
     
         // Cleanup

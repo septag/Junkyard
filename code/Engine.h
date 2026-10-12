@@ -19,9 +19,14 @@ namespace Engine
     API void EndFrame();
 
     API uint64 GetFrameIndex();
-    API float GetFrameTime();
+    API float GetFrameTime();           // Raw CPU measured frame-time
+    API float GetSnappedFrameTime();    // Snapped to vsync multiples and capped. Use for animation and visual effects
+    API float GetFPS();                 // Instantaneous, derived from the last frame time (not averaged)
+    API float GetAverageFrameTime();    // Averaged over the last 60 frames (ENGINE_FRAME_TIME_HISTORY)
+    API float GetAverageFPS();          // Averaged over the last 60 frames (ENGINE_FRAME_TIME_HISTORY)
+    API float GetEngineTimeMS();        // Engine frame time without Present wait (vsync)
+
     API const SysInfo& GetSysInfo();
-    API float GetEngineTimeMS();
 
     API bool IsMainThread();
 

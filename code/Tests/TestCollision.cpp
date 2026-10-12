@@ -362,12 +362,14 @@ struct TestCollisionApp final : AppCallbacks
 
     void Update(float dt) override
     {
-        mCamera.HandleMovementKeyboard(dt, 20, 5);
         Engine::BeginFrame(dt);
+
+
+        mCamera.HandleMovementKeyboard(Engine::GetSnappedFrameTime(), 20, 5);
         RenderViewport::PrepareRenderTargets(&mViewport);
         uint64 frameIdx = Engine::GetFrameIndex();
 
-        UpdateShapes(dt*mSimulationSpeed);
+        UpdateShapes(Engine::GetSnappedFrameTime()*mSimulationSpeed);
 
         if (mTestMode == TestMode::Collision) {
             MemTempAllocator tempAlloc;

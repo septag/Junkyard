@@ -440,7 +440,7 @@ void GUI::Begin(RectInt viewRect, bool processInput)
 
     if (processInput)
         Clay_SetPointerState(gGUI.mousePos, gGUI.mouseDown);
-    Clay_UpdateScrollContainers(true, gGUI.mouseScroll, Engine::GetFrameTime());
+    Clay_UpdateScrollContainers(true, gGUI.mouseScroll, Engine::GetSnappedFrameTime());
 
     // Clay treats the scroll as a per-frame delta, so it has to be consumed here
     gGUI.mouseScroll = {};
@@ -457,7 +457,7 @@ void GUI::End(GfxCommandBuffer& cmd)
     PROFILE_ZONE("GUI.End");
     ASSERT_MSG(gGUI.inFlight, "Begin() is not called");
 
-    Clay_RenderCommandArray renderCommands = Clay_EndLayout(Engine::GetFrameTime());
+    Clay_RenderCommandArray renderCommands = Clay_EndLayout(Engine::GetSnappedFrameTime());
     gGUI.inFlight = false;
 
     // Graphics resources are created after the initial asset group is loaded

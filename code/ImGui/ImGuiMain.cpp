@@ -1230,3 +1230,8 @@ ImVec2 ImGui::ProjectToScreen(Float3 point, const Mat4& worldToClipMat, const Re
 
     return ImVec2(pos.x, pos.y);
 }
+
+void ImGui::_private::DisableSkipItems()
+{
+    ImGui::GetCurrentWindow()->SkipItems = false;
+}
