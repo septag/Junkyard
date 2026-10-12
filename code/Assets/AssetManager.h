@@ -110,7 +110,7 @@ struct AssetGroup
     AssetHandle AddToLoadQueue(const AssetParams& params) const;
 
     void Load();
-    void Unload();
+    void Unload();  // NOTE: Calling this is only safe on fully loaded groups. It is recommended to use AssetHelperGroupUnloader
 
     // Waits for assets to load. This is not recommended since it blocks the thread, unless you really have to
     // Avoid calling it on the thread that records graphics command-buffers (usually main): With a separate transfer queue,
@@ -225,8 +225,8 @@ struct AssetHelperGroupUnloader
     bool IsEmpty() const { return mGroups.IsEmpty(); }
 
 private:
-    Array<AssetGroup> mGroups;
-    Array<bool> mUnloadIssued;          // Same indices as mGroups
+    using GroupAndUnloadIssuedPair = Pair<AssetGroup, bool>;
+    Array<GroupAndUnloadIssuedPair> mGroups;
 };
 
 

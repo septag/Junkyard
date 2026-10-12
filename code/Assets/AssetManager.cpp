@@ -2564,22 +2564,21 @@ Span<AssetHandle> AssetGroup::GetAssetHandles(MemAllocator* alloc) const
 void AssetHelperGroupUnloader::Initialize(MemAllocator* alloc)
 {
     mGroups.SetAllocator(alloc);
-    mUnloadIssued.SetAllocator(alloc);
+    mGroups.Reserve(1);
 }
 
 void AssetHelperGroupUnloader::Release()
 {
     for (uint32 i = 0; i < mGroups.Count(); i++) {
-        AssetGroup& group = mGroups[i];
-        AssetGroupState state = group.GetState();
-        if (state == AssetGroupState::Loaded && !mUnloadIssued[i])
-            group.Unload();
-        else if (state == AssetGroupState::Idle && (mUnloadIssued[i] || !group.HasItemsInQueue()))
-            Asset::DestroyGroup(group);
+        GroupAndUnloadIssuedPair& p = mGroups[i];
+        AssetGroupState state = p.first.GetState();
+        if (state == AssetGroupState::Loaded && !p.second)
+            p.first.Unload();
+        else if (state == AssetGroupState::Idle && (p.second || !p.first.HasItemsInQueue()))
+            Asset::DestroyGroup(p.first);
     }
 
     mGroups.Free();
-    mUnloadIssued.Free();
 }
 
 void AssetHelperGroupUnloader::UnloadAndDestroy(AssetGroup& group)
@@ -2588,8 +2587,7 @@ void AssetHelperGroupUnloader::UnloadAndDestroy(AssetGroup& group)
     if (!group.IsValid())
         return;
 
-    mGroups.Push(group);
-    mUnloadIssued.Push(false);
+    mGroups.Push(GroupAndUnloadIssuedPair(group, false));
     group = {};
 
     Update();   // Unload or destroy right away if the group is already in the right state
@@ -2600,30 +2598,29 @@ void AssetHelperGroupUnloader::Update()
     ASSERT_MSG(Engine::IsMainThread(), "AssetHelperGroupUnloader can only be used in the main thread");
 
     for (uint32 i = 0; i < mGroups.Count();) {
-        AssetGroup& group = mGroups[i];
+        GroupAndUnloadIssuedPair& p = mGroups[i];
         bool destroy = false;
 
-        if (!mUnloadIssued[i]) {
+        if (!p.second) {
             // Check the queue before the state: The load task sets the state to Loading before taking items out of
             // the queue. So an empty queue with Idle state means the group has nothing to load
-            bool hasItemsInQueue = group.HasItemsInQueue();
-            AssetGroupState state = group.GetState();
+            bool hasItemsInQueue = p.first.HasItemsInQueue();
+            AssetGroupState state = p.first.GetState();
             if (state == AssetGroupState::Loaded) {
-                group.Unload();
-                mUnloadIssued[i] = true;
+                p.first.Unload();
+                p.second = true;
             }
             else if (state == AssetGroupState::Idle && !hasItemsInQueue) {
                 destroy = true;     // Never loaded, or already unloaded by the user
             }
         }
         else {
-            destroy = group.GetState() == AssetGroupState::Idle;
+            destroy = p.first.GetState() == AssetGroupState::Idle;
         }
 
         if (destroy) {
-            Asset::DestroyGroup(group);
+            Asset::DestroyGroup(p.first);
             mGroups.RemoveAndSwap(i);
-            mUnloadIssued.RemoveAndSwap(i);
             continue;
         }
 
