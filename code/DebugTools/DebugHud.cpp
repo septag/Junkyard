@@ -100,6 +100,7 @@ struct DebugHudContext
     DebugHudGraph graphs[uint32(DebugHudGraphType::_Count)];
     bool enabledGraphs[uint32(DebugHudGraphType::_Count)];
     bool showMemStats;
+    bool showMinMax;
     DebugHudSide hudSide;
 
     uint32 monitorRefreshRate;
@@ -233,7 +234,14 @@ namespace DebugHud
 
         const float kLineSize = ImGui::GetFrameHeightWithSpacing();
 
-        String32 overlay = String32::Format("%s%s: %.1f", DEBUGHUD_GRAPH_NAMES[uint32(type)], isFrameTime ? "(ms)" : "", graph.avgValue);
+        String64 overlay;
+        if (gDebugHud.showMinMax) {
+            overlay = String64::Format("%s%s: %.1f (Min: %.1f, Max: %.1f)", DEBUGHUD_GRAPH_NAMES[uint32(type)], 
+                                                isFrameTime ? "(ms)" : "", graph.avgValue, graph.minValue, graph.maxValue);
+        }
+        else {
+            overlay = String64::Format("%s%s: %.1f", DEBUGHUD_GRAPH_NAMES[uint32(type)], isFrameTime ? "(ms)" : "", graph.avgValue);
+        }
 
         float plotMax = graph.maxValue;
         if (isFrameTime)
@@ -264,8 +272,10 @@ namespace DebugHud
                 ImGui::MenuItem(graphItemMenuStr.CStr(), nullptr, &gDebugHud.enabledGraphs[i]);
             }
 
+
             ImGui::Separator();
 
+            ImGui::MenuItem("Show Min/Max", nullptr, &gDebugHud.showMinMax);
             ImGui::MenuItem("Memory Stats", nullptr, &gDebugHud.showMemStats);
 
             ImGui::Separator();

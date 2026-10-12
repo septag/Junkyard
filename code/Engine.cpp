@@ -178,41 +178,37 @@ namespace Engine
 
         EngineDebugMemStats& mstats = gEng.debugMemStats;
     
-        if (ImGui::CollapsingHeader("VirtualMem", ImGuiTreeNodeFlags_DefaultOpen)) {
-            {
-                MemVirtualStats stats = Mem::VirtualGetStats();
-                float progress = float(double(stats.commitedBytes)/double(stats.reservedBytes));
-                ImGui::TextUnformatted("Total: ");
-                ImGui::SameLine();
-                ImGui::ProgressBar(progress, ImVec2(-1.0f, 0), 
-                                   String32::Format("%_$llu/%_$llu", stats.commitedBytes, stats.reservedBytes).CStr());
-            }
+        if (ImGui::CollapsingHeader("Commited/Reserved", ImGuiTreeNodeFlags_DefaultOpen)) {
+            MemVirtualStats vmStats = Mem::VirtualGetStats();
+            float vmProgress = vmStats.reservedBytes ? float(double(vmStats.commitedBytes)/double(vmStats.reservedBytes)) : 0;
+            ImGui::TextUnformatted("VirtualMem: ");
+            ImGui::SameLine();
+            ImGui::ProgressBar(vmProgress, ImVec2(-1.0f, 0), 
+                               String32::Format("%_$llu/%_$llu", vmStats.commitedBytes, vmStats.reservedBytes).CStr());
 
             size_t sum1 = 0;
             size_t sum2 = 0;
-            if (ImGui::CollapsingHeader("Temp", 0)) {
-                MemTempAllocator tempAlloc;
-                MemTempAllocator::Stats* stats;
-                uint32 statsCount;
-                MemTempAllocator::GetStats(&tempAlloc, &stats, &statsCount);
 
-                BlitSort<MemTempAllocator::Stats>(stats, statsCount, 
-                    [](const MemTempAllocator::Stats& a, const MemTempAllocator::Stats& b)->int
-                    {
-                        return a.commitedBytes < b.commitedBytes;
-                    });
+            MemTempAllocator tempAlloc;
+            MemTempAllocator::Stats* tempStats = nullptr;
+            uint32 tempStatsCount = 0;
+            MemTempAllocator::GetStats(&tempAlloc, &tempStats, &tempStatsCount);
 
-                for (uint32 i = 0; i < statsCount; i++) {
-                    const MemTempAllocator::Stats& s = stats[i];
-                    size_t commitBytes = s.commitedBytes;
-                    size_t reserveBytes = s.reservedBytes;
-                    float progress = float(double(commitBytes)/double(reserveBytes));
-                    sum1 += commitBytes;
-                    sum2 += reserveBytes;
-                    ImGui::Text("%s: ", s.threadName);
-                    ImGui::SameLine();
-                    ImGui::ProgressBar(progress, ImVec2(-1, 0), 
-                                       String32::Format("%_$llu/%_$llu (P: %_$llu)", commitBytes, reserveBytes, s.maxPeak).CStr());
+            size_t tempCommitBytes = 0;
+            size_t tempReserveBytes = 0;
+            for (uint32 i = 0; i < tempStatsCount; i++) {
+                const MemTempAllocator::Stats& s = tempStats[i];
+                tempCommitBytes += s.commitedBytes;
+                tempReserveBytes += s.reservedBytes;
+                sum1 += s.commitedBytes;
+                sum2 += s.reservedBytes;
+            }
+
+            {
+                SpinLockMutexScope l(gEng.vmAllocsMtx);
+                for (EngineVMAllocTrackItem& item : gEng.vmAllocs) {
+                    sum1 += item.alloc->GetCommitedSize();
+                    sum2 += item.alloc->GetReservedSize();
                 }
             }
 
@@ -224,20 +220,116 @@ namespace Engine
                         return a.alloc->GetCommitedSize() < b.alloc->GetCommitedSize();
                     });
 
-                for (EngineVMAllocTrackItem& item : gEng.vmAllocs) {
-                    size_t commitBytes = item.alloc->GetCommitedSize();
-                    sum1 += commitBytes;
-                    size_t reserveBytes = item.alloc->GetReservedSize();
-                    sum2 += reserveBytes;
-                    float progress = float(double(commitBytes)/double(reserveBytes));
-                    ImGui::Text("%s: ", item.name.CStr());
+                bool* groupedItems = Mem::AllocZeroTyped<bool>(gEng.vmAllocs.Count(), &tempAlloc);
+                bool* rootItems = Mem::AllocZeroTyped<bool>(gEng.vmAllocs.Count(), &tempAlloc);
+                for (uint32 itemIdx = 0; itemIdx < gEng.vmAllocs.Count(); itemIdx++) {
+                    if (groupedItems[itemIdx])
+                        continue;
+
+                    EngineVMAllocTrackItem& item = gEng.vmAllocs[itemIdx];
+                    const char* name = item.name.CStr();
+                    const char* slash = Str::FindChar(name, '/');
+                    if (!slash) {
+                        size_t commitBytes = item.alloc->GetCommitedSize();
+                        size_t reserveBytes = item.alloc->GetReservedSize();
+                        float progress = reserveBytes ? float(double(commitBytes)/double(reserveBytes)) : 0;
+                        ImGui::Text("%s: ", name);
+                        ImGui::SameLine();
+                        ImGui::ProgressBar(progress, ImVec2(-1, 0), 
+                                           String32::Format("%_$llu/%_$llu", commitBytes, reserveBytes).CStr());
+                        continue;
+                    }
+
+                    uint32 rootLen = uint32(slash - name);
+                    String32 rootName;
+                    Str::CopyCount(rootName.Ptr(), rootName.Capacity(), name, rootLen);
+                    rootName.CalcLength();
+
+                    size_t commitBytes = 0;
+                    size_t reserveBytes = 0;
+                    for (uint32 childIdx = itemIdx; childIdx < gEng.vmAllocs.Count(); childIdx++) {
+                        EngineVMAllocTrackItem& childItem = gEng.vmAllocs[childIdx];
+                        const char* childName = childItem.name.CStr();
+                        const char* childSlash = Str::FindChar(childName, '/');
+                        if (childSlash && uint32(childSlash - childName) == rootLen && Str::IsEqualCount(childName, name, rootLen)) {
+                            commitBytes += childItem.alloc->GetCommitedSize();
+                            reserveBytes += childItem.alloc->GetReservedSize();
+                            groupedItems[childIdx] = true;
+                        }
+                    }
+
+                    rootItems[itemIdx] = true;
+
+                    float progress = reserveBytes ? float(double(commitBytes)/double(reserveBytes)) : 0;
+                    ImGui::Text("%s: ", rootName.CStr());
                     ImGui::SameLine();
                     ImGui::ProgressBar(progress, ImVec2(-1, 0), 
                                        String32::Format("%_$llu/%_$llu", commitBytes, reserveBytes).CStr());
                 }
-            }
 
-            ImGui::Text("Total: %_$llu/%_$llu", sum1, sum2);
+                float tempProgress = tempReserveBytes ? float(double(tempCommitBytes)/double(tempReserveBytes)) : 0;
+                ImGui::TextUnformatted("Temp: ");
+                ImGui::SameLine();
+                ImGui::ProgressBar(tempProgress, ImVec2(-1, 0), 
+                                   String32::Format("%_$llu/%_$llu", tempCommitBytes, tempReserveBytes).CStr());
+
+                for (uint32 itemIdx = 0; itemIdx < gEng.vmAllocs.Count(); itemIdx++) {
+                    if (!rootItems[itemIdx])
+                        continue;
+
+                    EngineVMAllocTrackItem& item = gEng.vmAllocs[itemIdx];
+                    const char* name = item.name.CStr();
+                    const char* slash = Str::FindChar(name, '/');
+                    ASSERT(slash);
+
+                    uint32 rootLen = uint32(slash - name);
+                    String32 rootName;
+                    Str::CopyCount(rootName.Ptr(), rootName.Capacity(), name, rootLen);
+                    rootName.CalcLength();
+
+                    if (ImGui::TreeNode(rootName.CStr())) {
+                        for (uint32 childIdx = itemIdx; childIdx < gEng.vmAllocs.Count(); childIdx++) {
+                            EngineVMAllocTrackItem& childItem = gEng.vmAllocs[childIdx];
+                            const char* childName = childItem.name.CStr();
+                            const char* childSlash = Str::FindChar(childName, '/');
+                            if (childSlash && uint32(childSlash - childName) == rootLen && Str::IsEqualCount(childName, name, rootLen)) {
+                                size_t childCommitBytes = childItem.alloc->GetCommitedSize();
+                                size_t childReserveBytes = childItem.alloc->GetReservedSize();
+                                float childProgress = childReserveBytes ? float(double(childCommitBytes)/double(childReserveBytes)) : 0;
+                                ImGui::Text("%s: ", childSlash + 1);
+                                ImGui::SameLine();
+                                ImGui::ProgressBar(childProgress, ImVec2(-1, 0), 
+                                                   String32::Format("%_$llu/%_$llu", childCommitBytes, childReserveBytes).CStr());
+                            }
+                        }
+
+                        ImGui::TreePop();
+                    }
+                }
+
+                if (ImGui::TreeNode("Temp")) {
+                    BlitSort<MemTempAllocator::Stats>(tempStats, tempStatsCount, 
+                        [](const MemTempAllocator::Stats& a, const MemTempAllocator::Stats& b)->int
+                        {
+                            return a.commitedBytes < b.commitedBytes;
+                        });
+
+                    for (uint32 i = 0; i < tempStatsCount; i++) {
+                        const MemTempAllocator::Stats& s = tempStats[i];
+                        size_t commitBytes = s.commitedBytes;
+                        size_t reserveBytes = s.reservedBytes;
+                        float progress = reserveBytes ? float(double(commitBytes)/double(reserveBytes)) : 0;
+                        ImGui::Text("%s: ", s.threadName);
+                        ImGui::SameLine();
+                        ImGui::ProgressBar(progress, ImVec2(-1, 0), 
+                                           String32::Format("%_$llu/%_$llu (P: %_$llu)", commitBytes, reserveBytes, s.maxPeak).CStr());
+                    }
+
+                    ImGui::TreePop();
+                }
+            }
+            
+            ImGui::Text("Total Tracked: %_$llu/%_$llu", sum1, sum2);
         }
 
         if (ImGui::CollapsingHeader("Proxies", ImGuiTreeNodeFlags_DefaultOpen)) {

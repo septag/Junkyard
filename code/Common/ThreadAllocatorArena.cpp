@@ -101,7 +101,7 @@ MemBumpAllocatorVM* MemThreadAllocatorArena::GetOrCreateAllocatorForCurrentThrea
             ASSERT(trackingName);
             char threadName[32];
             Thread::GetCurrentThreadName(threadName, sizeof(threadName));
-            trackingName->FormatSelf("%s (%s)", arena->rootTrackingName, threadName);
+            trackingName->FormatSelf("%s/%s", arena->rootTrackingName, threadName);
             Engine::RegisterVMAllocator(alloc, trackingName->CStr());
         }
     }

@@ -175,8 +175,6 @@ protected:
 
 struct MemBumpAllocatorVM final : MemBumpAllocatorBase
 {
-    void WarmUp();
-
 private:
     void* BackendReserve(size_t size) override;
     void* BackendCommit(void* ptr, size_t size) override;

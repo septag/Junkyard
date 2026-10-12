@@ -205,9 +205,24 @@ void MemTempAllocator::PopId(ID id)
 MemTempContext::~MemTempContext()
 {
     if (buffer) {
-        if (bufferSize)
-            Mem::VirtualDecommit(buffer, bufferSize);
-        Mem::VirtualRelease(buffer, bufferSize);
+        if (commitedBytes)
+            Mem::VirtualDecommit(buffer, commitedBytes);
+        Mem::VirtualRelease(buffer, reservedBytes);
+        buffer = nullptr;
+        bufferSize = 0;
+        commitedBytes = 0;
+        reservedBytes = 0;
+    }
+
+    {
+        MutexScope mtx(gMemTemp.tempMtx);
+        uint32 index = gMemTemp.tempCtxs.FindIf([this](const MemTempContext* tmpCtx)->bool { return tmpCtx == this; });
+        if (index != UINT32_MAX)
+            gMemTemp.tempCtxs.RemoveAndSwap(index);
+
+        index = gMemTemp.tempCtxsCopy.FindIf([this](const MemTempContext* tmpCtx)->bool { return tmpCtx == this; });
+        if (index != UINT32_MAX)
+            gMemTemp.tempCtxsCopy.RemoveAndSwap(index);
     }
 
     if (debugMode) {
@@ -275,16 +290,14 @@ void MemTempAllocator::Reset()
             }
 
             ctx->used = false;
-            gMemTemp.tempCtxsCopy.RemoveAndSwap(i);
         }
-        else {
-            i++;
-        }
+
+        i++;
 
         ctx->inUseMtx.Exit();
     }
     
-    // Put back all the remaining temp contexts into the check list for the next Reset
+    // Put back all temp contexts and append contexts created while Reset was running
     {
         MutexScope mtx(gMemTemp.tempMtx);
         for (uint32 i = count; i < gMemTemp.tempCtxs.Count(); i++)
@@ -677,15 +690,6 @@ void  MemBumpAllocatorVM::BackendDecommit(void* ptr, size_t size)
 void  MemBumpAllocatorVM::BackendRelease(void* ptr, size_t size)
 {
     return Mem::VirtualRelease(ptr, size);
-}
-
-void MemBumpAllocatorVM::WarmUp()
-{
-    size_t hwPageSize = OS::GetPageSize();
-    size_t pageOffset = AlignValue(mOffset, mPageSize);
-    BackendCommit(mBuffer + pageOffset, mReserveSize - pageOffset);
-    for (size_t offset = pageOffset; offset < mReserveSize; offset += hwPageSize)
-        memset(mBuffer + offset, 0xfe, CONFIG_MACHINE_ALIGNMENT);
 }
 
 //----------------------------------------------------------------------------------------------------------------------
