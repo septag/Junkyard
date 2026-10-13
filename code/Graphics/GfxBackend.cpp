@@ -180,6 +180,7 @@ struct GfxBackendQueueFamily
 {
     GfxQueueType type;
     uint32 count;
+    uint32 timestampValidBits;
 };
 
 struct GfxBackendQueueSubmitRequest
@@ -237,7 +238,7 @@ struct GfxBackendProfilerContext
     // 
 
     VkQueryPool mQuery;
-    VkTimeDomainEXT mTimeDomain;
+    VkTimeDomainKHR mTimeDomain;
     uint64 mDeviation;
 #if PLATFORM_WINDOWS
     int64 mQpcToNS;
@@ -309,6 +310,7 @@ struct GfxBackendQueue
     GfxBackendCommandBufferContext cmdBufferContexts[GFXBACKEND_FRAMES_IN_FLIGHT];
     GfxBackendQueueSemaphoreBank semaphoreBanks[GFXBACKEND_FRAMES_IN_FLIGHT];
     VkQueryPool timeQueries[GFXBACKEND_FRAMES_IN_FLIGHT];   // For measuring GPU time per frame
+    bool timeQueriesWritten[GFXBACKEND_FRAMES_IN_FLIGHT];
     Array<WaitSemaphore> waitSemaphores;
     Array<VkSemaphore> signalSemaphores;
     Array<PendingBarrier> pendingBarriers;  // Buffers transfers coming into this queue
@@ -2935,7 +2937,9 @@ void GfxBackend::EndCommandBuffer(GfxCommandBuffer& cmdBuffer)
         state.lastAccessFlags = 0;
 
         // _Most likely_ the last call. write the end time query
-        vkCmdWriteTimestamp(cmdVk, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, queue.timeQueries[gBackendVk.queueMan.GetFrameIndex()], 1);
+        uint32 frameIndex = gBackendVk.queueMan.GetFrameIndex();
+        vkCmdWriteTimestamp(cmdVk, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, queue.timeQueries[frameIndex], 1);
+        queue.timeQueriesWritten[frameIndex] = true;
     }
 
     #ifdef TRACY_ENABLE
@@ -4879,6 +4883,7 @@ bool GfxBackendQueueManager::Initialize()
             fam.type |= GfxQueueType::Transfer;
 
         fam.count = props.queueCount;
+        fam.timestampValidBits = props.timestampValidBits;
 
         if (gBackendVk.surface) {
             VkBool32 supportsPresentation = false;
@@ -5481,10 +5486,25 @@ void GfxBackendQueueManager::BeginFrame()
         queue.semaphoreBanks[mFrameIndex].Reset();
 
         // It's safe to get query results now and measure Gpu time
-        uint64 timestamps[2];
-        vkGetQueryPoolResults(gBackendVk.device, queue.timeQueries[mFrameIndex], 0, 2, sizeof(timestamps), timestamps, sizeof(uint64), VK_QUERY_RESULT_64_BIT);
-        uint64 gpuTimeNs = timestamps[1] - timestamps[0];
-        gBackendVk.prevFrameGpuTime = float((double(gpuTimeNs) * double(gBackendVk.gpu.props.limits.timestampPeriod)) / 1e6);
+        if (queue.timeQueriesWritten[mFrameIndex]) {
+            uint64 timestamps[2];
+            [[maybe_unused]] VkResult r = vkGetQueryPoolResults(gBackendVk.device, queue.timeQueries[mFrameIndex],
+                                                                0, 2, sizeof(timestamps), timestamps, sizeof(uint64),
+                                                                VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WAIT_BIT);
+            ASSERT(r == VK_SUCCESS);
+
+            uint32 timestampValidBits = mQueueFamilies[queue.familyIdx].timestampValidBits;
+            uint64 gpuTimeTicks = 0;
+            if (timestampValidBits && timestampValidBits < 64) {
+                uint64 timestampMask = (uint64(1) << timestampValidBits) - uint64(1);
+                gpuTimeTicks = (timestamps[1] - timestamps[0]) & timestampMask;
+            }
+            else {
+                gpuTimeTicks = timestamps[1] - timestamps[0];
+            }
+            gBackendVk.prevFrameGpuTime = float((double(gpuTimeTicks) * double(gBackendVk.gpu.props.limits.timestampPeriod)) / 1e6);
+            queue.timeQueriesWritten[mFrameIndex] = false;
+        }
 
         vkResetQueryPool(gBackendVk.device, queue.timeQueries[mFrameIndex], 0, 2);
     }
@@ -7137,22 +7157,24 @@ GfxFormat GfxBackend::GetValidDepthFormat()
 // GpuProfilerScope
 #ifdef TRACY_ENABLE
 
-// This implementation uses VK_EXT_host_query_reset extensions that is available in Vulkan 1.2
+// This implementation uses host query reset, which is available in Vulkan 1.2.
 void GfxBackendProfilerContext::FindCalibratedDeviation()
 {
     constexpr uint32 NumProbes = 32;
-    VkCalibratedTimestampInfoEXT spec[2] = {
-        { VK_STRUCTURE_TYPE_CALIBRATED_TIMESTAMP_INFO_EXT, nullptr, VK_TIME_DOMAIN_DEVICE_EXT },
-        { VK_STRUCTURE_TYPE_CALIBRATED_TIMESTAMP_INFO_EXT, nullptr, mTimeDomain },
+    VkCalibratedTimestampInfoKHR spec[2] = {
+        { VK_STRUCTURE_TYPE_CALIBRATED_TIMESTAMP_INFO_KHR, nullptr, VK_TIME_DOMAIN_DEVICE_KHR },
+        { VK_STRUCTURE_TYPE_CALIBRATED_TIMESTAMP_INFO_KHR, nullptr, mTimeDomain },
     };
 
     uint64 ts[2];
     uint64 deviation[NumProbes];
-    for(uint32 i = 0; i < NumProbes; i++)
-        vkGetCalibratedTimestampsKHR(gBackendVk.device, 2, spec, ts, deviation + i);
+    for (uint32 i = 0; i < NumProbes; i++) {
+        [[maybe_unused]] VkResult r = vkGetCalibratedTimestampsKHR(gBackendVk.device, 2, spec, ts, deviation + i);
+        ASSERT(r == VK_SUCCESS);
+    }
 
     uint64 minDeviation = deviation[0];
-    for(uint32 i = 1; i < NumProbes; i++) {
+    for (uint32 i = 1; i < NumProbes; i++) {
         if (minDeviation > deviation[i])
             minDeviation = deviation[i];
     }
@@ -7161,33 +7183,41 @@ void GfxBackendProfilerContext::FindCalibratedDeviation()
 
 bool GfxBackendProfilerContext::Initialize(const char* name)
 {
-    ASSERT(gBackendVk.extApi.hasTimestampQueries);
-    ASSERT(gBackendVk.extApi.hasCalibratedTimestamps); // TODO: make Calibrated timestamps mandatory for profiling
+    mTimeDomain = VK_TIME_DOMAIN_DEVICE_KHR;
+
+    if (!gBackendVk.extApi.hasTimestampQueries || !gBackendVk.extApi.hasCalibratedTimestamps ||
+        !vkGetPhysicalDeviceCalibrateableTimeDomainsKHR || !vkGetCalibratedTimestampsKHR) {
+        return false;
+    }
 
     // (TracyVulkan: FindAvailableTimeDomains)
-    if (gBackendVk.extApi.hasCalibratedTimestamps) {
-        uint32 num;
-        vkGetPhysicalDeviceCalibrateableTimeDomainsEXT(gBackendVk.gpu.handle, &num, nullptr);
-        if(num > 4) 
-            num = 4;
+    uint32 num = 0;
+    VkResult r = vkGetPhysicalDeviceCalibrateableTimeDomainsKHR(gBackendVk.gpu.handle, &num, nullptr);
+    if (r != VK_SUCCESS || num == 0)
+        return false;
+    if (num > 4)
+        num = 4;
 
-        VkTimeDomainEXT data[4];
-        vkGetPhysicalDeviceCalibrateableTimeDomainsEXT(gBackendVk.gpu.handle, &num, data );
-        VkTimeDomainEXT supportedDomain = (VkTimeDomainEXT)-1;
-        #if PLATFORM_WINDOWS
-        supportedDomain = VK_TIME_DOMAIN_QUERY_PERFORMANCE_COUNTER_EXT;
-        #elif PLATFORM_LINUX && defined(CLOCK_MONOTONIC_RAW)
-        supportedDomain = VK_TIME_DOMAIN_CLOCK_MONOTONIC_RAW_EXT;
-        #endif
+    VkTimeDomainKHR data[4];
+    r = vkGetPhysicalDeviceCalibrateableTimeDomainsKHR(gBackendVk.gpu.handle, &num, data);
+    if (r != VK_SUCCESS && r != VK_INCOMPLETE)
+        return false;
 
-        for(uint32 i = 0; i < num; i++) {
-            if(data[i] == supportedDomain) {
-                mTimeDomain = data[i];
-                break;
-            }
+    VkTimeDomainKHR supportedDomain = (VkTimeDomainKHR)-1;
+    #if PLATFORM_WINDOWS
+    supportedDomain = VK_TIME_DOMAIN_QUERY_PERFORMANCE_COUNTER_KHR;
+    #elif PLATFORM_LINUX && defined(CLOCK_MONOTONIC_RAW)
+    supportedDomain = VK_TIME_DOMAIN_CLOCK_MONOTONIC_RAW_KHR;
+    #endif
+
+    for (uint32 i = 0; i < num; i++) {
+        if (data[i] == supportedDomain) {
+            mTimeDomain = data[i];
+            break;
         }
     }
 
+    // Tracy's calibrated path requires a CPU host time domain matching its timer.
     if (mTimeDomain == VK_TIME_DOMAIN_DEVICE_KHR)
         return false;
 
@@ -7228,27 +7258,30 @@ bool GfxBackendProfilerContext::Initialize(const char* name)
     mRes = Mem::AllocTyped<int64>(mQueryCount * 2, &gBackendVk.parentAlloc);
 
     {
-        ___tracy_gpu_new_context_data data {
+        uint32 contextId = Atomic::FetchAddExplicit(&smContextCounter, 1, AtomicMemoryOrder::Relaxed);
+        ASSERT(contextId < UINT8_MAX);
+
+        ___tracy_gpu_new_context_data tracyData {
             .gpuTime = tgpu,
             .period = gBackendVk.gpu.props.limits.timestampPeriod,
-            .context = uint8(Atomic::FetchAddExplicit(&smContextCounter, 1, AtomicMemoryOrder::Relaxed)),
-            .flags = uint8(mTimeDomain != VK_TIME_DOMAIN_DEVICE_EXT ? GfxBackendProfilerContext::GpuContextFlags::GpuContextCalibration : 0),
+            .context = uint8(contextId),
+            .flags = uint8(mTimeDomain != VK_TIME_DOMAIN_DEVICE_KHR ?
+                           GfxBackendProfilerContext::GpuContextFlags::GpuContextCalibration : 0),
             .type = uint8(GfxBackendProfilerContext::GpuContextType::Vulkan)
         };
-        ASSERT(data.context <= UINT8_MAX);
-        mContextId = data.context;
+        mContextId = tracyData.context;
 
-        ___tracy_emit_gpu_new_context(data);
+        ___tracy_emit_gpu_new_context(tracyData);
     }
 
     // (TracyVulkan: Name)
     {
-        ___tracy_gpu_context_name_data data {
+        ___tracy_gpu_context_name_data tracyData {
             .context = mContextId,
             .name = name,
             .len = uint16(Str::Len(name))
         };
-        ___tracy_emit_gpu_context_name_serial(data);
+        ___tracy_emit_gpu_context_name_serial(tracyData);
     }
 
     mInit = true;
@@ -7275,7 +7308,7 @@ void GfxBackendProfilerContext::Collect(VkCommandBuffer cmdVk)
         mTail = head;
         mOldCount = 0;
         int64 tgpu;
-        if(mTimeDomain != VK_TIME_DOMAIN_DEVICE_EXT) 
+        if(mTimeDomain != VK_TIME_DOMAIN_DEVICE_KHR)
             Calibrate(mPrevCalibration, tgpu);
         return;
     }
@@ -7316,7 +7349,7 @@ void GfxBackendProfilerContext::Collect(VkCommandBuffer cmdVk)
         ___tracy_emit_gpu_time_serial(data);
     }
 
-    ASSERT(mTimeDomain != VK_TIME_DOMAIN_DEVICE_EXT);
+    ASSERT(mTimeDomain != VK_TIME_DOMAIN_DEVICE_KHR);
 
     if ((gBackendVk.presentFrame & 511) == 0)  {
         int64 tgpu, tcpu;
@@ -7344,11 +7377,11 @@ void GfxBackendProfilerContext::Calibrate(int64& tCpu, int64& tGpu)
     // TODO: Improve the profile calibration
     //       We are now just retrying for a couple of times and quit when deviation is higher than the original one and recalibrate
     PROFILE_ZONE("ProfilerCalibrate");
-    ASSERT( mTimeDomain != VK_TIME_DOMAIN_DEVICE_EXT );
+    ASSERT(mTimeDomain != VK_TIME_DOMAIN_DEVICE_KHR);
 
-    VkCalibratedTimestampInfoEXT spec[2] = {
-        { VK_STRUCTURE_TYPE_CALIBRATED_TIMESTAMP_INFO_EXT, nullptr, VK_TIME_DOMAIN_DEVICE_EXT },
-        { VK_STRUCTURE_TYPE_CALIBRATED_TIMESTAMP_INFO_EXT, nullptr, mTimeDomain },
+    VkCalibratedTimestampInfoKHR spec[2] = {
+        { VK_STRUCTURE_TYPE_CALIBRATED_TIMESTAMP_INFO_KHR, nullptr, VK_TIME_DOMAIN_DEVICE_KHR },
+        { VK_STRUCTURE_TYPE_CALIBRATED_TIMESTAMP_INFO_KHR, nullptr, mTimeDomain },
     };
 
     uint64 ts[2];
