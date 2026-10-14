@@ -20,7 +20,7 @@
 #include "../Tool/MeshOptimizer.h"
 
 static constexpr uint32 MODEL_ASSET_TYPE = MakeFourCC('M', 'O', 'D', 'L');
-static constexpr uint32 MODEL_ASSET_CACHE_VERSION = 5;
+static constexpr uint32 MODEL_ASSET_CACHE_VERSION = 6;     // 6: ImageLoadParams::colorSpace (ModelMaterialTexture layout)
 
 struct ModelVertexAttribute
 {

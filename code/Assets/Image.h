@@ -7,13 +7,22 @@
 struct AssetGroup;
 
 inline constexpr uint32 IMAGE_ASSET_TYPE = MakeFourCC('I', 'M', 'A', 'G');
-inline constexpr uint32 IMAGE_ASSET_CACHE_VERSION = 1;
+inline constexpr uint32 IMAGE_ASSET_CACHE_VERSION = 2;
+
+// uint32, because ImageLoadParams is hashed as raw bytes (asset cache), so it shouldn't have any padding
+enum class ImageColorSpace : uint32
+{
+    Default = 0,    // From the asset metadata ("sRGB" key). sRGB if there is no metadata
+    SRGB,
+    Linear
+};
 
 struct ImageLoadParams
 {
     uint32 firstMip = 0;
     GfxSamplerFilterMode samplerFilter = GfxSamplerFilterMode::Default;
     GfxSamplerWrapMode samplerWrap = GfxSamplerWrapMode::Default;
+    ImageColorSpace colorSpace = ImageColorSpace::Default;     // Overrides the asset metadata if not Default
 };
 
 namespace Image

@@ -220,8 +220,10 @@ bool AssetImageImpl::Bake(const AssetParams& params, AssetData* data, const Span
     contentBlob.SetGrowPolicy(Blob::GrowPolicy::Multiply);
 
     String32 formatStr = String32(data->GetMetaValue("format", ""));
-    bool sRGB = data->GetMetaValue("sRGB", false);
-    bool generateMips = data->GetMetaValue("generateMips", false);
+    bool sRGB = data->GetMetaValue("sRGB", true);   // Textures are sRGB by default
+    if (imageParams->colorSpace != ImageColorSpace::Default)
+        sRGB = imageParams->colorSpace == ImageColorSpace::SRGB;
+    bool generateMips = data->GetMetaValue("generateMips", true);   // Generate mipmaps by default
     uint32 firstMip = imageParams->firstMip ? imageParams->firstMip : data->GetMetaValue("firstMip", 0u);
 
     // Load source image

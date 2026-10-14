@@ -1015,7 +1015,7 @@ bool R::Initialize()
     {
         ShaderLoadParams loadParams {
             .compileDesc = {
-                .numDefines = 3,
+                .numDefines = 4,
                 .defines = {
                     {
                         .define = "TILE_SIZE",
@@ -1028,6 +1028,11 @@ bool R::Initialize()
                     {
                         .define = "MSAA",
                         .value = String32::Format("%d", settings.graphics.msaa)
+                    },
+                    {
+                        // Without SRGB targets, the lighting shader encodes its linear output to sRGB itself
+                        .define = "SRGB_TARGET",
+                        .value = String32::Format("%d", settings.graphics.surfaceSRGB ? 1 : 0)
                     }
                 }
             }
@@ -1519,7 +1524,9 @@ void R::FwdLight::Render(RView& view, GfxCommandBuffer& cmd, GfxImageHandle fina
                 .clear = true,
                 .resolveToSwapchain = msaa > 1 && !finalColorImage.IsValid(),
                 .clearValue = {
-                    .color = viewData.skyAmbientColor
+                    // Clear doesn't go through the shader, so it's encoded here for UNORM targets. See SRGB_TARGET
+                    .color = SettingsJunkyard::Get().graphics.surfaceSRGB ?
+                        viewData.skyAmbientColor : Color4u::ToFloat4SRGB(viewData.skyAmbientColor)
                 }
             }},
             .depthAttachment = {

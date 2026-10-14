@@ -6,6 +6,12 @@
 #define MAX_LIGHTS_PER_TILE 4
 #endif
 
+// 1: Render target has an SRGB format, so the hardware encodes the linear output
+// 0: Render target is UNORM, so the output is encoded to sRGB in the shader
+#ifndef SRGB_TARGET
+#define SRGB_TARGET 1
+#endif
+
 #include "Samplers.h.hlsl"
 
 struct VsInput
@@ -62,6 +68,11 @@ cbuffer PerObjectData
 
 [vk::binding(1, 1)]
 Texture2D BaseColorTexture;
+
+float3 LinearToSRGB(float3 c)
+{
+    return select(c <= 0.0031308, c * 12.92, 1.055 * pow(c, 1.0 / 2.4) - 0.055);
+}
 
 [shader("vertex")]
 PsInput VsMain(VsInput v)
@@ -149,6 +160,10 @@ float4 PsMain(PsInput i) : SV_Target
     alpha = (alpha - _Cutoff) / max(fwidth(alpha), 0.0001) + 0.5;
 
     float4 finalColor = float4(litColor, alpha) * MaterialTintColor;
+
+#if !SRGB_TARGET
+    finalColor.xyz = LinearToSRGB(saturate(finalColor.xyz));
+#endif
 
     return finalColor;
 }
