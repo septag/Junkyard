@@ -1221,7 +1221,7 @@ void R::FwdLight::Update(RView& view, GfxCommandBuffer& cmd)
 
                 RLightShaderObjectData objectData {
                     .localToWorldMat = chunk->localToWorldMat,
-                    .materialTintColor = Color4u::ToFloat4(subChunk.tintColor)
+                    .materialTintColor = subChunk.baseColor * chunk->tintColor
                 };
 
                 GfxBindingDesc bindings[] = {
@@ -1306,23 +1306,35 @@ void R::FwdLight::Render(RView& view, GfxCommandBuffer& cmd, GfxImageHandle fina
     GfxImageHandle renderDepthImage = msaa > 1 ? fwdData.msaaDepthImage : finalDepthImage;
     ASSERT(renderDepthImage.IsValid());
 
-    // Render blank screen if we have nothing to render
+    // Nothing to render: Clear to the same values as the light pass (sky ambient + far depth), so whatever renders on
+    // top of the view (debug draws, grids) still gets a valid background and depth buffer
     if (viewData.numGeometryChunks == 0) {
-        GfxBackendRenderPass pass { 
+        GfxBackendRenderPass pass {
             .numAttachments = finalColorImage.IsValid() ? 1u : 0u,
-            .colorAttachments = {{ 
+            .colorAttachments = {{
                 .image = finalColorImage,
                 .clear = true,
                 .clearValue = {
-                    .color = Color4u::ToFloat4(COLOR4U_BLACK)
+                    // Clear doesn't go through the shader, so it's encoded here for UNORM targets. See SRGB_TARGET
+                    .color = SettingsJunkyard::Get().graphics.surfaceSRGB ?
+                        viewData.skyAmbientColor : Color4u::ToFloat4SRGB(viewData.skyAmbientColor)
                 }
             }},
+            .depthAttachment = {
+                .image = finalDepthImage,
+                .clear = true,
+                .clearValue = {
+                    .depth = 1.0f
+                }
+            },
             .swapchain = !finalColorImage.IsValid(),
-            .hasDepth = false
+            .hasDepth = finalDepthImage.IsValid()
         };
 
         if (finalColorImage.IsValid())
             cmd.TransitionImage(finalColorImage, GfxImageTransition::RenderTarget);
+        if (finalDepthImage.IsValid())
+            cmd.TransitionImage(finalDepthImage, GfxImageTransition::RenderTarget, GfxImageTransitionFlags::DepthWrite);
 
         cmd.BeginRenderPass(pass);
         cmd.EndRenderPass();
@@ -1727,6 +1739,7 @@ RGeometryChunk* RView::NewGeometryChunk()
 
     RGeometryChunk* chunk = Mem::AllocZeroTyped<RGeometryChunk>(1, &gFwd.frameAlloc);
     chunk->localToWorldMat = MAT4_IDENT;
+    chunk->tintColor = FLOAT4_ONE;      // Multiplied into the material color, zero would render the chunk black
 
     if (viewData.lastChunk)
         viewData.lastChunk->nextChunk = chunk;

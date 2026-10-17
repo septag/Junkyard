@@ -103,12 +103,13 @@ struct TestCollisionApp final : AppCallbacks
         chunk->posVertexBuffer = geo.vertexBuffers[0];
         chunk->lightingVertexBuffer = geo.vertexBuffers[1];
         chunk->indexBuffer = geo.indexBuffer;
+        Color4u tintColor = highlight ? COLOR4U_RED : COLOR4U_WHITE;
+        chunk->tintColor = Color4u::ToFloat4Linear(Color4u::ToFloat4(tintColor));
 
         RGeometrySubChunk subchunk {
             .startIndex = 0,
             .numIndices = geo.numIndices,
-            .baseColorImg = checkerTexture ? mCheckerImage : Image::GetWhite1x1(),
-            .tintColor = highlight ? COLOR4U_RED : COLOR4U_WHITE
+            .baseColorImg = checkerTexture ? mCheckerImage : Image::GetWhite1x1()
         };
         chunk->AddSubChunk(subchunk);
     }

@@ -2,9 +2,7 @@
 
 Yet another portable C++ framework to make games and maybe some other related high-performance applications.
 
-The goal is to focus on simplicity, fast iteration and development. Features will be developed based on the game/projects I do with it, so this is not going to be do-it-all engine/framework at all, but probably with a strong foundation to build your own renderers and other stuff on top of it.
-
-It's very much WIP, so not much to show off right now.
+The goal is to focus on simplicity, fast iteration and development. Features will be developed based on the game/projects I do with it, so this is not going to be do-it-all engine/framework at all, but probably with a strong foundation to build your own renderers and other stuff on top of it. Currently, a game prototype (Codename: Boneyard) is being built with this framework in which will be public soon.
 
 ![intro](doc/screenshots/intro.jpg)
 
@@ -107,6 +105,42 @@ Currently, there are a few very basic examples. First thing to consider is that 
 
 **Note**: Example assets are zip compressed in the `data` folder. If you have ran the `Setup.bat` script, it should ask for that and extract it already. For some other examples that use procedurally created assets by the scripts, read `data/README.txt` 
 
+<table>
+<tr>
+<td width="50%" valign="top">
+<b>TestAsset</b><br>
+<img src="doc/screenshots/TestAsset.jpg" width="100%">
+AssetManager and loading/unloading groups of assets asynchronously. The dataset includes many identical mesh files (Cube) with textures with numbers. To generate the data, run `code/Tests/TestAsset.bat`. For that, you would need Python 3 runtime with `Pillow` library installed.
+</td>
+<td width="50%" valign="top">
+<b>TestBasicGfx</b><br>
+<img src="doc/screenshots/TestBasicGfx.jpg" width="100%">
+Basic low-level graphics backend usage example. Instead of using the built-in renderer, it uses the GfxBackend API to create pipelines and other render states.
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+<b>TestCollision</b><br>
+<img src="doc/screenshots/TestCollision.jpg" width="100%">
+2.5D collision detection example. With ray casting and visualization.
+</td>
+<td width="50%" valign="top">
+<b>TestRenderer</b><br>
+<img src="doc/screenshots/TestRenderer.jpg" width="100%">
+Uses the built-in Forward+ renderer to draw the scene. 
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+<b>TestUI</b><br>
+<img src="doc/screenshots/TestUI.jpg" width="100%">
+Basic example for runtime GUI with Clay layout engine
+</td>
+<td width="50%" valign="top">
+</td>
+</tr>
+</table>
+
 ### Remote Asset Baking
 Optionally. you can load bake assets remotely through TCP/IP connection. For example, on mobile platforms, There is no deployment of source assets on the device and APKs are kept light and does not contain anything other than executable binaries. So for those platforms, it is actually a requirement to bake assets remotely, after they are baked, they will be cached on the target device.
 
@@ -151,6 +185,7 @@ allocation library
 - [OffsetAllocator](https://github.com/septag/OffsetAllocator): Fast O(1) offset allocator with minimal fragmentation (Used for GPU dynamic memory allocations). I maintain my own single-header fork of the original project.
 - [volk](https://github.com/zeux/volk): Meta loader for Vulkan API
 - [sokol_args](https://github.com/floooh/sokol/blob/master/sokol_args.h): Single-header lib for parsing command-line arguments
+- [Clay](https://github.com/nicbarker/clay): High performance UI layout library in C. Used for UI layouting and the basis for runtime GUI.
 - Tooling (only used in tooling/PC builds):
     - [ISPC Texture Compressor](https://github.com/septag/ISPCTextureCompressor): BC/ASTC texture compressor
     - [meshoptimizer](https://github.com/zeux/meshoptimizer): Mesh optimization library that makes meshes smaller and faster to render

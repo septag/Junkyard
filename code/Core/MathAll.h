@@ -1282,6 +1282,11 @@ FORCE_INLINE Float4 operator+(Float4 v1, Float4 v2)
     return Float4::Add(v1, v2);
 }
 
+FORCE_INLINE Float4 operator*(Float4 v1, Float4 v2)
+{
+    return Float4::Mul(v1, v2);
+}
+
 FORCE_INLINE Float4 operator-(Float4 v1, Float4 v2)
 {
     return Float4::Sub(v1, v2);

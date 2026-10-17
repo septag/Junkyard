@@ -40,7 +40,7 @@ struct RGeometrySubChunk
     uint32 startIndex;
     uint32 numIndices;
     GfxImageHandle baseColorImg;
-    Color4u tintColor = COLOR4U_WHITE;
+    Float4 baseColor = FLOAT4_ONE;
     bool hasAlphaMask;
     uint32 _drawItemIndex;  // Internal use only
 };
@@ -48,6 +48,7 @@ struct RGeometrySubChunk
 struct RGeometryChunk
 {
     Mat4 localToWorldMat;
+    Float4 tintColor;   // For selection/highlighting/etc.
 
     GfxBufferHandle posVertexBuffer;
     uint64 posVertexBufferOffset;

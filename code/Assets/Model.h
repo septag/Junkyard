@@ -134,6 +134,7 @@ struct ModelNode
     ModelTransform localTransform;
     AABB bounds;
     RelativePtr<uint32> childIds;     // indices to GfxModelData::nodes
+    RelativePtr<char> extras;         // JSON text of the glTF node's "extras" (ie. Blender custom properties). Null if none
 };
 
 struct ModelData 

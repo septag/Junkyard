@@ -379,8 +379,10 @@ static Blob Vfs::_DiskReadFile(const char* path, VfsFlags flags, MemAllocator* a
                 size_t bytesRead = f.Read(const_cast<void*>(blob.Data()), size);
                 blob.SetSize(bytesRead);
 
-                if ((flags & VfsFlags::TextFile) == VfsFlags::TextFile)
+                if ((flags & VfsFlags::TextFile) == VfsFlags::TextFile) {
                     blob.Write<char>('\0');
+                    blob.SetSize(bytesRead);
+                }
             }
 
             f.Close();

@@ -20,7 +20,7 @@
 #include "../Tool/MeshOptimizer.h"
 
 static constexpr uint32 MODEL_ASSET_TYPE = MakeFourCC('M', 'O', 'D', 'L');
-static constexpr uint32 MODEL_ASSET_CACHE_VERSION = 6;     // 6: ImageLoadParams::colorSpace (ModelMaterialTexture layout)
+static constexpr uint32 MODEL_ASSET_CACHE_VERSION = 7;     // 7: ModelNode::extras
 
 struct ModelVertexAttribute
 {
@@ -295,6 +295,8 @@ namespace GLTF
         default:                           ASSERT(0); alphaMode = ModelMaterialAlphaMode::Opaque;   break;
         }
 
+        // Note: About color factors. They are all in linear-space as GLTF spec says
+        //       Textures are in sRGB color-space
         ModelMaterial* mtl = Mem::AllocTyped<ModelMaterial>(1, alloc);
         *mtl = {
             .hasMetalRoughness = (bool)gltfMtl->has_pbr_metallic_roughness,
@@ -724,6 +726,10 @@ namespace GLTF
             if (srcNode->has_scale)
                 dstNode->localTransform.scale = Float3(srcNode->scale);
 
+            // cgltf allocates the extras before the model, so copy them into the model's memory block
+            if (srcNode->extras.data)
+                dstNode->extras = Mem::AllocCopy<char>(srcNode->extras.data, Str::Len(srcNode->extras.data) + 1, tmpAlloc);
+
             for (cgltf_size mi = 0; mi < data->meshes_count; mi++) {
                 if (&data->meshes[mi] == srcNode->mesh) {
                     dstNode->meshId = IndexToId(uint32(mi));
@@ -954,3 +960,4 @@ AssetHandleModel Model::Load(const char* path, const ModelLoadParams& params, co
 
     return group.AddToLoadQueue(assetParams);
 }
+

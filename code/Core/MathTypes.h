@@ -139,10 +139,20 @@ struct Color4u
     explicit Color4u(const float* f) { *this = Color4u::FromFloat4(f[0], f[1], f[2], f[3]); }
     constexpr Color4u(uint32 _n) : n(_n) {}
 
-    Color4u& operator=(uint32 _n) 
+    inline Color4u& operator=(uint32 _n) 
     {
         n = _n;
         return *this;
+    }
+
+    inline bool operator==(const Color4u& _c) const
+    {
+        return n == _c.n;
+    }
+
+    inline bool operator!=(const Color4u& _c) const
+    {
+        return n != _c.n;
     }
 
     static float ValueToLinear(float _a);
@@ -618,6 +628,7 @@ inline constexpr Float3 FLOAT3_UNITY { 0.0f, 1.0f, 0.0f };
 inline constexpr Float3 FLOAT3_UNITZ { 0.0f, 0.0f, 1.0f };
 
 inline constexpr Float4 FLOAT4_ZERO  { 0.0f, 0.0f, 0.0f, 1.0f };
+inline constexpr Float4 FLOAT4_ONE { 1.0f, 1.0f, 1.0f, 1.0f };
 inline constexpr Float4 FLOAT4_UNITX { 1.0f, 0.0f, 0.0f, 1.0f };
 inline constexpr Float4 FLOAT4_UNITY { 0.0f, 1.0f, 0.0f, 1.0f };
 inline constexpr Float4 FLOAT4_UNITZ { 0.0f, 0.0f, 1.0f, 1.0f };
