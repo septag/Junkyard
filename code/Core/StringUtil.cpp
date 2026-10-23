@@ -439,7 +439,7 @@ char* Str::Trim(char* dst, uint32 dstSize, const char* src)
 
     // trim from the end
     if (len) {
-        for (uint32 i = len; --i > 0; ) {
+        for (uint32 i = len; i-- > 0; ) {
             if (!Str::IsWhitespace(src[i]))   {
                 endOffset = i + 1;  
                 break;
@@ -473,7 +473,7 @@ char* Str::Trim(char* dst, uint32 dstSize, const char* src, char ch)
 
     // trim from the end
     {
-        for (uint32 i = len; --i > 0; ) {
+        for (uint32 i = len; i-- > 0; ) {
             if (src[i] != ch)   {
                 endOffset = i + 1;  
                 break;

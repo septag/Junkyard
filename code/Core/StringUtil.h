@@ -358,27 +358,24 @@ inline bool String<_Size>::EndsWith(const char* cstr) const
 template <uint32 _Size> 
 inline String<_Size>& String<_Size>::Append(const char* cstr)
 {
-    Str::Copy(mStr + mLen, _Size - mLen, cstr);
-    mLen += Str::Len(cstr);
+    char* end = Str::Copy(mStr + mLen, _Size - mLen, cstr);
+    mLen = static_cast<uint32>(end - mStr);
     return *this;
 }
 
 template <uint32 _Size> 
 inline String<_Size>& String<_Size>::Append(const char* cstr, uint32 count)
 {
-    ASSERT(mLen + count < _Size);
-    Str::CopyCount(mStr + mLen, _Size - mLen, cstr, count);
-    mLen += count;
+    ASSERT(count < _Size - mLen);
+    char* end = Str::CopyCount(mStr + mLen, _Size - mLen, cstr, count);
+    mLen = static_cast<uint32>(end - mStr);
     return *this;
 }
 
 template <uint32 _Size>
 inline String<_Size>& String<_Size>::Append(const String<_Size>& str)
 {
-    ASSERT(mLen + str.mLen < _Size);
-    Str::CopyCount(mStr + mLen, _Size - mLen, str.mStr, str.mLen);
-    mLen += str.mLen;
-    return *this;
+    return Append(str.CStr(), str.Length());
 }
 
 template <uint32 _Size> 
