@@ -314,7 +314,7 @@ inline uint32 String<_Size>::FindCharRev(char ch) const
 {
     const char* r = Str::FindCharRev(mStr, ch);
     if (r)
-        return PtrToInt<uint32>(r - mStr);
+        return PtrToInt<uint32>((void*)(r - mStr));
     else
         return UINT32_MAX;
 }
