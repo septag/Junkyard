@@ -150,7 +150,7 @@ namespace ImGui
         style.GrabMinSize = 12;
         style.WindowBorderSize = 1;
         style.ChildBorderSize = 0;
-        style.PopupBorderSize = 0;
+        style.PopupBorderSize = 1;
         style.FrameBorderSize = 0;
         style.TabBorderSize = 0;
     
@@ -170,7 +170,7 @@ namespace ImGui
         style.Colors[ImGuiCol_WindowBg]               = ImVec4(0.20f, 0.20f, 0.20f, 1.00f);
         style.Colors[ImGuiCol_ChildBg]                = ImVec4(0.24f, 0.24f, 0.24f, 1.00f);
         style.Colors[ImGuiCol_PopupBg]                = ImVec4(0.20f, 0.20f, 0.20f, 1.00f);
-        style.Colors[ImGuiCol_Border]                 = ImVec4(1.00f, 1.00f, 1.00f, 0.10f);
+        style.Colors[ImGuiCol_Border]                 = ImVec4(0.12f, 0.12f, 0.12f, 1.00f);
         style.Colors[ImGuiCol_BorderShadow]           = ImVec4(0.18f, 0.18f, 0.18f, 1.00f);
         style.Colors[ImGuiCol_FrameBg]                = ImVec4(0.14f, 0.14f, 0.14f, 1.00f);
         style.Colors[ImGuiCol_FrameBgHovered]         = ImVec4(1.00f, 1.00f, 1.00f, 0.08f);
