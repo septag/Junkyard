@@ -25,11 +25,12 @@ INIFileContext INIFile::Create(MemAllocator* alloc)
 
 INIFileContext INIFile::Load(const char* filepath, MemAllocator* alloc)
 {
-    ASSERT_MSG(alloc->GetType() != MemAllocatorType::Temp, "alloc cannot be temp. Because the code below also has temp alloc and breaks the stack");
+    // Reuse the caller's temp scope so ini_load can allocate while the file buffer is alive.
+    MemTempAllocator::ID tempMemId = alloc->GetType() == MemAllocatorType::Temp
+        ? ((MemTempAllocator*)alloc)->GetId() : 0;
+    MemTempAllocator tmpAlloc(tempMemId);
 
     File f;
-
-    MemTempAllocator tmpAlloc;
     Blob blob(&tmpAlloc);
     if (f.Open(filepath, FileOpenFlags::Read | FileOpenFlags::SeqScan)) {
         size_t size = f.GetSize();
