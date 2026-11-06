@@ -110,6 +110,22 @@ struct GFX_UNIFORM_BUFFER_ALIGNMENT RLightCullShaderFrameData
     STRUCT_PADDING_12_BYTES();
 };
 
+struct GFX_UNIFORM_BUFFER_ALIGNMENT RScreenShadowsShaderFrameData
+{
+    Mat4 viewToClipMat;
+    Mat4 clipToViewMat;
+    Float3 sunDirVS;            // Towards the sun
+    float maxDistance;
+    float thickness;
+    float bias;
+    float cameraNear;
+    float cameraFar;
+    uint32 numSteps;
+    uint32 width;
+    uint32 height;
+    STRUCT_PADDING_4_BYTES();
+};
+
 struct GFX_UNIFORM_BUFFER_ALIGNMENT RLightCullDebugShaderFrameData
 {
     uint32 tilesCountX;
@@ -134,7 +150,8 @@ struct GFX_UNIFORM_BUFFER_ALIGNMENT RLightShaderFrameData
     Float4 skyAmbientColor;
     Float4 groundAmbientColor;
     uint32 tilesCountX;
-    STRUCT_PADDING_12_BYTES();
+    uint32 screenShadows;       // 1: ScreenShadowMask is valid
+    STRUCT_PADDING_8_BYTES();
 };
 
 struct GFX_UNIFORM_BUFFER_ALIGNMENT RLightShaderObjectData
@@ -179,6 +196,7 @@ struct RViewData
     Float4 skyAmbientColor;
     Float4 groundAmbientColor;
     GfxImageHandle sunShadowMapImage;
+    RScreenShadowParams screenShadows;
 
     RLightBounds* lightBounds;
     RLightProps* lightProps;
@@ -203,10 +221,12 @@ struct RFwdLightViewData
     GfxImageHandle msaaColorImage;          // Always created. Dummy color attachment of the alpha-masked Z-prepass without MSAA
     GfxImageHandle msaaDepthImage;          // Only with MSAA, otherwise the final depth image is rendered to directly
     GfxBufferHandle bVisibleLightIndices;
+    GfxImageHandle screenShadowMask;        // Always created, so the light pass always has a valid binding
 
     // Per-frame data (ring-buffered by the backend for frames in flight)
     GfxBufferHandle ubZPrepass;
     GfxBufferHandle ubLightCull;
+    GfxBufferHandle ubScreenShadows;
     GfxBufferHandle ubLightPerFrameData;
     GfxBufferHandle ubLightPerObjectData;
     GfxBufferHandle dbLightPerFrameResources;
@@ -237,6 +257,10 @@ struct RFwdContext
     AssetHandleShader sLightCull;
     GfxPipelineHandle pLightCull;
     GfxPipelineLayoutHandle pLightCullLayout;
+
+    AssetHandleShader sScreenShadows;
+    GfxPipelineHandle pScreenShadows;
+    GfxPipelineLayoutHandle pScreenShadowsLayout;
 
     AssetHandleShader sLightCullDebug;
     GfxPipelineHandle pLightCullDebug;
@@ -312,6 +336,7 @@ namespace R
         GfxBackend::DestroyImage(data.msaaDepthImage);
         GfxBackend::DestroyImage(data.msaaColorImage);
         GfxBackend::DestroyBuffer(data.bVisibleLightIndices);
+        GfxBackend::DestroyImage(data.screenShadowMask);
 
         data.targetWidth = width;
         data.targetHeight = height;
@@ -358,6 +383,18 @@ namespace R
             data.msaaColorImage = GfxBackend::CreateImage(desc);
         }
 
+        // Screen-space shadows: 1 = lit, 0 = occluded. Single sample, written by compute, read by the light pass
+        {
+            GfxImageDesc desc {
+                .width = uint16(width),
+                .height = uint16(height),
+                .format = GfxFormat::R8_UNORM,
+                .usageFlags = GfxImageUsageFlags::Storage|GfxImageUsageFlags::Sampled,
+                .arena = GfxMemoryArena::DynamicImageGPU
+            };
+            data.screenShadowMask = GfxBackend::CreateImage(desc);
+        }
+
         // Buffers
         {
             GfxBufferDesc bufferDesc = {
@@ -393,6 +430,15 @@ namespace R
             .perFrameUpdates = true
         };
         data.ubLightCull = GfxBackend::CreateBuffer(bufferDesc);
+
+        // Screen-space shadows
+        bufferDesc = {
+            .sizeBytes = sizeof(RScreenShadowsShaderFrameData),
+            .usageFlags = GfxBufferUsageFlags::TransferDst | GfxBufferUsageFlags::Uniform,
+            .arena = GfxMemoryArena::DynamicBufferGPU,
+            .perFrameUpdates = true
+        };
+        data.ubScreenShadows = GfxBackend::CreateBuffer(bufferDesc);
 
         bufferDesc = {
             .sizeBytes = sizeof(RLightBounds)*R_LIGHT_CULL_MAX_LIGHTS_PER_FRAME,
@@ -453,9 +499,11 @@ namespace R
         GfxBackend::DestroyImage(data.msaaColorImage);
         GfxBackend::DestroyImage(data.msaaDepthImage);
         GfxBackend::DestroyBuffer(data.bVisibleLightIndices);
+        GfxBackend::DestroyImage(data.screenShadowMask);
 
         GfxBackend::DestroyBuffer(data.ubZPrepass);
         GfxBackend::DestroyBuffer(data.ubLightCull);
+        GfxBackend::DestroyBuffer(data.ubScreenShadows);
         GfxBackend::DestroyBuffer(data.ubLightPerFrameData);
         GfxBackend::DestroyBuffer(data.ubLightPerObjectData);
         GfxBackend::DestroyBuffer(data.dbLightPerFrameResources);
@@ -712,6 +760,38 @@ namespace R
         }
 
         //--------------------------------------------------------------------------------------------------------------
+        // Screen-space shadows
+        {
+            AssetObjPtrScope<GfxShader> shader(gFwd.sScreenShadows);
+            GfxPipelineLayoutDesc::Binding bindings[] = {
+                {
+                    .name = "PerFrameData",
+                    .type = GfxDescriptorType::UniformBuffer,
+                    .stagesUsed = GfxShaderStage::Compute
+                },
+                {
+                    .name = "DepthTexture",
+                    .type = GfxDescriptorType::SampledImage,
+                    .stagesUsed = GfxShaderStage::Compute
+                },
+                {
+                    .name = "ShadowMask",
+                    .type = GfxDescriptorType::StorageImage,
+                    .stagesUsed = GfxShaderStage::Compute
+                }
+            };
+
+            GfxPipelineLayoutDesc layoutDesc {
+                .type = GfxPipelineLayoutType::PushDescriptor,
+                .numBindings = CountOf(bindings),
+                .bindings = bindings
+            };
+
+            gFwd.pScreenShadowsLayout = GfxBackend::CreatePipelineLayout(*shader, layoutDesc);
+            gFwd.pScreenShadows = GfxBackend::CreateComputePipeline(*shader, gFwd.pScreenShadowsLayout);
+        }
+
+        //--------------------------------------------------------------------------------------------------------------
         // Lighting
         {
             AssetObjPtrScope<GfxShader> shader(gFwd.sLight);
@@ -744,6 +824,12 @@ namespace R
                 },
                 {
                     .name = "ShadowMap",
+                    .type = GfxDescriptorType::SampledImage,
+                    .stagesUsed = GfxShaderStage::Fragment,
+                    .setIndex = (uint8)RDescriptorSetIndex::PerFrame
+                },
+                {
+                    .name = "ScreenShadowMask",
                     .type = GfxDescriptorType::SampledImage,
                     .stagesUsed = GfxShaderStage::Fragment,
                     .setIndex = (uint8)RDescriptorSetIndex::PerFrame
@@ -1045,6 +1131,16 @@ bool R::Initialize()
     {
         ShaderLoadParams loadParams {
             .compileDesc = {
+                .numDefines = 1,
+                .defines = {{ .define = "MSAA", .value = String32::Format("%d", settings.graphics.msaa) }}
+            }
+        };
+        gFwd.sScreenShadows = Shader::Load("/shaders/ScreenShadows.hlsl", loadParams, assetGroup);
+    }
+
+    {
+        ShaderLoadParams loadParams {
+            .compileDesc = {
                 .numDefines = 2,
                 .defines = {
                     {
@@ -1102,6 +1198,9 @@ void R::Release()
 
     GfxBackend::DestroyPipeline(gFwd.pLightCull);
     GfxBackend::DestroyPipelineLayout(gFwd.pLightCullLayout);
+
+    GfxBackend::DestroyPipeline(gFwd.pScreenShadows);
+    GfxBackend::DestroyPipelineLayout(gFwd.pScreenShadowsLayout);
 
     GfxBackend::DestroyPipeline(gFwd.pLightCullDebug);
     GfxBackend::DestroyPipelineLayout(gFwd.pLightCullDebugLayout);
@@ -1161,6 +1260,24 @@ void R::FwdLight::Update(RView& view, GfxCommandBuffer& cmd)
         buffer->windowHeight = viewData.viewHeight;
     }
 
+    // Per-frame screen-space shadows data
+    const RScreenShadowParams& screenShadows = viewData.screenShadows;
+    if (screenShadows.enabled) {
+        GfxHelperBufferUpdateScope updater(cmd, fwdData.ubScreenShadows, uint32(-1), GfxShaderStage::Compute);
+        RScreenShadowsShaderFrameData* buffer = (RScreenShadowsShaderFrameData*)updater.mData;
+        buffer->viewToClipMat = viewData.viewToClipMat;
+        buffer->clipToViewMat = Mat4::Inverse(viewData.viewToClipMat);
+        buffer->sunDirVS = Float3::Norm(Mat4::MulFloat3_xyz0(viewData.worldToViewMat, viewData.sunLightDir*-1.0f));
+        buffer->maxDistance = screenShadows.maxDistance;
+        buffer->thickness = screenShadows.thickness;
+        buffer->bias = screenShadows.bias;
+        buffer->cameraNear = viewData.nearDist;
+        buffer->cameraFar = viewData.farDist;
+        buffer->numSteps = Max<uint32>(screenShadows.numSteps, 1);
+        buffer->width = viewData.viewWidth;
+        buffer->height = viewData.viewHeight;
+    }
+
     // Per-frame lighting data
     {
         GfxHelperBufferUpdateScope uniformBufferUpdater(cmd, fwdData.ubLightPerFrameData, uint32(-1), GfxShaderStage::Vertex);
@@ -1172,6 +1289,7 @@ void R::FwdLight::Update(RView& view, GfxCommandBuffer& cmd)
         frameData->skyAmbientColor = viewData.skyAmbientColor;
         frameData->groundAmbientColor = viewData.groundAmbientColor;
         frameData->tilesCountX = fwdData.tilesCountX;
+        frameData->screenShadows = screenShadows.enabled ? 1 : 0;
 
         GfxHelperBufferUpdateScope descriptorBufferUpdater(cmd, fwdData.dbLightPerFrameResources, uint32(-1), GfxShaderStage::Vertex);
         GfxHelperDescriptorBuffer descriptorBuffer(descriptorBufferUpdater.mData, gFwd.pLightLayout, (uint32)RDescriptorSetIndex::PerFrame);
@@ -1196,6 +1314,10 @@ void R::FwdLight::Update(RView& view, GfxCommandBuffer& cmd)
             {
                 .name = "ShadowMap",
                 .image = viewData.sunShadowMapImage
+            },
+            {
+                .name = "ScreenShadowMask",
+                .image = fwdData.screenShadowMask
             }
         };
 
@@ -1506,6 +1628,35 @@ void R::FwdLight::Render(RView& view, GfxCommandBuffer& cmd, GfxImageHandle fina
         cmd.TransitionBuffer(fwdData.bVisibleLightIndices, GfxBufferTransition::FragmentRead);
     }
 
+    // Screen-space shadows: Needs the depth of the Z-Prepass, result is combined with the sun shadow map in the light pass
+    if (viewData.screenShadows.enabled) {
+        GPU_PROFILE_ZONE(cmd, "ScreenShadows");
+        cmd.TransitionImage(renderDepthImage, GfxImageTransition::ShaderRead);
+        cmd.TransitionImage(fwdData.screenShadowMask, GfxImageTransition::ComputeWrite);
+
+        GfxBindingDesc bindings[] = {
+            {
+                .name = "PerFrameData",
+                .buffer = fwdData.ubScreenShadows
+            },
+            {
+                .name = "DepthTexture",
+                .image = renderDepthImage
+            },
+            {
+                .name = "ShadowMask",
+                .image = fwdData.screenShadowMask
+            }
+        };
+
+        cmd.BindPipeline(gFwd.pScreenShadows);
+        cmd.PushBindings(gFwd.pScreenShadowsLayout, CountOf(bindings), bindings);
+        cmd.Dispatch(M::CeilDiv(viewData.viewWidth, 8u), M::CeilDiv(viewData.viewHeight, 8u), 1);
+    }
+
+    // Also when disabled: The light pass always binds the mask (it's skipped in the shader)
+    cmd.TransitionImage(fwdData.screenShadowMask, GfxImageTransition::ShaderRead);
+
     cmd.TransitionImage(renderDepthImage, GfxImageTransition::RenderTarget, GfxImageTransitionFlags::DepthRead);
 
     // Light pass
@@ -1677,6 +1828,33 @@ void R::FwdLight::Render(RView& view, GfxCommandBuffer& cmd, GfxImageHandle fina
 
         cmd.EndRenderPass();
     }
+    else if (debugMode == RDebugMode::ScreenShadows) {
+        // Mask is view-sized, so no letterboxing. White when the screen-space shadows are disabled
+        _BeginDebugRenderPass(cmd, finalColorImage, FLOAT4_ONE);
+        if (viewData.screenShadows.enabled) {
+            cmd.BindPipeline(gFwd.pTextureDebugDepth);
+            R::_SetViewportAndScissor(cmd, viewData.viewWidth, viewData.viewHeight);
+
+            GfxBindingDesc bindings[] = {
+                {
+                    .name = "DepthTexture",
+                    .image = fwdData.screenShadowMask
+                },
+                {
+                    .name = "TextureSampler",
+                    .sampler = gFwd.samplers[uint32(RSamplerType::BilinearClamp)]
+                }
+            };
+
+            cmd.PushBindings(gFwd.pTextureDebugDepthLayout, CountOf(bindings), bindings);
+
+            RTextureDebugShaderFrameData perFrameData {};
+            cmd.PushConstants<RTextureDebugShaderFrameData>(gFwd.pTextureDebugDepthLayout, "PerFrameData", perFrameData);
+
+            cmd.Draw(3, 1, 0, 0);
+        }
+        cmd.EndRenderPass();
+    }
 }
 
 void RView::SetCamera(const Camera& cam, Float2 viewSize)
@@ -1731,6 +1909,13 @@ void RView::SetSunLight(Float3 direction, Float4 color, GfxImageHandle shadowMap
     viewData.sunLightColor = Color4u::ToFloat4Linear(color);
     viewData.sunShadowMapImage = shadowMapImage;
     viewData.sunLightWorldToClipMat = sunlightWorldToClipMat;
+}
+
+void RView::SetScreenShadows(const RScreenShadowParams& params)
+{
+    RViewData& viewData = gFwd.viewPool.Data(mHandle);
+    ASSERT_MSG(viewData.type == RViewType::FwdLight, "Screen-space shadows are only supported by FwdLight views");
+    viewData.screenShadows = params;
 }
 
 RGeometryChunk* RView::NewGeometryChunk()

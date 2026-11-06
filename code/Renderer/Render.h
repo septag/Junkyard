@@ -32,7 +32,19 @@ enum class RDebugMode
 {
     None = 0,
     LightCull,
-    SunShadowMap
+    SunShadowMap,
+    ScreenShadows
+};
+
+// Contact shadows for the sun: Short rays are marched towards the sun through the depth buffer of the view
+// Adds the small details that the shadow map misses. Only occluders that are on screen cast these shadows
+struct RScreenShadowParams
+{
+    bool enabled = false;
+    uint32 numSteps = 16;
+    float maxDistance = 2.0f;   // Ray length in world units. Keep it short, the shadow map handles the rest
+    float thickness = 1.0f;     // Assumed thickness of the depth buffer surfaces. Behind that, the ray passes through
+    float bias = 0.05f;         // World units. Against self-shadowing
 };
 
 struct RGeometrySubChunk
@@ -79,6 +91,7 @@ struct RView
     void SetLocalLights(uint32 numLights, const RLightBounds* bounds, const RLightProps* props);
     void SetAmbientLight(Float4 skyAmbientColor, Float4 groundAmbientColor);
     void SetSunLight(Float3 direction, Float4 color, GfxImageHandle shadowMapImage, const Mat4& sunlightWorldToClipMat);
+    void SetScreenShadows(const RScreenShadowParams& params);   // FwdLight views only. Needs SetSunLight
 
     RGeometryChunk* NewGeometryChunk();
 

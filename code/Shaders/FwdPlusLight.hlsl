@@ -49,6 +49,7 @@ struct RLightShaderFrameData
     float4 skyAmbientColor;
     float4 groundAmbientColor;
     uint tilesCountX;
+    uint screenShadows;     // 1: ScreenShadowMask is valid
 };
 
 // PerFrame
@@ -57,6 +58,7 @@ StructuredBuffer<uint> VisibleLightIndices;
 StructuredBuffer<RLightProps> LocalLights;
 StructuredBuffer<RLightBounds> LocalLightBounds;
 Texture2D<float> ShadowMap;
+Texture2D<float> ScreenShadowMask;
 
 // PerObject
 [vk::binding(0, 1)]
@@ -68,6 +70,45 @@ cbuffer PerObjectData
 
 [vk::binding(1, 1)]
 Texture2D BaseColorTexture;
+
+// Shadow map PCF kernel radius in texels: (2*r + 1)^2 taps. Each tap is a bilinear compare (2x2 texels in hardware),
+// so the kernel filters (2*r + 2)^2 texels. 1: 3x3 taps, 4x4 texels
+#ifndef SHADOW_PCF_RADIUS
+#define SHADOW_PCF_RADIUS 1
+#endif
+
+// Distance between the PCF taps in texels. Smaller is sharper: the kernel filters (2*r*spacing + 2)^2 texels
+// 0.5 with radius 1: ~3x3 texels, between the single tap (2x2) and 1.0 spacing (4x4)
+#ifndef SHADOW_PCF_SPACING
+#define SHADOW_PCF_SPACING 0.5f
+#endif
+
+// Sharpens the PCF result: smoothstep(SHARPEN, 1 - SHARPEN, pcf) narrows the penumbra but keeps it anti-aliased
+// 0: off (plain PCF). Up to ~0.4: harder edges. 0.5 would turn it into a hard step (aliasing comes back)
+#ifndef SHADOW_PCF_SHARPEN
+#define SHADOW_PCF_SHARPEN 0.15f
+#endif
+
+float SampleShadowPCF(float2 uv, float depth)
+{
+    float2 shadowMapSize;
+    ShadowMap.GetDimensions(shadowMapSize.x, shadowMapSize.y);
+    float2 tapOffset = SHADOW_PCF_SPACING / shadowMapSize;
+
+    float sum = 0;
+    [unroll]
+    for (int y = -SHADOW_PCF_RADIUS; y <= SHADOW_PCF_RADIUS; y++) {
+        [unroll]
+        for (int x = -SHADOW_PCF_RADIUS; x <= SHADOW_PCF_RADIUS; x++)
+            sum += ShadowMap.SampleCmpLevelZero(SamplerBilinearLess, uv + float2(x, y)*tapOffset, depth);
+    }
+
+    const float numTaps = float((2*SHADOW_PCF_RADIUS + 1)*(2*SHADOW_PCF_RADIUS + 1));
+    float shadow = sum / numTaps;
+    if (SHADOW_PCF_SHARPEN > 0)     // Compile-time constant, folded by the compiler
+        shadow = smoothstep(SHADOW_PCF_SHARPEN, 1.0f - SHADOW_PCF_SHARPEN, shadow);
+    return shadow;
+}
 
 float3 LinearToSRGB(float3 c)
 {
@@ -107,7 +148,9 @@ float4 PsMain(PsInput i) : SV_Target
         float4 posLS = mul(PerFrameData.worldToSunLightClipMat, float4(i.posWS, 1));
         posLS.xyz /= posLS.w;
         float2 shadowUv = posLS.xy * 0.5f + 0.5f;   // From clip-space to uv-space
-        float shadowTerm = ShadowMap.SampleCmpLevelZero(SamplerBilinearLess, shadowUv, posLS.z);
+        float shadowTerm = SampleShadowPCF(shadowUv, posLS.z);
+        if (PerFrameData.screenShadows)
+            shadowTerm = min(shadowTerm, ScreenShadowMask.Load(int3(loc, 0)));
 
         // Light
         float3 L = -PerFrameData.sunLightDir;
