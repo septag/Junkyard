@@ -467,7 +467,9 @@ void DebugDraw::DrawGroundGrid(const Camera& cam, const DebugDrawGridProperties&
     ASSERT(props.distance > 0);
 
     Int2 viewExtents = gDebugDraw.viewExtents;
-    CameraFrustumPoints frustumPts = cam.GetFrustumPoints(float(viewExtents.x), float(viewExtents.y), -props.distance, props.distance);
+    // Far plane at the grid distance
+    Mat4 gridProjMat = Mat4::PerspectiveFOV(cam.Fov(), float(viewExtents.x)/float(viewExtents.y), cam.Near(), props.distance);
+    FrustumPoints frustumPts = MathUtil::CalcFrustumPoints(gridProjMat * cam.GetViewMat());
     AABB bb = AABB_EMPTY;
 
     // extrude near plane

@@ -589,9 +589,44 @@ struct Plane
     static float  HitRay(Plane _plane, Float3 _origin, Float3 _direction);
 };
 
+// Corners of a view volume. 0..3: near quad, 4..7: far quad
+// Both quads are wound so that Plane::CalcNormal of their first 3 points faces into the volume
+struct FrustumPoints
+{
+    Float3 mPoints[8];
+
+    Float3& operator[](uint32 index) { ASSERT(index<8); return mPoints[index]; }
+    const Float3& operator[](uint32 index) const { ASSERT(index<8); return mPoints[index]; }
+    uint32 Count() const { return CountOf(mPoints); }
+};
+
+// Normalized planes. Normals face into the volume
+struct FrustumPlanes
+{
+    enum FrustumPlane
+    {
+        PlaneLeft = 0,
+        PlaneRight,
+        PlaneTop,
+        PlaneBottom,
+        PlaneNear,
+        PlaneFar,
+        _Count
+    };
+
+    Plane mPlanes[_Count];
+
+    Plane& operator[](uint32 index) { ASSERT(index < _Count); return mPlanes[index]; }
+    const Plane& operator[](uint32 index) const { ASSERT(index < _Count); return mPlanes[index]; }
+};
+
 namespace MathUtil
 {
     Float2 ProjectPointToScreenPixels(Float3 pt, const Mat4& cameraWorldToClipMat, const RectFloat& viewport);
+
+    // Both expect Vulkan clip space (+y down, depth [0, 1]) and work with perspective and ortho projections
+    FrustumPlanes CalcFrustumPlanes(const Mat4& worldToClipMat);
+    FrustumPoints CalcFrustumPoints(const Mat4& worldToClipMat);
 }
 
 //

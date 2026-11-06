@@ -949,3 +949,44 @@ Float2 MathUtil::ProjectPointToScreenPixels(Float3 pt, const Mat4& cameraWorldTo
 
     return Float2(pos.x, pos.y);
 }
+
+// Gribb/Hartmann: clip = M*p, so each plane is a combination of the matrix rows. Inside: -w <= x,y <= w, 0 <= z <= w
+FrustumPlanes MathUtil::CalcFrustumPlanes(const Mat4& worldToClipMat)
+{
+    Float4 r1 = worldToClipMat.Row1();
+    Float4 r2 = worldToClipMat.Row2();
+    Float4 r3 = worldToClipMat.Row3();
+    Float4 r4 = worldToClipMat.Row4();
+
+    Float4 coeffs[FrustumPlanes::_Count];
+    coeffs[FrustumPlanes::PlaneLeft] = r4 + r1;
+    coeffs[FrustumPlanes::PlaneRight] = r4 - r1;
+    coeffs[FrustumPlanes::PlaneTop] = r4 + r2;      // Vulkan: -y is the top of the screen
+    coeffs[FrustumPlanes::PlaneBottom] = r4 - r2;
+    coeffs[FrustumPlanes::PlaneNear] = r3;          // Depth [0, 1]
+    coeffs[FrustumPlanes::PlaneFar] = r4 - r3;
+
+    FrustumPlanes planes;
+    for (uint32 i = 0; i < FrustumPlanes::_Count; i++) {
+        Float4 c = coeffs[i];
+        float invLen = 1.0f / Float3::Len(Float3(c.x, c.y, c.z));
+        planes[i] = Plane(c.x*invLen, c.y*invLen, c.z*invLen, c.w*invLen);
+    }
+    return planes;
+}
+
+FrustumPoints MathUtil::CalcFrustumPoints(const Mat4& worldToClipMat)
+{
+    // NDC corners in FrustumPoints order: left-bottom, right-bottom, right-top, left-top (near),
+    // then left-bottom, left-top, right-top, right-bottom (far). Vulkan: +y is the bottom of the screen
+    static const Float3 NDC_CORNERS[8] = {
+        Float3(-1.0f,  1.0f, 0), Float3( 1.0f,  1.0f, 0), Float3( 1.0f, -1.0f, 0), Float3(-1.0f, -1.0f, 0),
+        Float3(-1.0f,  1.0f, 1), Float3(-1.0f, -1.0f, 1), Float3( 1.0f, -1.0f, 1), Float3( 1.0f,  1.0f, 1)
+    };
+
+    Mat4 clipToWorldMat = Mat4::Inverse(worldToClipMat);
+    FrustumPoints points;
+    for (uint32 i = 0; i < points.Count(); i++)
+        points[i] = Mat4::MulFloat3H(clipToWorldMat, NDC_CORNERS[i]);
+    return points;
+}

@@ -59,58 +59,6 @@ void Camera::SetViewMat(const Mat4& viewMat)
     mPos = Float3(vpInv.fc4);
 }
 
-CameraFrustumPoints Camera::GetFrustumPoints(float viewWidth, float viewHeight, float overrideNear, float overrideFar) const
-{
-    CameraFrustumPoints frustum;
-
-    float near = overrideNear >= 0 ? overrideNear : mNear;
-    float far = overrideFar >= 0 ? overrideFar : mFar;
-    ASSERT(far > near);
-
-    const float fov = mFov;
-    const float aspect = viewWidth / viewHeight;
-
-    Float3 xaxis = mRight;
-    Float3 yaxis = mUp;
-    Float3 zaxis = mForward;
-    Float3 pos = mPos;
-
-    float nearPlaneH = M::Tan(fov*0.5f) * near;
-    float nearPlaneW = nearPlaneH * aspect;
-
-    float farPlaneH = M::Tan(fov*0.5f) * far;
-    float farPlaneW = farPlaneH * aspect;
-
-    Float3 centerNear = zaxis*near + pos;
-    Float3 centerFar = zaxis*far + pos;
-
-    // scaled axises
-    Float3 xnearScaled = xaxis * nearPlaneW;
-    Float3 xfarScaled = xaxis * farPlaneW;
-    Float3 ynearScaled = yaxis * nearPlaneH;
-    Float3 yfarScaled = yaxis * farPlaneH;
-
-    // near quad (normal inwards)
-    frustum[0] = centerNear - (xnearScaled + ynearScaled);
-    frustum[1] = centerNear + (xnearScaled - ynearScaled);
-    frustum[2] = centerNear + (xnearScaled + ynearScaled);
-    frustum[3] = centerNear - (xnearScaled - ynearScaled);
-
-    // far quad (normal inwards)
-    frustum[4] = centerFar - (xfarScaled + yfarScaled);
-    frustum[5] = centerFar - (xfarScaled - yfarScaled);
-    frustum[6] = centerFar + (xfarScaled + yfarScaled);
-    frustum[7] = centerFar + (xfarScaled - yfarScaled);
-    
-    return frustum;
-}
-
-CameraFrustumPlanes Camera::GetFrustumPlanes(const Mat4& viewProjMat) const
-{
-    UNUSED(viewProjMat);
-    return {};
-}
-
 void Camera::SetLookAt(Float3 pos, Float3 target, Float3 up)
 {
     using namespace M;

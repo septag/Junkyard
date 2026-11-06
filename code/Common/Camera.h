@@ -3,35 +3,8 @@
 #include "../Core/MathTypes.h"
 
 struct AppEvent;    // Application.h
-struct CameraFrustumPoints
-{
-    Float3 mPoints[8];
 
-    Float3& operator[](uint32 index) { ASSERT(index<8); return mPoints[index]; }
-    const Float3& operator[](uint32 index) const { ASSERT(index<8); return mPoints[index]; }
-    uint32 Count() const { return CountOf(mPoints); }
-};
-
-struct CameraFrustumPlanes 
-{
-    enum FrustumPlane
-    {
-        PlaneLeft = 0,
-        PlaneRight, 
-        PlaneTop,
-        PlaneBottom,
-        PlaneNear,
-        PlaneFar,
-        _Count
-    };
-
-
-    Plane mPlanes[_Count];
-    
-    Plane& operator[](uint32 index) { ASSERT(index < _Count); return mPlanes[index]; }
-    const Plane& operator[](uint32 index) const { ASSERT(index < _Count); return mPlanes[index]; }
-};
-
+// Frustum points/planes: MathUtil::CalcFrustumPoints/CalcFrustumPlanes with the camera's world to clip matrix
 struct Camera
 {
     Camera() = default;
@@ -48,9 +21,6 @@ struct Camera
     Mat4 GetOrthoMat(float viewWidth, float viewHeight) const;
     Mat4 GetPerspectiveMat(float viewWidth, float viewHeight) const;
     Mat4 GetViewMat() const;
-
-    CameraFrustumPoints GetFrustumPoints(float viewWidth, float viewHeight, float overrideNear = -1.0f, float overrideFar = -1.0f) const;
-    CameraFrustumPlanes GetFrustumPlanes(const Mat4& viewProjMat) const;
 
     Float3 Forward() const { return mForward; }
     Float3 Right() const { return mRight; };
