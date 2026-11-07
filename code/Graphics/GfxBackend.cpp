@@ -2212,8 +2212,8 @@ bool GfxBackend::Initialize()
 
     gBackendVk.runtimeAllocBase.Initialize(&gBackendVk.parentAlloc, 16*SIZE_MB, debugAllocs);
     gBackendVk.driverAllocBase.Initialize(&gBackendVk.parentAlloc, 32*SIZE_MB, debugAllocs);
-    Engine::HelperInitializeProxyAllocator(&gBackendVk.runtimeAlloc, "GfxBackend.Runtime", &gBackendVk.runtimeAllocBase);
-    Engine::HelperInitializeProxyAllocator(&gBackendVk.driverAlloc, "GfxBackend.Vulkan", &gBackendVk.driverAllocBase);
+    Engine::HelperInitializeProxyAllocator(&gBackendVk.runtimeAlloc, "GfxBackend/Runtime", &gBackendVk.runtimeAllocBase);
+    Engine::HelperInitializeProxyAllocator(&gBackendVk.driverAlloc, "GfxBackend/Vulkan", &gBackendVk.driverAllocBase);
 
     Engine::RegisterProxyAllocator(&gBackendVk.parentAlloc);
     Engine::RegisterProxyAllocator(&gBackendVk.runtimeAlloc);

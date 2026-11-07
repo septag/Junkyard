@@ -589,6 +589,13 @@ namespace OS
     API size_t GetPageSize();
     API void GetSysInfo(SysInfo* info);
     API bool IsDebuggerPresent();
+
+    // Fills `dst` with cryptographically secure random bytes from the OS (no seeding, thread-safe)
+    // Windows: BCryptGenRandom (Bcrypt.dll is loaded on the first call), Linux/Android: getrandom (/dev/urandom
+    // fallback), Apple: arc4random_buf
+    // Slow compared to Random::Int (syscall per call): Use it for unique ids and seeds, not in hot loops
+    API bool GetCryptoRandom(void* dst, size_t size);
+
     API void GenerateCmdLineFromArgcArgv(int argc, const char* argv[], char** outString, uint32* outStringLen, 
                                              MemAllocator* alloc = Mem::GetDefaultAlloc(), const char* prefixCmd = nullptr);
 

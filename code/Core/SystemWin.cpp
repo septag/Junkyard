@@ -16,6 +16,7 @@
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #include <ShlObj.h>     // SH family of functions (Shell32)
+#include <bcrypt.h>     // BCryptGenRandom types/flags only. Bcrypt.dll is loaded on demand (see BCrypt)
 
 #pragma comment(lib, "ws2_32.lib")
 
@@ -121,6 +122,19 @@ struct Shell32
     SHGetKnownFolderPathFn SHGetKnownFolderPath;
 };
 
+struct BCrypt
+{
+    typedef NTSTATUS (WINAPI *BCryptGenRandomFn)(
+        _In_opt_ BCRYPT_ALG_HANDLE hAlgorithm,
+        _Out_writes_bytes_(cbBuffer) PUCHAR pbBuffer,
+        _In_ ULONG cbBuffer,
+        _In_ ULONG dwFlags
+    );
+
+    HANDLE dll;
+    BCryptGenRandomFn BCryptGenRandom;
+};
+
 //----------------------------------------------------------------------------------------------------------------------
 // AdvApi32
 static AdvApi32 gAdvApi32;
@@ -175,6 +189,22 @@ static void _LoadShell32()
         gShell32.SHGetKnownFolderPath = (Shell32::SHGetKnownFolderPathFn)OS::GetSymbolAddress(gShell32.dll, "SHGetKnownFolderPath");
 
         ASSERT_ALWAYS(gShell32.ShellExecuteA && gShell32.SHGetKnownFolderPath, "Loading Shell32 API failed");
+    }
+}
+
+//----------------------------------------------------------------------------------------------------------------------
+// BCrypt
+static BCrypt gBCrypt;
+
+static void _LoadBCrypt()
+{
+    if (gBCrypt.dll == nullptr) {
+        gBCrypt.dll = (HANDLE)OS::LoadDLL("Bcrypt.dll");
+        ASSERT_ALWAYS(gBCrypt.dll, "Could not load system DLL: Bcrypt.dll");
+
+        gBCrypt.BCryptGenRandom = (BCrypt::BCryptGenRandomFn)OS::GetSymbolAddress(gBCrypt.dll, "BCryptGenRandom");
+
+        ASSERT_ALWAYS(gBCrypt.BCryptGenRandom, "Loading BCrypt API failed");
     }
 }
 
@@ -741,6 +771,23 @@ bool UniqueID::FromString(UniqueID* _uuid, const char* str)
 //    ██║   ██║██╔══╝  ██║╚██╗██║██╔══╝  ██╔══██╗██╔══██║██║         ██║   ██║╚════██║
 //    ╚██████╔╝███████╗██║ ╚████║███████╗██║  ██║██║  ██║███████╗    ╚██████╔╝███████║
 //     ╚═════╝ ╚══════╝╚═╝  ╚═══╝╚══════╝╚═╝  ╚═╝╚═╝  ╚═╝╚══════╝     ╚═════╝ ╚══════╝
+
+bool OS::GetCryptoRandom(void* dst, size_t size)
+{
+    ASSERT(dst || size == 0);
+    _LoadBCrypt();
+
+    // BCryptGenRandom takes a ULONG size, so split very large requests
+    uint8* bytes = (uint8*)dst;
+    while (size > 0) {
+        ULONG chunkSize = ULONG(Min<size_t>(size, ULONG_MAX));
+        if (!BCRYPT_SUCCESS(gBCrypt.BCryptGenRandom(nullptr, bytes, chunkSize, BCRYPT_USE_SYSTEM_PREFERRED_RNG)))
+            return false;
+        bytes += chunkSize;
+        size -= chunkSize;
+    }
+    return true;
+}
 
 OSDLL OS::LoadDLL(const char* filepath, char** pErrorMsg)
 {

@@ -1863,8 +1863,8 @@ void Asset::UnregisterType(uint32 fourcc)
 bool Asset::Initialize()
 {
     Engine::HelperInitializeProxyAllocator(&gAssetMan.alloc, "AssetMan");
-    Engine::HelperInitializeProxyAllocator(&gAssetMan.assetDataAlloc, "AssetMan.Data", &gAssetMan.assetDataAllocBase);
-    Engine::HelperInitializeProxyAllocator(&gAssetMan.assetHeaderAlloc, "AssetMan.Headers", &gAssetMan.assetHeaderAllocBase);
+    Engine::HelperInitializeProxyAllocator(&gAssetMan.assetDataAlloc, "AssetMan/Data", &gAssetMan.assetDataAllocBase);
+    Engine::HelperInitializeProxyAllocator(&gAssetMan.assetHeaderAlloc, "AssetMan/Headers", &gAssetMan.assetHeaderAllocBase);
 
     Engine::RegisterProxyAllocator(&gAssetMan.alloc);
     Engine::RegisterProxyAllocator(&gAssetMan.assetDataAlloc);

@@ -931,6 +931,70 @@ bool UniqueID::operator==(const UniqueID& uuid) const
     return memcmp(&uuid, this, sizeof(UUIDImpl)) == 0;
 }
 
+//     ██████╗██████╗ ██╗   ██╗██████╗ ████████╗ ██████╗
+//    ██╔════╝██╔══██╗╚██╗ ██╔╝██╔══██╗╚══██╔══╝██╔═══██╗
+//    ██║     ██████╔╝ ╚████╔╝ ██████╔╝   ██║   ██║   ██║
+//    ██║     ██╔══██╗  ╚██╔╝  ██╔═══╝    ██║   ██║   ██║
+//    ╚██████╗██║  ██║   ██║   ██║        ██║   ╚██████╔╝
+//     ╚═════╝╚═╝  ╚═╝   ╚═╝   ╚═╝        ╚═╝    ╚═════╝
+#if PLATFORM_ANDROID || PLATFORM_LINUX
+// For kernels without getrandom (< 3.17) or when the syscall is blocked (some sandboxes)
+static bool _GetCryptoRandomFromDevice(uint8* bytes, size_t size)
+{
+    int fd = open("/dev/urandom", O_RDONLY | O_CLOEXEC);
+    if (fd < 0)
+        return false;
+
+    while (size > 0) {
+        ssize_t r = read(fd, bytes, size);
+        if (r <= 0) {
+            if (r < 0 && errno == EINTR)
+                continue;
+            close(fd);
+            return false;
+        }
+        bytes += r;
+        size -= size_t(r);
+    }
+
+    close(fd);
+    return true;
+}
+#endif
+
+bool OS::GetCryptoRandom(void* dst, size_t size)
+{
+    ASSERT(dst || size == 0);
+
+#if PLATFORM_APPLE
+    // Never fails, reseeds itself from the kernel
+    arc4random_buf(dst, size);
+    return true;
+#elif PLATFORM_ANDROID || PLATFORM_LINUX
+    // Raw syscall instead of the getrandom() wrapper, which needs glibc 2.25+ / Android API 28+
+    uint8* bytes = (uint8*)dst;
+    while (size > 0) {
+        long r = syscall(SYS_getrandom, bytes, size, 0);
+        if (r < 0) {
+            if (errno == EINTR)
+                continue;
+            if (errno == ENOSYS || errno == EPERM)
+                return _GetCryptoRandomFromDevice(bytes, size);
+            return false;
+        }
+        // Large requests (> 32 MB) or signals can return fewer bytes
+        bytes += r;
+        size -= size_t(r);
+    }
+    return true;
+#else
+    UNUSED(dst);
+    UNUSED(size);
+    ASSERT_MSG(0, "Not implemented");
+    return false;
+#endif
+}
+
 //    ███████╗██╗██╗     ███████╗
 //    ██╔════╝██║██║     ██╔════╝
 //    █████╗  ██║██║     █████╗  
